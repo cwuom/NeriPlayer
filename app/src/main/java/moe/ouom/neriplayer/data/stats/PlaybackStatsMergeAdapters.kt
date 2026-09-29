@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.data.stats
 
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 
 internal fun shouldKeepTrackStatAfterClear(stat: TrackStat, playbackStatsClearedAt: Long): Boolean {
     if (playbackStatsClearedAt <= 0L) return true

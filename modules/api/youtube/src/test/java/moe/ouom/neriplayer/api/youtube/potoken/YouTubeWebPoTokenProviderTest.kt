@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.api.youtube.potoken
 
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.api.youtube.transport.YOUTUBE_DEFAULT_WEB_USER_AGENT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals

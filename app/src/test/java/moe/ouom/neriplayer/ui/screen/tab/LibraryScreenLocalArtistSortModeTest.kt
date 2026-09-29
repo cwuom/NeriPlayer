@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
+import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.tab.library.LocalArtistSortMode
 import moe.ouom.neriplayer.ui.screen.tab.library.localArtistSortModeStorageValue

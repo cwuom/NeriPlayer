@@ -23,15 +23,16 @@ package moe.ouom.neriplayer.api.youtube.transport
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.Locale
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeCookieSupport
-import moe.ouom.neriplayer.api.youtube.model.auth.parseCookieHeader
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.api.youtube.auth.parseCookieHeader
 import moe.ouom.neriplayer.util.network.matchesRootDomain
 
 const val YOUTUBE_MUSIC_MEDIA_URI_SCHEME: String = "ytmusic"

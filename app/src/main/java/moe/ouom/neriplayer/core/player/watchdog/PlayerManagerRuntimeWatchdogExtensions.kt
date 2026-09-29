@@ -12,8 +12,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlayerEvent
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_RUNTIME_STALL_MAX_RECOVERY_ATTEMPTS
 import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_RUNTIME_STALL_POLL_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_RUNTIME_STALL_TIMEOUT_MS

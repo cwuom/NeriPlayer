@@ -1,15 +1,17 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceReleaseResult
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.host.resolveClaimFailureResult
 import moe.ouom.neriplayer.core.download.execution.host.resolveExecutionCancellationResult
 import moe.ouom.neriplayer.core.download.execution.notification.DOWNLOAD_EXECUTION_NOTIFICATION_ID
@@ -37,7 +39,7 @@ import androidx.work.ListenableWorker
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.core.download.observability.DownloadPumpSelectionTrace

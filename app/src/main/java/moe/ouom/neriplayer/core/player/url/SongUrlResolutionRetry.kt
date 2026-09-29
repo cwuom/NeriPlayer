@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.url
 
 import kotlinx.coroutines.delay
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import kotlin.time.Duration.Companion.milliseconds
 
 internal const val SONG_URL_RESOLUTION_RETRY_COUNT = 5

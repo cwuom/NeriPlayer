@@ -8,7 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.testing.DocumentsFixture

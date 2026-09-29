@@ -1,12 +1,15 @@
 package moe.ouom.neriplayer.core.player.download.progress
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.download.model.mergeDownloadProgress
+import moe.ouom.neriplayer.core.download.presentation.mergeDownloadProgress
 import java.util.concurrent.atomic.AtomicLong
 
 private val downloadProgressSequence = AtomicLong()
 
-internal fun AudioDownloadManager.DownloadProgress.forPublication(): AudioDownloadManager.DownloadProgress =
+internal fun DownloadProgress.forPublication(): DownloadProgress =
     copy(publicationSequence = downloadProgressSequence.incrementAndGet())
 
 /**
@@ -20,7 +23,7 @@ internal object AudioDownloadProgressPolicy {
 
     internal fun shouldPublishAudioDownloadProgress(
         previous: AudioDownloadManager.PublishedProgressState?,
-        progress: AudioDownloadManager.DownloadProgress,
+        progress: DownloadProgress,
         nowNs: Long,
         force: Boolean = false
     ): Boolean {
@@ -31,7 +34,7 @@ internal object AudioDownloadProgressPolicy {
             return true
         }
         val enoughTimeElapsed = nowNs - previous.emittedAtNs >= PROGRESS_EMIT_INTERVAL_NS
-        val completedTransfer = progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ||
+        val completedTransfer = progress.stage != DownloadStage.TRANSFERRING ||
             (progress.totalBytes > 0L && progress.bytesRead >= progress.totalBytes)
         if (progress.stage != previous.stage || completedTransfer) {
             return true
@@ -52,16 +55,16 @@ internal object AudioDownloadProgressPolicy {
     }
 
     internal fun shouldReplaceLatestProgress(
-        previous: AudioDownloadManager.DownloadProgress?,
-        incoming: AudioDownloadManager.DownloadProgress
+        previous: DownloadProgress?,
+        incoming: DownloadProgress
     ): Boolean {
         return previous != mergeLatestProgress(previous, incoming)
     }
 
     internal fun mergeLatestProgress(
-        previous: AudioDownloadManager.DownloadProgress?,
-        incoming: AudioDownloadManager.DownloadProgress
-    ): AudioDownloadManager.DownloadProgress {
+        previous: DownloadProgress?,
+        incoming: DownloadProgress
+    ): DownloadProgress {
         if (previous == null) {
             return incoming
         }
@@ -101,7 +104,7 @@ internal object AudioDownloadProgressPolicy {
      * 取消旧请求和替代请求可能短暂重叠，按歌曲键直接清空会让旧回调抹掉新任务的进度
      */
     internal fun shouldClearVisibleProgressForOwner(
-        visible: AudioDownloadManager.DownloadProgress?,
+        visible: DownloadProgress?,
         songKey: String,
         expectedAttemptId: Long? = null,
         expectedOperationId: String? = null

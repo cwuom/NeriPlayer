@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.core.player.queue.policy
 
 import moe.ouom.neriplayer.core.player.queue.identity.QueueSongIdentity
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueDisplayItem
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueDisplayState
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueRestoreOrder
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueShuffleOrder
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayItem
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState
+import moe.ouom.neriplayer.core.player.queue.policy.order.PlayerQueueRestoreOrder
+import moe.ouom.neriplayer.core.player.queue.policy.order.PlayerQueueShuffleOrder
 import moe.ouom.neriplayer.data.model.SongItem
 
 fun buildPlayerQueueDisplayState(

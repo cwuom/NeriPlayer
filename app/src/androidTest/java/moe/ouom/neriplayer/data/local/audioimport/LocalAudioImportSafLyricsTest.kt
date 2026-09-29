@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether
 
-import moe.ouom.neriplayer.listentogether.invite.ListenTogetherInvite
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherInviteBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite

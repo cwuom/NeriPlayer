@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import java.io.File
 import java.util.UUID
 

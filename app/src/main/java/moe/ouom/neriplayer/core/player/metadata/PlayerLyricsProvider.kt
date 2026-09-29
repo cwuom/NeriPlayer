@@ -1,8 +1,5 @@
 package moe.ouom.neriplayer.core.player.metadata
 
-import moe.ouom.neriplayer.data.lyrics.repository.AmllLyricsResolver
-import moe.ouom.neriplayer.core.lyrics.convertPlainLyricsToEntries
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -26,6 +23,10 @@ import moe.ouom.neriplayer.core.lyrics.convertPlainLyricsToEntries
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.settings.playback.sanitized
+import moe.ouom.neriplayer.data.lyrics.repository.AmllLyricsResolver
+import moe.ouom.neriplayer.core.lyrics.convertPlainLyricsToEntries
 import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps
 import android.app.Application
 import android.util.LruCache
@@ -35,13 +36,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.lyrics.repository.AmllLyricsRepository
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchCandidate
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchCandidate
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.data.lyrics.repository.EditableLyricsMatcher
 import moe.ouom.neriplayer.data.lyrics.repository.LrcLibLyricsRepository
-import moe.ouom.neriplayer.data.lyrics.model.RankedEditableLyricMatch
+import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.lyrics.matching.editableLyricMatchSourcePriority
 import moe.ouom.neriplayer.data.lyrics.matching.extractPlainLyricsFromCollapsedTimedLyrics
 import moe.ouom.neriplayer.core.lyrics.hasEditableLyricWordTiming
@@ -49,19 +50,19 @@ import moe.ouom.neriplayer.data.lyrics.matching.hasLrcTimestamp
 import moe.ouom.neriplayer.data.lyrics.matching.isExternalLyricDurationCompatible
 import moe.ouom.neriplayer.data.lyrics.matching.isReliableLyricMatchIdentity
 import moe.ouom.neriplayer.api.netease.client.NeteaseClient
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.api.youtube.client.YouTubeMusicClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.core.lyrics.resolveStoredLyricText

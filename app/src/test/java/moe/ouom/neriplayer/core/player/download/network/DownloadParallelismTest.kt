@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.network
 
+import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

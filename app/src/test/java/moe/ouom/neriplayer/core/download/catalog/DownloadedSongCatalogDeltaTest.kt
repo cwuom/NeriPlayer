@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.catalog
 
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

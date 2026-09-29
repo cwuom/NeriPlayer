@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.listentogether.playback
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

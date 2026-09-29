@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.data.history
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
@@ -49,41 +51,12 @@ import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
-import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
-
-data class PlayedEntry(
-    val id: Long,
-    val name: String,
-    val artist: String,
-    val album: String,
-    val albumId: Long = 0L,
-    val durationMs: Long,
-    val resumePositionMs: Long = 0L,
-    val coverUrl: String?,
-    val mediaUri: String? = null,
-    val matchedLyric: String? = null,
-    val matchedTranslatedLyric: String? = null,
-    val customCoverUrl: String? = null,
-    val customName: String? = null,
-    val customArtist: String? = null,
-    val originalName: String? = null,
-    val originalArtist: String? = null,
-    val originalCoverUrl: String? = null,
-    val originalLyric: String? = null,
-    val originalTranslatedLyric: String? = null,
-    val localFileName: String? = null,
-    val localFilePath: String? = null,
-    val channelId: String? = null,
-    val audioId: String? = null,
-    val subAudioId: String? = null,
-    val sourceStableKey: String? = null,
-    val playedAt: Long
-)
 
 internal fun SongItem.toPlayedEntry(now: Long): PlayedEntry {
     return PlayedEntry(

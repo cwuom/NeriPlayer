@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.data.auth.bili
 
-import moe.ouom.neriplayer.data.auth.bili.model.BiliAuthBundle
+import moe.ouom.neriplayer.data.model.bilibili.auth.BiliAuthBundle
 
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test

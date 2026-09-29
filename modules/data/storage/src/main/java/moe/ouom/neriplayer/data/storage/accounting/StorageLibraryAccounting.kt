@@ -1,12 +1,5 @@
 package moe.ouom.neriplayer.data.storage.accounting
 
-import java.io.File
-import moe.ouom.neriplayer.data.storage.model.DownloadIndexUsageStats
-import moe.ouom.neriplayer.data.storage.model.FileStats
-import moe.ouom.neriplayer.data.storage.model.ManagedDownloadLibraryUsage
-import moe.ouom.neriplayer.data.storage.model.StorageDownloadIndexStats
-import moe.ouom.neriplayer.data.storage.model.StorageLibraryEntry
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -30,6 +23,12 @@ import moe.ouom.neriplayer.data.storage.model.StorageLibraryEntry
  * Created: 2026/7/9
  */
 
+import java.io.File
+import moe.ouom.neriplayer.data.model.storage.DownloadIndexUsageStats
+import moe.ouom.neriplayer.data.model.storage.FileStats
+import moe.ouom.neriplayer.data.model.storage.ManagedDownloadLibraryUsage
+import moe.ouom.neriplayer.data.model.storage.StorageDownloadIndexStats
+import moe.ouom.neriplayer.data.model.storage.StorageLibraryEntry
 fun managedDownloadLibraryUsage(
     audioEntries: Collection<StorageLibraryEntry>,
     lyricEntries: Collection<StorageLibraryEntry>,

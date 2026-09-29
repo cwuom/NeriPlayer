@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.queue.policy.failure
 
-import moe.ouom.neriplayer.core.player.queue.model.PlaybackFailureAdvanceAction
+import moe.ouom.neriplayer.data.model.playback.queue.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.queue.policy.QueueRepeatMode
 
 fun resolvePlaybackFailureAdvanceAction(

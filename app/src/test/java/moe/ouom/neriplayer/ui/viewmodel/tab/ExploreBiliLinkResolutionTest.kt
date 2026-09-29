@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
-import moe.ouom.neriplayer.api.bilibili.model.video.UgcSeason
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
+import moe.ouom.neriplayer.data.model.bilibili.video.UgcSeason
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
 import moe.ouom.neriplayer.core.player.PlayerManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

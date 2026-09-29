@@ -9,8 +9,8 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficUsageSource
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.downloadNetworkTypeOrNull

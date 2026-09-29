@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.WordTiming
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.facade
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
@@ -15,13 +17,13 @@ import moe.ouom.neriplayer.core.download.manager.runtime.executionResultForOpera
 import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadOperation
 import moe.ouom.neriplayer.core.download.manager.runtime.reopenMissingPostCoreArtifactForFreshTransfer
 import moe.ouom.neriplayer.core.download.manager.runtime.startDownloadConfirmed
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.resolveDownloadPreserveStaging
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.presentation.resolveDownloadPreserveStaging
 import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
 import android.content.Context
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.state.isPostCoreDownloadOperationState

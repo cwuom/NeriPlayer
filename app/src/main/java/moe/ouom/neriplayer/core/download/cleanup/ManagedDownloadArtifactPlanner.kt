@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadRes
 import android.net.Uri
 import androidx.core.net.toUri
 import java.io.File
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames

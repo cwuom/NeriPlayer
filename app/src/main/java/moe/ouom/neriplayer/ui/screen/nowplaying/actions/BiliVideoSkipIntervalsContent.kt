@@ -54,10 +54,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import moe.ouom.neriplayer.data.platform.bili.skip.policy.normalizeBiliVideoSkipIntervals
 
 private const val MAX_BILI_VIDEO_SKIP_TIMESTAMP_MS = 24L * 60L * 60L * 1_000L

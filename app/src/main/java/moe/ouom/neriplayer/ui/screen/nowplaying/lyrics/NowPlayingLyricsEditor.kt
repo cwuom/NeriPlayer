@@ -22,6 +22,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.lyrics/NowPlayingLyricsEditor
  */
 
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.ClipData
 import android.content.Context
 import androidx.activity.compose.BackHandler
@@ -97,10 +98,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchConfidence
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
-import moe.ouom.neriplayer.data.lyrics.model.RankedEditableLyricMatch
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.lyrics.matching.defaultEditableLyricMatchSources
 import moe.ouom.neriplayer.data.lyrics.matching.editableLyricMatchResultComparator
 import moe.ouom.neriplayer.data.lyrics.matching.normalizeLyricMatchText
@@ -108,7 +109,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.core.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton

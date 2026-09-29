@@ -10,11 +10,11 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.lyrics.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.storage.model.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.transfer
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.runtime.clearHlsResumeState
 import moe.ouom.neriplayer.core.player.download.runtime.deleteWorkingFile
@@ -135,7 +137,7 @@ internal class AudioDownloadHlsTransfer(
             mediaSequence: Long?
         )
 
-        fun publishProgress(progress: AudioDownloadManager.DownloadProgress)
+        fun publishProgress(progress: DownloadProgress)
 
         fun resolveVisibleDownloadFileName(
             requestedName: String,
@@ -388,7 +390,7 @@ internal class AudioDownloadHlsTransfer(
                         val attemptTransferredBytes =
                             (downloadedBytes - attemptStartBytes).coerceAtLeast(0L)
                         hooks.publishProgress(
-                            AudioDownloadManager.DownloadProgress(
+                            DownloadProgress(
                                 songKey = songKey,
                                 songId = songId,
                                 fileName = hooks.resolveVisibleDownloadFileName(

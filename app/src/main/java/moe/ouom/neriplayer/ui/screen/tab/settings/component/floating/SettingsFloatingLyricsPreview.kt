@@ -38,15 +38,15 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.lyrics.resolveFloatingLyricsEffectAlpha
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_LEFT
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_RIGHT
-import moe.ouom.neriplayer.data.settings.lyrics.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
-import moe.ouom.neriplayer.data.settings.lyrics.MIN_FLOATING_LYRICS_MAX_WIDTH_DP
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsColorHex
-import moe.ouom.neriplayer.data.settings.lyrics.resolveFloatingLyricsPositionX
-import moe.ouom.neriplayer.data.settings.lyrics.resolveFloatingLyricsPositionY
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_LEFT
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_RIGHT
+import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
+import moe.ouom.neriplayer.data.model.settings.lyrics.MIN_FLOATING_LYRICS_MAX_WIDTH_DP
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsColorHex
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionX
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionY
 
 private val FloatingLyricsPreviewShape = RoundedCornerShape(22.dp)
 private val FloatingLyricsStageShape = RoundedCornerShape(18.dp)

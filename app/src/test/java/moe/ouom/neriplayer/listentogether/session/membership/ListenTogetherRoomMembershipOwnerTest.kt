@@ -5,11 +5,11 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherLeaveRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomSettings
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherLeaveRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomSettings
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

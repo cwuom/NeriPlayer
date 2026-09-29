@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.core.download
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupSkipReason
-import moe.ouom.neriplayer.core.download.storage.backend.StorageConfidence
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageConfidence
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupFinalizationPreparation
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupRoot
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupRootType
@@ -12,7 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class TerminalTemporaryWriteCleanupTargetTest {
     @Test

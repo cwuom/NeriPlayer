@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.artifact
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
@@ -14,7 +16,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /**
  * 核心音频保留恢复凭据，元信息完成后才对正式目录发布

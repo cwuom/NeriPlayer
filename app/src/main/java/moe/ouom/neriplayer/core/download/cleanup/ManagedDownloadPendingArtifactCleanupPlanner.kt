@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import java.util.Locale
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /** 描述可删除的引用，以及已经跨过核心提交边界的 pending 引用 */
 internal data class ManagedDownloadPendingArtifactCleanupPlan(

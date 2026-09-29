@@ -2,9 +2,9 @@ package moe.ouom.neriplayer.core.player.url
 
 import android.content.Context
 import android.net.Uri
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.deriveCodecLabel
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.deriveCodecLabel
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.localMediaUri

@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.download.catalog
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
 import android.content.Context
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase

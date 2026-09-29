@@ -1,15 +1,15 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.manager.catalog.selectDeletionCancellationKeys
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
-import moe.ouom.neriplayer.core.download.model.isCompleteDownloadedSongSelection
-import moe.ouom.neriplayer.core.download.model.mergeDownloadedSongsAfterDelete
-import moe.ouom.neriplayer.core.download.model.resolveConfirmedFullLibraryDeleteResult
-import moe.ouom.neriplayer.core.download.model.resolveDownloadedSongDeleteResult
-import moe.ouom.neriplayer.core.download.model.resolveFullLibraryRemainingReferences
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.core.download.policy.isCompleteDownloadedSongSelection
+import moe.ouom.neriplayer.core.download.policy.mergeDownloadedSongsAfterDelete
+import moe.ouom.neriplayer.core.download.policy.resolveConfirmedFullLibraryDeleteResult
+import moe.ouom.neriplayer.core.download.policy.resolveDownloadedSongDeleteResult
+import moe.ouom.neriplayer.core.download.policy.resolveFullLibraryRemainingReferences
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 import moe.ouom.neriplayer.core.download.policy.shouldDeleteEntireDownloadedLibrary
 import moe.ouom.neriplayer.core.download.cleanup.requiresManagedDownloadDeleteSnapshotRefresh
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
@@ -18,7 +18,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class GlobalDownloadManagerDeleteReferenceTest {
 

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.api.youtube.transport
 
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

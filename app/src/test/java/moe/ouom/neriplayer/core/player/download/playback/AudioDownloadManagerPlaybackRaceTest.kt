@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.playback
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -10,7 +12,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /** 锁定刚提交音频的别名替换和精确引用优先级 */
 class AudioDownloadManagerPlaybackRaceTest {

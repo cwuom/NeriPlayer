@@ -4,8 +4,8 @@ import com.google.gson.Gson
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
-import moe.ouom.neriplayer.core.player.model.PersistedState
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedState
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue

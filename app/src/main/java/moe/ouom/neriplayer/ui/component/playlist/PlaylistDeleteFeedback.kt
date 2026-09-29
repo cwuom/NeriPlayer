@@ -7,9 +7,9 @@ import androidx.compose.material3.SnackbarResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar

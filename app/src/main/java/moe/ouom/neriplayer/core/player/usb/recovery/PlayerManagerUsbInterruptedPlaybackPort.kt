@@ -1,13 +1,14 @@
 package moe.ouom.neriplayer.core.player.usb.recovery
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
-import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 
 internal object PlayerManagerUsbInterruptedPlaybackPort : UsbInterruptedPlaybackPort {
     override fun snapshot(): UsbInterruptedPlaybackSnapshot {

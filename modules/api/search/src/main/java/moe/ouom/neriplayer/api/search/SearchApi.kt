@@ -1,8 +1,5 @@
 package moe.ouom.neriplayer.api.search
 
-import moe.ouom.neriplayer.core.model.music.SongDetails
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -26,6 +23,8 @@ import moe.ouom.neriplayer.core.model.music.SongSearchInfo
  * Created: 2025/8/17
  */
 
+import moe.ouom.neriplayer.data.model.music.SongDetails
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 /**
  * 音乐搜索服务的统一接口
  */

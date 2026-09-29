@@ -4,9 +4,9 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
-import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlayBucket
-import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStat
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlayBucket
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 
 @Entity(
     tableName = "local_playlist_playback_stat",

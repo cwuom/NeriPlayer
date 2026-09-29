@@ -16,17 +16,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipDraft
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
-import moe.ouom.neriplayer.data.platform.bili.skip.model.MAX_BILI_VIDEO_SKIP_DRAFT_TEXT_LENGTH
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.MAX_BILI_VIDEO_SKIP_DRAFT_TEXT_LENGTH
 import moe.ouom.neriplayer.data.platform.bili.skip.policy.intervalsForBiliVideoSkipCid
 import moe.ouom.neriplayer.data.platform.bili.skip.policy.intervalsForBiliVideoSkipPlayback
 import moe.ouom.neriplayer.data.platform.bili.skip.policy.normalizeBiliVideoSkipDrafts
 import moe.ouom.neriplayer.data.platform.bili.skip.policy.normalizeBiliVideoSkipIntervals
 import moe.ouom.neriplayer.data.platform.bili.skip.policy.normalizeBiliVideoSkipRules
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipSnapshot
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipSnapshot
 import moe.ouom.neriplayer.data.platform.bili.skip.storage.BiliVideoSkipStore
 import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 

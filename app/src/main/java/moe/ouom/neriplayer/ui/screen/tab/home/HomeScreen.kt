@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import android.app.Application
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -121,17 +122,16 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.playlist.usage.buildLocalPlaylistUsageLookup
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
@@ -148,8 +148,8 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeShelf
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.api.youtube.parser.YouTubeMusicParser
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest

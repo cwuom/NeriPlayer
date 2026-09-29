@@ -58,8 +58,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
 import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight

@@ -6,8 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

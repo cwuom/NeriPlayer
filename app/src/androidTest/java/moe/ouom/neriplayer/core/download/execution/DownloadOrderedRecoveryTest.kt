@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.os.Process
 import androidx.room.Room
@@ -9,7 +11,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.testing.awaitProcessDeathAtSeedCheckpoint
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomReadStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.manager.recovery.resetInvalidCoreDownloadForTransfer

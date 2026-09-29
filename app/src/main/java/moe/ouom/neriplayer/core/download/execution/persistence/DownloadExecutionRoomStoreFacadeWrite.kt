@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
 import moe.ouom.neriplayer.core.download.execution.state.DownloadOperationState
 import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
 import moe.ouom.neriplayer.core.download.execution.state.planDownloadRetry

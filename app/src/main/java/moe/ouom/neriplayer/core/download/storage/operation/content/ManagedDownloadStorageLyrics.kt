@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedLyricsBundle
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.LyricKind
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import android.content.Context
 import android.net.Uri
 import android.os.Build

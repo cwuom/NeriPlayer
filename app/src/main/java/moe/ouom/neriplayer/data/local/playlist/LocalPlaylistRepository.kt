@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.data.local.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongAddResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistDeleteResult
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.SystemClock
@@ -41,26 +44,26 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.api.netease.client.NeteaseClient
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.localMediaUri
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncPlan
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseRemotePlaylist
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncPlan
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncResult
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.playlist.sync.addNeteasePlaylistSongIdsInBatches
 import moe.ouom.neriplayer.data.local.playlist.sync.classifyNeteasePlaylistAddFailures
 import moe.ouom.neriplayer.data.local.playlist.sync.parseNeteaseRemotePlaylists
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.settings.lyrics.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
@@ -69,24 +72,6 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.io.IOException
 import java.util.LinkedHashSet
-
-data class LocalPlaylistSongAddResult(
-    val addedSongs: List<SongItem>
-) {
-    val addedCount: Int
-        get() = addedSongs.size
-}
-
-data class LocalPlaylistSongDeleteResult(
-    val playlistId: Long,
-    val song: SongItem,
-    val index: Int
-)
-
-data class LocalPlaylistDeleteResult(
-    val playlist: LocalPlaylist,
-    val index: Int
-)
 
 internal fun resolvePlaylistSongAddedAt(
     song: SongItem,
@@ -251,101 +236,7 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     internal fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     internal class SongDuplicateIndex(
         private val includeLocalMetadataFallback: Boolean
@@ -400,10 +291,6 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-
-
-
-
     suspend fun createPlaylist(name: String) {
         withContext(Dispatchers.IO) {
             commitPlaylistMutation {
@@ -445,8 +332,6 @@ class LocalPlaylistRepository private constructor(
             hydrateLocalMetadata = false
         )
     }
-
-
 
     suspend fun addToFavorites(song: SongItem) {
         withContext(Dispatchers.IO) {
@@ -910,10 +795,6 @@ class LocalPlaylistRepository private constructor(
         )
     }
 
-
-
-
-
     suspend fun addSongsToLocalFilesPlaylist(songs: List<SongItem>) {
         addSongsToLocalFilesPlaylistAndCount(songs)
     }
@@ -938,10 +819,6 @@ class LocalPlaylistRepository private constructor(
             preserveScannedSourceAddedAt = true
         )
     }
-
-
-
-
 
     suspend fun refreshScannedLocalSongMetadata(
         songs: List<SongItem>,
@@ -1145,10 +1022,6 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-
-
-
-
     internal class SongMetadataUpdateIndex(updates: List<SongMetadataUpdate>) {
         private val byIdentity = HashMap<SongIdentity, SongMetadataUpdate>(updates.size * 2)
         private val byLocalKey = HashMap<String, SongMetadataUpdate>(updates.size * 3)
@@ -1186,10 +1059,6 @@ class LocalPlaylistRepository private constructor(
             triggerSync = triggerSync
         )
     }
-
-
-
-
 
     suspend fun rebaseLyricOffsetsForSource(
         targetSource: MusicPlatform,
@@ -1247,8 +1116,6 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-
-
     suspend fun updatePlaylists(
         playlists: List<LocalPlaylist>,
         triggerSync: Boolean = false,
@@ -1286,8 +1153,6 @@ class LocalPlaylistRepository private constructor(
             }
         }
     }
-
-
 
     suspend fun reorderPlaylists(newOrder: List<Long>) {
         withContext(Dispatchers.IO) {
@@ -1628,10 +1493,6 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-
-
-
-
     internal fun NeteaseRemotePlaylistSyncPlan.toLikeSyncPlan(): NeteaseLikeSyncPlan {
         return NeteaseLikeSyncPlan(
             totalSongs = totalSongs,
@@ -1651,40 +1512,16 @@ class LocalPlaylistRepository private constructor(
         val message: String? = null
     )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     internal data class NeteaseSongDetailSummary(
         val ids: Set<Long>,
         val fingerprints: Set<String>
     )
-
-
 
     internal data class ParsedNeteaseSongDetailSummary(
         val ids: Set<Long>,
         val fingerprints: Set<String>,
         val success: Boolean
     )
-
-
-
-
-
-
 
     internal fun SongItem.toNeteaseFingerprint(): String? {
         return buildNeteaseFingerprint(
@@ -1693,14 +1530,6 @@ class LocalPlaylistRepository private constructor(
             durationMs = durationMs
         )
     }
-
-
-
-
-
-
-
-
 
     internal fun String?.isNeteaseCoverUrl(): Boolean {
         if (this.isNullOrBlank()) return false

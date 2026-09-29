@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.api.youtube.client
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.hasSavedAuthMaterial
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -33,27 +36,27 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeAuthProvider
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeAuthRefresher
 import moe.ouom.neriplayer.api.youtube.auth.shouldStartYouTubeWebAuthRecovery
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorBrowseEndpoint
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorDetail
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItemsPage
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicDebugProbeResult
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeShelf
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicLibraryPlaylist
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicLyrics
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicPlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicPlaylistDetail
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicPlaylistTrack
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicRequestLocale
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchFilter
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResult
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResultType
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicVideoMetadata
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorBrowseEndpoint
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemsPage
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicDebugProbeResult
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicLibraryPlaylist
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicLyrics
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicPlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicPlaylistDetail
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicPlaylistTrack
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResultType
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicVideoMetadata
 import moe.ouom.neriplayer.api.youtube.parser.YouTubeMusicParser
 import moe.ouom.neriplayer.api.youtube.protocol.YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT
 import moe.ouom.neriplayer.api.youtube.protocol.YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
-import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicBootstrapConfig
-import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicBrowseResponse
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicBootstrapConfig
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicBrowseResponse
 import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicSearchParams
 import moe.ouom.neriplayer.api.youtube.protocol.hasEffectiveLogin
@@ -256,9 +259,10 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
     )
     val distinctTracks = tracks.distinctBy { it.videoId }
     val loadedTrackCount = distinctTracks.size.takeIf { it > 0 }
+    val declaredTrackCount = baseDetail.trackCount
     val resolvedTrackCount = when {
-        baseDetail.trackCount != null && loadedTrackCount != null -> maxOf(baseDetail.trackCount, loadedTrackCount)
-        baseDetail.trackCount != null -> baseDetail.trackCount
+        declaredTrackCount != null && loadedTrackCount != null -> maxOf(declaredTrackCount, loadedTrackCount)
+        declaredTrackCount != null -> declaredTrackCount
         else -> loadedTrackCount
     }
     return baseDetail.copy(

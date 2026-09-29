@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.operation.content.resolveTrustedManagedReferences

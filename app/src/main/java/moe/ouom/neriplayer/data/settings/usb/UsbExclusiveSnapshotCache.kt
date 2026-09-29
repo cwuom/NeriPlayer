@@ -1,5 +1,19 @@
 package moe.ouom.neriplayer.data.settings.usb
 
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_PERFECT
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
+
 import android.content.SharedPreferences
 
 private const val SAMPLE_RATE_MODE_KEY = "usb_exclusive_sample_rate_mode"

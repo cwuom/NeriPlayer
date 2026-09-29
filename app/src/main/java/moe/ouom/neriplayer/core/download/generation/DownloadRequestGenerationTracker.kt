@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.generation
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import moe.ouom.neriplayer.data.model.stableKey

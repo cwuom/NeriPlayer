@@ -4,8 +4,8 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
-import moe.ouom.neriplayer.data.stats.PlaybackStatBucket
-import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.TrackStat
 
 @Entity(
     tableName = "playback_stat",

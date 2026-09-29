@@ -7,10 +7,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.api.search.NativeLyricSearchApi
 import moe.ouom.neriplayer.api.search.client.QQMusicSearchApi
-import moe.ouom.neriplayer.api.search.model.QQMusicSongMetadata
+import moe.ouom.neriplayer.data.model.qqmusic.search.QQMusicSongMetadata
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.model.music.SongDetails
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.music.SongDetails
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.lyrics.matching.chooseQQMusicLyrics
 
 class QQMusicLyricsRepository(

@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.sync.model
 
+import moe.ouom.neriplayer.data.model.sync.SyncBiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.sync.SyncBiliVideoSkipRule
+import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

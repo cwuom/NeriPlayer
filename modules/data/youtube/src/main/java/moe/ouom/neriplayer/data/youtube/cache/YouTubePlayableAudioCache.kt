@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.data.youtube.cache
 
 import java.util.Locale
 import moe.ouom.neriplayer.api.youtube.challenge.extractStreamQueryParameter
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.api.youtube.playback.isPlayableM4aContainer
 import moe.ouom.neriplayer.api.youtube.playback.isTrustedYouTubeDirectUrlForStrictRecovery
 import moe.ouom.neriplayer.api.youtube.playback.satisfiesYouTubePlaybackQuality

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadPumpCompletion
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadPumpScheduleCoordinator
 import org.junit.Assert.assertEquals

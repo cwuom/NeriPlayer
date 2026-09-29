@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.service.presentation
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.service.notification.ServiceWidgetLabels
@@ -11,7 +13,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
-import moe.ouom.neriplayer.core.player.timer.SleepTimerState
+import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals

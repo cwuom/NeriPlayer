@@ -65,7 +65,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType

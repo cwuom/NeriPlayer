@@ -10,7 +10,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import moe.ouom.neriplayer.core.player.usb.sink.ResolvedUsbOutputFormat
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveIoGate
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

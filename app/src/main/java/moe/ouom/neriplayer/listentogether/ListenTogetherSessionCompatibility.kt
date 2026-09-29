@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether
 
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.session.membership.resolveListenTogetherJoinAutoPauseCause as resolveSessionJoinAutoPauseCause
 
 internal fun resolveListenTogetherJoinAutoPauseCause(

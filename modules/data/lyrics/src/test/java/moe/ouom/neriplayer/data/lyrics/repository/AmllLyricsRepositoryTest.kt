@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.lyrics.repository
 
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.lyrics.client.AmllTtmlClient
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
 import moe.ouom.neriplayer.data.lyrics.matching.isAmllDurationCompatible
 import moe.ouom.neriplayer.data.lyrics.matching.normalizeAmllSearchText
 import moe.ouom.neriplayer.data.lyrics.matching.scoreAmllSearchResult

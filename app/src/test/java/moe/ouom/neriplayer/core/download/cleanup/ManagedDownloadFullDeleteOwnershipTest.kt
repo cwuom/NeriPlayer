@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import java.io.IOException
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongDeleteTarget
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadResult
@@ -51,7 +51,7 @@ class ManagedDownloadFullDeleteOwnershipTest {
         val owned = entry("Covers/owned.jpg")
         val foreign = entry("Covers/song.jpg")
         val data = metadata(audio, owned).copy(mediaUri = audio.reference)
-        val song = moe.ouom.neriplayer.core.download.model.DownloadedSong(
+        val song = moe.ouom.neriplayer.data.model.download.DownloadedSong(
             1, "song", "artist", "album", audio.reference, 10, 1, coverPath = foreign.reference)
         val references = if (full) {
             planOwnedFullLibraryDeletion(inventory(listOfNotNull(audio, receipt.takeIf { hasReceipt }), listOf(owned, foreign),

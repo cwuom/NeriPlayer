@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.download.catalog.projection
 
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

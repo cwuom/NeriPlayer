@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.api.ltw.ws
 
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request

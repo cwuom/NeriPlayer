@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.tab.explore
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -137,8 +140,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
@@ -153,8 +156,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository

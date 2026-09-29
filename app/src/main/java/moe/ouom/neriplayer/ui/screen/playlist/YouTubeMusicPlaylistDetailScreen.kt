@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -111,9 +113,8 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet

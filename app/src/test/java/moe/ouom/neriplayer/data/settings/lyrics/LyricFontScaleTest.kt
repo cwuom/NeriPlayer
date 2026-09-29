@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

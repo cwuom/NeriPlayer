@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.api.youtube.parser
 
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeItem
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeShelf
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResultType
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResultType
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

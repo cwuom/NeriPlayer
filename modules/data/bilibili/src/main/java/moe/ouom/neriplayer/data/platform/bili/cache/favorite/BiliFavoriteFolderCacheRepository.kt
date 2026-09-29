@@ -1,7 +1,5 @@
 package moe.ouom.neriplayer.data.platform.bili.cache.favorite
 
-import moe.ouom.neriplayer.data.platform.bili.cache.favorite.model.BiliFavoriteFolderContentCache
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -25,6 +23,7 @@ import moe.ouom.neriplayer.data.platform.bili.cache.favorite.model.BiliFavoriteF
  * Created: 2026/7/2
  */
 
+import moe.ouom.neriplayer.data.model.bilibili.cache.favorite.BiliFavoriteFolderContentCache
 import com.google.gson.Gson
 import java.io.File
 import kotlinx.coroutines.Dispatchers

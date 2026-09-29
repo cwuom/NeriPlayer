@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether.mapping
 
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
 
 fun SongItem.toListenTogetherTrackOrNull(includeLocal: Boolean = false): ListenTogetherTrack? {

@@ -48,8 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton

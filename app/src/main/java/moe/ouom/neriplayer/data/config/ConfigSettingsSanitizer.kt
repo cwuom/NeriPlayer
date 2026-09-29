@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.config
 
+import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
+
 import android.content.Context
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.R
@@ -7,15 +9,15 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.player.download.network.normalizeDownloadParallelism
-import moe.ouom.neriplayer.core.player.model.DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresets
-import moe.ouom.neriplayer.core.player.model.decodePlaybackEqualizerBandLevels
-import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresets
+import moe.ouom.neriplayer.data.model.playback.decodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.data.model.playback.encodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.playback.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
@@ -23,14 +25,14 @@ import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsAlignment
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsAlpha
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsColorHex
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsFontSizeSp
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsMaxWidthDp
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsOutlineWidthDp
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsPosition
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsRenderStyle
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsAlignment
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsAlpha
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsColorHex
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsFontSizeSp
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsMaxWidthDp
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsOutlineWidthDp
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsRenderStyle
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import java.util.Locale

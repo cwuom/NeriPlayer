@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.playback
 
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherPlaybackState
 import kotlin.math.abs
 
 internal fun ListenTogetherPlaybackState.expectedPositionMs(

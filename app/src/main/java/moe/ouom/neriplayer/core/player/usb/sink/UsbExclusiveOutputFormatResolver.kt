@@ -9,9 +9,9 @@ import androidx.media3.common.C
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.device.UsbExclusiveDeviceSelectionOutcome
 import moe.ouom.neriplayer.core.player.usb.device.selectUsbExclusiveDevice
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveSampleRateMode
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
 
 internal data class ResolvedUsbOutputFormat(
     val sampleRate: Int,

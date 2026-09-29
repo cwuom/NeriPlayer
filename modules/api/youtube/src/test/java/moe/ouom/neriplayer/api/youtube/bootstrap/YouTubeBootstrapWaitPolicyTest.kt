@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.api.youtube.bootstrap
 
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

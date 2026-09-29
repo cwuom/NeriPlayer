@@ -8,8 +8,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTargetOption
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_ADD_BUTTON_TEST_TAG
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_END_INPUT_TEST_TAG

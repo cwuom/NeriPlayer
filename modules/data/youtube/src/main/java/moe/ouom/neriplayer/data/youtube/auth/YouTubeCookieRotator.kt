@@ -32,9 +32,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.youtube.model.auth.ROTATION_DEFAULT_INTERVAL_MS
-import moe.ouom.neriplayer.data.youtube.model.auth.YouTubeCookieRotationOutcome
-import moe.ouom.neriplayer.data.youtube.model.auth.YouTubeCookieRotationState
+import moe.ouom.neriplayer.data.model.youtube.auth.ROTATION_DEFAULT_INTERVAL_MS
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationOutcome
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationState
 import moe.ouom.neriplayer.util.network.awaitResponse
 import okhttp3.CookieJar
 import okhttp3.MediaType.Companion.toMediaType

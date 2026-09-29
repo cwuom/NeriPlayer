@@ -32,8 +32,8 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.traffic.TrafficStatsSummary
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.traffic.TrafficStatsSummary
 import moe.ouom.neriplayer.data.traffic.aggregateTrafficStatsForPeriod
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem

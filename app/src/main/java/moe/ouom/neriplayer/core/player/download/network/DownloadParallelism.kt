@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.network
 
+import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +16,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
-internal const val DEFAULT_DOWNLOAD_PARALLELISM = 6
 internal const val MAX_DOWNLOAD_PARALLELISM = 8
 internal const val MIN_DOWNLOAD_DISPATCH_WINDOW = 2
 internal const val MAX_DOWNLOAD_DISPATCH_WINDOW = 10

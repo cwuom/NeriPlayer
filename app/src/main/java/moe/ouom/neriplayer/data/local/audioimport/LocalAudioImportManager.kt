@@ -23,7 +23,10 @@ package moe.ouom.neriplayer.data.local.audioimport
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanPhase
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanProgress
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri

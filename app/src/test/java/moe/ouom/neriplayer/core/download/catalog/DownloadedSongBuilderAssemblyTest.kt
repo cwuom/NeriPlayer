@@ -12,7 +12,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class DownloadedSongBuilderAssemblyTest {
     @Test

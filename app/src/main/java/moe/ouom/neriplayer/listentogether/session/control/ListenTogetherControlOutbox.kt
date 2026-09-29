@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.session.control
 
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
 
 internal data class PendingListenTogetherControlEvent(
     val event: ListenTogetherEvent,

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.player.playback.PENDING_TRACK_END_DEDUPLICATION_KEY
 import moe.ouom.neriplayer.core.player.playback.shouldHandleTrackEnd
 import moe.ouom.neriplayer.core.player.playback.shouldSkipDuplicateTrackEnd

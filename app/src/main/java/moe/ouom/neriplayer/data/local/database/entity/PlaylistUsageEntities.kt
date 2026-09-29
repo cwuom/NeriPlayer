@@ -4,9 +4,9 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.playlist.usage.usageKey
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 
 @Entity(
     tableName = "playlist_usage",

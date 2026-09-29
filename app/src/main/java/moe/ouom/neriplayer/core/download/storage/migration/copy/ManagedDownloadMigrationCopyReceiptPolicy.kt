@@ -9,8 +9,8 @@ import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import java.util.Locale
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
 
 internal data class ReusableMigrationCopyPair(
     val sourceEntry: ManagedMigrationEntry,

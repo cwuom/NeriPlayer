@@ -2,9 +2,9 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import android.content.res.Resources
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyException
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryChangeGuardGateway
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryChangeGuardOwner
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationErrorPresenter
@@ -39,7 +39,7 @@ class SettingsDownloadDirectoryGuardOwnerTest {
             processing = ManagedLibraryProcessingState.Running(
                 operationId = "op",
                 reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
-                phase = moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                phase = moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase.REBUILDING_INDEX
             )
         }
 

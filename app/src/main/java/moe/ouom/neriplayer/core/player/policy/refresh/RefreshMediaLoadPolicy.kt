@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.policy.refresh
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 
 internal data class RefreshRequestSemantics(
     val songKey: String,

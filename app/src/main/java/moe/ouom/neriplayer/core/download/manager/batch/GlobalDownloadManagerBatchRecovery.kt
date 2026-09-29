@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.manager.batch
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
@@ -15,17 +18,17 @@ import moe.ouom.neriplayer.core.download.manager.runtime.repairDownloadedCoverIf
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
 import moe.ouom.neriplayer.core.download.manager.runtime.isRecoveryMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.settleAlreadyDownloadedOperation
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.QueuedDownloadRequest
-import moe.ouom.neriplayer.core.download.model.canScheduleRecoveredDownloadOperation
-import moe.ouom.neriplayer.core.download.model.resolveBatchOperationScheduleAction
-import moe.ouom.neriplayer.core.download.model.resolveDownloadPreserveStaging
-import moe.ouom.neriplayer.core.download.model.selectBatchArtifactLeaseForCancellation
-import moe.ouom.neriplayer.core.download.model.shouldPreserveBatchPreparationForHandedOffOperation
-import moe.ouom.neriplayer.core.download.model.shouldRehandoffRecoveredDownloadOperation
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.core.download.presentation.BatchOperationScheduleAction
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.presentation.QueuedDownloadRequest
+import moe.ouom.neriplayer.core.download.presentation.canScheduleRecoveredDownloadOperation
+import moe.ouom.neriplayer.core.download.presentation.resolveBatchOperationScheduleAction
+import moe.ouom.neriplayer.core.download.presentation.resolveDownloadPreserveStaging
+import moe.ouom.neriplayer.core.download.presentation.selectBatchArtifactLeaseForCancellation
+import moe.ouom.neriplayer.core.download.presentation.shouldPreserveBatchPreparationForHandedOffOperation
+import moe.ouom.neriplayer.core.download.presentation.shouldRehandoffRecoveredDownloadOperation
 import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.TrafficRiskDownloadRequest
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchDownloadSession
@@ -42,9 +45,9 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -52,7 +55,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -690,10 +693,12 @@ internal suspend fun GlobalDownloadManager.schedulePendingBatchDownload(
             val executionRequest = scheduleMetadata?.let { metadata ->
                 val persistedRequest = session.operationRequestsBySongKey[songKey]
                 val persistedBatchIdentity = persistedRequest?.let { request ->
-                    if (request.batchId != null && request.batchGeneration != null) {
+                    val batchId = request.batchId
+                    val batchGeneration = request.batchGeneration
+                    if (batchId != null && batchGeneration != null) {
                         DownloadExecutionRoomStore.DownloadBatchIdentity(
-                            batchId = request.batchId,
-                            generation = request.batchGeneration
+                            batchId = batchId,
+                            generation = batchGeneration
                         )
                     } else {
                         null
@@ -726,7 +731,7 @@ internal suspend fun GlobalDownloadManager.schedulePendingBatchDownload(
             }
             publishDownloadStage(
                 song = song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                stage = DownloadStage.WAITING_HOST,
                 operationId = operationId,
                 attemptId = executionRequest.attemptId
             )
@@ -997,7 +1002,7 @@ internal suspend fun GlobalDownloadManager.handleBatchDownloadScheduleFailure(
             )
             publishDownloadStage(
                 song = request.song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                stage = DownloadStage.WAITING_HOST,
                 operationId = request.operationId,
                 attemptId = request.attemptId
             )

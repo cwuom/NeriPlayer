@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -150,7 +152,7 @@ class BatchDownloadExecutionHostCharacterizationTest {
         val stageBody = methodBody(source, "publishDownloadStage")
 
         assertTrue(stageBody.contains("updateDownloadProgress("))
-        assertTrue(stageBody.contains("AudioDownloadManager.DownloadProgress("))
+        assertTrue(stageBody.contains("DownloadProgress("))
         assertFalse(stageBody.contains("AudioDownloadManager.publishStageProgress("))
     }
 

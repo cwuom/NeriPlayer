@@ -3,13 +3,14 @@ package moe.ouom.neriplayer.data.lyrics.matching
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.core.lyrics.hasEditableLyricWordTiming
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricFormat
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchCandidate
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchConfidence
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
-import moe.ouom.neriplayer.data.lyrics.model.RankedEditableLyricMatch
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricFormat
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchCandidate
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.lyrics.search.toSimplifiedChineseForDomesticSearch
+import moe.ouom.neriplayer.data.model.lyrics.matching.DEFAULT_EDITABLE_LYRIC_MATCH_SOURCES
 import moe.ouom.neriplayer.util.search.SearchTextMatcher
 
 private const val MIN_EDITABLE_LYRIC_MATCH_SCORE = 35
@@ -41,11 +42,7 @@ fun defaultEditableLyricMatchSources(
             EditableLyricMatchSource.LRCLIB
         )
     }
-    return setOf(
-        EditableLyricMatchSource.AMLL_TTML,
-        EditableLyricMatchSource.CLOUD_MUSIC,
-        EditableLyricMatchSource.KUGOU
-    )
+    return DEFAULT_EDITABLE_LYRIC_MATCH_SOURCES.toSet()
 }
 
 fun rankEditableLyricMatches(

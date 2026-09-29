@@ -1,12 +1,14 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class ManagedDownloadBatchLookupWorkTest {
     @Test

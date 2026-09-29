@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
@@ -21,7 +23,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException
 import moe.ouom.neriplayer.core.player.download.sidecar.verifyDownloadedAudioPayload
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.model.SongItem
@@ -34,7 +36,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class DownloadedMp3IntegrityTest {

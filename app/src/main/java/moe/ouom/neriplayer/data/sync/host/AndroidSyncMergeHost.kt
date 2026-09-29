@@ -5,8 +5,8 @@ import androidx.annotation.StringRes
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
-import moe.ouom.neriplayer.data.sync.merge.SyncMergeHost
-import moe.ouom.neriplayer.data.sync.merge.SyncSystemPlaylist
+import moe.ouom.neriplayer.data.sync.merge.host.SyncMergeHost
+import moe.ouom.neriplayer.data.model.sync.SyncSystemPlaylist
 
 internal class AndroidSyncMergeHost(
     private val localizedContext: Context,

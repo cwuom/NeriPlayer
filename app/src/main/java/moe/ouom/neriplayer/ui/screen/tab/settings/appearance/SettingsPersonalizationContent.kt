@@ -37,9 +37,9 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
-import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE

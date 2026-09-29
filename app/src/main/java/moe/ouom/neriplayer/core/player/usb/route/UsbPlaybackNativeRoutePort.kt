@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.core.player.usb.route
 
 import android.app.Application
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 
 internal interface UsbPlaybackNativeRoutePort {
     fun path(): UsbExclusiveAudioPathState

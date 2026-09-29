@@ -23,11 +23,13 @@ package moe.ouom.neriplayer.api.youtube.transport
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.isUsable
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import java.io.IOException
 import java.util.Locale
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.parseCookieHeader
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.api.youtube.auth.parseCookieHeader
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.api.youtube.playback
 
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackSourcePreference
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 
 internal enum class YouTubePlayerClientSource {
     VISION_OS,

@@ -27,7 +27,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import moe.ouom.neriplayer.R
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @SuppressLint("DefaultLocale")

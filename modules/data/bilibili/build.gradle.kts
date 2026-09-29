@@ -5,13 +5,12 @@ plugins {
 }
 
 android {
-    defaultConfig.consumerProguardFiles("consumer-rules.pro")
     namespace = "moe.ouom.neriplayer.data.bilibili"
 }
 
 dependencies {
     api(project(":api:bilibili"))
-    api(project(":core:model"))
+    api(project(":data:model"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.gson)
     implementation(project(":core:common"))

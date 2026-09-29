@@ -1,10 +1,12 @@
 package moe.ouom.neriplayer.data.local.database.entity
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import moe.ouom.neriplayer.data.history.PlayedEntry
+import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
 

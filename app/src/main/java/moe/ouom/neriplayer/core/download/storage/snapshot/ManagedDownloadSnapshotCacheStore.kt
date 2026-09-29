@@ -14,7 +14,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 import moe.ouom.neriplayer.core.logging.NPLogger
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal interface ManagedDownloadSnapshotPersistenceStore {
     suspend fun restore(

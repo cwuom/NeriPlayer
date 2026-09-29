@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.platform.bili.playback.quality
 
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

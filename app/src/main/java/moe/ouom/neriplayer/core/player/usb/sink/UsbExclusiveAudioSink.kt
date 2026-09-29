@@ -2,6 +2,13 @@
 
 package moe.ouom.neriplayer.core.player.usb.sink
 
+import moe.ouom.neriplayer.core.player.usb.transport.hasHealthyTransport
+import moe.ouom.neriplayer.core.player.usb.transport.hasKotlinTerminalRecoveryAction
+import moe.ouom.neriplayer.core.player.usb.transport.hasPcmQueue
+import moe.ouom.neriplayer.core.player.usb.transport.isBenignBackpressure
+import moe.ouom.neriplayer.core.player.usb.transport.isQueueFull
+import moe.ouom.neriplayer.core.player.usb.transport.outputFrameBytes
+
 import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -10,7 +17,6 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.AuxEffectInfo
 import androidx.media3.common.C
 import androidx.media3.common.Format
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.analytics.PlayerId
@@ -25,7 +31,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveAudioQualityRecoveryPolicy
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveAudioQualityRecoveryState
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveRecoveryActionPolicy
@@ -46,9 +52,9 @@ import moe.ouom.neriplayer.core.player.usb.device.hasPermittedUsbAudioOutput
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveErrorCode
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRecoveryActionAckStatus
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveErrorCode
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionAckStatus
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
 import moe.ouom.neriplayer.core.player.usb.transport.requiresFreshNativeOpen
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
@@ -976,23 +982,6 @@ internal class UsbExclusiveAudioSink(
     private fun hasDefaultPlaybackParameters(parameters: PlaybackParameters): Boolean {
         return abs(parameters.speed - 1f) <= PARAMETER_EPSILON &&
             abs(parameters.pitch - 1f) <= PARAMETER_EPSILON
-    }
-
-    private fun isNativePcmFormat(format: Format): Boolean {
-        return MimeTypes.AUDIO_RAW == format.sampleMimeType &&
-            format.sampleRate > 0 &&
-            format.channelCount > 0 &&
-            format.channelCount <= 8 &&
-            pcmFrameBytes(format.pcmEncoding, format.channelCount) > 0
-    }
-
-    private fun isUsbNativePcmFormat(format: Format): Boolean {
-        return isNativePcmFormat(format)
-    }
-
-    private fun inputFormatDescription(format: Format): String {
-        return "mime=${format.sampleMimeType ?: "unknown"} sampleRate=${format.sampleRate} " +
-            "channels=${format.channelCount} encoding=${format.pcmEncoding}"
     }
 
     private fun nativeWriteSnapshot() = UsbExclusiveNativeWriteSnapshot(
@@ -1977,18 +1966,5 @@ internal class UsbExclusiveAudioSink(
         return if (sampleRate > 0) frames * 1_000_000L / sampleRate else 0L
     }
 
-    private fun pcmFrameBytes(encoding: Int, channels: Int): Int {
-        val bytesPerSample = when (encoding) {
-            C.ENCODING_PCM_8BIT -> 1
-            C.ENCODING_PCM_16BIT,
-            C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 2
-            C.ENCODING_PCM_24BIT,
-            C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 3
-            C.ENCODING_PCM_32BIT,
-            C.ENCODING_PCM_32BIT_BIG_ENDIAN,
-            C.ENCODING_PCM_FLOAT -> 4
-            else -> 0
-        }
-        return bytesPerSample * max(0, channels)
-    }
+
 }

@@ -1,25 +1,29 @@
 package moe.ouom.neriplayer.core.player.url
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+import moe.ouom.neriplayer.listentogether.validation.format
+
 import java.security.MessageDigest
 import kotlin.math.abs
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
-import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
+import moe.ouom.neriplayer.data.model.playback.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
 
 internal const val LISTEN_TOGETHER_STREAM_CACHE_KEY_PREFIX = "listen-together-stream"

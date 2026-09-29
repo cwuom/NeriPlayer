@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.core.lyrics
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 fun convertPlainLyricsToEntries(text: String, durationMs: Long): List<LyricEntry> {
     val lines = text.lines().filter { it.isNotBlank() }
     if (lines.isEmpty()) {

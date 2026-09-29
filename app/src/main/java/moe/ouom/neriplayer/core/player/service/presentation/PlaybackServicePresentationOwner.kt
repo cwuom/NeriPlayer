@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.service.presentation
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
 import moe.ouom.neriplayer.core.player.service.media.MediaSessionPlaybackStateThrottler

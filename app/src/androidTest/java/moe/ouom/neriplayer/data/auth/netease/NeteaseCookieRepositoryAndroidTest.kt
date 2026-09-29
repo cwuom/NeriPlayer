@@ -10,7 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.netease.client.NeteaseClient
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals

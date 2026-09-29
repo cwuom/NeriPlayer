@@ -23,7 +23,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -118,9 +119,8 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight

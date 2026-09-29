@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.core.comment.mapper
 
 import moe.ouom.neriplayer.api.bilibili.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.core.comment.CommentApiException
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentPage
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
-import moe.ouom.neriplayer.core.comment.model.SongComment
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentPage
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.util.json.mapObjectsNotNull
 import org.json.JSONObject
 

@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.data.sync.github
 
 import com.google.gson.Gson
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

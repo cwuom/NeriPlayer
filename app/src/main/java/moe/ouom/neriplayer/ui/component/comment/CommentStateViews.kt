@@ -21,7 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 /**

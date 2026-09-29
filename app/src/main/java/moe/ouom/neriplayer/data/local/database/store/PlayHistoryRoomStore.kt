@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
 import androidx.room.withTransaction
-import moe.ouom.neriplayer.data.history.PlayedEntry
+import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 
 internal enum class PlayHistoryRoomImportStatus {

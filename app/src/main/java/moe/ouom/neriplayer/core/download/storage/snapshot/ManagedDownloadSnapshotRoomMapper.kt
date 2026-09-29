@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.metadata.resolveCreatedAtConfidence
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotEntryEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEntity
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal object ManagedDownloadSnapshotRoomMapper {
     const val BUCKET_AUDIO = "audio"

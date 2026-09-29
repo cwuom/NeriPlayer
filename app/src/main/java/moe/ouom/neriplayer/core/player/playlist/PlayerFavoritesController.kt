@@ -23,13 +23,13 @@ package moe.ouom.neriplayer.core.player.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import android.app.Application
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.toSyncableRemoteSongOrNull
+import moe.ouom.neriplayer.data.identity.toSyncableRemoteSongOrNull
 
 internal object PlayerFavoritesController {
 

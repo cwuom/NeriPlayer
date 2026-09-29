@@ -23,7 +23,9 @@ package moe.ouom.neriplayer.ui.screen.history
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -111,9 +113,8 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle

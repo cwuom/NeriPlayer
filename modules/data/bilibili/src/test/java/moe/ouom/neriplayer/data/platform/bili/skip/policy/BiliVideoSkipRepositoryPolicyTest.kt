@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.policy
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipDraft
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

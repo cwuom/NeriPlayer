@@ -32,8 +32,8 @@ import moe.ouom.neriplayer.core.download.storage.migration.recovery.shouldRetryA
 import androidx.work.workDataOf
 import java.io.IOException
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
 import org.junit.Assert.assertEquals

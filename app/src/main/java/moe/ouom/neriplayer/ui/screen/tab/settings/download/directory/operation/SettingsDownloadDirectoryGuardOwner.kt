@@ -5,8 +5,8 @@ import android.content.res.Resources
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyException
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 
 internal enum class DirectoryChangeBlockReason {
     NONE,

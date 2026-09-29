@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.youtube.auth.web
 import android.webkit.CookieManager
 import java.net.URI
 import java.util.Locale
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
 
 private const val YOUTUBE_WEB_COOKIE_YOUTUBE_DOMAIN = ".youtube.com"
 private const val YOUTUBE_WEB_COOKIE_GOOGLE_DOMAIN = ".google.com"

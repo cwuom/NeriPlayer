@@ -7,6 +7,7 @@ android {
 }
 
 dependencies {
+    api(project(":data:model"))
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)

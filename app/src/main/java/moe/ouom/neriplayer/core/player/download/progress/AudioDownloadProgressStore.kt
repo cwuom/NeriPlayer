@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.player.download.progress
 
+import moe.ouom.neriplayer.data.model.download.BatchDownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,33 +26,33 @@ internal class AudioDownloadProgressStore(
     >()
     private val latestProgressByOperationValues = mutableMapOf<
         String,
-        AudioDownloadManager.DownloadProgress
+        DownloadProgress
     >()
 
-    private val _progressFlow = MutableStateFlow<AudioDownloadManager.DownloadProgress?>(null)
-    val progressFlow: StateFlow<AudioDownloadManager.DownloadProgress?> =
+    private val _progressFlow = MutableStateFlow<DownloadProgress?>(null)
+    val progressFlow: StateFlow<DownloadProgress?> =
         _progressFlow.asStateFlow()
     private val progressEventStream = DownloadProgressEventStream<
-        AudioDownloadManager.DownloadProgress
+        DownloadProgress
     >(bufferCapacity)
-    val progressEvents: SharedFlow<AudioDownloadManager.DownloadProgress> =
+    val progressEvents: SharedFlow<DownloadProgress> =
         progressEventStream.events
 
     private val _batchProgressFlow =
-        MutableStateFlow<AudioDownloadManager.BatchDownloadProgress?>(null)
-    val batchProgressFlow: StateFlow<AudioDownloadManager.BatchDownloadProgress?> =
+        MutableStateFlow<BatchDownloadProgress?>(null)
+    val batchProgressFlow: StateFlow<BatchDownloadProgress?> =
         _batchProgressFlow.asStateFlow()
 
     private val _latestProgressByOperation =
-        MutableStateFlow<Map<String, AudioDownloadManager.DownloadProgress>>(emptyMap())
+        MutableStateFlow<Map<String, DownloadProgress>>(emptyMap())
     val latestProgressByOperation: StateFlow<
-        Map<String, AudioDownloadManager.DownloadProgress>
+        Map<String, DownloadProgress>
     > = _latestProgressByOperation.asStateFlow()
     private val latestProgressEventStream = DownloadProgressEventStream<
-        AudioDownloadManager.DownloadProgress
+        DownloadProgress
     >(bufferCapacity = (bufferCapacity * 4).coerceAtLeast(bufferCapacity))
     /** 批量和全局投影消费增量，避免每个进度回调扫描全量快照 */
-    val latestProgressEvents: SharedFlow<AudioDownloadManager.DownloadProgress> =
+    val latestProgressEvents: SharedFlow<DownloadProgress> =
         latestProgressEventStream.events
     private var lastLatestSnapshotAtNs = Long.MIN_VALUE
 
@@ -57,12 +61,12 @@ internal class AudioDownloadProgressStore(
     private val activeBatchSessionIds = linkedSetOf<Long>()
     private val batchProgressBySession = mutableMapOf<
         Long,
-        AudioDownloadManager.BatchDownloadProgress?
+        BatchDownloadProgress?
     >()
     private val batchSessionLock = Any()
 
     fun publish(
-        progress: AudioDownloadManager.DownloadProgress,
+        progress: DownloadProgress,
         nowNs: Long,
         force: Boolean = false
     ) {
@@ -159,20 +163,20 @@ internal class AudioDownloadProgressStore(
         songKey: String,
         attemptId: Long? = null,
         operationId: String? = null
-    ): AudioDownloadManager.DownloadProgress? = synchronized(progressPublishLock) {
+    ): DownloadProgress? = synchronized(progressPublishLock) {
         latestProgressByOperationValues.values
             .asSequence()
             .filter { progress -> progress.songKey == songKey }
             .filter { progress -> operationId == null || progress.operationId == operationId }
             .filter { progress -> attemptId == null || progress.attemptId == attemptId }
             .maxWithOrNull(
-                compareBy<AudioDownloadManager.DownloadProgress> {
+                compareBy<DownloadProgress> {
                     it.attemptId ?: Long.MIN_VALUE
                 }.thenBy { it.operationId.orEmpty() }
             )
     }
 
-    fun latestProgressSnapshot(): List<AudioDownloadManager.DownloadProgress> =
+    fun latestProgressSnapshot(): List<DownloadProgress> =
         synchronized(progressPublishLock) {
             latestProgressByOperationValues.values.toList()
         }
@@ -203,7 +207,7 @@ internal class AudioDownloadProgressStore(
         }
     }
 
-    fun currentProgress(): AudioDownloadManager.DownloadProgress? = _progressFlow.value
+    fun currentProgress(): DownloadProgress? = _progressFlow.value
 
     fun clearVisibleProgress() {
         _progressFlow.value = null
@@ -254,7 +258,7 @@ internal class AudioDownloadProgressStore(
 
     fun updateBatchProgressForSession(
         batchSessionId: Long,
-        progress: AudioDownloadManager.BatchDownloadProgress?
+        progress: BatchDownloadProgress?
     ) {
         synchronized(batchSessionLock) {
             if (batchSessionId !in activeBatchSessionIds) return
@@ -266,7 +270,7 @@ internal class AudioDownloadProgressStore(
     }
 
     private fun progressOperationKey(
-        progress: AudioDownloadManager.DownloadProgress
+        progress: DownloadProgress
     ): String {
         val operationId = progress.operationId?.trim().orEmpty()
         return operationId.ifBlank {
@@ -275,8 +279,8 @@ internal class AudioDownloadProgressStore(
     }
 
     private fun shouldPublishLatestSnapshot(
-        previous: AudioDownloadManager.DownloadProgress?,
-        incoming: AudioDownloadManager.DownloadProgress,
+        previous: DownloadProgress?,
+        incoming: DownloadProgress,
         nowNs: Long
     ): Boolean {
         if (previous == null) {
@@ -286,7 +290,7 @@ internal class AudioDownloadProgressStore(
         }
         if (previous.attemptId != incoming.attemptId) return true
         if (
-            incoming.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ||
+            incoming.stage != DownloadStage.TRANSFERRING ||
                 (incoming.totalBytes > 0L && incoming.bytesRead >= incoming.totalBytes)
         ) {
             return true

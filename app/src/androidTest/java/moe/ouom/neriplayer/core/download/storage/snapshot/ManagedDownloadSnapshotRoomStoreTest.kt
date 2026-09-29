@@ -16,7 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadSnapshotRoomStoreTest {

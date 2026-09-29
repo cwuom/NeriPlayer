@@ -1,13 +1,18 @@
 package moe.ouom.neriplayer.core.download.manager.catalog
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.batch.persistBatchMemberProgress
 import moe.ouom.neriplayer.core.download.manager.batch.updateBatchDownloadPresentationProgress
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.hasRecoveryBlockingDownloadOperations
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.presentation.hasRecoveryBlockingDownloadOperations
 import moe.ouom.neriplayer.core.download.policy.resolveRecoveredDownloadProgress
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.ActiveProgressCheckpointBinding
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PendingProgressCheckpoint
@@ -281,7 +286,7 @@ internal fun GlobalDownloadManager.observeDownloadProgress() {
 
 internal fun GlobalDownloadManager.overlayLatestProgress(
     tasks: List<DownloadTask>,
-    latestProgress: Map<String, AudioDownloadManager.DownloadProgress>
+    latestProgress: Map<String, DownloadProgress>
 ): List<DownloadTask> {
     if (tasks.isEmpty() || latestProgress.isEmpty()) {
         return tasks
@@ -299,8 +304,8 @@ internal fun GlobalDownloadManager.overlayLatestProgress(
 
 internal fun GlobalDownloadManager.latestProgressForTask(
     task: DownloadTask,
-    latestProgress: Map<String, AudioDownloadManager.DownloadProgress>
-): AudioDownloadManager.DownloadProgress? {
+    latestProgress: Map<String, DownloadProgress>
+): DownloadProgress? {
     val songKey = task.song.stableKey()
     val candidates = latestProgress.values
         .asSequence()
@@ -337,8 +342,8 @@ internal fun GlobalDownloadManager.latestProgressForTask(
 }
 
 internal fun GlobalDownloadManager.recordLatestDownloadProgress(
-    progress: AudioDownloadManager.DownloadProgress
-): AudioDownloadManager.DownloadProgress {
+    progress: DownloadProgress
+): DownloadProgress {
     return latestProgressProjectionStore.record(progress)
 }
 
@@ -352,7 +357,7 @@ internal fun GlobalDownloadManager.clearAllLatestProgress() {
 
 internal fun GlobalDownloadManager.enqueueProgressCheckpoint(
     context: Context,
-    progress: AudioDownloadManager.DownloadProgress,
+    progress: DownloadProgress,
     binding: ActiveProgressCheckpointBinding
 ) {
     val key = "${binding.operationId}:${binding.attemptId}:${progress.songKey}"
@@ -402,7 +407,7 @@ internal suspend fun GlobalDownloadManager.flushProgressCheckpoints() {
                 return@forEach
             }
             val bytesToPersist = when {
-                checkpoint.progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ->
+                checkpoint.progress.stage != DownloadStage.TRANSFERRING ->
                     checkpoint.progress.bytesRead.coerceAtLeast(0L)
                 else -> checkpoint.progress.durableBytesRead
                     ?.coerceAtLeast(0L)
@@ -453,7 +458,7 @@ internal suspend fun GlobalDownloadManager.persistLatestProgressCheckpointNow(
         operationId = binding.operationId
     ) ?: latestProgressProjectionStore.latest(binding.operationId) ?: return
     val bytesToPersist = when {
-        progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ->
+        progress.stage != DownloadStage.TRANSFERRING ->
             progress.bytesRead.coerceAtLeast(0L)
         else -> progress.durableBytesRead?.coerceAtLeast(0L) ?: return
     }
@@ -475,7 +480,7 @@ internal suspend fun GlobalDownloadManager.persistLatestProgressCheckpointNow(
     }
 }
 
-internal fun GlobalDownloadManager.updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress) {
+internal fun GlobalDownloadManager.updateDownloadProgress(progress: DownloadProgress) {
     val appContext = AppContainer.applicationContext
     val binding = activeProgressCheckpointBindings[progress.songKey]
     if (binding != null) {
@@ -548,7 +553,7 @@ internal suspend fun GlobalDownloadManager.restoreTaskProgressCheckpoint(
         checkpointTotalBytes = checkpoint.totalBytes,
         checkpointBytesWritten = checkpoint.bytesWritten
     ) ?: return
-    val restoredDownloadProgress = AudioDownloadManager.DownloadProgress(
+    val restoredDownloadProgress = DownloadProgress(
             songKey = songKey,
             songId = song.id,
             fileName = song.name,

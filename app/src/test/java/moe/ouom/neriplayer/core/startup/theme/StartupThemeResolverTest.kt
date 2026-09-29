@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.startup.theme
 
-import moe.ouom.neriplayer.data.settings.appearance.ThemeMode
-import moe.ouom.neriplayer.data.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

@@ -45,7 +45,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.TreeChildNameRef
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedLyricsBundle
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.LyricKind
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.RestoredMigrationManifest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.ValidatedMigrationCopyReceipts
 import android.content.Context
@@ -83,8 +83,8 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavail
 import moe.ouom.neriplayer.core.download.storage.sidecar.ManagedDownloadLyricStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.readPreservingBlockFailure
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry

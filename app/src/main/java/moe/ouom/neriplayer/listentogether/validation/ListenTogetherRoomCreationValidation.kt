@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether.validation
 
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
+
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull

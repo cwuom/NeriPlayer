@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.youtube.auth.web
 
 import android.webkit.CookieManager
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
 import moe.ouom.neriplayer.api.youtube.potoken.YouTubeWebSession
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 

@@ -6,11 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.Gson
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
-import moe.ouom.neriplayer.core.player.model.PersistedSongItem
-import moe.ouom.neriplayer.core.player.model.PersistedState
-import moe.ouom.neriplayer.core.player.model.withPlaybackState
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedSongItem
+import moe.ouom.neriplayer.data.model.playback.PersistedState
+import moe.ouom.neriplayer.core.player.persistence.withPlaybackState
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import org.junit.Assert.assertEquals

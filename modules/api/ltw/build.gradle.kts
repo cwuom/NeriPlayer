@@ -8,6 +8,7 @@ android {
 }
 
 dependencies {
+    api(project(":data:model"))
     api(project(":core:ltw-protocol"))
     implementation(project(":core:common"))
     implementation(libs.kotlinx.serialization.json)

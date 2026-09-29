@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.player.download.progress
 
+import moe.ouom.neriplayer.data.model.download.BatchDownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.take
@@ -16,7 +20,7 @@ class AudioDownloadProgressStoreTest {
     @Test
     fun `latest progress uses deltas while snapshot publication is bounded`() = runTest {
         val store = AudioDownloadProgressStore(bufferCapacity = 4)
-        val received = mutableListOf<AudioDownloadManager.DownloadProgress>()
+        val received = mutableListOf<DownloadProgress>()
         val collector = backgroundScope.launch(
             UnconfinedTestDispatcher(testScheduler)
         ) {
@@ -28,7 +32,7 @@ class AudioDownloadProgressStoreTest {
         val second = progress(bytesRead = 20L)
         val final = progress(
             bytesRead = 100L,
-            stage = AudioDownloadManager.DownloadStage.FINALIZING
+            stage = DownloadStage.FINALIZING
         )
 
         store.publish(first, nowNs = 0L)
@@ -97,7 +101,7 @@ class AudioDownloadProgressStoreTest {
     }
 
     private fun batchProgress(currentSong: String) =
-        AudioDownloadManager.BatchDownloadProgress(
+        BatchDownloadProgress(
             totalSongs = 2,
             completedSongs = 0,
             currentSong = currentSong,
@@ -108,10 +112,10 @@ class AudioDownloadProgressStoreTest {
         operationId: String = "operation",
         attemptId: Long = 1L,
         bytesRead: Long,
-        stage: AudioDownloadManager.DownloadStage =
-            AudioDownloadManager.DownloadStage.TRANSFERRING
-    ): AudioDownloadManager.DownloadProgress {
-        return AudioDownloadManager.DownloadProgress(
+        stage: DownloadStage =
+            DownloadStage.TRANSFERRING
+    ): DownloadProgress {
+        return DownloadProgress(
             songKey = "song",
             songId = 1L,
             fileName = "song.flac",

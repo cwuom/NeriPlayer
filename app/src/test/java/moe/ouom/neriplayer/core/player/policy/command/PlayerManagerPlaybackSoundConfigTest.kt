@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player.policy.command
 
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

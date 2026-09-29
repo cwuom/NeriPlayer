@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.core.download.cleanup
 
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongDeleteTarget
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming

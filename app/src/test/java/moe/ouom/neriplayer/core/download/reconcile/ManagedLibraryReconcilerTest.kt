@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download.reconcile
 
+import moe.ouom.neriplayer.data.model.download.EmptyScanDecision
+import moe.ouom.neriplayer.data.model.download.EmptyScanObservation
+import moe.ouom.neriplayer.data.model.download.ScanConfidence
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

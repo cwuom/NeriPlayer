@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.local.database.store
 
-import moe.ouom.neriplayer.data.history.PlayedEntry
+import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

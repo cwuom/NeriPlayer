@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StartupRecoveryResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBucket
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
@@ -38,9 +38,9 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavail
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
-import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
@@ -302,20 +302,20 @@ internal fun ManagedDownloadStorage.renameTreeDocumentWithoutReplacing(
                 displayName = finalName
             )
         }) {
-            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Renamed -> {
+            is moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult.Renamed -> {
                 val renamedUri = (result.stat.reference as? StorageReference.SafRef)?.uri
                     ?: return@withLock null
                 DocumentFile.fromSingleUri(context, renamedUri)
             }
-            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Missing -> null
-            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.PermissionLost -> {
+            moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult.Missing -> null
+            moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult.PermissionLost -> {
                 throw SecurityException("SAF 重命名权限丢失: ${document.uri}")
             }
-            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.ProviderFailure -> {
+            is moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult.ProviderFailure -> {
                 throw result.error
             }
-            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.OutOfScope,
-            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Unsupported -> null
+            moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult.OutOfScope,
+            is moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult.Unsupported -> null
         }
     }
 }

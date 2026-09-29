@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
-import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshot
 
 internal class PlayerStartupBootstrapper(

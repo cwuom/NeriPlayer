@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorBrowseEndpoint
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItemType
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorBrowseEndpoint
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemType
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

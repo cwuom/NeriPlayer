@@ -41,7 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
 

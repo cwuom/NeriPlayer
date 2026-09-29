@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.data.stats
 
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
+
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
@@ -18,13 +23,13 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomSnapshot
 import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomStore
-import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaybackStatsMergePolicy
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
+import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackStatsMergePolicy
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -32,27 +37,6 @@ import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
-
-data class TrackStat(
-    val id: Long,
-    val name: String,
-    val artist: String,
-    val album: String,
-    val albumId: Long = 0L,
-    val coverUrl: String?,
-    val durationMs: Long,
-    val totalListenMs: Long,
-    val playCount: Int,
-    val lastPlayedAt: Long,
-    val firstPlayedAt: Long,
-    val mediaUri: String?,
-    val localFilePath: String?,
-    val localFileName: String?,
-    val customName: String?,
-    val customArtist: String?,
-    val customCoverUrl: String?,
-    val identityKey: String
-)
 
 private data class PlaybackStatsPersistenceSnapshot(
     val stats: List<TrackStat>,

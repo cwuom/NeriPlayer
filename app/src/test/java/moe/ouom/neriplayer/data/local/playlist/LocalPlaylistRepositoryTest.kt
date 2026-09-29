@@ -1,15 +1,16 @@
 package moe.ouom.neriplayer.data.local.playlist
 
+import moe.ouom.neriplayer.data.identity.identity
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals

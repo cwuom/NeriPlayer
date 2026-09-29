@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.service.usb
 
 import android.media.AudioManager
 import android.media.VolumeProvider
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 
 internal fun shouldUseUsbExclusiveRemoteVolumeRouting(
     effectivePath: String,

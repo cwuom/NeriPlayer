@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.manager.commit
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
@@ -13,7 +16,7 @@ import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRep
 import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRetryable
 import moe.ouom.neriplayer.core.download.manager.recovery.resolveCoreRecoveryAudioCandidate
 import moe.ouom.neriplayer.core.download.manager.runtime.publishDownloadStage
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.policy.resolvePostCoreEnrichmentTaskStatus
 import moe.ouom.neriplayer.core.download.policy.shouldAcceptOrphanCoreCommit
@@ -38,7 +41,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import java.util.Locale
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichment(
@@ -514,7 +517,7 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
     )
     publishDownloadStage(
         song = song,
-        stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+        stage = DownloadStage.ASSETS_ENRICHING,
         operationId = normalizedOperationId,
         attemptId = expectedAttemptId,
         bytesRead = publishedAudio.sizeBytes,
@@ -789,7 +792,7 @@ internal suspend fun GlobalDownloadManager.completeCoreDownloadAndEnqueueEnrichm
             )
             publishDownloadStage(
                 song = song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                stage = DownloadStage.WAITING_HOST,
                 operationId = enrichmentOperationId,
                 attemptId = expectedAttemptId,
                 bytesRead = publishedAudio.sizeBytes,
@@ -1017,7 +1020,7 @@ internal suspend fun GlobalDownloadManager.recoverCorePublicationAfterExecutionC
         if (taskStatus == DownloadStatus.DOWNLOADING) {
             publishDownloadStage(
                 song = song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+                stage = DownloadStage.WAITING_RETRY,
                 operationId = normalizedOperationId,
                 attemptId = expectedAttemptId,
                 bytesRead = publishedAudio?.sizeBytes ?: 0L,
@@ -1186,7 +1189,7 @@ internal suspend fun GlobalDownloadManager.deferPendingCorePublication(
             )
             publishDownloadStage(
                 song = song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+                stage = DownloadStage.WAITING_RETRY,
                 operationId = recoveryOperationId,
                 attemptId = expectedAttemptId,
                 bytesRead = audio.sizeBytes,
@@ -1315,7 +1318,7 @@ internal suspend fun GlobalDownloadManager.settlePostCoreEnrichmentFailure(
     if (taskStatus == DownloadStatus.QUEUED) {
         publishDownloadStage(
             song = song,
-            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+            stage = DownloadStage.WAITING_RETRY,
             operationId = normalizedOperationId,
             attemptId = expectedAttemptId
         )

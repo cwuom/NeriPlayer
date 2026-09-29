@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.api.bilibili.parser
  * Created: 2026/8/3
  */
 
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContentKind
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentKind
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

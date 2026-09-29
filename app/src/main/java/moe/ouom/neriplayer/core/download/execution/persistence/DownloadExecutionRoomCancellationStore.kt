@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.recovery.CLEARED_ARTIFACT_RECOVERY_STOP_STATES
 import android.content.Context
 import androidx.room.withTransaction
@@ -8,7 +10,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationHeaderRow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import java.util.UUID
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.CancellationSnapshot
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.OperationIdentity

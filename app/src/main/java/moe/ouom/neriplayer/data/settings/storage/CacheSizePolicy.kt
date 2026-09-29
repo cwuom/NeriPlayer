@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
  */
 object CacheSizePolicy {
     const val UNLIMITED_CACHE_SIZE_BYTES = -1L
-    const val DEFAULT_CACHE_SIZE_BYTES = GIBIBYTE_BYTES
+    const val DEFAULT_CACHE_SIZE_BYTES = moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_CACHE_SIZE_BYTES
     const val MAX_FINITE_CACHE_SIZE_BYTES = 10 * GIBIBYTE_BYTES
     const val CACHE_SIZE_SLIDER_MAX_FINITE_MB = 10_240f
     const val CACHE_SIZE_SLIDER_UNLIMITED_VALUE = 10_241f

@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.data.lyrics.matching
 
 import kotlin.math.abs
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricSanitizeContext
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricSanitizeLine
-import moe.ouom.neriplayer.data.lyrics.model.SanitizedEditableLyrics
+import moe.ouom.neriplayer.data.lyrics.matching.EditableLyricSanitizeContext
+import moe.ouom.neriplayer.data.lyrics.matching.EditableLyricSanitizeLine
+import moe.ouom.neriplayer.data.model.lyrics.matching.SanitizedEditableLyrics
 
 fun sanitizeMatchedEditableLyrics(
     lyrics: String,

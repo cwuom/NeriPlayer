@@ -1,24 +1,28 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.BatchDownloadOverallProgress
-import moe.ouom.neriplayer.core.download.model.BatchDownloadPresentationState
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.QueuedDownloadRequest
-import moe.ouom.neriplayer.core.download.model.activeDownloadTaskWithProgress
-import moe.ouom.neriplayer.core.download.model.aggregateBatchDownloadProgress
-import moe.ouom.neriplayer.core.download.model.batchDownloadProgressForDisplay
-import moe.ouom.neriplayer.core.download.model.countFailedDownloadTasks
-import moe.ouom.neriplayer.core.download.model.countPendingDownloadTasks
-import moe.ouom.neriplayer.core.download.model.downloadProgressFraction
-import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.model.hasDownloadTaskStartedWork
-import moe.ouom.neriplayer.core.download.model.mergeBatchDownloadPresentations
-import moe.ouom.neriplayer.core.download.model.resumeBatchDownloadPresentationForRetry
-import moe.ouom.neriplayer.core.download.model.selectBatchRequestsForEarlyHandoff
-import moe.ouom.neriplayer.core.download.model.visibleDownloadProgressTasks
-import moe.ouom.neriplayer.core.download.model.visibleFailedDownloadTasks
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
+import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
+import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.core.download.presentation.QueuedDownloadRequest
+import moe.ouom.neriplayer.core.download.presentation.activeDownloadTaskWithProgress
+import moe.ouom.neriplayer.core.download.presentation.aggregateBatchDownloadProgress
+import moe.ouom.neriplayer.core.download.presentation.batchDownloadProgressForDisplay
+import moe.ouom.neriplayer.core.download.presentation.countFailedDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.countPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.downloadProgressFraction
+import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.presentation.hasDownloadTaskStartedWork
+import moe.ouom.neriplayer.core.download.presentation.mergeBatchDownloadPresentations
+import moe.ouom.neriplayer.core.download.presentation.resumeBatchDownloadPresentationForRetry
+import moe.ouom.neriplayer.core.download.presentation.selectBatchRequestsForEarlyHandoff
+import moe.ouom.neriplayer.core.download.presentation.visibleDownloadProgressTasks
+import moe.ouom.neriplayer.core.download.presentation.visibleFailedDownloadTasks
 import moe.ouom.neriplayer.core.download.policy.PendingWorkingProgressRecord
 import moe.ouom.neriplayer.core.download.policy.RecoveredDownloadProgress
 import moe.ouom.neriplayer.core.download.policy.RecoveredDownloadTaskPresentation
@@ -44,10 +48,10 @@ class DownloadProgressPresentationTest {
         val queued = DownloadTask(track, null, DownloadStatus.QUEUED, attemptId = 1L)
         val stages = listOf(
             null,
-            AudioDownloadManager.DownloadStage.WAITING_HOST,
-            AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
-            AudioDownloadManager.DownloadStage.WAITING_RETRY,
-            AudioDownloadManager.DownloadStage.TRANSFERRING
+            DownloadStage.WAITING_HOST,
+            DownloadStage.WAITING_DELETE_CLEANUP,
+            DownloadStage.WAITING_RETRY,
+            DownloadStage.TRANSFERRING
         )
         for (status in listOf(DownloadStatus.QUEUED, DownloadStatus.WAITING_NETWORK, DownloadStatus.DOWNLOADING)) {
             for (stage in stages) {
@@ -67,7 +71,7 @@ class DownloadProgressPresentationTest {
     fun `post core restart preserves retry wait and failed terminal presentation`() {
         assertEquals(
             RecoveredDownloadTaskPresentation(
-                DownloadStatus.QUEUED, AudioDownloadManager.DownloadStage.WAITING_RETRY
+                DownloadStatus.QUEUED, DownloadStage.WAITING_RETRY
             ),
             recoveredDownloadTaskPresentation(
                 "DEGRADED_COMPLETE", false, null, nextRetryAtMs = 200L, nowMs = 100L
@@ -281,7 +285,7 @@ class DownloadProgressPresentationTest {
                 songKey = song(5L).stableKey(),
                 attemptId = 5L,
                 bytesRead = 0L
-            ).copy(stage = AudioDownloadManager.DownloadStage.RESOLVING_SOURCE),
+            ).copy(stage = DownloadStage.RESOLVING_SOURCE),
             status = DownloadStatus.DOWNLOADING,
             attemptId = 5L
         )
@@ -304,7 +308,7 @@ class DownloadProgressPresentationTest {
             status = DownloadStatus.QUEUED,
             attemptId = 9L,
             progress = waitingWithProgress.progress!!.copy(
-                attemptId = 9L, stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                attemptId = 9L, stage = DownloadStage.WAITING_RETRY
             )
         )
         assertEquals(
@@ -349,7 +353,7 @@ class DownloadProgressPresentationTest {
         val sourceResolving = DownloadTask(
             song = song(2L),
             progress = progress(song(2L).stableKey(), 2L, bytesRead = 0L).copy(
-                stage = AudioDownloadManager.DownloadStage.RESOLVING_SOURCE
+                stage = DownloadStage.RESOLVING_SOURCE
             ),
             status = DownloadStatus.DOWNLOADING,
             attemptId = 2L
@@ -510,7 +514,7 @@ class DownloadProgressPresentationTest {
             songKey = selected.stableKey(),
             attemptId = 7L,
             bytesRead = 99L
-        ).copy(stage = AudioDownloadManager.DownloadStage.FINALIZING)
+        ).copy(stage = DownloadStage.FINALIZING)
 
         val aggregate = requireNotNull(
             aggregateBatchDownloadProgress(
@@ -545,28 +549,28 @@ class DownloadProgressPresentationTest {
         assertEquals(
             0.92f,
             downloadProgressFraction(
-                base.copy(stage = AudioDownloadManager.DownloadStage.VERIFYING_AUDIO)
+                base.copy(stage = DownloadStage.VERIFYING_AUDIO)
             ),
             0.0001f
         )
         assertEquals(
             0.94f,
             downloadProgressFraction(
-                base.copy(stage = AudioDownloadManager.DownloadStage.COMMITTING_CORE)
+                base.copy(stage = DownloadStage.COMMITTING_CORE)
             ),
             0.0001f
         )
         assertEquals(
             0.97f,
             downloadProgressFraction(
-                base.copy(stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING)
+                base.copy(stage = DownloadStage.ASSETS_ENRICHING)
             ),
             0.0001f
         )
         assertEquals(
             0.99f,
             downloadProgressFraction(
-                base.copy(stage = AudioDownloadManager.DownloadStage.FINALIZING)
+                base.copy(stage = DownloadStage.FINALIZING)
             ),
             0.0001f
         )
@@ -852,7 +856,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                stage = DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "QUEUED",
@@ -863,7 +867,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.WAITING_NETWORK,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                stage = DownloadStage.WAITING_RETRY
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "QUEUED",
@@ -874,7 +878,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+                stage = DownloadStage.WAITING_DELETE_CLEANUP
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "WAITING_STORAGE_MUTATION",
@@ -885,7 +889,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                stage = DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "ASSETS_ENRICHING",
@@ -896,7 +900,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                stage = DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "DEGRADED_COMPLETE",
@@ -907,7 +911,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                stage = DownloadStage.WAITING_RETRY
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "DEGRADED_COMPLETE",
@@ -920,7 +924,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                stage = DownloadStage.WAITING_RETRY
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "RETRYABLE",
@@ -933,7 +937,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                stage = DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "RETRYABLE",
@@ -946,7 +950,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                stage = DownloadStage.WAITING_HOST
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "RETRYABLE",
@@ -959,7 +963,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.WAITING_NETWORK,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                stage = DownloadStage.WAITING_RETRY
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "RETRYABLE",
@@ -971,7 +975,7 @@ class DownloadProgressPresentationTest {
         assertEquals(
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+                stage = DownloadStage.WAITING_DELETE_CLEANUP
             ),
             recoveredDownloadTaskPresentation(
                 operationState = "RETRYABLE",
@@ -1055,7 +1059,7 @@ class DownloadProgressPresentationTest {
     fun `transfer presentation includes percent sizes and byte based speed`() {
         val mebibyte = 1024L * 1024L
         val text = formatDownloadTransferProgress(
-            AudioDownloadManager.DownloadProgress(
+            DownloadProgress(
                 songKey = "song-key",
                 songId = 1L,
                 fileName = "song.mp3",
@@ -1073,12 +1077,12 @@ class DownloadProgressPresentationTest {
     @Test
     fun `post transfer stages show retained bytes without pretending final completion`() {
         for (stage in listOf(
-            AudioDownloadManager.DownloadStage.VERIFYING_AUDIO,
-            AudioDownloadManager.DownloadStage.COMMITTING_CORE,
-            AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
-            AudioDownloadManager.DownloadStage.FINALIZING
+            DownloadStage.VERIFYING_AUDIO,
+            DownloadStage.COMMITTING_CORE,
+            DownloadStage.ASSETS_ENRICHING,
+            DownloadStage.FINALIZING
         )) {
-            val text = formatDownloadTransferProgress(AudioDownloadManager.DownloadProgress(
+            val text = formatDownloadTransferProgress(DownloadProgress(
                 songKey = "song", songId = 1, fileName = "song.mp3",
                 bytesRead = 1024, totalBytes = 1024, speedBytesPerSec = 0, stage = stage
             ))
@@ -1091,7 +1095,7 @@ class DownloadProgressPresentationTest {
     fun `transfer presentation keeps an unknown total honest`() {
         val mebibyte = 1024L * 1024L
         val text = formatDownloadTransferProgress(
-            AudioDownloadManager.DownloadProgress(
+            DownloadProgress(
                 songKey = "song-key",
                 songId = 1L,
                 fileName = "song.mp3",
@@ -1110,14 +1114,14 @@ class DownloadProgressPresentationTest {
     @Test
     fun `retained transfer presentation hides stale speed and normalizes invalid bytes`() {
         val text = formatDownloadTransferProgress(
-            AudioDownloadManager.DownloadProgress(
+            DownloadProgress(
                 songKey = "song-key",
                 songId = 1L,
                 fileName = "song.mp3",
                 bytesRead = -1L,
                 totalBytes = -1L,
                 speedBytesPerSec = 1024L * 1024L,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                stage = DownloadStage.WAITING_RETRY
             ),
             showSpeed = false
         )
@@ -1130,8 +1134,8 @@ class DownloadProgressPresentationTest {
         songKey: String,
         attemptId: Long,
         bytesRead: Long = 42L
-    ): AudioDownloadManager.DownloadProgress {
-        return AudioDownloadManager.DownloadProgress(
+    ): DownloadProgress {
+        return DownloadProgress(
             songKey = songKey,
             songId = 1L,
             fileName = "song.mp3",

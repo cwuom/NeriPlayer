@@ -24,10 +24,10 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
-import moe.ouom.neriplayer.util.media.CoverArtColorSample
+import moe.ouom.neriplayer.data.model.artwork.CoverArtColorSample
 import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.util.media.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.media.isRemoteImageSource

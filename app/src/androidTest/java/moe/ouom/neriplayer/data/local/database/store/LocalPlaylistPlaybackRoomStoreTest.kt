@@ -6,9 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlayBucket
-import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStat
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlayBucket
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

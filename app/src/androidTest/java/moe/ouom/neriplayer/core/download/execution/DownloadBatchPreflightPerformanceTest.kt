@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.os.Bundle
 import android.os.SystemClock
@@ -15,7 +17,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.manager.batch.BatchDownloadPreflightProbe
 import moe.ouom.neriplayer.core.download.manager.batch.findFastCompletedBatchSongKeys
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity

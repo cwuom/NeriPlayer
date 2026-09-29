@@ -6,13 +6,13 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.applyUsbExclusivePlaybackPolicy
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.playback.playImpl
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 
 internal object PlayerManagerUsbExclusiveLivenessPort : UsbExclusiveLivenessPort {

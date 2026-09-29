@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component.playback
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.os.SystemClock
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -53,13 +55,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton

@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.core.download.storage.backend
 
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
+
 import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor

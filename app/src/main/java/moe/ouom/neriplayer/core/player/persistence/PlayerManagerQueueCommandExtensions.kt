@@ -5,10 +5,10 @@ package moe.ouom.neriplayer.core.player.persistence
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
-import moe.ouom.neriplayer.core.player.queue.model.QueueInsertPlacement
-import moe.ouom.neriplayer.core.player.queue.model.RemoveQueueEdit
-import moe.ouom.neriplayer.core.player.queue.model.RemovedQueuePlaybackAction
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement
+import moe.ouom.neriplayer.data.model.playback.queue.RemoveQueueEdit
+import moe.ouom.neriplayer.data.model.playback.queue.RemovedQueuePlaybackAction
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(

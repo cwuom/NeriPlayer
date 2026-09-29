@@ -1,14 +1,16 @@
 package moe.ouom.neriplayer.data.sync.github
 
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistUsageStatsMergePolicy
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.sync.model.SyncData
-import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipMergePolicy
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
-import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
-import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
-import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.sync.identity.identity
+
+import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy
+import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
+import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 
 internal object SyncDataChangeDetector {
     fun hasDataChanged(remote: SyncData, merged: SyncData): Boolean {

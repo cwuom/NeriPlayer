@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.core.player.persistence
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
-import moe.ouom.neriplayer.core.player.model.PersistedState
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.core.player.queue.state.PlayerQueueStateStore
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 import moe.ouom.neriplayer.data.model.SongItem

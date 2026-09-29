@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.policy.offload
 
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

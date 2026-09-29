@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.service.usb
 
 import android.media.AudioManager
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

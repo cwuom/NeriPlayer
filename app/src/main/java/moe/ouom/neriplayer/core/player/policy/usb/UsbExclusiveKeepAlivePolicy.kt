@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
+import moe.ouom.neriplayer.core.player.usb.transport.outputFrameBytes
+
 internal enum class UsbExclusiveKeepAliveProgress {
     BASELINE,
     ADVANCED,

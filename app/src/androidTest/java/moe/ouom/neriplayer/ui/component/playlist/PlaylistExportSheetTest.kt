@@ -17,7 +17,7 @@ import androidx.compose.ui.test.swipeWithVelocity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

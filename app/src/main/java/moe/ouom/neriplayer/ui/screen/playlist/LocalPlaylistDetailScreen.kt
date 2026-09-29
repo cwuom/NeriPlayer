@@ -23,7 +23,12 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.identity.identity
+import moe.ouom.neriplayer.data.sync.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.sync.identity.stableKey
 import android.annotation.SuppressLint
 import android.Manifest
 import android.content.ClipData
@@ -101,24 +106,22 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseRemotePlaylist
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncResult
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongIdentity
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.local.media.isLocalSong
-import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
@@ -330,7 +333,7 @@ fun LocalPlaylistDetailScreen(
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
     // 保存最新的歌单数据, 用于在Screen销毁时更新使用记录
-    var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist?>(null) }
+    var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.model.playlist.LocalPlaylist?>(null) }
     var playlistDeleted by remember(playlistId) { mutableStateOf(false) }
     LaunchedEffect(uiState.playlist) {
         uiState.playlist?.let { latestPlaylist = it }

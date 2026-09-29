@@ -2,6 +2,10 @@
 
 package moe.ouom.neriplayer.core.player.persistence
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.settings.playback.sanitized
+
 import android.app.Application
 import android.os.SystemClock
 import androidx.media3.common.Player
@@ -14,21 +18,21 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
-import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.core.player.metadata.SongMetadataRequestCoordinator
 import moe.ouom.neriplayer.core.player.metadata.hasUsableLyrics
 import moe.ouom.neriplayer.core.player.metadata.LocalMetadataWritePlaybackAction
@@ -41,12 +45,12 @@ import moe.ouom.neriplayer.core.player.metadata.shouldSkipSongMetadataMutation
 import moe.ouom.neriplayer.core.player.metadata.shouldWriteLocalCoverMetadata
 import moe.ouom.neriplayer.core.player.metadata.toBasicSongDetails
 import moe.ouom.neriplayer.core.player.metadata.withUpdatedLyricsPreservingOriginal
-import moe.ouom.neriplayer.core.player.model.PersistedState
-import moe.ouom.neriplayer.core.player.model.RestoredPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedState
+import moe.ouom.neriplayer.data.model.playback.RestoredPlaybackState
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherRestoredPlaybackAction
 import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherRestoredPlaybackAction
@@ -56,15 +60,14 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.isReadableLocalFile
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.lyrics.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.saturatingAddLyricOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.shouldRebaseLyricOffsetForSource
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import java.io.File
@@ -242,10 +245,10 @@ private fun buildRestoredStateSnapshot(
             }
         }
         val repeatMode = if (keepPlaybackModeStateEnabled) {
-            when (data.repeatMode) {
+            when (val persistedRepeatMode = data.repeatMode) {
                 Player.REPEAT_MODE_ALL,
                 Player.REPEAT_MODE_ONE,
-                Player.REPEAT_MODE_OFF -> data.repeatMode
+                Player.REPEAT_MODE_OFF -> persistedRepeatMode
                 else -> Player.REPEAT_MODE_OFF
             }
         } else {

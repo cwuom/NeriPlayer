@@ -3,12 +3,12 @@ package moe.ouom.neriplayer.core.player.download
 import moe.ouom.neriplayer.core.player.download.source.AudioDownloadSourceResolver
 import moe.ouom.neriplayer.core.player.download.source.DownloadSourceUnavailableException
 import moe.ouom.neriplayer.core.player.download.source.RetryableDownloadFailureException
-import moe.ouom.neriplayer.core.player.download.network.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.network.INITIAL_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.runtime.hasHlsResumeState
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadRangeRestartRequiredException
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
 import moe.ouom.neriplayer.data.model.SongItem

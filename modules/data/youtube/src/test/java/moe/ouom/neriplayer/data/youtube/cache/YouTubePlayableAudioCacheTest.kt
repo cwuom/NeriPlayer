@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.youtube.cache
 
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame

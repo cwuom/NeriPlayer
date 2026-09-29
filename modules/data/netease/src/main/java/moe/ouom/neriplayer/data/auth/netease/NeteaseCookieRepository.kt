@@ -2,10 +2,6 @@
 
 package moe.ouom.neriplayer.data.auth.netease
 
-import moe.ouom.neriplayer.data.auth.netease.model.NETEASE_LOGIN_COOKIE_KEYS
-import moe.ouom.neriplayer.data.auth.netease.model.NeteaseAuthBundle
-import moe.ouom.neriplayer.data.auth.netease.model.NeteaseCookieValidationResult
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -29,6 +25,9 @@ import moe.ouom.neriplayer.data.auth.netease.model.NeteaseCookieValidationResult
  * Created: 2025/8/9
  */
 
+import moe.ouom.neriplayer.data.model.netease.auth.NETEASE_LOGIN_COOKIE_KEYS
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseAuthBundle
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseCookieValidationResult
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
@@ -42,8 +41,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthHealth
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthHealth
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 

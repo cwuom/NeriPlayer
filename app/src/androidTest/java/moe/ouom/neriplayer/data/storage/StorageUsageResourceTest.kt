@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.storage
 
-import moe.ouom.neriplayer.data.storage.model.DownloadIndexUsageStats
+import moe.ouom.neriplayer.data.model.storage.DownloadIndexUsageStats
 
 import android.content.res.Configuration
 import android.content.res.Resources

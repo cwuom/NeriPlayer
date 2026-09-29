@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.progress
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,11 +18,11 @@ class DownloadProgressEventStreamTest {
 
     @Test
     fun `concurrent song progress remains ordered without state flow conflation`() = runTest {
-        val stream = DownloadProgressEventStream<AudioDownloadManager.DownloadProgress>(
+        val stream = DownloadProgressEventStream<DownloadProgress>(
             bufferCapacity = 4
         )
         val releaseCollector = CompletableDeferred<Unit>()
-        val received = mutableListOf<AudioDownloadManager.DownloadProgress>()
+        val received = mutableListOf<DownloadProgress>()
         val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             stream.events.take(3).collect { progress ->
                 received += progress
@@ -47,11 +49,11 @@ class DownloadProgressEventStreamTest {
 
     @Test
     fun `slow consumer keeps publishing nonblocking and receives the newest progress`() = runTest {
-        val stream = DownloadProgressEventStream<AudioDownloadManager.DownloadProgress>(
+        val stream = DownloadProgressEventStream<DownloadProgress>(
             bufferCapacity = 1
         )
         val releaseCollector = CompletableDeferred<Unit>()
-        val received = mutableListOf<AudioDownloadManager.DownloadProgress>()
+        val received = mutableListOf<DownloadProgress>()
         val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             stream.events.take(2).collect { progress ->
                 received += progress
@@ -76,7 +78,7 @@ class DownloadProgressEventStreamTest {
     @Test
     fun `event buffer capacity must be positive`() {
         val error = runCatching {
-            DownloadProgressEventStream<AudioDownloadManager.DownloadProgress>(bufferCapacity = 0)
+            DownloadProgressEventStream<DownloadProgress>(bufferCapacity = 0)
         }.exceptionOrNull()
 
         assertTrue(error is IllegalArgumentException)
@@ -86,8 +88,8 @@ class DownloadProgressEventStreamTest {
         songKey: String,
         attemptId: Long,
         bytesRead: Long
-    ): AudioDownloadManager.DownloadProgress {
-        return AudioDownloadManager.DownloadProgress(
+    ): DownloadProgress {
+        return DownloadProgress(
             songKey = songKey,
             songId = songKey.hashCode().toLong(),
             fileName = "$songKey.flac",

@@ -7,7 +7,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":core:model"))
+    implementation(project(":data:model"))
     implementation(project(":accompanist-lyrics-core"))
     testImplementation(libs.junit)
 }

@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

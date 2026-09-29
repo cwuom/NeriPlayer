@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.batch
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.manager.admission.dismissMobileDataDownloadInterruptionRequest
@@ -9,9 +11,9 @@ import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledDownload
 import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledPendingDownloadArtifacts
 import moe.ouom.neriplayer.core.download.manager.runtime.awaitSongCancellationSettled
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellationCandidate
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellationCandidate
 import moe.ouom.neriplayer.core.download.policy.DownloadClearRoomTimeoutException
 import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
 import moe.ouom.neriplayer.core.download.policy.cancellationConvergenceDelayMs
@@ -36,7 +38,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore

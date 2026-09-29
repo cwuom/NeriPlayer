@@ -11,14 +11,14 @@ import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
 import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
-import moe.ouom.neriplayer.core.player.model.AudioDevice
+import moe.ouom.neriplayer.data.model.playback.AudioDevice
 import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT
 import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
 import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.policy.audio.shouldConfirmBluetoothDisconnect
 import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveNoisyRouteToNativePath
 import moe.ouom.neriplayer.core.player.policy.usb.shouldStopUsbExclusivePlaybackForNoisyRoute
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForOutputDisconnect
 import kotlin.time.Duration.Companion.milliseconds
 

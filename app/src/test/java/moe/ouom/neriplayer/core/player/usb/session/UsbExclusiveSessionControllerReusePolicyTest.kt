@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.player.usb.session
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 
 class UsbExclusiveSessionControllerReusePolicyTest {
 

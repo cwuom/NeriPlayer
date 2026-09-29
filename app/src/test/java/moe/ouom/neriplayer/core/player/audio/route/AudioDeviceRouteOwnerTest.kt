@@ -2,17 +2,12 @@ package moe.ouom.neriplayer.core.player.audio.route
 
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BluetoothAudio
-import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.filled.Usb
-import androidx.compose.material.icons.filled.Headset
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.player.model.AudioDevice
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.AudioDevice
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -320,9 +315,9 @@ class AudioDeviceRouteOwnerTest {
     }
 
     private companion object {
-        val usb = AudioDevice("DAC", AudioDeviceInfo.TYPE_USB_DEVICE, Icons.Default.Usb)
-        val speaker = AudioDevice("speaker", AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
-        val bluetooth = AudioDevice("headset", AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, Icons.Default.BluetoothAudio)
-        val wired = AudioDevice("wired", AudioDeviceInfo.TYPE_WIRED_HEADPHONES, Icons.Default.Headset)
+        val usb = AudioDevice("DAC", AudioDeviceInfo.TYPE_USB_DEVICE)
+        val speaker = AudioDevice("speaker", AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+        val bluetooth = AudioDevice("headset", AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
+        val wired = AudioDevice("wired", AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
     }
 }

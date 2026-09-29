@@ -2,7 +2,6 @@
 
 package moe.ouom.neriplayer.data.youtube.auth
 
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -23,6 +22,9 @@ package moe.ouom.neriplayer.data.youtube.auth
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.fromJson
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.api.youtube.auth.toJson
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
@@ -33,9 +35,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeAuthProvider
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthHealth
-import moe.ouom.neriplayer.api.youtube.model.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
+import moe.ouom.neriplayer.api.youtube.auth.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 private const val YOUTUBE_AUTH_PREFS = "youtube_auth_secure_prefs"

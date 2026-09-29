@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution.uidt
 
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
 import moe.ouom.neriplayer.core.download.execution.notification.DownloadExecutionNotificationController
 import moe.ouom.neriplayer.core.download.execution.notification.buildDownloadExecutionNotification
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadExecutionNotificationIds

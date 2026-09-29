@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.persistence
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.queue.state.PlayerQueueStateStore
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 import moe.ouom.neriplayer.data.model.SongItem

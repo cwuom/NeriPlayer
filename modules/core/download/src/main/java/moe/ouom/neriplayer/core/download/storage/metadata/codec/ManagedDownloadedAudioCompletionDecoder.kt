@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.metadata.codec
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import org.json.JSONObject
 
 internal class ManagedDownloadedAudioCompletionDecoder(private val root: JSONObject) {

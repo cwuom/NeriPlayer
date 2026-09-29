@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether.session.control
 
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 
 internal fun shouldDropListenTogetherControllerLocalEcho(
     state: ListenTogetherRoomState,

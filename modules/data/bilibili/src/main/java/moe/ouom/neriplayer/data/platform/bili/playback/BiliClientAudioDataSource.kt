@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.data.platform.bili.playback
 
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
-import moe.ouom.neriplayer.api.bilibili.model.playback.PlayOptions
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions
 
 /**
  * 适配器: 用 BiliClient 作为音频数据源, 接到 BiliPlaybackRepository

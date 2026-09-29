@@ -1,12 +1,15 @@
 package moe.ouom.neriplayer.data.youtube.auth
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
 import moe.ouom.neriplayer.api.youtube.bootstrap.YouTubeBootstrapHtmlSource
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.api.youtube.transport.YOUTUBE_WEB_ORIGIN
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.api.youtube.transport.resolveBootstrapUserAgent
-import moe.ouom.neriplayer.data.youtube.model.auth.YouTubeBootstrapSessionState
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeBootstrapSessionState
 import okhttp3.Request
 
 internal fun parseYouTubeBootstrapSessionState(

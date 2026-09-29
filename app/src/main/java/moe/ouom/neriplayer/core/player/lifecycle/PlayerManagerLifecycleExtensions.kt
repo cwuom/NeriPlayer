@@ -2,6 +2,9 @@
 
 package moe.ouom.neriplayer.core.player.lifecycle
 
+import moe.ouom.neriplayer.data.settings.playback.toPlaybackSoundConfig
+import moe.ouom.neriplayer.listentogether.validation.format
+
 import android.app.Application
 import android.os.SystemClock
 import androidx.media3.common.Format
@@ -54,8 +57,8 @@ import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.applyRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.restoreState
@@ -68,7 +71,7 @@ import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.core.player.policy.command.shouldResumeSilentlyForListenTogetherNoisyPause
 import moe.ouom.neriplayer.core.player.policy.offload.pcmAudioRequirements
@@ -111,8 +114,8 @@ import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidate
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
-import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.usb.toUsbExclusivePreferences
 import java.io.File

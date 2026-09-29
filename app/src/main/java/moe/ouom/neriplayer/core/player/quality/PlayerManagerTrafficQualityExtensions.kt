@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.core.player.quality
 
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataBiliAudioQuality
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataYouTubeAudioQuality
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 
 internal fun PlayerManager.effectiveNeteaseQuality(): String {

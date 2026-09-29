@@ -15,8 +15,8 @@ import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigration
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_PROGRESS_EMIT_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteArtifacts
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlin.system.measureTimeMillis
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 class ManagedDownloadStorageMigrationCompatGroup2Test : ManagedDownloadStorageMigrationCompatTestSupport() {

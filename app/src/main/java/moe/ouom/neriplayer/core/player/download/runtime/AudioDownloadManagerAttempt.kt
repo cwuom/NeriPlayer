@@ -1,4 +1,9 @@
 package moe.ouom.neriplayer.core.player.download.runtime
+
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.settings.download.normalized
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.playback.coreCommittedSeedMetadataJson
 import moe.ouom.neriplayer.core.player.download.playback.shouldPreserveWorkingArtifactsAfterCancellation
@@ -8,7 +13,7 @@ import moe.ouom.neriplayer.core.player.download.sidecar.withTransferCyclePermit
 import moe.ouom.neriplayer.core.player.download.source.AudioDownloadSourceResolver
 import moe.ouom.neriplayer.core.player.download.source.RetryableDownloadFailureException
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadAttemptFailureAction
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadStage
+import moe.ouom.neriplayer.data.model.download.DownloadStage
 
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.ResolvedDownloadSource
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadTransportKind
@@ -23,7 +28,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.policy.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -42,12 +47,12 @@ import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissio
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.policy.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
 import okhttp3.Request
 import java.io.File

@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
 import org.junit.Assert.assertEquals

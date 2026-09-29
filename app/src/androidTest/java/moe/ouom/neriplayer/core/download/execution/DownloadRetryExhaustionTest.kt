@@ -1,12 +1,14 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomReadStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -15,7 +17,7 @@ import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEnt
 import moe.ouom.neriplayer.core.download.manager.recovery.resetInvalidCoreDownloadForTransfer
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
 import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.model.SongItem

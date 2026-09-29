@@ -1,16 +1,19 @@
 package moe.ouom.neriplayer.api.youtube.protocol
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
 import java.net.URLEncoder
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.random.Random
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicRequestLocale
-import moe.ouom.neriplayer.api.youtube.model.playback.PreparedYouTubePlayerRequest
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackSourcePreference
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayerClientProfile
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
+import moe.ouom.neriplayer.api.youtube.protocol.PreparedYouTubePlayerRequest
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerClientProfile
 import moe.ouom.neriplayer.api.youtube.playback.YouTubePlayerClientSource
 import moe.ouom.neriplayer.api.youtube.playback.resolveYouTubePlayerClientOrder
 import moe.ouom.neriplayer.api.youtube.transport.YOUTUBE_WEB_ORIGIN

@@ -2,9 +2,9 @@ package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.banner.DeterminateManagedProcessingIndicator
 import moe.ouom.neriplayer.ui.banner.HiddenManagedProcessingRow
 import moe.ouom.neriplayer.ui.banner.IndeterminateManagedProcessingIndicator

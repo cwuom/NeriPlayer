@@ -5,7 +5,7 @@ import androidx.core.net.toUri
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.catalog.assembly.DownloadedSongAssembler
@@ -23,7 +23,7 @@ import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLook
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal fun fallbackDownloadedSongId(reference: String): Long {
     val digest = MessageDigest.getInstance("SHA-256")

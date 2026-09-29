@@ -1,9 +1,5 @@
 package moe.ouom.neriplayer.api.netease.client
 
-import moe.ouom.neriplayer.api.netease.crypto.NeteaseCrypto
-import moe.ouom.neriplayer.api.netease.model.CryptoMode
-import moe.ouom.neriplayer.api.netease.request.buildNeteasePlaylistAddTracksParams
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -27,6 +23,9 @@ import moe.ouom.neriplayer.api.netease.request.buildNeteasePlaylistAddTracksPara
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.api.netease.crypto.NeteaseCrypto
+import moe.ouom.neriplayer.data.model.netease.crypto.CryptoMode
+import moe.ouom.neriplayer.api.netease.request.buildNeteasePlaylistAddTracksParams
 import moe.ouom.neriplayer.util.json.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.awaitResponse

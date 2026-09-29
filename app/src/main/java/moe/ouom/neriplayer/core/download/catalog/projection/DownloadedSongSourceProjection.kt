@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.core.download.catalog.projection
 
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
+import moe.ouom.neriplayer.data.identity.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 
 internal class DownloadedSongSourceProjection(

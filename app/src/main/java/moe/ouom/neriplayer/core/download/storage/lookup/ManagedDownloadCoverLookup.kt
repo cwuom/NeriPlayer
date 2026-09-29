@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal object ManagedDownloadCoverLookup {
     fun findCoverReference(

@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.stableKey
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -81,8 +81,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanPhase
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanProgress
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost

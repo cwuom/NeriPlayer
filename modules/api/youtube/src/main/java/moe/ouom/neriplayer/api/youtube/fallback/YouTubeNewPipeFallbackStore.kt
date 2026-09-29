@@ -25,25 +25,17 @@ package moe.ouom.neriplayer.api.youtube.fallback
 
 import android.content.Context
 import java.io.File
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.model.youtube.cache.NEWPIPE_FALLBACK_SNAPSHOT_VERSION
+import moe.ouom.neriplayer.data.model.youtube.cache.NewPipeFallbackSnapshot
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 
 private const val NEWPIPE_FALLBACK_STORE_DIRECTORY = "youtube"
 private const val NEWPIPE_FALLBACK_STORE_FILE = "newpipe_fallback.json"
 
-internal const val NEWPIPE_FALLBACK_SNAPSHOT_VERSION = 1
-
 /** player.js 每隔几天就换一版, 旧地址的结论留着也没人问 */
 internal const val NEWPIPE_FALLBACK_MAX_ENTRIES = 8
-
-@Serializable
-internal data class NewPipeFallbackSnapshot(
-    val signature: List<String> = emptyList(),
-    val throttling: List<String> = emptyList(),
-    val version: Int = NEWPIPE_FALLBACK_SNAPSHOT_VERSION
-)
 
 /**
  * 只留最近几条, 新的排在前面

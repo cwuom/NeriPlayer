@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.core.player.queue.policy
 
 import moe.ouom.neriplayer.core.player.queue.identity.QueueSongIdentity
-import moe.ouom.neriplayer.core.player.queue.model.InsertQueueEdit
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.queue.model.QueueInsertPlacement
-import moe.ouom.neriplayer.core.player.queue.model.RemoveQueueEdit
-import moe.ouom.neriplayer.core.player.queue.model.RemovedQueuePlaybackAction
-import moe.ouom.neriplayer.core.player.queue.model.ReplaceCurrentQueueEdit
+import moe.ouom.neriplayer.data.model.playback.queue.InsertQueueEdit
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement
+import moe.ouom.neriplayer.data.model.playback.queue.RemoveQueueEdit
+import moe.ouom.neriplayer.data.model.playback.queue.RemovedQueuePlaybackAction
+import moe.ouom.neriplayer.data.model.playback.queue.ReplaceCurrentQueueEdit
 import moe.ouom.neriplayer.data.model.SongItem
 
 class PlayerQueueEditOwner(private val identity: QueueSongIdentity) {

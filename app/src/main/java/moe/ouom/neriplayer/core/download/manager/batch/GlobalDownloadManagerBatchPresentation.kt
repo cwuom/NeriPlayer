@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.manager.batch
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
@@ -9,13 +12,13 @@ import moe.ouom.neriplayer.core.download.manager.catalog.awaitAllDownloadedSongD
 import moe.ouom.neriplayer.core.download.manager.runtime.findFastCachedDownloadedSong
 import moe.ouom.neriplayer.core.download.manager.runtime.isMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.settleAlreadyDownloadedOperation
-import moe.ouom.neriplayer.core.download.model.BatchDownloadPresentationState
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.downloadProgressFraction
+import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.presentation.downloadProgressFraction
 import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
-import moe.ouom.neriplayer.core.download.model.resumeBatchDownloadPresentationForRetry
-import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
+import moe.ouom.neriplayer.core.download.presentation.resumeBatchDownloadPresentationForRetry
+import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskMutation
 import moe.ouom.neriplayer.core.download.policy.shouldScheduleCancellationConvergence
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PendingDownloadRecoveryDirectSettlement
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.RecoveryDirectSettlementResult
@@ -36,7 +39,7 @@ import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
@@ -48,7 +51,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTermina
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import kotlin.time.Duration.Companion.milliseconds
 
 
@@ -301,7 +304,7 @@ internal fun GlobalDownloadManager.persistInitialBatchMemberCompletion(
 
 internal fun GlobalDownloadManager.persistBatchMemberProgress(
     context: Context,
-    progress: AudioDownloadManager.DownloadProgress
+    progress: DownloadProgress
 ) {
     val operationId = progress.operationId?.takeIf(String::isNotBlank) ?: return
     val fractionMilli = (downloadProgressFraction(progress) * 1_000f).toInt()
@@ -352,11 +355,13 @@ internal fun GlobalDownloadManager.persistBatchMemberTerminal(
                         context = context.applicationContext,
                         operationId = boundOperationId
                     )
-                    if (request?.batchId != null && request.batchGeneration != null) {
+                    val batchId = request?.batchId
+                    val batchGeneration = request?.batchGeneration
+                    if (batchId != null && batchGeneration != null) {
                         identitiesByOperation.putIfAbsent(
                             DownloadExecutionRoomStore.DownloadBatchIdentity(
-                                batchId = request.batchId,
-                                generation = request.batchGeneration
+                                batchId = batchId,
+                                generation = batchGeneration
                             ),
                             boundOperationId
                         )
@@ -707,7 +712,7 @@ internal suspend fun GlobalDownloadManager.bindBatchDownloadPresentationAttempts
 }
 
 internal fun GlobalDownloadManager.updateBatchDownloadPresentationProgress(
-    progress: AudioDownloadManager.DownloadProgress
+    progress: DownloadProgress
 ) {
     val songKey = progress.songKey
     val fraction = downloadProgressFraction(progress)

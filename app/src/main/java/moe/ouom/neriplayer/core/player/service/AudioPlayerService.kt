@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.core.player.service
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import moe.ouom.neriplayer.core.player.service.lifecycle.TaskRemovedPlaybackCallbacks
 import moe.ouom.neriplayer.core.player.service.lifecycle.executeTaskRemovedPlaybackAction
 import moe.ouom.neriplayer.core.player.service.lifecycle.resolveTaskRemovedPlaybackAction
@@ -107,7 +108,7 @@ import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.sameUsbExclusiveAudioPathConfiguration
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController

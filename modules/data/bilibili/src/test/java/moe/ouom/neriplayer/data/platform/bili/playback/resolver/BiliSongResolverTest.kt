@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.data.platform.bili.playback.resolver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.SongSourceTags
 import org.junit.Assert.assertEquals

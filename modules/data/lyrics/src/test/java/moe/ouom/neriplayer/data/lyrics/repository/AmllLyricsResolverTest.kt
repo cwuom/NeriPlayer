@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.data.lyrics.repository
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlLyrics
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlLyrics
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

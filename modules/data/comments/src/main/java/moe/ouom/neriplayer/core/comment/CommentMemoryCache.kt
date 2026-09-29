@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.comment
 
-import moe.ouom.neriplayer.core.comment.model.CommentPage
-import moe.ouom.neriplayer.core.comment.model.COMMENT_PAGE_SIZE
-import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentPage
+import moe.ouom.neriplayer.data.model.comments.COMMENT_PAGE_SIZE
+import moe.ouom.neriplayer.data.model.comments.CommentSort
 
 private const val DEFAULT_TTL_MS = 5 * 60 * 1000L
 private const val MAX_ENTRIES = 48

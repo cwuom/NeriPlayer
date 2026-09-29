@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.api.netease.auth
 
-import moe.ouom.neriplayer.api.netease.model.auth.NeteaseYdDeviceSnapshot
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseYdDeviceSnapshot
 
 import android.annotation.SuppressLint
 import android.content.Context

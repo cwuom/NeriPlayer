@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.scheduling.DeferredDownloadScheduleQueue
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

@@ -6,14 +6,14 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipDraft
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipSnapshot
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipSnapshot
 
 @RunWith(AndroidJUnit4::class)
 class BiliVideoSkipRoomStoreTest {

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.listentogether.compat.buildTrackFinishedLegacyFallbackEvent
 import moe.ouom.neriplayer.listentogether.compat.isListenTogetherMemberControlTargetCurrent
@@ -12,8 +14,8 @@ import moe.ouom.neriplayer.listentogether.control.ListenTogetherEventFactory
 import moe.ouom.neriplayer.listentogether.control.controlledPlaybackCommandTypes
 import moe.ouom.neriplayer.listentogether.control.requestControlEventTypes
 import moe.ouom.neriplayer.listentogether.control.resolveListenTogetherPlaybackCommandSnapshot
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommand
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
@@ -30,15 +32,15 @@ import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.shouldApplyListenTogetherQueueUpdateWithoutReload
 import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
 import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueueSnapshot
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueMutation
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueOperation
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueReference
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherPlaybackState
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomSettings
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueMutation
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueOperation
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueReference
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomSettings
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

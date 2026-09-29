@@ -13,7 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker

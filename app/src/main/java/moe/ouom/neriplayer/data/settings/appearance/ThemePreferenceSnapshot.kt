@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data.settings.appearance
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.dataStore
 import android.content.Context
@@ -40,20 +41,6 @@ private const val THEME_DYNAMIC_COLOR_KEY = "dynamic_color"
 private const val THEME_FORCE_DARK_KEY = "force_dark"
 private const val THEME_FOLLOW_SYSTEM_DARK_KEY = "follow_system_dark"
 private val themeSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-data class ThemePreferenceSnapshot(
-    val dynamicColor: Boolean = true,
-    val forceDark: Boolean = false,
-    val followSystemDark: Boolean = true
-) {
-    fun resolveUseDark(systemDark: Boolean): Boolean {
-        return when {
-            forceDark -> true
-            followSystemDark -> systemDark
-            else -> false
-        }
-    }
-}
 
 fun readThemePreferenceSnapshotSync(context: Context): ThemePreferenceSnapshot {
     readCachedThemePreferenceSnapshot(context)?.let { return it }

@@ -79,9 +79,9 @@ import kotlin.math.roundToLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem

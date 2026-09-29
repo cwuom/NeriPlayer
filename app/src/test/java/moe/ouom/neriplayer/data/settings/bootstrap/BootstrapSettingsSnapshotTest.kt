@@ -1,8 +1,11 @@
 package moe.ouom.neriplayer.data.settings.bootstrap
 
+import moe.ouom.neriplayer.data.model.settings.bootstrap.BootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.playback.sanitized
+
 import android.content.Context
 import android.content.SharedPreferences
-import moe.ouom.neriplayer.core.player.download.network.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.network.MAX_DOWNLOAD_PARALLELISM
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -30,9 +30,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
-import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.commentLengthLimit
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState

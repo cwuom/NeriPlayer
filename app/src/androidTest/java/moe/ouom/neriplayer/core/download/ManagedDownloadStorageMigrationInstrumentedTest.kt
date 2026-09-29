@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
@@ -25,9 +25,9 @@ import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker

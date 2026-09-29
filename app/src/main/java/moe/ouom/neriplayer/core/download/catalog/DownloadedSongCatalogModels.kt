@@ -1,13 +1,15 @@
 package moe.ouom.neriplayer.core.download.catalog
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.catalog.projection.projectDownloadedSongEdits
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.localFileNameFromFileReference
-import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
-import moe.ouom.neriplayer.core.download.model.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
-import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
-import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
-import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.localFileNameFromFileReference
+import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
+import moe.ouom.neriplayer.core.download.policy.remoteSourceIdentityOrNull as downloadedRemoteSourceIdentityOrNull
+import moe.ouom.neriplayer.core.download.policy.remoteSourceStableKeyOrNull
+import moe.ouom.neriplayer.core.download.policy.withRecoveredRemoteSourceStableKey
+import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport

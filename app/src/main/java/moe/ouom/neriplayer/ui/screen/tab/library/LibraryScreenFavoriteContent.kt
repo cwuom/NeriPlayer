@@ -84,9 +84,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.tab.toBiliPlaylist
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole

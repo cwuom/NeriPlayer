@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.stats
 
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+
 private const val PLAYBACK_STATS_DAILY_RETENTION_DAYS = 400L
 private const val PLAYBACK_STATS_MAX_DAILY_BUCKETS = 8_000
 private const val MILLIS_PER_DAY = 86_400_000L

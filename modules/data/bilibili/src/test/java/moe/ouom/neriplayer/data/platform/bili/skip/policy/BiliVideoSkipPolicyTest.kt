@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.policy
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

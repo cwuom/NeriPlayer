@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution.worker
 
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
 import android.content.Context
 import android.os.Build

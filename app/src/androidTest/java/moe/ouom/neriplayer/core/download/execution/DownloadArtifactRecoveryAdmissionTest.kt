@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.manager.recovery.claimArtifactForRecovery

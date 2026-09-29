@@ -26,10 +26,6 @@
     <fields>;
     <init>(...);
 }
--keepclassmembers,allowoptimization class moe.ouom.neriplayer.core.player.model.** {
-    <fields>;
-    <init>(...);
-}
 -keepclassmembers,allowoptimization class moe.ouom.neriplayer.ui.viewmodel.tab.** {
     <fields>;
     <init>(...);

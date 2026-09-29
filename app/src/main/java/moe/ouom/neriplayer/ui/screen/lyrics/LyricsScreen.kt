@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.lyrics
  * Created: 2025/8/13
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.Context
@@ -138,21 +140,20 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScalePage
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
-import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
+import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog

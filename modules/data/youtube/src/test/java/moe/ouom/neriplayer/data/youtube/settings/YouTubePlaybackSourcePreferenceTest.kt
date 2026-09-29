@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.youtube.settings
 
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackSourcePreference
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

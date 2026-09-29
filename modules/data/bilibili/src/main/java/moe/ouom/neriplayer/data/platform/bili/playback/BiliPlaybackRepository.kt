@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.data.platform.bili.playback
  */
 
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.platform.bili.playback.quality.selectStreamByPreference
 
 interface BiliAudioDataSource {

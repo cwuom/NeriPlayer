@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.core.player.persistence.toSongItem
+import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionDetailUiState
+import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionHeader
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -41,10 +44,10 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.api.netease.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteaseArtist
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistDetail
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistHeader
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistTrack
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteaseArtist
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistDetail
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistHeader
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistTrack
 import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem

@@ -1,19 +1,25 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
-import moe.ouom.neriplayer.core.download.model.withCachedDownloadedLyrics
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.identity.identity
+import moe.ouom.neriplayer.data.sync.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.sync.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.fromSongItemOrNull
+
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
+import moe.ouom.neriplayer.core.download.policy.withCachedDownloadedLyrics
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class DownloadedSongSourceMetadataTest {
 

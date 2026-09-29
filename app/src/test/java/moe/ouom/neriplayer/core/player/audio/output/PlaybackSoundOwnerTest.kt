@@ -5,9 +5,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

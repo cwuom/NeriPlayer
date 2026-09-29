@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.policy.offload
 
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import kotlin.math.abs
 
 private const val PLAYBACK_PARAMETER_EPSILON = 0.001f

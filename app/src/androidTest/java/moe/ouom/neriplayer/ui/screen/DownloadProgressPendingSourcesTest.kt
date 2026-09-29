@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.room.Room
@@ -15,7 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem

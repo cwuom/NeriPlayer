@@ -7,8 +7,8 @@ import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.roundToInt
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 
 internal object PlaybackVolumeBalanceState {
     @Volatile

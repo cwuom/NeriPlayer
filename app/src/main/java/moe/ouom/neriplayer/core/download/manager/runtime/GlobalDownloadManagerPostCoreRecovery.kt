@@ -1,10 +1,13 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmissionTicketOrNull
 import moe.ouom.neriplayer.core.download.manager.batch.forgetPendingDownloadQueueEntriesForOperation
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import android.content.Context
 import moe.ouom.neriplayer.core.download.execution.persistence.PostCoreRecoveryReadStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -18,7 +21,7 @@ import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 
 internal val POST_CORE_DOWNLOAD_OPERATION_STATES = listOf(
@@ -327,7 +330,7 @@ private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
             )
             publishDownloadStage(
                 song = currentEntry.request.song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+                stage = DownloadStage.WAITING_RETRY,
                 operationId = operationId,
                 attemptId = currentEntry.request.attemptId
             )

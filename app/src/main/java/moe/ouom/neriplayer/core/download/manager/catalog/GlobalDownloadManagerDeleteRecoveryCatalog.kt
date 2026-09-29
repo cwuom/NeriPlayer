@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongDeleteIntent
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeleteReferenceIndex
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 
 private suspend fun remainingDeleteRecoverySongs(
     context: Context,

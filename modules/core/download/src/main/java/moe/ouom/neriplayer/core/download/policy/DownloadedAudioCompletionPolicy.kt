@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.policy
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 fun isAcceptedDownloadedAudioEmbeddingState(
     state: DownloadedAudioEmbeddingState?

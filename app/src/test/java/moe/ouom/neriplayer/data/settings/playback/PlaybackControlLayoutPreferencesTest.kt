@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.settings.playback
 
+import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

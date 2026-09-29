@@ -9,7 +9,7 @@ import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

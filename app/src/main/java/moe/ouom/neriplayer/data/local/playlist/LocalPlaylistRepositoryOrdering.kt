@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.local.playlist
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongAddResult
+
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.SongDuplicateIndex
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.SongMatchIndex
 import kotlinx.coroutines.Dispatchers
@@ -9,13 +13,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
-import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun LocalPlaylistRepository.renewSongsForPlaylistRestore(songs: List<SongItem>): List<SongItem> {

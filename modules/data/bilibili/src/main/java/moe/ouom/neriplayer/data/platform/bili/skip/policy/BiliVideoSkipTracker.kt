@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.policy
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
 
 private const val BILI_VIDEO_SKIP_REWIND_TOLERANCE_MS = 1_000L
 

@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.data.sync
 
 import android.content.Context
 import androidx.core.content.edit
-import moe.ouom.neriplayer.data.config.SyncPreferencesConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.SyncPreferencesConfigSnapshot
 import java.util.Locale
 
 class PlayHistorySyncPreferences(private val context: Context) {

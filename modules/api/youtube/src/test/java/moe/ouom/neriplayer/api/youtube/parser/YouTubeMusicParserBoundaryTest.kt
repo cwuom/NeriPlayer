@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.api.youtube.parser
 
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItemType
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemType
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

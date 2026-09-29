@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.download.catalog.projection
 
 import moe.ouom.neriplayer.core.download.catalog.isResolvableLocalReference
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.localFileNameFromFileReference
-import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.localFileNameFromFileReference
+import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal class DownloadedSongLocalEdits(

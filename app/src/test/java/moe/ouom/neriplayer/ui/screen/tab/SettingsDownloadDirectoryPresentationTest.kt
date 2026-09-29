@@ -2,9 +2,9 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.downloadDirectoryMigrationBytes
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.downloadDirectoryMigrationDialogPresentation
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.downloadDirectoryMigrationStageId

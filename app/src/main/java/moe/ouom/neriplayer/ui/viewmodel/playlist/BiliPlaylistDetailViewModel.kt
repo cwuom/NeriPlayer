@@ -23,8 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  * Created: 2025/8/15
  */
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
-import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -34,19 +34,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
-import moe.ouom.neriplayer.api.bilibili.model.collection.CollectionArchiveItem
-import moe.ouom.neriplayer.api.bilibili.model.collection.FavResourceItem
-import moe.ouom.neriplayer.api.bilibili.model.collection.FavResourcePage
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourceItem
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourcePage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.BiliArchiveContentCache
-import moe.ouom.neriplayer.data.platform.bili.cache.favorite.model.BiliFavoriteFolderContentCache
-import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.CachedBiliArchiveVideo
-import moe.ouom.neriplayer.data.platform.bili.cache.favorite.model.CachedBiliFavoriteVideo
+import moe.ouom.neriplayer.data.model.bilibili.cache.archive.BiliArchiveContentCache
+import moe.ouom.neriplayer.data.model.bilibili.cache.favorite.BiliFavoriteFolderContentCache
+import moe.ouom.neriplayer.data.model.bilibili.cache.archive.CachedBiliArchiveVideo
+import moe.ouom.neriplayer.data.model.bilibili.cache.favorite.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -58,18 +57,6 @@ private const val BILI_RESOURCE_TYPE_VIDEO = 2
 private const val BILI_RESOURCE_TYPE_COLLECTION = 21
 private const val BILI_FAVORITE_LATEST_PAGE_SIZE = 20
 private const val BILI_ARCHIVE_PAGE_SIZE = 12
-
-/** Bilibili 视频条目数据模型 */
-@Parcelize
-data class BiliVideoItem(
-    val id: Long, // avid
-    val bvid: String,
-    val title: String,
-    val uploader: String,
-    val uploaderMid: Long = 0L,
-    val coverUrl: String,
-    val durationSec: Int
-) : Parcelable
 
 /** Bilibili 收藏夹详情页 UI 状态 */
 data class BiliPlaylistDetailUiState(

@@ -16,11 +16,11 @@ import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveOutputFormatResolver
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveIoGate
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeBridge
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.allowsAlternativeOutputRetry
 import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveTransferWindowDurationMs
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 
 internal class UsbExclusiveSessionResources(
     private val ioGate: UsbExclusiveIoGate,

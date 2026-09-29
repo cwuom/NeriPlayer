@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.core.download.storage.backend
 
+import moe.ouom.neriplayer.data.model.download.storage.StorageConfidence
+import moe.ouom.neriplayer.data.model.download.storage.StorageDirectorySnapshot
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+
 import java.io.File
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files

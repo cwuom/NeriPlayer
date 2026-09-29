@@ -9,9 +9,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
 import moe.ouom.neriplayer.api.youtube.transport.buildBootstrapAuthFingerprint
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient

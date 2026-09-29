@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.playback
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.player.download.ownership.AudioDownloadReferenceRegistry
 import moe.ouom.neriplayer.core.player.download.runtime.safeToPlayableUri
 import android.content.Context
@@ -31,7 +33,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /**
  * 本地播放引用协调器

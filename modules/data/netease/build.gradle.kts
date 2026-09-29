@@ -7,7 +7,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":core:model"))
+    implementation(project(":data:model"))
     implementation(project(":core:logging"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)

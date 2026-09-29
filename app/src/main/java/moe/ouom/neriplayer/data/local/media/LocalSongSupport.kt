@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.data.local.media
  * Updated: 2026/3/23
  */
 
-
 import android.content.Context
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -32,7 +31,6 @@ import java.io.File
 import java.util.Locale
 
 object LocalSongSupport {
-    private val localUriSchemes = setOf("content", "file", "android.resource")
     const val LOCAL_ALBUM_IDENTITY = "__local_files__"
 
     fun isLocalSong(song: SongItem, context: Context? = null): Boolean {
@@ -55,17 +53,8 @@ object LocalSongSupport {
             )
     }
 
-    fun isLocalMediaUri(mediaUri: String?): Boolean {
-        if (mediaUri.isNullOrBlank()) return false
-        if (mediaUri.startsWith("/")) return true
-        if (mediaUri.startsWith("file:", ignoreCase = true)) return true
-        if (mediaUri.startsWith("content://", ignoreCase = true)) return true
-        if (mediaUri.startsWith("android.resource://", ignoreCase = true)) return true
-
-        val scheme = runCatching { mediaUri.toUri().scheme.orEmpty().lowercase() }
-            .getOrDefault("")
-        return scheme in localUriSchemes
-    }
+    fun isLocalMediaUri(mediaUri: String?): Boolean =
+        moe.ouom.neriplayer.data.sync.policy.isLocalMediaUri(mediaUri)
 
     fun sanitizeMediaUriForSync(mediaUri: String?): String? {
         return mediaUri?.takeUnless { isLocalMediaUri(it) }

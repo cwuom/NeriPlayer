@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/11
  */
 
+import moe.ouom.neriplayer.core.player.persistence.toSongItem
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -34,21 +35,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.bilibili.model.collection.FavFolder
-import moe.ouom.neriplayer.api.bilibili.model.search.SearchVideoItem
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliSongAlbum
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchFilter
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResult
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResultType
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate

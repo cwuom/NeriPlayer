@@ -6,7 +6,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
-import moe.ouom.neriplayer.core.comment.model.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.core.comment.resolveCommentSource
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
@@ -20,9 +20,9 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
 
 class BiliCommentLegacyIdTest {
     private val cache = CommentMemoryCache()

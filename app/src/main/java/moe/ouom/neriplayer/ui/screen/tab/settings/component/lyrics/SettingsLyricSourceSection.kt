@@ -40,7 +40,7 @@ import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
-import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog

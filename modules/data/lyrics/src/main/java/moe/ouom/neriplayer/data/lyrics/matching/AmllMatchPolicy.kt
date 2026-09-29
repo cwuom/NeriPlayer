@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.lyrics.matching
 import java.text.Normalizer
 import kotlin.math.abs
 import kotlin.math.max
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
 
 private const val MIN_AMLL_ARTIST_MATCH_SCORE = 30
 

@@ -10,8 +10,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlLyrics
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlLyrics
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
 import okhttp3.Call
 import okhttp3.Interceptor
 import okhttp3.MediaType

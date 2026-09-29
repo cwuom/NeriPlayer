@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.api.youtube.transport
 
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol

@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player.download
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.player.download.playback.LocalPlaybackReferenceResolution
 import moe.ouom.neriplayer.core.player.download.playback.canExposeManagedDownloadForPlayback
 import moe.ouom.neriplayer.core.player.download.playback.coreCommittedSeedMetadataJson
@@ -14,7 +17,7 @@ import moe.ouom.neriplayer.core.player.download.playback.shouldTriggerNetworkRec
 import moe.ouom.neriplayer.core.player.download.playback.shouldUseCompletedAudioReferenceDirectly
 import moe.ouom.neriplayer.core.player.download.playback.shouldUseDirectPresentLocalPlayback
 import moe.ouom.neriplayer.core.player.download.network.DownloadNetworkPolicyTracker
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import org.junit.Assert.assertEquals
@@ -23,18 +26,18 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import org.json.JSONObject
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
 
     @Test
     fun `latest progress snapshot rejects an older attempt`() {
-        val previous = AudioDownloadManager.DownloadProgress(
+        val previous = DownloadProgress(
             songKey = "snapshot-song",
             songId = 1L,
             fileName = "snapshot-song.mp3",
@@ -65,7 +68,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
 
     @Test
     fun `latest progress snapshot retains same attempt byte high water`() {
-        val previous = AudioDownloadManager.DownloadProgress(
+        val previous = DownloadProgress(
             songKey = "snapshot-song",
             songId = 1L,
             fileName = "snapshot-song.mp3",
@@ -78,7 +81,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
             bytesRead = 200L,
             totalBytes = 1_000L,
             speedBytesPerSec = 0L,
-            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            stage = DownloadStage.WAITING_RETRY
         )
         val mergedRetryProgress = AudioDownloadManager.mergeLatestProgress(
             previous,
@@ -88,7 +91,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
         assertEquals(800L, mergedRetryProgress.bytesRead)
         assertEquals(1_000L, mergedRetryProgress.totalBytes)
         assertEquals(0L, mergedRetryProgress.speedBytesPerSec)
-        assertEquals(AudioDownloadManager.DownloadStage.WAITING_RETRY, mergedRetryProgress.stage)
+        assertEquals(DownloadStage.WAITING_RETRY, mergedRetryProgress.stage)
         assertTrue(AudioDownloadManager.shouldReplaceLatestProgress(previous, retryProgress))
 
         val resumedProgress = AudioDownloadManager.mergeLatestProgress(
@@ -97,13 +100,13 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
                 bytesRead = 300L,
                 totalBytes = 500L,
                 speedBytesPerSec = 20L,
-                stage = AudioDownloadManager.DownloadStage.TRANSFERRING
+                stage = DownloadStage.TRANSFERRING
             )
         )
         assertEquals(800L, resumedProgress.bytesRead)
         assertEquals(1_000L, resumedProgress.totalBytes)
         assertEquals(20L, resumedProgress.speedBytesPerSec)
-        assertEquals(AudioDownloadManager.DownloadStage.TRANSFERRING, resumedProgress.stage)
+        assertEquals(DownloadStage.TRANSFERRING, resumedProgress.stage)
         assertFalse(
             AudioDownloadManager.shouldReplaceLatestProgress(
                 previous,
@@ -138,7 +141,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
 
     @Test
     fun `late progress from an older transfer generation is ignored`() {
-        val current = AudioDownloadManager.DownloadProgress(
+        val current = DownloadProgress(
             songKey = "generation-song",
             songId = 1L,
             fileName = "generation-song.mp3",
@@ -162,7 +165,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
 
     @Test
     fun `newer attempt wins even when its transfer generation is lower`() {
-        val previous = AudioDownloadManager.DownloadProgress(
+        val previous = DownloadProgress(
             songKey = "generation-song",
             songId = 1L,
             fileName = "generation-song.mp3",
@@ -187,7 +190,7 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
 
     @Test
     fun `new transfer generation keeps monotonic visible and durable bytes`() {
-        val previous = AudioDownloadManager.DownloadProgress(
+        val previous = DownloadProgress(
             songKey = "generation-song",
             songId = 1L,
             fileName = "generation-song.mp3",
@@ -218,10 +221,10 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
             bytesRead = 1_000L,
             totalBytes = 0L,
             percentage = -1,
-            stage = AudioDownloadManager.DownloadStage.TRANSFERRING,
+            stage = DownloadStage.TRANSFERRING,
             emittedAtNs = 10L
         )
-        val next = AudioDownloadManager.DownloadProgress(
+        val next = DownloadProgress(
             songKey = "unknown-total",
             songId = 1L,
             fileName = "unknown-total.mp3",
@@ -268,10 +271,10 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
             bytesRead = 8L * 1024L * 1024L,
             totalBytes = 16L * 1024L * 1024L,
             percentage = 50,
-            stage = AudioDownloadManager.DownloadStage.TRANSFERRING,
+            stage = DownloadStage.TRANSFERRING,
             emittedAtNs = 20L
         )
-        val nextAttempt = AudioDownloadManager.DownloadProgress(
+        val nextAttempt = DownloadProgress(
             songKey = "retry-song",
             songId = 2L,
             fileName = "retry-song.mp3",
@@ -297,17 +300,17 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
             bytesRead = 900L,
             totalBytes = 1_000L,
             percentage = 90,
-            stage = AudioDownloadManager.DownloadStage.TRANSFERRING,
+            stage = DownloadStage.TRANSFERRING,
             emittedAtNs = 30L
         )
-        val finalizing = AudioDownloadManager.DownloadProgress(
+        val finalizing = DownloadProgress(
             songKey = "finalizing-song",
             songId = 3L,
             fileName = "finalizing-song.mp3",
             bytesRead = 100L,
             totalBytes = 1_000L,
             speedBytesPerSec = 0L,
-            stage = AudioDownloadManager.DownloadStage.FINALIZING,
+            stage = DownloadStage.FINALIZING,
             attemptId = 15L
         )
 

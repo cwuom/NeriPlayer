@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 
 import android.content.ClipData
 import android.content.Context
@@ -84,8 +84,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl

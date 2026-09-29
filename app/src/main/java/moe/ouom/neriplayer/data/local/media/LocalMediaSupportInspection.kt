@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
+
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.DocumentNavigationCacheEntry
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.AudioTrackTechInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.RetrieverTextMetadata

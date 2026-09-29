@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.prefetch
 
 import java.util.concurrent.ConcurrentHashMap
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 
 internal const val GENERIC_URL_PREFETCH_TTL_MS = 90_000L
 internal const val GENERIC_URL_PREFETCH_MAX_TTL_MS = 10L * 60L * 1000L

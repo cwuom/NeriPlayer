@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.url
 
-import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.PlaybackUrlCandidate
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player.lyrics
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -12,11 +15,10 @@ import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.lyrics.resolveEffectiveLyricOffsetMs
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
 
 internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {

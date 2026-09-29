@@ -33,8 +33,8 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
 import moe.ouom.neriplayer.widget.PlaybackWidgetState

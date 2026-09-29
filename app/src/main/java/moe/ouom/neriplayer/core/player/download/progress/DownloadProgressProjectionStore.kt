@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player.download.progress
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,18 +17,18 @@ internal class DownloadProgressProjectionStore(
     }
 
     private val mutationLock = Any()
-    private val values = linkedMapOf<String, AudioDownloadManager.DownloadProgress>()
+    private val values = linkedMapOf<String, DownloadProgress>()
     private val _snapshot = MutableStateFlow<
-        Map<String, AudioDownloadManager.DownloadProgress>
+        Map<String, DownloadProgress>
     >(emptyMap())
-    val snapshot: StateFlow<Map<String, AudioDownloadManager.DownloadProgress>> =
+    val snapshot: StateFlow<Map<String, DownloadProgress>> =
         _snapshot.asStateFlow()
     private var lastSnapshotAtNs = Long.MIN_VALUE
 
     fun record(
-        progress: AudioDownloadManager.DownloadProgress,
+        progress: DownloadProgress,
         nowNs: Long = System.nanoTime()
-    ): AudioDownloadManager.DownloadProgress {
+    ): DownloadProgress {
         synchronized(mutationLock) {
             val key = operationKey(progress)
             val previous = values[key]
@@ -59,18 +62,18 @@ internal class DownloadProgressProjectionStore(
         }
     }
 
-    fun latest(operationId: String?): AudioDownloadManager.DownloadProgress? {
+    fun latest(operationId: String?): DownloadProgress? {
         val normalizedId = operationId?.trim().orEmpty()
         if (normalizedId.isBlank()) return null
         return synchronized(mutationLock) { values[normalizedId] }
     }
 
-    fun snapshotValues(): List<AudioDownloadManager.DownloadProgress> =
+    fun snapshotValues(): List<DownloadProgress> =
         synchronized(mutationLock) { values.values.toList() }
 
     private fun shouldPublishSnapshot(
-        previous: AudioDownloadManager.DownloadProgress?,
-        incoming: AudioDownloadManager.DownloadProgress,
+        previous: DownloadProgress?,
+        incoming: DownloadProgress,
         nowNs: Long
     ): Boolean {
         if (previous == null) {
@@ -79,7 +82,7 @@ internal class DownloadProgressProjectionStore(
         }
         if (previous.attemptId != incoming.attemptId) return true
         if (
-            incoming.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ||
+            incoming.stage != DownloadStage.TRANSFERRING ||
                 (incoming.totalBytes > 0L && incoming.bytesRead >= incoming.totalBytes)
         ) {
             return true
@@ -93,7 +96,7 @@ internal class DownloadProgressProjectionStore(
     }
 
     private fun operationKey(
-        progress: AudioDownloadManager.DownloadProgress
+        progress: DownloadProgress
     ): String {
         val operationId = progress.operationId?.trim().orEmpty()
         return operationId.ifBlank {

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.lyrics.search
 
-import moe.ouom.neriplayer.data.lyrics.model.ChineseTransliterator
+import moe.ouom.neriplayer.data.lyrics.search.ChineseTransliterator
 
 private val traditionalToSimplifiedFallback = mapOf(
     '愛' to '爱',

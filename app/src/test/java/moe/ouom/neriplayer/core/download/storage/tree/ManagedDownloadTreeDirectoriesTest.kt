@@ -5,7 +5,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertEquals

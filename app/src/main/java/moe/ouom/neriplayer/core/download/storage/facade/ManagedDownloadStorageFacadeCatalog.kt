@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.facade
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
@@ -30,7 +32,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootForOperation
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.PendingAudioWriteScanResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.PendingArtifactScanResult
 import android.content.Context
@@ -64,8 +66,8 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
-import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
+import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
+import moe.ouom.neriplayer.data.identity.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import java.io.File
 import java.io.IOException

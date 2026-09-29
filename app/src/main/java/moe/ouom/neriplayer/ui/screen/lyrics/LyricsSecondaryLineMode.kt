@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.lyrics
 
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLrc
 
 internal fun hasDisplayableLyricTranslation(

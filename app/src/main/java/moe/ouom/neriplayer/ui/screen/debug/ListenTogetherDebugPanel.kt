@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.debug
 
+import moe.ouom.neriplayer.listentogether.validation.format
+
 import android.content.ClipData
 import android.content.Context
 import android.content.ContextWrapper
@@ -79,15 +81,15 @@ import moe.ouom.neriplayer.listentogether.invite.buildListenTogetherInviteUri
 import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherMember
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomSettings
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherMember
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomSettings
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.playback.indexOfTrack
-import moe.ouom.neriplayer.listentogether.validation.ListenTogetherValidationError
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
 import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherJoinSecretOrNull
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname

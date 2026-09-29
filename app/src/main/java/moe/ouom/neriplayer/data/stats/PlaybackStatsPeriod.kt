@@ -1,53 +1,17 @@
 package moe.ouom.neriplayer.data.stats
 
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsTimeRange
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsHotPlaylist
+
 import java.util.Calendar
 
 private const val HOT_PLAYLIST_MINUTE_MS = 60_000L
 private const val WEEKLY_HOT_PLAYLIST_MIN_LISTEN_MS = 10 * HOT_PLAYLIST_MINUTE_MS
 private const val MONTHLY_HOT_PLAYLIST_MIN_LISTEN_MS = 30 * HOT_PLAYLIST_MINUTE_MS
-
-enum class PlaybackStatsPeriod {
-    DAY,
-    WEEK,
-    MONTH,
-    YEAR,
-    ALL
-}
-
-data class PlaybackStatsTimeRange(
-    val startInclusive: Long?,
-    val endExclusive: Long
-)
-
-data class PlaybackStatBucket(
-    val dayStartAt: Long,
-    val id: Long,
-    val name: String,
-    val artist: String,
-    val album: String,
-    val albumId: Long = 0L,
-    val coverUrl: String?,
-    val durationMs: Long,
-    val totalListenMs: Long,
-    val playCount: Int,
-    val lastPlayedAt: Long,
-    val firstPlayedAt: Long,
-    val mediaUri: String?,
-    val localFilePath: String?,
-    val localFileName: String?,
-    val customName: String?,
-    val customArtist: String?,
-    val customCoverUrl: String?,
-    val identityKey: String
-)
-
-data class PlaybackStatsHotPlaylist(
-    val period: PlaybackStatsPeriod,
-    val tracks: List<TrackStat>,
-    val totalPlayCount: Long,
-    val totalListenMs: Long,
-    val usesLegacyBreakdown: Boolean
-)
 
 fun PlaybackStatsPeriod.resolvePlaybackStatsTimeRange(
     nowMillis: Long = System.currentTimeMillis()

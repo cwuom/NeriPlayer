@@ -1,16 +1,5 @@
 package moe.ouom.neriplayer.data.lyrics.search
 
-import kotlin.math.abs
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.api.search.SearchApi
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
-import moe.ouom.neriplayer.data.lyrics.matching.isExternalLyricDurationCompatible
-import moe.ouom.neriplayer.data.lyrics.model.SearchCandidateScore
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -34,6 +23,16 @@ import moe.ouom.neriplayer.data.lyrics.model.SearchCandidateScore
  * Created: 2025/8/17
  */
 
+import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.api.search.SearchApi
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.lyrics.matching.isExternalLyricDurationCompatible
+import moe.ouom.neriplayer.data.lyrics.search.SearchCandidateScore
 private const val MINIMUM_MATCH_SCORE = 60
 
 class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {

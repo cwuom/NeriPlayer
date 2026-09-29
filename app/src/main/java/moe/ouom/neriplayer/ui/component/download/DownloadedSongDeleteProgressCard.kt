@@ -20,8 +20,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 
 @Composable
 internal fun DownloadedSongDeleteProgressCard(

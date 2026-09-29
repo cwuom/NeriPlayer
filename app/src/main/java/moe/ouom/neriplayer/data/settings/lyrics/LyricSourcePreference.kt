@@ -1,7 +1,8 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+
 import java.util.Locale
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
 
 /**
  * 播放时优先使用的歌词来源。
@@ -9,31 +10,6 @@ import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
  * [Automatic] 保持改造前的既有行为: 平台自带歌词优先, 缺少逐词时再补 AMLL TTML。
  * 其余取值会让播放期主动去对应平台按歌名、歌手和时长匹配歌词, 匹配失败时沿用原有歌词路径
  */
-enum class LyricSourcePreference(
-    val storageValue: String
-) {
-    Automatic("automatic"),
-    CloudMusic("cloud_music"),
-    Kugou("kugou"),
-    QqMusic("qq_music"),
-    LrcLib("lrclib"),
-    AmllTtml("amll_ttml");
-
-    /**
-     * 该来源对应的可编辑歌词匹配源; [Automatic] 没有固定来源, 返回 null。
-     */
-    val matchSource: EditableLyricMatchSource?
-        get() = when (this) {
-            Automatic -> null
-            CloudMusic -> EditableLyricMatchSource.CLOUD_MUSIC
-            Kugou -> EditableLyricMatchSource.KUGOU
-            QqMusic -> EditableLyricMatchSource.QQ_MUSIC
-            LrcLib -> EditableLyricMatchSource.LRCLIB
-            AmllTtml -> EditableLyricMatchSource.AMLL_TTML
-        }
-}
-
-const val DEFAULT_LYRIC_SOURCE = "automatic"
 
 object LyricSourcePreferencePolicy {
     fun normalize(value: String): String = fromStorage(value).storageValue

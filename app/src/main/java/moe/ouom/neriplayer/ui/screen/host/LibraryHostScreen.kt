@@ -74,10 +74,10 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.core.player.PlayerManager

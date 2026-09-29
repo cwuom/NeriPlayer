@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.shouldIndexMetadataLe
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StartupRecoveryResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import android.content.Context
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException

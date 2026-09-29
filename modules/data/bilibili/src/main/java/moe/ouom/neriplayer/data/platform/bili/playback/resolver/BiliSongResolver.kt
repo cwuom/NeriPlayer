@@ -1,7 +1,5 @@
 package moe.ouom.neriplayer.data.platform.bili.playback.resolver
 
-import moe.ouom.neriplayer.data.platform.bili.playback.model.ResolvedBiliSong
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -25,10 +23,11 @@ import moe.ouom.neriplayer.data.platform.bili.playback.model.ResolvedBiliSong
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.model.bilibili.playback.ResolvedBiliSong
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.SongSourceTags
 

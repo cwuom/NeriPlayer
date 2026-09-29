@@ -16,10 +16,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.manager.catalog.findConfirmedMissingDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.statDownloadedSongReference
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail

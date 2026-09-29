@@ -1,15 +1,18 @@
 package moe.ouom.neriplayer.listentogether.session.state
 
+import moe.ouom.neriplayer.data.model.ltw.session.AcceptedRoomState
+import moe.ouom.neriplayer.data.model.ltw.session.RoomStateSource
+
 import moe.ouom.neriplayer.listentogether.session.control.shouldDropListenTogetherControllerLocalEcho
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.listentogether.control.buildListenTogetherForwardedControlSyntheticState
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
 
 internal interface ListenTogetherRoomStateObserver {
     fun onRoomActivated()

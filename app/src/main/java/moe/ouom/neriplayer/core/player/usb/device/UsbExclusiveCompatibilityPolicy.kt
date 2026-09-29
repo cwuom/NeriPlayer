@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.device
 
 import kotlin.math.abs
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
 
 private const val PARAMETER_EPSILON = 0.0001f
 

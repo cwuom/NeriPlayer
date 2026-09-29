@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.session.connection
 
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 
 internal enum class ListenTogetherForegroundRecoveryAction {
     NONE,

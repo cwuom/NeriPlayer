@@ -1,14 +1,14 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.resolver
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue

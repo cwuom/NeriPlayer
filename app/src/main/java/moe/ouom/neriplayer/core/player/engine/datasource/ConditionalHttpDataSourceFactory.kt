@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.core.player.engine.datasource
  * Created: 2025/8/15
  */
 
-
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.DataSpec
@@ -34,9 +34,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.api.bilibili.stream.isBiliStreamHost
 import moe.ouom.neriplayer.api.bilibili.stream.isBiliStreamUrl
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeStreamRequestHeaders

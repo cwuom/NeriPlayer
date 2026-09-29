@@ -23,14 +23,9 @@ package moe.ouom.neriplayer.data.local.playlist.sync
  * Created: 2026/8/10
  */
 
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import org.json.JSONObject
 import java.io.IOException
-
-data class NeteaseRemotePlaylist(
-    val id: Long,
-    val name: String,
-    val trackCount: Int
-)
 
 internal fun parseNeteaseRemotePlaylists(
     raw: String,

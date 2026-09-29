@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download
 import java.io.File
 import java.util.Locale
 import moe.ouom.neriplayer.core.download.execution.scheduling.DeferredDownloadScheduleQueue
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTiming
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTimingCollector
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase

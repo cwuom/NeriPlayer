@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.api.youtube.client
 
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicPlaylistDetail
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicPlaylistDetail
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test

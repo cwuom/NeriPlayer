@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoSegment
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressOwner

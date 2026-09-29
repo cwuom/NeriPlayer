@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.service.usb
 
+import moe.ouom.neriplayer.core.player.usb.transport.outputFrameBytes
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -8,9 +10,9 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRunUsbExclusiveBackgroundAudioAnchor
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import kotlin.time.Duration.Companion.milliseconds
 

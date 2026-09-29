@@ -5,8 +5,8 @@ import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isWiredOutputType
 import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
-import moe.ouom.neriplayer.core.player.model.AudioDevice
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.AudioDevice
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 
 internal fun pausesForImmediateOutputDisconnect(
     state: AudioDeviceRouteSnapshot,

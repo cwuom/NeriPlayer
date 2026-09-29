@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,10 +54,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseRemotePlaylist
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.media.displayAlbum
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalMetadataProcessingState
 import moe.ouom.neriplayer.data.model.SongItem

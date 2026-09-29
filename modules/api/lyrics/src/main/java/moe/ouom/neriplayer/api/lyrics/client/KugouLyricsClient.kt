@@ -7,9 +7,9 @@ import moe.ouom.neriplayer.api.lyrics.codec.decodeKugouKrcDownloadPayload
 import moe.ouom.neriplayer.api.lyrics.codec.decodeKugouLyricDownload
 import moe.ouom.neriplayer.api.lyrics.codec.parseKugouLyricCandidates
 import moe.ouom.neriplayer.api.lyrics.codec.parseKugouSearchResults
-import moe.ouom.neriplayer.api.lyrics.model.KugouLyricCandidate
-import moe.ouom.neriplayer.api.lyrics.model.KugouLyricsPayload
-import moe.ouom.neriplayer.api.lyrics.model.KugouSongSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricCandidate
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricsPayload
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouSongSearchResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient

@@ -14,7 +14,7 @@ import android.content.Context
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import java.util.Locale
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.resolveCoreRecoveryAudioCandidate(

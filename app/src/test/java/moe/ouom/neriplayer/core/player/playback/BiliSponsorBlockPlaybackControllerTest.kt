@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.playback
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockTarget
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

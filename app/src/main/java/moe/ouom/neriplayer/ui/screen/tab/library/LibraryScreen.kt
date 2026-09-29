@@ -72,11 +72,11 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylist
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist
-import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.comment
 
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

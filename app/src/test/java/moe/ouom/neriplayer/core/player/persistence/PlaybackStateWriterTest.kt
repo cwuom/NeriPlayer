@@ -4,10 +4,10 @@ import com.google.gson.Gson
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
-import moe.ouom.neriplayer.core.player.model.PersistedState
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.model.withPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedState
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
+import moe.ouom.neriplayer.core.player.persistence.withPlaybackState
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

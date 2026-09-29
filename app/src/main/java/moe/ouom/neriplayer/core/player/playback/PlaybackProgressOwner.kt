@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+
 import androidx.media3.common.C
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,7 +10,6 @@ import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DU
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPositionForPersistence
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 
 internal interface PlaybackProgressPort {
     fun rememberLongFormEnabled(): Boolean

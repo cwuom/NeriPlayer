@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+import moe.ouom.neriplayer.listentogether.validation.format
+
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,22 +62,22 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -300,7 +304,7 @@ internal fun DownloadProgressContent(task: DownloadTask?) {
             }
         }
 
-        progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
+        progress?.stage == DownloadStage.FINALIZING -> {
             Column {
                 Text(stringResource(R.string.download_finalizing))
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

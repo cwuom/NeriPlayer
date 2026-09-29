@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.local.database.store
 
-import moe.ouom.neriplayer.data.history.PlayedEntry
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.local.database.entity.PlayHistoryEntity
 import moe.ouom.neriplayer.data.local.database.entity.toEntity
 import moe.ouom.neriplayer.data.model.SongIdentity

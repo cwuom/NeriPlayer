@@ -2,8 +2,6 @@
 
 package moe.ouom.neriplayer.data.auth.bili
 
-import moe.ouom.neriplayer.data.auth.bili.model.BiliAuthBundle
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -27,6 +25,7 @@ import moe.ouom.neriplayer.data.auth.bili.model.BiliAuthBundle
  * Created: 2025/8/13
  */
 
+import moe.ouom.neriplayer.data.model.bilibili.auth.BiliAuthBundle
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
@@ -42,8 +41,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.bilibili.auth.BiliCookieSource
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthHealth
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthHealth
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import org.json.JSONObject
 
 private const val BILI_AUTH_PREFS = "bili_auth_secure_prefs"

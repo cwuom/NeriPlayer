@@ -36,8 +36,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import kotlin.math.abs
 

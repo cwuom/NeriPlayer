@@ -9,9 +9,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationJournal
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow

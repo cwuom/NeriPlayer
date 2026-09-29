@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.local.database.entity
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
-import moe.ouom.neriplayer.data.traffic.TrafficStatsBucket
+import moe.ouom.neriplayer.data.model.traffic.TrafficStatsBucket
 
 @Entity(
     tableName = "traffic_stats_bucket",

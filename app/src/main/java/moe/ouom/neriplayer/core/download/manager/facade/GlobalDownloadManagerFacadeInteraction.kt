@@ -24,9 +24,9 @@ import moe.ouom.neriplayer.core.download.manager.runtime.pauseActiveDownloadsFor
 import moe.ouom.neriplayer.core.download.manager.runtime.pauseActiveDownloadsForUnknownNetwork
 import moe.ouom.neriplayer.core.download.manager.runtime.scheduleUserDownload
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.shouldHandoffBlockedWifiRecoveryToSharedPump
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.presentation.shouldHandoffBlockedWifiRecoveryToSharedPump
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.TrafficRiskDownloadRequest
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadInterruptionRequest
 import android.content.Context
@@ -40,7 +40,7 @@ import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecove
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 
 internal fun GlobalDownloadManager.confirmTrafficRiskDownloadImpl(

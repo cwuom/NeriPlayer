@@ -1,11 +1,15 @@
 package moe.ouom.neriplayer.core.player.download.runtime
+
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.settings.download.normalized
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.playback.shouldAbortDownloadWork
 import moe.ouom.neriplayer.core.player.download.progress.forPublication
 import moe.ouom.neriplayer.core.player.download.source.AudioDownloadSourceResolver
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadProgress
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadStage
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
 
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadExecutionAttemptState
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.HlsResumeState
@@ -23,17 +27,16 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.settings.download.resolveDownloadAudioQualitySelection
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal fun AudioDownloadManager.evictDownloadConnections() {
     runCatching {
@@ -169,9 +172,10 @@ internal fun AudioDownloadManager.publishProgress(
         )
         return
     }
+    val transferGeneration = progress.transferGeneration
     if (
         progress.stage == DownloadStage.TRANSFERRING &&
-            progress.transferGeneration != null
+            transferGeneration != null
     ) {
         transferPermitRegistry.recordProgress(
             ownerKey = DownloadTransferPermitRegistry.ownerKey(
@@ -179,7 +183,7 @@ internal fun AudioDownloadManager.publishProgress(
                 attemptId = progress.attemptId,
                 stableKey = progress.songKey
             ),
-            generation = progress.transferGeneration,
+            generation = transferGeneration,
             absoluteBytes = progress.bytesRead
         )
     }

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PendingDownloadRecoveryCandidate
@@ -22,8 +24,8 @@ import moe.ouom.neriplayer.core.download.manager.batch.pauseDownloadTasksForNetw
 import moe.ouom.neriplayer.core.download.manager.batch.purgeSettledRecoveryEntries
 import moe.ouom.neriplayer.core.download.manager.batch.settlePendingDownloadRecoveryDirectHits
 import moe.ouom.neriplayer.core.download.manager.recovery.resolvePendingDownloadRecoveryPlan
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadBatchIdentity
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.WifiBoundNetworkPolicySnapshot
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadInterruptionRequest
@@ -40,7 +42,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 
 

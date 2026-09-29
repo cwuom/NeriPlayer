@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.component
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
 
 typealias NeriMiniPlayerDefaults = moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
 typealias PlaybackSourceType = moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType

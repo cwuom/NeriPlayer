@@ -10,8 +10,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.filters.SdkSuppress
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor

@@ -14,8 +14,8 @@ import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReadLimitExceededException
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.readBounded
 
 internal object ManagedDownloadCoverAssetStore {

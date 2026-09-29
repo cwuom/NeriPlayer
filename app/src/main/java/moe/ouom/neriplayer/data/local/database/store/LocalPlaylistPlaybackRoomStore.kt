@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.data.local.database.store
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.toEntity
-import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlayBucket
-import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStat
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlayBucket
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 
 internal class LocalPlaylistPlaybackRoomStore(
     private val database: NeriUserDataDatabase

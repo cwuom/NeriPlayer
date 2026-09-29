@@ -5,7 +5,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommand
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class PlayerStartupServiceSyncCoordinator(

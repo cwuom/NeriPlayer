@@ -15,7 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.storage.operation.content.canReclaimEmptyPublicationTarget
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class ManagedDownloadStoragePendingAudioPromotionTest {
     @Test

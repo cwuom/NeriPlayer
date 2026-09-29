@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.listentogether.playback
 import androidx.media3.common.Player
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 
 internal class ListenTogetherListenerStallRecovery(
     private val stallTimeoutMs: Long,

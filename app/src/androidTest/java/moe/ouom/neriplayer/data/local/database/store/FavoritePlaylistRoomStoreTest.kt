@@ -7,7 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test

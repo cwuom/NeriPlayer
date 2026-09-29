@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal const val DEFAULT_REPLACEMENT_BACKUP_NAMESPACE = "migration"
 

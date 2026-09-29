@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.*
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
+
 import moe.ouom.neriplayer.core.download.storage.facade.*
 import moe.ouom.neriplayer.core.download.storage.operation.*
 import moe.ouom.neriplayer.core.download.storage.operation.content.*
@@ -37,10 +39,10 @@ import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_IN
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadStorageCommitWriter
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadTreeFileCommitter
@@ -77,7 +79,7 @@ import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import java.io.File
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap

@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.data.platform.youtube
  * Created: 2026/7/2
  */
 
+import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistTrack
+import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistDetail
 import android.content.Context
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -34,28 +36,6 @@ import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomSt
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
 import java.io.File
 import java.security.MessageDigest
-
-data class CachedYouTubeMusicPlaylistTrack(
-    val videoId: String,
-    val name: String,
-    val artist: String,
-    val albumName: String,
-    val durationMs: Long,
-    val coverUrl: String
-)
-
-data class CachedYouTubeMusicPlaylistDetail(
-    val browseId: String,
-    val playlistId: String,
-    val title: String,
-    val subtitle: String,
-    val creatorName: String? = null,
-    val coverUrl: String,
-    val trackCount: Int,
-    val firstPageSignature: String,
-    val tracks: List<CachedYouTubeMusicPlaylistTrack>,
-    val savedAtMs: Long = System.currentTimeMillis()
-)
 
 class YouTubeMusicPlaylistCacheRepository private constructor(
     private val roomStore: PlatformPlaylistCacheRoomStore,

@@ -13,8 +13,8 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
 import org.junit.Before

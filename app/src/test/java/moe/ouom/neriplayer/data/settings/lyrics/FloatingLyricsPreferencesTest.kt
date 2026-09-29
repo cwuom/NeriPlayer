@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
+import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsRenderStyle
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionX
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionY
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

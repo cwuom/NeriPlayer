@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.listentogether.invite.buildListenTogetherUserUuid
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherNicknameOrNull
-import moe.ouom.neriplayer.data.config.ListenTogetherConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.ListenTogetherConfigSnapshot
 
 private val Context.listenTogetherDataStore by preferencesDataStore("listen_together_prefs")
 

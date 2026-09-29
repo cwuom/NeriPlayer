@@ -22,7 +22,6 @@ val ownedLibraryPaths = listOf(
     ":core:logging",
     ":core:ltw-protocol",
     ":core:lyrics",
-    ":core:model",
     ":core:network",
     ":core:playback-queue",
     ":api:bilibili",
@@ -34,8 +33,10 @@ val ownedLibraryPaths = listOf(
     ":data:bilibili",
     ":data:comments",
     ":data:lyrics",
+    ":data:model",
     ":data:netease",
     ":data:storage",
+    ":data:sync",
     ":data:youtube"
 )
 val libraryCoverageClasses = configurations.create("libraryCoverageClasses") {

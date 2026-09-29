@@ -17,10 +17,18 @@ APP_FAMILIES = (
     "listentogether/session", "ui/screen/tab/settings/component",
     "core/player/queue", "data/sync/merge",
 )
-LIBRARY_OWNED_FAMILIES = ("core/api", "core/lyrics", "core/player/queue")
+LIBRARY_OWNED_FAMILIES = ("core/api", "core/lyrics", "core/player/queue", "data/sync/merge")
 MODULE_LAYERS = {"core": 0, "api": 1, "data": 2}
+MODEL_MODULE = ":data:model"
+# 已写入 Android 保存状态的 Parcelable 全名需要保持稳定
+LEGACY_MODEL_TYPES = {
+    f"moe.ouom.neriplayer.ui.viewmodel.tab.{name}"
+    for name in ("PlaylistSummary", "AlbumSummary", "BiliPlaylist", "BiliPlaylistKind", "YouTubeMusicPlaylist")
+}
+LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
+LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 PACKAGE_OWNERS = {
-    "moe.ouom.neriplayer.core.model": ":core:model",
+    "moe.ouom.neriplayer.data.model": MODEL_MODULE,
     "moe.ouom.neriplayer.core.network": ":core:network",
     "moe.ouom.neriplayer.core.player.queue": ":core:playback-queue",
 }
@@ -87,11 +95,13 @@ def verify(root):
         dependencies = set(PROJECT_REFERENCE.findall(script))
         graph[name] = dependencies & modules
         for dependency in sorted(dependencies):
+            if name == MODEL_MODULE:
+                errors.append(f"{name}: model contracts cannot depend on project implementations: {dependency}")
             if dependency not in declared:
                 errors.append(f"{name}: undeclared dependency {dependency}")
             owner_layer = MODULE_LAYERS[name.split(":")[1]]
             dependency_layer = MODULE_LAYERS.get(dependency.split(":")[1], -1)
-            if dependency == ":app" or dependency_layer > owner_layer:
+            if dependency == ":app" or (dependency != MODEL_MODULE and dependency_layer > owner_layer):
                 errors.append(f"{name}: forbidden upward dependency {dependency}")
         sources = [file for language in ("java", "kotlin")
                    for file in source_files(directory / "src/main" / language)]
@@ -108,15 +118,23 @@ def verify(root):
             label = source.relative_to(root)
             package = PACKAGE.search(text)
             if package:
+                if "model" in package[1].split(".") and name != MODEL_MODULE:
+                    errors.append(f"{label}: model package belongs to {MODEL_MODULE}")
                 for prefix, owner in PACKAGE_OWNERS.items():
                     if (package[1] == prefix or package[1].startswith(prefix + ".")) and name != owner:
-                        errors.append(f"{label}: package belongs to {owner}")
+                        if owner != MODEL_MODULE:
+                            errors.append(f"{label}: package belongs to {owner}")
+            if name == MODEL_MODULE:
+                for imported in re.findall(r'^import (moe\.ouom\.neriplayer\.[\w.]+)', text, re.MULTILINE):
+                    if not imported.startswith("moe.ouom.neriplayer.data.model.") and imported not in LEGACY_MODEL_TYPES:
+                        errors.append(f"{label}: model contract imports implementation {imported}")
             if name.startswith(":data:") and package and package[1].startswith((
                 "moe.ouom.neriplayer.api.", "moe.ouom.neriplayer.core.api."
             )):
                 errors.append(f"{label}: API implementation belongs in an api module")
-            for match in FORBIDDEN_IMPORT.finditer(text):
-                errors.append(f"{label}: application dependency {match.group()}")
+            for imported in re.findall(r'^import ([\w.]+)', text, re.MULTILINE):
+                if FORBIDDEN_IMPORT.match(f"import {imported}") and imported not in LEGACY_MODEL_TYPES:
+                    errors.append(f"{label}: application dependency import {imported}")
             count = len(text.splitlines())
             if count >= 2000:
                 errors.append(f"{label}: {count} lines, must remain below 2000")
@@ -138,6 +156,10 @@ def verify(root):
     for language in ("java", "kotlin"):
         app_sources = root / "app/src/main" / language
         verify_packages(root, app_sources, errors)
+        for source in source_files(app_sources):
+            package = PACKAGE.search(source.read_text())
+            if package and "model" in package[1].split("."):
+                errors.append(f"{source.relative_to(root)}: model package belongs to {MODEL_MODULE}")
         for family in LIBRARY_OWNED_FAMILIES:
             for source in source_files(app_sources / "moe/ouom/neriplayer" / family):
                 errors.append(f"{source.relative_to(root)}: production code belongs in a library module")

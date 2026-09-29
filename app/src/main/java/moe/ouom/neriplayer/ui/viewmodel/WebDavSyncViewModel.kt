@@ -9,14 +9,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
+import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.webdav.WebDavApiClient
 import moe.ouom.neriplayer.data.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncInProgressException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.data.sync.model.SyncResult
+import moe.ouom.neriplayer.data.model.sync.SyncResult
 
 class WebDavSyncViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(WebDavSyncUiState())

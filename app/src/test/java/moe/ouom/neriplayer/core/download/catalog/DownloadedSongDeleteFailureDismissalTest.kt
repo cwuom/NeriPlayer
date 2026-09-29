@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.core.download.catalog
 import android.content.Context
 import android.content.SharedPreferences
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

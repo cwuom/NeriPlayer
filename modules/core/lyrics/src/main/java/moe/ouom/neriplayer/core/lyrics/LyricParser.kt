@@ -21,26 +21,12 @@ package moe.ouom.neriplayer.core.lyrics
  *
  */
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.WordTiming
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
-
-/** 单词/字的时间戳 */
-data class WordTiming(
-    val startTimeMs: Long,
-    val endTimeMs: Long,
-    val charCount: Int = 0
-)
-
-/** 一行歌词 */
-data class LyricEntry(
-    val text: String,
-    val startTimeMs: Long,
-    val endTimeMs: Long,
-    val words: List<WordTiming>? = null,
-    val translation: String? = null
-)
 
 private val NeteaseYrcLineRegex = Regex("""\[\d{1,19},\s*\d{1,19}]\(\d{1,19},""")
 private val TtmlTagRegex = Regex("""<\s*tt(?:\s|>)""", RegexOption.IGNORE_CASE)

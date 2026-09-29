@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirect
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import org.json.JSONObject
 import java.util.Locale
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal fun shouldAbortDownloadWork(
     allDownloadsCancelled: Boolean,

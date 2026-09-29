@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.download.catalog.assembly
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.catalog.fallbackDownloadedSongId
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.withRecoveredRemoteSourceStableKey
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 

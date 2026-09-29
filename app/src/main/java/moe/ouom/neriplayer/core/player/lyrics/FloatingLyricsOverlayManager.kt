@@ -24,13 +24,13 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_LEFT
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_RIGHT
-import moe.ouom.neriplayer.data.settings.lyrics.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsColorHex
-import moe.ouom.neriplayer.data.settings.lyrics.resolveFloatingLyricsPositionX
-import moe.ouom.neriplayer.data.settings.lyrics.resolveFloatingLyricsPositionY
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_LEFT
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_RIGHT
+import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsColorHex
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionX
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionY
 import kotlin.math.roundToInt
 
 @SuppressLint("StaticFieldLeak")

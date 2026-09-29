@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
@@ -28,7 +30,7 @@ import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.operation.content.promoteFileTargetWithoutReplacement
 import moe.ouom.neriplayer.core.download.storage.operation.content.publicationFileIdentity

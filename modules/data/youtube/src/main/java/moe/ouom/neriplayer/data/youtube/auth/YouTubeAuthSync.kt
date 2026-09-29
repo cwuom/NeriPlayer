@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.data.youtube.auth
 
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeCookieSupport
-import moe.ouom.neriplayer.api.youtube.model.auth.parseCookieHeader
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.api.youtube.auth.parseCookieHeader
 
 private val YOUTUBE_AUTH_OBSERVER_IDENTITY_COOKIE_KEYS: List<String> = listOf(
     "SID",

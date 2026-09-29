@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.core.player.media
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
@@ -14,7 +16,7 @@ import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 
 internal object PlaybackMediaItemFactory {
     const val BILI_SOURCE_TAG = SongSourceTags.BILIBILI

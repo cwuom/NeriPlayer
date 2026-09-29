@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
+import moe.ouom.neriplayer.core.player.usb.transport.outputFrameBytes
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

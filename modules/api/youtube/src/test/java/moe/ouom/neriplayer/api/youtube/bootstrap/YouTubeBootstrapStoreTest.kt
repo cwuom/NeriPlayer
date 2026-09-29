@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.api.youtube.bootstrap
 
 import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.api.youtube.model.playback.BOOTSTRAP_SNAPSHOT_VERSION_CURRENT
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.playback.BOOTSTRAP_SNAPSHOT_VERSION_CURRENT
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

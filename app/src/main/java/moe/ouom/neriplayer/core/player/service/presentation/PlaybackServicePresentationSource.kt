@@ -1,10 +1,13 @@
 package moe.ouom.neriplayer.core.player.service.presentation
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import android.content.Context
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
-import moe.ouom.neriplayer.core.player.timer.SleepTimerState
+import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
@@ -12,7 +15,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 
 internal data class PlaybackServicePlaybackSnapshot(

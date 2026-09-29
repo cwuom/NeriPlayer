@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.platform.bili.cache.archive
 
-import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.BiliArchiveContentCache
+import moe.ouom.neriplayer.data.model.bilibili.cache.archive.BiliArchiveContentCache
 
 interface BiliArchiveCacheStore {
     suspend fun read(mediaId: Long, kind: String): BiliArchiveContentCache?

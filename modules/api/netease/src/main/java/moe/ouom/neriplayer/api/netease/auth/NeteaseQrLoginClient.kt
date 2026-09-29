@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.api.netease.auth
 
 import moe.ouom.neriplayer.api.netease.crypto.NeteaseCrypto
-import moe.ouom.neriplayer.api.netease.model.auth.NeteaseQrHttpResult
-import moe.ouom.neriplayer.api.netease.model.auth.NeteaseQrLoginCheckResult
-import moe.ouom.neriplayer.api.netease.model.auth.NeteaseQrLoginSession
-import moe.ouom.neriplayer.api.netease.model.auth.NeteaseYdDeviceSnapshot
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseQrHttpResult
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseQrLoginCheckResult
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseQrLoginSession
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseYdDeviceSnapshot
 
 import android.content.Context
 import moe.ouom.neriplayer.util.network.DynamicProxySelector

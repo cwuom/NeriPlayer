@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.data.playlist.usage
 
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlayBucket
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistHotEntry
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackSyncSnapshot
+
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -12,48 +17,19 @@ import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.data.stats.resolvePlaybackStatsTimeRange
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.merge.policy.LocalPlaylistPlaybackSyncResult
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistUsageStatsMergePolicy
-import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
-import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.LocalPlaylistPlaybackSyncResult
+import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy
+import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackBucket
+import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 import java.util.UUID
-
-data class LocalPlaylistPlayBucket(
-    val dayStartAt: Long,
-    val playCount: Long,
-    val firstPlayedAt: Long = 0L,
-    val lastPlayedAt: Long = 0L,
-    val counterBasePlayCount: Long = 0L,
-    val counterShards: List<SyncPlaybackCounterShard> = emptyList()
-)
-
-data class LocalPlaylistPlaybackStat(
-    val playlistId: Long,
-    val totalPlayCount: Long = 0L,
-    val firstPlayedAt: Long = 0L,
-    val lastPlayedAt: Long = 0L,
-    val counterBasePlayCount: Long = 0L,
-    val counterShards: List<SyncPlaybackCounterShard> = emptyList(),
-    val dailyPlayBuckets: List<LocalPlaylistPlayBucket> = emptyList()
-)
-
-data class LocalPlaylistHotEntry(
-    val playlistId: Long,
-    val playCount: Long
-)
-
-data class LocalPlaylistPlaybackSyncSnapshot(
-    val stats: List<SyncLocalPlaylistPlaybackStat>,
-    val buckets: List<SyncLocalPlaylistPlaybackBucket>
-)
 
 class LocalPlaylistPlaybackStatsRepository private constructor(
     private val app: Context,

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data
 
-import moe.ouom.neriplayer.core.model.auth.SavedCookieAuthState
-import moe.ouom.neriplayer.data.auth.netease.model.NeteaseAuthBundle
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.netease.auth.NeteaseAuthBundle
 import moe.ouom.neriplayer.data.auth.netease.evaluateNeteaseAuthHealth
 import moe.ouom.neriplayer.data.auth.netease.validateAndSanitizeNeteaseCookies
 import org.junit.Assert.assertEquals

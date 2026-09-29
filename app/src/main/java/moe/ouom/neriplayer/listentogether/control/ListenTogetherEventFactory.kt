@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.listentogether.control
 
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommand
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherPlaybackCommandShouldPlay
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherLinkReadyState
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
@@ -15,11 +15,11 @@ import moe.ouom.neriplayer.listentogether.playback.mergeCurrentTrack
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
 import moe.ouom.neriplayer.listentogether.playback.wrapListenTogetherSingleTrackRepeatPosition
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.LISTEN_TOGETHER_QUEUE_MUTATION_SCHEMA_VERSION
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.message.queue.LISTEN_TOGETHER_QUEUE_MUTATION_SCHEMA_VERSION
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.player.url.currentListenTogetherShareableStreamUrls
 import java.util.UUID
@@ -440,14 +440,15 @@ internal class ListenTogetherEventFactory(
     fun buildEventForPlaybackCommand(
         command: PlaybackCommand
     ): ListenTogetherEvent? {
+        val commandQueue = command.queue
         val commandSnapshot = resolveListenTogetherPlaybackCommandSnapshot(
-            commandQueue = command.queue,
+            commandQueue = commandQueue,
             commandPositionMs = command.positionMs,
             currentQueue = PlayerManager.currentQueueFlow.value,
             currentPositionMs = PlayerManager.playbackPositionFlow.value
         )
-        val queue = if (command.type == "SET_QUEUE" && command.queue != null) {
-            command.queue
+        val queue = if (command.type == "SET_QUEUE" && commandQueue != null) {
+            commandQueue
         } else {
             commandSnapshot.queue
         }

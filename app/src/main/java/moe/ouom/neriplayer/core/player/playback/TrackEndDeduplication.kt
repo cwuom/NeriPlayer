@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.core.player.playback
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 

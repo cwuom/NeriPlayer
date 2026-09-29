@@ -10,7 +10,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 

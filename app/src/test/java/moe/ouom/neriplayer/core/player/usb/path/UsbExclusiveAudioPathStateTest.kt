@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.path
 
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
+
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.comment
 
-import moe.ouom.neriplayer.core.comment.model.CommentPage
-import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentPage
+import moe.ouom.neriplayer.data.model.comments.CommentSort
 import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

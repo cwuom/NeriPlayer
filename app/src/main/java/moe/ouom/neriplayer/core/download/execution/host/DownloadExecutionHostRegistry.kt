@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution.host
 
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
+
 import android.content.Context
 
 /** 统一持有下载宿主实例，避免不同入口各自创建泵 */

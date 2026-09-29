@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.api.lyrics.client
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlLyrics
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlLyrics
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.awaitResponse
 import okhttp3.HttpUrl

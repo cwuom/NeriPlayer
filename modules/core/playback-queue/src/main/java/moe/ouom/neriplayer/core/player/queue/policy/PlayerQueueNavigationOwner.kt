@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.core.player.queue.policy
 
 import moe.ouom.neriplayer.core.player.queue.identity.QueueSongIdentity
-import moe.ouom.neriplayer.core.player.queue.model.ListenTogetherTrackFinishPlan
-import moe.ouom.neriplayer.core.player.queue.model.PlaybackFailureAdvanceAction
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.queue.model.QueueNavigationStep
-import moe.ouom.neriplayer.core.player.queue.model.QueueTrackCompletion
-import moe.ouom.neriplayer.core.player.queue.model.RemotePlaybackModeUpdate
+import moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan
+import moe.ouom.neriplayer.data.model.playback.queue.PlaybackFailureAdvanceAction
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.queue.QueueNavigationStep
+import moe.ouom.neriplayer.data.model.playback.queue.QueueTrackCompletion
+import moe.ouom.neriplayer.data.model.playback.queue.RemotePlaybackModeUpdate
 import moe.ouom.neriplayer.data.model.SongItem
 
 object PlayerQueueNavigationOwner {

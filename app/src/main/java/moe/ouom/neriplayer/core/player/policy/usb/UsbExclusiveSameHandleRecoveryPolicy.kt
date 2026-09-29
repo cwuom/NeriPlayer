@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveErrorCode
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveFeedbackMode
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveErrorCode
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveFeedbackMode
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 
 internal data class UsbExclusiveSameHandleRecoveryDecision(
     val shouldAttempt: Boolean,

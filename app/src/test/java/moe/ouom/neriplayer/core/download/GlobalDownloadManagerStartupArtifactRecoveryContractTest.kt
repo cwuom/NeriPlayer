@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapsho
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /**
  * 固定启动交接行为，避免缓慢的 SAF 恢复阻塞首次目录发布

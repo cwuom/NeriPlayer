@@ -9,8 +9,8 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSinkRoutePort
 import moe.ouom.neriplayer.data.model.SongItem

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component.usb
 
+import moe.ouom.neriplayer.core.player.audio.icon
+
 import android.media.AudioFormat
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -15,9 +17,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 
 @Composable
 internal fun resolveUsbStatus(

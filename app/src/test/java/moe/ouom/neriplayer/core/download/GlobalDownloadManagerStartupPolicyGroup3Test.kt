@@ -1,18 +1,22 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.applyCancelledStatus
-import moe.ouom.neriplayer.core.download.model.applyWaitingNetworkStatus
-import moe.ouom.neriplayer.core.download.model.countPendingDownloadTasks
-import moe.ouom.neriplayer.core.download.model.hasActiveDownloadOperations
-import moe.ouom.neriplayer.core.download.model.hasActiveDownloadTasks
-import moe.ouom.neriplayer.core.download.model.isActiveDownloadAttempt
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskFinalizing
-import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
-import moe.ouom.neriplayer.core.download.model.shouldHideRemoteDownloadAction
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.presentation.applyCancelledStatus
+import moe.ouom.neriplayer.core.download.presentation.applyWaitingNetworkStatus
+import moe.ouom.neriplayer.core.download.presentation.countPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.hasActiveDownloadOperations
+import moe.ouom.neriplayer.core.download.presentation.hasActiveDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.isActiveDownloadAttempt
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskFinalizing
+import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskMutation
+import moe.ouom.neriplayer.core.download.presentation.shouldHideRemoteDownloadAction
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -25,7 +29,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 class GlobalDownloadManagerStartupPolicyGroup3Test : GlobalDownloadManagerStartupPolicyTestSupport() {
@@ -537,14 +541,14 @@ class GlobalDownloadManagerStartupPolicyGroup3Test : GlobalDownloadManagerStartu
                 durationMs = 1_000L,
                 coverUrl = null
             ),
-            progress = AudioDownloadManager.DownloadProgress(
+            progress = DownloadProgress(
                 songKey = "1|Album|",
                 songId = 1L,
                 fileName = "song.flac",
                 bytesRead = 10L,
                 totalBytes = 10L,
                 speedBytesPerSec = 0L,
-                stage = AudioDownloadManager.DownloadStage.FINALIZING
+                stage = DownloadStage.FINALIZING
             ),
             status = DownloadStatus.DOWNLOADING
         )

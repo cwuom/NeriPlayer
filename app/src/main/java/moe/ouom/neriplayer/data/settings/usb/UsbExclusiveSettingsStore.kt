@@ -1,8 +1,18 @@
 package moe.ouom.neriplayer.data.settings.usb
 
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBufferProfile
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveDeviceKey
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveForegroundBufferMs
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveVolumeRiskThresholdDbfs
+
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.dataStore
-import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.playback.updatePlaybackPreferenceSnapshot
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences

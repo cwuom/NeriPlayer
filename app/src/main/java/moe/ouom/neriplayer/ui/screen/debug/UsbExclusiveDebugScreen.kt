@@ -43,9 +43,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.debug.UsbAudioOutputDebugInfo
+import moe.ouom.neriplayer.data.model.playback.usb.UsbAudioOutputDebugInfo
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
-import moe.ouom.neriplayer.core.player.debug.UsbHostDeviceDebugInfo
+import moe.ouom.neriplayer.data.model.playback.usb.UsbHostDeviceDebugInfo
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.core.logging.NPLogger

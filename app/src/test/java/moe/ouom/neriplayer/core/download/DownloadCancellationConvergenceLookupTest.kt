@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.manager.batch.loadCancellationConvergenceRequests
 import moe.ouom.neriplayer.data.model.SongItem

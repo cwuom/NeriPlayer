@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether.mapping
 
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private const val MAX_NETEASE_STREAM_URL_CANDIDATES = 3

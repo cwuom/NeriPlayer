@@ -6,7 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.lyrics.client.AmllTtmlClient
 import moe.ouom.neriplayer.api.search.client.QQMusicSearchApi
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request

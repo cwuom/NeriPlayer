@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.data.model
 
-import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.resolveDisplayCoverUrl
+import moe.ouom.neriplayer.data.local.media.shouldResolveLocalCoverFallback
+
+import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule

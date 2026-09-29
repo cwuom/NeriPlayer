@@ -54,10 +54,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentSource
-import moe.ouom.neriplayer.core.comment.model.CommentSort
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentSource
+import moe.ouom.neriplayer.data.model.comments.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -317,7 +317,7 @@ internal fun CommentSheetContent(
                     val message = stringResource(
                         when {
                             ui.likeError == CommentError.PERMISSION -> R.string.comment_like_login_required
-                            ui.source?.platform == moe.ouom.neriplayer.core.comment.model.CommentPlatform.NETEASE &&
+                            ui.source?.platform == moe.ouom.neriplayer.data.model.comments.CommentPlatform.NETEASE &&
                                 ui.likeErrorCode == 250 -> R.string.comment_like_verification
                             else -> R.string.comment_like_failed
                         }

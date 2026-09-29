@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution.scheduling
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
 

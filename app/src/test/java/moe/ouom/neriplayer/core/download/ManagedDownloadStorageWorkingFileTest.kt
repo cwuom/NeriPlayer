@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadRecoveryFiles
 import java.io.File
 import java.util.concurrent.TimeUnit
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary

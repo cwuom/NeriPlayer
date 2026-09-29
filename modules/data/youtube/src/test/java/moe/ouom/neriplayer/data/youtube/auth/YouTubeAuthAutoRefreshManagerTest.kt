@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.data.youtube.auth
 
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
 import android.content.Context
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthHealth
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

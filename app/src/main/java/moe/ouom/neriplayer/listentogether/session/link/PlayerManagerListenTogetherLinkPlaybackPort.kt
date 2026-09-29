@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether.session.link
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.url.ShareableListenTogetherStreamResolution
 import moe.ouom.neriplayer.core.player.url.hasUsableListenTogetherLocalDirectStream
@@ -9,7 +11,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.listentogether.playback.normalizedDirectStreamUrl
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 
 internal object PlayerManagerListenTogetherLinkPlaybackPort : ListenTogetherLinkPlaybackPort {
     override fun currentSong(): SongItem? = PlayerManager.currentSongFlow.value

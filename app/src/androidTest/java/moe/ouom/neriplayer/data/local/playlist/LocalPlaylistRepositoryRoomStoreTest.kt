@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken

@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.data.storage.source
 
 import java.io.File
-import moe.ouom.neriplayer.data.storage.model.StorageCacheKind
-import moe.ouom.neriplayer.data.storage.model.StorageUsageItemKind
+import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
+import moe.ouom.neriplayer.data.model.storage.StorageUsageItemKind
 
 const val LYRICS_CACHE_DIRECTORY_NAME = "lyrics_cache"
 

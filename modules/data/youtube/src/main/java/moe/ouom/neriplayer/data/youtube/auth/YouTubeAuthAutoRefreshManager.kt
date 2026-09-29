@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.youtube.auth
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.CookieManager
@@ -19,13 +22,13 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeAuthRefresher
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthAutoRefreshResult
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthHealth
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeCookieSupport
-import moe.ouom.neriplayer.api.youtube.model.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthAutoRefreshResult
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
+import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.api.youtube.auth.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.api.youtube.transport.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.api.youtube.web.installYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.api.youtube.web.removeYouTubeBackgroundWebViewGuard
@@ -34,7 +37,7 @@ import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.youtube.auth.web.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.youtube.auth.web.collectYouTubeWebCookies
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
-import moe.ouom.neriplayer.data.youtube.model.auth.YouTubeCookieRotationOutcome
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationOutcome
 import org.json.JSONObject
 import org.json.JSONTokener
 

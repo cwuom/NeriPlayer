@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.comment
 
-import moe.ouom.neriplayer.core.comment.model.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentError
 
 /**
  * 平台评论接口返回的业务错误 (HTTP 成功但业务 code != 0)。

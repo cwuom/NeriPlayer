@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.comment.mapper
 
 import moe.ouom.neriplayer.core.comment.CommentApiException
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

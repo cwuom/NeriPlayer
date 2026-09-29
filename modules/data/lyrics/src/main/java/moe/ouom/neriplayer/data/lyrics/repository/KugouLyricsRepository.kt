@@ -4,9 +4,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.api.lyrics.client.KugouLyricsClient
-import moe.ouom.neriplayer.api.lyrics.model.KugouLyricCandidate
-import moe.ouom.neriplayer.api.lyrics.model.KugouLyricsPayload
-import moe.ouom.neriplayer.api.lyrics.model.KugouSongSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricCandidate
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricsPayload
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouSongSearchResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 class KugouLyricsRepository(private val client: KugouLyricsClient) {

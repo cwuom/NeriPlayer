@@ -6,7 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshSideEffectGate
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseMatchedLocalSource

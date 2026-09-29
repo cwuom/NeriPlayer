@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertEquals
@@ -10,7 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class DownloadedSongBuilderCoverPolicyTest {
 

@@ -1,7 +1,31 @@
 package moe.ouom.neriplayer.data.settings.usb
 
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+import moe.ouom.neriplayer.data.model.settings.usb.MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBufferProfile
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveDeviceKey
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveForegroundBufferMs
+import moe.ouom.neriplayer.data.settings.playback.sanitized
+
 import moe.ouom.neriplayer.data.settings.SettingsKeys
-import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.playback.toPlaybackPreferenceSnapshot
 import androidx.datastore.preferences.core.preferencesOf
 import org.junit.Assert.assertEquals

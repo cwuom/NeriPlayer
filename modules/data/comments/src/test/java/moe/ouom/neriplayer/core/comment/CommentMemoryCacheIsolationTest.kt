@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.comment
 
-import moe.ouom.neriplayer.core.comment.model.CommentPage
+import moe.ouom.neriplayer.data.model.comments.CommentPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

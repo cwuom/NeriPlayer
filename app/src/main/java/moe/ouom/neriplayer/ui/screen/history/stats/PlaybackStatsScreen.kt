@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatBucketsForPeriod
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatsCompatForPeriod
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem

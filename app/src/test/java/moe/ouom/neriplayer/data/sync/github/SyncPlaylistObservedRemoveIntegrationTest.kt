@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.data.sync.github
 
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistDeletionPolicy
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistSongMergePolicy
+import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
+import moe.ouom.neriplayer.data.sync.merge.song.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
-import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

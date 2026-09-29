@@ -8,8 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongAddResult
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongAddResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar

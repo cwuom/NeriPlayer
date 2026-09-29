@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.recovery
 
+import moe.ouom.neriplayer.core.player.usb.transport.outputFrameBytes
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -14,8 +16,8 @@ import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveForegroundR
 import moe.ouom.neriplayer.core.player.policy.usb.shouldApplyActiveUsbBufferResize
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRestoreUsbExclusiveForegroundPlaybackIntent
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRetryUsbExclusiveDeferredRuntimeRefresh
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import kotlin.time.Duration.Companion.milliseconds
 

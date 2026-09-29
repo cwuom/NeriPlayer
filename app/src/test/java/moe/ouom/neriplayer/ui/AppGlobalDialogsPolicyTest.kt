@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.ui
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.ui.dialog.formatTrafficRiskDownloadMessage
 import moe.ouom.neriplayer.ui.dialog.trafficRiskNetworkLabelResource
 import org.junit.Assert.assertEquals

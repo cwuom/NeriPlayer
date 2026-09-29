@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.session.state
 
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 
 internal fun latestListenTogetherAcceptedRoomVersion(
     lastAppliedRoomVersion: Long,

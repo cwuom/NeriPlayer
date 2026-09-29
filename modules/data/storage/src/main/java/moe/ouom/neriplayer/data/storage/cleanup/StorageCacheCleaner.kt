@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.data.storage.cleanup
 
 import java.io.File
-import moe.ouom.neriplayer.data.storage.model.ExtraCacheClearResult
-import moe.ouom.neriplayer.data.storage.model.FileStats
-import moe.ouom.neriplayer.data.storage.model.StorageCacheClearOptions
-import moe.ouom.neriplayer.data.storage.model.StorageCacheKind
+import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
+import moe.ouom.neriplayer.data.model.storage.FileStats
+import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
 import moe.ouom.neriplayer.data.storage.policy.storageScanOrDefault
 import moe.ouom.neriplayer.data.storage.source.StorageCacheFileAccess
 import moe.ouom.neriplayer.data.storage.source.StorageLocations

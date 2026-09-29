@@ -8,11 +8,11 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.SongMetad
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.api.netease.client.NeteaseClient
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
-import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
+import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 

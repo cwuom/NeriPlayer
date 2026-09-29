@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.model
 
+import moe.ouom.neriplayer.data.model.playback.RestoredPlaybackState
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test

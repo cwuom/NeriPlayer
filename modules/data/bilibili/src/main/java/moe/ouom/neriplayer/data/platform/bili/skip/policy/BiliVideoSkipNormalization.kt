@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.policy
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipDraft
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
-import moe.ouom.neriplayer.data.platform.bili.skip.model.MAX_BILI_VIDEO_SKIP_DRAFT_TEXT_LENGTH
-import moe.ouom.neriplayer.data.platform.bili.skip.model.MAX_BILI_VIDEO_SKIP_INTERVALS
-import moe.ouom.neriplayer.data.platform.bili.skip.model.MAX_BILI_VIDEO_SKIP_RULES
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.MAX_BILI_VIDEO_SKIP_DRAFT_TEXT_LENGTH
+import moe.ouom.neriplayer.data.model.bilibili.skip.MAX_BILI_VIDEO_SKIP_INTERVALS
+import moe.ouom.neriplayer.data.model.bilibili.skip.MAX_BILI_VIDEO_SKIP_RULES
 
 fun normalizeBiliVideoSkipIntervals(
     intervals: Iterable<BiliVideoSkipInterval>,

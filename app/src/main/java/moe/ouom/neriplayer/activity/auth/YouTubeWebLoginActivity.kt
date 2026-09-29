@@ -20,6 +20,8 @@ package moe.ouom.neriplayer.activity.auth
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.api.youtube.auth.toJson
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
@@ -62,14 +64,14 @@ import moe.ouom.neriplayer.data.youtube.auth.web.collectYouTubeWebCookies
 import moe.ouom.neriplayer.data.youtube.auth.hasMeaningfulYouTubeAuthChange
 import moe.ouom.neriplayer.data.youtube.auth.mergeYouTubeAuthBundle
 import moe.ouom.neriplayer.data.youtube.auth.preserveMatchingYouTubeAuthCookies
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.youtube.model.auth.YouTubeBootstrapSessionState
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeBootstrapSessionState
+import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeWebLoginVerifier
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.evaluateYouTubeAuthHealth
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.api.youtube.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.api.youtube.transport.YOUTUBE_DEFAULT_WEB_USER_AGENT
 import moe.ouom.neriplayer.api.youtube.transport.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.api.youtube.transport.resolveYouTubeMobileWebLoginUserAgent

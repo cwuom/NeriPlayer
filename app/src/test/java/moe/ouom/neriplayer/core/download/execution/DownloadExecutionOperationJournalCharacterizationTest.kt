@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationJournal
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionPumpCursor

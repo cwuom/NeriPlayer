@@ -8,9 +8,9 @@ import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.web.clearAllWebViewLoginState
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.settings.bootstrap.BootstrapSettingsSnapshot
-import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.bootstrap.BootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot

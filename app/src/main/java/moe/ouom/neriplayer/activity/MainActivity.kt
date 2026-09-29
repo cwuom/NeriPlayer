@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.activity
  * Created: 2025/8/8
  */
 
-
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Context
@@ -114,7 +114,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudPlaybackRisk
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
@@ -141,11 +141,11 @@ import moe.ouom.neriplayer.core.startup.theme.StartupNightModeSyncPlanner
 import moe.ouom.neriplayer.core.startup.theme.StartupResourceNightMode
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeSnapshotProvider
-import moe.ouom.neriplayer.listentogether.invite.ListenTogetherInvite
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
-import moe.ouom.neriplayer.navigation.LauncherShortcutRequest
+import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutRequest
 import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.dialog.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
@@ -732,7 +732,7 @@ class MainActivity : ComponentActivity() {
                                             joiningInvite -> getString(R.string.listen_together_status_joining)
                                             !listenTogetherStatus.isNullOrBlank() -> listenTogetherStatus
                                             isListenTogetherRoomActive &&
-                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState.CONNECTING ->
+                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState.CONNECTING ->
                                                 getString(R.string.listen_together_status_syncing)
 
                                             isListenTogetherRoomActive -> getString(R.string.listen_together_status_active)
@@ -778,7 +778,7 @@ class MainActivity : ComponentActivity() {
                                             updateListenTogetherStatus(
                                                 when {
                                                     listenTogetherSessionState.roomId.isNullOrBlank() -> null
-                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState.CONNECTING ->
+                                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState.CONNECTING ->
                                                         getString(R.string.listen_together_status_syncing)
 
                                                     else -> getString(R.string.listen_together_status_active)

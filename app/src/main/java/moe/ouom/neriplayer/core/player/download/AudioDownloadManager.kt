@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.core.player.download
  * Created: 2025/8/20
  */
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+import moe.ouom.neriplayer.data.model.download.BatchDownloadProgress
 import moe.ouom.neriplayer.core.player.download.batch.AudioDownloadBatchCoordinator
 import moe.ouom.neriplayer.core.player.download.cover.AudioCachedCoverReference
 import moe.ouom.neriplayer.core.player.download.cover.AudioDownloadCoverCoordinator
@@ -44,7 +47,7 @@ import moe.ouom.neriplayer.core.player.download.facade.releaseCompletedAudioRefe
 import moe.ouom.neriplayer.core.player.download.facade.resolveBatchDownloadWorkerCountImpl
 import moe.ouom.neriplayer.core.player.download.facade.shouldFetchRomanizedLyricForDownloadImpl
 import moe.ouom.neriplayer.core.player.download.lyrics.AudioDownloadLyricsCoordinator
-import moe.ouom.neriplayer.core.player.download.network.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.network.DownloadNetworkPolicyTracker
 import moe.ouom.neriplayer.core.player.download.network.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.network.newDownloadTrafficAccumulator
@@ -92,8 +95,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.policy.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -103,9 +106,9 @@ import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirector
 import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.api.youtube.transport.isTrustedYouTubeHost
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import okhttp3.Dispatcher
 import okhttp3.Request
@@ -612,8 +615,6 @@ object AudioDownloadManager {
     @Volatile
     internal var lastRecoveryOpportunityAtMs = 0L
 
-
-
     @Volatile
     internal var networkRecoveryMonitorRegistered = false
 
@@ -630,22 +631,9 @@ object AudioDownloadManager {
     internal fun currentDownloadNetworkGeneration(): Long =
         downloadNetworkPolicyTracker.currentGeneration()
 
-
-
     fun initialize(context: Context) {
         return this.initializeImpl(context)
     }
-
-
-
-
-
-
-
-
-
-
-
 
     internal data class ResolvedDownloadSource(
         val url: String,
@@ -675,76 +663,6 @@ object AudioDownloadManager {
                 append('_')
                 append(if (requireDirect) "direct" else "playable")
             }
-    }
-
-    enum class DownloadStage {
-        WAITING_HOST,
-        WAITING_DELETE_CLEANUP,
-        RESOLVING_SOURCE,
-        PREPARING_STORAGE,
-        TRANSFERRING,
-        VERIFYING_AUDIO,
-        COMMITTING_CORE,
-        ASSETS_ENRICHING,
-        WAITING_RETRY,
-        FINALIZING
-    }
-
-    data class DownloadProgress(
-        val songKey: String,
-        val songId: Long,
-        val fileName: String,
-        val bytesRead: Long,
-        val totalBytes: Long,
-        val speedBytesPerSec: Long,
-        val stage: DownloadStage = DownloadStage.TRANSFERRING,
-        val attemptId: Long? = null,
-        val operationId: String? = null,
-        /** 当前传输 permit 的代次，拒绝旧 attempt 的迟到进度回调 */
-        val transferGeneration: Long? = null,
-        /** 已完成 flush 和 fsync 的前缀，只有这部分可以写入恢复检查点 */
-        val durableBytesRead: Long? = null,
-        /** 同一进程内的发布顺序，防止补偿快照覆盖较新的增量事件 */
-        val publicationSequence: Long = 0L
-    ) {
-        val percentage: Int
-            get() = when {
-                stage == DownloadStage.FINALIZING -> 100
-                totalBytes <= 0L -> -1
-                bytesRead >= totalBytes -> 100
-                else -> ((bytesRead * 100) / totalBytes).toInt().coerceIn(0, 99)
-            }
-    }
-
-    data class BatchDownloadProgress(
-        val totalSongs: Int,
-        val completedSongs: Int,
-        val currentSong: String,
-        val currentProgress: DownloadProgress?,
-        val currentSongIndex: Int = 0,
-        val aggregateProgressFraction: Float? = null
-    ) {
-        val percentage: Int get() = if (totalSongs > 0) {
-            aggregateProgressFraction?.let { progressFraction ->
-                if (completedSongs >= totalSongs) {
-                    100
-                } else {
-                    (progressFraction.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 99)
-                }
-            } ?: run {
-                val baseProgress = (completedSongs * 100.0 / totalSongs)
-                val currentSongProgress = currentProgress?.let { progress ->
-                    if (progress.totalBytes > 0) {
-                        (progress.bytesRead.toDouble() / progress.totalBytes) / totalSongs
-                    } else 0.0
-                } ?: 0.0
-                if (completedSongs >= totalSongs) {
-                    100
-                } else {
-                    (baseProgress + currentSongProgress * 100).toInt().coerceIn(0, 99)
-                }
-            }
-        } else 0
     }
 
     internal data class PublishedProgressState(
@@ -778,7 +696,6 @@ object AudioDownloadManager {
         previous: DownloadProgress?,
         incoming: DownloadProgress
     ): DownloadProgress = AudioDownloadProgressPolicy.mergeLatestProgress(previous, incoming)
-
 
     internal data class DownloadedSidecarReferences(
         val coverReference: String? = null,
@@ -1053,15 +970,9 @@ object AudioDownloadManager {
     ): List<YouTubeDownloadResolveAttempt> =
         AudioDownloadTransferPolicy.resolveYouTubeDownloadResolveAttempts(forceRefresh)
 
-
     fun notifyRecoveryOpportunity(reason: String) {
         return this.notifyRecoveryOpportunityImpl(reason)
     }
-
-
-
-
-
 
     internal fun buildHlsPlaylistFingerprint(
         segmentUrls: List<String>,
@@ -1085,41 +996,12 @@ object AudioDownloadManager {
         return this.isHlsResumeStateCompatibleImpl(state, actualFileLength, actualPrefixSha256, segmentCount)
     }
 
-
     internal fun isHlsResumeStateOwnedByOperation(
         state: HlsResumeState,
         operationId: String
     ): Boolean {
         return hlsResumeStore.isOwnedByOperation(state, operationId)
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     internal fun latestProgressForSong(
         songKey: String,
@@ -1146,10 +1028,7 @@ object AudioDownloadManager {
 
     internal fun clearAllPublishedProgress() = progressStore.clearAllPublished()
 
-
-
     /** 网络仍在读取但暂时没有形成进度事件时，单独刷新传输看门狗心跳 */
-
 
     internal fun startBatchSession(): Long = progressStore.startBatchSession()
 
@@ -1166,26 +1045,10 @@ object AudioDownloadManager {
         progress: BatchDownloadProgress?
     ) = progressStore.updateBatchProgressForSession(batchSessionId, progress)
 
-
-
-
-
     internal fun claimReferenceOwnershipForEnrichment(
         songKey: String,
         operationId: String
     ): Boolean = operationRegistry.claimReferenceOwnershipForEnrichment(songKey, operationId)
-
-
-
-
-
-
-
-
-
-
-
-
 
     /** 只取消指定 operation 的网络调用，保留同一歌曲的新代次 */
     internal fun cancelOperationDownload(
@@ -1195,7 +1058,6 @@ object AudioDownloadManager {
         return this.cancelOperationDownloadImpl(songKey, operationIds)
     }
 
-
     /** 在系统取消协程前建立保留标记，避免取消异常先删除可续传文件 */
     internal fun pauseOperationDownloadForExecutionHost(
         operationId: String,
@@ -1203,7 +1065,6 @@ object AudioDownloadManager {
     ): Boolean {
         return this.pauseOperationDownloadForExecutionHostImpl(operationId, durableState)
     }
-
 
     internal fun isOperationPausedForExecutionHost(operationId: String): Boolean {
         val normalizedId = operationId.trim()
@@ -1243,8 +1104,6 @@ object AudioDownloadManager {
         cancelYouTubeCalls(snapshotActiveCalls())
     }
 
-
-
     internal fun consumeCompletedAudioReference(
         songKey: String
     ): ManagedDownloadStorage.StoredEntry? =
@@ -1257,7 +1116,6 @@ object AudioDownloadManager {
     ) {
         return this.releaseCompletedAudioReferenceImpl(songKey, expectedAudio, retainForPlayback)
     }
-
 
     /** 迁移或切换下载根后，主动丢弃仍指向旧目录的内存桥接引用 */
     internal fun invalidateCompletedAudioReference(song: SongItem) {
@@ -1332,8 +1190,6 @@ object AudioDownloadManager {
         completedAudioReferenceRegistry.rememberCompletedAudioReference(song, storedAudio)
     }
 
-
-
     internal fun rememberPartialSidecarReferences(
         songKey: String,
         sidecarReferences: DownloadedSidecarReferences,
@@ -1379,11 +1235,6 @@ object AudioDownloadManager {
         incoming
     )
 
-
-
-
-
-
     internal fun publishStageProgress(
         songId: Long,
         songKey: String,
@@ -1396,15 +1247,6 @@ object AudioDownloadManager {
     ) {
         return this.publishStageProgressImpl(songId, songKey, fileName, stage, attemptId, operationId, bytesRead, totalBytes)
     }
-
-
-
-
-
-
-
-
-
 
     suspend fun downloadSong(
         context: Context,
@@ -1446,28 +1288,7 @@ object AudioDownloadManager {
         )
     }
 
-
-
-
-
-
     /** 统一处理取消、空间等待和普通失败，避免下载入口生成过大的协程状态机 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     internal suspend fun cleanupCancelledPendingArtifactsWithLease(
         context: Context,
@@ -1523,10 +1344,6 @@ object AudioDownloadManager {
             deleteLease.close()
         }
     }
-
-
-
-
 
     internal suspend fun downloadSidecarsForCompletedAudio(
         context: Context,
@@ -1634,11 +1451,6 @@ object AudioDownloadManager {
      * 网络 I/O 结束时只关闭 active 标记，permit 本身由调用方的 Core Commit 继续持有
      */
 
-
-
-
-
-
     internal suspend fun cacheCover(
         context: Context,
         song: SongItem,
@@ -1676,8 +1488,6 @@ object AudioDownloadManager {
         maxResponseBytes = MAX_COVER_RESPONSE_BYTES
     )
 
-
-
     /** 批量下载歌单中的所有歌曲 */
     suspend fun downloadPlaylist(
         context: Context,
@@ -1706,23 +1516,19 @@ object AudioDownloadManager {
         return this.cancelSongDownloadImpl(songKey)
     }
 
-
     /** 取消下载 */
     fun cancelDownload() {
         return this.cancelDownloadImpl()
     }
 
-
     fun pauseDownloadsForNetworkPolicy(songKeys: Collection<String>) {
         return this.pauseDownloadsForNetworkPolicyImpl(songKeys)
     }
-
 
     /** 系统执行宿主被外部停止时保留工作文件，供后续恢复 */
     fun pauseSongDownloadForExecutionHost(songKey: String) {
         return this.pauseSongDownloadForExecutionHostImpl(songKey)
     }
-
 
     fun isDownloadPausedForNetworkPolicy(songKey: String): Boolean {
         return operationRegistry.isNetworkPolicyPaused(songKey)
@@ -1757,8 +1563,6 @@ object AudioDownloadManager {
     internal fun isForbiddenYouTubeDownloadFailure(error: Throwable): Boolean =
         AudioDownloadTransferPolicy.isForbiddenYouTubeDownloadFailure(error)
 
-
-
     internal fun clampBatchDownloadParallelism(requestedParallelism: Int): Int {
         return normalizeDownloadParallelism(requestedParallelism)
     }
@@ -1770,14 +1574,12 @@ object AudioDownloadManager {
         return this.onConfiguredDownloadParallelismChangedImpl(configuredValue, configurationRevision)
     }
 
-
     internal fun resolveBatchDownloadWorkerCount(
         songCount: Int,
         requestedParallelism: Int
     ): Int {
         return this.resolveBatchDownloadWorkerCountImpl(songCount, requestedParallelism)
     }
-
 
     internal suspend fun findFastCachedManagedDownloadForStart(
         context: Context,
@@ -1799,9 +1601,7 @@ object AudioDownloadManager {
         return this.shouldFetchRomanizedLyricForDownloadImpl(shouldFetchPrimaryLyric, shouldFetchTranslatedLyric)
     }
 
-
     /** 下载歌词文件 */
-
 
     fun getLocalPlaybackUri(context: Context, song: SongItem): String? =
         playbackCoordinator.getLocalPlaybackUri(context, song)
@@ -1876,7 +1676,6 @@ object AudioDownloadManager {
         return this.getLyricsBundleFastImpl(context, song, allowColdSafProbe)
     }
 
-
     fun getTranslatedLyricContent(context: Context, song: SongItem): String? {
         return ManagedDownloadStorage.readLyrics(context, song, translated = true)
     }
@@ -1947,7 +1746,6 @@ object AudioDownloadManager {
         return this.copyHlsSegmentImpl(source, sink, trafficAccumulator, prefixDigest, expectedRawBytes, onNetworkActivity)
     }
 
-
     /** 单线程下载 */
     internal suspend fun singleThreadDownload(
         client: okhttp3.OkHttpClient,
@@ -1972,7 +1770,6 @@ object AudioDownloadManager {
         operationId = operationId,
         transferGeneration = transferGeneration
     )
-
 
 }
 

@@ -1,9 +1,12 @@
 package moe.ouom.neriplayer.core.download.policy
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.runtime.POST_CORE_DOWNLOAD_OPERATION_STATES
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -19,7 +22,7 @@ import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.clear.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
@@ -28,8 +31,7 @@ import moe.ouom.neriplayer.core.player.download.playback.isFormalManagedAudioRef
 import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import kotlin.time.Duration.Companion.milliseconds
 
 internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int): Boolean {
@@ -474,7 +476,7 @@ internal fun resolveRecoveredDownloadProgress(
 
 internal data class RecoveredDownloadTaskPresentation(
     val status: DownloadStatus,
-    val stage: AudioDownloadManager.DownloadStage
+    val stage: DownloadStage
 )
 
 internal fun recoveredDownloadTaskPresentation(
@@ -491,7 +493,7 @@ internal fun recoveredDownloadTaskPresentation(
     if (operationState == "INVALID" || operationState == "METADATA_ACTION_REQUIRED") {
         return RecoveredDownloadTaskPresentation(
             status = DownloadStatus.FAILED,
-            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            stage = DownloadStage.WAITING_RETRY
         )
     }
     val normalizedErrorCode = lastErrorCode?.trim()?.takeIf(String::isNotBlank)
@@ -502,7 +504,7 @@ internal fun recoveredDownloadTaskPresentation(
     if (waitsForNetwork) {
         return RecoveredDownloadTaskPresentation(
             status = DownloadStatus.WAITING_NETWORK,
-            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            stage = DownloadStage.WAITING_RETRY
         )
     }
     if (operationState in POST_CORE_DOWNLOAD_OPERATION_STATES) {
@@ -510,9 +512,9 @@ internal fun recoveredDownloadTaskPresentation(
         return RecoveredDownloadTaskPresentation(
             status = DownloadStatus.QUEUED,
             stage = if (nextRetryAtMs?.let { it > nowMs } == true) {
-                AudioDownloadManager.DownloadStage.WAITING_RETRY
+                DownloadStage.WAITING_RETRY
             } else {
-                AudioDownloadManager.DownloadStage.WAITING_HOST
+                DownloadStage.WAITING_HOST
             }
         )
     }
@@ -521,16 +523,16 @@ internal fun recoveredDownloadTaskPresentation(
             normalizedErrorCode == DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR ->
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+                stage = DownloadStage.WAITING_DELETE_CLEANUP
             )
         nextRetryAtMs?.let { it > nowMs } == true ->
             RecoveredDownloadTaskPresentation(
                 status = DownloadStatus.QUEUED,
-                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                stage = DownloadStage.WAITING_RETRY
             )
         else -> RecoveredDownloadTaskPresentation(
             status = DownloadStatus.QUEUED,
-            stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+            stage = DownloadStage.WAITING_HOST
         )
     }
 }

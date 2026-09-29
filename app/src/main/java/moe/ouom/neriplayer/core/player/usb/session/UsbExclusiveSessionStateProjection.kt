@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.player.usb.session
 
-import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.core.player.usb.sink.ResolvedUsbOutputFormat
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.policy.usb.isUsbDeviceDetachOpenGate
 import moe.ouom.neriplayer.core.player.policy.usb.isNativeCloseInFlightUsbExclusiveOpenGate
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics

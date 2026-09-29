@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.naming
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import java.io.File
 import java.security.MessageDigest
 import java.text.Normalizer

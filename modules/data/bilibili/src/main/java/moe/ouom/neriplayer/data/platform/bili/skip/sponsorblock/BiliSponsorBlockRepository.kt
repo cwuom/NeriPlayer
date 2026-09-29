@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.sponsorblock
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockSegment
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockSegment
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockTarget
 
 import kotlin.math.abs
 import kotlin.math.roundToLong

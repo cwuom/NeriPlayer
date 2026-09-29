@@ -10,8 +10,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS
 import moe.ouom.neriplayer.api.ltw.reconnect.isTerminalListenTogetherReconnectError
 import moe.ouom.neriplayer.api.ltw.reconnect.listenTogetherReconnectDelayMs
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import kotlin.time.Duration.Companion.milliseconds
 
 internal interface ListenTogetherConnectionRecoveryPort {

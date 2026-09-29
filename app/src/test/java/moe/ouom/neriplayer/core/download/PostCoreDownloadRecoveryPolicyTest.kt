@@ -10,7 +10,7 @@ import androidx.work.BackoffPolicy
 import androidx.work.NetworkType
 import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadPumpCompletion
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

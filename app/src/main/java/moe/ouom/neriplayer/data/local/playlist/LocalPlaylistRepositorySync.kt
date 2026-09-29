@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.NeteasePl
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.NeteaseSongDetailSummary
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository.ParsedNeteaseSongDetailSummary
 import moe.ouom.neriplayer.api.netease.client.NeteaseClient
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject

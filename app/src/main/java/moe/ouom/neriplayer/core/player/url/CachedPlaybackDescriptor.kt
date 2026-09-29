@@ -10,9 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.ref.WeakReference

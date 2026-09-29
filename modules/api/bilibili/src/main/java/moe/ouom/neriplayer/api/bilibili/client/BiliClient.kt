@@ -42,29 +42,29 @@ import moe.ouom.neriplayer.api.bilibili.auth.BiliCookieSource
 import moe.ouom.neriplayer.api.bilibili.comment.BiliCommentApi
 import moe.ouom.neriplayer.api.bilibili.http.BILI_WEB_REFERER
 import moe.ouom.neriplayer.api.bilibili.http.BILI_WEB_USER_AGENT
-import moe.ouom.neriplayer.api.bilibili.model.collection.CollectionArchiveItem
-import moe.ouom.neriplayer.api.bilibili.model.collection.CollectionArchivePage
-import moe.ouom.neriplayer.api.bilibili.model.collection.CollectionMeta
-import moe.ouom.neriplayer.api.bilibili.model.collection.FavFolder
-import moe.ouom.neriplayer.api.bilibili.model.collection.FavResourceItem
-import moe.ouom.neriplayer.api.bilibili.model.collection.FavResourcePage
-import moe.ouom.neriplayer.api.bilibili.model.collection.SeriesArchivePage
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
-import moe.ouom.neriplayer.api.bilibili.model.playback.DashStream
-import moe.ouom.neriplayer.api.bilibili.model.playback.DolbyAudio
-import moe.ouom.neriplayer.api.bilibili.model.playback.Durl
-import moe.ouom.neriplayer.api.bilibili.model.playback.FlacAudio
-import moe.ouom.neriplayer.api.bilibili.model.playback.PlayInfo
-import moe.ouom.neriplayer.api.bilibili.model.playback.PlayOptions
-import moe.ouom.neriplayer.api.bilibili.model.search.SearchVideoItem
-import moe.ouom.neriplayer.api.bilibili.model.search.SearchVideoPage
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContentPage
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderProfile
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderVideoPage
-import moe.ouom.neriplayer.api.bilibili.model.video.UgcSeason
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
+import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
+import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchivePage
+import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionMeta
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourceItem
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourcePage
+import moe.ouom.neriplayer.data.model.bilibili.collection.SeriesArchivePage
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.DashStream
+import moe.ouom.neriplayer.data.model.bilibili.playback.DolbyAudio
+import moe.ouom.neriplayer.data.model.bilibili.playback.Durl
+import moe.ouom.neriplayer.data.model.bilibili.playback.FlacAudio
+import moe.ouom.neriplayer.data.model.bilibili.playback.PlayInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoPage
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentPage
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderProfile
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.UgcSeason
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
 import moe.ouom.neriplayer.api.bilibili.parser.parseBiliSeriesArchivePage
 import moe.ouom.neriplayer.api.bilibili.parser.parseBiliUploaderContentPage
 import moe.ouom.neriplayer.api.bilibili.parser.parseBiliUploaderProfile
@@ -168,13 +168,6 @@ class BiliClient(
 
         /** WebTicket HMAC key */
         private const val WEB_TICKET_KEY = "XgwSnGZ1p"
-
-        // ---- fnval 位 ----
-        /** DASH 开关 (必开, 否则只有 durl/mp4) */
-        const val FNVAL_DASH = 1 shl 4  // 16
-        /** 杜比音频 (E-AC-3/Atmos) , 要拿 dolby.audio 必开 */
-        const val FNVAL_DOLBY = 1 shl 8  // 256
-        /** 其它位 (如 AV1/HDR/8K 等) 按需再开, 这里不强制 */
     }
 
     private val http: OkHttpClient = client ?: OkHttpClient.Builder()

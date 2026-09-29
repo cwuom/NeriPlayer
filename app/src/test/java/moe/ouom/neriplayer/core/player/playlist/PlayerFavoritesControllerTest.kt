@@ -1,10 +1,12 @@
 package moe.ouom.neriplayer.core.player.playlist
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.app.Application
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper

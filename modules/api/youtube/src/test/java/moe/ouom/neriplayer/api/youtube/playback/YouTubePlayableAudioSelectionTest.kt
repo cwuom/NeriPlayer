@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.api.youtube.playback
 
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayerClientProfile
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerClientProfile
 import moe.ouom.neriplayer.api.youtube.protocol.YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME
 import moe.ouom.neriplayer.api.youtube.protocol.YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME
 import moe.ouom.neriplayer.api.youtube.protocol.YOUTUBE_PLAYER_TV_CLIENT_NAME

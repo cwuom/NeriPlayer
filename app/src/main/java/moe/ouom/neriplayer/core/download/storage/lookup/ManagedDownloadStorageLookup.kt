@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.lookup
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
@@ -7,11 +10,10 @@ import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapsho
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
+import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal data class ManagedDownloadAudioLookupResult(
     val entry: ManagedDownloadStorage.StoredEntry,

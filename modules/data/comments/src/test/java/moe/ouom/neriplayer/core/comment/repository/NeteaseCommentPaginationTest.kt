@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.comment.repository
 
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.mapper.parseNeteaseCommentPage
-import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentSort
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test

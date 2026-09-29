@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether.invite
 
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
+
 import android.net.Uri
 import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherJoinSecretOrNull

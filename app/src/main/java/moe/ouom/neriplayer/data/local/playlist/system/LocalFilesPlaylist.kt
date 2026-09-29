@@ -25,8 +25,8 @@ package moe.ouom.neriplayer.data.local.playlist.system
 
 import android.content.Context
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.util.platform.LanguageManager
 
 object LocalFilesPlaylist {

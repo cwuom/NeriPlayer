@@ -20,6 +20,7 @@ package moe.ouom.neriplayer.data.local.media
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri

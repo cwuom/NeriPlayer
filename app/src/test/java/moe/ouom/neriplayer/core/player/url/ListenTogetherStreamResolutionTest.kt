@@ -1,13 +1,13 @@
 package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackUrlCandidate
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherChannels
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

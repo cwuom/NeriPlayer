@@ -69,11 +69,11 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorDetail
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItemType
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSection
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemType
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.theme.background.BlurTransformation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight

@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -48,7 +48,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem

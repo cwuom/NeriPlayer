@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution.host
 
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive

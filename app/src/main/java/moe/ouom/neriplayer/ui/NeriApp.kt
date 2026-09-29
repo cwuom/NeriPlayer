@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Activity
 import android.app.Application
 import android.content.Context
@@ -95,8 +96,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
@@ -112,23 +113,23 @@ import moe.ouom.neriplayer.core.startup.player.PlayerStartupAudioFocusRefresher
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupHistoryRecorder
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupServiceSyncCoordinator
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
-import moe.ouom.neriplayer.data.model.playbackVisualKey
-import moe.ouom.neriplayer.data.model.playbackVisualKeyAliases
+import moe.ouom.neriplayer.data.identity.playbackVisualKey
+import moe.ouom.neriplayer.data.identity.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
-import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
-import moe.ouom.neriplayer.data.settings.appearance.ThemeMode
-import moe.ouom.neriplayer.data.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.navigation.Destinations
-import moe.ouom.neriplayer.navigation.LauncherShortcutAction
-import moe.ouom.neriplayer.navigation.LauncherShortcutRequest
+import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutAction
+import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutRequest
 import moe.ouom.neriplayer.navigation.launcherShortcutMainTabRoute
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost

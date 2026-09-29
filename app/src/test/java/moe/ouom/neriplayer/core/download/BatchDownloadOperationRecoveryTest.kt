@@ -1,18 +1,20 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
-import moe.ouom.neriplayer.core.download.model.resolveBatchOperationScheduleAction
-import moe.ouom.neriplayer.core.download.model.resolveDownloadPreserveStaging
-import moe.ouom.neriplayer.core.download.model.selectBatchArtifactLeaseForCancellation
-import moe.ouom.neriplayer.core.download.model.selectBatchDownloadCandidates
-import moe.ouom.neriplayer.core.download.model.shouldPreserveBatchPreparationForHandedOffOperation
-import moe.ouom.neriplayer.core.download.model.shouldRehandoffRecoveredDownloadOperation
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.core.download.presentation.BatchOperationScheduleAction
+import moe.ouom.neriplayer.core.download.presentation.resolveBatchOperationScheduleAction
+import moe.ouom.neriplayer.core.download.presentation.resolveDownloadPreserveStaging
+import moe.ouom.neriplayer.core.download.presentation.selectBatchArtifactLeaseForCancellation
+import moe.ouom.neriplayer.core.download.presentation.selectBatchDownloadCandidates
+import moe.ouom.neriplayer.core.download.presentation.shouldPreserveBatchPreparationForHandedOffOperation
+import moe.ouom.neriplayer.core.download.presentation.shouldRehandoffRecoveredDownloadOperation
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 

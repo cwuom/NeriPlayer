@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.data.local.playlist.system
  */
 
 import android.content.Context
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 
 object SystemLocalPlaylists {
     data class Descriptor(

@@ -9,10 +9,10 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
-import moe.ouom.neriplayer.core.player.model.defaultPlaybackEqualizerBands
-import moe.ouom.neriplayer.core.player.model.formatPlaybackGainLabel
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.defaultPlaybackEqualizerBands
+import moe.ouom.neriplayer.data.model.playback.formatPlaybackGainLabel
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
 import org.junit.Before

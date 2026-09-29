@@ -21,7 +21,7 @@ import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_MAX_ATTEMPTS
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_RETRY_DELAY_MS
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.commit.sameMigrationReplacementBackupIdentity
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming

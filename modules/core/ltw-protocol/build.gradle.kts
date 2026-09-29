@@ -8,6 +8,7 @@ android {
 }
 
 dependencies {
+    api(project(":data:model"))
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)

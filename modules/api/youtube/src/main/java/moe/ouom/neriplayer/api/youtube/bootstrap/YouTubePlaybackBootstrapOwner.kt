@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.api.youtube.bootstrap
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
 import android.content.Context
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -19,9 +22,9 @@ import moe.ouom.neriplayer.api.youtube.auth.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.api.youtube.auth.shouldStartYouTubeWebAuthRecovery
 import moe.ouom.neriplayer.api.youtube.challenge.YouTubeEjsChallengeSolver
 import moe.ouom.neriplayer.api.youtube.challenge.playbackElapsedMs
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
 import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.api.youtube.transport.YOUTUBE_ERROR_RESPONSE_MAX_BYTES
 import moe.ouom.neriplayer.api.youtube.transport.YOUTUBE_TEXT_RESPONSE_MAX_BYTES

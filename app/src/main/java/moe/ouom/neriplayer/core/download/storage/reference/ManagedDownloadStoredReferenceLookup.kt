@@ -9,8 +9,8 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 

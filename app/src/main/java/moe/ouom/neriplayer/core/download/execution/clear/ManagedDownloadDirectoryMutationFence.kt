@@ -6,9 +6,9 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal const val DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR =

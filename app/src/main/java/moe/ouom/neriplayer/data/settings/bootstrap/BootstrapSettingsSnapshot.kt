@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.data.settings.bootstrap
  * Updated: 2026/4/5
  */
 
+import moe.ouom.neriplayer.data.settings.playback.sanitized
+import moe.ouom.neriplayer.data.model.settings.bootstrap.BootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.dataStore
@@ -41,7 +43,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
-import moe.ouom.neriplayer.core.player.download.network.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.network.normalizeDownloadParallelism
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -59,26 +61,6 @@ private const val BOOTSTRAP_DOWNLOAD_PARALLELISM_KEY = "download_parallelism"
 private val bootstrapSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val bootstrapSnapshotWarmupRunning = AtomicBoolean(false)
 private val bootstrapSnapshotPersistenceLock = Any()
-
-data class BootstrapSettingsSnapshot(
-    val bypassProxy: Boolean = true,
-    val youtubeEnabled: Boolean = true,
-    val preferHighRefreshRate: Boolean = false,
-    val downloadDirectoryUri: String? = null,
-    val downloadDirectoryLabel: String? = null,
-    val downloadFileNameTemplate: String? = null,
-    val downloadFollowPlaybackAudioQuality: Boolean = true,
-    val downloadParallelism: Int = DEFAULT_DOWNLOAD_PARALLELISM
-) {
-    fun sanitized(): BootstrapSettingsSnapshot {
-        return copy(
-            downloadDirectoryUri = downloadDirectoryUri?.takeIf { it.isNotBlank() },
-            downloadDirectoryLabel = downloadDirectoryLabel?.takeIf { it.isNotBlank() },
-            downloadFileNameTemplate = normalizeDownloadFileNameTemplate(downloadFileNameTemplate),
-            downloadParallelism = normalizeDownloadParallelism(downloadParallelism)
-        )
-    }
-}
 
 fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapshot {
     readCachedBootstrapSettingsSnapshot(context)?.let { snapshot ->
@@ -277,4 +259,13 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
         ),
         downloadParallelism = downloadParallelism
     ).sanitized()
+}
+
+fun BootstrapSettingsSnapshot.sanitized(): BootstrapSettingsSnapshot {
+    return copy(
+        downloadDirectoryUri = downloadDirectoryUri?.takeIf { it.isNotBlank() },
+        downloadDirectoryLabel = downloadDirectoryLabel?.takeIf { it.isNotBlank() },
+        downloadFileNameTemplate = normalizeDownloadFileNameTemplate(downloadFileNameTemplate),
+        downloadParallelism = normalizeDownloadParallelism(downloadParallelism)
+    )
 }

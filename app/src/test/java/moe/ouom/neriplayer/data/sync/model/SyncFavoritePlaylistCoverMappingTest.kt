@@ -1,8 +1,11 @@
 package moe.ouom.neriplayer.data.sync.model
 
+import moe.ouom.neriplayer.data.model.sync.SyncFavoritePlaylist
+import moe.ouom.neriplayer.data.sync.mapping.fromFavoritePlaylist
+
 import android.content.Context
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import org.junit.After
 import org.junit.Assert.assertEquals

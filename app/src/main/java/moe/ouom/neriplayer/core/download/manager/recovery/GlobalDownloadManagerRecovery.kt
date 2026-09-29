@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.manager.recovery
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PendingDownloadRecoveryCandidate
@@ -35,11 +38,11 @@ import moe.ouom.neriplayer.core.download.manager.runtime.removeObsoleteWaitingNe
 import moe.ouom.neriplayer.core.download.manager.runtime.repairDownloadedCoverIfMissing
 import moe.ouom.neriplayer.core.download.manager.runtime.shouldSkipDownload
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.model.BatchDownloadPresentationState
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.downloadProgressFraction
+import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.presentation.downloadProgressFraction
 import moe.ouom.neriplayer.core.download.policy.FinalizedDownloadPublicationResult
 import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoverySummary
 import moe.ouom.neriplayer.core.download.policy.PendingWorkingProgressRecord
@@ -78,7 +81,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -1218,7 +1221,7 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                     checkpointBytesWritten = entry.bytesWritten
                 )
                 val presentation = presentationsByEntry.getValue(entry)
-                AudioDownloadManager.DownloadProgress(
+                DownloadProgress(
                     songKey = songKey,
                     songId = request.song.id,
                     fileName = request.song.name,

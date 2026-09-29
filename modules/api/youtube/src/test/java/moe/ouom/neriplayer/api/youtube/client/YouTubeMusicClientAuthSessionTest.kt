@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.api.youtube.client
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeAuthProvider
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeAuthRefresher
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthAutoRefreshResult
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthAutoRefreshResult
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.api.youtube.auth.evaluateYouTubeAuthHealth
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request

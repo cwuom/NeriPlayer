@@ -1,6 +1,15 @@
 package moe.ouom.neriplayer.core.download.storage.backend
 
-import android.net.Uri
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
+import moe.ouom.neriplayer.data.model.download.storage.StorageDirectorySnapshot
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageCapabilities
+
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -8,10 +17,6 @@ import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 
 /** 受管存储的稳定引用，不把展示 URI 当作唯一身份 */
-sealed interface StorageReference {
-    data class FileRef(val logicalPath: String) : StorageReference
-    data class SafRef(val uri: Uri) : StorageReference
-}
 
 /** 标记身份来自受管根目录 operation 的引用 */
 class TrustedManagedRef internal constructor(
@@ -49,61 +54,7 @@ private fun StorageReference.externalReference(): String {
     }
 }
 
-sealed interface StorageTarget {
-    val temporaryWriteOwnerName: String?
-
-    data class FileTarget(
-        val logicalPath: String,
-        override val temporaryWriteOwnerName: String? = null
-    ) : StorageTarget
-
-    data class SafTarget(
-        val parent: StorageReference.SafRef,
-        val displayName: String,
-        val mimeType: String,
-        override val temporaryWriteOwnerName: String? = null
-    ) : StorageTarget
-}
-
-data class StorageStat(
-    val reference: StorageReference,
-    val displayName: String,
-    val sizeBytes: Long?,
-    val lastModifiedMs: Long?,
-    val isDirectory: Boolean
-)
-
-data class StorageDirectorySnapshot(
-    val entries: List<StorageStat>,
-    val confidence: StorageConfidence
-)
-
-sealed interface StorageConfidence {
-    data object Complete : StorageConfidence
-    data object Missing : StorageConfidence
-    data object OutOfScope : StorageConfidence
-    data object PermissionLost : StorageConfidence
-    data class ProviderFailure(val error: Throwable) : StorageConfidence
-}
-
 /** 查询结果保留缺失、权限和 Provider 不确定性，避免调用方靠字符串猜测 */
-sealed interface StorageLookupResult<out T> {
-    data class Found<T>(val value: T) : StorageLookupResult<T>
-    data object Missing : StorageLookupResult<Nothing>
-    data object OutOfScope : StorageLookupResult<Nothing>
-    data object PermissionLost : StorageLookupResult<Nothing>
-    data class ProviderFailure(val error: Throwable) : StorageLookupResult<Nothing>
-    data class Unsupported(val operation: String) : StorageLookupResult<Nothing>
-}
-
-sealed interface StorageWriteResult {
-    data class Written(val stat: StorageStat) : StorageWriteResult
-    data object Missing : StorageWriteResult
-    data object OutOfScope : StorageWriteResult
-    data object PermissionLost : StorageWriteResult
-    data class ProviderFailure(val error: Throwable) : StorageWriteResult
-    data class Unsupported(val operation: String) : StorageWriteResult
-}
 
 internal class StorageTargetChangedException(message: String) : IOException(message)
 
@@ -121,36 +72,6 @@ internal fun chooseSafWriteCommitMode(
     targetExists -> SafWriteCommitMode.Unsupported
     else -> SafWriteCommitMode.DirectCreate
 }
-
-sealed interface StorageMutationResult {
-    data object Deleted : StorageMutationResult
-    data object Missing : StorageMutationResult
-    data object OutOfScope : StorageMutationResult
-    data object PermissionLost : StorageMutationResult
-    data class ProviderFailure(val error: Throwable) : StorageMutationResult
-    data class Unsupported(val operation: String) : StorageMutationResult
-}
-
-sealed interface StorageRenameResult {
-    data class Renamed(val stat: StorageStat) : StorageRenameResult
-    data object Missing : StorageRenameResult
-    data object OutOfScope : StorageRenameResult
-    data object PermissionLost : StorageRenameResult
-    data class ProviderFailure(val error: Throwable) : StorageRenameResult
-    data class Unsupported(val operation: String) : StorageRenameResult
-}
-
-data class StorageCapabilities(
-    val canRead: Boolean,
-    val canWrite: Boolean,
-    val canCreate: Boolean,
-    val canDelete: Boolean,
-    val canRename: Boolean,
-    val canMove: Boolean,
-    val canCopy: Boolean,
-    val hasReliableSize: Boolean,
-    val hasReliableLastModified: Boolean
-)
 
 /** File 和 SAF 实现共用的可恢复存储边界 */
 interface StorageBackend {

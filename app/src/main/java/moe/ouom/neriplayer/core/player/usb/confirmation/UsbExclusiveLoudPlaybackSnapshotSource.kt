@@ -2,12 +2,12 @@ package moe.ouom.neriplayer.core.player.usb.confirmation
 
 import android.content.Context
 import android.media.AudioManager
-import moe.ouom.neriplayer.core.player.model.AudioDevice
+import moe.ouom.neriplayer.data.model.playback.AudioDevice
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessEstimate
 import moe.ouom.neriplayer.core.player.policy.usb.estimateUsbExclusiveLoudness
 import moe.ouom.neriplayer.core.player.policy.usb.predictedUsbExclusivePlaybackGain
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 
 internal data class UsbExclusiveLoudPlaybackSignals(

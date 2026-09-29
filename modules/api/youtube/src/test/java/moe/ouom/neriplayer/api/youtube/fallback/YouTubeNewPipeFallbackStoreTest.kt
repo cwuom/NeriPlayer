@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.api.youtube.fallback
 
 import kotlinx.serialization.json.Json
+import moe.ouom.neriplayer.data.model.youtube.cache.NEWPIPE_FALLBACK_SNAPSHOT_VERSION
+import moe.ouom.neriplayer.data.model.youtube.cache.NewPipeFallbackSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

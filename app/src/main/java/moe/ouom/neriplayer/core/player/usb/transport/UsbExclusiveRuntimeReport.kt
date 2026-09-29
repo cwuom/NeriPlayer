@@ -1,261 +1,13 @@
 package moe.ouom.neriplayer.core.player.usb.transport
 
-enum class UsbExclusiveErrorCode {
-    None,
-    OpenDeferred,
-    PermissionDenied,
-    DeviceDetached,
-    NoSelectedDevice,
-    NoCompatibleFormat,
-    SampleRateUnsupported,
-    BitDepthUnsupported,
-    ChannelCountUnsupported,
-    ClaimInterfaceFailed,
-    SetAltFailed,
-    SampleRateNegotiationFailed,
-    AsyncFeedbackUnsupported,
-    FeedbackEndpointInvalid,
-    FeedbackInitialLockTimeout,
-    FeedbackPayloadInvalid,
-    FeedbackTransferFailed,
-    FeedbackLost,
-    FeedbackPacketCapacityExceeded,
-    ImplicitFeedbackTopologyUnsupported,
-    ImplicitFeedbackTransferFailed,
-    FeedbackQuirkRequired,
-    TransferFirstCompletionTimeout,
-    TransferCompletionStalled,
-    IsoPacketErrorBurst,
-    TransportFailed,
-    StaleHandle,
-    InvalidBuffer,
-    CancelDrainTimeout,
-    Quarantined,
-    NativeInternalError
-}
-
-enum class UsbExclusiveFeedbackMode {
-    Disabled,
-    Explicit,
-    Implicit
-}
-
-enum class UsbExclusiveFeedbackState {
-    Disabled,
-    Priming,
-    Acquiring,
-    Locked,
-    Holdover,
-    Relocking,
-    Failed
-}
-
-enum class UsbExclusiveFeedbackClockFailure {
-    None,
-    AcquireTimeout,
-    HoldoverTimeout,
-    NonMonotonicTime
-}
-
-enum class UsbExclusiveRecoveryAction {
-    None,
-    Holdover,
-    Relock,
-    SameHandleRearm,
-    SwitchNativeCandidate,
-    FreshOpen,
-    StopPreserveIntent
-}
-
-enum class UsbExclusiveRecoveryActionOwner {
-    None,
-    Native,
-    Kotlin
-}
-
-enum class UsbExclusiveRecoveryActionAckStatus {
-    Acked,
-    AlreadyAcked,
-    GenerationMismatch,
-    HandleClosing,
-    NoPending
-}
-
-data class UsbExclusiveRuntimeMetrics(
-    val reportVersion: Int = 1,
-    val reportValid: Boolean = true,
-    val reportInvalidReason: String? = null,
-    val source: String? = null,
-    val uacVersion: String? = null,
-    val syncType: String? = null,
-    val feedback: String? = null,
-    val feedbackMode: UsbExclusiveFeedbackMode = UsbExclusiveFeedbackMode.Disabled,
-    val feedbackEndpointAddress: Int? = null,
-    val feedbackState: UsbExclusiveFeedbackState = UsbExclusiveFeedbackState.Disabled,
-    val feedbackPayloadBytes: Int? = null,
-    val feedbackExpectedPeriodUs: Long? = null,
-    val feedbackRawValue: String? = null,
-    val feedbackRateQ32: String? = null,
-    val feedbackRateHz: Double? = null,
-    val feedbackRatePpm: Long? = null,
-    val feedbackValidSamples: Long? = null,
-    val feedbackInvalidSamples: Long? = null,
-    val feedbackOutliers: Long? = null,
-    val feedbackTimeouts: Long? = null,
-    val feedbackLockCount: Long? = null,
-    val feedbackRelockCount: Long? = null,
-    val feedbackHoldoverCount: Long? = null,
-    val feedbackHoldoverTotalMs: Long? = null,
-    val feedbackLongGapReacquisitions: Long? = null,
-    val feedbackLastAgeMs: Long? = null,
-    val feedbackClockFailure: UsbExclusiveFeedbackClockFailure =
-        UsbExclusiveFeedbackClockFailure.None,
-    val feedbackInFlight: Int? = null,
-    val feedbackTransferErrors: Long? = null,
-    val feedbackPacketErrors: Long? = null,
-    val packetLengthClampCount: Long? = null,
-    val sampleRate: Int? = null,
-    val channelCount: Int? = null,
-    val subslotBytes: Int? = null,
-    val transferBytes: Long? = null,
-    val lastTransferBytes: Long? = null,
-    val completedTransfers: Long? = null,
-    val inFlightTransfers: Int? = null,
-    val isoPacketErrors: Long? = null,
-    val isoPacketErrorTransfers: Long? = null,
-    val isoPacketErrorScore: Int? = null,
-    val pcmLevelBytes: Long? = null,
-    val pcmCapacityBytes: Long? = null,
-    val pcmFreeBytes: Long? = null,
-    val pcmMaxLevelBytes: Long? = null,
-    val pcmBackpressureEvents: Long? = null,
-    val pcmBackpressureTotalMs: Long? = null,
-    val pcmBackpressureCurrentMs: Long? = null,
-    val pcmBackpressureMaxMs: Long? = null,
-    val playerSignalFrames: Long? = null,
-    val playerSilentFrames: Long? = null,
-    val playerSignalBytes: Long? = null,
-    val playerDroppedBytes: Long? = null,
-    val playerUnderrunBytes: Long? = null,
-    val playerZeroFillBytes: Long? = null,
-    val playerPausedZeroFillBytes: Long? = null,
-    val outputPeak: Float? = null,
-    val lastOutputPeak: Float? = null,
-    val channel0OutputPeak: Float? = null,
-    val channel1OutputPeak: Float? = null,
-    val lastChannel0OutputPeak: Float? = null,
-    val lastChannel1OutputPeak: Float? = null,
-    val transportFailed: Boolean? = null,
-    val deviceOnline: Boolean? = null,
-    val running: Boolean? = null,
-    val paused: Boolean? = null,
-    val transportRunning: Boolean? = null,
-    val feedbackReady: Boolean? = null,
-    val realPcmReleased: Boolean? = null,
-    val canAcceptPcm: Boolean? = null,
-    val playbackReady: Boolean? = null,
-    val feedbackReusable: Boolean? = null,
-    val terminalFailure: Boolean? = null,
-    val nativeStreamGeneration: Long? = null,
-    val candidateId: String? = null,
-    val recoveryEpoch: Long? = null,
-    val recommendedAction: UsbExclusiveRecoveryAction = UsbExclusiveRecoveryAction.None,
-    val actionId: Long? = null,
-    val actionGeneration: Long? = null,
-    val actionOwner: UsbExclusiveRecoveryActionOwner = UsbExclusiveRecoveryActionOwner.None,
-    val actionLatched: Boolean? = null,
-    val errorCode: UsbExclusiveErrorCode = UsbExclusiveErrorCode.None,
-    val lastError: String = "none"
-) {
-    val outputFrameBytes: Int?
-        get() {
-            val channels = channelCount ?: return null
-            val bytes = subslotBytes ?: return null
-            val frameBytes = channels * bytes
-            return frameBytes.takeIf { it > 0 }
-        }
-
-    val hasPcmQueue: Boolean
-        get() = (pcmCapacityBytes ?: 0L) > 0L
-
-    val hasHealthyTransport: Boolean
-        get() {
-            if (!reportValid) return false
-            if (reportVersion >= 2) {
-                return transportFailed != true &&
-                    terminalFailure != true &&
-                    errorCode == UsbExclusiveErrorCode.None &&
-                    lastError == "none" &&
-                    playbackReady == true
-            }
-            return transportFailed != true &&
-                errorCode == UsbExclusiveErrorCode.None &&
-                lastError == "none"
-        }
-
-    val isQueueFull: Boolean
-        get() {
-            pcmFreeBytes?.let { return it <= 0L && (pcmCapacityBytes ?: 0L) > 0L }
-            val level = pcmLevelBytes ?: return false
-            val capacity = pcmCapacityBytes ?: return false
-            return capacity in 1..level
-        }
-
-    val isBenignBackpressure: Boolean
-        get() = isQueueFull && hasHealthyTransport
-
-    val hasPlayerPcmAudioQualityDegradation: Boolean
-        get() {
-            if (source != "player_pcm" || running != true || paused == true) return false
-            if ((isoPacketErrorScore ?: 0) > 0) return true
-            if ((isoPacketErrorTransfers ?: 0L) > 0L) return true
-            if ((isoPacketErrors ?: 0L) > 0L) return true
-            return (playerDroppedBytes ?: 0L) > 0L
-        }
-
-    val hasPlayerPcmBufferStarvationCounters: Boolean
-        get() {
-            if (source != "player_pcm" || running != true || paused == true) return false
-            if ((playerUnderrunBytes ?: 0L) > 0L) return true
-            return (playerZeroFillBytes ?: 0L) > 0L
-        }
-
-    val hasKotlinTerminalRecoveryAction: Boolean
-        get() = actionOwner == UsbExclusiveRecoveryActionOwner.Kotlin &&
-            recommendedAction.isKotlinTerminalAction
-
-    val canReuseNativePlayerSession: Boolean
-        get() {
-            if (!reportValid) return false
-            if (deviceOnline == false) return false
-            if (transportFailed == true) return false
-            if (terminalFailure == true) return false
-            if (errorCode != UsbExclusiveErrorCode.None) return false
-            if (lastError != "none") return false
-            if (hasKotlinTerminalRecoveryAction) return false
-            if (actionOwner == UsbExclusiveRecoveryActionOwner.Kotlin &&
-                actionLatched == true
-            ) {
-                return false
-            }
-            if (reportVersion < 2) {
-                return !isLegacyAsyncFeedbackReport
-            }
-            if (feedbackMode == UsbExclusiveFeedbackMode.Disabled) return true
-            val reusableState = feedbackState == UsbExclusiveFeedbackState.Locked ||
-                feedbackState == UsbExclusiveFeedbackState.Holdover
-            return reusableState &&
-                canAcceptPcm == true &&
-                feedbackReusable == true
-        }
-
-    private val isLegacyAsyncFeedbackReport: Boolean
-        get() = syncType.isAsynchronousUsbSyncType() ||
-            feedback?.let { value ->
-                !value.equals("none", ignoreCase = true) &&
-                    !value.equals("disabled", ignoreCase = true)
-            } == true
-}
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveErrorCode
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveFeedbackMode
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveFeedbackState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveFeedbackClockFailure
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryAction
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionOwner
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionAckStatus
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 
 internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
     val fields = runtimeReportFields()
@@ -1021,3 +773,92 @@ internal val UsbExclusiveErrorCode.suppressesSystemFallbackPlayback: Boolean
         UsbExclusiveErrorCode.NativeInternalError -> true
         else -> false
     }
+
+val UsbExclusiveRuntimeMetrics.outputFrameBytes: Int?
+    get() {
+        val channels = channelCount ?: return null
+        val bytes = subslotBytes ?: return null
+        val frameBytes = channels * bytes
+        return frameBytes.takeIf { it > 0 }
+    }
+
+val UsbExclusiveRuntimeMetrics.hasPcmQueue: Boolean
+    get() = (pcmCapacityBytes ?: 0L) > 0L
+
+val UsbExclusiveRuntimeMetrics.hasHealthyTransport: Boolean
+    get() {
+        if (!reportValid) return false
+        if (reportVersion >= 2) {
+            return transportFailed != true &&
+                terminalFailure != true &&
+                errorCode == UsbExclusiveErrorCode.None &&
+                lastError == "none" &&
+                playbackReady == true
+        }
+        return transportFailed != true &&
+            errorCode == UsbExclusiveErrorCode.None &&
+            lastError == "none"
+    }
+
+val UsbExclusiveRuntimeMetrics.isQueueFull: Boolean
+    get() {
+        pcmFreeBytes?.let { return it <= 0L && (pcmCapacityBytes ?: 0L) > 0L }
+        val level = pcmLevelBytes ?: return false
+        val capacity = pcmCapacityBytes ?: return false
+        return capacity in 1..level
+    }
+
+val UsbExclusiveRuntimeMetrics.isBenignBackpressure: Boolean
+    get() = isQueueFull && hasHealthyTransport
+
+val UsbExclusiveRuntimeMetrics.hasPlayerPcmAudioQualityDegradation: Boolean
+    get() {
+        if (source != "player_pcm" || running != true || paused == true) return false
+        if ((isoPacketErrorScore ?: 0) > 0) return true
+        if ((isoPacketErrorTransfers ?: 0L) > 0L) return true
+        if ((isoPacketErrors ?: 0L) > 0L) return true
+        return (playerDroppedBytes ?: 0L) > 0L
+    }
+
+val UsbExclusiveRuntimeMetrics.hasPlayerPcmBufferStarvationCounters: Boolean
+    get() {
+        if (source != "player_pcm" || running != true || paused == true) return false
+        if ((playerUnderrunBytes ?: 0L) > 0L) return true
+        return (playerZeroFillBytes ?: 0L) > 0L
+    }
+
+val UsbExclusiveRuntimeMetrics.hasKotlinTerminalRecoveryAction: Boolean
+    get() = actionOwner == UsbExclusiveRecoveryActionOwner.Kotlin &&
+        recommendedAction.isKotlinTerminalAction
+
+val UsbExclusiveRuntimeMetrics.canReuseNativePlayerSession: Boolean
+    get() {
+        if (!reportValid) return false
+        if (deviceOnline == false) return false
+        if (transportFailed == true) return false
+        if (terminalFailure == true) return false
+        if (errorCode != UsbExclusiveErrorCode.None) return false
+        if (lastError != "none") return false
+        if (hasKotlinTerminalRecoveryAction) return false
+        if (actionOwner == UsbExclusiveRecoveryActionOwner.Kotlin &&
+            actionLatched == true
+        ) {
+            return false
+        }
+        if (reportVersion < 2) {
+            return !isLegacyAsyncFeedbackReport
+        }
+        if (feedbackMode == UsbExclusiveFeedbackMode.Disabled) return true
+        val reusableState = feedbackState == UsbExclusiveFeedbackState.Locked ||
+            feedbackState == UsbExclusiveFeedbackState.Holdover
+        return reusableState &&
+            canAcceptPcm == true &&
+            feedbackReusable == true
+    }
+
+private val UsbExclusiveRuntimeMetrics.isLegacyAsyncFeedbackReport: Boolean
+    get() = syncType.isAsynchronousUsbSyncType() ||
+        feedback?.let { value ->
+            !value.equals("none", ignoreCase = true) &&
+                !value.equals("disabled", ignoreCase = true)
+        } == true

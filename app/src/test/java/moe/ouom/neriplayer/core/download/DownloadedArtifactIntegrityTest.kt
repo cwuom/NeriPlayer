@@ -1,17 +1,19 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadedArtifactIntegrityIssue
-import moe.ouom.neriplayer.core.download.model.DownloadedArtifactReferenceState
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.verifyDownloadedArtifactIntegrity
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.DownloadedArtifactIntegrityIssue
+import moe.ouom.neriplayer.data.model.download.DownloadedArtifactReferenceState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.policy.verifyDownloadedArtifactIntegrity
 import moe.ouom.neriplayer.core.download.manager.catalog.buildSongFromDurableMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class DownloadedArtifactIntegrityTest {
     @Test

@@ -1,16 +1,12 @@
 package moe.ouom.neriplayer.core.player.audio.route
 
+
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BluetoothAudio
-import androidx.compose.material.icons.filled.Headset
-import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.filled.Usb
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -20,13 +16,13 @@ import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.lifecycle.applyUsbExclusivePlaybackPolicy
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
-import moe.ouom.neriplayer.core.player.model.AudioDevice
+import moe.ouom.neriplayer.data.model.playback.AudioDevice
 import moe.ouom.neriplayer.core.player.playback.pauseForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playback.restorePlaybackAfterTransientAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 
 internal object PlayerManagerAudioDeviceRoutePort : AudioDeviceRoutePort {
     private fun audioManager(): AudioManager =
@@ -55,8 +51,7 @@ internal object PlayerManagerAudioDeviceRoutePort : AudioDeviceRoutePort {
         if (selected != null) return toAudioDevice(selected)
         return AudioDevice(
             PlayerManager.getLocalizedString(R.string.device_speaker),
-            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
-            Icons.Default.SpeakerGroup
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
         )
     }
 
@@ -65,29 +60,26 @@ internal object PlayerManagerAudioDeviceRoutePort : AudioDeviceRoutePort {
 
     private fun toWiredOrUsbDevice(device: AudioDeviceInfo): AudioDevice =
         if (isUsbOutputType(device.type)) toUsbDevice(device) else AudioDevice(
-            PlayerManager.getLocalizedString(R.string.device_wired_headset), device.type, Icons.Default.Headset
+            PlayerManager.getLocalizedString(R.string.device_wired_headset), device.type
         )
 
     private fun toBluetoothDevice(device: AudioDeviceInfo): AudioDevice = try {
         AudioDevice(
             name = device.productName.toString()
                 .ifBlank { PlayerManager.getLocalizedString(R.string.device_bluetooth_headset) },
-            type = device.type,
-            icon = Icons.Default.BluetoothAudio
+            type = device.type
         )
     } catch (_: SecurityException) {
         AudioDevice(
             PlayerManager.getLocalizedString(R.string.device_bluetooth_headset),
-            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-            Icons.Default.BluetoothAudio
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
         )
     }
 
     private fun toUsbDevice(device: AudioDeviceInfo): AudioDevice = AudioDevice(
         name = device.productName.toString()
             .ifBlank { PlayerManager.getLocalizedString(R.string.device_usb_audio) },
-        type = device.type,
-        icon = Icons.Default.Usb
+        type = device.type
     )
 
     override fun publishCurrentDevice(device: AudioDevice) {

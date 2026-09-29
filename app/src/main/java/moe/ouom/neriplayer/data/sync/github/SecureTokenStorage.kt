@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.sync.github
  * Created: 2025/1/7
  */
 
+import moe.ouom.neriplayer.data.model.stableKey
 import android.content.Context
 import android.content.SharedPreferences
 import android.annotation.SuppressLint
@@ -33,15 +34,15 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistDeletionPolicy
-import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
+import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
+import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
+import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
-import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
 import java.util.UUID
 
 /**

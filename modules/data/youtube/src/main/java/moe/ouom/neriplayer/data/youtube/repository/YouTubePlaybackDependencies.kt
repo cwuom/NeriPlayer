@@ -4,7 +4,7 @@ import android.content.Context
 import moe.ouom.neriplayer.api.youtube.challenge.NewPipeFallbackTracker
 import moe.ouom.neriplayer.api.youtube.challenge.YouTubeEjsChallengeSolver
 import moe.ouom.neriplayer.api.youtube.fallback.YouTubeNewPipeFallbackStore
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.api.youtube.potoken.YouTubePoTokenProvider
 import moe.ouom.neriplayer.api.youtube.potoken.YouTubeWebPoTokenProvider
 import moe.ouom.neriplayer.data.youtube.auth.web.YouTubeWebSessionAdapter

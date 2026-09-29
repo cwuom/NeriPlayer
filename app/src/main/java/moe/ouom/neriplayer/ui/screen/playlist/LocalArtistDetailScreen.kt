@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -76,14 +78,14 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
-import moe.ouom.neriplayer.data.local.playlist.model.findLocalArtistSummary
-import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableId
-import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableKey
+import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
+import moe.ouom.neriplayer.data.local.playlist.artist.findLocalArtistSummary
+import moe.ouom.neriplayer.data.model.playlist.localArtistStableId
+import moe.ouom.neriplayer.data.model.playlist.localArtistStableKey
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight

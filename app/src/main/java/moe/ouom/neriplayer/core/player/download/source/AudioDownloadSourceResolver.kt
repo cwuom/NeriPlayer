@@ -1,18 +1,19 @@
 package moe.ouom.neriplayer.core.player.download.source
 
+import moe.ouom.neriplayer.data.identity.identity
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.transfer.AudioDownloadTransferPolicy
 import androidx.core.net.toUri
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.api.youtube.transport.isYouTubeWebRemixDirectMissingPoToken
 import java.io.IOException

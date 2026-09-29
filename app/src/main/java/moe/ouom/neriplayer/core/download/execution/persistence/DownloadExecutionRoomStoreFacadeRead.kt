@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.CancellationBoundary
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.DownloadBatchIdentity
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.DownloadBatchRecoverySnapshot

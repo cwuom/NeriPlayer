@@ -5,7 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.data.history.PlayedEntry
+import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

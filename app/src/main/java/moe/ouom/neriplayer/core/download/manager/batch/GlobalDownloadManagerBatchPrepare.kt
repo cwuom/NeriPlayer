@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.batch
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PreExistingDownloadedAudioAction
@@ -29,10 +31,10 @@ import moe.ouom.neriplayer.core.download.manager.runtime.settleAlreadyDownloaded
 import moe.ouom.neriplayer.core.download.manager.runtime.settleAndRemoveRecoveredTask
 import moe.ouom.neriplayer.core.download.manager.runtime.shouldSkipDownload
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.QueuedDownloadRequest
-import moe.ouom.neriplayer.core.download.model.selectBatchDownloadCandidates
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.presentation.QueuedDownloadRequest
+import moe.ouom.neriplayer.core.download.presentation.selectBatchDownloadCandidates
 import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchDownloadSession
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PreparedBatchArtifact
@@ -43,7 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker

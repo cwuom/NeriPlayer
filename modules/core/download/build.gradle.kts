@@ -7,6 +7,7 @@ android {
 }
 
 dependencies {
+    api(project(":data:model"))
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
 }

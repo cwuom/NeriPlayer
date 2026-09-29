@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.listentogether
 
+import moe.ouom.neriplayer.listentogether.validation.format
+
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.Resources
@@ -22,15 +24,15 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
-import moe.ouom.neriplayer.listentogether.invite.ListenTogetherInvite
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
 import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
-import moe.ouom.neriplayer.api.ltw.model.ListenTogetherServerTestResult
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.ListenTogetherServerTestResult
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 
 internal fun isDefaultListenTogetherSettingsServer(input: String): Boolean =

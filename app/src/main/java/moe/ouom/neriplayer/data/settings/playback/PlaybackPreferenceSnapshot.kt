@@ -23,38 +23,41 @@ package moe.ouom.neriplayer.data.settings.playback
  * Updated: 2026/4/5
  */
 
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.dataStore
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_LYRIC_SOURCE
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LYRIC_SOURCE
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_PERFECT
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveBitDepthMode
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveBufferProfile
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveSampleRateMode
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveUnsupportedFormatPolicy
-import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
-import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveDeviceKey
-import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveForegroundBufferMs
-import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveVolumeRiskThresholdDbfs
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_PERFECT
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBufferProfile
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveDeviceKey
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveForegroundBufferMs
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveVolumeRiskThresholdDbfs
 import moe.ouom.neriplayer.data.settings.usb.putUsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.usb.readUsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.usb.toUsbExclusivePreferences
@@ -65,18 +68,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
-import moe.ouom.neriplayer.core.player.model.decodePlaybackEqualizerBandLevels
-import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
+import moe.ouom.neriplayer.data.model.playback.decodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.data.model.playback.encodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
@@ -140,137 +143,6 @@ private val playbackPreferenceSnapshotWarmLock = Any()
 
 @Volatile
 private var playbackPreferenceSnapshotWarmScheduled = false
-
-data class PlaybackPreferenceSnapshot(
-    val audioQuality: String = "exhigh",
-    val youtubeAudioQuality: String = "high",
-    val biliAudioQuality: String = "high",
-    val mobileDataFollowDefaultAudioQuality: Boolean = true,
-    val mobileDataNeteaseAudioQuality: String = DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY,
-    val mobileDataYouTubeAudioQuality: String = DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY,
-    val mobileDataBiliAudioQuality: String = DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY,
-    val keepLastPlaybackProgress: Boolean = true,
-    val rememberLongFormPlaybackProgress: Boolean = true,
-    val keepPlaybackModeState: Boolean = true,
-    val neteaseAutoSourceSwitch: Boolean = false,
-    val neteaseLocalSourceFallback: Boolean = false,
-    val playbackFadeIn: Boolean = true,
-    val playbackCrossfadeNext: Boolean = true,
-    val sleepTimerFinishCurrentOnExpiry: Boolean = false,
-    val playbackFadeInDurationMs: Long = 500L,
-    val playbackFadeOutDurationMs: Long = 500L,
-    val playbackCrossfadeInDurationMs: Long = 500L,
-    val playbackCrossfadeOutDurationMs: Long = 500L,
-    val playbackSpeed: Float = DEFAULT_PLAYBACK_SPEED,
-    val playbackPitch: Float = DEFAULT_PLAYBACK_PITCH,
-    val playbackLoudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
-    val playbackVolumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
-    val playbackVolumeNormalizationEnabled: Boolean = false,
-    val playbackHighResolutionOutputEnabled: Boolean = false,
-    val playbackEqualizerEnabled: Boolean = false,
-    val playbackEqualizerPreset: String = PlaybackEqualizerPresetId.FLAT,
-    val playbackEqualizerCustomBandLevels: List<Int> = emptyList(),
-    val stopOnBluetoothDisconnect: Boolean = true,
-    val usbExclusivePlayback: Boolean = false,
-    val usbExclusiveDeviceKey: String = DEFAULT_USB_EXCLUSIVE_DEVICE_KEY,
-    val usbExclusiveSampleRateMode: String = DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
-    val usbExclusiveBitDepthMode: String = DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE,
-    val usbExclusiveBitPerfect: Boolean = DEFAULT_USB_EXCLUSIVE_BIT_PERFECT,
-    val usbExclusiveBufferProfile: String = DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
-    val usbExclusiveUnsupportedFormatPolicy: String =
-        DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
-    val usbExclusiveSampleRateCompatibility: Boolean =
-        DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
-    val usbExclusiveBitDepthCompatibility: Boolean =
-        DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
-    val usbExclusiveChannelCompatibility: Boolean =
-        DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
-    val usbExclusiveForegroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
-    val usbExclusiveBackgroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
-    val usbExclusiveVolumeRiskThresholdDbfs: Int =
-        DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
-    val allowMixedPlayback: Boolean = false,
-    val preemptAudioFocus: Boolean = false,
-    val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
-    val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
-    val kugouLyricDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
-    val lrclibLyricDefaultOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
-    val amllTtmlLyricDefaultOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
-    val lyriconEnabled: Boolean = false,
-    val amllLyricsEnabled: Boolean = true,
-    val preferWordTimedLyrics: Boolean = true,
-    val defaultLyricSource: String = DEFAULT_LYRIC_SOURCE,
-    val maxCacheSizeBytes: Long = CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES
-) {
-    fun sanitized(): PlaybackPreferenceSnapshot {
-        return copy(
-            audioQuality = audioQuality.trim().ifBlank { "exhigh" },
-            youtubeAudioQuality = youtubeAudioQuality.trim().ifBlank { "high" },
-            biliAudioQuality = biliAudioQuality.trim().ifBlank { "high" },
-            mobileDataNeteaseAudioQuality =
-                normalizeMobileDataNeteaseAudioQuality(mobileDataNeteaseAudioQuality),
-            mobileDataYouTubeAudioQuality =
-                normalizeMobileDataYouTubeAudioQuality(mobileDataYouTubeAudioQuality),
-            mobileDataBiliAudioQuality =
-                normalizeMobileDataBiliAudioQuality(mobileDataBiliAudioQuality),
-            playbackFadeInDurationMs = playbackFadeInDurationMs.coerceAtLeast(0L),
-            playbackFadeOutDurationMs = playbackFadeOutDurationMs.coerceAtLeast(0L),
-            playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs.coerceAtLeast(0L),
-            playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs.coerceAtLeast(0L),
-            playbackSpeed = normalizePlaybackSpeed(playbackSpeed),
-            playbackPitch = normalizePlaybackPitch(playbackPitch),
-            playbackLoudnessGainMb = normalizePlaybackLoudnessGainMb(playbackLoudnessGainMb),
-            playbackVolumeBalance = normalizePlaybackVolumeBalance(playbackVolumeBalance),
-            playbackEqualizerPreset = playbackEqualizerPreset.trim()
-                .ifBlank { PlaybackEqualizerPresetId.FLAT },
-            usbExclusiveSampleRateMode = UsbExclusiveSampleRateMode
-                .fromStorageValue(usbExclusiveSampleRateMode)
-                .storageValue,
-            usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(usbExclusiveDeviceKey),
-            usbExclusiveBitDepthMode = UsbExclusiveBitDepthMode
-                .fromStorageValue(usbExclusiveBitDepthMode)
-                .storageValue,
-            usbExclusiveBitPerfect = usbExclusiveBitPerfect,
-            usbExclusiveBufferProfile = UsbExclusiveBufferProfile
-                .fromStorageValue(usbExclusiveBufferProfile)
-                .storageValue,
-            usbExclusiveUnsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy
-                .fromStorageValue(usbExclusiveUnsupportedFormatPolicy)
-                .storageValue,
-            usbExclusiveForegroundBufferMs = normalizeUsbExclusiveForegroundBufferMs(
-                usbExclusiveForegroundBufferMs
-            ),
-            usbExclusiveBackgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
-                usbExclusiveBackgroundBufferMs
-            ),
-            usbExclusiveVolumeRiskThresholdDbfs = normalizeUsbExclusiveVolumeRiskThresholdDbfs(
-                usbExclusiveVolumeRiskThresholdDbfs
-            ),
-            cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
-            qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
-            kugouLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(kugouLyricDefaultOffsetMs),
-            lrclibLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(lrclibLyricDefaultOffsetMs),
-            amllTtmlLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(amllTtmlLyricDefaultOffsetMs),
-            defaultLyricSource = LyricSourcePreferencePolicy.normalize(defaultLyricSource),
-            maxCacheSizeBytes = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSizeBytes)
-        )
-    }
-
-    fun toPlaybackSoundConfig(): PlaybackSoundConfig {
-        val normalizedSnapshot = sanitized()
-        return PlaybackSoundConfig(
-            speed = normalizedSnapshot.playbackSpeed,
-            pitch = normalizedSnapshot.playbackPitch,
-            loudnessGainMb = normalizedSnapshot.playbackLoudnessGainMb,
-            volumeBalance = normalizedSnapshot.playbackVolumeBalance,
-            volumeNormalizationEnabled = normalizedSnapshot.playbackVolumeNormalizationEnabled,
-            equalizerEnabled = normalizedSnapshot.playbackEqualizerEnabled,
-            presetId = normalizedSnapshot.playbackEqualizerPreset,
-            customBandLevelsMb = normalizedSnapshot.playbackEqualizerCustomBandLevels
-        )
-    }
-
-}
 
 suspend fun readPlaybackPreferenceSnapshot(context: Context): PlaybackPreferenceSnapshot {
     return runCatching {
@@ -779,4 +651,72 @@ private fun migrateCachedUsbExclusivePreferencesIfNeeded(
         }
     }
     return migrated
+}
+
+fun PlaybackPreferenceSnapshot.sanitized(): PlaybackPreferenceSnapshot {
+    return copy(
+        audioQuality = audioQuality.trim().ifBlank { "exhigh" },
+        youtubeAudioQuality = youtubeAudioQuality.trim().ifBlank { "high" },
+        biliAudioQuality = biliAudioQuality.trim().ifBlank { "high" },
+        mobileDataNeteaseAudioQuality =
+            normalizeMobileDataNeteaseAudioQuality(mobileDataNeteaseAudioQuality),
+        mobileDataYouTubeAudioQuality =
+            normalizeMobileDataYouTubeAudioQuality(mobileDataYouTubeAudioQuality),
+        mobileDataBiliAudioQuality =
+            normalizeMobileDataBiliAudioQuality(mobileDataBiliAudioQuality),
+        playbackFadeInDurationMs = playbackFadeInDurationMs.coerceAtLeast(0L),
+        playbackFadeOutDurationMs = playbackFadeOutDurationMs.coerceAtLeast(0L),
+        playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs.coerceAtLeast(0L),
+        playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs.coerceAtLeast(0L),
+        playbackSpeed = normalizePlaybackSpeed(playbackSpeed),
+        playbackPitch = normalizePlaybackPitch(playbackPitch),
+        playbackLoudnessGainMb = normalizePlaybackLoudnessGainMb(playbackLoudnessGainMb),
+        playbackVolumeBalance = normalizePlaybackVolumeBalance(playbackVolumeBalance),
+        playbackEqualizerPreset = playbackEqualizerPreset.trim()
+            .ifBlank { PlaybackEqualizerPresetId.FLAT },
+        usbExclusiveSampleRateMode = UsbExclusiveSampleRateMode
+            .fromStorageValue(usbExclusiveSampleRateMode)
+            .storageValue,
+        usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(usbExclusiveDeviceKey),
+        usbExclusiveBitDepthMode = UsbExclusiveBitDepthMode
+            .fromStorageValue(usbExclusiveBitDepthMode)
+            .storageValue,
+        usbExclusiveBitPerfect = usbExclusiveBitPerfect,
+        usbExclusiveBufferProfile = UsbExclusiveBufferProfile
+            .fromStorageValue(usbExclusiveBufferProfile)
+            .storageValue,
+        usbExclusiveUnsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy
+            .fromStorageValue(usbExclusiveUnsupportedFormatPolicy)
+            .storageValue,
+        usbExclusiveForegroundBufferMs = normalizeUsbExclusiveForegroundBufferMs(
+            usbExclusiveForegroundBufferMs
+        ),
+        usbExclusiveBackgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
+            usbExclusiveBackgroundBufferMs
+        ),
+        usbExclusiveVolumeRiskThresholdDbfs = normalizeUsbExclusiveVolumeRiskThresholdDbfs(
+            usbExclusiveVolumeRiskThresholdDbfs
+        ),
+        cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
+        qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
+        kugouLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(kugouLyricDefaultOffsetMs),
+        lrclibLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(lrclibLyricDefaultOffsetMs),
+        amllTtmlLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(amllTtmlLyricDefaultOffsetMs),
+        defaultLyricSource = LyricSourcePreferencePolicy.normalize(defaultLyricSource),
+        maxCacheSizeBytes = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSizeBytes)
+    )
+}
+
+fun PlaybackPreferenceSnapshot.toPlaybackSoundConfig(): PlaybackSoundConfig {
+    val normalizedSnapshot = sanitized()
+    return PlaybackSoundConfig(
+        speed = normalizedSnapshot.playbackSpeed,
+        pitch = normalizedSnapshot.playbackPitch,
+        loudnessGainMb = normalizedSnapshot.playbackLoudnessGainMb,
+        volumeBalance = normalizedSnapshot.playbackVolumeBalance,
+        volumeNormalizationEnabled = normalizedSnapshot.playbackVolumeNormalizationEnabled,
+        equalizerEnabled = normalizedSnapshot.playbackEqualizerEnabled,
+        presetId = normalizedSnapshot.playbackEqualizerPreset,
+        customBandLevelsMb = normalizedSnapshot.playbackEqualizerCustomBandLevels
+    )
 }

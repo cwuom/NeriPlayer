@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.generation
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals

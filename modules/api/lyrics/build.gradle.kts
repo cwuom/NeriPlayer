@@ -7,6 +7,7 @@ android {
 }
 
 dependencies {
+    api(project(":data:model"))
     implementation(project(":core:network"))
     implementation(project(":core:lyrics"))
     implementation(project(":core:logging"))

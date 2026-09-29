@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.youtube.auth
 
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.core.network.http.parser.parseRawCookieText
 import moe.ouom.neriplayer.core.network.http.parser.parseRawHeaderText
 

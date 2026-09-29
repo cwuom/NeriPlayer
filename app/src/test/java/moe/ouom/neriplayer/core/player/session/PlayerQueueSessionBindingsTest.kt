@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.session
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.queue.state.PlayerQueueStateStore
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

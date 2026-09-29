@@ -5,9 +5,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.PreferredQualityKeys
-import moe.ouom.neriplayer.core.player.model.forSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PreferredQualityKeys
+import moe.ouom.neriplayer.data.model.playback.forSource
 
 internal interface PlaybackQualityPort {
     fun currentAudioSource(): PlaybackAudioSource?

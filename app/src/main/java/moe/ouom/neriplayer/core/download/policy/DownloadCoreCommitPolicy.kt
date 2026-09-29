@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.policy
 
 import java.util.Locale
 import java.util.UUID
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /**
  * tracks the point after which a cancellation no longer owns the committed media

@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.core.download.manager.recovery
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.policy.finalizedPublicationRecoveryLeaseOwnerId
 import moe.ouom.neriplayer.core.logging.NPLogger

@@ -31,9 +31,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
+import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.github.*
-import moe.ouom.neriplayer.data.sync.model.SyncResult
+import moe.ouom.neriplayer.data.model.sync.SyncResult
 
 /**
  * GitHub 同步 ViewModel

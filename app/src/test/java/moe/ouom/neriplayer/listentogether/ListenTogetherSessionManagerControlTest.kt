@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
 import moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClient
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals

@@ -1,16 +1,18 @@
 package moe.ouom.neriplayer.listentogether.playback
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import android.os.SystemClock
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.url.currentPlaybackRequiresListenTogetherAuthoritativeStream
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.playback.sync.ListenTogetherPlayerSyncContext
 import moe.ouom.neriplayer.listentogether.playback.sync.ListenTogetherPlayerSyncPlan
 import moe.ouom.neriplayer.listentogether.playback.sync.resolveListenTogetherPlayerSyncPlan
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.session.state.normalized
 import moe.ouom.neriplayer.data.model.SongItem
 

@@ -1,13 +1,13 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingStateMachine
-import moe.ouom.neriplayer.core.download.model.describeManagedLibraryProcessingBusy
-import moe.ouom.neriplayer.core.download.model.isManagedLibraryProcessingOwnedByCurrentProcess
-import moe.ouom.neriplayer.core.download.model.restoreManagedLibraryProcessingState
-import moe.ouom.neriplayer.core.download.model.shouldCompleteOrphanedTerminalDirectoryChange
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingStateMachine
+import moe.ouom.neriplayer.core.download.processing.describeManagedLibraryProcessingBusy
+import moe.ouom.neriplayer.core.download.processing.isManagedLibraryProcessingOwnedByCurrentProcess
+import moe.ouom.neriplayer.core.download.processing.restoreManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.processing.shouldCompleteOrphanedTerminalDirectoryChange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

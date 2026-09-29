@@ -14,8 +14,8 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
-import moe.ouom.neriplayer.api.ltw.model.ListenTogetherServerTestResult
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.ListenTogetherServerTestResult
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.SettingsListenTogetherController
 import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.isDefaultListenTogetherSettingsServer
 import moe.ouom.neriplayer.ui.screen.tab.settings.listentogether.listenTogetherIdentityDescriptionId

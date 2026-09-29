@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanPhase
+
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager.LyricSidecarKind
 import android.content.Context
 import android.net.Uri

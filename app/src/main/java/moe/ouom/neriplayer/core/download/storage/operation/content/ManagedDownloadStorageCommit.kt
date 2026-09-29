@@ -34,11 +34,11 @@ import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPending
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
-import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
-import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
@@ -57,7 +57,7 @@ import java.nio.file.Files
 import java.util.UUID
 import org.json.JSONObject
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 private val audioCommitLocks = Array(64) { Mutex() }
 private val audioPublicationLocks = Array(64) { Mutex() }

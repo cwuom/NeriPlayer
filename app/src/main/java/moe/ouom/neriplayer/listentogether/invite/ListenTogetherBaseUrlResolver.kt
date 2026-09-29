@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether.invite
 
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
+
 import moe.ouom.neriplayer.api.ltw.http.normalizeBaseUrl
 import moe.ouom.neriplayer.api.ltw.http.normalizedHttpBaseUrlOrNull
 

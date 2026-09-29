@@ -1,16 +1,9 @@
 package moe.ouom.neriplayer.data.settings.appearance
 
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+
 import android.os.Build
 import java.util.Locale
-
-enum class AdvancedBlurQuality(
-    val storageValue: String
-) {
-    UltraLow("ultra_low"),
-    Low("low"),
-    Default("default"),
-    High("high")
-}
 
 const val DEFAULT_ADVANCED_BLUR_QUALITY = "default"
 

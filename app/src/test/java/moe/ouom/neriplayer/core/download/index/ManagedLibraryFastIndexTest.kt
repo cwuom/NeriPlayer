@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.index
 
 import java.nio.file.Files
 import java.security.MessageDigest
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
 import org.json.JSONObject
@@ -12,7 +12,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class ManagedLibraryFastIndexTest {
     @Test

@@ -336,7 +336,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun pollQrLogin(session: moe.ouom.neriplayer.api.netease.model.auth.NeteaseQrLoginSession) {
+    private suspend fun pollQrLogin(session: moe.ouom.neriplayer.data.model.netease.auth.NeteaseQrLoginSession) {
         while (shouldPollNeteaseQrLogin(lifecycle.currentState, hasReturned)) {
             pollRound += 1
             NPLogger.d(LOG_TAG, "Poll round=$pollRound")

@@ -15,10 +15,10 @@ import moe.ouom.neriplayer.ui.component.lyrics.verticalEdgeFade as newVerticalEd
 import moe.ouom.neriplayer.data.model.SongItem
 
 typealias LyricVisualSpec = moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
-typealias WordTiming = moe.ouom.neriplayer.core.lyrics.WordTiming
-typealias LyricEntry = moe.ouom.neriplayer.core.lyrics.LyricEntry
+typealias WordTiming = moe.ouom.neriplayer.data.model.lyrics.WordTiming
+typealias LyricEntry = moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 typealias LyricSeekHapticFeedback = moe.ouom.neriplayer.ui.component.lyrics.LyricSeekHapticFeedback
-internal typealias LyricsEditorSeed = moe.ouom.neriplayer.core.lyrics.LyricsEditorSeed
+internal typealias LyricsEditorSeed = moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
 internal typealias HeadGlowTarget = moe.ouom.neriplayer.ui.component.lyrics.HeadGlowTarget
 
 @Deprecated(

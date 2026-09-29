@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PreExistingDownloadedAudioAction
@@ -30,7 +34,7 @@ import moe.ouom.neriplayer.core.download.manager.catalog.updateDownloadProgress
 import moe.ouom.neriplayer.core.download.manager.commit.cleanupDownloadArtifactsBeforeFreshStart
 import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownload
 import moe.ouom.neriplayer.core.download.manager.commit.recoverCorePublicationAfterExecutionCancellation
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
 import moe.ouom.neriplayer.core.download.policy.shouldForceFreshStartStorageScan
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.ActiveProgressCheckpointBinding
@@ -59,7 +63,7 @@ import moe.ouom.neriplayer.core.player.download.source.RetryableDownloadFailureE
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 
 
 internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(
@@ -268,7 +272,7 @@ internal suspend fun GlobalDownloadManager.prepareConfirmedDownload(
                         )
                         publishDownloadStage(
                             song = song,
-                            stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                            stage = DownloadStage.WAITING_HOST,
                             operationId = operationId,
                             attemptId = task?.attemptId ?: preparedAttemptId,
                             bytesRead = task?.progress?.bytesRead ?: 0L,
@@ -1270,7 +1274,7 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
         status = retryStatus,
         expectedAttemptId = expectedAttemptId
     )
-    val retryProgress = AudioDownloadManager.DownloadProgress(
+    val retryProgress = DownloadProgress(
         songKey = songKey,
         songId = song.id,
         fileName = previousProgress?.fileName
@@ -1278,7 +1282,7 @@ internal suspend fun GlobalDownloadManager.deferRetryableDownloadFailure(
         bytesRead = previousProgress?.bytesRead ?: 0L,
         totalBytes = previousProgress?.totalBytes ?: 0L,
         speedBytesPerSec = 0L,
-        stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+        stage = DownloadStage.WAITING_RETRY,
         attemptId = expectedAttemptId,
         operationId = operationId,
         durableBytesRead = previousProgress?.durableBytesRead

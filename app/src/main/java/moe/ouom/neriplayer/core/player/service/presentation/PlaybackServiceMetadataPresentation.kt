@@ -9,8 +9,8 @@ import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.playbackVisualKey
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.identity.playbackVisualKey
 
 internal fun serviceMetadataText(
     song: SongItem?,

@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.api.youtube.parser
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+
 import java.util.Locale
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicRequestLocale
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
 import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.api.youtube.protocol.hasEffectiveLogin
 import moe.ouom.neriplayer.api.youtube.protocol.shouldRefreshYouTubeAuthAfterBootstrapFailure

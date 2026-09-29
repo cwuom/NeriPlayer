@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.util.search
 import android.content.Context
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 
 private const val TITLE_BIAS = 0
 private const val TITLE_VARIANT_BIAS = 4

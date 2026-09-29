@@ -22,6 +22,8 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.edit
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.edit/NowPlayingSongEditSheet
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -88,11 +90,10 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText

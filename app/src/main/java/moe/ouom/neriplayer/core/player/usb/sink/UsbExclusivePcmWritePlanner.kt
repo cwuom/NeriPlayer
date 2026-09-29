@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
+import moe.ouom.neriplayer.core.player.usb.transport.outputFrameBytes
+
 import kotlin.math.min
 import kotlin.math.max
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 
 internal object UsbExclusivePcmWritePlanner {
     private const val DEFAULT_MAX_WRITE_CHUNK_BYTES = 12 * 1024

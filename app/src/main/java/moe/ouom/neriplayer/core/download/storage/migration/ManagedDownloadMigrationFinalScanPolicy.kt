@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementJournal
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming

@@ -1,0 +1,7 @@
+package moe.ouom.neriplayer.data.model.settings.lyrics
+
+const val DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS = 1000L
+const val DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS = 500L
+const val DEFAULT_KUGOU_LYRIC_OFFSET_MS = 0L
+const val DEFAULT_LRCLIB_LYRIC_OFFSET_MS = 0L
+const val DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS = 0L

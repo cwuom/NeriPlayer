@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.transfer
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.runtime.deleteWorkingFile
 import moe.ouom.neriplayer.core.player.download.runtime.executeTrackedCall
@@ -83,7 +85,7 @@ internal class AudioDownloadFileTransfer(
             transferGeneration: Long?
         )
 
-        fun publishProgress(progress: AudioDownloadManager.DownloadProgress)
+        fun publishProgress(progress: DownloadProgress)
 
         fun resolveVisibleDownloadFileName(
             requestedName: String,
@@ -396,7 +398,7 @@ internal class AudioDownloadFileTransfer(
                         val elapsedSec = ((nowNs - startNs) / 1_000_000_000.0)
                             .coerceAtLeast(0.001)
                         hooks.publishProgress(
-                            AudioDownloadManager.DownloadProgress(
+                            DownloadProgress(
                                 songKey = songKey,
                                 songId = songId,
                                 fileName = hooks.resolveVisibleDownloadFileName(
@@ -583,7 +585,7 @@ internal class AudioDownloadFileTransfer(
                         output.fd.sync()
                         durableBytes = downloadedBytes
                         hooks.publishProgress(
-                            AudioDownloadManager.DownloadProgress(
+                            DownloadProgress(
                                 songKey = songKey,
                                 songId = songId,
                                 fileName = hooks.resolveVisibleDownloadFileName(
@@ -862,7 +864,7 @@ internal class AudioDownloadFileTransfer(
                     val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
                         .coerceAtLeast(0.001)
                     hooks.publishProgress(
-                        AudioDownloadManager.DownloadProgress(
+                        DownloadProgress(
                             songKey = songKey,
                             songId = songId,
                             fileName = hooks.resolveVisibleDownloadFileName(

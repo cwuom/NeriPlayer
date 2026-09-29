@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.listentogether.playback
 
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 
 const val LISTEN_TOGETHER_MAX_SHAREABLE_QUEUE_SIZE = 2_000
 

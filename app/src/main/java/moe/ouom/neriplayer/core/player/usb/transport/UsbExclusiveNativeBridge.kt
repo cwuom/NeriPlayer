@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.transport
 
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionAckStatus
+
 import android.hardware.usb.UsbDeviceConnection
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicReference

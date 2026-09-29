@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.api.youtube.parser.YouTubeMusicParser
 
 internal data class YouTubeMusicHomeSnapshot(

@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.download.storage.migration.progress.ManagedMigra
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import java.io.IOException
 import java.util.Locale
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal class ManagedDownloadMigrationException(
     message: String,

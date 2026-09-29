@@ -17,8 +17,8 @@ import androidx.compose.ui.platform.LocalResources
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.DownloadDirectoryStoragePort
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.rememberDownloadDirectoryMigrationRecoveryController
 

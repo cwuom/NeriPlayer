@@ -1,10 +1,8 @@
 package moe.ouom.neriplayer.core.player.audio.route
 
 import android.media.AudioDeviceInfo
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SpeakerGroup
-import moe.ouom.neriplayer.core.player.model.AudioDevice
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.AudioDevice
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -43,9 +41,9 @@ class AudioDeviceRoutePolicyTest {
 
     @Test
     fun `USB route jitter distinguishes topology and physical identity`() {
-        val usb = AudioDevice("DAC", AudioDeviceInfo.TYPE_USB_DEVICE, Icons.Default.SpeakerGroup)
+        val usb = AudioDevice("DAC", AudioDeviceInfo.TYPE_USB_DEVICE)
         val otherUsb = usb.copy(name = "replacement")
-        val speaker = AudioDevice("speaker", AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
+        val speaker = AudioDevice("speaker", AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
         val state = playing.copy(usbExclusiveEnabled = true)
         assertFalse(treatsAsUsbRouteJitter(playing, usb, otherUsb))
         assertFalse(treatsAsUsbRouteJitter(state, speaker, speaker))

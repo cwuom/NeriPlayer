@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.testing
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+
 import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Intent

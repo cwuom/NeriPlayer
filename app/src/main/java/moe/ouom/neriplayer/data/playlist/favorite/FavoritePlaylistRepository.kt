@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.data.playlist.favorite
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
@@ -38,7 +38,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.FavoritePlaylistRoomStore
-import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
@@ -49,22 +49,6 @@ import java.io.File
 
 const val FAVORITE_SOURCE_NETEASE_ARTIST = "neteaseArtist"
 private const val TAG = "FavoritePlaylistRepo"
-
-data class FavoritePlaylist(
-    val id: Long,
-    val name: String,
-    val coverUrl: String?,
-    val trackCount: Int,
-    val source: String,
-    val browseId: String? = null,
-    val playlistId: String? = null,
-    val subtitle: String? = null,
-    val songs: List<SongItem>,
-    val addedTime: Long = System.currentTimeMillis(),
-    val sortOrder: Long = addedTime,
-    val modifiedAt: Long = addedTime,
-    val isDeleted: Boolean = false
-)
 
 class FavoritePlaylistRepository private constructor(private val context: Context) {
     private val gson = Gson()

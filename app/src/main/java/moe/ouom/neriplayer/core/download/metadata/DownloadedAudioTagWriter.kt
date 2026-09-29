@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.metadata
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
@@ -13,8 +15,8 @@ import moe.ouom.neriplayer.data.local.media.EmbeddedMetadataPropertyPlan
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.normalizeWritableComments
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger

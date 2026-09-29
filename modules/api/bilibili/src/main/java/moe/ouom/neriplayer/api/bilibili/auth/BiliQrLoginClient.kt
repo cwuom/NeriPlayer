@@ -4,8 +4,8 @@ import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-import moe.ouom.neriplayer.api.bilibili.model.auth.BiliQrLoginCheckResult
-import moe.ouom.neriplayer.api.bilibili.model.auth.BiliQrLoginSession
+import moe.ouom.neriplayer.data.model.bilibili.auth.BiliQrLoginCheckResult
+import moe.ouom.neriplayer.data.model.bilibili.auth.BiliQrLoginSession
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import okhttp3.HttpUrl

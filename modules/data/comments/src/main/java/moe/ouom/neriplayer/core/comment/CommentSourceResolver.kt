@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.core.comment
 import java.util.Locale
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliBvidOrNull
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliCidOrNull
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
-import moe.ouom.neriplayer.core.comment.model.CommentSource
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.SongItem
 

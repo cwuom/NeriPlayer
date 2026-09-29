@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download.task
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -11,16 +15,16 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.DownloadTaskSummary
-import moe.ouom.neriplayer.core.download.model.applyWaitingNetworkStatus
-import moe.ouom.neriplayer.core.download.model.buildDownloadTaskSummary
-import moe.ouom.neriplayer.core.download.model.hasActiveDownloadOperations
-import moe.ouom.neriplayer.core.download.model.mergeDownloadProgress
-import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
-import moe.ouom.neriplayer.core.download.model.shouldApplyTaskProgressMutation
-import moe.ouom.neriplayer.core.download.model.stabilizeDownloadTaskSummary
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadTaskSummary
+import moe.ouom.neriplayer.core.download.presentation.applyWaitingNetworkStatus
+import moe.ouom.neriplayer.core.download.presentation.buildDownloadTaskSummary
+import moe.ouom.neriplayer.core.download.presentation.hasActiveDownloadOperations
+import moe.ouom.neriplayer.core.download.presentation.mergeDownloadProgress
+import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskMutation
+import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskProgressMutation
+import moe.ouom.neriplayer.core.download.presentation.stabilizeDownloadTaskSummary
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -116,7 +120,7 @@ internal class DownloadTaskStore(
         val totalBytes: Long,
         val percentage: Int,
         val speedBytesPerSec: Long,
-        val stage: AudioDownloadManager.DownloadStage,
+        val stage: DownloadStage,
         val emittedAtNs: Long
     )
 
@@ -217,7 +221,7 @@ internal class DownloadTaskStore(
         )
     }
 
-    fun updateProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
+    fun updateProgress(progress: DownloadProgress): Boolean {
         return synchronized(mutationLock) {
             if (isClearKeyBlockedLocked(progress.songKey)) return@synchronized false
             val tasks = _downloadTasks.value
@@ -257,7 +261,7 @@ internal class DownloadTaskStore(
      * 重启后任务尚未进入 DOWNLOADING，普通 updateProgress 会拒绝这类进度，
      * 进而让页面一直显示 0。只接受当前 attempt，并保留单调递增的字节数。
      */
-    fun restoreProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
+    fun restoreProgress(progress: DownloadProgress): Boolean {
         return synchronized(mutationLock) {
             if (isClearKeyBlockedLocked(progress.songKey)) return@synchronized false
             val taskIndex = songKeyIndex[progress.songKey] ?: -1
@@ -291,7 +295,7 @@ internal class DownloadTaskStore(
      * 整个列表并重复重建索引，导致页面首帧和恢复变慢
      */
     fun restoreProgressBatch(
-        progresses: Collection<AudioDownloadManager.DownloadProgress>
+        progresses: Collection<DownloadProgress>
     ): Int {
         if (progresses.isEmpty()) return 0
         return synchronized(mutationLock) {
@@ -649,7 +653,7 @@ internal class DownloadTaskStore(
         return task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
     }
 
-    private fun shouldPublishProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
+    private fun shouldPublishProgress(progress: DownloadProgress): Boolean {
         val nowNs = System.nanoTime()
         val previous = progressPublishStates[progress.songKey]
         val shouldPublish = previous == null || shouldPublishProgress(
@@ -673,12 +677,12 @@ internal class DownloadTaskStore(
 
     private fun shouldPublishProgress(
         previous: TaskProgressPublishState,
-        progress: AudioDownloadManager.DownloadProgress,
+        progress: DownloadProgress,
         nowNs: Long
     ): Boolean {
         val enoughTimeElapsed = nowNs - previous.emittedAtNs >= progressEmitIntervalNs
         return progress.stage != previous.stage ||
-            progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ||
+            progress.stage != DownloadStage.TRANSFERRING ||
             progress.totalBytes != previous.totalBytes ||
             (
                 enoughTimeElapsed &&
@@ -777,8 +781,8 @@ internal class DownloadTaskStore(
     /** 已开始执行的内存进度比启动检查点新，只合并字节高水位而不回退阶段 */
     private fun mergeRestoredProgress(
         task: DownloadTask,
-        restored: AudioDownloadManager.DownloadProgress
-    ): AudioDownloadManager.DownloadProgress {
+        restored: DownloadProgress
+    ): DownloadProgress {
         val current = task.progress
         return if (task.status == DownloadStatus.DOWNLOADING && current != null) {
             mergeDownloadProgress(current = restored, incoming = current)

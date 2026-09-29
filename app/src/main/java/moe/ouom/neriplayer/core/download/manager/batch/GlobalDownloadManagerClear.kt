@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.batch
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.manager.admission.isWifiBoundNetworkPolicyStillRequired
@@ -15,10 +17,10 @@ import moe.ouom.neriplayer.core.download.manager.commit.cleanupCancelledPendingD
 import moe.ouom.neriplayer.core.download.manager.runtime.awaitSongCancellationSettled
 import moe.ouom.neriplayer.core.download.manager.runtime.scheduleWifiBoundDownloadWakeTasks
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_HARD_DEADLINE_MS
 import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS
 import moe.ouom.neriplayer.core.download.policy.DownloadAdmissionGate
@@ -51,7 +53,7 @@ import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteI
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceReleaseResult
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore

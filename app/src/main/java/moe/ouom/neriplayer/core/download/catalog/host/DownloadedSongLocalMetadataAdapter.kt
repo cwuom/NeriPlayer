@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.catalog.host
 
 import moe.ouom.neriplayer.core.download.catalog.assembly.DownloadedSongLocalMetadata
-import moe.ouom.neriplayer.data.local.media.LocalMediaDetails
+import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 
 internal fun LocalMediaDetails.toSongLocalMetadata(): DownloadedSongLocalMetadata =
     DownloadedSongLocalMetadata(

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether.validation
 
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
+
 import moe.ouom.neriplayer.R
 
 const val LISTEN_TOGETHER_NICKNAME_MIN_LENGTH = 1

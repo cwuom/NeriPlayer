@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.listentogether.session.membership
 
 import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherInitialSnapshot
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherLeaveRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherInitialSnapshot
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherLeaveRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherRoomResponse
 
 internal data class ListenTogetherCreateMembershipCall(
     val baseUrl: String,

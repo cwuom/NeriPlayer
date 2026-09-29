@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.system
 
 import kotlin.math.pow
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_PERFECT
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_PERFECT
 
 internal const val USB_EXCLUSIVE_SYSTEM_VOLUME_EXPONENT = 2.0
 

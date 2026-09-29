@@ -19,8 +19,8 @@ import moe.ouom.neriplayer.core.download.storage.SAF_DELETE_RETRY_DELAY_MS
 import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_BATCH_PARALLELISM
 import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_BATCH_SIZE
 import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_PARALLELISM
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger

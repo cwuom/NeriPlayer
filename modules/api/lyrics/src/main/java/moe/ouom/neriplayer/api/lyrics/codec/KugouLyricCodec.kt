@@ -3,10 +3,10 @@ package moe.ouom.neriplayer.api.lyrics.codec
 import java.io.ByteArrayInputStream
 import java.util.Base64
 import java.util.zip.InflaterInputStream
-import moe.ouom.neriplayer.api.lyrics.model.KugouKrcTimedLine
-import moe.ouom.neriplayer.api.lyrics.model.KugouLyricCandidate
-import moe.ouom.neriplayer.api.lyrics.model.KugouLyricsPayload
-import moe.ouom.neriplayer.api.lyrics.model.KugouSongSearchResult
+import moe.ouom.neriplayer.api.lyrics.codec.KugouKrcTimedLine
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricCandidate
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricsPayload
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouSongSearchResult
 import moe.ouom.neriplayer.core.lyrics.hasEditableLyricWordTiming
 import org.json.JSONArray
 import org.json.JSONObject

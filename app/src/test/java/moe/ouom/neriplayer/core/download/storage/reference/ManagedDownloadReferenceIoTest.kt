@@ -17,7 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
-import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer

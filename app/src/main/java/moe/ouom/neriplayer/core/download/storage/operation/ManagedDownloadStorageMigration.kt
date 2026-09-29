@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.normalizeDire
 import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadataBatch
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadLibrarySnapshot
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import android.content.Context
 import android.provider.DocumentsContract
 import androidx.core.net.toUri
@@ -24,15 +24,15 @@ import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigration
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationCopyReceipt
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationSourceEntry
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.isMigrationDocumentIdWithinTree
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayName
 import java.io.File
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.sync.model
 
+import moe.ouom.neriplayer.data.sync.policy.mergePositiveTimestamp
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

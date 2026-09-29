@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Created: 2025/8/15
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -81,7 +83,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.api.bilibili.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTargetOptions
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliSongAlbum
@@ -108,7 +110,6 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.toFavoriteBrowseId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.core.logging.NPLogger

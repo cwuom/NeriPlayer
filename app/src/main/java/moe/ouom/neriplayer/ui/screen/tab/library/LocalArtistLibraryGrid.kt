@@ -39,7 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
+import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest

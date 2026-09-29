@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.usb.device
 
 import android.hardware.usb.UsbDevice
 import android.media.AudioDeviceInfo
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 
 internal fun UsbDevice.usbExclusiveDeviceKey(): String {
     return buildUsbExclusiveDeviceKey(

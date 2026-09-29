@@ -8,7 +8,7 @@ android {
 
 dependencies {
     implementation(project(":core:common"))
-    api(project(":core:model"))
+    api(project(":data:model"))
     api(project(":api:lyrics"))
     api(project(":api:search"))
     api(project(":api:youtube"))

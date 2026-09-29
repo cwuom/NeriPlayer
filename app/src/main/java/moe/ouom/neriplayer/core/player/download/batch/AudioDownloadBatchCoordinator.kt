@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.player.download.batch
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.BatchDownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.progress.AudioDownloadProgressPolicy
 import moe.ouom.neriplayer.core.player.download.runtime.shouldPreserveArtifactsForNetworkPolicy
@@ -19,7 +23,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import java.util.concurrent.atomic.AtomicInteger
@@ -32,9 +36,9 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 internal class AudioDownloadBatchCoordinator(
     private val latestProgressByOperation: StateFlow<
-        Map<String, AudioDownloadManager.DownloadProgress>
+        Map<String, DownloadProgress>
     >,
-    private val latestProgressEvents: SharedFlow<AudioDownloadManager.DownloadProgress>,
+    private val latestProgressEvents: SharedFlow<DownloadProgress>,
     private val maxCompletionCallbacks: Int,
     private val hooks: Hooks,
     private val tag: String = "NERI-Downloader"
@@ -48,7 +52,7 @@ internal class AudioDownloadBatchCoordinator(
 
         fun updateBatchProgressForSession(
             batchSessionId: Long,
-            progress: AudioDownloadManager.BatchDownloadProgress?
+            progress: BatchDownloadProgress?
         )
 
         fun isAllDownloadsCancelled(): Boolean
@@ -108,7 +112,7 @@ internal class AudioDownloadBatchCoordinator(
                 val progressMutex = Mutex()
                 val latestProgressBySongKey = mutableMapOf<
                     String,
-                    AudioDownloadManager.DownloadProgress
+                    DownloadProgress
                 >()
                 val progressPublishMutex = Mutex()
                 var completedSongs = 0
@@ -143,7 +147,7 @@ internal class AudioDownloadBatchCoordinator(
                         }.coerceIn(0.0, 1.0).toFloat()
 
                         nextProgressVersion += 1
-                        nextProgressVersion to AudioDownloadManager.BatchDownloadProgress(
+                        nextProgressVersion to BatchDownloadProgress(
                             totalSongs = trackedSongs.size,
                             completedSongs = completedSongs,
                             currentSong = currentSongLabel,
@@ -192,7 +196,7 @@ internal class AudioDownloadBatchCoordinator(
                 hooks.resetCancelFlag()
                 hooks.updateBatchProgressForSession(
                     batchSessionId,
-                    AudioDownloadManager.BatchDownloadProgress(
+                    BatchDownloadProgress(
                         totalSongs = trackedSongs.size,
                         completedSongs = 0,
                         currentSong = "",
@@ -205,7 +209,7 @@ internal class AudioDownloadBatchCoordinator(
                     requestedParallelism = maxConcurrentDownloads
                 )
 
-                suspend fun acceptProgress(progress: AudioDownloadManager.DownloadProgress) {
+                suspend fun acceptProgress(progress: DownloadProgress) {
                     if (!hooks.isBatchSessionCurrent(batchSessionId)) {
                         return
                     }

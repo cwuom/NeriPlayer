@@ -23,13 +23,31 @@ package moe.ouom.neriplayer.core.download
  * Updated: 2026/3/24
  */
 
+import moe.ouom.neriplayer.core.download.cleanup.DownloadedSongDeleteVisibility
+import moe.ouom.neriplayer.core.download.presentation.QueuedDownloadRequest
+import moe.ouom.neriplayer.core.download.presentation.aggregateBatchDownloadProgress
+import moe.ouom.neriplayer.core.download.presentation.hasActiveDownloadOperations
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
+import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadTaskSummary
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.artifact.*
 import moe.ouom.neriplayer.core.download.manager.admission.*
 import moe.ouom.neriplayer.core.download.manager.batch.*
 import moe.ouom.neriplayer.core.download.manager.catalog.*
 import moe.ouom.neriplayer.core.download.manager.facade.*
 import moe.ouom.neriplayer.core.download.manager.runtime.*
-import moe.ouom.neriplayer.core.download.model.*
 import moe.ouom.neriplayer.core.download.policy.*
 import android.content.Context
 import kotlinx.coroutines.CompletableDeferred
@@ -60,23 +78,23 @@ import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongDeleteFailureDismissalStore
 import moe.ouom.neriplayer.core.download.enrichment.AssetEnrichmentCoordinator
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.progress.DownloadProgressProjectionStore
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.util.units.DAY_MS
 import java.io.File
 import java.util.Collections
@@ -263,7 +281,7 @@ object GlobalDownloadManager {
 
     internal data class PendingProgressCheckpoint(
         val context: Context,
-        val progress: AudioDownloadManager.DownloadProgress,
+        val progress: DownloadProgress,
         val binding: ActiveProgressCheckpointBinding
     )
 
@@ -400,7 +418,7 @@ object GlobalDownloadManager {
     internal val latestProgressProjectionStore =
         DownloadProgressProjectionStore()
     internal val latestProgressByOperation: StateFlow<
-        Map<String, AudioDownloadManager.DownloadProgress>
+        Map<String, DownloadProgress>
         > = latestProgressProjectionStore.snapshot
     internal val activeProgressCheckpointBindings =
         ConcurrentHashMap<String, ActiveProgressCheckpointBinding>()

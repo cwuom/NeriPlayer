@@ -7,8 +7,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.testing.awaitProcessDeathAtSeedCheckpoint
 import org.json.JSONObject
-import org.junit.After
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,12 +31,12 @@ import moe.ouom.neriplayer.core.download.manager.catalog.endDownloadedSongDeleti
 import moe.ouom.neriplayer.core.download.manager.catalog.awaitAllDownloadedSongDeletions
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.reloadDownloadedSongs
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.manager.batch.replayFullLibraryDeleteWithoutCatalog
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import kotlin.time.Duration.Companion.milliseconds
 

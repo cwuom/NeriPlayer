@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.core.download.execution.worker
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
 import moe.ouom.neriplayer.core.download.execution.notification.DOWNLOAD_EXECUTION_NOTIFICATION_ID
 import moe.ouom.neriplayer.core.download.execution.notification.DownloadExecutionNotificationController
 import moe.ouom.neriplayer.core.download.execution.notification.LEGACY_FOREGROUND_NOTIFICATION_MIN

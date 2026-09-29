@@ -23,10 +23,10 @@ package moe.ouom.neriplayer.data.local.playlist.system
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.SongIdentity
-import moe.ouom.neriplayer.data.model.identity
 
 internal fun List<SongItem>.distinctSystemSongs(): List<SongItem> {
     if (size < 2) return this

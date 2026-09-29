@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.policy
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.stableKey

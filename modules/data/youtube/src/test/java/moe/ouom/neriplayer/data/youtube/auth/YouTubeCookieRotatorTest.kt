@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.youtube.auth
 
-import moe.ouom.neriplayer.data.youtube.model.auth.ROTATION_DEFAULT_INTERVAL_MS
-import moe.ouom.neriplayer.data.youtube.model.auth.YouTubeCookieRotationState
+import moe.ouom.neriplayer.data.model.youtube.auth.ROTATION_DEFAULT_INTERVAL_MS
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

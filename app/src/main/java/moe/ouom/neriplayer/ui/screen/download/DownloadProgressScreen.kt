@@ -23,7 +23,9 @@ package moe.ouom.neriplayer.ui.screen.download
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
 import android.content.Context
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -58,30 +60,30 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.BatchDownloadOverallProgress
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
-import moe.ouom.neriplayer.core.download.model.ExplicitDownloadResumeCandidate
+import moe.ouom.neriplayer.core.download.presentation.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.batchDownloadProgressForDisplay
-import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
-import moe.ouom.neriplayer.core.download.model.visibleDownloadProgressTasks
-import moe.ouom.neriplayer.core.download.model.visibleExplicitResumeCandidates
-import moe.ouom.neriplayer.core.download.model.visibleFailedDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.batchDownloadProgressForDisplay
+import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.presentation.visibleDownloadProgressTasks
+import moe.ouom.neriplayer.core.download.presentation.visibleExplicitResumeCandidates
+import moe.ouom.neriplayer.core.download.presentation.visibleFailedDownloadTasks
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearProgressStore
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.execution.recovery.loadExplicitDownloadResumeCandidates
 import moe.ouom.neriplayer.core.download.execution.recovery.resumeExplicitDownload
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
@@ -1371,7 +1373,7 @@ private fun DownloadTaskActionButton(
         DownloadStatus.WAITING_NETWORK,
         DownloadStatus.DOWNLOADING -> {
             if (task.status == DownloadStatus.WAITING_NETWORK ||
-                task.progress?.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY
+                task.progress?.stage == DownloadStage.WAITING_RETRY
             ) {
                 IconButton(onClick = onResume, enabled = actionsEnabled) {
                     Icon(
@@ -1429,7 +1431,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
             Text(
                 text = stringResource(
                     task.progress?.stage
-                        ?.takeIf { it == AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP }
+                        ?.takeIf { it == DownloadStage.WAITING_DELETE_CLEANUP }
                         ?.let(::downloadStageLabelResource)
                         ?: R.string.download_waiting_network_recovery
                 ),
@@ -1453,7 +1455,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                 DownloadTaskIndeterminateProgress()
                 return
             }
-            if (progress.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY) {
+            if (progress.stage == DownloadStage.WAITING_RETRY) {
                 Text(
                     text = stringResource(R.string.download_waiting_retry),
                     style = MaterialTheme.typography.bodySmall,
@@ -1462,7 +1464,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                 DownloadTaskRetainedProgress(progress)
                 return
             }
-            if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
+            if (progress.stage == DownloadStage.FINALIZING) {
                 Text(
                     text = stringResource(R.string.download_finalizing),
                     style = MaterialTheme.typography.bodySmall,
@@ -1532,7 +1534,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
 }
 
 @Composable
-private fun DownloadTaskRetainedProgress(progress: AudioDownloadManager.DownloadProgress) {
+private fun DownloadTaskRetainedProgress(progress: DownloadProgress) {
     Spacer(modifier = Modifier.height(4.dp))
     Text(
         text = formatDownloadTransferProgress(progress, showSpeed = false),

@@ -1,16 +1,18 @@
 package moe.ouom.neriplayer.core.download.execution.recovery
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.download.model.ExplicitDownloadResumeCandidate
-import moe.ouom.neriplayer.core.download.model.visibleExplicitResumeCandidates
+import moe.ouom.neriplayer.core.download.presentation.ExplicitDownloadResumeCandidate
+import moe.ouom.neriplayer.core.download.presentation.visibleExplicitResumeCandidates
 import moe.ouom.neriplayer.data.model.stableKey
 
 private val EXPLICIT_RESUME_OPERATION_STATES = listOf(

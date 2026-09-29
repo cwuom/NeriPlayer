@@ -24,9 +24,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.storage.migration.migrationProgressFromWorkData
 import moe.ouom.neriplayer.core.logging.NPLogger

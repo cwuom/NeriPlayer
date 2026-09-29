@@ -6,8 +6,8 @@ import moe.ouom.neriplayer.core.player.download.runtime.downloadSongOnIo
 import moe.ouom.neriplayer.core.player.download.runtime.evictDownloadConnections
 import moe.ouom.neriplayer.core.player.download.runtime.publishProgress
 import moe.ouom.neriplayer.core.player.download.runtime.snapshotActiveCalls
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadStage
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager.HlsResumeState
 import android.content.Context
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.state.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.download.DownloadAudioQualitySelection
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 
 internal fun AudioDownloadManager.notifyRecoveryOpportunityImpl(reason: String) {
     val appContext = AppContainer.applicationContext

@@ -5,7 +5,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,7 +15,7 @@ import org.junit.Assert.assertTrue
 import org.json.JSONObject
 import org.junit.Test
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class DownloadedAudioMetadataStoreTest {
 

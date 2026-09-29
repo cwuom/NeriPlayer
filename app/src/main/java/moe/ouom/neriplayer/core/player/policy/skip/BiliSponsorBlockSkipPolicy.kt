@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.policy.skip
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockSegment
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockSegment
 
 internal const val BILI_SPONSOR_BLOCK_REWIND_TOLERANCE_MS = 1_000L
 

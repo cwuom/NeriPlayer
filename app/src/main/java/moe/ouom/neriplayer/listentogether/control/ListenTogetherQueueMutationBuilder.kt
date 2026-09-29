@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.listentogether.control
 
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.LISTEN_TOGETHER_MAX_QUEUE_MUTATION_OPERATIONS
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueMutation
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueOperation
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueReference
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.message.queue.LISTEN_TOGETHER_MAX_QUEUE_MUTATION_OPERATIONS
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueMutation
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueOperation
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueReference
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 
 internal data class ListenTogetherQueueMutationPlan(
     val mutation: ListenTogetherQueueMutation,

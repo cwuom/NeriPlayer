@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

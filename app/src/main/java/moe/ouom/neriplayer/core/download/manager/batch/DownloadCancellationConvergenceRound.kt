@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.batch
 
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 
 internal suspend fun runCancellationConvergenceRound(
     loadRequests: suspend () -> List<DownloadExecutionRequest>,

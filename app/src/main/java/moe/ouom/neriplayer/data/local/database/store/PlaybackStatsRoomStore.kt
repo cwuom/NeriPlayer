@@ -7,10 +7,10 @@ import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatCounterShardEn
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatDailyCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatEntity
 import moe.ouom.neriplayer.data.local.database.entity.toEntity
-import moe.ouom.neriplayer.data.stats.PlaybackStatBucket
-import moe.ouom.neriplayer.data.stats.PlaybackStatsSyncCounterSnapshot
-import moe.ouom.neriplayer.data.stats.TrackStat
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 
 internal data class PlaybackStatsRoomSnapshot(
     val stats: List<TrackStat>,

@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.data.storage
 
-import moe.ouom.neriplayer.data.storage.model.FileStats
-import moe.ouom.neriplayer.data.storage.model.ManagedDownloadLibraryUsage
-import moe.ouom.neriplayer.data.storage.model.StorageCacheKind
-import moe.ouom.neriplayer.data.storage.model.StorageDownloadIndexStats
-import moe.ouom.neriplayer.data.storage.model.StorageLibraryEntry
-import moe.ouom.neriplayer.data.storage.model.StoragePlatformCacheStats
+import moe.ouom.neriplayer.data.model.storage.FileStats
+import moe.ouom.neriplayer.data.model.storage.ManagedDownloadLibraryUsage
+import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
+import moe.ouom.neriplayer.data.model.storage.StorageDownloadIndexStats
+import moe.ouom.neriplayer.data.model.storage.StorageLibraryEntry
+import moe.ouom.neriplayer.data.model.storage.StoragePlatformCacheStats
 import moe.ouom.neriplayer.data.storage.scan.StorageUsageScanner
 import moe.ouom.neriplayer.data.storage.source.StorageLocations
 import moe.ouom.neriplayer.data.storage.source.StorageUsageSource

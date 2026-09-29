@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution.worker
 
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import android.content.Context
 import android.net.NetworkCapabilities
@@ -20,7 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.jvm.JvmName
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 
 /** wakes a Wi-Fi-bound operation only after a Wi-Fi-class transport is available again */

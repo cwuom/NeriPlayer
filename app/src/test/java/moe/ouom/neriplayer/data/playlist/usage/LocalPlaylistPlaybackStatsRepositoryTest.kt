@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.playlist.usage
 
+import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
+
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.junit.Assert.assertEquals

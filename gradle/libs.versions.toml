@@ -1,4 +1,5 @@
 [versions]
+androidxAnnotation = "1.11.0"
 accompanistNavigationAnimation = "0.36.0"
 agp = "9.4.1"
 coilCompose = "2.7.0"
@@ -50,6 +51,7 @@ lyriconProvider = "0.1.70"
 zxingCore = "3.5.4"
 
 [libraries]
+androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidxAnnotation" }
 accompanist-navigation-animation = { module = "com.google.accompanist:accompanist-navigation-animation", version.ref = "accompanistNavigationAnimation" }
 android-tools = { module = "com.android.tools.build:gradle", version.ref = "agp" }
 androidx-animation = { module = "androidx.compose.animation:animation" }

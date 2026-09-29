@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.playlist.sync
 
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows

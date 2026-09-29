@@ -7,12 +7,12 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOrZero
 import moe.ouom.neriplayer.core.player.durationMsOrZero
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
-import moe.ouom.neriplayer.core.player.queue.model.ListenTogetherTrackFinishPlan
-import moe.ouom.neriplayer.core.player.queue.model.PlaybackFailureAdvanceAction
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.queue.model.QueueNavigationStep
-import moe.ouom.neriplayer.core.player.queue.model.QueueTrackCompletion
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan
+import moe.ouom.neriplayer.data.model.playback.queue.PlaybackFailureAdvanceAction
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.queue.QueueNavigationStep
+import moe.ouom.neriplayer.data.model.playback.queue.QueueTrackCompletion
 import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueNavigationOwner
 import moe.ouom.neriplayer.core.player.queue.policy.failure.resolvePlaybackFailureAdvanceAction
 

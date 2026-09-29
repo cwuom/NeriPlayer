@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.playlist.usage
 
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -7,13 +9,13 @@ import android.content.res.Resources
 import android.os.LocaleList
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.artist.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -46,7 +48,7 @@ class PlaylistUsageRepositoryTest {
             source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST,
             now = 100L
         )
-        mockStatic(Class.forName("moe.ouom.neriplayer.data.model.MediaModelExtensionsKt"), CALLS_REAL_METHODS).use { extensions ->
+        mockStatic(Class.forName("moe.ouom.neriplayer.data.local.media.MediaDisplayExtensionsKt"), CALLS_REAL_METHODS).use { extensions ->
             extensions.`when`<String?> { artist.displayCoverUrl(context, true) }
                 .thenReturn("file:///covers/refreshed.jpg")
 

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.StateEntry
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.CoreCommitJournalRecovery
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.OperationIdentity

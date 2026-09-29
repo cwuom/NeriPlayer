@@ -16,13 +16,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.BatchDownloadOverallProgress
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.downloadProgressFraction
-import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.core.download.presentation.downloadProgressFraction
+import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
+import moe.ouom.neriplayer.data.local.media.displayName
 import kotlin.time.Duration.Companion.milliseconds
 
 internal const val DOWNLOAD_EXECUTION_NOTIFICATION_CHANNEL_ID = "download_execution"

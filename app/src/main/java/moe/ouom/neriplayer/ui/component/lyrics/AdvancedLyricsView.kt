@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.core.lyrics.isNeteaseYrc
 import moe.ouom.neriplayer.core.lyrics.isTtmlLyrics

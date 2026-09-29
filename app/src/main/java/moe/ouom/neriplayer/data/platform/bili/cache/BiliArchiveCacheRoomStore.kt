@@ -4,9 +4,9 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
-import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.BiliArchiveContentCache
+import moe.ouom.neriplayer.data.model.bilibili.cache.archive.BiliArchiveContentCache
 import moe.ouom.neriplayer.data.platform.bili.cache.archive.BiliArchiveCacheStore
-import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.CachedBiliArchiveVideo
+import moe.ouom.neriplayer.data.model.bilibili.cache.archive.CachedBiliArchiveVideo
 import java.util.Locale
 
 internal class BiliArchiveCacheRoomStore(

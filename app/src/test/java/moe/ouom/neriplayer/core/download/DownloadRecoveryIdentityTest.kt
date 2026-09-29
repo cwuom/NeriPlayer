@@ -1,15 +1,17 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.manager.runtime.isMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.isRecoveryMetadataOwnedBySong
-import moe.ouom.neriplayer.core.download.model.hasDownloadedAudioDurationMismatch
+import moe.ouom.neriplayer.core.download.policy.hasDownloadedAudioDurationMismatch
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class DownloadRecoveryIdentityTest {
     private val song = SongItem(

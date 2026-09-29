@@ -1,6 +1,10 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

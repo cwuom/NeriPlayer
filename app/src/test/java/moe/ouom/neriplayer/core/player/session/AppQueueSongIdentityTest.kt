@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.player.session
+
+import moe.ouom.neriplayer.data.model.stableKey
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.queue.model.QueueInsertPlacement
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement
 import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueEditOwner
 import moe.ouom.neriplayer.core.player.queue.policy.QueueRepeatMode
 import moe.ouom.neriplayer.core.player.queue.state.PlayerQueueStateStore

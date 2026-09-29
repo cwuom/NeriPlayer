@@ -6,8 +6,8 @@ import moe.ouom.neriplayer.core.player.service.presentation.serviceMetadataSnaps
 import moe.ouom.neriplayer.core.player.service.presentation.serviceMetadataText
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
-import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
-import moe.ouom.neriplayer.core.player.timer.SleepTimerState
+import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
+import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

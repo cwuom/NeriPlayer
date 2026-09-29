@@ -11,8 +11,8 @@ import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.NO_MEDIA_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo

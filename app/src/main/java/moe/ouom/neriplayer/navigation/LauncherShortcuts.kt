@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.navigation
 
+import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutAction
+import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutRequest
+
 const val ACTION_LAUNCHER_SHORTCUT_CONTINUE_PLAYBACK =
     "moe.ouom.neriplayer.action.CONTINUE_PLAYBACK"
 const val ACTION_LAUNCHER_SHORTCUT_EXPLORE =
@@ -8,18 +11,6 @@ const val ACTION_LAUNCHER_SHORTCUT_LIBRARY =
     "moe.ouom.neriplayer.action.OPEN_LIBRARY"
 const val ACTION_LAUNCHER_SHORTCUT_SHUFFLE_FAVORITES =
     "moe.ouom.neriplayer.action.SHUFFLE_FAVORITES"
-
-enum class LauncherShortcutAction {
-    ContinuePlayback,
-    OpenExplore,
-    OpenLibrary,
-    ShuffleFavorites
-}
-
-data class LauncherShortcutRequest(
-    val token: Long,
-    val action: LauncherShortcutAction
-)
 
 fun launcherShortcutActionFromIntentAction(action: String?): LauncherShortcutAction? {
     return when (action) {

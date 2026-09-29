@@ -1,25 +1,5 @@
 package moe.ouom.neriplayer.api.search.client
 
-import android.annotation.SuppressLint
-import java.io.IOException
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.api.netease.client.NeteaseClient
-import moe.ouom.neriplayer.api.search.SearchApi
-import moe.ouom.neriplayer.api.search.model.CloudMusicLyricResponse
-import moe.ouom.neriplayer.api.search.model.CloudMusicSearchResponse
-import moe.ouom.neriplayer.api.search.model.CloudMusicSongDetailResponse
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.model.music.SongDetails
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
-import moe.ouom.neriplayer.util.network.awaitResponse
-import okhttp3.OkHttpClient
-import okhttp3.Request
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -43,6 +23,25 @@ import okhttp3.Request
  * Created: 2025/8/17
  */
 
+import android.annotation.SuppressLint
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import moe.ouom.neriplayer.api.netease.client.NeteaseClient
+import moe.ouom.neriplayer.api.search.SearchApi
+import moe.ouom.neriplayer.data.model.netease.search.CloudMusicLyricResponse
+import moe.ouom.neriplayer.data.model.netease.search.CloudMusicSearchResponse
+import moe.ouom.neriplayer.data.model.netease.search.CloudMusicSongDetailResponse
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongDetails
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
+import moe.ouom.neriplayer.util.network.awaitResponse
+import okhttp3.OkHttpClient
+import okhttp3.Request
 class CloudMusicSearchApi(
     private val neteaseClient: NeteaseClient,
     private val client: OkHttpClient,

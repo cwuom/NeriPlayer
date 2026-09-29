@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.policy
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 fun DownloadedAudioMetadata.publicationOwnerId(): String? =
     audioPublicationOwnerId?.takeIf(String::isNotBlank)

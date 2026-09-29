@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
+import moe.ouom.neriplayer.core.player.usb.transport.hasHealthyTransport
+import moe.ouom.neriplayer.core.player.usb.transport.hasPcmQueue
+import moe.ouom.neriplayer.core.player.usb.transport.isBenignBackpressure
+
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
@@ -12,7 +16,7 @@ import kotlin.math.max
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatSampleForNativePipeline
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.valueAfter

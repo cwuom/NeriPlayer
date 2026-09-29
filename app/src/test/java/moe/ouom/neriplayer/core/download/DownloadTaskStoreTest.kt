@@ -1,11 +1,15 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.DownloadTaskSummary
-import moe.ouom.neriplayer.core.download.model.buildDownloadTaskSummary
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellationCandidate
-import moe.ouom.neriplayer.core.download.model.stabilizeDownloadTaskSummary
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadTaskSummary
+import moe.ouom.neriplayer.core.download.presentation.buildDownloadTaskSummary
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellationCandidate
+import moe.ouom.neriplayer.core.download.presentation.stabilizeDownloadTaskSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -72,14 +76,14 @@ class DownloadTaskStoreTest {
             assertEquals(statuses, store.currentTasks().map { it.status })
             val live = progress(songs.first(), 1L, 80L).copy(
                 operationId = "op",
-                stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING,
+                stage = DownloadStage.ASSETS_ENRICHING,
                 publicationSequence = 2L
             )
             assertTrue(store.updateProgress(live))
             val liveTasks = store.currentTasks()
             repeat(100) {
                 val stale = live.copy(
-                    stage = AudioDownloadManager.DownloadStage.WAITING_RETRY,
+                    stage = DownloadStage.WAITING_RETRY,
                     publicationSequence = 1L
                 )
                 assertFalse(store.updateProgress(stale))
@@ -267,7 +271,7 @@ class DownloadTaskStoreTest {
                 song = downloadSong,
                 attemptId = attemptId,
                 bytesRead = 128L,
-                stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP
+                stage = DownloadStage.WAITING_DELETE_CLEANUP
             )
 
             assertTrue(store.updateProgress(waitingProgress))
@@ -332,7 +336,7 @@ class DownloadTaskStoreTest {
                 song = downloadSong,
                 attemptId = attemptId,
                 bytesRead = 128L,
-                stage = AudioDownloadManager.DownloadStage.RESOLVING_SOURCE
+                stage = DownloadStage.RESOLVING_SOURCE
             )
             assertTrue(store.updateProgress(liveProgress))
 
@@ -344,7 +348,7 @@ class DownloadTaskStoreTest {
                             song = downloadSong,
                             attemptId = attemptId,
                             bytesRead = 512L,
-                            stage = AudioDownloadManager.DownloadStage.WAITING_HOST
+                            stage = DownloadStage.WAITING_HOST
                         )
                     )
                 )
@@ -352,7 +356,7 @@ class DownloadTaskStoreTest {
 
             val merged = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
             assertEquals(512L, merged.bytesRead)
-            assertEquals(AudioDownloadManager.DownloadStage.RESOLVING_SOURCE, merged.stage)
+            assertEquals(DownloadStage.RESOLVING_SOURCE, merged.stage)
             assertEquals(liveProgress.speedBytesPerSec, merged.speedBytesPerSec)
         } finally {
             scope.cancel()
@@ -865,7 +869,7 @@ class DownloadTaskStoreTest {
                         song = downloadSong,
                         attemptId = attemptId,
                         bytesRead = 200L,
-                        stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                        stage = DownloadStage.WAITING_RETRY
                     ).copy(speedBytesPerSec = 0L)
                 )
             )
@@ -873,7 +877,7 @@ class DownloadTaskStoreTest {
             assertEquals(800L, waitingProgress.bytesRead)
             assertEquals(1_000L, waitingProgress.totalBytes)
             assertEquals(0L, waitingProgress.speedBytesPerSec)
-            assertEquals(AudioDownloadManager.DownloadStage.WAITING_RETRY, waitingProgress.stage)
+            assertEquals(DownloadStage.WAITING_RETRY, waitingProgress.stage)
 
             store.registerActiveDownloadTask(downloadSong, attemptId)
             assertEquals(800L, store.findTask(downloadSong.stableKey())?.progress?.bytesRead)
@@ -889,7 +893,7 @@ class DownloadTaskStoreTest {
             val restartedProgress = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
             assertEquals(800L, restartedProgress.bytesRead)
             assertEquals(1_000L, restartedProgress.totalBytes)
-            assertEquals(AudioDownloadManager.DownloadStage.TRANSFERRING, restartedProgress.stage)
+            assertEquals(DownloadStage.TRANSFERRING, restartedProgress.stage)
 
             assertFalse(
                 store.updateProgress(
@@ -955,10 +959,10 @@ class DownloadTaskStoreTest {
         song: SongItem,
         attemptId: Long,
         bytesRead: Long,
-        stage: AudioDownloadManager.DownloadStage =
-            AudioDownloadManager.DownloadStage.TRANSFERRING
-    ): AudioDownloadManager.DownloadProgress {
-        return AudioDownloadManager.DownloadProgress(
+        stage: DownloadStage =
+            DownloadStage.TRANSFERRING
+    ): DownloadProgress {
+        return DownloadProgress(
             songKey = song.stableKey(),
             songId = song.id,
             fileName = "song.mp3",

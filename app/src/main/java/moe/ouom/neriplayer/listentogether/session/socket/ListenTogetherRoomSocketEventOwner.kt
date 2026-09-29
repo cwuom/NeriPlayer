@@ -7,8 +7,8 @@ import moe.ouom.neriplayer.listentogether.session.membership.resolveListenTogeth
 import moe.ouom.neriplayer.listentogether.session.membership.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.listentogether.session.membership.shouldApplyListenTogetherClosedRoomPause
 import moe.ouom.neriplayer.listentogether.session.membership.shouldShowListenTogetherControllerReconnectedNotice
-import moe.ouom.neriplayer.listentogether.session.state.AcceptedRoomState
-import moe.ouom.neriplayer.listentogether.session.state.RoomStateSource
+import moe.ouom.neriplayer.data.model.ltw.session.AcceptedRoomState
+import moe.ouom.neriplayer.data.model.ltw.session.RoomStateSource
 import moe.ouom.neriplayer.listentogether.session.state.normalized
 import moe.ouom.neriplayer.listentogether.session.state.shouldAcceptListenTogetherAuthoritativeQueueUpdate
 import moe.ouom.neriplayer.listentogether.session.state.shouldDeferListenTogetherIncomingStateForLocalTrackFinish
@@ -16,10 +16,10 @@ import moe.ouom.neriplayer.listentogether.session.state.shouldIgnoreListenTogeth
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.isListenTogetherQueueUpdateCause
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
-import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
 
 internal interface ListenTogetherRoomSocketEventPort {
     fun session(): ListenTogetherSessionState

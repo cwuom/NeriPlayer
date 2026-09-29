@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.traffic
 
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
+
 import android.net.NetworkCapabilities
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock

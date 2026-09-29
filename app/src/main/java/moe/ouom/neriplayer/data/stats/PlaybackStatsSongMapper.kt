@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.stats
 
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun TrackStat.toPlaybackStatsSongItem(): SongItem = SongItem(

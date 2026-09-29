@@ -6,10 +6,11 @@ import java.net.URLEncoder
 import java.util.Locale
 import moe.ouom.neriplayer.api.youtube.challenge.YouTubeStreamingCipherResolver
 import moe.ouom.neriplayer.api.youtube.challenge.extractStreamQueryParameter
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubeAudioMetadata
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubeMusicPlaybackQuality
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayerPlayabilityStatus
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubeAudioMetadata
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubeHlsAudioPlaylist
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubeMusicPlaybackQuality
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerPlayabilityStatus
 import moe.ouom.neriplayer.api.youtube.transport.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONArray
@@ -540,13 +541,6 @@ object YouTubeMusicPlaybackParser {
         return URLEncoder.encode(this, Charsets.UTF_8.name())
     }
 }
-
-internal data class YouTubeHlsAudioPlaylist(
-    val uri: String,
-    val contentLength: Long? = null,
-    val estimatedBitrate: Int = 0,
-    val audioItag: Int? = null
-)
 
 internal object YouTubeMusicHlsManifestParser {
     fun selectAudioPlaylist(

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.execution.state.planDownloadRetry
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase

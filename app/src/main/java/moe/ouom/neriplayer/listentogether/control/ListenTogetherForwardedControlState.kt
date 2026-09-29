@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.listentogether.control
 import moe.ouom.neriplayer.listentogether.playback.mergeCurrentTrack
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherQueueIndex
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
 
 internal fun buildListenTogetherForwardedControlSyntheticState(
     currentState: ListenTogetherRoomState,

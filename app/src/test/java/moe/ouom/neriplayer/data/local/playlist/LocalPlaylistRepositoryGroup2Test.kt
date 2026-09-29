@@ -1,13 +1,15 @@
 package moe.ouom.neriplayer.data.local.playlist
 
+import moe.ouom.neriplayer.data.sync.mapping.fromSongItem
+
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistDeletionPolicy
+import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
-import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

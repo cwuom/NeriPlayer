@@ -1,13 +1,13 @@
 package moe.ouom.neriplayer.api.bilibili.parser
 
-import moe.ouom.neriplayer.api.bilibili.model.collection.CollectionArchiveItem
-import moe.ouom.neriplayer.api.bilibili.model.collection.SeriesArchivePage
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContent
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContentKind
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContentPage
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderProfile
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderVideo
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderVideoPage
+import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
+import moe.ouom.neriplayer.data.model.bilibili.collection.SeriesArchivePage
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentKind
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentPage
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderProfile
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideo
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideoPage
 import org.json.JSONArray
 import org.json.JSONObject
 

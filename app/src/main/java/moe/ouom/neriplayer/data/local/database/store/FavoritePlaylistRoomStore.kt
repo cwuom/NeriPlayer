@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 
 internal class FavoritePlaylistRoomStore(
     private val database: NeriUserDataDatabase,

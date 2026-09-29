@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import android.content.Context
 import com.kyant.taglib.PropertyMap
 import moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogIndex as buildDownloadedSongCatalogIndexDelegate
@@ -57,9 +57,9 @@ import moe.ouom.neriplayer.core.download.policy.shouldTrustFastDownloadedSongCat
 import moe.ouom.neriplayer.core.download.policy.shouldUseImmediateDownloadedPlaybackHydration as shouldUseImmediateDownloadedPlaybackHydrationDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup as shouldUseIndexedSidecarLookupDelegate
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal typealias DownloadedSongCatalogIndex = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 internal typealias DownloadedSongCatalogStore = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogStore

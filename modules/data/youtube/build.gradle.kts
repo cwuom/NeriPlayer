@@ -9,7 +9,7 @@ android {
 dependencies {
     implementation(project(":api:youtube"))
     implementation(project(":core:common"))
-    implementation(project(":core:model"))
+    implementation(project(":data:model"))
     implementation(project(":core:network"))
     implementation(project(":core:logging"))
     implementation(libs.okhttp)

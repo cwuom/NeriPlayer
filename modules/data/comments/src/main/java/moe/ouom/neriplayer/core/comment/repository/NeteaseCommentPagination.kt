@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.comment.repository
 
 import moe.ouom.neriplayer.core.comment.CommentApiException
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentPage
-import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentPage
+import moe.ouom.neriplayer.data.model.comments.CommentSort
 
 internal fun requireNeteaseCommentProgress(result: CommentPage, sort: CommentSort, cursor: String?) {
     val stalledTimeCursor = sort == CommentSort.NEWEST &&

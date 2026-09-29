@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.data.playlist.usage
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -39,45 +39,26 @@ import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
-import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.artist.buildLocalArtistSummaries
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncPlaylistUsageStatsMergePolicy
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
-import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
+import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.sync.mapping.sanitizeCoverUrlForSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
 import java.util.UUID
-
-data class UsageEntry(
-    val id: Long,
-    val name: String,
-    val picUrl: String?,
-    val trackCount: Int,
-    val source: String, // "netease" | "neteaseAlbum" | "bili" | "local" | "localArtist" | "youtubeMusic"
-    val lastOpened: Long,
-    val openCount: Int,
-    val firstOpened: Long = lastOpened,
-    val counterBaseOpenCount: Long = 0L,
-    val counterShards: List<SyncPlaybackCounterShard> = emptyList(),
-    val fid: Long? = null,
-    val mid: Long? = null,
-    val browseId: String? = null,
-    val playlistId: String? = null,
-    val subtype: String? = null,
-    val subtitle: String? = null,
-)
 
 internal fun playlistUsageKey(source: String, id: Long, subtype: String?): String = buildString {
     append(source)

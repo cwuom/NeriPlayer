@@ -1,13 +1,15 @@
 package moe.ouom.neriplayer.core.player.service.notification
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.service.presentation.PlaybackNotificationSnapshot
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
-import moe.ouom.neriplayer.core.player.timer.SleepTimerState
+import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
+import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.widget.PlaybackWidgetState
 import moe.ouom.neriplayer.widget.buildPlaybackWidgetState

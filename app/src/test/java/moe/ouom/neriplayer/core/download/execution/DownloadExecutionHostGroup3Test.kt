@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.host.canScheduleDownloadOperation
 import moe.ouom.neriplayer.core.download.execution.host.releaseTransferReservation
 import moe.ouom.neriplayer.core.download.execution.host.requiresTransferHostAdmission

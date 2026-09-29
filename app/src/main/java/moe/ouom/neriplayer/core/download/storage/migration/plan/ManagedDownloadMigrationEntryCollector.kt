@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal object ManagedDownloadMigrationEntryCollector {
     internal data class PendingArtifactClassification(

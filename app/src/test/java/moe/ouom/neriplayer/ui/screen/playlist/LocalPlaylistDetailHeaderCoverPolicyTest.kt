@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

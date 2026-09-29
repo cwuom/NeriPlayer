@@ -36,11 +36,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.batchDownloadProgressForDisplay
-import moe.ouom.neriplayer.core.download.model.countFailedDownloadTasks
-import moe.ouom.neriplayer.core.download.model.countPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.batchDownloadProgressForDisplay
+import moe.ouom.neriplayer.core.download.presentation.countFailedDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton

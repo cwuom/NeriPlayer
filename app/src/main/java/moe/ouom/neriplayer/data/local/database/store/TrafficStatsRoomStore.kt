@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.TrafficStatsBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.toDomain
 import moe.ouom.neriplayer.data.local.database.entity.toEntity
-import moe.ouom.neriplayer.data.traffic.TrafficStatsBucket
+import moe.ouom.neriplayer.data.model.traffic.TrafficStatsBucket
 
 internal class TrafficStatsRoomStore(
     private val database: NeriUserDataDatabase

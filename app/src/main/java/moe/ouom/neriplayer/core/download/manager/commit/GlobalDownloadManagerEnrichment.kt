@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.commit
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -16,13 +18,13 @@ import moe.ouom.neriplayer.core.download.manager.runtime.cleanupUnfinalizedDownl
 import moe.ouom.neriplayer.core.download.manager.runtime.publishCompletedDownloadOptimistically
 import moe.ouom.neriplayer.core.download.manager.recovery.invalidCoreAudioReason
 import moe.ouom.neriplayer.core.download.manager.recovery.requeueInvalidCoreAudio
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedArtifactIntegrityResult
-import moe.ouom.neriplayer.core.download.model.DownloadedArtifactReferenceState
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.expectedDownloadedAudioDurationMs
-import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
-import moe.ouom.neriplayer.core.download.model.verifyDownloadedArtifactIntegrity
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedArtifactIntegrityResult
+import moe.ouom.neriplayer.data.model.download.DownloadedArtifactReferenceState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.policy.expectedDownloadedAudioDurationMs
+import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskMutation
+import moe.ouom.neriplayer.core.download.policy.verifyDownloadedArtifactIntegrity
 import moe.ouom.neriplayer.core.download.policy.FinalizedDownloadPublicationResult
 import moe.ouom.neriplayer.core.download.policy.TerminalTemporaryWriteCleanupRetryPolicy
 import moe.ouom.neriplayer.core.download.policy.finalizedTemporaryWriteTargetNames
@@ -53,7 +55,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
@@ -78,7 +80,7 @@ import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(

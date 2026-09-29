@@ -1,5 +1,15 @@
 package moe.ouom.neriplayer.data.config
 
+import moe.ouom.neriplayer.data.model.config.AppConfigBackup
+import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.LanguageConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.ListenTogetherConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.SavedCookieConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.SyncPreferencesConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.config.WebDavSyncConfigSnapshot
+import moe.ouom.neriplayer.data.model.config.YouTubeAuthConfigSnapshot
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

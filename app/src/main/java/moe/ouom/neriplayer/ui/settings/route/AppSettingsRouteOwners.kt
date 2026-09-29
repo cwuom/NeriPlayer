@@ -15,11 +15,11 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
-import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
-import moe.ouom.neriplayer.data.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner

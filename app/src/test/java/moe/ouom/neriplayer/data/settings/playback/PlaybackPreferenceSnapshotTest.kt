@@ -1,13 +1,15 @@
 package moe.ouom.neriplayer.data.settings.playback
 
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import androidx.datastore.preferences.core.preferencesOf
-import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_LOUDNESS_GAIN_MB
-import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_PITCH
-import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_SPEED
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_LOUDNESS_GAIN_MB
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_SPEED
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

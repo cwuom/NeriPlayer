@@ -1,11 +1,12 @@
 package moe.ouom.neriplayer.core.download.catalog
 
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.localFileNameFromFileReference
-import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
+import moe.ouom.neriplayer.data.identity.identity
+
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.localFileNameFromFileReference
+import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

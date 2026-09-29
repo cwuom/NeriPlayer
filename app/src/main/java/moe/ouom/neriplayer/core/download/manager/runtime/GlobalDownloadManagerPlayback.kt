@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.buildExpectedDownloadArtists
@@ -14,9 +19,9 @@ import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleDownloadedSongReferenceReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.updateDownloadProgress
 import moe.ouom.neriplayer.core.download.manager.commit.inspectFinalizedDownloadedAudio
-import moe.ouom.neriplayer.core.download.model.hasDownloadedAudioDurationMismatch
-import moe.ouom.neriplayer.core.download.model.expectedDownloadedAudioDurationMs
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.hasDownloadedAudioDurationMismatch
+import moe.ouom.neriplayer.core.download.policy.expectedDownloadedAudioDurationMs
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.policy.matchesDownloadedCatalogFileSize
 import moe.ouom.neriplayer.core.download.policy.shouldTrustDirectPresentDownloadedSongReference
@@ -33,9 +38,8 @@ import moe.ouom.neriplayer.core.player.download.progress.forPublication
 import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 internal suspend fun GlobalDownloadManager.findExistingDownloadedAudio(
@@ -631,7 +635,7 @@ internal fun GlobalDownloadManager.batchOperationIdForAttempt(
 
 internal fun GlobalDownloadManager.publishDownloadStage(
     song: SongItem,
-    stage: AudioDownloadManager.DownloadStage,
+    stage: DownloadStage,
     operationId: String? = null,
     attemptId: Long? = null,
     bytesRead: Long = 0L,
@@ -640,7 +644,7 @@ internal fun GlobalDownloadManager.publishDownloadStage(
     // 宿主入队尚未进入 AudioDownloadManager 的 operation 生命周期。队列阶段
     // 必须由已持有 durable task 身份的全局投影发布，不能被音频引用租约误判为旧回调
     updateDownloadProgress(
-        AudioDownloadManager.DownloadProgress(
+        DownloadProgress(
             songKey = song.stableKey(),
             songId = song.id,
             fileName = ManagedDownloadStorage.buildDisplayBaseName(song),

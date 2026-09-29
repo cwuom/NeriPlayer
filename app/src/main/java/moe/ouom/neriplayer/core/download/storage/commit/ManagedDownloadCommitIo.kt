@@ -14,7 +14,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteArtifacts
-import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
 
 internal object ManagedDownloadCommitIo {

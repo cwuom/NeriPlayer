@@ -1,5 +1,13 @@
 package moe.ouom.neriplayer.core.download.storage.backend
 
+import moe.ouom.neriplayer.data.model.download.storage.StorageConfidence
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
+
 import android.net.Uri
 import java.nio.file.Files
 import kotlinx.coroutines.CompletableDeferred

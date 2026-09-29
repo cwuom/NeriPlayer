@@ -26,8 +26,8 @@ package moe.ouom.neriplayer.api.youtube.bootstrap
 import android.content.Context
 import java.io.File
 import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.api.youtube.model.playback.BOOTSTRAP_SNAPSHOT_VERSION_CURRENT
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.playback.BOOTSTRAP_SNAPSHOT_VERSION_CURRENT
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 

@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
 
 internal object PlayerManagerPlaybackSoundPort : PlaybackSoundPort {
     override fun lyriconEnabled(): Boolean = PlayerManager.lyriconEnabled

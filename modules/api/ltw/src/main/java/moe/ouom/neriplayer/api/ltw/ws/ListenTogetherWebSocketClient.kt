@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.api.ltw.ws
 
 import android.os.SystemClock
-import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.protocol.message.socket.ListenTogetherSocketEnvelope
+import moe.ouom.neriplayer.listentogether.protocol.listenTogetherProtocolJson
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
+import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -38,11 +38,7 @@ fun shouldReconnectListenTogetherSocket(
 class ListenTogetherWebSocketClient(
     private val okHttpClient: OkHttpClient
 ) {
-    private val json = Json {
-        encodeDefaults = true
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
+    private val json = listenTogetherProtocolJson()
 
     // 回调运行在 OkHttp 分发线程, 需保证对 webSocket 引用的可见性
     // 否则 onOpen/onMessage 里的身份校验可能读到过期引用而误丢消息

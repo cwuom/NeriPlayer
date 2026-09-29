@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.lyrics.matching
 
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
 import moe.ouom.neriplayer.data.lyrics.search.toSimplifiedChineseForDomesticSearch
 
 fun editableLyricMatchSearchQueries(request: EditableLyricMatchRequest): List<String> {

@@ -2,34 +2,40 @@
 
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.playlist.normalizedForDisplayOrder
+
+import moe.ouom.neriplayer.data.sync.mapping.fromSongItem
+import moe.ouom.neriplayer.data.sync.mapping.toLocalPlaylist
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import com.google.gson.Gson
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.local.playlist.model.LEGACY_SONG_ORDER_VERSION
-import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
-import moe.ouom.neriplayer.data.sync.model.LEGACY_SYNC_METADATA_VERSION
-import moe.ouom.neriplayer.data.sync.model.SyncAction
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.playlist.LEGACY_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
+import moe.ouom.neriplayer.data.model.sync.CURRENT_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.model.sync.LEGACY_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.model.sync.SyncAction
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
-import moe.ouom.neriplayer.data.sync.model.SyncData
-import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipInterval
-import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipRule
-import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
-import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
-import moe.ouom.neriplayer.data.sync.model.SyncSong
-import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
-import moe.ouom.neriplayer.data.sync.model.copyWithNormalizedMembershipTokens
-import moe.ouom.neriplayer.data.sync.model.hasResolvableSyncIdentity
-import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
+import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.model.sync.SyncBiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.sync.SyncBiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackBucket
+import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.sync.policy.copyWithNormalizedMembershipTokens
+import moe.ouom.neriplayer.data.sync.policy.hasResolvableSyncIdentity
+import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -54,7 +60,7 @@ class SyncDataSerializerCompatTest {
             deviceName = "Device",
             playlists = listOf(SyncPlaylist(id = 1L, name = "playlist", songs = listOf(song))),
             favoritePlaylists = listOf(
-                moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist(
+                moe.ouom.neriplayer.data.model.sync.SyncFavoritePlaylist(
                     id = 2L,
                     name = "favorite",
                     coverUrl = localCover,

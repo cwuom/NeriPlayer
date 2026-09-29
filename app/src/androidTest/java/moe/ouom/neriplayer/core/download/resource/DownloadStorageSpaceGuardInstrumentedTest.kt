@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.resource
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4

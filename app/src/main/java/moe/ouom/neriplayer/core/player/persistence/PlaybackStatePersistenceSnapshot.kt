@@ -1,13 +1,14 @@
 package moe.ouom.neriplayer.core.player.persistence
 
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
-import moe.ouom.neriplayer.core.player.model.PersistedState
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSessionSnapshot
-import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
-import moe.ouom.neriplayer.core.player.model.withPlaybackState
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedState
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSessionSnapshot
+import moe.ouom.neriplayer.core.player.persistence.toPersistedSongItem
+import moe.ouom.neriplayer.core.player.persistence.withPlaybackState
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 
 internal enum class PlaybackStateWrite {
     NONE,

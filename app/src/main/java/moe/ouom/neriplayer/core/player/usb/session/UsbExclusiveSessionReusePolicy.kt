@@ -1,7 +1,10 @@
 package moe.ouom.neriplayer.core.player.usb.session
 
+import moe.ouom.neriplayer.core.player.usb.transport.canReuseNativePlayerSession
+import moe.ouom.neriplayer.core.player.usb.transport.hasHealthyTransport
+
 import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveOutputFormatResolver
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 

@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.control.applyListenTogetherQueueMutation
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueMutation
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueOperation
-import moe.ouom.neriplayer.listentogether.protocol.message.queue.ListenTogetherQueueReference
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueMutation
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueOperation
+import moe.ouom.neriplayer.data.model.ltw.message.queue.ListenTogetherQueueReference
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test

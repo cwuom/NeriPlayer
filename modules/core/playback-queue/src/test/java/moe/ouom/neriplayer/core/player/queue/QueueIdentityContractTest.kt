@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.queue
 import moe.ouom.neriplayer.core.player.queue.identity.QueueSongIdentity
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
-import moe.ouom.neriplayer.core.player.queue.model.QueueInsertPlacement
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement
 import moe.ouom.neriplayer.core.player.queue.policy.PlayerQueueEditOwner
 import moe.ouom.neriplayer.core.player.queue.policy.reorderQueueSongsPreservingLatestMetadata
 import moe.ouom.neriplayer.core.player.queue.policy.resolvePlayerQueueRestoreOrder

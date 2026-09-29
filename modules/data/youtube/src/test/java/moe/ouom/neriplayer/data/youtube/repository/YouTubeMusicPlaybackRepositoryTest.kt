@@ -15,10 +15,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.api.youtube.challenge.NewPipeFallbackTracker
 import moe.ouom.neriplayer.api.youtube.challenge.YouTubeStreamingCipherResolver
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.api.youtube.playback.satisfiesYouTubePlaybackQuality
 import moe.ouom.neriplayer.api.youtube.potoken.YouTubePoTokenProvider
 import moe.ouom.neriplayer.api.youtube.transport.resolveAuthorizationHeader

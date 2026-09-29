@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.backend
 
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract

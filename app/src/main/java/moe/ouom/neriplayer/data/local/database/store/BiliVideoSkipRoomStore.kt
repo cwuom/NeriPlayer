@@ -6,11 +6,11 @@ import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipDraft
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipSnapshot
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipSnapshot
 import moe.ouom.neriplayer.data.platform.bili.skip.storage.BiliVideoSkipStore
 
 internal class BiliVideoSkipRoomStore(

@@ -1,12 +1,15 @@
 package moe.ouom.neriplayer.data.youtube.repository
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
 import java.io.File
 import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request

@@ -3,12 +3,12 @@ package moe.ouom.neriplayer.core.download.policy
 import kotlin.math.abs
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /** 标签后处理一次尝试后的收尾动作 */
 internal enum class TagPostProcessingAction {

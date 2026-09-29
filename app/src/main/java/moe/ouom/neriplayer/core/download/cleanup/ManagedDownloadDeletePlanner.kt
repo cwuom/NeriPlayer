@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteI
 import moe.ouom.neriplayer.core.download.storage.operation.content.rootKeyForResolvedRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.readDownloadedAudioMetadataEntriesDetailed
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries

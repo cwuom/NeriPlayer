@@ -4,8 +4,8 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
 import moe.ouom.neriplayer.core.player.url.currentListenTogetherShareableStreamUrls
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomSettings
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomSettings
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.state.normalized
 import moe.ouom.neriplayer.data.model.SongItem
 

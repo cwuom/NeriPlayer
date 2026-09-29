@@ -50,7 +50,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.CancelledPending
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.FinalizedPendingAudioPromotion
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.SnapshotEntryBucket
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -70,9 +70,9 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProvide
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProbeResult
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupSkipReason
-import moe.ouom.neriplayer.core.download.storage.backend.StorageConfidence
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageConfidence
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger

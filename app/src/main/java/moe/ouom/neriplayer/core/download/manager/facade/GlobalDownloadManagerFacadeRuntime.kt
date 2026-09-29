@@ -1,12 +1,16 @@
 package moe.ouom.neriplayer.core.download.manager.facade
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.matchesDownloadedSong
 import moe.ouom.neriplayer.core.download.manager.runtime.awaitSongCancellationSettled
 import moe.ouom.neriplayer.core.download.manager.runtime.scheduleUserDownload
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import android.content.Context
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
@@ -15,9 +19,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
-import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
+import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
+import moe.ouom.neriplayer.data.identity.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 
 internal fun GlobalDownloadManager.isDownloadAttemptActiveImpl(
@@ -36,7 +39,7 @@ internal fun GlobalDownloadManager.resumeDownloadTaskImpl(context: Context, song
         task.status != DownloadStatus.CANCELLED &&
         task.status != DownloadStatus.FAILED &&
         task.status != DownloadStatus.WAITING_NETWORK &&
-        task.progress?.stage != AudioDownloadManager.DownloadStage.WAITING_RETRY
+        task.progress?.stage != DownloadStage.WAITING_RETRY
     ) {
         return
     }

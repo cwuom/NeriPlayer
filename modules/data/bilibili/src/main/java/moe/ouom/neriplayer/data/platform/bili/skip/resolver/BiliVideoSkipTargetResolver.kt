@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.resolver
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 
 suspend fun resolveBiliVideoSkipTarget(
     song: SongItem,

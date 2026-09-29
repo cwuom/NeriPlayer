@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.history
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals

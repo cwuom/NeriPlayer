@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.data.storage
 
-import moe.ouom.neriplayer.data.storage.model.DownloadIndexUsageStats
-import moe.ouom.neriplayer.data.storage.model.StorageUsageItem
-import moe.ouom.neriplayer.data.storage.model.StorageUsageItemKind
-import moe.ouom.neriplayer.data.storage.model.StorageUsageMeasurement
-import moe.ouom.neriplayer.data.storage.model.StorageUsageSection
-import moe.ouom.neriplayer.data.storage.model.StorageUsageSnapshot
-import moe.ouom.neriplayer.data.storage.model.StorageUsageSummary
+import moe.ouom.neriplayer.data.model.storage.DownloadIndexUsageStats
+import moe.ouom.neriplayer.data.model.storage.StorageUsageItem
+import moe.ouom.neriplayer.data.model.storage.StorageUsageItemKind
+import moe.ouom.neriplayer.data.model.storage.StorageUsageMeasurement
+import moe.ouom.neriplayer.data.model.storage.StorageUsageSection
+import moe.ouom.neriplayer.data.model.storage.StorageUsageSnapshot
+import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.data.storage.source.storageCacheItemKinds
 
 import android.content.res.Resources

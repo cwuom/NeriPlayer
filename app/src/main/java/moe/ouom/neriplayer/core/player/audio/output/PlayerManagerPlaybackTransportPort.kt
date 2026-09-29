@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.audio.output
 
+import moe.ouom.neriplayer.core.player.usb.transport.hasHealthyTransport
+
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -8,8 +10,8 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics

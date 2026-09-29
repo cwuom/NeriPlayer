@@ -1,32 +1,13 @@
 package moe.ouom.neriplayer.core.player.policy.command
 
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
-
-enum class PlaybackCommandSource {
-    LOCAL,
-    LOCAL_SAFETY,
-    REMOTE_SYNC
-}
-
-data class PlaybackCommand(
-    val type: String,
-    val source: PlaybackCommandSource,
-    val timestampMs: Long = System.currentTimeMillis(),
-    val queue: List<SongItem>? = null,
-    val currentIndex: Int? = null,
-    val positionMs: Long? = null,
-    val shouldPlay: Boolean? = null,
-    val repeatMode: Int? = null,
-    val shuffleEnabled: Boolean? = null,
-    val force: Boolean = false
-)
 
 internal data class PlaybackStartPlan(
     val useFadeIn: Boolean,

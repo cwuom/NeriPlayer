@@ -62,8 +62,8 @@ import moe.ouom.neriplayer.core.download.storage.migration.recovery.hasCompleteM
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersistedMigrationCleanupReceipts
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.migrationSourceEntryCount
 import moe.ouom.neriplayer.core.download.storage.migration.copy.sha256MigrationContent
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -71,7 +71,7 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 internal fun ManagedDownloadStorage.restorePersistedMigrationProgress(

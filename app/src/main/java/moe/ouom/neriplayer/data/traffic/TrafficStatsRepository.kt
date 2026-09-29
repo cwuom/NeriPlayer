@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.traffic
 
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficStatsBucket
+import moe.ouom.neriplayer.data.model.traffic.TrafficUsageSource
+
 import android.app.Application
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken

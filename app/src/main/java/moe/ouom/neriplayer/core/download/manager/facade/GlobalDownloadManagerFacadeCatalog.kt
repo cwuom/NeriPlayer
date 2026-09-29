@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.facade
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.findDownloadedSongCatalogMatch
@@ -29,15 +31,15 @@ import moe.ouom.neriplayer.core.download.manager.runtime.resolveFinalizedManaged
 import moe.ouom.neriplayer.core.download.manager.runtime.resolvePlayableManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
 import moe.ouom.neriplayer.core.download.manager.runtime.updateFastIndexAfterMetadataEdit
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 import moe.ouom.neriplayer.core.download.policy.runDownloadedSongMetadataSyncSafely
 import moe.ouom.neriplayer.core.download.policy.shouldApplyDownloadedPlaybackHydration
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.DownloadedSongMetadataSyncOutcome
@@ -60,7 +62,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     context: Context,

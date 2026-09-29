@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.data.lyrics.matching
 
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricFormat
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchCandidate
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchConfidence
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricFormat
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchCandidate
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
 import moe.ouom.neriplayer.data.lyrics.search.toSimplifiedChineseForDomesticSearch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

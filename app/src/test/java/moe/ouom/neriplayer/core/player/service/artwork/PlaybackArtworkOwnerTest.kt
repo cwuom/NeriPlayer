@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playbackVisualKey
+import moe.ouom.neriplayer.data.identity.playbackVisualKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -8,7 +8,7 @@ import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 
 private const val TAG = "UsbExclusiveDeviceAccess"
 

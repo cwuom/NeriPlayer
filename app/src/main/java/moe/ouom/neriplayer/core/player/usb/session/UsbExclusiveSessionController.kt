@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.session
 
+import moe.ouom.neriplayer.core.player.usb.transport.isBenignBackpressure
+
 import android.content.Context
 import android.hardware.usb.UsbDevice
 import android.os.SystemClock
@@ -23,12 +25,12 @@ import moe.ouom.neriplayer.core.player.usb.sink.describeUsbInputFormat
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveIoGate
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeBridge
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRecoveryActionAckStatus
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionAckStatus
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
-import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
-import moe.ouom.neriplayer.data.settings.usb.normalizeUsbExclusiveForegroundBufferMs
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveBackgroundBufferMs
+import moe.ouom.neriplayer.data.model.settings.usb.normalizeUsbExclusiveForegroundBufferMs
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 object UsbExclusiveSessionController {

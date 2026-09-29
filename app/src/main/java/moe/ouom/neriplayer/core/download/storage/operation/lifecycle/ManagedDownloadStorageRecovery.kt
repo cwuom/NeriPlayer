@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.writeTextThro
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StartupRecoveryResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -32,9 +32,9 @@ import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
-import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.backend.cleanupTerminalTemporaryWrites
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File

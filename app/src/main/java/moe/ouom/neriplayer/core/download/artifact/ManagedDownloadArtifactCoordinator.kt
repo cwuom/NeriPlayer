@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.artifact
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
@@ -7,8 +9,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.UUID
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.resolvedLocalFileName
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.policy.matchesDownloadedCatalogFileSize
@@ -16,7 +18,6 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey
 
 /** 批量删除结果，用于把竞态和真正的“已不存在”区分开 */
 internal data class ManagedDownloadArtifactBatchDeleteResult(
@@ -1939,61 +1940,4 @@ internal class ManagedDownloadArtifactCoordinator {
         val sourceCreatedAtMs: Long?,
         val sourceModifiedAtMs: Long?
     )
-}
-
-internal fun artifactReconciliationAudioEntries(
-    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
-): List<ManagedDownloadStorage.StoredEntry> {
-    return (
-        snapshot.audioEntries +
-            snapshot.audioEntriesWithoutMetadata +
-            snapshot.pendingAudioEntries
-        )
-        .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
-}
-
-internal fun resolveDiscoveredManagedArtifactState(
-    finalized: Boolean,
-    metadataArtifactState: String?
-): ManagedDownloadArtifactState {
-    if (finalized) {
-        return ManagedDownloadArtifactState.FINALIZED
-    }
-    val persistedState = metadataArtifactState
-        ?.trim()
-        ?.let { raw ->
-            ManagedDownloadArtifactState.entries.firstOrNull { state ->
-                state.name.equals(raw, ignoreCase = true)
-            }
-        }
-    return when (persistedState) {
-        ManagedDownloadArtifactState.CORE_COMMITTED ->
-            ManagedDownloadArtifactState.CORE_COMMITTED
-        ManagedDownloadArtifactState.ASSETS_ENRICHING ->
-            ManagedDownloadArtifactState.ASSETS_ENRICHING
-        ManagedDownloadArtifactState.DEGRADED_COMPLETE ->
-            ManagedDownloadArtifactState.DEGRADED_COMPLETE
-        else -> ManagedDownloadArtifactState.REPAIR_REQUIRED
-    }
-}
-
-internal fun resolveCatalogArtifactState(
-    currentState: ManagedDownloadArtifactState?,
-    hasAudioReference: Boolean
-): ManagedDownloadArtifactState {
-    if (currentState == null) {
-        return if (hasAudioReference) {
-            ManagedDownloadArtifactState.FINALIZED
-        } else {
-            ManagedDownloadArtifactState.MISSING_CONFIRMED
-        }
-    }
-    return if (
-        currentState == ManagedDownloadArtifactState.FINALIZED &&
-            !hasAudioReference
-    ) {
-        ManagedDownloadArtifactState.MISSING_CONFIRMED
-    } else {
-        currentState
-    }
 }

@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.core.di
  * Created: 2025/8/19
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.hasEffectiveAuth
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.api.netease.auth.NeteaseYdDeviceTokenProvider
 import android.app.Application
@@ -49,7 +51,7 @@ import moe.ouom.neriplayer.api.lyrics.client.LrcLibClient
 import moe.ouom.neriplayer.api.netease.client.NeteaseClient
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.api.search.client.CloudMusicSearchApi
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.api.search.client.QQMusicSearchApi
 import moe.ouom.neriplayer.data.lyrics.search.SearchManager
 import moe.ouom.neriplayer.api.youtube.client.YouTubeMusicClient
@@ -66,7 +68,7 @@ import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.platform.bili.cache.BiliCacheRepositories
 import moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepositoryProvider
@@ -97,7 +99,7 @@ import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureDisabledException
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.core.comment.repository.CommentRepository
 import moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository
 import moe.ouom.neriplayer.core.comment.repository.NeteaseCommentRepository
@@ -172,7 +174,7 @@ internal fun resolveInitialManagedDownloadSettings(
 }
 
 internal fun handleYouTubeAuthStateChanged(
-    bundle: moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle,
+    bundle: moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle,
     clearBootstrapCache: () -> Unit,
     clearPlaybackAuthBoundCaches: (Boolean) -> Unit,
     evictConnections: () -> Unit,
@@ -216,7 +218,7 @@ private data class YouTubeAuthWarmBootstrapKey(
     val userAgent: String,
 )
 
-private fun moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle.toWarmBootstrapKey():
+private fun moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle.toWarmBootstrapKey():
     YouTubeAuthWarmBootstrapKey {
     val normalized = normalized()
     return YouTubeAuthWarmBootstrapKey(

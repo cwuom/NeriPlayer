@@ -1,12 +1,19 @@
 package moe.ouom.neriplayer.data
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.identity.identity
+import moe.ouom.neriplayer.data.sync.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.sync.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.fromSongItemOrNull
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.recoverNeteaseRemoteSourceFromStaleLocalCopy
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.recoverNeteaseRemoteSourceFromStaleLocalCopy
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.model.SongItem

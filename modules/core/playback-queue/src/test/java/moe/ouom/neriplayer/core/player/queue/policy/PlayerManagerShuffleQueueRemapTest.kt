@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.queue.policy
 import moe.ouom.neriplayer.core.player.queue.TestQueueSongIdentity
-import moe.ouom.neriplayer.core.player.queue.model.PlayerQueueSnapshot
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Test

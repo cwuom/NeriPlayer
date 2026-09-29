@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether.validation
 
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
+
 import moe.ouom.neriplayer.R
 
 private val ROOM_ID_REGEX = Regex("^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$")

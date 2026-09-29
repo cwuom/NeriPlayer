@@ -1,12 +1,14 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.upsertDownloadedSongCatalog
 import moe.ouom.neriplayer.core.download.catalog.ManagedLibraryItemRoomStore
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.FinalizedManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PlayableManagedAudioSnapshot
@@ -26,11 +28,11 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
+import moe.ouom.neriplayer.data.identity.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 
 internal suspend fun <T> GlobalDownloadManager.withSongExecutionLock(

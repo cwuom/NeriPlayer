@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.local.database.entity.LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
@@ -7,12 +11,11 @@ import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberTokenEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
-import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
+import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
 
 internal data class LocalPlaylistRoomSnapshot(
     val playlists: List<LocalPlaylistEntity>,

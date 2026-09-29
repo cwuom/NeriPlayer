@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.auth.youtube
 
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
 
 import android.content.Context

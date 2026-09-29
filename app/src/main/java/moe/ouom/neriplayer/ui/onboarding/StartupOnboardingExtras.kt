@@ -74,13 +74,13 @@ import androidx.compose.ui.unit.sp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
-import moe.ouom.neriplayer.data.settings.playback.NowPlayingControlPlacement
-import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.playback.PlaybackControlSize
+import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
 import moe.ouom.neriplayer.ui.component.playback.scaleIconSize

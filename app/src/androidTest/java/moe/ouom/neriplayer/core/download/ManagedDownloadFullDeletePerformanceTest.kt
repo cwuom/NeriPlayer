@@ -13,7 +13,7 @@ import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeletePlanner
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals

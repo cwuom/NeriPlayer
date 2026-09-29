@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
+
 import moe.ouom.neriplayer.data.model.SongItem
 
 fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
@@ -16,26 +20,6 @@ fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
 }
 
 fun List<LyricEntry>.hasWordTimedEntries(): Boolean = any { !it.words.isNullOrEmpty() }
-
-enum class LyricsEditorSource {
-    SIDECAR,
-    EMBEDDED
-}
-
-data class LyricsEditorSeed(
-    val lyrics: String,
-    val translatedLyrics: String,
-    val romanizedLyrics: String = "",
-    val sidecarLyrics: String = lyrics,
-    val sidecarTranslatedLyrics: String = translatedLyrics,
-    val sidecarRomanizedLyrics: String = romanizedLyrics,
-    val embeddedLyrics: String = lyrics,
-    val embeddedTranslatedLyrics: String = translatedLyrics,
-    val embeddedRomanizedLyrics: String = romanizedLyrics,
-    val hasSidecar: Boolean = false,
-    val hasEmbeddedLyrics: Boolean = false,
-    val source: LyricsEditorSource = LyricsEditorSource.SIDECAR
-)
 
 fun resolveLocalLyricsEditorSeed(
     song: SongItem,

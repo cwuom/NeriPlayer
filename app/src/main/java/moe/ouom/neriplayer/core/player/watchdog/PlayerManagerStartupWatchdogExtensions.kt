@@ -12,14 +12,14 @@ import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
-import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.PlaybackUrlCandidate
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.playback.preparePlayerForManagedStart
 import moe.ouom.neriplayer.core.player.playback.startPlayerPlaybackWithFade
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.progress.hasPlaybackProgressAdvancedSinceBaseline
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
@@ -30,7 +30,7 @@ import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
 import moe.ouom.neriplayer.core.player.url.offlineCacheKeyFromUrl
 import moe.ouom.neriplayer.core.player.url.resolvePlaybackAudioInfoForListenTogetherStreamCandidate
 import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import kotlin.time.Duration.Companion.milliseconds

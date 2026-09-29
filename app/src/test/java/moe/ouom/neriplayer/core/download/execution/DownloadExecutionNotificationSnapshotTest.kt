@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.download.execution.notification.deriveDownloadExecutionNotificationSnapshot
-import moe.ouom.neriplayer.core.download.model.BatchDownloadOverallProgress
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -16,7 +18,7 @@ class DownloadExecutionNotificationSnapshotTest {
     @Test
     fun `batch progress exposes completed total remaining and current transfer`() {
         val song = sampleSong("第一首")
-        val progress = AudioDownloadManager.DownloadProgress(
+        val progress = DownloadProgress(
             songKey = song.sourceStableKey.orEmpty(),
             songId = song.id,
             fileName = "first.mp3",
@@ -60,7 +62,7 @@ class DownloadExecutionNotificationSnapshotTest {
             tasks = listOf(
                 DownloadTask(
                     song = song,
-                    progress = AudioDownloadManager.DownloadProgress(
+                    progress = DownloadProgress(
                         songKey = song.sourceStableKey.orEmpty(),
                         songId = song.id,
                         fileName = "unknown.mp3",

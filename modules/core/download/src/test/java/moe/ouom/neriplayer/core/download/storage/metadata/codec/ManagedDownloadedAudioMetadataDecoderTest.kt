@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.download.storage.metadata.codec
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.storage.metadata.serialization.toJson
+
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

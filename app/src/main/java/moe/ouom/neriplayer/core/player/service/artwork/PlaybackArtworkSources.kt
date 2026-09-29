@@ -14,7 +14,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest

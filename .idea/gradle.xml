@@ -46,15 +46,16 @@
             <option value="$PROJECT_DIR$/modules/core/logging" />
             <option value="$PROJECT_DIR$/modules/core/ltw-protocol" />
             <option value="$PROJECT_DIR$/modules/core/lyrics" />
-            <option value="$PROJECT_DIR$/modules/core/model" />
             <option value="$PROJECT_DIR$/modules/core/network" />
             <option value="$PROJECT_DIR$/modules/core/playback-queue" />
             <option value="$PROJECT_DIR$/modules/data" />
             <option value="$PROJECT_DIR$/modules/data/bilibili" />
             <option value="$PROJECT_DIR$/modules/data/comments" />
             <option value="$PROJECT_DIR$/modules/data/lyrics" />
+            <option value="$PROJECT_DIR$/modules/data/model" />
             <option value="$PROJECT_DIR$/modules/data/netease" />
             <option value="$PROJECT_DIR$/modules/data/storage" />
+            <option value="$PROJECT_DIR$/modules/data/sync" />
             <option value="$PROJECT_DIR$/modules/data/youtube" />
             <option value="$PROJECT_DIR$/np-submodule/accompanist-lyrics-core" />
             <option value="$PROJECT_DIR$/np-submodule/accompanist-lyrics-ui/src" />

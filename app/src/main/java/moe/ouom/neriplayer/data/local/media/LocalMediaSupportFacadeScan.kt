@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
+
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.RetrieverTextMetadata
 import android.content.Context
 import android.media.MediaMetadataRetriever
@@ -9,7 +11,7 @@ import android.provider.MediaStore
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey as songStableKey
+import moe.ouom.neriplayer.data.identity.stableKey as songStableKey
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import kotlin.math.max

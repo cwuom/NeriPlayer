@@ -1,7 +1,5 @@
 package moe.ouom.neriplayer.data.platform.bili.cache.archive
 
-import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.BiliArchiveContentCache
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -25,6 +23,7 @@ import moe.ouom.neriplayer.data.platform.bili.cache.archive.model.BiliArchiveCon
  * Created: 2026/8/4
  */
 
+import moe.ouom.neriplayer.data.model.bilibili.cache.archive.BiliArchiveContentCache
 import com.google.gson.Gson
 import java.io.File
 import java.util.Locale

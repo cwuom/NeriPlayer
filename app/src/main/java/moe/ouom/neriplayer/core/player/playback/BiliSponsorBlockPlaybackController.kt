@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockSegment
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockSegment
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockTarget
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliBvidOrNull
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliCidOrNull
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
@@ -13,7 +15,6 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.skip.BiliSponsorBlockSkipTracker
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 
 internal object BiliSponsorBlockPlaybackController {

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+
 import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
@@ -9,7 +11,7 @@ import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -27,7 +29,7 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class LocalAudioImportManagerTest {
 

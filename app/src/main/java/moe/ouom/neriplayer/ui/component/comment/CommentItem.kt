@@ -36,8 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.SongComment
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.SongComment
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatPlayCount

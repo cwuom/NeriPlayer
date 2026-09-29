@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.settings.appearance
 
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

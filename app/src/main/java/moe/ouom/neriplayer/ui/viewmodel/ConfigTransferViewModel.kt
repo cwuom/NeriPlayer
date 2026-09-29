@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.config.AppConfigImportResult
+import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.config.ConfigFileManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 

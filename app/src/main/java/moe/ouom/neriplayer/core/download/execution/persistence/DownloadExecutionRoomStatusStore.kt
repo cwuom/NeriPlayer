@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.stableKey

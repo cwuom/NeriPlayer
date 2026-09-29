@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.download.storage.metadata.codec
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.storage.metadata.serialization.fromJson
+
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import org.json.JSONObject
 
 class ManagedDownloadedAudioMetadataDecoder(private val root: JSONObject) {

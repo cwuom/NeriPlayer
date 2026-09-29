@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.storage.scan
 
 import java.io.File
-import moe.ouom.neriplayer.data.storage.model.FileStats
+import moe.ouom.neriplayer.data.model.storage.FileStats
 
 fun statsOf(file: File?, excludedRoots: List<File> = emptyList()): FileStats {
     if (file == null || !file.exists()) return FileStats.Empty

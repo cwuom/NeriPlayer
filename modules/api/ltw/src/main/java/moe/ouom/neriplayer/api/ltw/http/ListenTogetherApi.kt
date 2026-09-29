@@ -2,17 +2,17 @@ package moe.ouom.neriplayer.api.ltw.http
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.api.ltw.model.ListenTogetherServerTestResult
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherControlResponse
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherCreateRoomRequest
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherInitialSnapshot
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherJoinRoomRequest
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherLeaveRoomRequest
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherLeaveRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherStateResponse
+import moe.ouom.neriplayer.listentogether.protocol.listenTogetherProtocolJson
+import moe.ouom.neriplayer.data.model.ltw.ListenTogetherServerTestResult
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherControlResponse
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherCreateRoomRequest
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherInitialSnapshot
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherJoinRoomRequest
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherLeaveRoomRequest
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherLeaveRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherStateResponse
 import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -26,11 +26,7 @@ private const val LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES = 2 * MEBIBYTE_BYTES
 class ListenTogetherApi(
     private val okHttpClient: OkHttpClient
 ) {
-    private val json = Json {
-        encodeDefaults = true
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
+    private val json = listenTogetherProtocolJson()
 
     suspend fun createRoom(
         baseUrl: String,

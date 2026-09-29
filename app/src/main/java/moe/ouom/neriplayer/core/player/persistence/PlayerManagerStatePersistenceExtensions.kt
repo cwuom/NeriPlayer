@@ -9,7 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaUrl
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation

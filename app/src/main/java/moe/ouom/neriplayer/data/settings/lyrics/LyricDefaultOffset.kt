@@ -1,16 +1,16 @@
 package moe.ouom.neriplayer.data.settings.lyrics
 
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import kotlin.math.roundToLong
 
 internal const val MIN_LYRIC_DEFAULT_OFFSET_MS = -5000L
 internal const val MAX_LYRIC_DEFAULT_OFFSET_MS = 5000L
 internal const val LYRIC_DEFAULT_OFFSET_STEP_MS = 50L
-internal const val DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS = 1000L
-internal const val DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS = 500L
-internal const val DEFAULT_KUGOU_LYRIC_OFFSET_MS = 0L
-internal const val DEFAULT_LRCLIB_LYRIC_OFFSET_MS = 0L
-internal const val DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS = 0L
 
 fun normalizeLyricDefaultOffsetMs(value: Long): Long {
     val stepAligned =

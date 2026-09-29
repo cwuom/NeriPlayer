@@ -24,13 +24,13 @@ import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLock
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafParentDocumentCache
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend.SafQueryResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
-import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
-import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.data.model.download.storage.StorageReference
+import moe.ouom.neriplayer.data.model.download.storage.StorageStat
+import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTargetChangedException
-import moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
-import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageRenameResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.plan.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementPlan
@@ -179,8 +179,8 @@ internal class ManagedDownloadStorageCommitWriter(
                                 )
                             )
                         }
-                        if (deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Deleted &&
-                            deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Missing
+                        if (deleted !is moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult.Deleted &&
+                            deleted !is moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult.Missing
                         ) {
                             return@forEach
                         }
@@ -283,8 +283,8 @@ internal class ManagedDownloadStorageCommitWriter(
                 )
             }
             if (
-                deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Deleted &&
-                deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Missing
+                deleted !is moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult.Deleted &&
+                deleted !is moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult.Missing
             ) {
                 return false
             }
@@ -1105,7 +1105,7 @@ internal class ManagedDownloadStorageCommitWriter(
                         STREAM_COPY_BUFFER_SIZE_BYTES
                     )
                 }) {
-                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {
+                    is moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult.Found -> {
                         measured.value
                     }
                     else -> null

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.youtube.settings
 
 import java.util.Locale
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackSourcePreference
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 
 const val DEFAULT_YOUTUBE_PLAYBACK_SOURCE = "automatic"
 

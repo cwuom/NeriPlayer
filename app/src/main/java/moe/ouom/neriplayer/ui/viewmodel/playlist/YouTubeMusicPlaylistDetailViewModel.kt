@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -33,14 +35,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.platform.youtube.CachedYouTubeMusicPlaylistDetail
-import moe.ouom.neriplayer.data.platform.youtube.CachedYouTubeMusicPlaylistTrack
+import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistDetail
+import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistTrack
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.api.youtube.transport.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist

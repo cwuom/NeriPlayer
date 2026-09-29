@@ -41,8 +41,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylist
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsHotPlaylist
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight

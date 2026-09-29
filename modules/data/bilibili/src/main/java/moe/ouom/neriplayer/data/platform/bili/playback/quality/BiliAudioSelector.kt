@@ -1,7 +1,5 @@
 package moe.ouom.neriplayer.data.platform.bili.playback.quality
 
-import moe.ouom.neriplayer.data.platform.bili.playback.model.BiliQuality
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -25,7 +23,8 @@ import moe.ouom.neriplayer.data.platform.bili.playback.model.BiliQuality
  * Created: 2025/8/14
  */
 
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliQuality
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 
 private fun regularQualityUpperBoundExclusive(quality: BiliQuality): Int = when (quality) {
     BiliQuality.LOSSLESS -> BiliQuality.HIRES.minBitrateKbps

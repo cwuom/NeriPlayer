@@ -2,6 +2,9 @@
 
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.os.SystemClock
 import androidx.media3.common.Player
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +14,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
@@ -27,12 +30,12 @@ import moe.ouom.neriplayer.core.player.lifecycle.prepareUsbExclusiveRouteForManu
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.isExternalBluetoothLyricCadenceActive
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.PlayerEvent
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.prepareStatePersist
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS
 import moe.ouom.neriplayer.core.player.policy.command.resolveEffectivePlaybackStartPlan
@@ -73,7 +76,7 @@ import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.resolvePlaybackAudioInfoForListenTogetherStreamCandidate
 import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForSeek
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
@@ -88,7 +91,6 @@ import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackRuntimeWatchdog
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.api.youtube.transport.youtubeMusicThumbnailUrl

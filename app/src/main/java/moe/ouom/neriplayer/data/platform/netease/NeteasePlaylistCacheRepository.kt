@@ -23,6 +23,10 @@ package moe.ouom.neriplayer.data.platform.netease
  * Created: 2026/7/9
  */
 
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistHeader
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteaseArtist
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistTrack
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistDetail
 import android.content.Context
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -34,41 +38,6 @@ import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheArtist
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
-
-data class CachedNeteasePlaylistHeader(
-    val id: Long,
-    val name: String,
-    val coverUrl: String,
-    val playCount: Long,
-    val trackCount: Int
-)
-
-data class CachedNeteaseArtist(
-    val id: Long,
-    val name: String
-)
-
-data class CachedNeteasePlaylistTrack(
-    val id: Long,
-    val name: String,
-    val artist: String,
-    val album: String,
-    val albumId: Long,
-    val durationMs: Long,
-    val coverUrl: String?,
-    val audioId: String?,
-    val artists: List<CachedNeteaseArtist> = emptyList(),
-    val addedAt: Long = 0L
-)
-
-data class CachedNeteasePlaylistDetail(
-    val playlistId: Long,
-    val header: CachedNeteasePlaylistHeader,
-    val recentTrackSignature: String,
-    val tracks: List<CachedNeteasePlaylistTrack>,
-    val radarCacheContext: String? = null,
-    val savedAtMs: Long = System.currentTimeMillis()
-)
 
 class NeteasePlaylistCacheRepository private constructor(
     private val roomStore: PlatformPlaylistCacheRoomStore,

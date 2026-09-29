@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
+
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.LocalLyricsCacheEntry
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.QuickLocalMetadataSelection
 import android.content.Context
@@ -12,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey as songStableKey
+import moe.ouom.neriplayer.data.identity.stableKey as songStableKey
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import java.io.File

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRecoveryAction
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRecoveryActionAckStatus
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryAction
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionAckStatus
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

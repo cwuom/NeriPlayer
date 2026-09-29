@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.facade
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.shouldRunInitialDownloadScan
@@ -36,12 +38,12 @@ import moe.ouom.neriplayer.core.download.manager.runtime.pauseActiveDownloadsFor
 import moe.ouom.neriplayer.core.download.manager.runtime.resumePostCoreDownloadsAfterProgressRestore
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeStartupDownloadExecutionAfterProgressRestore
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
-import moe.ouom.neriplayer.core.download.model.shouldHandoffBlockedWifiRecoveryToSharedPump
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.core.download.presentation.shouldHandoffBlockedWifiRecoveryToSharedPump
 import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoverySummary
 import moe.ouom.neriplayer.core.download.policy.runDownloadStartupRecoverySafely
 import moe.ouom.neriplayer.core.download.policy.shouldContinueWifiRecoveryProbe
@@ -57,7 +59,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.notification.DownloadExecutionNotificationController
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadStorageRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
@@ -72,7 +74,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import kotlin.time.Duration.Companion.milliseconds
 

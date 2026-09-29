@@ -1,20 +1,7 @@
 package moe.ouom.neriplayer.listentogether.session.control
 
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
-
-internal data class PendingTrackFinishedLegacyFallback(
-    val event: ListenTogetherEvent,
-    val createdAtElapsedMs: Long,
-    val attempted: Boolean = false
-)
-
-internal data class PendingMemberControlRequest(
-    val event: ListenTogetherEvent,
-    val createdAtElapsedMs: Long,
-    val lastSentAtElapsedMs: Long,
-    val attempts: Int
-)
+import moe.ouom.neriplayer.data.model.ltw.session.PendingMemberControlRequest
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause
 
 internal fun PendingMemberControlRequest.retriedAt(
     nowElapsedMs: Long

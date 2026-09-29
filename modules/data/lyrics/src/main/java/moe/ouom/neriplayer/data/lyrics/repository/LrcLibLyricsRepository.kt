@@ -5,13 +5,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.api.lyrics.client.LrcLibClient
-import moe.ouom.neriplayer.api.lyrics.model.LrcLibRecord
+import moe.ouom.neriplayer.data.model.lyrics.lrclib.LrcLibRecord
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.lyrics.matching.extractPlainLyricsFromCollapsedTimedLyrics
 import moe.ouom.neriplayer.data.lyrics.matching.isExternalLyricDurationCompatible
 import moe.ouom.neriplayer.data.lyrics.matching.isReliableLyricMatchIdentity
 import moe.ouom.neriplayer.data.lyrics.matching.isUsableTimedLyricTimeline
-import moe.ouom.neriplayer.data.lyrics.model.LrcLibResult
+import moe.ouom.neriplayer.data.model.lyrics.lrclib.LrcLibResult
 
 class LrcLibLyricsRepository(private val client: LrcLibClient) {
     suspend fun getLyrics(

@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.bilibili.model.playback.PlayOptions
+import moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions
 import moe.ouom.neriplayer.core.di.AppContainer
 import org.json.JSONArray
 import org.json.JSONObject

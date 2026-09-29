@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.recovery
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -7,7 +9,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.state.DOWNLOAD_INTEGRITY_MAX_FAILURES
 import moe.ouom.neriplayer.core.download.manager.commit.inspectFinalizedDownloadedAudio
 import moe.ouom.neriplayer.core.download.manager.runtime.isRecoveryMetadataOwnedBySong
@@ -15,9 +17,9 @@ import moe.ouom.neriplayer.core.download.manager.runtime.loadFinalizationRecover
 import moe.ouom.neriplayer.core.download.manager.batch.forgetPendingDownloadQueueEntriesForOperation
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.hasDownloadedAudioDurationMismatch
-import moe.ouom.neriplayer.core.download.model.expectedDownloadedAudioDurationMs
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.policy.hasDownloadedAudioDurationMismatch
+import moe.ouom.neriplayer.core.download.policy.expectedDownloadedAudioDurationMs
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberTerminal

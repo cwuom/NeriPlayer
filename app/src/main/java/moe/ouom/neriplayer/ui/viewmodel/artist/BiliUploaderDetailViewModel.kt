@@ -37,9 +37,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderContent
-import moe.ouom.neriplayer.api.bilibili.model.uploader.UploaderVideo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary

@@ -16,15 +16,15 @@ import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.clearAudioRouteMuteSuppression
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipUsbExclusiveRouteRebuildForManualPlayback
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 
 internal object PlayerManagerUsbPlaybackRoutePort : UsbPlaybackRoutePort {
     internal fun isPlaybackActiveForSwitch(): Boolean {

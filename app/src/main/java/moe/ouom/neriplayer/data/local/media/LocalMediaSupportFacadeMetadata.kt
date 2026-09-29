@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -7,7 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey as songStableKey
+import moe.ouom.neriplayer.data.identity.stableKey as songStableKey
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject

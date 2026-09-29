@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.core.player.metadata
 
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.model.music.SongDetails
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongDetails
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.core.lyrics.resolveStoredLyricText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

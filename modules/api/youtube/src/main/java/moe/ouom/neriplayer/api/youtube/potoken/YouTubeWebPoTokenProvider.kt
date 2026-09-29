@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.api.youtube.potoken
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
@@ -45,7 +47,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.api.youtube.transport.buildBootstrapAuthFingerprint
 import moe.ouom.neriplayer.api.youtube.transport.isTrustedYouTubeBootstrapHost
 import moe.ouom.neriplayer.api.youtube.transport.resolveBootstrapUserAgent

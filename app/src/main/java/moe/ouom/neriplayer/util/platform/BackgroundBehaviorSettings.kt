@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.util.platform
 
+import moe.ouom.neriplayer.data.model.system.BackgroundBehaviorAllowance
+
 import android.annotation.SuppressLint
 import android.app.AppOpsManager
 import android.content.ActivityNotFoundException
@@ -14,14 +16,6 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 private const val BACKGROUND_BEHAVIOR_TAG = "NERI-BackgroundBehavior"
 private const val OPSTR_RUN_IN_BACKGROUND = "android:run_in_background"
 private const val OPSTR_RUN_ANY_IN_BACKGROUND = "android:run_any_in_background"
-
-data class BackgroundBehaviorAllowance(
-    val ignoringBatteryOptimizations: Boolean,
-    val backgroundAppOpsAllowed: Boolean
-) {
-    val fullyAllowed: Boolean
-        get() = ignoringBatteryOptimizations && backgroundAppOpsAllowed
-}
 
 fun Context.readBackgroundBehaviorAllowance(): BackgroundBehaviorAllowance {
     return BackgroundBehaviorAllowance(

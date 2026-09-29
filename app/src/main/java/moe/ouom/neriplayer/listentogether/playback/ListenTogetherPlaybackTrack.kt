@@ -1,14 +1,16 @@
 package moe.ouom.neriplayer.listentogether.playback
 
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+
 import moe.ouom.neriplayer.listentogether.mapping.resolvedAudioId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedChannelId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedPlaylistContextId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedSubAudioId
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherEvent
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun ListenTogetherRoomState.currentStableKey(): String? {

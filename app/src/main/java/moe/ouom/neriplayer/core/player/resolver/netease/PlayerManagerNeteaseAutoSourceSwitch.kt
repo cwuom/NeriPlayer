@@ -1,17 +1,17 @@
 package moe.ouom.neriplayer.core.player.resolver.netease
 
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.api.bilibili.model.search.SearchVideoItem
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.data.model.playback.PlaybackUrlCandidate
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildBiliRepresentationIdentity
 import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import kotlin.math.absoluteValue

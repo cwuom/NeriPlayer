@@ -1,9 +1,6 @@
 package moe.ouom.neriplayer.listentogether.control
 
-internal data class ListenTogetherPlaybackCommandSnapshot<T>(
-    val queue: List<T>,
-    val positionMs: Long
-)
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherPlaybackCommandSnapshot
 
 internal fun <T> resolveListenTogetherPlaybackCommandSnapshot(
     commandQueue: List<T>?,

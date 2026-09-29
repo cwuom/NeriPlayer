@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.progress
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -70,8 +72,8 @@ class AudioDownloadProgressPolicyTest {
         songKey: String,
         attemptId: Long,
         operationId: String
-    ): AudioDownloadManager.DownloadProgress {
-        return AudioDownloadManager.DownloadProgress(
+    ): DownloadProgress {
+        return DownloadProgress(
             songKey = songKey,
             songId = 1L,
             fileName = "$songKey.mp3",

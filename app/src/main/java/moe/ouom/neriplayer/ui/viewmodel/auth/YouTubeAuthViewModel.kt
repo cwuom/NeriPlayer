@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.viewmodel.auth
  * Created: 2026/3/16
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.fromJson
+import moe.ouom.neriplayer.api.youtube.auth.hasEffectiveAuth
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -38,10 +41,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthHealth
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthState
-import moe.ouom.neriplayer.api.youtube.model.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
+import moe.ouom.neriplayer.api.youtube.auth.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.data.youtube.auth.parseYouTubeAuthBundleFromRaw
 
 data class YouTubeAuthUiState(

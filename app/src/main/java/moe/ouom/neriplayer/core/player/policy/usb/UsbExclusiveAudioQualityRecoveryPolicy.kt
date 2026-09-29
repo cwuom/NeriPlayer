@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
+import moe.ouom.neriplayer.core.player.usb.transport.outputFrameBytes
+
 import kotlin.math.max
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 
 internal data class UsbExclusiveAudioQualityRecoveryState(
     val handle: Long = 0L,

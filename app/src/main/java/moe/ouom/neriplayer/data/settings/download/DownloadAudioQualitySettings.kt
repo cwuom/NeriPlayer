@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.settings.download
 
+import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
+
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.bootstrap.readBootstrapSettingsSnapshotSync
@@ -41,26 +43,6 @@ private val DOWNLOAD_BILI_AUDIO_QUALITIES = setOf(
     "hires",
     "dolby"
 )
-
-data class DownloadAudioQualitySelection(
-    val neteaseQuality: String,
-    val youtubeQuality: String,
-    val biliQuality: String
-) {
-    companion object {
-        fun normalized(
-            neteaseQuality: String?,
-            youtubeQuality: String?,
-            biliQuality: String?
-        ): DownloadAudioQualitySelection {
-            return DownloadAudioQualitySelection(
-                neteaseQuality = normalizeDownloadNeteaseAudioQuality(neteaseQuality),
-                youtubeQuality = normalizeDownloadYouTubeAudioQuality(youtubeQuality),
-                biliQuality = normalizeDownloadBiliAudioQuality(biliQuality)
-            )
-        }
-    }
-}
 
 internal fun normalizeDownloadNeteaseAudioQuality(value: String?): String {
     val normalized = value?.trim()?.lowercase().orEmpty()
@@ -160,5 +142,17 @@ internal fun updateDownloadFollowPlaybackAudioQualityStartupValue(
     updateBootstrapDownloadFollowPlaybackAudioQuality(
         context = context,
         followsPlaybackQuality = followsPlaybackQuality
+    )
+}
+
+fun DownloadAudioQualitySelection.Companion.normalized(
+    neteaseQuality: String?,
+    youtubeQuality: String?,
+    biliQuality: String?
+): DownloadAudioQualitySelection {
+    return DownloadAudioQualitySelection(
+        neteaseQuality = normalizeDownloadNeteaseAudioQuality(neteaseQuality),
+        youtubeQuality = normalizeDownloadYouTubeAudioQuality(youtubeQuality),
+        biliQuality = normalizeDownloadBiliAudioQuality(biliQuality)
     )
 }

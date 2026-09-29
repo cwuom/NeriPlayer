@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.data.settings.playback
 
-const val DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY = "standard"
-const val DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY = "low"
-const val DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY = "low"
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY
 
 private val NETEASE_MOBILE_DATA_AUDIO_QUALITIES = setOf(
     "standard",

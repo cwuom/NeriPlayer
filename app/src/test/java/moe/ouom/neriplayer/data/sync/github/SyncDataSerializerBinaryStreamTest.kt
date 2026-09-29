@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.data.sync.github
 
-import moe.ouom.neriplayer.data.sync.model.SyncData
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
-import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
-import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

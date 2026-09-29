@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.url
 
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
 
 private val NETEASE_SHARE_DEFAULT_GROUPS = listOf(

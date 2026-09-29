@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.catalog.projection
 
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.withRecoveredRemoteSourceStableKey
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.withRecoveredRemoteSourceStableKey
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun projectDownloadedSongEdits(

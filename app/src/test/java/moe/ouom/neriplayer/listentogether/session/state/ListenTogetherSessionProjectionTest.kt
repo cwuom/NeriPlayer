@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether.session.state
 
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

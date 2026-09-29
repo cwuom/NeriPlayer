@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -7,7 +9,7 @@ import android.content.res.Resources
 import android.os.LocaleList
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists

@@ -7,14 +7,14 @@ import moe.ouom.neriplayer.core.comment.CommentMemoryCache
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import moe.ouom.neriplayer.core.comment.mapper.parseNeteaseCommentPage
 import moe.ouom.neriplayer.core.comment.mapper.parseNeteaseReplyPage
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
-import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.commentLengthLimit
 import moe.ouom.neriplayer.core.comment.mapper.neteaseCommentError
-import moe.ouom.neriplayer.core.comment.model.CommentPage
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
-import moe.ouom.neriplayer.core.comment.model.CommentSource
-import moe.ouom.neriplayer.core.comment.model.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentPage
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.CommentSource
+import moe.ouom.neriplayer.data.model.comments.CommentSort
 import org.json.JSONObject
 import moe.ouom.neriplayer.core.logging.NPLogger
 

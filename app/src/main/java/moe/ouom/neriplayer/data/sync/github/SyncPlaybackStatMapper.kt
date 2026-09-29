@@ -1,14 +1,14 @@
 package moe.ouom.neriplayer.data.sync.github
 
 import android.content.Context
-import moe.ouom.neriplayer.data.sync.merge.policy.SyncCounterShardPolicy
+import moe.ouom.neriplayer.data.sync.merge.stats.SyncCounterShardPolicy
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.stats.PlaybackStatBucket
-import moe.ouom.neriplayer.data.stats.TrackStat
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
-import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.sync.mapping.sanitizeCoverUrlForSync
 
 internal object SyncPlaybackStatMapper {
     fun shouldSync(stat: TrackStat, context: Context): Boolean {

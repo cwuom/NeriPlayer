@@ -10,10 +10,10 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherListenerStallRecovery
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.targetSongItem
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomStatuses
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import kotlin.time.Duration.Companion.milliseconds
 
 internal data class ListenTogetherListenerWatchdogSnapshot(

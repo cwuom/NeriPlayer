@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.cover
 
+import moe.ouom.neriplayer.core.player.audio.icon
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterTransition

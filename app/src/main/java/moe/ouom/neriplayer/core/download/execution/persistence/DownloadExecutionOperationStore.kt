@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.normalizeDownloadOperationId
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
 import moe.ouom.neriplayer.core.download.execution.state.DownloadOperationStateTransitions
 import android.content.Context
 import kotlinx.coroutines.Dispatchers

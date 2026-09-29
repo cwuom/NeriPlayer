@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.ownership
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.playback.shouldInvalidateCompletedAudioReferenceForRoot
 import moe.ouom.neriplayer.core.player.download.runtime.safeToPlayableUri
@@ -8,8 +10,8 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playbackVisualKey
-import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
+import moe.ouom.neriplayer.data.identity.playbackVisualKey
+import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import java.util.concurrent.ConcurrentHashMap
 

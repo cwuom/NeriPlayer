@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.data.youtube.repository
 
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -24,6 +23,9 @@ package moe.ouom.neriplayer.data.youtube.repository
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.api.youtube.auth.hasLoginCookies
+import moe.ouom.neriplayer.api.youtube.auth.isUsable
+import moe.ouom.neriplayer.api.youtube.auth.normalized
 import android.content.Context
 import androidx.annotation.VisibleForTesting
 import java.io.IOException
@@ -49,18 +51,18 @@ import moe.ouom.neriplayer.api.youtube.challenge.YouTubeStreamingCipherResolver
 import moe.ouom.neriplayer.api.youtube.challenge.createDefaultStreamingCipherResolver
 import moe.ouom.neriplayer.api.youtube.challenge.extractStreamQueryParameter
 import moe.ouom.neriplayer.api.youtube.challenge.playbackElapsedMs
-import moe.ouom.neriplayer.api.youtube.model.auth.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicRequestLocale
-import moe.ouom.neriplayer.api.youtube.model.playback.PreparedYouTubePlayerRequest
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubeAudioMetadata
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubeMusicPlaybackQuality
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableAudio
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayableStreamType
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackSourcePreference
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayerClientProfile
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayerPlayabilityStatus
+import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
+import moe.ouom.neriplayer.api.youtube.protocol.PreparedYouTubePlayerRequest
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubeAudioMetadata
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubeMusicPlaybackQuality
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerClientProfile
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerPlayabilityStatus
 import moe.ouom.neriplayer.api.youtube.playback.YouTubePlayableAudioSelection
 import moe.ouom.neriplayer.api.youtube.playback.YouTubePlaybackStreamAccessOwner
 import moe.ouom.neriplayer.api.youtube.playback.isTrustedYouTubeDirectUrlForStrictRecovery

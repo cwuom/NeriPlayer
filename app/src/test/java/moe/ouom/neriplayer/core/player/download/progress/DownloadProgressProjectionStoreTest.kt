@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player.download.progress
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -11,23 +14,23 @@ class DownloadProgressProjectionStoreTest {
     fun `late snapshot cannot flash active enrichment back to waiting or transferring`() {
         val store = DownloadProgressProjectionStore(snapshotIntervalNs = 1_000L)
         val waiting = progress(bytesRead = 90L)
-            .copy(stage = AudioDownloadManager.DownloadStage.WAITING_RETRY).forPublication()
+            .copy(stage = DownloadStage.WAITING_RETRY).forPublication()
         store.record(waiting, nowNs = 0L)
         val oldSnapshot = store.snapshot.value.getValue("operation")
         val transferring = progress(bytesRead = 100L).forPublication()
         store.record(transferring, nowNs = 1L)
         val enriching = transferring
-            .copy(stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING).forPublication()
+            .copy(stage = DownloadStage.ASSETS_ENRICHING).forPublication()
         store.record(enriching, nowNs = 2L)
 
         repeat(100) {
             assertEquals(enriching, store.record(oldSnapshot, nowNs = 3L + it))
             assertEquals(enriching, store.record(transferring, nowNs = 3L + it))
         }
-        val retry = enriching.copy(stage = AudioDownloadManager.DownloadStage.WAITING_RETRY)
+        val retry = enriching.copy(stage = DownloadStage.WAITING_RETRY)
             .forPublication()
         assertEquals(retry, store.record(retry, nowNs = 200L))
-        val resumed = retry.copy(stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING)
+        val resumed = retry.copy(stage = DownloadStage.ASSETS_ENRICHING)
             .forPublication()
         assertEquals(resumed, store.record(resumed, nowNs = 201L))
     }
@@ -36,7 +39,7 @@ class DownloadProgressProjectionStoreTest {
     fun `persisted checkpoint cannot overwrite a live stage but a new attempt starts fresh`() {
         val store = DownloadProgressProjectionStore(snapshotIntervalNs = 0L)
         val live = progress(bytesRead = 100L)
-            .copy(stage = AudioDownloadManager.DownloadStage.FINALIZING).forPublication()
+            .copy(stage = DownloadStage.FINALIZING).forPublication()
         store.record(live, nowNs = 0L)
         assertEquals(live, store.record(progress(bytesRead = 50L), nowNs = 1L))
         val next = progress(attemptId = 2L, bytesRead = 0L).forPublication()
@@ -82,15 +85,15 @@ class DownloadProgressProjectionStoreTest {
         assertEquals(setOf("b"), store.snapshot.value.keys)
 
         store.clear()
-        assertEquals(emptyMap<String, AudioDownloadManager.DownloadProgress>(), store.snapshot.value)
+        assertEquals(emptyMap<String, DownloadProgress>(), store.snapshot.value)
     }
 
     private fun progress(
         operationId: String = "operation",
         attemptId: Long = 1L,
         bytesRead: Long
-    ): AudioDownloadManager.DownloadProgress {
-        return AudioDownloadManager.DownloadProgress(
+    ): DownloadProgress {
+        return DownloadProgress(
             songKey = operationId,
             songId = operationId.hashCode().toLong(),
             fileName = "$operationId.flac",

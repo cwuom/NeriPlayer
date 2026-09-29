@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.commit
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.CompletedDownloadFinalizationAction
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -12,8 +14,8 @@ import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRetryable
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskMutation
 import moe.ouom.neriplayer.core.download.policy.shouldDemotePublishedAudioForFinalization
 import android.content.Context
 import kotlinx.coroutines.CancellationException

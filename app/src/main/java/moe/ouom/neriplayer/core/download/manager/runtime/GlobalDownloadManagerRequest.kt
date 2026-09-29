@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
@@ -29,10 +32,10 @@ import moe.ouom.neriplayer.core.download.manager.commit.isDownloadMetadataPostPr
 import moe.ouom.neriplayer.core.download.manager.recovery.invalidCoreAudioReason
 import moe.ouom.neriplayer.core.download.manager.recovery.requeueInvalidCoreAudio
 import moe.ouom.neriplayer.core.download.manager.recovery.requeueConfirmedMissingCoreAudio
-import moe.ouom.neriplayer.core.download.model.BatchDownloadTerminalState
-import moe.ouom.neriplayer.core.download.model.BatchOperationScheduleAction
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.resolveBatchOperationScheduleAction
+import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.core.download.presentation.BatchOperationScheduleAction
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.presentation.resolveBatchOperationScheduleAction
 import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
 import moe.ouom.neriplayer.core.download.manager.recovery.claimArtifactForRecovery
 import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
@@ -43,10 +46,10 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionSchedule
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
@@ -251,7 +254,7 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
             }
             publishDownloadStage(
                 song = song,
-                stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                stage = DownloadStage.WAITING_HOST,
                 operationId = operationId,
                 attemptId = taskStore.findTask(song.stableKey())?.attemptId
             )

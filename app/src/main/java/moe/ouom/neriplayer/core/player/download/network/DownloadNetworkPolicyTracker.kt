@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.download.network
 
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 
 /** keeps callback ordering from turning one Wi-Fi loss into duplicate pauses */
 internal class DownloadNetworkPolicyTracker {

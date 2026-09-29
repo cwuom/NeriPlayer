@@ -23,7 +23,8 @@ package moe.ouom.neriplayer.data.local.media
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.content.Context
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever

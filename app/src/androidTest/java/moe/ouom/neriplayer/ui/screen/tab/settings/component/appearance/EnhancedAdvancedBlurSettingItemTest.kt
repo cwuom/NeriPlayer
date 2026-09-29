@@ -12,7 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MIN_SDK
 import org.junit.Assert.assertFalse

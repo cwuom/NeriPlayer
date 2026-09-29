@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.api.youtube.protocol
 
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicRequestLocale
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackBootstrap
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlayerClientProfile
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackBootstrap
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerClientProfile
 import okio.Buffer
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.host.isUserRequestedProcessExitReason
 import moe.ouom.neriplayer.core.download.execution.persistence.resolveProcessExitRecoveryState
 import moe.ouom.neriplayer.core.download.execution.uidt.UIDT_SHARED_PUMP_GRACE_MS

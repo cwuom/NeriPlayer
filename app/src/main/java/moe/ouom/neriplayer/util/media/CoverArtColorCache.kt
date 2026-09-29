@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.util.media
 
+import moe.ouom.neriplayer.data.model.artwork.CoverArtColorSample
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -13,11 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-
-data class CoverArtColorSample(
-    val seedHex: String,
-    val baseColorArgb: Int
-)
 
 object CoverArtColorCache {
     private const val CACHE_SIZE = 64

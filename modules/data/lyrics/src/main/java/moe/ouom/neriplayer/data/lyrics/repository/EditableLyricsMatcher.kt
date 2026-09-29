@@ -1,20 +1,20 @@
 package moe.ouom.neriplayer.data.lyrics.repository
 
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlSearchResult
-import moe.ouom.neriplayer.api.lyrics.model.KugouSongSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouSongSearchResult
 import moe.ouom.neriplayer.api.search.NativeLyricSearchApi
 import moe.ouom.neriplayer.api.search.SearchApi
 import moe.ouom.neriplayer.api.youtube.client.YouTubeMusicClient
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResult
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.convertPlainLyricsToEntries
 import moe.ouom.neriplayer.core.lyrics.hasEditableLyricWordTiming
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.lyrics.matching.editableLyricMatchDomesticSearchQueries
 import moe.ouom.neriplayer.data.lyrics.matching.editableLyricMatchResultComparator
 import moe.ouom.neriplayer.data.lyrics.matching.editableLyricMatchSearchQueries
@@ -31,12 +31,12 @@ import moe.ouom.neriplayer.data.lyrics.matching.scoreLyricMatchArtist
 import moe.ouom.neriplayer.data.lyrics.matching.scoreLyricMatchDuration
 import moe.ouom.neriplayer.data.lyrics.matching.scoreLyricMatchKeyword
 import moe.ouom.neriplayer.data.lyrics.matching.scoreLyricMatchTitle
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricFormat
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchCandidate
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchConfidence
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchRequest
-import moe.ouom.neriplayer.data.lyrics.model.EditableLyricMatchSource
-import moe.ouom.neriplayer.data.lyrics.model.RankedEditableLyricMatch
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricFormat
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchCandidate
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 
 private const val TAG = "EditableLyricsMatcher"
 private const val MAX_SOURCE_RESULTS = 5

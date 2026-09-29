@@ -1,8 +1,5 @@
 package moe.ouom.neriplayer.data.settings
 
-import moe.ouom.neriplayer.api.youtube.model.playback.YouTubePlaybackSourcePreference
-import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -26,8 +23,9 @@ import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreference
  * Created: 2025/8/8
  */
 
-
-import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
+import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
@@ -37,26 +35,26 @@ import moe.ouom.neriplayer.data.settings.appearance.persistThemeFollowSystemDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeModeSnapshot
 import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_CENTER
-import moe.ouom.neriplayer.data.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
-import moe.ouom.neriplayer.data.settings.lyrics.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
-import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_CENTER
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
+import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeFloatingLyricsPosition
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
-import moe.ouom.neriplayer.data.settings.lyrics.resolveFloatingLyricsLyricAlpha
-import moe.ouom.neriplayer.data.settings.lyrics.resolveFloatingLyricsTranslationAlpha
-import moe.ouom.neriplayer.data.settings.lyrics.resolveFloatingLyricsTranslationOutlineWidthDp
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsLyricAlpha
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsTranslationAlpha
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsTranslationOutlineWidthDp
 import moe.ouom.neriplayer.data.settings.lyrics.resolveLyricFontScales
-import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataBiliAudioQuality
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataYouTubeAudioQuality
@@ -67,12 +65,12 @@ import moe.ouom.neriplayer.data.settings.playback.resolveLegacyMobileDataYouTube
 import moe.ouom.neriplayer.data.settings.playback.resolvePlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.playback.updatePlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveBitDepthMode
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveBufferProfile
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusivePreferences
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBufferProfile
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveSettingsStore
-import moe.ouom.neriplayer.data.settings.usb.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -85,17 +83,17 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
-import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
-import moe.ouom.neriplayer.core.player.model.decodePlaybackEqualizerBandLevels
-import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.decodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.data.model.playback.encodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import java.util.Locale

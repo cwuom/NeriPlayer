@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.host
 
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Test

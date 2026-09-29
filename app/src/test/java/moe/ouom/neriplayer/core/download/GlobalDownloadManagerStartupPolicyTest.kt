@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
-import moe.ouom.neriplayer.core.download.model.shouldHandoffBlockedWifiRecoveryToSharedPump
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.core.download.presentation.shouldHandoffBlockedWifiRecoveryToSharedPump
 import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS
 import moe.ouom.neriplayer.core.download.policy.DownloadClearProviderCleanupCoordinator
 import moe.ouom.neriplayer.core.download.policy.DownloadClearRoomTimeoutException
@@ -51,10 +53,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 import kotlin.time.Duration.Companion.milliseconds
 

@@ -13,9 +13,9 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.DownloadDirectoryMigrationRecoveryController
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.DownloadDirectoryMigrationRecoveryGateway
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.MIGRATION_SNAPSHOT_READ_RETRY_LIMIT

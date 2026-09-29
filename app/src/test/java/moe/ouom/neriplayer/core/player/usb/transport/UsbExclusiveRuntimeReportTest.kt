@@ -1,5 +1,14 @@
 package moe.ouom.neriplayer.core.player.usb.transport
 
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveErrorCode
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveFeedbackClockFailure
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveFeedbackMode
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveFeedbackState
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryAction
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionAckStatus
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRecoveryActionOwner
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

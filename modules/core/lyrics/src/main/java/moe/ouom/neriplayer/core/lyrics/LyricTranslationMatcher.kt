@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min

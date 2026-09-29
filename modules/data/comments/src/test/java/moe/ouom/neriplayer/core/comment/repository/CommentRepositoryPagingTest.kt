@@ -4,11 +4,11 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
 import moe.ouom.neriplayer.api.netease.client.NeteaseClient
 import moe.ouom.neriplayer.core.comment.CommentMemoryCache
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
-import moe.ouom.neriplayer.core.comment.model.CommentSource
-import moe.ouom.neriplayer.core.comment.model.CommentSort
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.CommentSource
+import moe.ouom.neriplayer.data.model.comments.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.core.comment.CommentApiException
 import org.json.JSONObject
 import org.junit.After
@@ -21,9 +21,9 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoPage
-import moe.ouom.neriplayer.api.bilibili.model.video.VideoStats
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
 
 class CommentRepositoryPagingTest {
     private val cache = CommentMemoryCache()

@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.download.metadata
 
+import moe.ouom.neriplayer.core.download.storage.metadata.serialization.toJson
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -11,23 +15,22 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
 import moe.ouom.neriplayer.core.download.policy.resolvePersistedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
-import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.time.elapsedMillisSince
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /**
  * 以固定并发度读取独立侧载, 保持返回顺序并避免阻塞下一首歌曲

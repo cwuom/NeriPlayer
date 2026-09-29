@@ -49,8 +49,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest

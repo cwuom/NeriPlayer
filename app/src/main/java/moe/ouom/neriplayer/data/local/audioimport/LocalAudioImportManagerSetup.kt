@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanPhase
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanProgress
+
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager.LocalSidecarDirectoryIndex
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager.LyricSidecarKind
 import android.content.Context
@@ -25,7 +30,6 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
 import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
 import moe.ouom.neriplayer.data.local.media.isMediaStoreUri
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File

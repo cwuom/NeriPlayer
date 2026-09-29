@@ -40,7 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
+import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
 import moe.ouom.neriplayer.R
 
 @Composable

@@ -1,14 +1,14 @@
 package moe.ouom.neriplayer.data.lyrics.repository
 
 import kotlin.math.max
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlLyrics
-import moe.ouom.neriplayer.api.lyrics.model.AmllTtmlSearchResult
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlLyrics
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.data.lyrics.matching.isAmllDurationCompatible
-import moe.ouom.neriplayer.data.lyrics.model.AmllResolvedLyrics
+import moe.ouom.neriplayer.data.model.lyrics.amll.AmllResolvedLyrics
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 

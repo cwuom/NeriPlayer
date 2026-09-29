@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.sync.github
 
-import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.model.sync.SyncData
 
 internal object GitHubSyncUploadPolicy {
     fun shouldUpload(

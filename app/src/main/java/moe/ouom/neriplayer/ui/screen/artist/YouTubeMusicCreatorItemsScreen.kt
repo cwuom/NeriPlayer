@@ -54,8 +54,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton

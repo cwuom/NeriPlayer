@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
+
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

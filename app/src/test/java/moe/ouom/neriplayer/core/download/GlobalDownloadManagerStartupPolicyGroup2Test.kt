@@ -1,18 +1,22 @@
 package moe.ouom.neriplayer.core.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.buildDownloadTaskSummary
-import moe.ouom.neriplayer.core.download.model.countFailedDownloadTasks
-import moe.ouom.neriplayer.core.download.model.countPendingDownloadTasks
-import moe.ouom.neriplayer.core.download.model.hasActiveDownloadOperations
-import moe.ouom.neriplayer.core.download.model.hasActiveDownloadTasks
-import moe.ouom.neriplayer.core.download.model.hasPendingDownloadTasks
-import moe.ouom.neriplayer.core.download.model.hasRecoveryBlockingDownloadOperations
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskFinalizing
-import moe.ouom.neriplayer.core.download.model.shouldApplyTaskMutation
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.presentation.buildDownloadTaskSummary
+import moe.ouom.neriplayer.core.download.presentation.countFailedDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.countPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.hasActiveDownloadOperations
+import moe.ouom.neriplayer.core.download.presentation.hasActiveDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.hasPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.presentation.hasRecoveryBlockingDownloadOperations
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskFinalizing
+import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskMutation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -20,7 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 
 
@@ -545,14 +549,14 @@ class GlobalDownloadManagerStartupPolicyGroup2Test : GlobalDownloadManagerStartu
                 coverUrl = null,
                 mediaUri = "https://example.com/finalizing"
             ),
-            progress = AudioDownloadManager.DownloadProgress(
+            progress = DownloadProgress(
                 songKey = "7|Album|https://example.com/finalizing",
                 songId = 7L,
                 fileName = "Finalizing.flac",
                 bytesRead = 1024L,
                 totalBytes = 1024L,
                 speedBytesPerSec = 0L,
-                stage = AudioDownloadManager.DownloadStage.FINALIZING
+                stage = DownloadStage.FINALIZING
             ),
             status = DownloadStatus.DOWNLOADING
         )
@@ -755,14 +759,14 @@ class GlobalDownloadManagerStartupPolicyGroup2Test : GlobalDownloadManagerStartu
                 coverUrl = null,
                 mediaUri = "https://example.com/finalizing"
             ),
-            progress = AudioDownloadManager.DownloadProgress(
+            progress = DownloadProgress(
                 songKey = "song:4",
                 songId = 4L,
                 fileName = "Finalizing.flac",
                 bytesRead = 1_024L,
                 totalBytes = 1_024L,
                 speedBytesPerSec = 0L,
-                stage = AudioDownloadManager.DownloadStage.FINALIZING
+                stage = DownloadStage.FINALIZING
             ),
             status = DownloadStatus.DOWNLOADING
         )

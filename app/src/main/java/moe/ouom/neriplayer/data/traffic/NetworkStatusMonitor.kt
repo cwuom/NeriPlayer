@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.traffic
 
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities

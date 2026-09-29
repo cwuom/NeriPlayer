@@ -4,7 +4,7 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.lyrics.client.LrcLibClient
-import moe.ouom.neriplayer.data.lyrics.model.LrcLibResult
+import moe.ouom.neriplayer.data.model.lyrics.lrclib.LrcLibResult
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol

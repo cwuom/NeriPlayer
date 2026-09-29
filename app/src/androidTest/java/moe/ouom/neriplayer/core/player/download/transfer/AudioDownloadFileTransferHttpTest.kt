@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.transfer
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -220,7 +222,7 @@ class AudioDownloadFileTransferHttpTest {
         override fun markTransferNetworkActivity(
             operationId: String?, attemptId: Long?, songKey: String, transferGeneration: Long?
         ) = Unit
-        override fun publishProgress(progress: AudioDownloadManager.DownloadProgress) = Unit
+        override fun publishProgress(progress: DownloadProgress) = Unit
         override fun resolveVisibleDownloadFileName(requestedName: String, actualName: String) = requestedName
     }
 

@@ -8,9 +8,9 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
-import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
+import moe.ouom.neriplayer.data.model.traffic.TrafficUsageSource
 import moe.ouom.neriplayer.core.player.resolver.netease.shouldUseNeteaseFlacResumableRange
 import java.io.IOException
 

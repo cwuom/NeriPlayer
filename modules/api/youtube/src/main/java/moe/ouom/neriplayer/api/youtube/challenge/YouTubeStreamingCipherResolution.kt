@@ -17,7 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.api.youtube.fallback.NewPipeFallbackSnapshot
+import moe.ouom.neriplayer.data.model.youtube.cache.NewPipeFallbackSnapshot
 import moe.ouom.neriplayer.api.youtube.fallback.YouTubeNewPipeFallbackStore
 import moe.ouom.neriplayer.api.youtube.fallback.retainRecentNewPipeFallbackKeys
 import moe.ouom.neriplayer.core.logging.NPLogger

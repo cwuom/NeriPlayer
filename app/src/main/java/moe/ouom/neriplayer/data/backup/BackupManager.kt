@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.data.backup
  * Created: 2025/8/11
  */
 
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.sync.identity.identity
+import moe.ouom.neriplayer.data.sync.mapping.fromLocalPlaylist
 import android.content.Context
 import android.net.Uri
 import com.google.gson.Gson
@@ -33,15 +36,14 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.config.LimitedTextReader
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
-import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
-import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
+import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException

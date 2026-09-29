@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.api.ltw.ws.shouldReconnectListenTogetherSocket
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherConnectionState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.session.connection.shouldHoldListenTogetherBackgroundKeepAlive
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

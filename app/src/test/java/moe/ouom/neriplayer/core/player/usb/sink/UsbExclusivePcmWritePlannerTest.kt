@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
-import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

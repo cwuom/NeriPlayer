@@ -1,34 +1,17 @@
 package moe.ouom.neriplayer.data.stats
 
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
+
 import android.content.Context
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
-
-data class PlaybackStatsSyncCounterSnapshot(
-    val trackShardsByIdentity: Map<String, List<SyncPlaybackCounterShard>> = emptyMap(),
-    val dailyShardsByBucketKey: Map<String, List<SyncPlaybackCounterShard>> = emptyMap()
-) {
-    fun trackShards(identityKey: String): List<SyncPlaybackCounterShard> {
-        return trackShardsByIdentity[identityKey].orEmpty()
-    }
-
-    fun dailyShards(dayStartAt: Long, identityKey: String): List<SyncPlaybackCounterShard> {
-        return dailyShardsByBucketKey[dailyCounterKey(dayStartAt, identityKey)].orEmpty()
-    }
-
-    companion object {
-        fun dailyCounterKey(dayStartAt: Long, identityKey: String): String {
-            return "$dayStartAt|$identityKey"
-        }
-    }
-}
 
 private data class PlaybackStatsCounterState(
     val epochStartedAt: Long = 0L,

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -74,7 +76,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             rejectionIndex
         )
         val enrichmentStageIndex = body.indexOf(
-            "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING",
+            "stage = DownloadStage.ASSETS_ENRICHING",
             rejectionIndex
         )
         val enrichmentIndex = body.indexOf("assetEnrichmentCoordinator.tryEnqueue(", rejectionIndex)
@@ -194,7 +196,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val coreCommittedIndex = body.indexOf("markCoreCommitted")
         val activeTaskIndex = body.indexOf("status = DownloadStatus.DOWNLOADING")
         val enrichmentStageIndex = body.indexOf(
-            "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING"
+            "stage = DownloadStage.ASSETS_ENRICHING"
         )
         val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.tryEnqueue(")
 
@@ -229,7 +231,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val bridgeIndex = body.indexOf("AudioDownloadManager.rememberCompletedAudioReference(")
         val activeTaskIndex = body.indexOf("status = DownloadStatus.DOWNLOADING")
         val stageIndex = body.indexOf(
-            "stage = AudioDownloadManager.DownloadStage.ASSETS_ENRICHING"
+            "stage = DownloadStage.ASSETS_ENRICHING"
         )
 
         assertTrue(
@@ -358,7 +360,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         assertTrue(settleBody.contains("resolvePostCoreEnrichmentTaskStatus"))
         assertTrue(settleBody.contains("DownloadStatus.QUEUED"))
         assertTrue(
-            settleBody.contains("stage = AudioDownloadManager.DownloadStage.WAITING_RETRY")
+            settleBody.contains("stage = DownloadStage.WAITING_RETRY")
         )
         assertTrue(settleBody.contains("schedulePostCoreEnrichmentRetry"))
         assertFalse(enrichmentBody.contains("DownloadStatus.FAILED"))

@@ -1,27 +1,8 @@
 package moe.ouom.neriplayer.core.download.reconcile
 
-enum class ScanConfidence {
-    COMPLETE,
-    PARTIAL,
-    ROOT_UNAVAILABLE,
-    PERMISSION_LOST,
-    PROVIDER_ERROR
-}
-
-enum class EmptyScanDecision {
-    PRESERVE,
-    WAIT_FOR_CONFIRMATION,
-    CLEAR_CONFIRMED
-}
-
-data class EmptyScanObservation(
-    val rootKey: String,
-    val confidence: ScanConfidence,
-    val isUncached: Boolean,
-    val knownReferenceCount: Int,
-    val missingReferenceCount: Int,
-    val scanId: Long
-)
+import moe.ouom.neriplayer.data.model.download.ScanConfidence
+import moe.ouom.neriplayer.data.model.download.EmptyScanDecision
+import moe.ouom.neriplayer.data.model.download.EmptyScanObservation
 
 class ManagedLibraryReconciler {
     private var pendingEmpty: PendingEmptyScan? = null

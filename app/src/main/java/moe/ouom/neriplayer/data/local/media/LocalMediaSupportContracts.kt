@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.data.local.media
  * Updated: 2026/3/23
  */
 
-
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -160,42 +159,6 @@ internal val LOCAL_METADATA_PLACEHOLDERS = setOf(
     "未知歌手",
     "未知艺术家",
     "未知专辑"
-)
-data class LocalMediaDetails(
-    val sourceUri: Uri,
-    val displayName: String,
-    val title: String,
-    val artist: String,
-    val album: String,
-    val usesFallbackAlbum: Boolean,
-    val albumArtist: String?,
-    val composer: String?,
-    val genre: String?,
-    val year: Int?,
-    val trackNumber: Int?,
-    val discNumber: Int?,
-    val durationMs: Long,
-    val fileExtension: String?,
-    val mimeType: String?,
-    val audioMimeType: String?,
-    val bitrateKbps: Int?,
-    val sampleRateHz: Int?,
-    val channelCount: Int?,
-    val bitsPerSample: Int?,
-    val sizeBytes: Long?,
-    val lastModifiedMs: Long?,
-    val filePath: String?,
-    val coverUri: String?,
-    val coverSource: String?,
-    val lyricContent: String?,
-    val lyricPath: String?,
-    val lyricSource: String?,
-    val originalTitle: String?,
-    val originalArtist: String?,
-    val embeddedCover: Boolean,
-    val sourceStableKey: String? = null,
-    val translatedLyricContent: String? = null,
-    val romanizedLyricContent: String? = null
 )
 
 internal data class NearbyLyricFiles(

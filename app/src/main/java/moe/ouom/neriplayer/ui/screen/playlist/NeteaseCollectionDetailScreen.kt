@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
 import android.content.ClipData
 import androidx.activity.compose.BackHandler
@@ -137,9 +139,8 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -148,9 +149,9 @@ import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
-import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailUiState
+import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailViewModel
-import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
+import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionHeader
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -806,6 +807,7 @@ fun DetailScreen(
                                 }
                             }
 
+                            val loadError = ui.error
                             // 状态块
                             when {
                                 ui.loading && ui.tracks.isEmpty() -> {
@@ -829,7 +831,7 @@ fun DetailScreen(
                                     }
                                 }
 
-                                ui.error != null && ui.tracks.isEmpty() -> {
+                                loadError != null && ui.tracks.isEmpty() -> {
                                     item {
                                         PlaylistModernListItemSurface(
                                             coverUrl = displayCoverUrl,
@@ -842,7 +844,7 @@ fun DetailScreen(
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 Text(
-                                                    text = stringResource(R.string.playlist_load_failed_format, ui.error),
+                                                    text = stringResource(R.string.playlist_load_failed_format, loadError),
                                                     color = MaterialTheme.colorScheme.error
                                                 )
                                                 Spacer(Modifier.height(8.dp))

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.artifact
 
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.policy.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import org.junit.Assert.assertEquals

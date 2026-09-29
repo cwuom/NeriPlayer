@@ -27,9 +27,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.CommentQuote
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
-import moe.ouom.neriplayer.core.comment.model.SongComment
+import moe.ouom.neriplayer.data.model.comments.CommentQuote
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.SongComment
 
 @Composable
 internal fun CommentActionBox(

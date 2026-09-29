@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.ui.playback.visual.shouldClearRetainedPlaybackVisualC
 import moe.ouom.neriplayer.ui.playback.visual.shouldCommitRetainedPlaybackVisualCoverClear
 import moe.ouom.neriplayer.ui.playback.visual.shouldRetainNowPlayingBlurCover
 import moe.ouom.neriplayer.ui.playback.visual.shouldScheduleRetainedPlaybackVisualCoverClear
-import moe.ouom.neriplayer.util.media.CoverArtColorSample
+import moe.ouom.neriplayer.data.model.artwork.CoverArtColorSample
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

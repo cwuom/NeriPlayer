@@ -1,13 +1,15 @@
 package moe.ouom.neriplayer.api.youtube.protocol
 
+import moe.ouom.neriplayer.api.youtube.auth.hasEffectiveAuth
+import moe.ouom.neriplayer.api.youtube.auth.normalized
+
 import java.util.Locale
 import moe.ouom.neriplayer.api.youtube.auth.shouldStartYouTubeWebAuthRecovery
-import moe.ouom.neriplayer.api.youtube.model.auth.YouTubeAuthBundle
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeItem
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicPlaylistTrack
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicRequestLocale
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicSearchFilter
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicVideoMetadata
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicBootstrapConfig
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicRequestLocale
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicVideoMetadata
 import org.json.JSONObject
 
 internal const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
@@ -15,11 +17,6 @@ internal const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
 internal const val YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT = 24
 internal const val YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT = 30
 internal const val YOUTUBE_MUSIC_AUTH_REFRESH_RETRY_LIMIT = 1
-
-internal data class YouTubeMusicPlaylistPage(
-    val tracks: List<YouTubeMusicPlaylistTrack>,
-    val continuation: String? = null
-)
 
 internal fun parseYouTubeMusicVideoMetadata(raw: String): YouTubeMusicVideoMetadata {
     val root = JSONObject(raw)
@@ -29,25 +26,6 @@ internal fun parseYouTubeMusicVideoMetadata(raw: String): YouTubeMusicVideoMetad
         thumbnailUrl = root.optString("thumbnail_url")
     )
 }
-
-internal data class ParsedYouTubeMusicHomeShelf(
-    val title: String,
-    val items: List<YouTubeMusicHomeItem>,
-    val continuation: String? = null
-)
-
-internal data class YouTubeMusicBootstrapConfig(
-    val apiKey: String,
-    val webRemixClientVersion: String,
-    val visitorData: String,
-    val sessionIndex: String,
-    val loggedIn: Boolean,
-    val userSessionId: String,
-    val cookieHeader: String,
-    val authFingerprint: String,
-    val webUserAgent: String,
-    val fetchedAtMs: Long
-)
 
 internal fun YouTubeMusicBootstrapConfig.hasEffectiveLogin(auth: YouTubeAuthBundle): Boolean {
     return loggedIn || auth.normalized().hasEffectiveAuth()
@@ -70,12 +48,6 @@ internal fun shouldRefreshYouTubeAuthAfterBootstrapFailure(
 internal fun shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount: Int): Boolean {
     return authRefreshRetryCount < YOUTUBE_MUSIC_AUTH_REFRESH_RETRY_LIMIT
 }
-
-internal data class YouTubeMusicBrowseResponse(
-    val bootstrap: YouTubeMusicBootstrapConfig,
-    val root: JSONObject,
-    val requestLocale: YouTubeMusicRequestLocale
-)
 
 object YouTubeMusicLocaleResolver {
     private val safeFallback = YouTubeMusicRequestLocale(

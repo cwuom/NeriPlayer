@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -15,8 +17,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.platform.bili.skip.policy.BiliVideoSkipTracker
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val BILI_VIDEO_SKIP_TARGET_LOAD_MAX_ATTEMPTS = 3

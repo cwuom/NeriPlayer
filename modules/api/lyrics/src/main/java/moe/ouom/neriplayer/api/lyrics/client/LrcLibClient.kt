@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.api.lyrics.client
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.api.lyrics.model.LrcLibRecord
+import moe.ouom.neriplayer.data.model.lyrics.lrclib.LrcLibRecord
 import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request

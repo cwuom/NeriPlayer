@@ -7,15 +7,19 @@
       "java.lang.*",
       "kotlin.*",
       "org.json.JSONObject",
-      "moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata",
-      "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState",
-      "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState$Companion",
-      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata",
-      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata$Baseline",
-      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata$Overrides",
-      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata$Companion"
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata",
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState",
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState$Companion",
+      "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata",
+      "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata$Baseline",
+      "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata$Overrides",
+      "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata$Companion"
     ],
-    "bridges": {}
+    "bridges": {
+      "moe.ouom.neriplayer.core.download.storage.metadata.serialization.ManagedDownloadRestorableMetadataJsonKt": [
+        "Methodref fromJson:(Lmoe/ouom/neriplayer/data/model/download/ManagedDownloadRestorableMetadata$Companion;Lorg/json/JSONObject;)Lmoe/ouom/neriplayer/data/model/download/ManagedDownloadRestorableMetadata;"
+      ]
+    }
   },
   {
     "name": "downloaded-song-projection",
@@ -24,8 +28,8 @@
     "allowed_classes": [
       "java.lang.*",
       "kotlin.*",
-      "moe.ouom.neriplayer.core.model.music.MusicPlatform",
-      "moe.ouom.neriplayer.core.download.model.DownloadedSong",
+      "moe.ouom.neriplayer.data.model.music.MusicPlatform",
+      "moe.ouom.neriplayer.data.model.download.DownloadedSong",
       "moe.ouom.neriplayer.data.model.SongItem",
       "moe.ouom.neriplayer.data.model.SongIdentity"
     ],
@@ -33,15 +37,17 @@
       "moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogModelsKt": [
         "Methodref isResolvableLocalReference:(Ljava/lang/String;)Z"
       ],
-      "moe.ouom.neriplayer.core.download.model.DownloadModelsKt": [
-        "Methodref withRecoveredRemoteSourceStableKey:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;",
-        "Methodref remoteSourceIdentityOrNull:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
+      "moe.ouom.neriplayer.core.download.policy.DownloadedSongPoliciesKt": [
+        "Methodref withRecoveredRemoteSourceStableKey:(Lmoe/ouom/neriplayer/data/model/download/DownloadedSong;)Lmoe/ouom/neriplayer/data/model/download/DownloadedSong;",
+        "Methodref remoteSourceIdentityOrNull:(Lmoe/ouom/neriplayer/data/model/download/DownloadedSong;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
         "Methodref localFileNameFromFileReference:(Ljava/lang/String;)Ljava/lang/String;",
-        "Methodref resolvedLocalFileName:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Ljava/lang/String;"
+        "Methodref resolvedLocalFileName:(Lmoe/ouom/neriplayer/data/model/download/DownloadedSong;)Ljava/lang/String;"
+      ],
+      "moe.ouom.neriplayer.data.identity.SongIdentityExtensionsKt": [
+        "Methodref remoteSourceIdentityOrNull:(Lmoe/ouom/neriplayer/data/model/SongItem;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
+        "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongItem;)Ljava/lang/String;"
       ],
       "moe.ouom.neriplayer.data.model.SongIdentityKt": [
-        "Methodref remoteSourceIdentityOrNull:(Lmoe/ouom/neriplayer/data/model/SongItem;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
-        "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongItem;)Ljava/lang/String;",
         "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongIdentity;)Ljava/lang/String;"
       ]
     }
@@ -54,22 +60,22 @@
       "java.lang.*",
       "java.util.*",
       "kotlin.*",
-      "moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata",
-      "moe.ouom.neriplayer.core.download.model.DownloadedSong"
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata",
+      "moe.ouom.neriplayer.data.model.download.DownloadedSong"
     ],
     "bridges": {
-      "moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState": [],
-      "moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata": [],
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState": [],
+      "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata": [],
       "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilderKt": [
         "Methodref fallbackDownloadedSongId:(Ljava/lang/String;)J",
         "Methodref shouldInspectDownloadedLocalLyrics:(ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"
       ],
       "moe.ouom.neriplayer.core.download.policy.DownloadLifecyclePoliciesKt": [
-        "Methodref shouldInspectDownloadedAudioDetails:(ZLmoe/ouom/neriplayer/core/download/model/DownloadedAudioMetadata;Ljava/lang/String;Z)Z",
+        "Methodref shouldInspectDownloadedAudioDetails:(ZLmoe/ouom/neriplayer/data/model/download/DownloadedAudioMetadata;Ljava/lang/String;Z)Z",
         "Methodref resolveDownloadedLyricOverride:(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
       ],
-      "moe.ouom.neriplayer.core.download.model.DownloadModelsKt": [
-        "Methodref withRecoveredRemoteSourceStableKey:(Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;)Lmoe/ouom/neriplayer/core/download/model/DownloadedSong;"
+      "moe.ouom.neriplayer.core.download.policy.DownloadedSongPoliciesKt": [
+        "Methodref withRecoveredRemoteSourceStableKey:(Lmoe/ouom/neriplayer/data/model/download/DownloadedSong;)Lmoe/ouom/neriplayer/data/model/download/DownloadedSong;"
       ]
     }
   },
@@ -82,32 +88,55 @@
       "java.util.*",
       "kotlin.*",
       "kotlinx.coroutines.flow.*",
-      "moe.ouom.neriplayer.data.model.SongItem"
+      "moe.ouom.neriplayer.data.model.SongItem",
+      "moe.ouom.neriplayer.data.model.playback.queue.InsertQueueEdit",
+      "moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan",
+      "moe.ouom.neriplayer.data.model.playback.queue.PlaybackFailureAdvanceAction",
+      "moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayItem",
+      "moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState",
+      "moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState$Companion",
+      "moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSessionSnapshot",
+      "moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot",
+      "moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot$Companion",
+      "moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement",
+      "moe.ouom.neriplayer.data.model.playback.queue.QueueNavigationStep",
+      "moe.ouom.neriplayer.data.model.playback.queue.QueueTrackCompletion",
+      "moe.ouom.neriplayer.data.model.playback.queue.RemotePlaybackModeUpdate",
+      "moe.ouom.neriplayer.data.model.playback.queue.RemoveQueueEdit",
+      "moe.ouom.neriplayer.data.model.playback.queue.RemovedQueuePlaybackAction",
+      "moe.ouom.neriplayer.data.model.playback.queue.ReplaceCurrentQueueEdit"
     ],
     "bridges": {}
   },
   {
     "name": "sync-merge",
     "package": "moe.ouom.neriplayer.data.sync.merge.",
-    "descriptor_only": [
-      "moe.ouom.neriplayer.data.sync.CoverUrlMapper"
-    ],
+    "descriptor_only": [],
     "allowed_classes": [
       "java.lang.*",
       "java.util.*",
       "kotlin.*",
       "moe.ouom.neriplayer.data.model.SongIdentity",
-      "moe.ouom.neriplayer.data.sync.model.*"
+      "moe.ouom.neriplayer.data.sync.model.SyncCausalToken",
+      "moe.ouom.neriplayer.data.model.sync.*"
     ],
     "bridges": {
       "moe.ouom.neriplayer.data.model.SongIdentityKt": [
-        "Methodref identity:(Lmoe/ouom/neriplayer/data/sync/model/SyncSong;)Lmoe/ouom/neriplayer/data/model/SongIdentity;",
         "Methodref stableKey:(Lmoe/ouom/neriplayer/data/model/SongIdentity;)Ljava/lang/String;"
       ],
-      "moe.ouom.neriplayer.data.sync.model.SyncDataModelsKt": [
-        "Methodref copyWithNormalizedMembershipTokens$default:(Lmoe/ouom/neriplayer/data/sync/model/SyncSong;Ljava/lang/String;JLjava/lang/Long;ILjava/lang/Object;)Lmoe/ouom/neriplayer/data/sync/model/SyncSong;",
-        "Methodref mergePositiveTimestamp:(JJ)J",
-        "Methodref sanitizeCoverUrlForSync$default:(Ljava/lang/String;Lmoe/ouom/neriplayer/data/sync/CoverUrlMapper;ILjava/lang/Object;)Ljava/lang/String;"
+      "moe.ouom.neriplayer.data.sync.identity.SyncSongIdentityKt": [
+        "Methodref identity:(Lmoe/ouom/neriplayer/data/model/sync/SyncSong;)Lmoe/ouom/neriplayer/data/model/SongIdentity;"
+      ],
+      "moe.ouom.neriplayer.data.sync.policy.SyncMetadataPolicyKt": [
+        "Methodref copyWithNormalizedMembershipTokens$default:(Lmoe/ouom/neriplayer/data/model/sync/SyncSong;Ljava/lang/String;JLjava/lang/Long;ILjava/lang/Object;)Lmoe/ouom/neriplayer/data/model/sync/SyncSong;",
+        "Methodref mergePositiveTimestamp:(JJ)J"
+      ],
+      "moe.ouom.neriplayer.data.sync.policy.SyncCoverUrlPolicyKt": [
+        "Methodref sanitizeCoverUrlForSync:(Ljava/lang/String;)Ljava/lang/String;"
+      ],
+      "moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy": [
+        "Fieldref INSTANCE:Lmoe/ouom/neriplayer/data/sync/policy/SyncBiliVideoSkipMergePolicy;",
+        "Methodref merge:(Ljava/lang/Iterable;Ljava/lang/Iterable;)Ljava/util/List;"
       ]
     }
   }

@@ -1,15 +1,18 @@
 package moe.ouom.neriplayer.core.download.storage
 
-import moe.ouom.neriplayer.core.model.music.MusicPlatform
+import moe.ouom.neriplayer.core.download.storage.metadata.serialization.toJson
+import moe.ouom.neriplayer.data.identity.stableKey
+
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.metadata.codec.ManagedDownloadedAudioMetadataDecoder
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONArray
 import org.json.JSONObject
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal object ManagedDownloadStorageJsonCodec {
     fun storedEntriesToJsonArray(entries: List<ManagedDownloadStorage.StoredEntry>): JSONArray {

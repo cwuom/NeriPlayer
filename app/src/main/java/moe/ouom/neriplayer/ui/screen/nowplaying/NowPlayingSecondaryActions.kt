@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -53,26 +56,25 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTargetOptions
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.core.model.music.SongSearchInfo
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScalePage
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet

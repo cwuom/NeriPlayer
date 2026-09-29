@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.api.youtube.model.music.YouTubeMusicHomeItem
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.tab.home.buildHomeSongInfo
 import moe.ouom.neriplayer.ui.screen.tab.home.homeLocalFilesCoverCandidates

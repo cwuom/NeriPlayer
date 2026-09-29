@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download.manager.catalog
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -27,17 +30,17 @@ import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPu
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadStorageRecoveryWorker
 import moe.ouom.neriplayer.core.download.manager.runtime.publishDownloadStage
 import moe.ouom.neriplayer.core.download.manager.runtime.resolvePlayableManagedAudioSnapshot
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteResult
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteVisibility
-import moe.ouom.neriplayer.core.download.model.mergeDownloadedSongsAfterDelete
-import moe.ouom.neriplayer.core.download.model.remoteSourceStableKeyOrNull
-import moe.ouom.neriplayer.core.download.model.resolveConfirmedFullLibraryDeleteResult
-import moe.ouom.neriplayer.core.download.model.resolveDownloadedSongDeleteResult
-import moe.ouom.neriplayer.core.download.model.resolveFullLibraryRemainingReferences
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.core.download.cleanup.DownloadedSongDeleteVisibility
+import moe.ouom.neriplayer.core.download.policy.mergeDownloadedSongsAfterDelete
+import moe.ouom.neriplayer.core.download.policy.remoteSourceStableKeyOrNull
+import moe.ouom.neriplayer.core.download.policy.resolveConfirmedFullLibraryDeleteResult
+import moe.ouom.neriplayer.core.download.policy.resolveDownloadedSongDeleteResult
+import moe.ouom.neriplayer.core.download.policy.resolveFullLibraryRemainingReferences
 import moe.ouom.neriplayer.core.download.policy.nextDownloadOperationCreatedAtMs
 import moe.ouom.neriplayer.core.download.policy.shouldAllowPendingCatalogPlayback
 import moe.ouom.neriplayer.core.download.policy.shouldApplyDownloadedPlaybackRequest
@@ -81,7 +84,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.download.resolveDownloadAudioQualitySelection
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -494,7 +497,7 @@ private suspend fun GlobalDownloadManager.persistDownloadWaitingForDeleteCleanup
                 val attemptId = attempts[request.song.stableKey()] ?: return@forEach
                 publishDownloadStage(
                     song = request.song,
-                    stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
+                    stage = DownloadStage.WAITING_DELETE_CLEANUP,
                     operationId = request.operationId,
                     attemptId = attemptId
                 )
@@ -577,7 +580,7 @@ internal suspend fun GlobalDownloadManager.markDownloadWaitingForDeleteCleanup(
     }
     publishDownloadStage(
         song = request.song,
-        stage = AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
+        stage = DownloadStage.WAITING_DELETE_CLEANUP,
         operationId = operationId,
         attemptId = attemptId
     )

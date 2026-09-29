@@ -8,7 +8,7 @@ android {
 }
 
 dependencies {
-    api(project(":core:model"))
+    api(project(":data:model"))
     implementation(project(":api:netease"))
     implementation(project(":core:network"))
     implementation(project(":core:lyrics"))

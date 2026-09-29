@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.queue.policy
 
+import moe.ouom.neriplayer.data.model.stableKey
+
 import moe.ouom.neriplayer.core.player.queue.identity.QueueSongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
 

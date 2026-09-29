@@ -5,7 +5,7 @@ import android.content.Context
 import kotlinx.coroutines.CancellationException
 import java.io.InputStream
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
 
 internal interface ManagedMigrationEntryReader {
     suspend fun <T> read(

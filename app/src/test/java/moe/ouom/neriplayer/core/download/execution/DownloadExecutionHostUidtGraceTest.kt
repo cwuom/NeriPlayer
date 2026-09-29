@@ -11,9 +11,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionPumpResult
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

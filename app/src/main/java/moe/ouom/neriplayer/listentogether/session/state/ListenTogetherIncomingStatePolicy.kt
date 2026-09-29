@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.listentogether.session.state
 import moe.ouom.neriplayer.listentogether.control.passivePositionUpdateTypes
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.isListenTogetherQueueUpdateCause
-import moe.ouom.neriplayer.listentogether.protocol.message.event.ListenTogetherCause
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 
 /**
  * a higher-version room queue is authoritative over any local optimistic

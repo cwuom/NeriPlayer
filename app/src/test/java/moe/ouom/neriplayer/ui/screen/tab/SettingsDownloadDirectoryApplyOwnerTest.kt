@@ -5,10 +5,10 @@ import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyException
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryApplyGateway
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryApplyOwner
 import org.junit.Assert.assertEquals

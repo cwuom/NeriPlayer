@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution.recovery
 
 import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionResult
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import android.content.Context
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 

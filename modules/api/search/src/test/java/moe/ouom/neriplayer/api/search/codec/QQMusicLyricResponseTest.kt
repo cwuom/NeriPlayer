@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.api.search.codec
 
 import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.api.search.model.QQMusicLyricContainer
-import moe.ouom.neriplayer.api.search.model.QQMusicLyricResponse
+import moe.ouom.neriplayer.data.model.qqmusic.search.QQMusicLyricContainer
+import moe.ouom.neriplayer.data.model.qqmusic.search.QQMusicLyricResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

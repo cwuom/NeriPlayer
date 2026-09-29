@@ -2,6 +2,9 @@
 
 package moe.ouom.neriplayer.core.player.url
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.net.Uri
 import android.os.SystemClock
 import androidx.core.net.toUri
@@ -17,7 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockTarget
 import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
@@ -25,12 +28,12 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.playback.LocalPlaybackReferenceResolution
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
-import moe.ouom.neriplayer.core.player.model.mergeLocalPlaybackAudioInfoWithRemoteQuality
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.PlayerEvent
+import moe.ouom.neriplayer.data.model.playback.SongUrlResult
+import moe.ouom.neriplayer.core.player.policy.audio.mergeLocalPlaybackAudioInfoWithRemoteQuality
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshDeferredCompletion
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestHandle
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
@@ -59,10 +62,9 @@ import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidate
 import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
 import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackProgressAdvanceBaseline
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
-import moe.ouom.neriplayer.data.model.recoverNeteaseRemoteSourceFromStaleLocalCopy
-import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.api.bilibili.model.playback.BiliAudioStreamInfo
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.identity.recoverNeteaseRemoteSourceFromStaleLocalCopy
+import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger

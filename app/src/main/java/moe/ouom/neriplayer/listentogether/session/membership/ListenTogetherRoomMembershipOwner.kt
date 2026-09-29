@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether.session.membership
 
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherMembershipCredential
+
 import moe.ouom.neriplayer.listentogether.session.state.normalized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -8,12 +10,12 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
 import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueueSnapshot
 import moe.ouom.neriplayer.api.ltw.ws.redactListenTogetherWsUrlForLog
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherInitialSnapshot
-import moe.ouom.neriplayer.listentogether.protocol.message.http.ListenTogetherRoomResponse
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomSettings
-import moe.ouom.neriplayer.listentogether.protocol.model.room.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.protocol.model.session.ListenTogetherSessionState
-import moe.ouom.neriplayer.listentogether.protocol.model.track.ListenTogetherTrack
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherInitialSnapshot
+import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherRoomResponse
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomSettings
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherJoinSecret
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomCreation

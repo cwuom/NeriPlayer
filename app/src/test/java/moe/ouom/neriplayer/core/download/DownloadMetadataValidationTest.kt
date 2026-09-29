@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 /**
  * 回归测试: #121 (SD 卡 JSON 元数据写入失败) 和 #126 (本地存在同名歌曲时重复下载)

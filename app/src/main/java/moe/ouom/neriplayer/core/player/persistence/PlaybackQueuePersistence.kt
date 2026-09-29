@@ -7,9 +7,9 @@ import java.io.IOException
 import java.lang.reflect.Type
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
-import moe.ouom.neriplayer.core.player.model.PersistedState
-import moe.ouom.neriplayer.core.player.model.withPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
+import moe.ouom.neriplayer.data.model.playback.PersistedState
+import moe.ouom.neriplayer.core.player.persistence.withPlaybackState
 import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 

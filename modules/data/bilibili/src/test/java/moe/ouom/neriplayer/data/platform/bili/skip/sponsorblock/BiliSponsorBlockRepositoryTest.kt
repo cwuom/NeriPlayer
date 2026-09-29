@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.platform.bili.skip.sponsorblock
 
-import moe.ouom.neriplayer.data.platform.bili.skip.model.BiliSponsorBlockTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockTarget
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

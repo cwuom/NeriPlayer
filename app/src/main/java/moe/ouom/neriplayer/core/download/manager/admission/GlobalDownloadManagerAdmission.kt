@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.manager.admission
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.isWifiBoundNetworkPolicyObservationCurrent
 import moe.ouom.neriplayer.core.download.manager.batch.cancellationOperationIdsForSong
@@ -16,7 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.download.execution.clear.DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
@@ -30,7 +32,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.download.resolveDownloadAudioQualitySelection
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import kotlin.time.Duration.Companion.milliseconds
 

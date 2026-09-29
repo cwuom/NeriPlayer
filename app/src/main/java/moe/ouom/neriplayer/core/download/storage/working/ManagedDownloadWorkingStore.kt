@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.working
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX

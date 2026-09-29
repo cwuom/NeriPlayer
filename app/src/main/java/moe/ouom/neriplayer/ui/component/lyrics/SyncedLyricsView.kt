@@ -23,8 +23,8 @@ package moe.ouom.neriplayer.ui.component.lyrics
  * Created: 2025/8/13
  */
 
-import moe.ouom.neriplayer.core.lyrics.LyricEntry
-import moe.ouom.neriplayer.core.lyrics.WordTiming
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.WordTiming
 import moe.ouom.neriplayer.core.lyrics.calculateLineProgress
 import moe.ouom.neriplayer.core.lyrics.findCurrentLineIndex
 import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices

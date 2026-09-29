@@ -20,9 +20,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.playback.NowPlayingControlPlacement
-import moe.ouom.neriplayer.data.settings.playback.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.playback.PlaybackControlSize
+import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog

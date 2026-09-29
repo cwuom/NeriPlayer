@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.startup.player
 
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
-import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommand
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
