@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.webdav
+package moe.ouom.neriplayer.data.sync.remote
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

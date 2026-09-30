@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.mapping.stats
 
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class SyncPlaybackStatMapperCompatTest {
+class SyncPlaybackStatMappingCompatTest {
     private val gson = Gson()
 
     @Test
@@ -30,7 +30,7 @@ class SyncPlaybackStatMapperCompatTest {
 
         assertEquals(
             emptyList<SyncPlaybackCounterShard>(),
-            SyncPlaybackStatMapper.normalizeCounterShards(stat.counterShards)
+            SyncPlaybackStatMapping.normalizeCounterShards(stat.counterShards)
         )
     }
 
@@ -56,7 +56,7 @@ class SyncPlaybackStatMapperCompatTest {
 
         assertEquals(
             emptyList<SyncPlaybackCounterShard>(),
-            SyncPlaybackStatMapper.normalizeCounterShards(bucket.counterShards)
+            SyncPlaybackStatMapping.normalizeCounterShards(bucket.counterShards)
         )
     }
 }

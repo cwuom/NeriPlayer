@@ -219,7 +219,9 @@ and CRAP selectors together.
 - `:core:download`
   - Completion policies and download metadata JSON decoding; directory access, writes, and recovery scheduling belong to the host.
 - `:data:sync`
-  - Sync merge and tombstone calculations; the host owns storage, transport, cover mapping, and presentation.
+  - Sync sessions, compatibility codecs, sanitization, change detection, merging, and concurrency protection; the host owns storage, transport, cover mapping, and presentation.
+  - `runtime` executes sessions through local-data and backend interfaces, `remote` owns compatibility-file fallback and WebDAV fingerprint revalidation, and `retry` handles conflicts.
+  - New business rules must enter CRAP and domain-dependency gates; the module must not directly depend on Android hosts, databases, or network clients.
 - `:data:lyrics`
   - Cross-source lyric matching, ranking, and fallback using clients from `:api:lyrics` and `:api:search`.
 - `:ksp-annotations` / `:ksp-processor`
@@ -435,8 +437,10 @@ and at most 16 direct source files per directory in libraries and app areas regi
     `host/AndroidSyncMergeHost` provides system-playlist identities and messages through the merge host interface.
     `verifyDomainDependencies` protects the entire merge package against direct database,
     network, and Android host dependencies.
-  - `sync/`: provider-neutral coordination, preferences, and cover mapping.
-  - `sync/github/`: GitHub transport, sync orchestration, serialization, Data Saver,
+  - `sync/runtime/`, `codec/`, `sanitize/`, `change/`, `mapping/stats/`, `remote/`, and `retry/` in `:data:sync` own shared sessions, codecs, sanitization, change detection, stat mapping, remote protection, and conflict retries.
+  - `sync/host/`: Android repository snapshots, resource resolution, and persistence adapters consumed through interfaces.
+  - `sync/`: provider-neutral preferences and cover mapping.
+  - `sync/github/`: GitHub backend, transport, Data Saver,
     and secure storage.
   - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
@@ -728,7 +732,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 #### 7. Modify GitHub / WebDAV sync
 
 1. Understand `data/model/sync/SyncDataModels.kt` and
-   `data/sync/github/SyncDataSerializer.kt` compatibility first. Shared payload
+   `data/sync/codec/SyncDataSerializer.kt` in `:data:sync` compatibility first. Shared payload
    models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
    and playback stats. Data Saver writes raw `GZIP(ProtoBuf)` to `backup-raw.bin`,
@@ -749,9 +753,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    valid deletion time; songs with missing `addedAt` are low-priority display items.
 6. `CoverUrlMapper.kt` lives in provider-neutral `data/sync/`. Both GitHub and WebDAV
    use `data/sync/merge/engine/SyncDataMerger.kt` for initial uploads and merging snapshots.
-   Shared merge components own business rules; the host resolves messages and system
-   playlists. Backends still coordinate transport retries, remote-version validation,
-   and local mutation-version checks.
+   Shared components own business rules; the host resolves messages and system
+   playlists. `SyncSession` coordinates conflict retries, local mutation-version checks,
+   and persistence confirmation; backends provide transport and remote-version interfaces.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`. GitHub writes must use
    the remote branch head and a non-force update, failing on conflicts rather than

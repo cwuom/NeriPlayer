@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.codec.SyncDataSerializer
+
 import moe.ouom.neriplayer.data.sync.playlist.normalizedForDisplayOrder
 
 import moe.ouom.neriplayer.data.sync.mapping.fromSongItem

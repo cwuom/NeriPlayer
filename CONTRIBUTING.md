@@ -197,7 +197,9 @@
 - `:core:download`
   - 完成状态规则和下载元数据 JSON 解码；目录访问、写入和恢复调度由宿主负责。
 - `:data:sync`
-  - 同步合并与删除标记计算；宿主负责数据库、远端传输、封面映射和文案。
+  - 同步会话、兼容编解码、清洗、差异检测、合并和并发保护；宿主负责数据库、远端传输、封面映射和文案。
+  - `runtime` 通过本地数据与后端接口执行会话，`remote` 维护兼容文件回退和 WebDAV 指纹复核，`retry` 统一处理冲突重试。
+  - 新增业务规则必须进入 CRAP 与计算域依赖门禁；模块不得直接依赖 Android 宿主、数据库或网络客户端。
 - `:data:lyrics`
   - 跨来源歌词匹配、排序和回退编排；服务客户端来自 `:api:lyrics` 和 `:api:search`。
 - `:ksp-annotations` / `:ksp-processor`
@@ -385,8 +387,10 @@
   - `:data:sync` 的 `sync/merge/` 按 `engine`、`host`、`playlist`、`song`、`history` 和 `stats` 维护合并入口、宿主契约、冲突、排序和统计规则。
     `host/AndroidSyncMergeHost` 提供系统歌单身份与文案，合并组件通过接口读取这些信息。
     `verifyDomainDependencies` 检查整个合并计算包，避免数据库、网络和 Android 宿主依赖回流。
-  - `sync/`：provider 无关的协调、偏好和封面映射。
-  - `sync/github/`：GitHub 传输、同步编排、序列化、省流模式和安全存储。
+  - `:data:sync` 的 `sync/runtime/`、`codec/`、`sanitize/`、`change/`、`mapping/stats/`、`remote/` 和 `retry/` 分别维护共享会话、编解码、清洗、差异检测、统计映射、远端保护和冲突重试。
+  - `sync/host/`：Android 仓库快照、资源解析与落库适配；会话通过接口调用这些实现。
+  - `sync/`：provider 无关的偏好和封面映射。
+  - `sync/github/`：GitHub 后端、传输、省流模式和安全存储。
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
 - `modules/api/ltw/src/main/java/moe/ouom/neriplayer/api/ltw/`
@@ -626,7 +630,7 @@
 #### 7. 修改 GitHub / WebDAV 同步
 
 1. 先理解 `data/model/sync/SyncDataModels.kt` 与
-   `data/sync/github/SyncDataSerializer.kt` 的兼容策略；共享载荷模型不得
+   `:data:sync` 中 `data/sync/codec/SyncDataSerializer.kt` 的兼容策略；共享载荷模型不得
    重新放回 GitHub provider 包。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
    省流写侧使用 `backup-raw.bin` 原始 `GZIP(ProtoBuf)`，普通模式使用
@@ -642,8 +646,8 @@
    之一，删除记录还需要有效删除时间，缺失 `addedAt` 的歌曲只能作为低优先级展示项。
 6. `CoverUrlMapper.kt` 位于 provider 无关的 `data/sync/`；
    GitHub 与 WebDAV 的首次上传和双端合并统一调用 `data/sync/merge/engine/SyncDataMerger.kt`。
-   业务规则在共享合并组件中维护，宿主负责资源文案与系统歌单解析；传输重试、
-   远端版本校验和本地 mutation version 检查仍由后端编排。
+   业务规则在共享组件中维护，宿主负责资源文案与系统歌单解析；`SyncSession` 统一
+   执行冲突重试、本地 mutation version 校验和落库确认，后端提供传输与远端版本接口。
 7. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
    周期同步、validated network 检查和失败重试行为。GitHub 写入按远端分支头做
    非强制更新，冲突时必须失败而不是覆盖；WebDAV 无 ETag/Last-Modified 时仍需

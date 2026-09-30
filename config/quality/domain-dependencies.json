@@ -139,5 +139,124 @@
         "Methodref merge:(Ljava/lang/Iterable;Ljava/lang/Iterable;)Ljava/util/List;"
       ]
     }
+  },
+  {
+    "name": "sync-session",
+    "package": "moe.ouom.neriplayer.data.sync.runtime.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "java.io.IOException",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.sync.*",
+      "moe.ouom.neriplayer.data.sync.SyncCoordinator",
+      "moe.ouom.neriplayer.data.sync.retry.*",
+      "moe.ouom.neriplayer.data.sync.change.SyncDataChangeDetector",
+      "moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-remote-safety",
+    "package": "moe.ouom.neriplayer.data.sync.remote.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "java.io.IOException",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.sync.*",
+      "moe.ouom.neriplayer.data.sync.codec.SyncDataSerializer"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-change-detection",
+    "package": "moe.ouom.neriplayer.data.sync.change.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "java.io.IOException",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.sync.*",
+      "moe.ouom.neriplayer.data.model.SongIdentity",
+      "moe.ouom.neriplayer.data.sync.mapping.stats.SyncPlaybackStatMapping",
+      "moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy",
+      "moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy"
+    ],
+    "bridges": {
+      "moe.ouom.neriplayer.data.sync.identity.SyncSongIdentityKt": [
+        "Methodref identity:(Lmoe/ouom/neriplayer/data/model/sync/SyncSong;)Lmoe/ouom/neriplayer/data/model/SongIdentity;"
+      ]
+    }
+  },
+  {
+    "name": "sync-sanitization",
+    "package": "moe.ouom.neriplayer.data.sync.sanitize.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "java.io.IOException",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.sync.*",
+      "moe.ouom.neriplayer.data.sync.mapping.stats.SyncPlaybackStatMapping",
+      "moe.ouom.neriplayer.data.sync.merge.song.SyncPlaylistSongMergePolicy",
+      "moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy",
+      "moe.ouom.neriplayer.data.sync.policy.*",
+      "moe.ouom.neriplayer.data.sync.playlist.SyncPlaylistOrderPolicyKt"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-codec",
+    "package": "moe.ouom.neriplayer.data.sync.codec.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "java.io.ByteArrayInputStream",
+      "java.io.ByteArrayOutputStream",
+      "java.io.Closeable",
+      "java.io.InputStream",
+      "java.io.OutputStream",
+      "java.nio.charset.Charset",
+      "kotlin.*",
+      "kotlinx.serialization.*",
+      "moe.ouom.neriplayer.data.model.sync.*",
+      "moe.ouom.neriplayer.data.sync.policy.SyncCoverUrlPolicyKt"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-stat-mapping",
+    "package": "moe.ouom.neriplayer.data.sync.mapping.stats.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.stats.*",
+      "moe.ouom.neriplayer.data.model.sync.*",
+      "moe.ouom.neriplayer.data.sync.merge.stats.SyncCounterShardPolicy",
+      "moe.ouom.neriplayer.data.sync.sanitize.SyncSanitizationHost",
+      "moe.ouom.neriplayer.data.sync.policy.SyncCoverUrlPolicyKt"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-conflict-retry",
+    "package": "moe.ouom.neriplayer.data.sync.retry.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "java.io.IOException",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.sync.*"
+    ],
+    "bridges": {}
   }
 ]

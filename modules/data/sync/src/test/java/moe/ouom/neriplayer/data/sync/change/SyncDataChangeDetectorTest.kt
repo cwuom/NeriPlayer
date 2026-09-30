@@ -1,5 +1,6 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.change
 
+import moe.ouom.neriplayer.data.sync.codec.SyncDataSerializer
 import moe.ouom.neriplayer.data.model.sync.CURRENT_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.model.sync.LEGACY_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken

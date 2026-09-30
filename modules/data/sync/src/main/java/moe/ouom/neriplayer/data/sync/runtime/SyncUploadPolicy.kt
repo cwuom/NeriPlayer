@@ -1,8 +1,9 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.runtime
 
 import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.sync.change.SyncDataChangeDetector
 
-internal object GitHubSyncUploadPolicy {
+object SyncUploadPolicy {
     fun shouldUpload(
         remoteData: SyncData?,
         requiresMigrationUpload: Boolean,

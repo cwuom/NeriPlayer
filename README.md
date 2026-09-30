@@ -538,7 +538,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存和播放源仓库。
 - `:data:lyrics` / `:data:comments`：跨来源歌词匹配与回退、评论分页和缓存。
-- `:data:sync`：同步合并、删除标记、冲突处理和身份匹配；由宿主注入本地数据与文案接口。
+- `:data:sync`：同步会话、编解码、快照清洗、差异检测、合并与并发保护；由宿主注入本地数据、远端传输与文案接口。
 - `:data:storage`：存储统计、文件扫描和缓存清理；宿主提供目录、数据库统计及下载条目快照。
 - `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`：歌词解析与 Compose 歌词 UI 子模块。
@@ -672,8 +672,8 @@ JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实
 - 播放历史、播放统计、歌单、收藏快照和部分映射数据使用本地文件持久化。
 - 本地歌单使用 JSON 文件存储，并通过临时文件实现原子写入。
 - GitHub 与 WebDAV 共用的同步载荷模型位于 `:data:model` 的 `data/model/sync/`，
-  合并和冲突策略位于 `:data:sync`；宿主负责封面映射、兼容序列化与持久化，
-  GitHub/WebDAV 管理器与传输位于各自 provider 包。
+  会话、兼容编解码、清洗、合并和冲突策略位于 `:data:sync`；宿主负责封面映射、
+  持久化与传输，GitHub/WebDAV 管理器通过后端接口接入共享会话。
   删除记录会和撤销操作一起进入合并策略，避免本地撤销后的歌曲在下一轮同步又被旧删除记录移除。
 - GitHub/WebDAV 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。
 - GitHub 同步通过 Git Data API 在用户仓库中创建原始二进制 blob，再以非强制更新提交到默认分支；

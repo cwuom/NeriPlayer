@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.codec
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.data.sync.github
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.data.sync.github/SyncDataSerializer
+ * File: moe.ouom.neriplayer.data.sync.codec/SyncDataSerializer
  * Created: 2025/1/8
  */
 
@@ -110,7 +110,7 @@ object SyncDataSerializer {
         if (looksLikeGzip(content)) {
             return decodeGzipProto(content)
         }
-        val text = content.toString(Charsets.UTF_8)
+        val text = content.toString(Charsets.UTF_8).removePrefix("\uFEFF")
         return if (looksLikeJson(content)) {
             deserializeJson(text)
         } else {
@@ -124,10 +124,13 @@ object SyncDataSerializer {
         require(
             compact.isNotEmpty() &&
                 compact.length % 4 == 0 &&
-                compact.all { it.isLetterOrDigit() || it == '+' || it == '/' || it == '=' }
+                compact.all(::isLegacyBase64Character)
         ) { "Invalid legacy Base64 sync data" }
         return Base64.getDecoder().decode(compact)
     }
+
+    private fun isLegacyBase64Character(character: Char): Boolean =
+        character.isLetterOrDigit() || character == '+' || character == '/' || character == '='
 
     /**
      * JSON序列化
@@ -170,14 +173,7 @@ object SyncDataSerializer {
 
     /** 跳过前导 UTF-8 BOM 与空白后, 首个有效字节为 '{' 即视为 JSON 对象 */
     private fun looksLikeJson(bytes: ByteArray): Boolean {
-        var i = 0
-        if (bytes.size >= 3 &&
-            bytes[0] == 0xEF.toByte() &&
-            bytes[1] == 0xBB.toByte() &&
-            bytes[2] == 0xBF.toByte()
-        ) {
-            i = 3
-        }
+        var i = if (hasUtf8Bom(bytes)) 3 else 0
         while (i < bytes.size) {
             when (bytes[i]) {
                 ' '.code.toByte(),
@@ -190,6 +186,10 @@ object SyncDataSerializer {
         }
         return false
     }
+
+    private fun hasUtf8Bom(bytes: ByteArray): Boolean =
+        bytes.size >= 3 && bytes[0] == 0xEF.toByte() &&
+            bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()
 
     /**
      * GZIP压缩
@@ -259,7 +259,7 @@ object SyncDataSerializer {
     }
 
     /** 返回只读兼容文件，上传始终使用 getFileName 返回的当前文件名 */
-    internal fun getReadFallbackFileNames(useDataSaver: Boolean): List<String> {
+    fun getReadFallbackFileNames(useDataSaver: Boolean): List<String> {
         return if (useDataSaver) {
             listOf(LEGACY_BINARY_FILE_NAME, JSON_FILE_NAME)
         } else {

@@ -24,9 +24,13 @@ lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 库主源码及 `module_boundaries.py` 中 `APP_FAMILIES` 登记的应用区域，每个目录最多 16 个直接源码文件，模块职责见
 [根目录 README](../../README.md#模块结构)。移动路径时必须同步 CRAP source/method 选择器，不能减少原检查范围。
 已迁出的 `core/api`、`core/lyrics`、`core/player/queue` 和 `data/sync/merge` 生产代码不得重新放入 `app`；
+同步的 `change`、`codec`、`mapping/stats`、`remote`、`retry`、`runtime` 和 `sanitize` 包同样固定归属 `:data:sync`。
 `LIBRARY_OWNED_FAMILIES` 检查这些目录及其子目录，宿主集成测试仍可保留在 `app`。
 单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
 但不会因超分退出失败。
+同步模块可独立运行 `./gradlew :data:sync:verifyCrap :data:sync:verifyDomainDependencies :data:sync:lintDebug`，
+从同一份范围配置选择模块源码并执行同样的阈值，报告位于 `modules/data/sync/build/reports/crap/`。
+Android CI 在全项目门禁前执行同步门禁，其他模块编译失败时仍可检查同步规则。
 
 报告位于 `app/build/reports/crap/`：
 
@@ -85,6 +89,7 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 
 - `core:playback-queue` 的 `core/player/queue` 包含状态存储和编辑/导航策略，队列模型位于 `:data:model`；歌曲身份由接口注入，库不得依赖宿主的 `SongIdentity` 实现
 - `:data:sync` 的 `data/sync/merge` 包含共享合并规则与宿主接口；Android 实现位于 app 的 `data/sync/host`
+- 同步会话、差异检测、快照清洗和远端并发保护有独立计算域规则；本地数据与网络操作通过接口注入，不允许依赖 Android 宿主实现
 - `core/download/catalog/assembly` 负责下载条目的元数据优先级、歌词覆盖和封面选择，文件访问由宿主提供
 - `core/download/catalog/projection` 负责编辑后的来源身份、原始标签和本地引用合并，不读写文件或目录状态
 - `core:download` 的 `core/download/storage/metadata/codec` 只解析 JSON 与兼容旧版元数据，不调用存储入口或恢复任务

@@ -230,6 +230,36 @@ class ModuleBoundariesTest(unittest.TestCase):
         )
         self.assertEqual([], verify(self.root))
 
+    def test_sync_domain_sources_cannot_return_to_app(self):
+        self.module(":data:sync")
+        for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize"):
+            package = "moe/ouom/neriplayer/data/sync/" + family
+            directory = self.root / "app/src/main/java" / package
+            directory.mkdir(parents=True)
+            (directory / "Stranded.kt").write_text(
+                "package " + package.replace("/", ".") + "\nclass Stranded\n"
+            )
+        errors = verify(self.root)
+        self.assertEqual(7, len(errors))
+        self.assertTrue(all("belongs in a library module" in error for error in errors))
+
+    def test_sync_domain_requires_sync_module(self):
+        self.module(":data:sync")
+        self.module(":core:common")
+        directory = self.root / "modules/core/common/src/main/java/moe/ouom/neriplayer/data/sync/runtime"
+        directory.mkdir(parents=True)
+        (directory / "Misplaced.kt").write_text(
+            "package moe.ouom.neriplayer.data.sync.runtime\nclass Misplaced\n"
+        )
+        self.assertTrue(any("package belongs to :data:sync" in error for error in verify(self.root)))
+
+    def test_sync_android_host_adapters_can_remain_in_app(self):
+        self.module(":data:sync")
+        directory = self.root / "app/src/main/java/moe/ouom/neriplayer/data/sync/host"
+        directory.mkdir(parents=True)
+        (directory / "Host.kt").write_text("package moe.ouom.neriplayer.data.sync.host\nclass Host\n")
+        self.assertEqual([], verify(self.root))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.retry
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -51,7 +51,7 @@ class SyncUploadRetryExecutorTest {
             upload = { _, version ->
                 uploadAttempts++
                 if (version == "v1") {
-                    Result.failure(GitHubContentConflictException(409, "sha mismatch"))
+                    Result.failure(ConflictException("sha mismatch"))
                 } else {
                     Result.success("v3")
                 }
@@ -60,7 +60,7 @@ class SyncUploadRetryExecutorTest {
                 refetchCount++
                 Result.success(2 to "v2")
             },
-            isConflict = { it is GitHubContentConflictException }
+            isConflict = { it is ConflictException }
         ).getOrThrow()
 
         assertEquals(listOf(1, 2), mergedInputs)
@@ -107,17 +107,18 @@ class SyncUploadRetryExecutorTest {
             merge = { "merged-$it" },
             hasMeaningfulChange = { _, _ -> true },
             upload = { _, _ ->
-                Result.failure(GitHubContentConflictException(409, "still conflicting"))
+                Result.failure(ConflictException("still conflicting"))
             },
             refetch = {
                 refetchCount++
                 Result.success(2 to "v2")
             },
-            isConflict = { it is GitHubContentConflictException }
+            isConflict = { it is ConflictException }
         )
 
         assertTrue(result.isFailure)
         assertEquals(1, refetchCount)
         assertEquals("still conflicting", result.exceptionOrNull()?.message)
     }
+    private class ConflictException(message: String) : IOException(message)
 }

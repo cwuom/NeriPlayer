@@ -12,12 +12,20 @@ MODULE_INCLUDE = re.compile(r'(?:include|includeOwnedLibrary)\("(:[\w:-]+)"\)')
 OWNED_INCLUDE = re.compile(r'includeOwnedLibrary\("(:[\w:-]+)"\)')
 PACKAGE = re.compile(r'^[ \t]*package\s+([\w.]+)', re.MULTILINE)
 MAX_DIRECTORY_SOURCES = 16
+SYNC_DOMAIN_FAMILIES = tuple(
+    f"data/sync/{family}"
+    for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize")
+)
 APP_FAMILIES = (
     "core/player/download", "core/player/service", "data/settings",
     "listentogether/session", "ui/screen/tab/settings/component",
     "core/player/queue", "data/sync/merge",
+    "data/sync",
 )
-LIBRARY_OWNED_FAMILIES = ("core/api", "core/lyrics", "core/player/queue", "data/sync/merge")
+LIBRARY_OWNED_FAMILIES = (
+    "core/api", "core/lyrics", "core/player/queue", "data/sync/merge",
+    *SYNC_DOMAIN_FAMILIES,
+)
 MODULE_LAYERS = {"core": 0, "api": 1, "data": 2}
 MODEL_MODULE = ":data:model"
 # 已写入 Android 保存状态的 Parcelable 全名需要保持稳定
@@ -28,6 +36,8 @@ LEGACY_MODEL_TYPES = {
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 PACKAGE_OWNERS = {
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":data:sync"
+       for family in SYNC_DOMAIN_FAMILIES},
     "moe.ouom.neriplayer.data.model": MODEL_MODULE,
     "moe.ouom.neriplayer.core.network": ":core:network",
     "moe.ouom.neriplayer.core.player.queue": ":core:playback-queue",

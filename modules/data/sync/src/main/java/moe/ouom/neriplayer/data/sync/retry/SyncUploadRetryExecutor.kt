@@ -1,17 +1,11 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.retry
 
+import moe.ouom.neriplayer.data.model.sync.SyncUploadResolution
 import java.io.IOException
 
 internal class LocalSyncMutationConflictException(message: String) : IOException(message)
 
-internal object SyncUploadRetryExecutor {
-    data class Resolution<TMerged, TVersion>(
-        val merged: TMerged,
-        val remoteVersion: TVersion,
-        val uploadPerformed: Boolean,
-        val remoteChangedDuringSync: Boolean
-    )
-
+object SyncUploadRetryExecutor {
     suspend fun <TRemote, TMerged, TVersion> execute(
         initialRemote: TRemote,
         initialVersion: TVersion,
@@ -22,7 +16,7 @@ internal object SyncUploadRetryExecutor {
         upload: suspend (TMerged, TVersion) -> Result<TVersion>,
         refetch: suspend (TVersion) -> Result<Pair<TRemote, TVersion>>,
         isConflict: (Throwable?) -> Boolean
-    ): Result<Resolution<TMerged, TVersion>> {
+    ): Result<SyncUploadResolution<TMerged, TVersion>> {
         var remote = initialRemote
         var version = initialVersion
         var remoteChangedDuringSync = initialRemoteChangedDuringSync
@@ -31,7 +25,7 @@ internal object SyncUploadRetryExecutor {
             val merged = merge(remote)
             if (!hasMeaningfulChange(remote, merged)) {
                 return Result.success(
-                    Resolution(
+                    SyncUploadResolution(
                         merged = merged,
                         remoteVersion = version,
                         uploadPerformed = false,
@@ -43,7 +37,7 @@ internal object SyncUploadRetryExecutor {
             val uploadResult = upload(merged, version)
             if (uploadResult.isSuccess) {
                 return Result.success(
-                    Resolution(
+                    SyncUploadResolution(
                         merged = merged,
                         remoteVersion = uploadResult.getOrThrow(),
                         uploadPerformed = true,
@@ -52,12 +46,9 @@ internal object SyncUploadRetryExecutor {
                 )
             }
 
-            val error = uploadResult.exceptionOrNull()
-            if (!isConflict(error) || attempt >= maxConflictRetries) {
-                return Result.failure(error ?: IOException("Upload failed"))
-            }
-
-            val refetchResult = refetch(version)
+            val refetchResult = refetchAfterConflict(
+                uploadResult.exceptionOrNull(), attempt, maxConflictRetries, version, refetch, isConflict
+            )
             if (refetchResult.isFailure) {
                 return Result.failure(
                     refetchResult.exceptionOrNull() ?: IOException("Refetch failed after conflict")
@@ -71,5 +62,19 @@ internal object SyncUploadRetryExecutor {
         }
 
         return Result.failure(IOException("Retry budget exhausted"))
+    }
+
+    private suspend fun <TRemote, TVersion> refetchAfterConflict(
+        error: Throwable?,
+        attempt: Int,
+        maxConflictRetries: Int,
+        version: TVersion,
+        refetch: suspend (TVersion) -> Result<Pair<TRemote, TVersion>>,
+        isConflict: (Throwable?) -> Boolean
+    ): Result<Pair<TRemote, TVersion>> {
+        if (!isConflict(error) || attempt >= maxConflictRetries) {
+            return Result.failure(error ?: IOException("Upload failed"))
+        }
+        return refetch(version)
     }
 }

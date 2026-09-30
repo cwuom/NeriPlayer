@@ -693,7 +693,7 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, and playback source repositories.
 - `:data:lyrics` / `:data:comments`: lyric matching and fallback across sources, comment pagination, and caching.
-- `:data:sync`: sync merging, tombstones, conflict resolution, and identity matching through host-provided data and presentation interfaces.
+- `:data:sync`: sync sessions, codecs, snapshot sanitization, change detection, merging, and concurrency protection through host-provided local data, transport, and presentation interfaces.
 - `:data:storage`: storage accounting, file scanning, and cache cleanup with host-provided locations, database statistics, and download snapshots.
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
@@ -852,9 +852,9 @@ See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension ru
   persisted through local files.
 - Local playlists are stored as JSON with atomic temp-file writes.
 - Sync payloads shared by GitHub and WebDAV live in `:data:model` under `data/model/sync/`.
-  Merge and conflict policies belong to `:data:sync`; the host owns cover mapping,
-  compatibility serialization, and persistence. GitHub/WebDAV managers and
-  transports live in their provider packages.
+  Sessions, compatibility codecs, sanitization, merge rules, and conflict policies belong
+  to `:data:sync`. The host owns cover mapping, persistence, and transport;
+  GitHub/WebDAV managers connect to the shared session through backend interfaces.
   Deletion records and undo operations participate in the same merge policy so
   locally restored songs are not removed again by stale deletion records on the
   next sync.

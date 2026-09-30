@@ -44,7 +44,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests, CRAP gate and lint
-        run: ./gradlew verifyModularization --warning-mode all --stacktrace
+        run: ./gradlew :data:sync:verifyCrap :data:sync:verifyDomainDependencies verifyModularization --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()
