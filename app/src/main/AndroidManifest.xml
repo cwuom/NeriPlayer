@@ -167,15 +167,6 @@
             </intent-filter>
         </receiver>
         <service
-            android:name="moe.ouom.neriplayer.core.player.service.AudioPlayerService"
-            android:exported="false"
-            android:stopWithTask="false"
-            android:foregroundServiceType="mediaPlayback">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </service>
-        <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync"

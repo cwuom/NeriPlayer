@@ -195,7 +195,7 @@ Security reminders:
 
 #### Root modules
 
-Owned libraries live under `modules/core/`, `modules/api/`, and `modules/data/`, with matching `:core:*`, `:api:*`, and `:data:*` Gradle identities.
+Owned libraries live under `modules/core/`, `modules/api/`, `modules/data/`, and `modules/feature/`, with matching Gradle identities.
 See the root [README_EN.md](README_EN.md#module-layout) for module responsibilities and dependency rules.
 New libraries use the `build-logic.android.feature-library` convention, register through
 `includeOwnedLibrary` in `settings.gradle.kts`, and join `ownedLibraryPaths` in `app/build.gradle.kts`
@@ -218,6 +218,12 @@ and CRAP selectors together.
   - Account persistence, caches, and playback source repositories.
 - `:core:playback-queue` / `:data:storage`
   - Queue calculations and storage accounting, isolated from the host through identity interfaces and input snapshots.
+- `:core:player-policy` / `:core:player-runtime` / `:core:player-audio`
+  - Playback decisions, stateful coordinators, and PCM processing respectively; they do not read the player facade or app container.
+  - Responsibility packages enter the full-file CRAP scope, including new files and subdirectories.
+- `:feature:player`
+  - Media3 engine, playback service, source resolution, USB output, effects, and lyrics output.
+  - Repository, downloads, Listen Together, and presentation interfaces connect it to app; app cannot retain production sources in `core/player`.
 - `:core:download`
   - Download admission, clear progress, state transitions, retries, deferred scheduling, transfer permits, watchdogs, network policy, operation ownership, commit rules, and metadata JSON decoding.
   - State contracts live in `:data:model` under `download/execution`; Room, SAF, file writes, and service orchestration stay in the host without reverse dependencies from rule components.
@@ -245,13 +251,13 @@ and CRAP selectors together.
 - `np-submodule/miuix`
   - Vendored upstream Miuix source/docs tree, not part of the current app module graph.
 
-Implementation dependencies flow from `app -> data -> api -> core`; higher layers may use lower layers directly.
+Implementation dependencies flow from `app -> feature -> data -> api -> core`; higher layers may use lower layers directly.
 Every layer may depend on `:data:model`, which cannot depend on project implementations. Otherwise core cannot depend on API/data and API cannot depend on repositories.
 Model packages belong exclusively to `:data:model`. Libraries must not reference app, Compose screens,
-`AppContainer`, or `PlayerManager`. Read preferences through suspending providers
+or `AppContainer`; only `:feature:player` may use its own `PlayerManager` directly. Read preferences through suspending providers
 at call time, and inject clients and device tokens from `AppContainer`.
-Room, service lifecycles, and player integration remain in app; define narrow
-interfaces before extracting these responsibilities.
+Room business mappings belong to data modules. Playback services, lifecycle, USB output, and lyrics output belong to
+`:feature:player`, with repository, download, Listen Together, and presentation interfaces assembled in app's `core/di/player`.
 
 Register new libraries with `includeOwnedLibrary` in `settings.gradle.kts` and app's `ownedLibraryPaths`, use
 the `build-logic.android.feature-library` convention, and keep tests in their own
@@ -338,16 +344,15 @@ and at most 16 direct source files per directory in libraries and app areas regi
   - The host owns cache lifetime. Libraries do not access the global container. Repository tests belong to the module; ViewModel integration tests remain in `app`.
   - Source tags belong to `:data:model`; Bilibili legacy playback identity resolution belongs to `:data:bilibili` and does not depend on the player singleton.
 
-- `app/src/main/java/moe/ouom/neriplayer/core/player/`
+- `modules/feature/player/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`: unified Media3 ExoPlayer management, playback resolution, queue,
     cache, state recovery, retry, and playback policy.
   - `service/AudioPlayerService.kt`: foreground playback service, media notification,
     MediaSession, and media button handling.
-  - `download/AudioDownloadManager.kt`: resolves platform playback and saves downloads;
-    `DownloadParallelism.kt` defines concurrency boundaries.
+  - Downloads belong to `:feature:download`; playback uses the `PlayerDownloadAccess` interface.
   - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
-  - `engine/`: Media3 audio processors, including loudness normalization,
-    channel balance, and high-resolution output processing.
+  - `engine/`: Media3 renderers and data sources. PCM normalization, channel balance,
+    and reactive audio signals belong to `:core:player-audio` under `audio/processing` and `audio/reactive`.
   - `playback/PlaybackStatsTracker.kt`: playback stats tracking. Playback commands
     and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
   - `queue/state` and `queue/policy` in `:core:playback-queue` hold state ownership
@@ -466,7 +471,7 @@ and at most 16 direct source files per directory in libraries and app areas regi
     `usb/exclusive/`, `usb/feedback/`, `usb/iso/`, `usb/pcm/`, `usb/uac1/`,
     and `usb/uac2/`, with matching host tests under `tests/usb/`.
 
-- `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
+- `modules/feature/player/src/main/java/moe/ouom/neriplayer/core/lyricon/`
   - Lyricon integration and SuperLyric output for current song, playback state, position,
     word-level lyrics, and translations.
 
@@ -1018,6 +1023,12 @@ the score does not cover native code or replace a coupling review.
 Both `:app:check` and Android CI run the gate. Reports are under
 `app/build/reports/crap/`; see the [quality guide](tools_pub/quality/README.md)
 for the calculation and prerequisites.
+
+The four player modules also expose `verifyCrap` through `build-logic.android.module-quality`.
+Each gate uses module-local coverage and the matching rules from the shared scope; an empty selected scope fails.
+The policy, runtime, PCM, host interface, USB policy, and widget presentation packages include new files automatically.
+App player adapters participate in the combined app gate. Run `:feature:player:connectedDebugAndroidTest` for
+the migrated lyrics rendering, Room queue, decoder, and playback range instrumentation tests.
 
 `OwnedMainSourceLineBudgetTest` keeps the owned main-source files split in this
 refactor and their extracted components strictly below 2000 physical lines.

@@ -495,6 +495,7 @@ object AppContainer {
     fun initialize(app: Application) {
         this.application = app
         initialized = true
+        moe.ouom.neriplayer.core.di.player.installPlayerDependencies(app)
         AudioDownloadManager.initialize(app)
         warmLocalPlaylistRepository()
         warmBiliVideoSkipRepository()

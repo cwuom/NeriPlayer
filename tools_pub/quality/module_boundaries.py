@@ -12,6 +12,11 @@ MODULE_INCLUDE = re.compile(r'(?:include|includeOwnedLibrary)\("(:[\w:-]+)"\)')
 OWNED_INCLUDE = re.compile(r'includeOwnedLibrary\("(:[\w:-]+)"\)')
 PACKAGE = re.compile(r'^[ \t]*package\s+([\w.]+)', re.MULTILINE)
 MAX_DIRECTORY_SOURCES = 16
+PLAYER_POLICY_FAMILIES = tuple(
+    f"core/player/policy/{family}"
+    for family in ("audio", "command", "offload", "pending", "progress", "service", "skip", "storage", "wake")
+)
+PLAYER_AUDIO_FAMILIES = ("core/player/audio/processing", "core/player/audio/reactive")
 DOWNLOAD_RULE_FAMILIES = (
     "core/download/admission",
     "core/download/execution/state",
@@ -39,12 +44,14 @@ APP_FAMILIES = (
     "data/sync",
 )
 LIBRARY_OWNED_FAMILIES = (
+    "core/player",
+    "core/player/runtime", *PLAYER_POLICY_FAMILIES, *PLAYER_AUDIO_FAMILIES,
     "data/ltw", "listentogether",
     *DOWNLOAD_RULE_FAMILIES,
     "core/api", "core/lyrics", "core/player/queue", "data/sync/merge",
     *SYNC_DOMAIN_FAMILIES,
 )
-MODULE_LAYERS = {"core": 0, "api": 1, "data": 2}
+MODULE_LAYERS = {"core": 0, "api": 1, "data": 2, "feature": 3}
 MODEL_MODULE = ":data:model"
 # 已写入 Android 保存状态的 Parcelable 全名需要保持稳定
 LEGACY_MODEL_TYPES = {
@@ -54,6 +61,12 @@ LEGACY_MODEL_TYPES = {
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 PACKAGE_OWNERS = {
+    "moe.ouom.neriplayer.core.player": ":feature:player",
+    "moe.ouom.neriplayer.core.player.runtime": ":core:player-runtime",
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:player-policy"
+       for family in PLAYER_POLICY_FAMILIES},
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:player-audio"
+       for family in PLAYER_AUDIO_FAMILIES},
     "moe.ouom.neriplayer.data.ltw": ":data:ltw",
     "moe.ouom.neriplayer.listentogether": ":core:ltw-protocol",
     **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:download"
@@ -127,6 +140,8 @@ def verify(root):
         dependencies = set(PROJECT_REFERENCE.findall(script))
         graph[name] = dependencies & modules
         for dependency in sorted(dependencies):
+            if name == ":feature:player" and dependency == ":feature:download":
+                errors.append(f"{name}: use PlayerDownloadAccess instead of depending on {dependency}")
             if name == MODEL_MODULE:
                 errors.append(f"{name}: model contracts cannot depend on project implementations: {dependency}")
             if dependency not in declared:
@@ -152,10 +167,13 @@ def verify(root):
             if package:
                 if "model" in package[1].split(".") and name != MODEL_MODULE:
                     errors.append(f"{label}: model package belongs to {MODEL_MODULE}")
-                for prefix, owner in PACKAGE_OWNERS.items():
-                    if (package[1] == prefix or package[1].startswith(prefix + ".")) and name != owner:
-                        if owner != MODEL_MODULE:
-                            errors.append(f"{label}: package belongs to {owner}")
+                owners = [(prefix, owner) for prefix, owner in PACKAGE_OWNERS.items()
+                          if package[1] == prefix or package[1].startswith(prefix + ".")]
+                if owners:
+                    _, owner = max(owners, key=lambda item: len(item[0]))
+                    legacy_contract = name == MODEL_MODULE and f"{package[1]}.{source.stem}" in LEGACY_MODEL_TYPES
+                    if name not in (owner if isinstance(owner, tuple) else (owner,)) and owner != MODEL_MODULE and not legacy_contract:
+                        errors.append(f"{label}: package belongs to {owner}")
             if name == MODEL_MODULE:
                 for imported in re.findall(r'^import (moe\.ouom\.neriplayer\.[\w.]+)', text, re.MULTILINE):
                     if not imported.startswith("moe.ouom.neriplayer.data.model.") and imported not in LEGACY_MODEL_TYPES:
@@ -165,6 +183,9 @@ def verify(root):
             )):
                 errors.append(f"{label}: API implementation belongs in an api module")
             for imported in re.findall(r'^import ([\w.]+)', text, re.MULTILINE):
+                if name == ":feature:player" and (imported == "moe.ouom.neriplayer.core.player.PlayerManager"
+                                                   or imported.startswith("moe.ouom.neriplayer.core.player.PlayerManager.")):
+                    continue
                 if FORBIDDEN_IMPORT.match(f"import {imported}") and imported not in LEGACY_MODEL_TYPES:
                     errors.append(f"{label}: application dependency import {imported}")
             count = len(text.splitlines())
@@ -192,9 +213,13 @@ def verify(root):
             package = PACKAGE.search(source.read_text())
             if package and "model" in package[1].split("."):
                 errors.append(f"{source.relative_to(root)}: model package belongs to {MODEL_MODULE}")
-        for family in LIBRARY_OWNED_FAMILIES:
-            for source in source_files(app_sources / "moe/ouom/neriplayer" / family):
-                errors.append(f"{source.relative_to(root)}: production code belongs in a library module")
+        owned_sources = {
+            source
+            for family in LIBRARY_OWNED_FAMILIES
+            for source in source_files(app_sources / "moe/ouom/neriplayer" / family)
+        }
+        for source in sorted(owned_sources):
+            errors.append(f"{source.relative_to(root)}: production code belongs in a library module")
         for family in APP_FAMILIES:
             verify_directory_capacity(root, app_sources / "moe/ouom/neriplayer" / family, errors)
     return errors

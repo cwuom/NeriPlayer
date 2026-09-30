@@ -528,11 +528,15 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 自有库按 `modules/<层>/<模块>` 组织，对应同名 Gradle 路径，例如 `modules/api/youtube` 对应 `:api:youtube`。
 
-- `:app`：Android 宿主、页面、播放/下载运行时与依赖组装。
+- `:app`：Android 应用入口、页面与跨功能依赖组装。
 - `:data:model`：统一数据模型，按认证、平台、歌词、下载、播放、存储和同步细分；不依赖业务实现模块。
 - `:core:common` / `:core:logging` / `:core:network`：通用工具、日志和网络基础能力。
 - `:core:lyrics`：歌词解析与转换；数据类型统一位于 `:data:model`。
 - [`:core:ltw-protocol`](modules/core/ltw-protocol/README.md)：一起听 HTTP 响应限额、WebSocket 编解码与保活消息、身份生成规则；协议模型位于 `:data:model`。
+- `:core:player-policy`：播放命令、恢复进度、卡顿判断、音频 offload 和服务生命周期规则，不依赖 Android 宿主。
+- `:core:player-runtime`：刷新请求、状态保存调度、预取仲裁、播放进度与统计、音质及传输控制；歌曲身份与副作用由宿主注入。
+- `:core:player-audio`：PCM 声道平衡、响度归一化和音频可视化。
+- `:feature:player`：播放器引擎、音源解析、播放服务、USB 独占输出、系统音效与歌词输出；通过接口连接下载、一起听、小组件、反馈和启动策略。
 - `:core:playback-queue`：队列状态、编辑、导航和顺序策略；歌曲身份规则通过接口注入。
 - `:core:download`：下载准入与清空进度、状态迁移与重试、延后调度队列、传输槽位与看门狗、网络策略、operation 所有权、提交与发布规则、元数据编解码；Room、SAF、文件读写及服务编排由宿主负责。
 - `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
@@ -549,7 +553,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `np-submodule/NeriPlayer-LTW`：一起听 Cloudflare Workers 服务端。
 - `np-submodule/miuix`：仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
 
-实现模块的依赖方向为 `app -> data -> api -> core`，上层可以直接依赖下层。
+实现模块的依赖方向为 `app -> feature -> data -> api -> core`，上层可以直接依赖下层。
 所有层都可以依赖基础数据契约 `:data:model`；该模块不依赖任何项目实现模块。
 除此之外，core 不依赖 api/data，api 不依赖数据仓储，所有库不得依赖 app 或形成循环。
 客户端读取账号、刷新凭据和使用宿主存储时依赖窄接口，由宿主组装实现；
@@ -567,6 +571,8 @@ JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实
 计算域依赖和 lint；单模块测试可运行 `./gradlew :data:youtube:testDebugUnitTest`。
 结构检查也可独立运行 `python3 -B tools_pub/quality/module_boundaries.py`，无需 Android SDK。
 一起听模块可独立运行 `./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug`；客户端与协议库的全部生产方法和新增文件自动受检，任意 CRAP 分数大于 9 都会使 CI 失败。`app/listentogether` 禁止重新加入生产源码，app 只在 `core/di/ltw` 组装平台接口，播放器适配位于 `core/player/ltw`。
+播放器模块可分别运行 `:core:player-policy:verifyCrap`、`:core:player-runtime:verifyCrap`、`:core:player-audio:verifyCrap` 和 `:feature:player:verifyCrap`，使用同一份检查范围和大于 9 即失败的阈值。
+播放器的 Kotlin 类和服务声明由库维护，app 只在 `core/di/player` 中组装接口；`app/core/player` 禁止重新加入生产源码。FFmpeg AAR 和 USB native 库由应用统一打包，播放器库保持现有 JNI 类全名。
 库源码文件必须少于 2000 行，库内每个生产源码目录最多包含 16 个直接 Kotlin/Java 文件。
 具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout)。
 

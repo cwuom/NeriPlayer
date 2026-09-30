@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.widget
 
+import moe.ouom.neriplayer.core.player.presentation.widget.shouldShowPlaybackWidgetFallbackBackground
+import moe.ouom.neriplayer.core.player.presentation.widget.shouldRetainPlaybackWidgetVisuals
+import moe.ouom.neriplayer.core.player.presentation.widget.shouldUseCachedPlaybackWidgetArtwork
+import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
+import moe.ouom.neriplayer.core.player.presentation.widget.PLAYBACK_WIDGET_PROGRESS_MAX
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -17,6 +22,7 @@ import android.widget.RemoteViews
 import androidx.annotation.LayoutRes
 import androidx.annotation.RequiresApi
 import androidx.core.content.edit
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -278,15 +284,15 @@ internal object PlaybackWidgetUpdater {
         }
         views.setImageViewResource(
             R.id.widget_play_pause,
-            if (state.isPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
+            if (state.isPlaying) CoreCommonR.drawable.round_pause_24 else CoreCommonR.drawable.round_play_arrow_24,
         )
         if (hasProgress) {
             views.setImageViewResource(
                 R.id.widget_favorite,
                 if (state.isFavorite) {
-                    R.drawable.ic_baseline_favorite_24
+                    CoreCommonR.drawable.ic_baseline_favorite_24
                 } else {
-                    R.drawable.ic_outline_favorite_24
+                    CoreCommonR.drawable.ic_outline_favorite_24
                 },
             )
         }
@@ -429,7 +435,7 @@ internal object PlaybackWidgetUpdater {
             views.setImageViewResource(
                 R.id.widget_floating_lyrics,
                 if (state.isFloatingLyricsEnabled) {
-                    R.drawable.ic_lyrics_off_24
+                    CoreCommonR.drawable.ic_lyrics_off_24
                 } else {
                     R.drawable.ic_lyrics_24
                 },

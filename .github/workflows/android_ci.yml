@@ -44,7 +44,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests, CRAP gate and lint
-        run: ./gradlew :data:sync:verifyCrap :data:sync:verifyDomainDependencies verifyModularization --warning-mode all --stacktrace
+        run: ./gradlew :core:player-policy:verifyCrap :core:player-runtime:verifyCrap :core:player-audio:verifyCrap :feature:player:verifyCrap :data:sync:verifyCrap :data:sync:verifyDomainDependencies verifyModularization --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()
@@ -147,7 +147,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: >-
-            ./gradlew :app:connectedDebugAndroidTest
+            ./gradlew :feature:player:connectedDebugAndroidTest :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             --warning-mode all --stacktrace
 

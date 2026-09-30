@@ -196,6 +196,14 @@
   - 账号持久化、缓存和播放源仓库。
 - `:core:playback-queue` / `:data:storage`
   - 队列计算与存储统计，分别通过身份接口和输入快照隔离宿主。
+- `:core:player-policy` / `:core:player-runtime` / `:core:player-audio`
+  - 分别维护播放规则、请求和状态控制、PCM 处理及音频可视化；运行时不读宿主全局容器。
+  - 播放进度的同曲判断和统计的稳定 key 由宿主注入，保留本地来源和下载副本的身份语义。
+  - 新生产文件自动进入 CRAP 门禁，迁出的包不得返回 app；编译依赖与计算域门禁共同限制反向引用。
+- `:feature:player`
+  - Media3 引擎、播放服务、USB 输出、音源解析、状态恢复与歌词输出；继续使用既有播放器类全名。
+  - `host` 定义仓库、下载、一起听及展示接口，app 的 `core/di/player` 负责绑定。库不得引用 `AppContainer` 或应用入口类。
+  - 使用 `build-logic.android.module-quality` 提供独立 CRAP 门禁；原有方法检查继续保留，宿主接口、展示状态、一起听映射和 USB 策略按目录整文件受检。
 - `:core:download`
   - 下载准入与清空进度、状态迁移、重试、延后调度、传输槽位、看门狗、网络策略、operation 所有权、提交规则和元数据 JSON 解码。
   - 状态契约位于 `:data:model` 的 `download/execution`；Room、SAF、文件写入和服务编排留在宿主，规则组件不引用这些实现。
@@ -223,12 +231,12 @@
 - `np-submodule/miuix`
   - 仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
 
-实现模块依赖方向为 `app -> data -> api -> core`，允许直接使用下层模块。
+实现模块依赖方向为 `app -> feature -> data -> api -> core`，允许直接使用下层模块。
 各层均可依赖 `:data:model`，它不得依赖项目实现；其余 core 不得依赖 api/data，api 不得依赖数据仓储。
-模型目录只允许出现在 `:data:model`，库不得引用 app、Compose 页面、`AppContainer` 或 `PlayerManager`。
+模型目录只允许出现在 `:data:model`，库不得引用 app、Compose 页面或 `AppContainer`；只有 `:feature:player` 内部可直接使用自己的 `PlayerManager`。
 设置值通过挂起的 provider 在调用时读取，网络客户端和设备令牌由 `AppContainer` 注入，
-不要通过全局容器恢复反向依赖。涉及 Room、服务生命周期和播放器的功能仍在 app，
-后续提取前应先设计窄接口，不要为了搬文件引入循环依赖。
+不要通过全局容器恢复反向依赖。Room 业务映射随数据模块维护，播放器服务与生命周期随播放器功能模块维护，
+跨功能调用通过接口连接，不能通过模块间循环依赖传递宿主实现。
 
 新增库需通过 `settings.gradle.kts` 的 `includeOwnedLibrary` 和 app 的 `ownedLibraryPaths` 登记，使用
 `build-logic.android.feature-library` convention，测试放在该模块 `src/test/`。
@@ -307,16 +315,15 @@
   - 缓存实例的生命周期由宿主决定，库内不读取全局容器；仓库测试位于该模块，ViewModel 集成测试位于 `app`。
   - 歌曲来源标签属于 `:data:model`，Bilibili 历史播放身份解析属于 `:data:bilibili`，无需引用播放器单例。
 
-- `app/src/main/java/moe/ouom/neriplayer/core/player/`
+- `modules/feature/player/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`：Media3 ExoPlayer 的统一管理层，
     负责音源解析、播放队列、缓存、状态恢复、失败重试和播放策略。
   - `service/AudioPlayerService.kt`：前台播放服务、媒体通知、MediaSession 和媒体按钮。
-  - `download/AudioDownloadManager.kt`：受管下载核心链路；同目录的
-    `DownloadParallelism.kt` 定义并发边界。
+  - 下载执行实现归 `:feature:download`；播放器只消费 `host/PlayerDownloadAccess.kt`，下载状态契约位于 `:data:model` 的 `playback/storage`。
   - `effects/PlaybackEffectsController.kt`：倍速、音调、响度增强和均衡器。
-  - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
-  - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
-    `playback/PlayerManagerPlaybackExtensions.kt`。
+  - `engine/`：Media3 渲染器与数据源组装；PCM 声道平衡、响度归一化和音频可视化位于 `:core:player-audio` 的 `audio/processing` 和 `audio/reactive`。
+  - `:core:player-runtime` 的 `runtime/stats`、`runtime/progress`、`runtime/transport` 和 `runtime/quality` 分别维护统计采集、播放进度、传输及音质控制；宿主通过对应 Port 提供副作用。
+    播放命令与队列推进仍在 `playback/PlayerManagerPlaybackExtensions.kt`。
   - `:core:playback-queue` 的 `queue/state` 和 `queue/policy` 维护状态所有权与编辑/导航规则；队列数据契约位于 `:data:model` 的 `playback/queue` 包。
     `PlayerQueueSnapshot` 持有列表与当前索引；`PlayerQueueSessionSnapshot` 将队列、
     随机播放模式和恢复顺序组成完整会话，由 `PlayerQueueStateStore` 统一发布。
@@ -331,13 +338,14 @@
     当前歌曲 Flow 和 Media3 副作用的线程边界仍需单独检查。
     `session/PlayerQueueSessionBindings` 适配新引擎初始化、本地/远端播放请求和持久化恢复。
     队列计算包的直接 JVM 依赖由 `verifyDomainDependencies` 检查，禁止引用该宿主适配器。
-  - `persistence/PlaybackStatePersistenceCoordinator.kt` 统一管理保存请求与延迟任务。
+  - `:core:player-runtime` 的 `runtime/persistence/PlaybackStatePersistenceCoordinator.kt` 统一管理保存请求与延迟任务。
     在同步事件入口调用 `prepareStatePersist` 或 `scheduleStatePersist`，先捕获完整快照并签发请求，
     再等待统计落盘或其它异步工作；写入串行执行，排队期间被替代的请求不再写入。
     `PlaybackStateWriter` 只确认实际成功的后端；JSON 回退后必须完整写回 Room，才能恢复增量保存。
     协程取消继续向上传播，释放播放器会关闭保存请求入口；存储完成回调不修改当前播放状态。
     `RestoredPlaybackState` 表达无恢复、保留暂停进度、待自动恢复三种状态，禁止独立修改恢复进度与标记。
   - URL 刷新的活动状态只由 `RefreshInFlightController` 持有。
+    请求契约、副作用门控和活动任务控制位于 `:core:player-runtime` 的 `runtime/refresh`。
     参数相同可以复用活动任务；写回、完成和取消使用该任务的 `RefreshRequestHandle` 身份，
     避免旧任务影响参数相同的新任务。看门狗直接读取控制器，不另存“正在刷新”标记。
     任务完成清理要覆盖 lazy 协程尚未执行就被取消的情况。
@@ -415,7 +423,7 @@
     `usb/feedback/`、`usb/iso/`、`usb/pcm/`、`usb/uac1/`、`usb/uac2/`
     拆分，对应 host 测试位于 `tests/usb/`。
 
-- `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
+- `modules/feature/player/src/main/java/moe/ouom/neriplayer/core/lyricon/`
   - 词幕适配（Lyricon Provider）与 SuperLyric 输出，
     同步歌曲、播放状态、进度、逐字歌词和翻译。
 

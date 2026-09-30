@@ -482,5 +482,57 @@
     ],
     "bridges": {},
     "descriptor_only": []
+  },
+  {
+    "name": "player-runtime",
+    "package": "moe.ouom.neriplayer.core.player.runtime.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "android.os.SystemClock",
+      "android.media.session.PlaybackState",
+      "androidx.media3.common.C",
+      "androidx.media3.common.Player",
+      "moe.ouom.neriplayer.core.logging.NPLogger",
+      "moe.ouom.neriplayer.util.concurrent.RequestGeneration*",
+      "moe.ouom.neriplayer.data.model.*",
+      "moe.ouom.neriplayer.core.player.policy.command.*",
+      "moe.ouom.neriplayer.core.player.policy.pending.*",
+      "moe.ouom.neriplayer.core.player.policy.progress.*",
+      "moe.ouom.neriplayer.core.player.policy.wake.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "player-audio-processing",
+    "package": "moe.ouom.neriplayer.core.player.audio.processing.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.nio.*",
+      "java.util.concurrent.atomic.AtomicReference",
+      "kotlin.*",
+      "androidx.media3.common.*",
+      "moe.ouom.neriplayer.data.model.playback.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "player-audio-reactive",
+    "package": "moe.ouom.neriplayer.core.player.audio.reactive.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.nio.*",
+      "kotlin.*",
+      "kotlinx.coroutines.flow.*",
+      "androidx.media3.common.*",
+      "androidx.media3.exoplayer.audio.TeeAudioProcessor",
+      "androidx.media3.exoplayer.audio.TeeAudioProcessor$AudioBufferSink"
+    ],
+    "bridges": {}
   }
 ]

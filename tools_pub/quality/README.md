@@ -9,7 +9,7 @@
 ./gradlew verifyModularization
 ```
 
-`verifyCrap` 运行 app 和自有 core/api/data 库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES
+`verifyCrap` 运行 app 和自有 core/api/data/feature 库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES
 获取每个模块自身的 Kotlin/Java 字节码，合并各测试任务的执行数据，生成 JaCoCo XML，
 再计算逐方法 CRAP。库的覆盖率产物由 convention 的 outgoing configurations 提供。
 源码从各模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，
@@ -18,7 +18,7 @@
 lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 
 自有库位于 `modules/core`、`modules/api` 和 `modules/data`，Gradle 标识分别为 `:core:*`、`:api:*` 和 `:data:*`。
-实现依赖遵循 `app -> data -> api -> core`；各层均可引用 `:data:model`，该模型契约库禁止依赖项目实现。
+实现依赖遵循 `app -> feature -> data -> api -> core`；各层均可引用 `:data:model`，该模型契约库禁止依赖项目实现。
 其他反向依赖仍被禁止，API 实现不得放入数据模块，生产模型包不得留在 app 或其他库中。
 边界检查同时验证 `includeOwnedLibrary` 登记、孤立库、包名与目录一致性和目录容量；
 统一模型、网络基础能力和队列包还校验模块归属，防止源码被移回不匹配的库。
@@ -68,6 +68,12 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 `listen-together-runtime` 允许模型、一起听传输、协程、基础工具与明确列出的 Android 线程、时钟、URI、唤醒锁能力，禁止引用 `AppContainer`、`PlayerManager` 和数据仓库。
 `listen-together-protocol` 仅允许协议模型、序列化与标准库。结构门禁禁止任何一起听生产源码回到 `app/listentogether`，平台绑定归 `app/core/di/ltw`，播放器适配归播放器的 `core/player/ltw`。
 模块的 `verifyDomainDependencies` 按编译后的类验证该边界，`check` 和一起听 CI 均调用；报告位于 `modules/data/ltw/build/reports/domain-dependencies/`。
+
+`player-policy` 的播放规则、`player-runtime` 的全部运行时组件和 `player-audio` 的 PCM/可视化
+组件按包目录整文件受检，新文件无需逐一登记。结构门禁禁止这些包返回 app 或进入错误的库，
+运行时与音频计算域另有字节码依赖允许列表。Android 播放器实现、资源映射和系统唤醒锁位于 `:feature:player`。
+播放器的四个模块通过 `build-logic.android.module-quality` 提供独立 `verifyCrap`，从共享范围配置选择本模块的源码，保留原方法选择器并拒绝空范围。
+播放器宿主接口、展示状态、一起听映射、USB 策略和 app 的 `core/di/player` 桥接按目录受检。整个 `app/core/player` 禁止出现生产源码，纯播放器库仍禁止依赖功能实现层。
 
 `:core:download` 的全部生产源码按职责包使用 `**/*.kt` 整文件模式，包括准入、状态迁移、重试、
 延后队列、清空/提交/大小/发布规则、传输槽位、看门狗、网络策略、所有权和元数据编解码。

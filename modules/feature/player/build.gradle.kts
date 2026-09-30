@@ -1,0 +1,63 @@
+plugins {
+    id("build-logic.android.feature-library")
+    id("build-logic.android.module-quality")
+}
+
+android {
+    namespace = "moe.ouom.neriplayer.feature.player"
+    defaultConfig.consumerProguardFiles("consumer-rules.pro")
+}
+
+dependencies {
+    testImplementation(testFixtures(project(":core:common")))
+    implementation(project(":core:common"))
+    implementation(project(":core:logging"))
+    implementation(project(":core:lyrics"))
+    implementation(project(":core:network"))
+    implementation(project(":core:playback-queue"))
+    implementation(project(":core:player-policy"))
+    implementation(project(":core:player-runtime"))
+    implementation(project(":core:player-audio"))
+    implementation(project(":api:bilibili"))
+    implementation(project(":api:netease"))
+    implementation(project(":api:search"))
+    implementation(project(":api:youtube"))
+    implementation(project(":data:bilibili"))
+    implementation(project(":data:database"))
+    implementation(project(":data:lyrics"))
+    implementation(project(":data:ltw"))
+    implementation(project(":data:model"))
+    implementation(project(":data:netease"))
+    implementation(project(":data:repository"))
+    implementation(project(":data:storage"))
+    implementation(project(":data:sync"))
+    implementation(project(":data:youtube"))
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.media)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.datasource.okhttp)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.okhttp)
+    implementation(libs.gson)
+    implementation(libs.coil.compose)
+    implementation(libs.lyricon.provider)
+    implementation(libs.superlyricapi)
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.icons)
+    implementation(libs.androidx.appcompat)
+
+    // 解码器的 native 库由应用打包, 库模块只使用编译接口
+    compileOnly(files(rootProject.file("app/libs/lib-decoder-ffmpeg-media3-1.8.0-ffmpeg-6.0-api28-common-release.aar")))
+    testImplementation(files(rootProject.file("app/libs/lib-decoder-ffmpeg-media3-1.8.0-ffmpeg-6.0-api28-common-release.aar")))
+    testImplementation(libs.junit)
+    testImplementation(libs.org.json)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(files(rootProject.file("app/libs/lib-decoder-ffmpeg-media3-1.8.0-ffmpeg-6.0-api28-common-release.aar")))
+}

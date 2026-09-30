@@ -18,7 +18,8 @@ tasks.register("verifyModularization") {
     dependsOn(verifyModuleBoundaries, ":app:verifyDomainDependencies", ":app:verifyCrap", ":app:lintDebug")
     dependsOn(gradle.includedBuild("build-logic").task(":convention:test"))
     subprojects.filter {
-        it.path.startsWith(":core:") || it.path.startsWith(":api:") || it.path.startsWith(":data:")
+        it.path.startsWith(":core:") || it.path.startsWith(":api:") ||
+            it.path.startsWith(":data:") || it.path.startsWith(":feature:")
     }
         .forEach { dependsOn("${it.path}:lintDebug") }
 }

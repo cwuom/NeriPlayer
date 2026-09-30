@@ -683,11 +683,15 @@ For release build and signing details, see
 
 Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for example, `modules/api/youtube` maps to `:api:youtube`.
 
-- `:app`: Android host, screens, playback/download runtime, and dependency assembly.
+- `:app`: Android application entry points, screens, and cross-feature dependency assembly.
 - `:data:model`: centralized data contracts grouped by authentication, platform, lyrics, downloads, playback, storage, and sync, without dependencies on project implementations.
 - `:core:common` / `:core:logging` / `:core:network`: shared utilities, logging, and networking.
 - `:core:lyrics`: lyric parsing/transforms; data types belong to `:data:model`.
 - [`:core:ltw-protocol`](modules/core/ltw-protocol/README.md): bounded HTTP response reading, WebSocket codecs and keepalive messages, and identity generation rules; protocol models live in `:data:model`.
+- `:core:player-policy`: playback commands, resume progress, stall detection, audio offload, and service lifecycle rules without app dependencies.
+- `:core:player-runtime`: refresh ownership, persistence scheduling, prefetch arbitration, progress/statistics, quality, and transport control with injected identity and side effects.
+- `:core:player-audio`: PCM channel balance, volume normalization, and audio visualization.
+- `:feature:player`: playback engine, source resolution, playback service, USB exclusive output, platform effects, and lyrics output; interfaces connect downloads, Listen Together, widgets, feedback, and startup policies.
 - `:core:playback-queue`: queue state, editing, navigation, and ordering policies with injected song identity rules.
 - `:core:download`: admission and clear progress, state transitions and retries, deferred scheduling, transfer permits and watchdogs, network policy, operation ownership, commit and publication rules, and metadata codecs; the host owns Room, SAF, file I/O, and service orchestration.
 - `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
@@ -704,7 +708,7 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `np-submodule/NeriPlayer-LTW`: Listen Together Cloudflare Workers server.
 - `np-submodule/miuix`: vendored upstream Miuix source/docs tree, not part of the current app module graph.
 
-Implementation dependencies flow from `app -> data -> api -> core`; higher layers may use lower layers directly.
+Implementation dependencies flow from `app -> feature -> data -> api -> core`; higher layers may use lower layers directly.
 Every layer may depend on the foundational `:data:model` contracts, which have no dependencies on project implementations.
 Otherwise core cannot depend on API/data implementations, API cannot depend on repositories, and no library may depend on app.
 The graph must remain acyclic. Clients use injected account, credential-refresh, and storage interfaces, with providers for live settings.
@@ -720,6 +724,11 @@ Modules own their tests, resources, and consumer R8 rules; host integration test
 
 Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage,
 domain dependencies, and lint. Run an individual module's tests with `./gradlew :data:youtube:testDebugUnitTest`.
+Player modules also provide independent gates: `:core:player-policy:verifyCrap`, `:core:player-runtime:verifyCrap`,
+`:core:player-audio:verifyCrap`, and `:feature:player:verifyCrap`. They select each module's rules from the shared scope
+and use its own JVM coverage; a scoped method above 9 fails CI. The original app `core/player` production directory
+must stay absent. App adapters live in `core/di/player`, while the playback service and its manifest belong to the feature.
+Native C++ and the FFmpeg AAR remain packaged by app; JNI class names and existing playback persistence contracts stay stable.
 The standalone structural check, `python3 -B tools_pub/quality/module_boundaries.py`, needs no Android SDK.
 Run `./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug` for the standalone Listen Together gate. All client and protocol production methods and new files are included automatically; any CRAP score above 9 fails CI. Production sources cannot return to `app/listentogether`; app assembles platform interfaces in `core/di/ltw`, and player adapters live under `core/player/ltw`.
 Library source files must stay below 2000 lines, with at most 16 direct Kotlin/Java files per production directory.
