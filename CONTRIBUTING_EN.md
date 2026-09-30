@@ -208,8 +208,10 @@ and CRAP selectors together.
   - Centralized data and state contracts grouped by business, with no dependencies on project implementations.
 - `:core:common` / `:core:logging` / `:core:network`
   - Shared utilities, logging, and HTTP infrastructure.
-- `:core:lyrics` / `:core:ltw-protocol`
-  - Compose-independent lyric parsing, transforms, translation alignment, and Listen Together wire-format conventions.
+- `:core:lyrics`
+  - Compose-independent lyric parsing, transforms, and translation alignment.
+- `:core:ltw-protocol`
+  - Bounded Listen Together response reading, WebSocket codecs, keepalive messages, and identity generation without Android host or network-client dependencies.
 - `:api:netease` / `:api:bilibili` / `:api:youtube` / `:api:lyrics` / `:api:search` / `:api:ltw`
   - Platform services, request construction, and network parsing. The YouTube API module owns its JS assets and consumer R8 rules.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`
@@ -224,6 +226,10 @@ and CRAP selectors together.
   - Sync sessions, compatibility codecs, sanitization, change detection, merging, and concurrency protection; the host owns storage, transport, cover mapping, and presentation.
   - `runtime` executes sessions through local-data and backend interfaces, `remote` owns compatibility-file fallback and WebDAV fingerprint revalidation, and `retry` handles conflicts.
   - New business rules must enter CRAP and domain-dependency gates; the module must not directly depend on Android hosts, databases, or network clients.
+- `:data:ltw`
+  - Listen Together client sessions, membership operations, credentials, reconnects, control acknowledgement and compatibility fallback, playback synchronization, invites, and input validation.
+  - `session` separates state, connection, membership, control, heartbeat, links, and socket events; host ports supply playback, Android services, and resource messages.
+  - Every production file enters the CRAP and domain-dependency gates automatically; the module cannot reference `PlayerManager`, `AppContainer`, or UI.
 - `:data:lyrics`
   - Cross-source lyric matching, ranking, and fallback using clients from `:api:lyrics` and `:api:search`.
 - `:ksp-annotations` / `:ksp-processor`
@@ -449,13 +455,11 @@ and at most 16 direct source files per directory in libraries and app areas regi
 - `modules/api/ltw/src/main/java/moe/ouom/neriplayer/api/ltw/`
   - HTTP, WebSocket, server URL validation, and reconnect policies using protocol models and an injected HTTP client.
 
-- `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - Room, event, and transport models live in the `ltw` package of `modules/data/model`; transport implementations live in
-    `modules/api/ltw`; `playback/` owns queues, authoritative
-    stream links, and position sync. `control/`, `session/`, `invite/`, `mapping/`,
-    and `validation/` own their corresponding policies and boundaries.
-  - The root retains `ListenTogetherSessionManager.kt` and a few compatibility
-    entry points. New protocol logic should not keep accumulating in the root package.
+- `modules/data/ltw/src/main/java/moe/ouom/neriplayer/data/ltw/`
+  - `ListenTogetherSessionManager` assembles session components; `playback/` owns queues, authoritative streams, and position synchronization.
+  - `control/`, `session/`, `invite/`, `mapping/`, and `validation/` own controls, sessions, invites, song mapping, and input boundaries.
+  - Room, event, and transport models live in `modules/data/model` under `ltw`; HTTP/WebSocket transport lives in `modules/api/ltw`, and bounded reading and message codecs in `modules/core/ltw-protocol`.
+  - App supplies platform interfaces under `core/di/ltw`; the player supplies playback and song mapping under `core/player/ltw`. Production sources cannot remain in `app/listentogether`.
 
 - `app/src/main/cpp/`
   - Native crash handling lives under `crash/`. USB code is split across
@@ -838,7 +842,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 13. Modify Listen Together
 
-1. Android client logic is under `listentogether/`.
+1. Client logic and session assembly live in `modules/data/ltw`, HTTP/WebSocket transport in `modules/api/ltw`, codecs and bounded reading in `modules/core/ltw-protocol`, and protocol models in `modules/data/model`. App binds platform capabilities under `core/di/ltw`; player adapters live under `core/player/ltw`.
 2. Server logic is under `np-submodule/NeriPlayer-LTW`.
 3. Protocol field changes must stay compatible across the Android client and Worker,
    and tests must be updated.
@@ -864,6 +868,13 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 10. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
    and request de-duplication as protocol boundaries, not just UI validation details.
 11. Settings support custom server URLs and availability tests. Do not hard-code a single server.
+12. HTTP control fallback responses must match the server, room, user, and credential snapshot. Leaving, disconnecting, or changing sessions cancels old work; cancellation must not enter error or reconnect handling.
+13. Queue mutation construction and replay must preserve duplicate occurrence identity, consecutive insertion order, and the current track. Run the module round-trip tests after changes.
+
+```bash
+./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug
+./gradlew :app:testDebugUnitTest --tests "*ListenTogether*"
+```
 
 #### 14. Modify main navigation and glass transitions
 
@@ -1021,8 +1032,8 @@ splitting a directory, update its required paths and scanned scope.
 Extract state, async jobs, and cleanup into the component responsible for them,
 and access external capabilities through narrow interfaces. Player and global
 service access for the extracted `PlayerManager` components belongs in their
-`PlayerManager*Port` adapters. Listen Together components under `session/` own
-room state, membership, connection recovery, and control results separately.
+`PlayerManager*Port` adapters. Listen Together components under `:data:ltw`'s `session/` own
+membership, room state, connection recovery, and control results; platform and player implementations use injected host interfaces. Wake locks are released with the session, async owners cancel their jobs, and components cannot read the global container.
 `NowPlayingScreen`, `SettingsScreen`, and `NeriApp` compose pages and feature
 components; editing sessions, directory selection, settings domain bindings,
 and navigation effects belong to the corresponding components. Do not move

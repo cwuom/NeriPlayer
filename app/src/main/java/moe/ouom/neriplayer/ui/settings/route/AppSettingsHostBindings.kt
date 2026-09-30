@@ -4,7 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
-import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
+import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
 import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
 import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
 import moe.ouom.neriplayer.util.platform.LanguageManager

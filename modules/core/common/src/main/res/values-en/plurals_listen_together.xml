@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Listen Together -->
+    <plurals name="listen_together_notice_controller_offline">
+        <item quantity="one">Controller is offline. Room closes in about %1$d minute if not reconnected.</item>
+        <item quantity="other">Controller is offline. Room closes in about %1$d minutes if not reconnected.</item>
+    </plurals>
+</resources>

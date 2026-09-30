@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Listen Together -->
+    <plurals name="listen_together_notice_controller_offline">
+        <item quantity="other">房主当前离线，如果大约 %1$d 分钟内没有重连，房间会自动关闭</item>
+    </plurals>
+</resources>

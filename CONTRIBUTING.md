@@ -186,8 +186,10 @@
   - 统一模型与状态契约，按业务细分；不依赖项目中的实现模块。
 - `:core:common` / `:core:logging` / `:core:network`
   - 通用工具、日志和 HTTP 基础能力。
-- `:core:lyrics` / `:core:ltw-protocol`
-  - 不依赖 Compose 的歌词解析、转换、翻译对齐，以及一起听编解码约定。
+- `:core:lyrics`
+  - 不依赖 Compose 的歌词解析、转换和翻译对齐。
+- `:core:ltw-protocol`
+  - 一起听有界响应读取、WebSocket 编解码、保活消息和身份生成，不依赖 Android 宿主或网络客户端。
 - `:api:netease` / `:api:bilibili` / `:api:youtube` / `:api:lyrics` / `:api:search` / `:api:ltw`
   - 平台服务、请求构造与网络解析；YouTube 的 JS assets 和 consumer R8 规则由 API 模块维护。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`
@@ -202,6 +204,10 @@
   - 同步会话、兼容编解码、清洗、差异检测、合并和并发保护；宿主负责数据库、远端传输、封面映射和文案。
   - `runtime` 通过本地数据与后端接口执行会话，`remote` 维护兼容文件回退和 WebDAV 指纹复核，`retry` 统一处理冲突重试。
   - 新增业务规则必须进入 CRAP 与计算域依赖门禁；模块不得直接依赖 Android 宿主、数据库或网络客户端。
+- `:data:ltw`
+  - 一起听客户端会话、成员操作、凭据、重连、控制确认与兼容回退、播放同步、邀请和输入校验。
+  - `session` 按状态、连接、成员、控制、心跳、音源和 socket 分类；播放器、资源文案和 Android 服务由宿主 Port 提供。
+  - 模块全部生产文件自动进入 CRAP 与计算域依赖门禁，不能引用 `PlayerManager`、`AppContainer` 或 UI。
 - `:data:lyrics`
   - 跨来源歌词匹配、排序和回退编排；服务客户端来自 `:api:lyrics` 和 `:api:search`。
 - `:ksp-annotations` / `:ksp-processor`
@@ -398,12 +404,11 @@
 - `modules/api/ltw/src/main/java/moe/ouom/neriplayer/api/ltw/`
   - HTTP、WebSocket、服务器地址校验和重连策略，依赖协议模型与注入的 HTTP 客户端。
 
-- `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - 房间、事件与传输模型位于 `modules/data/model` 的 `ltw` 包，传输实现位于 `modules/api/ltw`；
-    `playback/` 负责队列、权威播放候选和进度同步，`control/`、`session/`、`invite/`、
-    `mapping/`、`validation/` 分别承载控制、会话策略、邀请、模型映射和输入边界。
-  - 根目录保留 `ListenTogetherSessionManager.kt` 与少量兼容入口；新增协议逻辑
-    不应继续堆入根包。
+- `modules/data/ltw/src/main/java/moe/ouom/neriplayer/data/ltw/`
+  - `ListenTogetherSessionManager` 组装会话组件；`playback/` 维护队列、权威播放候选和进度同步。
+  - `control/`、`session/`、`invite/`、`mapping/`、`validation/` 分别维护控制、会话、邀请、歌曲映射和输入边界。
+  - 房间、事件与传输模型位于 `modules/data/model` 的 `ltw` 包，HTTP/WebSocket 位于 `modules/api/ltw`，有界读取与消息编解码位于 `modules/core/ltw-protocol`。
+  - app 的 `core/di/ltw` 提供平台接口，播放器的 `core/player/ltw` 提供播放器和歌曲映射接口；`app/listentogether` 不得保留生产源码。
 
 - `app/src/main/cpp/`
   - Native 崩溃处理位于 `crash/`；USB 实现按 `usb/exclusive/`、
@@ -720,7 +725,7 @@
 
 #### 13. 修改一起听
 
-1. Android 客户端逻辑在 `listentogether/`。
+1. 客户端业务与会话组装在 `modules/data/ltw`，HTTP/WebSocket 在 `modules/api/ltw`，编解码与有界读取在 `modules/core/ltw-protocol`，协议模型在 `modules/data/model`。app 的 `core/di/ltw` 只绑定平台能力，播放器适配在 `core/player/ltw`。
 2. 服务端逻辑在 `np-submodule/NeriPlayer-LTW`。
 3. 协议字段变更必须同时兼容客户端和 Worker，并更新测试。
 4. `shareAudioLinks=false` 时，HTTP/WS 房间快照都不能暴露
@@ -741,6 +746,13 @@
 10. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
    不要只改 UI 校验而忘记服务端约束。
 11. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
+12. HTTP 控制回退必须按服务端、房间、用户和凭据校验回包；离开、断开或更换会话时取消旧任务，协程取消不能进入错误或重连流程。
+13. 队列变更构建与应用必须保留重复曲目的 occurrence 身份、连续插入顺序和当前歌曲；修改后运行模块往返测试。
+
+```bash
+./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug
+./gradlew :app:testDebugUnitTest --tests "*ListenTogether*"
+```
 
 #### 14. 修改主导航与玻璃转场
 

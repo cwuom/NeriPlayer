@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
-import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
+import moe.ouom.neriplayer.data.ltw.mapping.trustedListenTogetherStreamUrls
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

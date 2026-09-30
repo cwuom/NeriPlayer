@@ -230,6 +230,40 @@ class ModuleBoundariesTest(unittest.TestCase):
         )
         self.assertEqual([], verify(self.root))
 
+    def test_listen_together_runtime_package_requires_its_own_module(self):
+        self.module(":data:ltw")
+        self.module(":core:common")
+        directory = self.root / "modules/core/common/src/main/java/moe/ouom/neriplayer/data/ltw/session"
+        directory.mkdir(parents=True)
+        (directory / "Session.kt").write_text(
+            "package moe.ouom.neriplayer.data.ltw.session\nclass Session\n"
+        )
+        self.assertTrue(any("package belongs to :data:ltw" in error for error in verify(self.root)))
+
+    def test_listen_together_runtime_cannot_return_to_app(self):
+        self.module(":data:ltw")
+        directory = self.root / "app/src/main/java/moe/ouom/neriplayer/data/ltw/session"
+        directory.mkdir(parents=True)
+        (directory / "Session.kt").write_text(
+            "package moe.ouom.neriplayer.data.ltw.session\nclass Session\n"
+        )
+        self.assertTrue(any("belongs in a library module" in error for error in verify(self.root)))
+
+    def test_entire_legacy_listen_together_tree_must_stay_outside_app(self):
+        self.module(":data:ltw")
+        for language in ("java", "kotlin"):
+            for family in ("", "invite", "validation", "session/membership"):
+                package = "moe/ouom/neriplayer/listentogether" + ("/" + family if family else "")
+                directory = self.root / "app/src/main" / language / package
+                directory.mkdir(parents=True)
+                (directory / "Stranded.kt").write_text(
+                    "package " + package.replace("/", ".") + "\nclass Stranded\n"
+                )
+        errors = verify(self.root)
+        self.assertEqual(8, len(errors))
+        self.assertTrue(all("belongs in a library module" in error for error in errors))
+
+
     def test_sync_domain_sources_cannot_return_to_app(self):
         self.module(":data:sync")
         for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize"):

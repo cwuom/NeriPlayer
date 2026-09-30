@@ -1,7 +1,8 @@
 package moe.ouom.neriplayer.api.ltw.ws
 
 import android.os.SystemClock
-import moe.ouom.neriplayer.listentogether.protocol.listenTogetherProtocolJson
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketCodec
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketMessageTooLargeException
 import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
@@ -10,8 +11,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-
-private const val LISTEN_TOGETHER_MAX_WS_MESSAGE_CHARS = 2 * 1024 * 1024
 
 const val LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS = 35_000L
 
@@ -38,7 +37,7 @@ fun shouldReconnectListenTogetherSocket(
 class ListenTogetherWebSocketClient(
     private val okHttpClient: OkHttpClient
 ) {
-    private val json = listenTogetherProtocolJson()
+    private val codec = ListenTogetherSocketCodec()
 
     // 回调运行在 OkHttp 分发线程, 需保证对 webSocket 引用的可见性
     // 否则 onOpen/onMessage 里的身份校验可能读到过期引用而误丢消息
@@ -62,18 +61,16 @@ class ListenTogetherWebSocketClient(
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     if (this@ListenTogetherWebSocketClient.webSocket !== webSocket) return
-                    if (text.length > LISTEN_TOGETHER_MAX_WS_MESSAGE_CHARS) {
-                        listener.onProtocolError(
-                            text.take(256),
-                            IllegalArgumentException("WebSocket message too large: ${text.length} chars")
-                        )
-                        disconnect(code = 1009, reason = "message_too_large")
-                        return
-                    }
-                    runCatching {
-                        json.decodeFromString<ListenTogetherSocketEnvelope>(text)
-                    }.onSuccess(listener::onMessage)
-                        .onFailure { listener.onProtocolError(text, it) }
+                    runCatching { codec.decodeEnvelope(text) }
+                        .onSuccess(listener::onMessage)
+                        .onFailure {
+                            if (it is ListenTogetherSocketMessageTooLargeException) {
+                                listener.onProtocolError(text.take(256), it)
+                                disconnect(code = 1009, reason = "message_too_large")
+                            } else {
+                                listener.onProtocolError(text, it)
+                            }
+                        }
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -102,17 +99,17 @@ class ListenTogetherWebSocketClient(
 
     @Synchronized
     fun sendEvent(event: ListenTogetherEvent): Boolean {
-        return webSocket?.send(json.encodeToString(event)) == true
+        return webSocket?.send(codec.encodeEvent(event)) == true
     }
 
     @Synchronized
     fun sendPing(sentAtElapsedMs: Long = SystemClock.elapsedRealtime()): Boolean {
-        return webSocket?.send("""{"type":"np_ping","t":$sentAtElapsedMs}""") == true
+        return webSocket?.send(codec.encodePing(sentAtElapsedMs)) == true
     }
 
     @Synchronized
     fun sendLegacyPing(): Boolean {
-        return webSocket?.send("""{"type":"ping"}""") == true
+        return webSocket?.send(codec.encodeLegacyPing()) == true
     }
 
     @Synchronized

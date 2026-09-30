@@ -34,11 +34,12 @@ SYNC_DOMAIN_FAMILIES = tuple(
 )
 APP_FAMILIES = (
     "core/player/download", "core/player/service", "data/settings",
-    "listentogether/session", "ui/screen/tab/settings/component",
+    "ui/screen/tab/settings/component",
     "core/player/queue", "data/sync/merge",
     "data/sync",
 )
 LIBRARY_OWNED_FAMILIES = (
+    "data/ltw", "listentogether",
     *DOWNLOAD_RULE_FAMILIES,
     "core/api", "core/lyrics", "core/player/queue", "data/sync/merge",
     *SYNC_DOMAIN_FAMILIES,
@@ -53,6 +54,8 @@ LEGACY_MODEL_TYPES = {
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 PACKAGE_OWNERS = {
+    "moe.ouom.neriplayer.data.ltw": ":data:ltw",
+    "moe.ouom.neriplayer.listentogether": ":core:ltw-protocol",
     **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:download"
        for family in DOWNLOAD_RULE_FAMILIES},
     **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":data:sync"

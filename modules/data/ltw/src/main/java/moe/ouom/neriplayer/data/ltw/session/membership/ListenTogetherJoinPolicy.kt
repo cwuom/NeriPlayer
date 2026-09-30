@@ -1,0 +1,27 @@
+package moe.ouom.neriplayer.data.ltw.session.membership
+
+import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+
+fun shouldAutoPauseListenTogetherForMemberChange(
+    autoPauseOnMemberChange: Boolean,
+    memberChangeType: String?
+): Boolean {
+    if (!autoPauseOnMemberChange) return false
+    return memberChangeType == "MEMBER_JOINED" || memberChangeType == "MEMBER_LEFT"
+}
+
+fun resolveListenTogetherJoinAutoPauseCause(
+    autoPauseOnJoin: Boolean,
+    role: String?,
+    state: ListenTogetherRoomState
+): String? {
+    if (
+        !shouldAutoPauseListenTogetherForMemberChange(
+            autoPauseOnMemberChange = autoPauseOnJoin,
+            memberChangeType = "MEMBER_JOINED"
+        ) || role != "listener"
+    ) {
+        return null
+    }
+    return "JOIN_AUTO_PAUSE".takeIf { state.playback.state == "paused" }
+}

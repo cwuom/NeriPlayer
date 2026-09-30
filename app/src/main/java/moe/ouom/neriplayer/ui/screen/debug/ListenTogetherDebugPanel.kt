@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.debug
 
-import moe.ouom.neriplayer.listentogether.validation.format
+import moe.ouom.neriplayer.data.ltw.validation.format
 
 import android.content.ClipData
 import android.content.Context
@@ -76,11 +76,12 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
-import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
-import moe.ouom.neriplayer.listentogether.invite.buildListenTogetherInviteUri
-import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
-import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
-import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
+import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
+import moe.ouom.neriplayer.data.ltw.invite.buildListenTogetherInviteUri
+import moe.ouom.neriplayer.core.player.ltw.PlayerListenTogetherSongMapper
+import moe.ouom.neriplayer.data.ltw.invite.parseListenTogetherInvite
+import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherInviteJoinBaseUrl
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherMember
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomSettings
@@ -88,13 +89,13 @@ import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
-import moe.ouom.neriplayer.listentogether.playback.indexOfTrack
+import moe.ouom.neriplayer.core.player.ltw.indexOfTrack
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
-import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
-import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherJoinSecretOrNull
-import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
-import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomCreation
-import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherUserUuid
+import moe.ouom.neriplayer.data.ltw.validation.normalizeListenTogetherRoomId
+import moe.ouom.neriplayer.data.ltw.validation.sanitizeListenTogetherJoinSecretOrNull
+import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherNickname
+import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherRoomCreation
+import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherUserUuid
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
@@ -185,7 +186,8 @@ fun ListenTogetherRoomPanel(
     val roomCreationError = validateListenTogetherRoomCreation(
         queue = currentQueue,
         currentIndex = currentSongIndex,
-        currentSong = currentSong
+        currentSong = currentSong,
+        songMapper = PlayerListenTogetherSongMapper
     )
     fun showMessage(message: String) {
         AppFeedback.showToast(context = context, message = message)
@@ -202,7 +204,8 @@ fun ListenTogetherRoomPanel(
                     roomId = roomId,
                     inviterNickname = sessionState.nickname,
                     baseUrl = effectiveBaseUrl,
-                    joinSecret = joinSecret
+                    joinSecret = joinSecret,
+                    formatValidationError = { it.format(context) }
                 )
             }
         }
@@ -674,7 +677,8 @@ private fun RoomActions(
     val roomCreationError = validateListenTogetherRoomCreation(
         queue = currentQueue,
         currentIndex = currentIndex,
-        currentSong = currentSong
+        currentSong = currentSong,
+        songMapper = PlayerListenTogetherSongMapper
     )
 
     Row(

@@ -531,12 +531,14 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `:app`：Android 宿主、页面、播放/下载运行时与依赖组装。
 - `:data:model`：统一数据模型，按认证、平台、歌词、下载、播放、存储和同步细分；不依赖业务实现模块。
 - `:core:common` / `:core:logging` / `:core:network`：通用工具、日志和网络基础能力。
-- `:core:lyrics` / `:core:ltw-protocol`：歌词解析与转换、一起听协议编解码约定；数据类型统一位于 `:data:model`。
+- `:core:lyrics`：歌词解析与转换；数据类型统一位于 `:data:model`。
+- [`:core:ltw-protocol`](modules/core/ltw-protocol/README.md)：一起听 HTTP 响应限额、WebSocket 编解码与保活消息、身份生成规则；协议模型位于 `:data:model`。
 - `:core:playback-queue`：队列状态、编辑、导航和顺序策略；歌曲身份规则通过接口注入。
 - `:core:download`：下载准入与清空进度、状态迁移与重试、延后调度队列、传输槽位与看门狗、网络策略、operation 所有权、提交与发布规则、元数据编解码；Room、SAF、文件读写及服务编排由宿主负责。
 - `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
 - `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存和播放源仓库。
+- [`:data:ltw`](modules/data/ltw/README.md)：一起听客户端会话、成员操作、连接恢复、控制事件、播放同步、邀请与输入校验；播放器与 Android 副作用通过宿主接口接入。
 - `:data:lyrics` / `:data:comments`：跨来源歌词匹配与回退、评论分页和缓存。
 - `:data:sync`：同步会话、编解码、快照清洗、差异检测、合并与并发保护；由宿主注入本地数据、远端传输与文案接口。
 - `:data:storage`：存储统计、文件扫描和缓存清理；宿主提供目录、数据库统计及下载条目快照。
@@ -564,6 +566,7 @@ JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实
 运行 `./gradlew verifyModularization` 检查依赖边界、各模块 JVM 测试、合并 CRAP 覆盖率、
 计算域依赖和 lint；单模块测试可运行 `./gradlew :data:youtube:testDebugUnitTest`。
 结构检查也可独立运行 `python3 -B tools_pub/quality/module_boundaries.py`，无需 Android SDK。
+一起听模块可独立运行 `./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug`；客户端与协议库的全部生产方法和新增文件自动受检，任意 CRAP 分数大于 9 都会使 CI 失败。`app/listentogether` 禁止重新加入生产源码，app 只在 `core/di/ltw` 组装平台接口，播放器适配位于 `core/player/ltw`。
 库源码文件必须少于 2000 行，库内每个生产源码目录最多包含 16 个直接 Kotlin/Java 文件。
 具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout)。
 

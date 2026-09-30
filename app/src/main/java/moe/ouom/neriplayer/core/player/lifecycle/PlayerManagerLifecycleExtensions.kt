@@ -3,7 +3,7 @@
 package moe.ouom.neriplayer.core.player.lifecycle
 
 import moe.ouom.neriplayer.data.settings.playback.toPlaybackSoundConfig
-import moe.ouom.neriplayer.listentogether.validation.format
+import moe.ouom.neriplayer.data.ltw.validation.format
 
 import android.app.Application
 import android.os.SystemClock

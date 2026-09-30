@@ -141,6 +141,28 @@ class CrapReportTest(unittest.TestCase):
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("Changed.kt", result.stderr)
 
+    def test_abstract_interface_is_measured_without_executable_methods(self):
+        (self.sources / "Port.kt").write_text("package example\ninterface Port { fun run() }\n")
+        self.scope.write_text(json.dumps({"source_patterns": ["*.kt"]}))
+        self.xml.write_text(
+            '<report><package name="example">'
+            '<class name="example/Port" sourcefilename="Port.kt" />'
+            '<class name="example/Changed" sourcefilename="Changed.kt">'
+            + method("implementation", 2, 1) + '</class>'
+            '<class name="example/Legacy" sourcefilename="Legacy.kt">'
+            + method("legacy", 1, 1) + '</class></package></report>'
+        )
+        result = self.invoke()
+        self.assertEqual(0, result.returncode, result.stderr)
+        rows = json.loads((self.output / "methods.json").read_text())
+        self.assertEqual(2, len(rows))
+
+    def test_interface_default_method_still_fails_above_threshold(self):
+        (self.sources / "Changed.kt").write_text("package example\ninterface Changed { fun run() = 1 }\n")
+        result = self.run_report(method("run", 10, 10))
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("#run", result.stdout)
+
     def test_missing_complexity_counter_is_an_error(self):
         result = self.run_report('<method name="scan" desc="()V" line="2"/>')
         self.assertEqual(2, result.returncode, result.stderr)

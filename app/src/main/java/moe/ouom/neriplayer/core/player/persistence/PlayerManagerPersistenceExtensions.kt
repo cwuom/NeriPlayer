@@ -52,8 +52,8 @@ import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
-import moe.ouom.neriplayer.listentogether.playback.ListenTogetherRestoredPlaybackAction
-import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherRestoredPlaybackAction
+import moe.ouom.neriplayer.data.ltw.playback.ListenTogetherRestoredPlaybackAction
+import moe.ouom.neriplayer.data.ltw.playback.resolveListenTogetherRestoredPlaybackAction
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport

@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.api.ltw.http
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.listentogether.protocol.listenTogetherProtocolJson
+import moe.ouom.neriplayer.listentogether.protocol.readListenTogetherResponse
 import moe.ouom.neriplayer.data.model.ltw.ListenTogetherServerTestResult
 import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherControlResponse
 import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherCreateRoomRequest
@@ -13,7 +15,6 @@ import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherLeaveRoomRe
 import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherLeaveRoomResponse
 import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherRoomResponse
 import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherStateResponse
-import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -21,10 +22,9 @@ import okhttp3.ResponseBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
-private const val LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES = 2 * MEBIBYTE_BYTES
-
 class ListenTogetherApi(
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val json = listenTogetherProtocolJson()
 
@@ -101,7 +101,7 @@ class ListenTogetherApi(
         )
     }
 
-    suspend fun testServerAvailability(baseUrl: String): ListenTogetherServerTestResult = withContext(Dispatchers.IO) {
+    suspend fun testServerAvailability(baseUrl: String): ListenTogetherServerTestResult = withContext(ioDispatcher) {
         val normalizedBaseUrl = baseUrl.normalizedHttpBaseUrlOrNull()
             ?: return@withContext ListenTogetherServerTestResult(
                 ok = false,
@@ -141,7 +141,7 @@ class ListenTogetherApi(
     private suspend inline fun <reified T> get(
         url: String,
         bearerToken: String? = null
-    ): T = withContext(Dispatchers.IO) {
+    ): T = withContext(ioDispatcher) {
         val requestBuilder = Request.Builder()
             .url(url)
             .get()
@@ -162,7 +162,7 @@ class ListenTogetherApi(
         url: String,
         body: RequestBodyT,
         bearerToken: String? = null
-    ): ResponseT = withContext(Dispatchers.IO) {
+    ): ResponseT = withContext(ioDispatcher) {
         val requestBuilder = Request.Builder()
             .url(url)
             .post(
@@ -183,24 +183,9 @@ class ListenTogetherApi(
 }
 
 private fun ResponseBody.limitedString(): String {
-    val contentLength = contentLength()
-    if (contentLength > LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES) {
-        throw IOException("ListenTogether response too large: $contentLength bytes")
-    }
-    val bytes = byteStream().use { input ->
-        val output = java.io.ByteArrayOutputStream()
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        var total = 0L
-        while (true) {
-            val read = input.read(buffer)
-            if (read == -1) break
-            total += read
-            if (total > LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES) {
-                throw IOException("ListenTogether response too large: $total bytes")
-            }
-            output.write(buffer, 0, read)
-        }
-        output.toByteArray()
-    }
-    return bytes.toString(contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
+    return readListenTogetherResponse(
+        input = byteStream(),
+        contentLength = contentLength(),
+        charset = contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+    )
 }

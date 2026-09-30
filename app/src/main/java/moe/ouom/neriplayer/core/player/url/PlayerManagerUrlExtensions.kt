@@ -70,11 +70,11 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
-import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
-import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
-import moe.ouom.neriplayer.listentogether.playback.shouldPreferListenTogetherSourceBeforeNeteaseFallback
-import moe.ouom.neriplayer.listentogether.playback.shouldSuppressListenTogetherResolverError
+import moe.ouom.neriplayer.data.ltw.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
+import moe.ouom.neriplayer.core.player.ltw.toListenTogetherTrackOrNull
+import moe.ouom.neriplayer.data.ltw.mapping.trustedListenTogetherStreamUrls
+import moe.ouom.neriplayer.data.ltw.playback.shouldPreferListenTogetherSourceBeforeNeteaseFallback
+import moe.ouom.neriplayer.data.ltw.playback.shouldSuppressListenTogetherResolverError
 import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds

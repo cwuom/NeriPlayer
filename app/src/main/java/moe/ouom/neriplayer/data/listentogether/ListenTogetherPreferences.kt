@@ -8,11 +8,11 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
-import moe.ouom.neriplayer.listentogether.invite.buildDefaultListenTogetherNickname
-import moe.ouom.neriplayer.listentogether.invite.buildListenTogetherUserUuid
-import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
-import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
-import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherNicknameOrNull
+import moe.ouom.neriplayer.listentogether.profile.buildDefaultListenTogetherNickname
+import moe.ouom.neriplayer.listentogether.profile.buildListenTogetherUserUuid
+import moe.ouom.neriplayer.api.ltw.http.configuredListenTogetherBaseUrlOrNull
+import moe.ouom.neriplayer.api.ltw.http.isDefaultListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.profile.sanitizeListenTogetherNicknameOrNull
 import moe.ouom.neriplayer.data.model.config.ListenTogetherConfigSnapshot
 
 private val Context.listenTogetherDataStore by preferencesDataStore("listen_together_prefs")

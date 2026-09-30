@@ -12,9 +12,9 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.listentogether.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.playback.currentTrack
-import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
+import moe.ouom.neriplayer.core.player.ltw.toSongItem
+import moe.ouom.neriplayer.data.ltw.playback.currentTrack
+import moe.ouom.neriplayer.data.ltw.playback.expectedPositionMs
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 

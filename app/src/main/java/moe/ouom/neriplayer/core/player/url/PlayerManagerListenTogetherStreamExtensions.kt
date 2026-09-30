@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.validation.format
+import moe.ouom.neriplayer.data.ltw.validation.format
 
 import java.security.MessageDigest
 import kotlin.math.abs
@@ -17,12 +17,12 @@ import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
+import moe.ouom.neriplayer.data.ltw.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
-import moe.ouom.neriplayer.listentogether.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.playback.currentTrack
-import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
-import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
+import moe.ouom.neriplayer.core.player.ltw.toSongItem
+import moe.ouom.neriplayer.data.ltw.playback.currentTrack
+import moe.ouom.neriplayer.data.ltw.mapping.trustedListenTogetherStreamUrls
+import moe.ouom.neriplayer.core.player.ltw.sameTrackAs
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
 

@@ -416,5 +416,71 @@
       "okhttp3.Call"
     ],
     "bridges": {}
+  },
+  {
+    "name": "listen-together-runtime",
+    "package": "moe.ouom.neriplayer.data.ltw.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "okhttp3.HttpUrl",
+      "okhttp3.HttpUrl$Companion",
+      "moe.ouom.neriplayer.data.model.SongItem",
+      "moe.ouom.neriplayer.data.model.ltw.*",
+      "moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi",
+      "moe.ouom.neriplayer.api.ltw.http.ListenTogetherBaseUrlKt",
+      "moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWsUrlKt",
+      "moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClientKt",
+      "moe.ouom.neriplayer.api.ltw.reconnect.ListenTogetherReconnectPolicyKt",
+      "moe.ouom.neriplayer.core.logging.NPLogger",
+      "moe.ouom.neriplayer.util.units.MeasureUnitsKt",
+      "moe.ouom.neriplayer.listentogether.profile.*",
+      "java.net.URI",
+      "java.net.URISyntaxException",
+      "java.net.URLDecoder",
+      "android.content.Context",
+      "android.net.Uri",
+      "android.net.Uri$Builder",
+      "android.os.SystemClock",
+      "android.os.Looper",
+      "android.os.PowerManager",
+      "android.os.PowerManager$WakeLock",
+      "androidx.media3.common.Player",
+      "androidx.media3.common.Player$State",
+      "moe.ouom.neriplayer.data.model.SongSourceTags",
+      "moe.ouom.neriplayer.data.model.playback.*",
+      "moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClient",
+      "moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClient$Listener",
+      "moe.ouom.neriplayer.core.common.R$string",
+      "moe.ouom.neriplayer.util.platform.LanguageManager",
+      "moe.ouom.neriplayer.core.common.R",
+      "moe.ouom.neriplayer.api.ltw.http.ListenTogetherServiceAddressKt",
+      "moe.ouom.neriplayer.data.model.music.MusicPlatform"
+    ],
+    "bridges": {
+      "moe.ouom.neriplayer.api.youtube.transport.YouTubeRequestSupportKt": [
+        "Methodref buildYouTubeMusicMediaUri:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+        "Methodref extractYouTubeMusicVideoId:(Ljava/lang/String;)Ljava/lang/String;",
+        "Methodref stableYouTubeMusicId:(Ljava/lang/String;)J"
+      ]
+    }
+  },
+  {
+    "name": "listen-together-protocol",
+    "package": "moe.ouom.neriplayer.listentogether.",
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "java.io.*",
+      "java.nio.charset.*",
+      "kotlin.*",
+      "kotlinx.serialization.*",
+      "moe.ouom.neriplayer.data.model.ltw.*"
+    ],
+    "bridges": {},
+    "descriptor_only": []
   }
 ]

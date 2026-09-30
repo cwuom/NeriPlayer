@@ -120,8 +120,8 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.settings.playback.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
 import moe.ouom.neriplayer.data.settings.playback.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.listentogether.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.playback.currentTrack
+import moe.ouom.neriplayer.core.player.ltw.toSongItem
+import moe.ouom.neriplayer.data.ltw.playback.currentTrack
 import moe.ouom.neriplayer.widget.playbackWidgetProgressRefreshBucket
 import kotlin.time.Duration.Companion.milliseconds
 

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.actions
 
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadStage
-import moe.ouom.neriplayer.listentogether.validation.format
+import moe.ouom.neriplayer.data.ltw.validation.format
 
 import android.content.Intent
 import androidx.compose.foundation.clickable

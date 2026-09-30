@@ -94,7 +94,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.api.youtube.transport.youtubeMusicThumbnailUrl
-import moe.ouom.neriplayer.listentogether.playback.shouldShowListenTogetherPreviewClipNotice
+import moe.ouom.neriplayer.data.ltw.playback.shouldShowListenTogetherPreviewClipNotice
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import kotlin.time.Duration.Companion.milliseconds
 

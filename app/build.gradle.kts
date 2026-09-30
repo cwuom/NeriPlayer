@@ -33,6 +33,7 @@ val ownedLibraryPaths = listOf(
     ":data:bilibili",
     ":data:comments",
     ":data:lyrics",
+    ":data:ltw",
     ":data:model",
     ":data:netease",
     ":data:storage",

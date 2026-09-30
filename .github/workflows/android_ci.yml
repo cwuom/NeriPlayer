@@ -91,7 +91,7 @@ jobs:
         run: npm ci --prefix np-submodule/NeriPlayer-LTW
 
       - name: Run Android Listen Together tests
-        run: ./gradlew :app:testDebugUnitTest --tests "*ListenTogether*" --warning-mode all --stacktrace
+        run: ./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug :api:ltw:testDebugUnitTest :core:ltw-protocol:lintDebug :app:testDebugUnitTest --tests "*ListenTogether*" --warning-mode all --stacktrace
 
       - name: Run Worker protocol tests
         run: npm run check --prefix np-submodule/NeriPlayer-LTW
@@ -104,6 +104,10 @@ jobs:
           path: |
             **/build/reports/tests/**
             **/build/test-results/**/*.xml
+            modules/data/ltw/build/reports/crap/**
+            modules/data/ltw/build/reports/domain-dependencies/**
+            modules/data/ltw/build/reports/lint-results-debug.html
+            modules/core/ltw-protocol/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
   android-instrumented-tests:

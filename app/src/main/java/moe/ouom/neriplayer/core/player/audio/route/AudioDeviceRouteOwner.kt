@@ -19,7 +19,7 @@ import moe.ouom.neriplayer.core.player.policy.audio.shouldConfirmBluetoothDiscon
 import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveNoisyRouteToNativePath
 import moe.ouom.neriplayer.core.player.policy.usb.shouldStopUsbExclusivePlaybackForNoisyRoute
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
-import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForOutputDisconnect
+import moe.ouom.neriplayer.data.ltw.playback.shouldMuteListenTogetherListenerForOutputDisconnect
 import kotlin.time.Duration.Companion.milliseconds
 
 internal data class AudioDeviceRouteSnapshot(

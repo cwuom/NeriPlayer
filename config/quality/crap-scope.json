@@ -174,13 +174,12 @@
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsFastStage.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsBackgroundStage.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsResolution.kt",
-    "moe/ouom/neriplayer/listentogether/session/link/ListenTogetherControllerLinkOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/link/PlayerManagerListenTogetherLinkPlaybackPort.kt",
+    "moe/ouom/neriplayer/data/ltw/session/link/ListenTogetherControllerLinkOwner.kt",
     "moe/ouom/neriplayer/core/player/playback/PlaybackStatsOwner.kt",
     "moe/ouom/neriplayer/core/player/playback/PlaybackStatsWritePort.kt",
-    "moe/ouom/neriplayer/listentogether/session/state/ListenTogetherRoomStateOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/state/ListenTogetherSessionProjection.kt",
-    "moe/ouom/neriplayer/listentogether/session/control/ListenTogetherPendingEvents.kt",
+    "moe/ouom/neriplayer/data/ltw/session/state/ListenTogetherRoomStateOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/state/ListenTogetherSessionProjection.kt",
+    "moe/ouom/neriplayer/data/ltw/session/control/ListenTogetherPendingEvents.kt",
     "moe/ouom/neriplayer/data/model/ltw/session/ListenTogetherPendingEvents.kt",
     "moe/ouom/neriplayer/core/player/queue/policy/PlayerQueueNavigationOwner.kt",
     "moe/ouom/neriplayer/core/player/playback/PlayerManagerQueueNavigationExtensions.kt",
@@ -188,7 +187,7 @@
     "moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbExclusiveLivenessPort.kt",
     "moe/ouom/neriplayer/core/player/usb/recovery/UsbInterruptedPlaybackOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/recovery/PlayerManagerUsbInterruptedPlaybackPort.kt",
-    "moe/ouom/neriplayer/listentogether/session/control/ListenTogetherLocalControlOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/control/ListenTogetherLocalControlOwner.kt",
     "moe/ouom/neriplayer/ui/settings/route/AppSettingsRoute.kt",
     "moe/ouom/neriplayer/ui/settings/route/AppSettingsRouteOwners.kt",
     "moe/ouom/neriplayer/ui/settings/route/AppSettingsRouteActions.kt",
@@ -212,13 +211,13 @@
     "moe/ouom/neriplayer/ui/playback/visual/NowPlayingBlurImageRequests.kt",
     "moe/ouom/neriplayer/ui/playback/visual/NowPlayingBackdropLayers.kt",
     "moe/ouom/neriplayer/ui/playback/visual/NowPlayingBlurEffectOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/connection/ListenTogetherSocketHealthOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/liveness/ListenTogetherHeartbeatOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/liveness/ListenTogetherListenerWatchdogOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/connection/ListenTogetherSocketHealthOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/liveness/ListenTogetherHeartbeatOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/liveness/ListenTogetherListenerWatchdogOwner.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/SettingsScreen.kt",
     "moe/ouom/neriplayer/ui/settings/owner/AppUsbExclusiveSettingsActions.kt",
-    "moe/ouom/neriplayer/listentogether/session/connection/ListenTogetherConnectionRecoveryOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/connection/ListenTogetherConnectionRecoveryPolicy.kt",
+    "moe/ouom/neriplayer/data/ltw/session/connection/ListenTogetherConnectionRecoveryOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/connection/ListenTogetherConnectionRecoveryPolicy.kt",
     "moe/ouom/neriplayer/core/player/usb/route/UsbRouteTransitionOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/route/UsbSinkRouteOwner.kt",
     "moe/ouom/neriplayer/core/player/usb/route/UsbSinkRoutePolicy.kt",
@@ -235,10 +234,10 @@
     "moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRoutePolicy.kt",
     "moe/ouom/neriplayer/core/player/audio/route/PlayerManagerAudioDeviceRoutePort.kt",
     "moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt",
-    "moe/ouom/neriplayer/listentogether/session/socket/ListenTogetherRoomSocketEventOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/control/ListenTogetherSocketControlResultOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/membership/ListenTogetherRoomMembershipOwner.kt",
-    "moe/ouom/neriplayer/listentogether/session/membership/ListenTogetherMembershipTransport.kt",
+    "moe/ouom/neriplayer/data/ltw/session/socket/ListenTogetherRoomSocketEventOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/control/ListenTogetherSocketControlResultOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/membership/ListenTogetherRoomMembershipOwner.kt",
+    "moe/ouom/neriplayer/data/ltw/session/membership/ListenTogetherMembershipTransport.kt",
     "moe/ouom/neriplayer/core/player/audio/output/PlaybackSoundOwner.kt",
     "moe/ouom/neriplayer/core/player/audio/output/PlayerManagerPlaybackSoundPort.kt",
     "moe/ouom/neriplayer/core/player/audio/output/PlaybackQualityOwner.kt",
@@ -275,7 +274,12 @@
     "moe/ouom/neriplayer/data/model/youtube/playback/YouTubeMusicPlaybackQuality.kt",
     "moe/ouom/neriplayer/data/model/youtube/playback/YouTubePlayerClientProfile.kt",
     "moe/ouom/neriplayer/api/youtube/protocol/PreparedYouTubePlayerRequest.kt",
-    "moe/ouom/neriplayer/data/model/youtube/music/YouTubeMusicRequestLocale.kt"
+    "moe/ouom/neriplayer/data/model/youtube/music/YouTubeMusicRequestLocale.kt",
+    "moe/ouom/neriplayer/data/ltw/**/*.kt",
+    "moe/ouom/neriplayer/data/model/ltw/track/ListenTogetherStreamResolution.kt",
+    "moe/ouom/neriplayer/listentogether/**/*.kt",
+    "moe/ouom/neriplayer/core/player/ltw/**/*.kt",
+    "moe/ouom/neriplayer/core/di/ltw/**/*.kt"
   ],
   "method_scopes": [
     {
@@ -1066,128 +1070,6 @@
         "NowPlayingScreen",
         "NowPlayingScreen$lambda$148$0$0$1",
         "NowPlayingScreen$lambda$148$0$0$1$17"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager",
-      "methods": [
-        "<init>",
-        "getRoomState",
-        "start",
-        "createRoom",
-        "createRoom$default",
-        "joinRoom",
-        "joinRoom$default",
-        "leaveRoom",
-        "updateSession",
-        "resetForSessionChange",
-        "openSessionRoom",
-        "finishSessionRoomActivation",
-        "logSessionUpdate",
-        "applySessionRoomState",
-        "acceptRoomState",
-        "onRoomStateCommitted",
-        "recordWebSocketMessage",
-        "applyForwardedControllerRequestLocally",
-        "connectWebSocket",
-        "receiveSocketEnvelope$app",
-        "noteSocketMessageClock",
-        "closeRoomLocally",
-        "disconnectWebSocket",
-        "handleWebSocketControlSendFailure",
-        "trySendTrackFinishedLegacyFallback",
-        "sendPing",
-        "noteOutboundSync"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$membershipOwner$1",
-      "methods": [
-        "<init>",
-        "currentSession",
-        "repeatMode",
-        "shuffleEnabled",
-        "shuffleRestoreSongs",
-        "applyRoomResponse",
-        "pauseForDeparture"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$connectWebSocket$1",
-      "methods": [
-        "<init>",
-        "onMessage"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$roomStateOwner$1",
-      "methods": [
-        "<init>",
-        "onRoomActivated",
-        "onCommitted",
-        "onPositionSupplement",
-        "onSocketMessageAccepted"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$localControlOwner$1",
-      "methods": [
-        "<init>",
-        "currentRoomId",
-        "isController",
-        "nextEventId",
-        "markOutbound",
-        "noteOutboundSync",
-        "send"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$connectionRecoveryOwner$1",
-      "methods": [
-        "<init>",
-        "session",
-        "isController",
-        "updateBackgroundKeepAlive",
-        "connectWebSocket",
-        "closeRoomLocally",
-        "beginMembershipRecovery",
-        "rejoinRoom",
-        "membershipRecoveryFailed"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$roomSocketEventOwner$1",
-      "methods": [
-        "<init>",
-        "session",
-        "room",
-        "accept",
-        "updateNotice",
-        "applyToPlayer",
-        "publishControllerHeartbeat",
-        "pauseClosedRoomPlayback",
-        "closeRoomLocally"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/listentogether/ListenTogetherSessionManager.kt",
-      "class": "moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager$socketControlResultOwner$1",
-      "methods": [
-        "<init>",
-        "currentUserUuid",
-        "currentRoom",
-        "accept",
-        "isController",
-        "applyToPlayer",
-        "setLastError",
-        "trySendTrackFinishedLegacyFallback"
       ]
     }
   ]

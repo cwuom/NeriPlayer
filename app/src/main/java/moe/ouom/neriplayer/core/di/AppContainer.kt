@@ -80,7 +80,7 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
-import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
+import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
 import moe.ouom.neriplayer.api.ltw.ws.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.data.settings.dataStore
 import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
@@ -467,7 +467,10 @@ object AppContainer {
     val listenTogetherSessionManager by lazy {
         ListenTogetherSessionManager(
             api = listenTogetherApi,
-            webSocketClient = listenTogetherWebSocketClient
+            webSocketClient = listenTogetherWebSocketClient,
+            playback = moe.ouom.neriplayer.core.player.ltw.PlayerManagerListenTogetherHost,
+            platform = moe.ouom.neriplayer.core.di.ltw.AppListenTogetherPlatform,
+            songMapper = moe.ouom.neriplayer.core.player.ltw.PlayerListenTogetherSongMapper
         )
     }
 

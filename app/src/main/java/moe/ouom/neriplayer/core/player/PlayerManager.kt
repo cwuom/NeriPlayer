@@ -212,16 +212,16 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.lyrics.resolveEffectiveLyricOffsetMs
-import moe.ouom.neriplayer.listentogether.mapping.buildStableTrackKey
-import moe.ouom.neriplayer.listentogether.mapping.resolvedAudioId
-import moe.ouom.neriplayer.listentogether.mapping.resolvedChannelId
-import moe.ouom.neriplayer.listentogether.mapping.resolvedPlaylistContextId
-import moe.ouom.neriplayer.listentogether.mapping.resolvedSubAudioId
-import moe.ouom.neriplayer.listentogether.playback.authoritativeStreamUrlForCurrentTrack
-import moe.ouom.neriplayer.listentogether.playback.currentStableKey
-import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
-import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
-import moe.ouom.neriplayer.listentogether.session.membership.resolveListenTogetherSessionRole
+import moe.ouom.neriplayer.data.ltw.mapping.buildStableTrackKey
+import moe.ouom.neriplayer.core.player.ltw.resolvedAudioId
+import moe.ouom.neriplayer.core.player.ltw.resolvedChannelId
+import moe.ouom.neriplayer.core.player.ltw.resolvedPlaylistContextId
+import moe.ouom.neriplayer.core.player.ltw.resolvedSubAudioId
+import moe.ouom.neriplayer.data.ltw.playback.authoritativeStreamUrlForCurrentTrack
+import moe.ouom.neriplayer.data.ltw.playback.currentStableKey
+import moe.ouom.neriplayer.data.ltw.playback.shouldHoldListenTogetherPlaybackForSafetyPause
+import moe.ouom.neriplayer.data.ltw.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
+import moe.ouom.neriplayer.data.ltw.session.membership.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
@@ -1139,7 +1139,7 @@ object PlayerManager {
         song: SongItem,
         localResolutionRequiresSharedStream: Boolean
     ): Boolean {
-        return moe.ouom.neriplayer.listentogether.playback
+        return moe.ouom.neriplayer.data.ltw.playback
             .shouldAwaitListenTogetherSharedStreamFallback(
                 listenerAudioLinkSharingActive = isListenTogetherAudioLinkFallbackEnabled(),
                 localResolutionRequiresSharedStream = localResolutionRequiresSharedStream,

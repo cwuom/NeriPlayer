@@ -5,6 +5,7 @@
 ```bash
 ./gradlew :app:verifyCrap
 ./gradlew :app:verifyDomainDependencies
+./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug
 ./gradlew verifyModularization
 ```
 
@@ -52,13 +53,21 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 规则匹配不到 JaCoCo 方法时直接报错。范围外的方法仍进入 `methods.json` 和 `above-8.md`，
 用于风险分析，不参与门禁判定。
 范围内任意方法原始分数严格大于 9 时退出码为 1；分数等于 9 时通过。
-缺少 XML、无效计数器、空范围、范围匹配不到文件或范围文件无被测方法时退出码为 2。
+缺少 XML、无效计数器、空范围、范围匹配不到文件或范围文件未出现在 JaCoCo 类报告中时退出码为 2。
+纯接口没有可执行方法，以类记录验证源码存在；接口默认实现与其它可执行方法仍按实际复杂度检查。
 不使用平均分或历史 baseline 豁免；协程和 lambda 字节码同样保留，只使用 JaCoCo 内置的编译器过滤。
 新增拆分组件应位于已覆盖的文件模式内，或同时更新范围配置。原文件中业务分支发生变化的
 方法也必须加入门禁；不能因为其既有分数较高而遗漏改动。如果 Android 宿主入口的变更仅将
 原有逻辑委托给独立组件，可将完整的迁入逻辑和宿主参数适配器纳入门禁，并通过 JVM 测试
 验证适配器实际使用的来源、模式与生命周期分支。审查时必须核对委托前后的完整 diff，
 报告应区分受检组件与未执行的宿主入口，不能宣称后者已具备覆盖率。
+
+`:data:ltw` 的 `data/ltw/**/*.kt` 与 `:core:ltw-protocol` 的 `listentogether/**/*.kt` 整文件受检，包括默认参数、协程和 lambda；新增目录和文件自动纳入。
+模块的 `verifyCrap` 执行客户端与协议库 JVM 测试、检查执行数据并生成合并的真实 JaCoCo 报告，`check` 和一起听 CI 均调用该门禁。
+报告位于 `modules/data/ltw/build/reports/crap/`；分数算法与根门禁相同，任意方法大于 9 即失败。
+`listen-together-runtime` 允许模型、一起听传输、协程、基础工具与明确列出的 Android 线程、时钟、URI、唤醒锁能力，禁止引用 `AppContainer`、`PlayerManager` 和数据仓库。
+`listen-together-protocol` 仅允许协议模型、序列化与标准库。结构门禁禁止任何一起听生产源码回到 `app/listentogether`，平台绑定归 `app/core/di/ltw`，播放器适配归播放器的 `core/player/ltw`。
+模块的 `verifyDomainDependencies` 按编译后的类验证该边界，`check` 和一起听 CI 均调用；报告位于 `modules/data/ltw/build/reports/domain-dependencies/`。
 
 `:core:download` 的全部生产源码按职责包使用 `**/*.kt` 整文件模式，包括准入、状态迁移、重试、
 延后队列、清空/提交/大小/发布规则、传输槽位、看门狗、网络策略、所有权和元数据编解码。

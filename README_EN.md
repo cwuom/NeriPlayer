@@ -686,12 +686,14 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `:app`: Android host, screens, playback/download runtime, and dependency assembly.
 - `:data:model`: centralized data contracts grouped by authentication, platform, lyrics, downloads, playback, storage, and sync, without dependencies on project implementations.
 - `:core:common` / `:core:logging` / `:core:network`: shared utilities, logging, and networking.
-- `:core:lyrics` / `:core:ltw-protocol`: lyric parsing/transforms and Listen Together wire-format conventions; data types belong to `:data:model`.
+- `:core:lyrics`: lyric parsing/transforms; data types belong to `:data:model`.
+- [`:core:ltw-protocol`](modules/core/ltw-protocol/README.md): bounded HTTP response reading, WebSocket codecs and keepalive messages, and identity generation rules; protocol models live in `:data:model`.
 - `:core:playback-queue`: queue state, editing, navigation, and ordering policies with injected song identity rules.
 - `:core:download`: admission and clear progress, state transitions and retries, deferred scheduling, transfer permits and watchdogs, network policy, operation ownership, commit and publication rules, and metadata codecs; the host owns Room, SAF, file I/O, and service orchestration.
 - `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
 - `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, and playback source repositories.
+- [`:data:ltw`](modules/data/ltw/README.md): Listen Together client sessions, membership operations, connection recovery, control events, playback synchronization, invites, and input validation through host-provided playback and Android interfaces.
 - `:data:lyrics` / `:data:comments`: lyric matching and fallback across sources, comment pagination, and caching.
 - `:data:sync`: sync sessions, codecs, snapshot sanitization, change detection, merging, and concurrency protection through host-provided local data, transport, and presentation interfaces.
 - `:data:storage`: storage accounting, file scanning, and cache cleanup with host-provided locations, database statistics, and download snapshots.
@@ -719,6 +721,7 @@ Modules own their tests, resources, and consumer R8 rules; host integration test
 Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage,
 domain dependencies, and lint. Run an individual module's tests with `./gradlew :data:youtube:testDebugUnitTest`.
 The standalone structural check, `python3 -B tools_pub/quality/module_boundaries.py`, needs no Android SDK.
+Run `./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug` for the standalone Listen Together gate. All client and protocol production methods and new files are included automatically; any CRAP score above 9 fails CI. Production sources cannot return to `app/listentogether`; app assembles platform interfaces in `core/di/ltw`, and player adapters live under `core/player/ltw`.
 Library source files must stay below 2000 lines, with at most 16 direct Kotlin/Java files per production directory.
 See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension rules.
 
