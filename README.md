@@ -538,7 +538,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `:core:player-audio`：PCM 声道平衡、响度归一化和音频可视化。
 - `:feature:player`：播放器引擎、音源解析、播放服务、USB 独占输出、系统音效与歌词输出；通过接口连接下载、一起听、小组件、反馈和启动策略。
 - `:core:playback-queue`：队列状态、编辑、导航和顺序策略；歌曲身份规则通过接口注入。
-- `:core:download`：下载准入与清空进度、状态迁移与重试、延后调度队列、传输槽位与看门狗、网络策略、operation 所有权、提交与发布规则、元数据编解码；Room、SAF、文件读写及服务编排由宿主负责。
+- `:core:download`：下载准入与清空进度、状态迁移与重试、延后调度队列、传输槽位与看门狗、网络策略、operation 所有权、提交与发布规则、元数据编解码；基础存储工具可被数据模块复用，下载业务与服务编排归 `:feature:download`。
+- `:feature:download`：下载执行、Room 队列、批次恢复、传输、受管文件与迁移、Worker 和 JobService；应用初始化时注入来源服务、凭据、流量、启动和播放接口。
 - `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
 - `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存和播放源仓库。

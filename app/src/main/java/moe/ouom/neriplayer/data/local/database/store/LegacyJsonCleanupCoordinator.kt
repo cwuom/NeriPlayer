@@ -1,10 +1,8 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorageAccess
 import android.content.Context
 import java.io.File
-import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogRoomStore
-import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomStore
-import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 
@@ -35,14 +33,14 @@ internal data class LegacyJsonCleanupPlan(
 
     val isBlockedOnlyByUserClearedDownloadQueues: Boolean
         get() = blockedTargets.isNotEmpty() && blockedTargets.all { target ->
-            target.cutoverState == DownloadRecoveryRoomStore.USER_CLEARED_STATE &&
+            target.cutoverState == DownloadLegacyStorageAccess.USER_CLEARED_STATE &&
                 target.cutoverStateKey in USER_CLEAR_SUPPRESSED_QUEUE_STATE_KEYS
         }
 
     private companion object {
         val USER_CLEAR_SUPPRESSED_QUEUE_STATE_KEYS = setOf(
-            DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY,
-            DownloadRecoveryRoomStore.CANCELLED_KEYS_CUTOVER_STATE_KEY
+            DownloadLegacyStorageAccess.PENDING_QUEUE_CUTOVER_STATE_KEY,
+            DownloadLegacyStorageAccess.CANCELLED_KEYS_CUTOVER_STATE_KEY
         )
     }
 }
@@ -222,23 +220,23 @@ internal class LegacyJsonCleanupCoordinator(
             ),
             TargetDefinition(
                 "pending_download_queue_v1.json",
-                DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY
+                DownloadLegacyStorageAccess.PENDING_QUEUE_CUTOVER_STATE_KEY
             ),
             TargetDefinition(
                 "cancelled_download_keys_v1.json",
-                DownloadRecoveryRoomStore.CANCELLED_KEYS_CUTOVER_STATE_KEY
+                DownloadLegacyStorageAccess.CANCELLED_KEYS_CUTOVER_STATE_KEY
             ),
             TargetDefinition(
                 "downloaded_song_catalog_v4.json",
-                DownloadedSongCatalogRoomStore.CUTOVER_STATE_METADATA_KEY
+                DownloadLegacyStorageAccess.CATALOG_CUTOVER_STATE_KEY
             ),
             TargetDefinition(
                 "downloaded_song_catalog_v3.json",
-                DownloadedSongCatalogRoomStore.CUTOVER_STATE_METADATA_KEY
+                DownloadLegacyStorageAccess.CATALOG_CUTOVER_STATE_KEY
             ),
             TargetDefinition(
                 "managed_download_snapshot_v1.json",
-                ManagedDownloadSnapshotRoomStore.CUTOVER_STATE_METADATA_KEY
+                DownloadLegacyStorageAccess.SNAPSHOT_CUTOVER_STATE_KEY
             )
         )
     }

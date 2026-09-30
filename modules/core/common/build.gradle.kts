@@ -4,6 +4,7 @@ plugins {
 
 android {
     namespace = "moe.ouom.neriplayer.core.common"
+    testFixtures.enable = true
 }
 
 dependencies {

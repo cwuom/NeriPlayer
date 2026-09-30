@@ -206,8 +206,13 @@
   - 使用 `build-logic.android.module-quality` 提供独立 CRAP 门禁；原有方法检查继续保留，宿主接口、展示状态、一起听映射和 USB 策略按目录整文件受检。
 - `:core:download`
   - 下载准入与清空进度、状态迁移、重试、延后调度、传输槽位、看门狗、网络策略、operation 所有权、提交规则和元数据 JSON 解码。
-  - 状态契约位于 `:data:model` 的 `download/execution`；Room、SAF、文件写入和服务编排留在宿主，规则组件不引用这些实现。
+  - 状态契约位于 `:data:model` 的 `download/execution`；Room、SAF、文件写入和服务编排位于 `:feature:download`，规则组件不引用这些实现。
   - 按职责包整文件纳入 CRAP 和依赖门禁，新文件及子目录自动受检；针对性测试使用 `./gradlew :core:download:testDebugUnitTest`。
+- `:feature:download`
+  - 下载执行、批次队列、Room 日志、受管文件、目录迁移、恢复任务和系统服务。
+  - 应用通过 `core/integration/download` 安装来源、歌词、凭据、环境和播放接口；模块不依赖应用容器或播放器实现。
+  - Worker 和 JobService 保留既有类全名，避免已保存任务在升级后找不到执行入口。
+  - 模块测试使用 `./gradlew :feature:download:testDebugUnitTest`；复杂度门禁使用 `./gradlew :core:download:verifyCrap :feature:download:verifyCrap`。
 - `:data:sync`
   - 同步会话、兼容编解码、清洗、差异检测、合并和并发保护；宿主负责数据库、远端传输、封面映射和文案。
   - `runtime` 通过本地数据与后端接口执行会话，`remote` 维护兼容文件回退和 WebDAV 指纹复核，`retry` 统一处理冲突重试。

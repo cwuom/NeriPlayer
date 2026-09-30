@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.download
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.core.download.presentation.progress.DownloadProgressReadAccess
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadProgress
 import moe.ouom.neriplayer.data.model.download.DownloadStage
@@ -73,11 +74,7 @@ import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.download.presentation.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.download.presentation.visibleExplicitResumeCandidates
 import moe.ouom.neriplayer.core.download.presentation.visibleFailedDownloadTasks
-import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearProgressStore
-import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
-import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.execution.recovery.loadExplicitDownloadResumeCandidates
 import moe.ouom.neriplayer.core.download.execution.recovery.resumeExplicitDownload
@@ -98,13 +95,13 @@ private const val DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_INITIAL_DELAY_MS = 750L
 private const val DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_MAX_DELAY_MS = 5_000L
 
 internal val DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES =
-    DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES + listOf(
+    DownloadProgressReadAccess.reusableOperationStates + listOf(
         "RUNNING",
         "COMMITTING",
         "CORE_COMMITTED",
         "ASSETS_ENRICHING",
         "DEGRADED_COMPLETE",
-        WAITING_STORAGE_MUTATION_OPERATION_STATE
+        DownloadProgressReadAccess.WAITING_STORAGE_MUTATION_STATE
     )
 
 internal data class DownloadProgressBootstrapState(
@@ -302,7 +299,7 @@ internal suspend fun readDurablePendingDownloadSongKeys(
 ): Set<String> {
     val durablePendingSongKeys = linkedSetOf<String>()
     val resumableDownloads = ManagedDownloadStorage.listPendingResumableDownloads(context)
-    val operationHeaders = DownloadExecutionRoomStore.readOperationHeaders(
+    val operationHeaders = DownloadProgressReadAccess.readOperationHeaders(
         context = context,
         operationIds = resumableDownloads.mapNotNull { it.operationId },
         database = database
@@ -316,12 +313,12 @@ internal suspend fun readDurablePendingDownloadSongKeys(
             durablePendingSongKeys += entry.song.stableKey()
         }
     }
-    durablePendingSongKeys += DownloadExecutionRoomStore.listByStates(
+    durablePendingSongKeys += DownloadProgressReadAccess.listPendingRequests(
         context = context,
         states = DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES,
         excludeUserStoppedOperations = true,
         database = database
-    ).map { entry -> entry.request.song.stableKey() }
+    ).map { request -> request.song.stableKey() }
     return durablePendingSongKeys
 }
 
@@ -329,18 +326,18 @@ private suspend fun readDownloadProgressBootstrapState(
     context: Context
 ): DownloadProgressBootstrapState = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
-    if (PersistentDownloadClearFenceStore.isTaskProgressActive(appContext)) {
+    if (DownloadProgressReadAccess.isTaskProgressClearActive(appContext)) {
         return@withContext DownloadProgressBootstrapState(
             clearFenceActive = true,
-            clearProgress = PersistentDownloadClearProgressStore.read(appContext)
+            clearProgress = DownloadProgressReadAccess.readClearProgress(appContext)
         )
     }
     val durablePendingSongKeys = readDurablePendingDownloadSongKeys(appContext)
 
-    if (PersistentDownloadClearFenceStore.isTaskProgressActive(appContext)) {
+    if (DownloadProgressReadAccess.isTaskProgressClearActive(appContext)) {
         return@withContext DownloadProgressBootstrapState(
             clearFenceActive = true,
-            clearProgress = PersistentDownloadClearProgressStore.read(appContext)
+            clearProgress = DownloadProgressReadAccess.readClearProgress(appContext)
         )
     }
 

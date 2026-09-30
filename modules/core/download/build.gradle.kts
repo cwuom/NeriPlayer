@@ -1,5 +1,6 @@
 plugins {
     id("build-logic.android.feature-library")
+    id("build-logic.android.module-quality")
 }
 
 android {

@@ -693,7 +693,8 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `:core:player-audio`: PCM channel balance, volume normalization, and audio visualization.
 - `:feature:player`: playback engine, source resolution, playback service, USB exclusive output, platform effects, and lyrics output; interfaces connect downloads, Listen Together, widgets, feedback, and startup policies.
 - `:core:playback-queue`: queue state, editing, navigation, and ordering policies with injected song identity rules.
-- `:core:download`: admission and clear progress, state transitions and retries, deferred scheduling, transfer permits and watchdogs, network policy, operation ownership, commit and publication rules, and metadata codecs; the host owns Room, SAF, file I/O, and service orchestration.
+- `:core:download`: admission and clear progress, state transitions and retries, deferred scheduling, transfer permits and watchdogs, network policy, operation ownership, commit and publication rules, and metadata codecs; reusable storage tools support data modules, while download orchestration belongs to `:feature:download`.
+- `:feature:download`: execution, Room queues, batch recovery, transfers, managed files and migrations, Workers, and JobService, with host-provided source services, credentials, traffic, startup, and playback interfaces.
 - `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
 - `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, and playback source repositories.

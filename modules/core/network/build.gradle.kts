@@ -8,6 +8,7 @@ android {
 
 dependencies {
     implementation(project(":core:logging"))
+    implementation(libs.androidx.media3.datasource)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
 

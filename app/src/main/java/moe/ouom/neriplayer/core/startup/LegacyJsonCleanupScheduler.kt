@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.startup
 
+import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorageAccess
 import android.content.Context
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -16,7 +17,6 @@ import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoor
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeCoordinator
 import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeResult
@@ -84,7 +84,7 @@ internal object LegacyJsonCleanupScheduler {
                         }
                     }
                     val queueBootstrapSucceeded = runCatching {
-                        DownloadRecoveryRoomStore(appContext).bootstrapLegacyFilesOnce()
+                        DownloadLegacyStorageAccess.bootstrapLegacyQueues(appContext)
                         true
                     }.onFailure { error ->
                         NPLogger.w(

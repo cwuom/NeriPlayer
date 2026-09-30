@@ -19,6 +19,7 @@ plugins {
 val ownedLibraryPaths = listOf(
     ":core:common",
     ":core:download",
+    ":feature:download",
     ":core:logging",
     ":core:ltw-protocol",
     ":core:lyrics",
@@ -251,6 +252,25 @@ gradle.taskGraph.whenReady {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     exclude("**/com/mocharealm/accompanist/lyrics/ui/utils/String.kt")
+    if (name.endsWith("AndroidTestKotlin") || name.endsWith("UnitTestKotlin")) {
+        // 应用集成测试继续验证下载内部恢复状态，业务编译仍遵守模块可见性
+        val compileClasspathName = name.removePrefix("compile").removeSuffix("Kotlin")
+            .replaceFirstChar(Char::lowercaseChar) + "CompileClasspath"
+        val downloadIntegrationClasses = providers.provider {
+            configurations.getByName(compileClasspathName).incoming.artifactView {
+                attributes.attribute(
+                    org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
+                    "android-classes-jar"
+                )
+                componentFilter { component ->
+                    component is org.gradle.api.artifacts.component.ProjectComponentIdentifier &&
+                        component.projectPath == ":feature:download"
+                }
+            }.files
+        }
+        friendPaths.from(downloadIntegrationClasses)
+        dependsOn(downloadIntegrationClasses)
+    }
 }
 
 tasks.withType<Test>().configureEach {
@@ -425,6 +445,7 @@ androidComponents {
 }
 
 dependencies {
+    testImplementation(testFixtures(project(":core:common")))
     ownedLibraryPaths.forEach { module ->
         implementation(project(module))
         add(libraryCoverageClasses.name, project(mapOf("path" to module, "configuration" to "coverageClassesElements")))

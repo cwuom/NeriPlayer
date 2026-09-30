@@ -25,13 +25,26 @@ DOWNLOAD_RULE_FAMILIES = (
     "core/download/storage/metadata/serialization",
 )
 
+DOWNLOAD_RUNTIME_RULE_FAMILIES = (
+    "core/download/host",
+    "core/integration/download",
+    "core/download/generation",
+    "core/download/execution/notification/refresh",
+    "core/download/execution/scheduling/deadline",
+    "core/download/execution/scheduling/ids",
+    "core/download/execution/host/isolation",
+    "core/download/integration/legacy",
+    "core/download/presentation/progress",
+    "core/download/storage/migration/access",
+)
+
 
 class DownloadModuleBoundariesTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        modules = (":data:model", ":core:download", ":core:common")
+        modules = (":data:model", ":core:download", ":core:common", ":feature:download")
         (self.root / "settings.gradle.kts").write_text(
             'include(":app")\n'
             + "".join(f'includeOwnedLibrary("{name}")\n' for name in modules)
@@ -77,15 +90,28 @@ class DownloadModuleBoundariesTest(unittest.TestCase):
             self.source(self.root / "modules/core/download", family + "/nested", "Owned")
         self.assertEqual([], verify(self.root))
 
-    def test_allows_host_storage_and_room_adapters_in_app(self):
+    def test_rejects_runtime_and_storage_reintroduced_in_app(self):
         for family in ("core/download/storage", "core/download/execution/persistence"):
             self.source(self.root / "app", family, "HostAdapter")
+        errors = verify(self.root)
+        self.assertEqual(2, len(errors))
+        self.assertTrue(all("belongs in a library module" in error for error in errors))
+
+    def test_accepts_download_runtime_in_its_feature(self):
+        for family in ("core/download/execution/persistence", "core/player/download/runtime"):
+            self.source(self.root / "modules/feature/download", family, "Runtime")
         self.assertEqual([], verify(self.root))
+
+    def test_rejects_runtime_in_other_features(self):
+        self.source(self.root / "modules/core/common", "core/player/download/runtime", "Misplaced")
+        errors = verify(self.root)
+        self.assertEqual(1, len(errors))
+        self.assertIn("package belongs to :feature:download", errors[0])
 
     def test_new_nested_download_file_automatically_fails_above_crap_threshold(self):
         repository = Path(__file__).resolve().parents[2]
         config = json.loads((repository / "config/quality/crap-scope.json").read_text())
-        families = (*DOWNLOAD_RULE_FAMILIES, "data/model/download/execution")
+        families = (*DOWNLOAD_RULE_FAMILIES, *DOWNLOAD_RUNTIME_RULE_FAMILIES, "data/model/download/execution")
         patterns = [f"moe/ouom/neriplayer/{family}/**/*.kt" for family in families]
         self.assertTrue(set(patterns).issubset(config["source_patterns"]))
         scope = self.root / "scope.json"

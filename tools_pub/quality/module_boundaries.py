@@ -44,6 +44,7 @@ APP_FAMILIES = (
     "data/sync",
 )
 LIBRARY_OWNED_FAMILIES = (
+    "core/download", "core/player/download",
     "core/player",
     "core/player/runtime", *PLAYER_POLICY_FAMILIES, *PLAYER_AUDIO_FAMILIES,
     "data/ltw", "listentogether",
@@ -60,7 +61,12 @@ LEGACY_MODEL_TYPES = {
 }
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
+LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName")
 PACKAGE_OWNERS = {
+    "moe.ouom.neriplayer.core.download": ":feature:download",
+    "moe.ouom.neriplayer.core.player.download": ":feature:download",
+    "moe.ouom.neriplayer.core.download.policy.settings": ":core:download",
+    "moe.ouom.neriplayer.core.download.storage": (":core:common", ":core:download", ":feature:download"),
     "moe.ouom.neriplayer.core.player": ":feature:player",
     "moe.ouom.neriplayer.core.player.runtime": ":core:player-runtime",
     **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:player-policy"

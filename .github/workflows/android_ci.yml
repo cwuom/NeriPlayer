@@ -44,7 +44,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests, CRAP gate and lint
-        run: ./gradlew :core:player-policy:verifyCrap :core:player-runtime:verifyCrap :core:player-audio:verifyCrap :feature:player:verifyCrap :data:sync:verifyCrap :data:sync:verifyDomainDependencies verifyModularization --warning-mode all --stacktrace
+        run: >-
+          ./gradlew :core:player-policy:verifyCrap :core:player-runtime:verifyCrap :core:player-audio:verifyCrap :feature:player:verifyCrap :data:sync:verifyCrap :data:sync:verifyDomainDependencies :core:download:verifyCrap :feature:download:verifyCrap verifyModularization --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()

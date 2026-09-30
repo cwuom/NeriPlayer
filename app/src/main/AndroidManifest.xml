@@ -166,16 +166,6 @@
                 <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
             </intent-filter>
         </receiver>
-        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
-        <service
-            android:name=".core.download.execution.uidt.UidtDownloadJobService"
-            android:exported="true"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            tools:targetApi="34" />
 
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"

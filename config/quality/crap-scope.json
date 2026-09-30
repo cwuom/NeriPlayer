@@ -298,7 +298,18 @@
     "moe/ouom/neriplayer/core/player/integration/ltw/**/*.kt",
     "moe/ouom/neriplayer/core/player/presentation/**/*.kt",
     "moe/ouom/neriplayer/core/player/policy/usb/**/*.kt",
-    "moe/ouom/neriplayer/core/di/player/**/*.kt"
+    "moe/ouom/neriplayer/core/di/player/**/*.kt",
+    "moe/ouom/neriplayer/core/download/execution/scheduling/ids/**/*.kt",
+    "moe/ouom/neriplayer/core/download/host/**/*.kt",
+    "moe/ouom/neriplayer/core/integration/download/**/*.kt",
+    "moe/ouom/neriplayer/util/format/FileSizeFormatting.kt",
+    "moe/ouom/neriplayer/core/download/generation/**/*.kt",
+    "moe/ouom/neriplayer/core/download/execution/notification/refresh/**/*.kt",
+    "moe/ouom/neriplayer/core/download/execution/scheduling/deadline/**/*.kt",
+    "moe/ouom/neriplayer/core/download/execution/host/isolation/**/*.kt",
+    "moe/ouom/neriplayer/core/download/integration/legacy/**/*.kt",
+    "moe/ouom/neriplayer/core/download/presentation/progress/**/*.kt",
+    "moe/ouom/neriplayer/core/download/storage/migration/access/**/*.kt"
   ],
   "method_scopes": [
     {
@@ -1089,6 +1100,21 @@
         "ensureForeground",
         "onForegroundFailure",
         "updatePlaybackPresentation"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/download/storage/backend/ManagedTemporaryWriteJournal.kt",
+      "class": "moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteJournalKt",
+      "methods": [
+        "recoverInterruptedManagedTemporaryWrites"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt",
+      "class": "moe.ouom.neriplayer.core.download.ManagedDownloadStorage",
+      "methods": [
+        "migrateManagedDownloads",
+        "migrateManagedDownloads$default"
       ]
     }
   ]

@@ -30,6 +30,7 @@ fun includeOwnedLibrary(path: String) {
 
 includeOwnedLibrary(":core:common")
 includeOwnedLibrary(":core:download")
+includeOwnedLibrary(":feature:download")
 includeOwnedLibrary(":core:logging")
 includeOwnedLibrary(":core:ltw-protocol")
 includeOwnedLibrary(":core:lyrics")

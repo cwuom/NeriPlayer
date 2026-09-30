@@ -75,12 +75,19 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 播放器的四个模块通过 `build-logic.android.module-quality` 提供独立 `verifyCrap`，从共享范围配置选择本模块的源码，保留原方法选择器并拒绝空范围。
 播放器宿主接口、展示状态、一起听映射、USB 策略和 app 的 `core/di/player` 桥接按目录受检。整个 `app/core/player` 禁止出现生产源码，纯播放器库仍禁止依赖功能实现层。
 
-`:core:download` 的全部生产源码按职责包使用 `**/*.kt` 整文件模式，包括准入、状态迁移、重试、
+`:core:download` 的规则组件按职责包使用 `**/*.kt` 整文件模式，包括准入、状态迁移、重试、
 延后队列、清空/提交/大小/发布规则、传输槽位、看门狗、网络策略、所有权和元数据编解码。
 `data/model/download/execution` 的状态契约也整文件受检。
 新文件与子目录自动进入 CRAP 门禁，超分使现有 Android CI 的 `verifyModularization` 失败。
 结构门禁禁止这些规则包回到 app 或进入其他库；依赖门禁限制规则只使用标准库、协程和所需模型。
 传输注册表继续共用同一状态锁，FIFO、并发限制与活动心跳组件不独立修改槽位所有权。
+
+下载运行实现归 `:feature:download`，结构门禁禁止 `app/core/download` 和 `app/core/player/download` 回流。
+应用只通过 `core/integration/download` 绑定环境、来源、歌词、凭据和播放接口，下载库不得引用应用容器或播放器实现。
+下载请求代次、通知刷新、重试截止时间、单项异常隔离和宿主接口也按职责目录整文件受检，新文件自动进入门禁。
+`./gradlew :core:download:verifyCrap :feature:download:verifyCrap` 独立运行下载规则和运行模块的 JVM 测试与复杂度检查；
+这些任务复用 `build-logic.android.module-quality`，`check` 与 Android CI 均执行，超分仍按大于 9 失败。
+共享源码契约测试工具位于 `:core:common` 的 test fixtures，测试随实现模块迁移，宿主集成测试留在应用。
 
 下载条目构建将元数据、歌词和封面选择整体委托给 `catalog/assembly`，该目录整文件受检；
 宿主的元数据读取选择、文件信息、封面参数与本地标签映射适配器也纳入门禁。

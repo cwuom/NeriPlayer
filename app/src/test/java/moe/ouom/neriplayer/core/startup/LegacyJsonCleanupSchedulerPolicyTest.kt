@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.startup
 
-import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
+import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorageAccess
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupPlan
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupTarget
 import org.junit.Assert.assertFalse
@@ -34,19 +34,19 @@ class LegacyJsonCleanupSchedulerPolicyTest {
             targets = listOf(
                 LegacyJsonCleanupTarget(
                     fileName = "pending_download_queue_v1.json",
-                    cutoverStateKey = DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY,
+                    cutoverStateKey = DownloadLegacyStorageAccess.PENDING_QUEUE_CUTOVER_STATE_KEY,
                     exists = true,
                     eligible = false,
                     reason = "Room primary marker is user_cleared",
-                    cutoverState = DownloadRecoveryRoomStore.USER_CLEARED_STATE
+                    cutoverState = DownloadLegacyStorageAccess.USER_CLEARED_STATE
                 ),
                 LegacyJsonCleanupTarget(
                     fileName = "cancelled_download_keys_v1.json",
-                    cutoverStateKey = DownloadRecoveryRoomStore.CANCELLED_KEYS_CUTOVER_STATE_KEY,
+                    cutoverStateKey = DownloadLegacyStorageAccess.CANCELLED_KEYS_CUTOVER_STATE_KEY,
                     exists = true,
                     eligible = false,
                     reason = "Room primary marker is user_cleared",
-                    cutoverState = DownloadRecoveryRoomStore.USER_CLEARED_STATE
+                    cutoverState = DownloadLegacyStorageAccess.USER_CLEARED_STATE
                 )
             )
         )
@@ -60,11 +60,11 @@ class LegacyJsonCleanupSchedulerPolicyTest {
             targets = listOf(
                 LegacyJsonCleanupTarget(
                     fileName = "pending_download_queue_v1.json",
-                    cutoverStateKey = DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY,
+                    cutoverStateKey = DownloadLegacyStorageAccess.PENDING_QUEUE_CUTOVER_STATE_KEY,
                     exists = true,
                     eligible = false,
                     reason = "Room primary marker is user_cleared",
-                    cutoverState = DownloadRecoveryRoomStore.USER_CLEARED_STATE
+                    cutoverState = DownloadLegacyStorageAccess.USER_CLEARED_STATE
                 ),
                 LegacyJsonCleanupTarget(
                     fileName = "play_history.json",

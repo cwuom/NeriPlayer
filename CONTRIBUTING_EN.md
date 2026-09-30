@@ -226,8 +226,13 @@ and CRAP selectors together.
   - Repository, downloads, Listen Together, and presentation interfaces connect it to app; app cannot retain production sources in `core/player`.
 - `:core:download`
   - Download admission, clear progress, state transitions, retries, deferred scheduling, transfer permits, watchdogs, network policy, operation ownership, commit rules, and metadata JSON decoding.
-  - State contracts live in `:data:model` under `download/execution`; Room, SAF, file writes, and service orchestration stay in the host without reverse dependencies from rule components.
+  - State contracts live in `:data:model` under `download/execution`; Room, SAF, file writes, and service orchestration belong to `:feature:download` without reverse dependencies from rule components.
   - Responsibility packages join full-file CRAP and dependency gates, including new files and subdirectories; run focused tests with `./gradlew :core:download:testDebugUnitTest`.
+- `:feature:download`
+  - Execution, batch queues, Room journals, managed files, directory migrations, recovery jobs, and system services.
+  - The app installs source, lyrics, credential, environment, and playback interfaces through `core/integration/download`; the module has no dependency on the app container or player implementation.
+  - Workers and JobService keep their existing class names so persisted tasks remain resolvable after upgrades.
+  - Run `./gradlew :feature:download:testDebugUnitTest` and `./gradlew :core:download:verifyCrap :feature:download:verifyCrap` for tests and complexity gates.
 - `:data:sync`
   - Sync sessions, compatibility codecs, sanitization, change detection, merging, and concurrency protection; the host owns storage, transport, cover mapping, and presentation.
   - `runtime` executes sessions through local-data and backend interfaces, `remote` owns compatibility-file fallback and WebDAV fingerprint revalidation, and `retry` handles conflicts.

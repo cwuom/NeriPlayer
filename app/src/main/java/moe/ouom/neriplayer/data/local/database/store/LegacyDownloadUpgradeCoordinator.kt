@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorageAccess
 import android.content.Context
 import androidx.room.withTransaction
 import java.io.File
@@ -20,12 +21,9 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
-import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.model.SongItem
@@ -641,7 +639,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 (!isUnresolvedLegacyStableKey(row.stableKey) &&
                     row.stableKey.trim() != canonicalStableKey) ||
                 hasConflictingLegacyMetadataIdentity(
-                    ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata),
+                    DownloadLegacyStorageAccess.serializeAudioMetadata(metadata),
                     canonicalStableKey
                 ) || hasConflictingLegacyMetadataIdentity(persistedMetadata, canonicalStableKey)
             ) {
@@ -850,7 +848,7 @@ internal class LegacyDownloadUpgradeCoordinator(
         return try {
             val existingEntry = resolvedSnapshot.metadataEntriesByAudioName[audio.logicalName]
             val cachedExistingJson = resolvedSnapshot.metadataByAudioName[audio.logicalName]
-                ?.let(ManagedDownloadStorageJsonCodec::downloadedAudioMetadataToJson)
+                ?.let(DownloadLegacyStorageAccess::serializeAudioMetadata)
             val existingJson = existingEntry
                 ?.let { ManagedDownloadStorage.readText(context, it.reference) }
                 ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
@@ -1018,7 +1016,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                     song = song,
                     userInitiated = false
                 )
-                DownloadExecutionRoomStore.upsert(
+                DownloadLegacyStorageAccess.upsertOperation(
                     context = context,
                     request = request,
                     state = if (cancelled) "CANCELLED" else "QUEUED",
@@ -1026,7 +1024,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                     database = database
                 )
                 if (cancelled) {
-                    DownloadExecutionRoomStore.updateState(
+                    DownloadLegacyStorageAccess.updateOperationState(
                         context = context,
                         operationId = operationId,
                         state = "CANCELLED",
@@ -1380,7 +1378,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 "NOT EXISTS (SELECT 1 FROM migration_metadata marker " +
                     "WHERE marker.key = ? || payload.stable_key AND marker.value = ?)"
             bindArgs += USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX
-            bindArgs += DownloadRecoveryRoomStore.USER_CLEARED_STATE
+            bindArgs += DownloadLegacyStorageAccess.USER_CLEARED_STATE
         }
         val whereClause = conditions.takeIf { it.isNotEmpty() }
             ?.joinToString(prefix = " WHERE ", separator = " AND ")
@@ -1425,7 +1423,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 query,
                 arrayOf(
                     USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX,
-                    DownloadRecoveryRoomStore.USER_CLEARED_STATE
+                    DownloadLegacyStorageAccess.USER_CLEARED_STATE
                 )
             )
         } else {
@@ -1448,7 +1446,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                     database.syncMetadataDao().upsertMigrationMetadata(
                         MigrationMetadataEntity(
                             key = USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX + stableKey,
-                            value = DownloadRecoveryRoomStore.USER_CLEARED_STATE,
+                            value = DownloadLegacyStorageAccess.USER_CLEARED_STATE,
                             updatedAt = nowMs
                         )
                     )
@@ -1464,8 +1462,8 @@ internal class LegacyDownloadUpgradeCoordinator(
 
     private suspend fun isLegacyQueueImportSuppressed(): Boolean {
         return database.syncMetadataDao()
-            .getMigrationMetadata(DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY)
-            ?.value == DownloadRecoveryRoomStore.USER_CLEARED_STATE
+            .getMigrationMetadata(DownloadLegacyStorageAccess.PENDING_QUEUE_CUTOVER_STATE_KEY)
+            ?.value == DownloadLegacyStorageAccess.USER_CLEARED_STATE
     }
 
     private fun countUserClearSuppressedPayloadRows(
@@ -1477,7 +1475,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 "WHERE marker.key = ? || payload.stable_key AND marker.value = ?)",
             arrayOf(
                 USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX,
-                DownloadRecoveryRoomStore.USER_CLEARED_STATE
+                DownloadLegacyStorageAccess.USER_CLEARED_STATE
             )
         ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getInt(0) else 0
