@@ -8,16 +8,16 @@ import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.presentation.shouldHandoffBlockedWifiRecoveryToSharedPump
-import moe.ouom.neriplayer.core.download.policy.DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS
+import moe.ouom.neriplayer.core.download.policy.clear.DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS
 import moe.ouom.neriplayer.core.download.policy.DownloadClearProviderCleanupCoordinator
-import moe.ouom.neriplayer.core.download.policy.DownloadClearRoomTimeoutException
+import moe.ouom.neriplayer.core.download.policy.clear.DownloadClearRoomTimeoutException
 import moe.ouom.neriplayer.core.download.policy.DownloadedSongReferenceCoverage
 import moe.ouom.neriplayer.core.download.policy.TerminalTemporaryWriteCleanupBatch
 import moe.ouom.neriplayer.core.download.policy.awaitBatchDownloadJobsSettled
 import moe.ouom.neriplayer.core.download.policy.awaitDownloadClearProviderCleanup
 import moe.ouom.neriplayer.core.download.policy.cancellationConvergenceDelayMs
 import moe.ouom.neriplayer.core.download.policy.finalizedTemporaryWriteTargetNames
-import moe.ouom.neriplayer.core.download.policy.hasDownloadClearExceededDeadline
+import moe.ouom.neriplayer.core.download.policy.clear.hasDownloadClearExceededDeadline
 import moe.ouom.neriplayer.core.download.policy.nextDownloadOperationCreatedAtMs
 import moe.ouom.neriplayer.core.download.policy.observeDownloadedSongReferencesFromSnapshot
 import moe.ouom.neriplayer.core.download.policy.partitionForBoundedParallelism
@@ -27,7 +27,7 @@ import moe.ouom.neriplayer.core.download.policy.resolveRestorableCoverReference
 import moe.ouom.neriplayer.core.download.policy.shouldApplyDownloadedPlaybackHydration
 import moe.ouom.neriplayer.core.download.policy.shouldBlockDownloadClearForPendingArtifacts
 import moe.ouom.neriplayer.core.download.policy.shouldContinueWifiRecoveryProbe
-import moe.ouom.neriplayer.core.download.policy.shouldDeferDownloadClearAfterConvergenceRound
+import moe.ouom.neriplayer.core.download.policy.clear.shouldDeferDownloadClearAfterConvergenceRound
 import moe.ouom.neriplayer.core.download.policy.shouldFinalizeDownloadedSidecars
 import moe.ouom.neriplayer.core.download.policy.shouldPersistDownloadClearProgress
 import moe.ouom.neriplayer.core.download.policy.shouldPurgeCancelledDownloadOperation
@@ -36,7 +36,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldRetainDownloadClearVisibil
 import moe.ouom.neriplayer.core.download.policy.shouldRetainUnresolvedCancellationSnapshot
 import moe.ouom.neriplayer.core.download.policy.shouldScheduleCancellationConvergence
 import moe.ouom.neriplayer.core.download.policy.shouldSchedulePostCoreEnrichmentRetry
-import moe.ouom.neriplayer.core.download.policy.withDownloadClearRoomTimeout
+import moe.ouom.neriplayer.core.download.policy.clear.withDownloadClearRoomTimeout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope

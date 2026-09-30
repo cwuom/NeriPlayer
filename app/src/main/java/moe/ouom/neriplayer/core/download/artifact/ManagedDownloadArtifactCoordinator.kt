@@ -12,7 +12,7 @@ import java.util.UUID
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.policy.matchesDownloadedCatalogFileSize
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase

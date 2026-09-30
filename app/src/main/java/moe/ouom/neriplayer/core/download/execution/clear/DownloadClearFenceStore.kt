@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution.clear
 
+import moe.ouom.neriplayer.data.model.download.execution.DownloadClearPurpose
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
@@ -27,12 +28,6 @@ internal interface DownloadClearFenceStore {
     fun activate(context: Context): Boolean
 
     fun clear(context: Context): Boolean
-}
-
-/** 清空下载任务与删除整个下载库使用不同的进程死亡恢复策略 */
-internal enum class DownloadClearPurpose {
-    TASK_PROGRESS,
-    FULL_LIBRARY_DELETE
 }
 
 internal enum class DownloadClearFenceReleaseResult {

@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution.recovery
 
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
-import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.core.download.execution.retry.isRetryDeadlineReady
 import android.content.Context
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase

@@ -7,7 +7,6 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
-internal const val METADATA_ACTION_REQUIRED_OPERATION_STATE = "METADATA_ACTION_REQUIRED"
 internal const val METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR =
     "METADATA_EMBEDDING_UNSUPPORTED_CONTAINER"
 

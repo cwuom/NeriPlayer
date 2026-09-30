@@ -12,11 +12,11 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionPumpCursor
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.persistence.INTERRUPTED_DOWNLOAD_OPERATION_STATES
-import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.recovery.ExistingDownloadOperationEntryPoint
-import moe.ouom.neriplayer.core.download.execution.scheduling.DeferredDownloadScheduleQueue
+import moe.ouom.neriplayer.core.download.execution.scheduling.queue.DeferredDownloadScheduleQueue
 import moe.ouom.neriplayer.core.download.execution.scheduling.DownloadRetryDeadlineWakeCoordinator
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker

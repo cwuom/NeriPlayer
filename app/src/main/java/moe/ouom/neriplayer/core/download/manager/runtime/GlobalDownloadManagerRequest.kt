@@ -36,9 +36,9 @@ import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
 import moe.ouom.neriplayer.core.download.presentation.BatchOperationScheduleAction
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.presentation.resolveBatchOperationScheduleAction
-import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
+import moe.ouom.neriplayer.core.download.policy.commit.isDownloadFinalizationDurablySettled
 import moe.ouom.neriplayer.core.download.manager.recovery.claimArtifactForRecovery
-import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
+import moe.ouom.neriplayer.core.download.policy.commit.requiresDownloadFinalizationRecovery
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.MobileDataDownloadBatchIdentity
 import android.content.Context
 import kotlinx.coroutines.CancellationException
@@ -51,10 +51,10 @@ import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
-import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
-import moe.ouom.neriplayer.core.download.execution.state.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
+import moe.ouom.neriplayer.core.download.execution.retry.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem

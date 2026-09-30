@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.facade
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.ManagedDownloadSizePolicy
+import moe.ouom.neriplayer.core.download.policy.size.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.storage.operation.content.backendReference
 import moe.ouom.neriplayer.core.download.storage.operation.content.buildManagedDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.operation.content.buildManagedLyricBaseNames

@@ -10,8 +10,8 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.buildExpectedDownloadArtists
 import moe.ouom.neriplayer.core.download.buildExpectedDownloadTitles
 import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.shouldRepairDownloadedCover
 import moe.ouom.neriplayer.core.download.shouldRepairMetadataLessManagedDownload
 import moe.ouom.neriplayer.core.download.shouldTrustFastDownloadedSongCatalogHit
@@ -22,7 +22,7 @@ import moe.ouom.neriplayer.core.download.manager.commit.inspectFinalizedDownload
 import moe.ouom.neriplayer.core.download.policy.hasDownloadedAudioDurationMismatch
 import moe.ouom.neriplayer.core.download.policy.expectedDownloadedAudioDurationMs
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
+import moe.ouom.neriplayer.core.download.policy.commit.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.policy.matchesDownloadedCatalogFileSize
 import moe.ouom.neriplayer.core.download.policy.shouldTrustDirectPresentDownloadedSongReference
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.DownloadedSongReferenceProbe

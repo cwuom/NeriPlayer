@@ -12,6 +12,22 @@ MODULE_INCLUDE = re.compile(r'(?:include|includeOwnedLibrary)\("(:[\w:-]+)"\)')
 OWNED_INCLUDE = re.compile(r'includeOwnedLibrary\("(:[\w:-]+)"\)')
 PACKAGE = re.compile(r'^[ \t]*package\s+([\w.]+)', re.MULTILINE)
 MAX_DIRECTORY_SOURCES = 16
+DOWNLOAD_RULE_FAMILIES = (
+    "core/download/admission",
+    "core/download/execution/state",
+    "core/download/execution/retry",
+    "core/download/execution/scheduling/queue",
+    "core/download/policy/commit",
+    "core/download/policy/clear",
+    "core/download/policy/size",
+    "core/download/policy/publication",
+    "core/download/resource/permit",
+    "core/download/resource/watchdog",
+    "core/download/network",
+    "core/download/ownership",
+    "core/download/storage/metadata/codec",
+    "core/download/storage/metadata/serialization",
+)
 SYNC_DOMAIN_FAMILIES = tuple(
     f"data/sync/{family}"
     for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize")
@@ -23,6 +39,7 @@ APP_FAMILIES = (
     "data/sync",
 )
 LIBRARY_OWNED_FAMILIES = (
+    *DOWNLOAD_RULE_FAMILIES,
     "core/api", "core/lyrics", "core/player/queue", "data/sync/merge",
     *SYNC_DOMAIN_FAMILIES,
 )
@@ -36,6 +53,8 @@ LEGACY_MODEL_TYPES = {
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 PACKAGE_OWNERS = {
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:download"
+       for family in DOWNLOAD_RULE_FAMILIES},
     **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":data:sync"
        for family in SYNC_DOMAIN_FAMILIES},
     "moe.ouom.neriplayer.data.model": MODEL_MODULE,

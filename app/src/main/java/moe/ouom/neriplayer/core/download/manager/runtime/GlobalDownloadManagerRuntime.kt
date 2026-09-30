@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.download.catalog.ManagedLibraryItemRoomStore
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.FinalizedManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PlayableManagedAudioSnapshot
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.CatalogPublishMode

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.playback
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX

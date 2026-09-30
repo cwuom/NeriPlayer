@@ -688,7 +688,7 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `:core:common` / `:core:logging` / `:core:network`: shared utilities, logging, and networking.
 - `:core:lyrics` / `:core:ltw-protocol`: lyric parsing/transforms and Listen Together wire-format conventions; data types belong to `:data:model`.
 - `:core:playback-queue`: queue state, editing, navigation, and ordering policies with injected song identity rules.
-- `:core:download`: download metadata JSON decoding and completion policies with file I/O owned by the host.
+- `:core:download`: admission and clear progress, state transitions and retries, deferred scheduling, transfer permits and watchdogs, network policy, operation ownership, commit and publication rules, and metadata codecs; the host owns Room, SAF, file I/O, and service orchestration.
 - `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
 - `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, and playback source repositories.

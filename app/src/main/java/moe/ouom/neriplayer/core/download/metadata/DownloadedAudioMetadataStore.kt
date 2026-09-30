@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
-import moe.ouom.neriplayer.core.download.policy.resolvePersistedDownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.policy.publication.resolvePersistedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore

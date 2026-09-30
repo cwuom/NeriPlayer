@@ -17,10 +17,10 @@ import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRet
 import moe.ouom.neriplayer.core.download.manager.recovery.resolveCoreRecoveryAudioCandidate
 import moe.ouom.neriplayer.core.download.manager.runtime.publishDownloadStage
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
+import moe.ouom.neriplayer.core.download.policy.commit.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.policy.resolvePostCoreEnrichmentTaskStatus
-import moe.ouom.neriplayer.core.download.policy.shouldAcceptOrphanCoreCommit
-import moe.ouom.neriplayer.core.download.policy.shouldPublishCoreCommit
+import moe.ouom.neriplayer.core.download.policy.commit.shouldAcceptOrphanCoreCommit
+import moe.ouom.neriplayer.core.download.policy.commit.shouldPublishCoreCommit
 import moe.ouom.neriplayer.core.download.policy.shouldSchedulePostCoreEnrichmentRetry
 import android.content.Context
 import kotlinx.coroutines.CancellationException

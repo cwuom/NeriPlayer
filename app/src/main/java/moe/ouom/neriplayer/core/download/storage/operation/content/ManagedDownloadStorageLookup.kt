@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.operation.content
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
+import moe.ouom.neriplayer.core.download.policy.commit.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.storage.operation.isMigrationReferenceBoundToRoot
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.composeSnapshot
 import moe.ouom.neriplayer.core.download.storage.operation.listChildren

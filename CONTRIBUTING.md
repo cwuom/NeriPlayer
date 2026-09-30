@@ -195,7 +195,9 @@
 - `:core:playback-queue` / `:data:storage`
   - 队列计算与存储统计，分别通过身份接口和输入快照隔离宿主。
 - `:core:download`
-  - 完成状态规则和下载元数据 JSON 解码；目录访问、写入和恢复调度由宿主负责。
+  - 下载准入与清空进度、状态迁移、重试、延后调度、传输槽位、看门狗、网络策略、operation 所有权、提交规则和元数据 JSON 解码。
+  - 状态契约位于 `:data:model` 的 `download/execution`；Room、SAF、文件写入和服务编排留在宿主，规则组件不引用这些实现。
+  - 按职责包整文件纳入 CRAP 和依赖门禁，新文件及子目录自动受检；针对性测试使用 `./gradlew :core:download:testDebugUnitTest`。
 - `:data:sync`
   - 同步会话、兼容编解码、清洗、差异检测、合并和并发保护；宿主负责数据库、远端传输、封面映射和文案。
   - `runtime` 通过本地数据与后端接口执行会话，`remote` 维护兼容文件回退和 WebDAV 指纹复核，`retry` 统一处理冲突重试。

@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.manager.recovery.claimArtifactForRecovery
-import moe.ouom.neriplayer.core.download.policy.finalizedPublicationRecoveryLeaseOwnerId
+import moe.ouom.neriplayer.core.download.policy.commit.finalizedPublicationRecoveryLeaseOwnerId
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider

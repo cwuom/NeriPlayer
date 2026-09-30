@@ -63,7 +63,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
-import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
+import moe.ouom.neriplayer.core.download.admission.DownloadClearVisibility
 import moe.ouom.neriplayer.core.download.presentation.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage

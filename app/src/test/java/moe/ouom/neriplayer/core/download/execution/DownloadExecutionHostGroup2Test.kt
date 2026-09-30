@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.core.download.execution.host.DownloadOperationEntryPoint
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearFenceReleaseResult
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearOwnership
-import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
+import moe.ouom.neriplayer.data.model.download.execution.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.host.DefaultDownloadExecutionHost
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionPumpResult
@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.core.download.execution.host.resolveExecutionCancella
 import moe.ouom.neriplayer.core.download.execution.notification.DOWNLOAD_EXECUTION_NOTIFICATION_ID
 import moe.ouom.neriplayer.core.download.execution.notification.isLegacyDownloadExecutionNotificationId
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
-import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.scheduling.DownloadRetryDeadlineWakeCoordinator
 import moe.ouom.neriplayer.core.download.execution.uidt.UIDT_SHARED_PUMP_GRACE_MS

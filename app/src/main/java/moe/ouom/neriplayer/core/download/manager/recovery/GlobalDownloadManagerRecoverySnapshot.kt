@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.manager.batch.matchesFinalizationStored
 import moe.ouom.neriplayer.core.download.manager.runtime.isRecoveryMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.loadFinalizationRecoverySnapshot
 import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
-import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
+import moe.ouom.neriplayer.core.download.policy.commit.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.CoreRecoveryAudioCandidate
 import android.content.Context
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager

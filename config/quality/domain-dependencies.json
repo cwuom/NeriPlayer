@@ -258,5 +258,163 @@
       "moe.ouom.neriplayer.data.model.sync.*"
     ],
     "bridges": {}
+  },
+  {
+    "name": "download-publication",
+    "package": "moe.ouom.neriplayer.core.download.policy.publication.",
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata",
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState"
+    ],
+    "bridges": {},
+    "descriptor_only": []
+  },
+  {
+    "name": "download-restorable-json",
+    "package": "moe.ouom.neriplayer.core.download.storage.metadata.serialization.",
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "org.json.*",
+      "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata*"
+    ],
+    "bridges": {},
+    "descriptor_only": []
+  },
+  {
+    "name": "download-admission",
+    "package": "moe.ouom.neriplayer.core.download.admission.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "java.util.*",
+      "kotlinx.coroutines.*",
+      "moe.ouom.neriplayer.data.model.download.execution.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-execution-state",
+    "package": "moe.ouom.neriplayer.core.download.execution.state.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "java.util.*",
+      "moe.ouom.neriplayer.data.model.download.execution.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-execution-retry",
+    "package": "moe.ouom.neriplayer.core.download.execution.retry.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "java.util.*",
+      "moe.ouom.neriplayer.data.model.download.execution.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-execution-scheduling-queue",
+    "package": "moe.ouom.neriplayer.core.download.execution.scheduling.queue.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "java.util.*",
+      "moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-policy-commit",
+    "package": "moe.ouom.neriplayer.core.download.policy.commit.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "java.util.*",
+      "moe.ouom.neriplayer.data.model.download.execution.*",
+      "java.nio.charset.*",
+      "moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-policy-clear",
+    "package": "moe.ouom.neriplayer.core.download.policy.clear.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-policy-size",
+    "package": "moe.ouom.neriplayer.core.download.policy.size.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-resource-permit",
+    "package": "moe.ouom.neriplayer.core.download.resource.permit.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "java.util.*",
+      "kotlinx.coroutines.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-resource-watchdog",
+    "package": "moe.ouom.neriplayer.core.download.resource.watchdog.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "java.io.IOException",
+      "moe.ouom.neriplayer.core.download.resource.permit.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-network",
+    "package": "moe.ouom.neriplayer.core.download.network.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "download-ownership",
+    "package": "moe.ouom.neriplayer.core.download.ownership.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "kotlin.*",
+      "java.util.*",
+      "okhttp3.Call"
+    ],
+    "bridges": {}
   }
 ]

@@ -8,6 +8,11 @@ android {
 
 dependencies {
     api(project(":data:model"))
+    api(libs.kotlinx.coroutines.android)
+    api(libs.okhttp)
+
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

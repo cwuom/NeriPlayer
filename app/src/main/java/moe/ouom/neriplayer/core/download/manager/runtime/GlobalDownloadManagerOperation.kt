@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadStage
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PreExistingDownloadedAudioAction
-import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.resolvePreExistingDownloadedAudioAction
 import moe.ouom.neriplayer.core.download.shouldClearNetworkPolicyPauseAfterCancellationSettled
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
@@ -35,7 +35,7 @@ import moe.ouom.neriplayer.core.download.manager.commit.cleanupDownloadArtifacts
 import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownload
 import moe.ouom.neriplayer.core.download.manager.commit.recoverCorePublicationAfterExecutionCancellation
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
+import moe.ouom.neriplayer.core.download.policy.commit.requiresDownloadFinalizationRecovery
 import moe.ouom.neriplayer.core.download.policy.shouldForceFreshStartStorageScan
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.ActiveProgressCheckpointBinding
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PreparedConfirmedDownload
@@ -50,7 +50,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.DIRECTORY_CHANGE_DOWNLO
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissionDeferredException
-import moe.ouom.neriplayer.core.download.execution.state.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
+import moe.ouom.neriplayer.core.download.execution.retry.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
 import moe.ouom.neriplayer.core.download.execution.worker.DownloadStorageRecoveryWorker
 import moe.ouom.neriplayer.core.download.execution.worker.WifiBoundDownloadWakeWorker
 import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE

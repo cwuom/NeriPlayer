@@ -217,7 +217,9 @@ and CRAP selectors together.
 - `:core:playback-queue` / `:data:storage`
   - Queue calculations and storage accounting, isolated from the host through identity interfaces and input snapshots.
 - `:core:download`
-  - Completion policies and download metadata JSON decoding; directory access, writes, and recovery scheduling belong to the host.
+  - Download admission, clear progress, state transitions, retries, deferred scheduling, transfer permits, watchdogs, network policy, operation ownership, commit rules, and metadata JSON decoding.
+  - State contracts live in `:data:model` under `download/execution`; Room, SAF, file writes, and service orchestration stay in the host without reverse dependencies from rule components.
+  - Responsibility packages join full-file CRAP and dependency gates, including new files and subdirectories; run focused tests with `./gradlew :core:download:testDebugUnitTest`.
 - `:data:sync`
   - Sync sessions, compatibility codecs, sanitization, change detection, merging, and concurrency protection; the host owns storage, transport, cover mapping, and presentation.
   - `runtime` executes sessions through local-data and backend interfaces, `remote` owns compatibility-file fallback and WebDAV fingerprint revalidation, and `retry` handles conflicts.

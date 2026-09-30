@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutation
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
-import moe.ouom.neriplayer.core.download.execution.state.DOWNLOAD_INTEGRITY_MAX_FAILURES
+import moe.ouom.neriplayer.core.download.execution.retry.DOWNLOAD_INTEGRITY_MAX_FAILURES
 import moe.ouom.neriplayer.core.download.manager.commit.inspectFinalizedDownloadedAudio
 import moe.ouom.neriplayer.core.download.manager.runtime.isRecoveryMetadataOwnedBySong
 import moe.ouom.neriplayer.core.download.manager.runtime.loadFinalizationRecoverySnapshot

@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.admission.DownloadAdmissionGate
+import moe.ouom.neriplayer.core.download.admission.DownloadClearVisibility
+import moe.ouom.neriplayer.core.download.policy.commit.shouldPreserveAudioForCancellationRollback
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers

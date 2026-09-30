@@ -20,7 +20,7 @@ import moe.ouom.neriplayer.core.download.policy.remoteSourceStableKeyOrNull
 import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.policy.observeDownloadedSongReferencesFromSnapshot
 import moe.ouom.neriplayer.core.download.policy.partitionForBoundedParallelism
-import moe.ouom.neriplayer.core.download.policy.withDownloadClearRoomTimeout
+import moe.ouom.neriplayer.core.download.policy.clear.withDownloadClearRoomTimeout
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.FastIndexPersistenceRequest
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReadUnavailableException
 import android.content.Context
@@ -40,7 +40,7 @@ import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstCompar
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadFullDeleteBlockReason
-import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
+import moe.ouom.neriplayer.data.model.download.execution.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore

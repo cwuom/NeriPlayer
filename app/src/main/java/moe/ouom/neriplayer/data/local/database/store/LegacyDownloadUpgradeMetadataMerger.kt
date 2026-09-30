@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
-import moe.ouom.neriplayer.core.download.policy.isAcceptedDownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.policy.publication.isAcceptedDownloadedAudioEmbeddingState
 import org.json.JSONObject
 
 /**

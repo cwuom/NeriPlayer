@@ -4,7 +4,7 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

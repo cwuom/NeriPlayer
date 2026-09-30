@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.operation.content
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.boundManagedDownloadFileName
-import moe.ouom.neriplayer.core.download.policy.ManagedDownloadSizePolicy
+import moe.ouom.neriplayer.core.download.policy.size.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.findMetadataForAudioBlocking
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.isPendingAudioPromotionFinalNameCandidate
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries

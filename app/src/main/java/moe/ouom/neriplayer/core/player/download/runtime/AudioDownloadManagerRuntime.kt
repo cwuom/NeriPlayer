@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.resource.DownloadTransferPermitRegistry
+import moe.ouom.neriplayer.core.download.resource.permit.DownloadTransferPermitRegistry
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore

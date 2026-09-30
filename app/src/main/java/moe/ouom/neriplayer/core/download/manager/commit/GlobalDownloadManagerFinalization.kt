@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.core.download.manager.runtime.resolveStoredAudio
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.presentation.shouldApplyTaskMutation
-import moe.ouom.neriplayer.core.download.policy.shouldDemotePublishedAudioForFinalization
+import moe.ouom.neriplayer.core.download.policy.commit.shouldDemotePublishedAudioForFinalization
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore

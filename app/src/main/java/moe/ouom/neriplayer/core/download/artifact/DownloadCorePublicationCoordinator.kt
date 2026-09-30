@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.artifact
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.policy.publicationOwnerId
 import android.content.Context
 import kotlinx.coroutines.CancellationException

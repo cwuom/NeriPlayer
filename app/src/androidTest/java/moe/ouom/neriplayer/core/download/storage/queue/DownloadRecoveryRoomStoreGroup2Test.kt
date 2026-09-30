@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.state.DOWNLOAD_RETRY_BASE_DELAY_MS
+import moe.ouom.neriplayer.core.download.execution.retry.DOWNLOAD_RETRY_BASE_DELAY_MS
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.stableKey

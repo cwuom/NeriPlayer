@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.isDurableCoreArtifactState
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.commit.isDurableCoreArtifactState
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import java.util.Locale

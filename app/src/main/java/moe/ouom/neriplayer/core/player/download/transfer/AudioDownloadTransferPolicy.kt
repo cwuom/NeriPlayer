@@ -12,9 +12,9 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
-import moe.ouom.neriplayer.core.download.policy.ManagedDownloadSizePolicy
+import moe.ouom.neriplayer.core.download.policy.size.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.resource.DownloadTransferStalledException
+import moe.ouom.neriplayer.core.download.resource.watchdog.DownloadTransferStalledException
 import moe.ouom.neriplayer.core.player.engine.datasource.ChunkRequestIOException
 import moe.ouom.neriplayer.core.player.engine.datasource.ResumableHttpRangeSupport
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport

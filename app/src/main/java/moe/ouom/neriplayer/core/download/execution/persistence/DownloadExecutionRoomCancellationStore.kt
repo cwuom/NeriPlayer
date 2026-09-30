@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest

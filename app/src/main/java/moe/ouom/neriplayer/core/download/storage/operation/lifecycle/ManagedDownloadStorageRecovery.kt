@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.operation.lifecycle
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.invalidateSnapshotCache
 import moe.ouom.neriplayer.core.download.storage.operation.content.parseDownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.storage.operation.content.preserveAudioPublicationReceipt

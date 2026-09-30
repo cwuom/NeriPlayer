@@ -19,7 +19,7 @@ import moe.ouom.neriplayer.core.download.manager.runtime.reopenMissingPostCoreAr
 import moe.ouom.neriplayer.core.download.manager.runtime.startDownloadConfirmed
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.presentation.resolveDownloadPreserveStaging
-import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
+import moe.ouom.neriplayer.core.download.policy.commit.requiresDownloadFinalizationRecovery
 import android.content.Context
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest

@@ -55,7 +55,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
-import moe.ouom.neriplayer.core.download.execution.clear.DownloadClearPurpose
+import moe.ouom.neriplayer.data.model.download.execution.DownloadClearPurpose
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.notification.DownloadExecutionNotificationController
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore

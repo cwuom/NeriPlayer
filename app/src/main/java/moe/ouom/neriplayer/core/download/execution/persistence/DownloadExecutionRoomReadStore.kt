@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution.persistence
 
+import moe.ouom.neriplayer.core.download.execution.retry.isRetryDeadlineReady
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.settings.download.normalized
 
@@ -468,7 +470,7 @@ internal object DownloadExecutionRoomReadStore {
                 limit = boundedLimit
             )
             // 重试截止时间只决定何时唤醒，不能让后面的新任务越过队首
-            val headers = page.takeWhile { it.nextRetryAtMs == null || it.nextRetryAtMs <= nowMs }
+            val headers = page.takeWhile { isRetryDeadlineReady(it.nextRetryAtMs, nowMs) }
             blockedByRetry = headers.size < page.size
             Triple(
                 headers,

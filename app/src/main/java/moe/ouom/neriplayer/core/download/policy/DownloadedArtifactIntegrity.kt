@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadedArtifactReferenceState
 import moe.ouom.neriplayer.data.model.download.DownloadedArtifactIntegrityIssue
 import moe.ouom.neriplayer.data.model.download.DownloadedArtifactIntegrityResult
 
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import kotlin.math.abs
 import kotlin.math.max
 import moe.ouom.neriplayer.data.model.SongItem

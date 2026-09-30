@@ -4,10 +4,10 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.data.model.download.normalizeDownloadOperationId
-import moe.ouom.neriplayer.core.download.execution.state.DownloadOperationState
-import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
-import moe.ouom.neriplayer.core.download.execution.state.planDownloadRetry
-import moe.ouom.neriplayer.core.download.execution.state.isAutomaticDownloadRetryExhausted
+import moe.ouom.neriplayer.data.model.download.execution.DownloadOperationState
+import moe.ouom.neriplayer.core.download.execution.retry.isRetryDeadlineReady
+import moe.ouom.neriplayer.core.download.execution.retry.planDownloadRetry
+import moe.ouom.neriplayer.core.download.execution.retry.isAutomaticDownloadRetryExhausted
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.CachedNetworkPolicy
 import android.content.Context
 import androidx.room.withTransaction

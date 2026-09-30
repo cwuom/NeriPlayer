@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.core.player.download.playback.shouldPreserveWorkingAr
 import moe.ouom.neriplayer.core.player.download.playback.shouldTriggerNetworkRecovery
 import moe.ouom.neriplayer.core.player.download.playback.shouldUseCompletedAudioReferenceDirectly
 import moe.ouom.neriplayer.core.player.download.playback.shouldUseDirectPresentLocalPlayback
-import moe.ouom.neriplayer.core.player.download.network.DownloadNetworkPolicyTracker
+import moe.ouom.neriplayer.core.download.network.DownloadNetworkPolicyTracker
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup

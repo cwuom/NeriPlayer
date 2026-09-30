@@ -31,7 +31,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.hasDownloadedAudioDurationMismatch
-import moe.ouom.neriplayer.core.download.resource.DownloadTransferPermitRegistry
+import moe.ouom.neriplayer.core.download.resource.permit.DownloadTransferPermitRegistry
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase

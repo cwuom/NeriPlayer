@@ -29,7 +29,7 @@ import moe.ouom.neriplayer.core.download.presentation.resolveDownloadPreserveSta
 import moe.ouom.neriplayer.core.download.presentation.selectBatchArtifactLeaseForCancellation
 import moe.ouom.neriplayer.core.download.presentation.shouldPreserveBatchPreparationForHandedOffOperation
 import moe.ouom.neriplayer.core.download.presentation.shouldRehandoffRecoveredDownloadOperation
-import moe.ouom.neriplayer.core.download.policy.requiresDownloadFinalizationRecovery
+import moe.ouom.neriplayer.core.download.policy.commit.requiresDownloadFinalizationRecovery
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.TrafficRiskDownloadRequest
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchDownloadSession
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PreparedBatchArtifact

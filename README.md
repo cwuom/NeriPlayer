@@ -533,7 +533,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `:core:common` / `:core:logging` / `:core:network`：通用工具、日志和网络基础能力。
 - `:core:lyrics` / `:core:ltw-protocol`：歌词解析与转换、一起听协议编解码约定；数据类型统一位于 `:data:model`。
 - `:core:playback-queue`：队列状态、编辑、导航和顺序策略；歌曲身份规则通过接口注入。
-- `:core:download`：下载元数据 JSON 解码和完成状态规则，文件读写由宿主负责。
+- `:core:download`：下载准入与清空进度、状态迁移与重试、延后调度队列、传输槽位与看门狗、网络策略、operation 所有权、提交与发布规则、元数据编解码；Room、SAF、文件读写及服务编排由宿主负责。
 - `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
 - `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存和播放源仓库。

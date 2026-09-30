@@ -60,6 +60,13 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 验证适配器实际使用的来源、模式与生命周期分支。审查时必须核对委托前后的完整 diff，
 报告应区分受检组件与未执行的宿主入口，不能宣称后者已具备覆盖率。
 
+`:core:download` 的全部生产源码按职责包使用 `**/*.kt` 整文件模式，包括准入、状态迁移、重试、
+延后队列、清空/提交/大小/发布规则、传输槽位、看门狗、网络策略、所有权和元数据编解码。
+`data/model/download/execution` 的状态契约也整文件受检。
+新文件与子目录自动进入 CRAP 门禁，超分使现有 Android CI 的 `verifyModularization` 失败。
+结构门禁禁止这些规则包回到 app 或进入其他库；依赖门禁限制规则只使用标准库、协程和所需模型。
+传输注册表继续共用同一状态锁，FIFO、并发限制与活动心跳组件不独立修改槽位所有权。
+
 下载条目构建将元数据、歌词和封面选择整体委托给 `catalog/assembly`，该目录整文件受检；
 宿主的元数据读取选择、文件信息、封面参数与本地标签映射适配器也纳入门禁。
 JVM 测试执行快速快照入口及侧载缺失回退，但不覆盖 `build` 的全部 Android I/O 挂起路径，
@@ -93,6 +100,7 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 - `core/download/catalog/assembly` 负责下载条目的元数据优先级、歌词覆盖和封面选择，文件访问由宿主提供
 - `core/download/catalog/projection` 负责编辑后的来源身份、原始标签和本地引用合并，不读写文件或目录状态
 - `core:download` 的 `core/download/storage/metadata/codec` 只解析 JSON 与兼容旧版元数据，不调用存储入口或恢复任务
+- `core:download` 的下载规则按职责允许状态模型、协程、网络类型或 `okhttp3.Call`，JSON 编解码域只允许模型、标准库和 `org.json`；禁止引用 Room、SAF、Android 服务和宿主全局容器
 - 各计算域的全部编译类自动纳入检查，包括新类、嵌套类、lambda 和 Kotlin 生成类
 - 类依赖采用允许列表，禁止直接引用播放器全局状态、数据库、网络、UI 或宿主适配器实现
 - 混合文件中的身份与同步辅助函数仅允许列出的 JVM 方法签名；允许某个方法不等于允许整个文件

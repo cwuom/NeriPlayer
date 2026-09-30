@@ -15,9 +15,9 @@ import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
-import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
+import moe.ouom.neriplayer.core.download.execution.retry.isRetryDeadlineReady
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey

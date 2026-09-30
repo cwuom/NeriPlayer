@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.PreExistingDownloadedAudioAction
-import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata
+import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.resolvePreExistingDownloadedAudioAction
 import moe.ouom.neriplayer.core.download.shouldDeferQueuedDownloadStartForNetwork
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
@@ -35,7 +35,7 @@ import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.presentation.QueuedDownloadRequest
 import moe.ouom.neriplayer.core.download.presentation.selectBatchDownloadCandidates
-import moe.ouom.neriplayer.core.download.policy.isDownloadFinalizationDurablySettled
+import moe.ouom.neriplayer.core.download.policy.commit.isDownloadFinalizationDurablySettled
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchDownloadSession
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.PreparedBatchArtifact
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.BatchOperationScheduleMetadata

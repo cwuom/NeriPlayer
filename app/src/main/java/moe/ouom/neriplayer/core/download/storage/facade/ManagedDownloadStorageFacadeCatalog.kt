@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
-import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedAudioEntry
+import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.operation.content.ensureManagedLibraryManifestForRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.fastIndexRootIdentity
 import moe.ouom.neriplayer.core.download.storage.operation.content.fastIndexShardStorage

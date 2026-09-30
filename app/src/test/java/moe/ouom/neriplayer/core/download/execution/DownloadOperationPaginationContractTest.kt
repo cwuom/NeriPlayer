@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import moe.ouom.neriplayer.core.download.execution.state.isRetryDeadlineReady
+import moe.ouom.neriplayer.core.download.execution.retry.isRetryDeadlineReady
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

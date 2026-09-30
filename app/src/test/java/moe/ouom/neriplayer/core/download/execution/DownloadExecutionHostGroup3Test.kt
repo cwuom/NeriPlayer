@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.core.download.execution.host.resolveConcurrentExecuti
 import moe.ouom.neriplayer.core.download.execution.host.shouldBlockHostReschedule
 import moe.ouom.neriplayer.core.download.execution.host.shouldHandleHostStop
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionOperationStore
-import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest

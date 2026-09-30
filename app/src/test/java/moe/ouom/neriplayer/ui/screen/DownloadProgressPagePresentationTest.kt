@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
 import java.io.File
-import moe.ouom.neriplayer.core.download.policy.DownloadClearVisibility
+import moe.ouom.neriplayer.core.download.admission.DownloadClearVisibility
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.ui.screen.download.DOWNLOAD_PROGRESS_DURABLE_PENDING_OPERATION_STATES
 import moe.ouom.neriplayer.ui.screen.download.DownloadProgressInitialProbeState

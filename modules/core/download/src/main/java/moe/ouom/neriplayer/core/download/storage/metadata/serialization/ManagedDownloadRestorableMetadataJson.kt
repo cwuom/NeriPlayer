@@ -32,37 +32,26 @@ fun ManagedDownloadRestorableMetadata.toJson(): JSONObject {
 
 fun ManagedDownloadRestorableMetadata.Companion.fromJson(root: JSONObject?): ManagedDownloadRestorableMetadata? {
     root ?: return null
-    val sourceIdentity = root.optJSONObject("sourceIdentity")
-    val sourceStableKey = sourceIdentity?.optionalString("stableKey")
-        ?: root.optionalString("sourceStableKey")
-    val baseline = root.optJSONObject("baseline")?.toBaseline() ?: ManagedDownloadRestorableMetadata.Baseline()
-    val overrides = root.optJSONObject("overrides")?.toOverrides() ?: ManagedDownloadRestorableMetadata.Overrides()
+    val baseline = root.optJSONObject("baseline").toBaseline()
+    val overrides = root.optJSONObject("overrides").toOverrides()
     val assets = root.optJSONObject("assetRefs")
     val times = root.optJSONObject("times")
     return ManagedDownloadRestorableMetadata(
-        sourceStableKey = sourceStableKey,
+        sourceStableKey = root.sourceStableKey(),
         baseline = baseline,
         overrides = overrides,
-        baselineCoverAssetHash = assets?.optionalString("baselineCoverHash"),
-        currentCoverAssetHash = assets?.optionalString("currentCoverHash"),
-        baselineCoverAssetFileName = assets?.optionalString("baselineCoverFileName"),
-        currentCoverAssetFileName = assets?.optionalString("currentCoverFileName"),
-        legacyCoverRecoveryReferences = assets
-            ?.optJSONArray("legacyCoverRecoveryReferences")
-            ?.toStringList()
-            .orEmpty(),
-        createdAtMs = times?.optionalLong("createdAtMs"),
-        updatedAtMs = times?.optionalLong("updatedAtMs")
+        baselineCoverAssetHash = assets.optionalString("baselineCoverHash"),
+        currentCoverAssetHash = assets.optionalString("currentCoverHash"),
+        baselineCoverAssetFileName = assets.optionalString("baselineCoverFileName"),
+        currentCoverAssetFileName = assets.optionalString("currentCoverFileName"),
+        legacyCoverRecoveryReferences = assets.stringList("legacyCoverRecoveryReferences"),
+        createdAtMs = times.optionalLong("createdAtMs"),
+        updatedAtMs = times.optionalLong("updatedAtMs")
     )
 }
 
-private fun JSONArray.toStringList(): List<String> {
-    return buildList {
-        for (index in 0 until length()) {
-            optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
-        }
-    }.distinct()
-}
+private fun JSONObject.sourceStableKey(): String? =
+    optJSONObject("sourceIdentity").optionalString("stableKey") ?: optionalString("sourceStableKey")
 
 private fun ManagedDownloadRestorableMetadata.Baseline.toJson(): JSONObject {
     return JSONObject().apply {
@@ -88,7 +77,8 @@ private fun ManagedDownloadRestorableMetadata.Overrides.toJson(): JSONObject {
     }
 }
 
-private fun JSONObject.toBaseline(): ManagedDownloadRestorableMetadata.Baseline {
+private fun JSONObject?.toBaseline(): ManagedDownloadRestorableMetadata.Baseline {
+    this ?: return ManagedDownloadRestorableMetadata.Baseline()
     return ManagedDownloadRestorableMetadata.Baseline(
         title = optionalString("title"),
         artist = optionalString("artist"),
@@ -100,7 +90,8 @@ private fun JSONObject.toBaseline(): ManagedDownloadRestorableMetadata.Baseline 
     )
 }
 
-private fun JSONObject.toOverrides(): ManagedDownloadRestorableMetadata.Overrides {
+private fun JSONObject?.toOverrides(): ManagedDownloadRestorableMetadata.Overrides {
+    this ?: return ManagedDownloadRestorableMetadata.Overrides()
     return ManagedDownloadRestorableMetadata.Overrides(
         title = optionalString("title"),
         artist = optionalString("artist"),
@@ -110,25 +101,4 @@ private fun JSONObject.toOverrides(): ManagedDownloadRestorableMetadata.Override
         translatedLyric = optionalString("translatedLyric"),
         romanizedLyric = optionalString("romanizedLyric")
     )
-}
-
-private fun JSONObject.optionalString(name: String): String? {
-    return optString(name).takeIf { has(name) && !isNull(name) && it.isNotBlank() }
-}
-
-private fun JSONObject.optionalLyric(name: String): String? {
-    return optString(name).takeIf { has(name) && !isNull(name) }
-}
-
-private fun JSONObject.optionalLong(name: String): Long? {
-    return optLong(name).takeIf { has(name) && !isNull(name) && it > 0L }
-}
-
-private fun JSONObject.optionalOffset(primaryName: String, legacyName: String): Long {
-    val name = when {
-        has(primaryName) && !isNull(primaryName) -> primaryName
-        has(legacyName) && !isNull(legacyName) -> legacyName
-        else -> return 0L
-    }
-    return optLong(name)
 }
