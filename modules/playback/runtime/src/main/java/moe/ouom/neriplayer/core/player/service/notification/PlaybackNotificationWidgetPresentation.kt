@@ -119,7 +119,8 @@ internal class ServiceWidgetInputs(
     val playerPositionMs: Long,
     val roomPositionMs: Long,
     val buffering: Boolean,
-    val transportActive: Boolean,
+    val enginePlaying: Boolean,
+    val playbackControlPlaying: Boolean,
     val roomPlaying: Boolean,
     val favorite: Boolean,
     val canToggleFavorite: Boolean,
@@ -131,11 +132,11 @@ internal class ServiceWidgetInputs(
 internal fun servicePlaybackWidgetState(input: ServiceWidgetInputs): PlaybackWidgetState {
     val song = input.song
     val fallback = usesRoomSongFallback(input)
-    val playing = isServiceWidgetPlaying(input, fallback)
+    val playing = input.enginePlaying
     return buildPlaybackWidgetState(
         title = serviceWidgetTitle(song, input.labels),
         subtitle = serviceWidgetSubtitle(song, input.labels),
-        status = serviceWidgetStatus(input, playing),
+        status = serviceWidgetStatus(input, playing, fallback),
         positionMs = serviceWidgetPosition(input, fallback),
         durationMs = serviceWidgetDuration(song),
         hasSong = hasServiceWidgetSong(song),
@@ -147,14 +148,13 @@ internal fun servicePlaybackWidgetState(input: ServiceWidgetInputs): PlaybackWid
         contentId = serviceWidgetContentId(song),
         coverId = input.artwork.coverSource.orEmpty(),
         artworkPending = input.artwork.pending,
+        showPauseAction = playing || (input.buffering && input.playbackControlPlaying) ||
+            (fallback && input.roomPlaying),
     )
 }
 
 private fun usesRoomSongFallback(input: ServiceWidgetInputs): Boolean =
     !input.playerSongPresent && input.song != null
-
-private fun isServiceWidgetPlaying(input: ServiceWidgetInputs, fallback: Boolean): Boolean =
-    input.transportActive || (fallback && input.roomPlaying)
 
 private fun serviceWidgetPosition(input: ServiceWidgetInputs, fallback: Boolean): Long =
     if (fallback) input.roomPositionMs else input.playerPositionMs
@@ -173,8 +173,8 @@ private fun serviceWidgetContentId(song: SongItem?): String = song?.stableKey().
 
 private fun serviceNotificationSongKey(song: SongItem?): String? = song?.stableKey()
 
-private fun serviceWidgetStatus(input: ServiceWidgetInputs, playing: Boolean): String = when {
-    input.buffering -> input.labels.buffering
+private fun serviceWidgetStatus(input: ServiceWidgetInputs, playing: Boolean, fallback: Boolean): String = when {
+    input.buffering || (fallback && input.roomPlaying) -> input.labels.buffering
     playing -> input.labels.playing
     input.song != null -> input.labels.paused
     else -> input.labels.ready

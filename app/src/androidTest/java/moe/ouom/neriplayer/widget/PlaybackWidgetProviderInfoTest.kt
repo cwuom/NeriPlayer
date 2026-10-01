@@ -18,6 +18,31 @@ import kotlin.math.roundToInt
 class PlaybackWidgetProviderInfoTest {
     @Test
     @SdkSuppress(minSdkVersion = 31)
+    fun stripWidgetDefaultsToOneRowAndAllowsHorizontalResizing() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val provider = ComponentName(context, NeriPlayerStripWidgetProvider::class.java)
+        val providerInfo = checkNotNull(
+            AppWidgetManager.getInstance(context).getInstalledProvidersForPackage(
+                context.packageName,
+                Process.myUserHandle(),
+            ).firstOrNull { it.provider == provider },
+        ) { "Strip widget provider is not installed" }
+
+        assertEquals(4, providerInfo.targetCellWidth)
+        assertEquals(1, providerInfo.targetCellHeight)
+        assertEquals(AppWidgetProviderInfo.RESIZE_HORIZONTAL, providerInfo.resizeMode)
+        assertEquals(
+            TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP,
+                PLAYBACK_WIDGET_DEFAULT_STRIP_HEIGHT_DP.toFloat(),
+                context.resources.displayMetrics,
+            ).roundToInt(),
+            providerInfo.minHeight,
+        )
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 31)
     fun fullWidgetDefaultsToTwoRowsAndAllowsVerticalResizing() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val appWidgetManager = AppWidgetManager.getInstance(context)

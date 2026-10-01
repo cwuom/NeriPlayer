@@ -10,6 +10,8 @@
     <string name="player_shuffle">随机</string>
     <string name="player_repeat">循环</string>
     <string name="player_now_playing">正在播放</string>
+    <string name="widget_playback_4x1_label">横条播放器</string>
+    <string name="widget_playback_4x1_description">一行容纳封面、歌曲信息和播放控制，跟随封面动态取色</string>
     <string name="widget_playback_4x2_label">播放器</string>
     <string name="widget_playback_2x2_label">迷你播放器</string>
     <string name="widget_playback_4x2_description">跟随封面取色，显示歌曲、进度、播放控制和桌面歌词入口</string>

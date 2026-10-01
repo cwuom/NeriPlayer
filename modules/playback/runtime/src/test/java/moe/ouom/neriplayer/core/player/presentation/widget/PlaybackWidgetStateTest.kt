@@ -105,6 +105,7 @@ class PlaybackWidgetStateTest {
             state.copy(durationText = "4:00"),
             state.copy(hasSong = false),
             state.copy(isPlaying = false),
+            state.copy(showPauseAction = false),
             state.copy(isFavorite = true),
             state.copy(canToggleFavorite = false),
             state.copy(isFloatingLyricsEnabled = true),

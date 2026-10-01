@@ -64,7 +64,7 @@ internal data class PlaybackMetadataSnapshot(
 
 internal fun resolveServicePlaybackState(snapshot: PlaybackServicePlaybackSnapshot): Int = when {
     snapshot.buffering -> PlaybackState.STATE_BUFFERING
-    snapshot.transportActive -> PlaybackState.STATE_PLAYING
+    snapshot.enginePlaying -> PlaybackState.STATE_PLAYING
     !snapshot.playerSongPresent && snapshot.song != null && snapshot.roomPlaying ->
         PlaybackState.STATE_BUFFERING
     else -> PlaybackState.STATE_PAUSED
@@ -76,6 +76,9 @@ internal fun servicePlaybackPositionMs(snapshot: PlaybackServicePlaybackSnapshot
 
 internal fun servicePlaybackSpeed(state: Int, snapshot: PlaybackServicePlaybackSnapshot): Float =
     if (state == PlaybackState.STATE_PLAYING) snapshot.playbackSpeed else 0.0f
+
+internal fun servicePlaybackControlPlaying(snapshot: PlaybackServicePlaybackSnapshot): Boolean =
+    snapshot.enginePlaying || (snapshot.buffering && snapshot.playbackControlPlaying)
 
 internal fun mediaSessionPlaybackActions(): Long =
     PlaybackState.ACTION_PLAY or
@@ -170,10 +173,10 @@ internal class PlaybackServicePresentationOwner(
     ) {
         if (!foregroundStarted) return
         val prepared = prepareNotification(lyricState, floatingLyricsEnabled)
+        updateWidget(force = false, floatingLyricsEnabled = floatingLyricsEnabled)
         if (!force && prepared.snapshot == lastNotificationSnapshot) return
         lastNotificationSnapshot = prepared.snapshot
         port.publishNotification(withShareUrl(prepared.renderInputs))
-        updateWidget(force = false, floatingLyricsEnabled = floatingLyricsEnabled)
     }
 
     private fun withShareUrl(inputs: PlaybackServiceNotificationRenderInputs): PlaybackServiceNotificationRenderInputs =
@@ -186,6 +189,7 @@ internal class PlaybackServicePresentationOwner(
         val playback = source.playback()
         val song = playback.song
         val artworkSnapshot = artwork.snapshotFor(song)
+        val playbackControlPlaying = servicePlaybackControlPlaying(playback)
         val text = notificationText(song)
         val favorite = isFavoriteSong(song)
         val interactiveFavorite = requiresInteractiveFavoriteConfirmation(song)
@@ -193,7 +197,7 @@ internal class PlaybackServicePresentationOwner(
             song = song,
             text = text,
             transportActive = playback.transportActive,
-            playbackControlPlaying = playback.playbackControlPlaying,
+            playbackControlPlaying = playbackControlPlaying,
             audioRouteMuted = playback.audioRouteMuted,
             isFavorite = favorite,
             interactiveFavorite = interactiveFavorite,
@@ -205,7 +209,7 @@ internal class PlaybackServicePresentationOwner(
             song = song,
             text = text,
             audioRouteMuted = playback.audioRouteMuted,
-            playbackControlPlaying = playback.playbackControlPlaying,
+            playbackControlPlaying = playbackControlPlaying,
             favorite = favorite,
             interactiveFavorite = interactiveFavorite,
             floatingLyricsEnabled = floatingLyricsEnabled,
@@ -297,7 +301,8 @@ internal class PlaybackServicePresentationOwner(
             playerPositionMs = playback.playerPositionMs,
             roomPositionMs = playback.roomPositionMs,
             buffering = playback.buffering,
-            transportActive = playback.transportActive,
+            enginePlaying = playback.enginePlaying,
+            playbackControlPlaying = playback.playbackControlPlaying,
             roomPlaying = playback.roomPlaying,
             favorite = isFavoriteSong(song),
             canToggleFavorite = canToggleFavorite(song),

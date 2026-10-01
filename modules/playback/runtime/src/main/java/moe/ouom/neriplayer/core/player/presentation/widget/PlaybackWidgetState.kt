@@ -25,6 +25,7 @@ data class PlaybackWidgetState(
     val contentId: String = "",
     val coverId: String = "",
     val artworkPending: Boolean = false,
+    val showPauseAction: Boolean = isPlaying,
 ) {
     companion object {
         fun idle(context: Context): PlaybackWidgetState {
@@ -62,6 +63,7 @@ fun buildPlaybackWidgetState(
     contentId: String = "",
     coverId: String = "",
     artworkPending: Boolean = false,
+    showPauseAction: Boolean = isPlaying,
 ): PlaybackWidgetState {
     val bucketedPositionMs = playbackWidgetBucketedPositionMs(
         positionMs = positionMs,
@@ -88,6 +90,7 @@ fun buildPlaybackWidgetState(
         contentId = contentId,
         coverId = coverId,
         artworkPending = artworkPending,
+        showPauseAction = showPauseAction,
     )
 }
 
