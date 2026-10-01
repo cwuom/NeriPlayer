@@ -96,6 +96,42 @@ class ManagedDownloadImportedAudioClassificationTest {
     }
 
     @Test
+    fun `owned import copy stays independent when it has a content alias`() {
+        val audio = File(importsDirectory, "Imported.flac")
+        for (alias in listOf(
+            "content://media/external/audio/media/42",
+            "content://downloads/tree/old/document/Song.flac.npdl_pending.operation.flac"
+        )) {
+            val songWithAlias = localSong(audio.absolutePath).copy(
+                mediaUri = alias,
+                sourceStableKey = "42|netease|"
+            )
+            assertClassification(
+                songWithAlias,
+                expectedManaged = false
+            )
+            assertEquals(
+                audio.canonicalPath,
+                ManagedDownloadStorage.resolveIndependentExternalImportReference(context, songWithAlias)
+            )
+            assertClassification(
+                localSong(audio.toURI().toASCIIString()).copy(localFilePath = alias),
+                expectedManaged = false
+            )
+        }
+    }
+
+    @Test
+    fun `an import alias cannot exempt another managed file path`() {
+        assertClassification(
+            localSong(File(importsDirectory, "Imported.flac").absolutePath).copy(
+                mediaUri = File(defaultRoot, "Downloaded.flac").toURI().toASCIIString()
+            ),
+            expectedManaged = true
+        )
+    }
+
+    @Test
     fun `private downloads and other subdirectories keep managed classification`() {
         val relativePaths = listOf(
             "Downloaded.flac",
@@ -133,6 +169,7 @@ class ManagedDownloadImportedAudioClassificationTest {
             .copy(channelId = "netease", audioId = "42", sourceStableKey = "42|netease|")
 
         assertClassification(song, expectedManaged = true)
+        assertClassification(song.copy(mediaUri = "content://media/external/audio/media/42"), expectedManaged = true)
     }
 
     @Test
@@ -159,6 +196,30 @@ class ManagedDownloadImportedAudioClassificationTest {
 
         assertClassification(link.absolutePath, expectedManaged = true)
         assertClassification(link.toURI().toASCIIString(), expectedManaged = true)
+    }
+
+    @Test
+    fun `unfinished symlink names cannot borrow a completed import copy`() {
+        val audio = File(importsDirectory, "Imported.flac").apply { writeBytes(byteArrayOf(1)) }
+        val link = File(importsDirectory, "Imported.flac.npdl_pending.operation.flac")
+        Files.createSymbolicLink(link.toPath(), audio.toPath())
+
+        assertClassification(link.absolutePath, expectedManaged = true)
+        assertClassification(link.toURI().toASCIIString(), expectedManaged = true)
+        assertClassification(
+            localSong(link.absolutePath).copy(mediaUri = "content://media/external/audio/media/42"),
+            expectedManaged = true
+        )
+    }
+
+    @Test
+    fun `a content reference alone cannot establish import ownership`() {
+        assertEquals(
+            null,
+            ManagedDownloadStorage.resolveIndependentExternalImportReference(
+                context, localSong("content://media/external/audio/media/42")
+            )
+        )
     }
 
     private fun assertClassification(reference: String, expectedManaged: Boolean) {

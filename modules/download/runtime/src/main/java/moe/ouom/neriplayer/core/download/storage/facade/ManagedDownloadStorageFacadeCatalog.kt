@@ -81,7 +81,7 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongImpl(context: Con
         return true
     }
     val defaultRoot = ManagedDownloadRootResolver.defaultRootDirectory(context)
-    if (song.hasIndependentExternalImportReference(defaultRoot)) {
+    if (song.independentExternalImportReference(defaultRoot) != null) {
         return false
     }
     if (peekDownloadedAudio(song) != null) {
@@ -166,7 +166,7 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
     val defaultRoot = runCatching {
         ManagedDownloadRootResolver.defaultRootDirectory(context)
     }.getOrNull()
-    if (defaultRoot != null && song.hasIndependentExternalImportReference(defaultRoot)) {
+    if (defaultRoot != null && song.independentExternalImportReference(defaultRoot) != null) {
         return false
     }
     if (peekDownloadedAudio(song) != null) {
@@ -198,28 +198,43 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
     }
 }
 
-private fun SongItem.hasIndependentExternalImportReference(defaultRoot: File): Boolean {
+internal fun ManagedDownloadStorage.resolveIndependentExternalImportReferenceImpl(
+    context: Context,
+    song: SongItem
+): String? {
+    if (hasManagedDownloadIdentityHint(song)) return null
+    return runCatching {
+        song.independentExternalImportReference(ManagedDownloadRootResolver.defaultRootDirectory(context))
+    }.getOrNull()
+}
+
+private fun SongItem.independentExternalImportReference(defaultRoot: File): String? {
     val references = listOfNotNull(localFilePath, mediaUri)
-    if (references.isEmpty()) return false
-    // Imports 副本不随下载根迁移, 元数据中的来源 ID 也不能改变它的文件归属
+    // content 别名不能证明归属, 播放时只交付 Imports 副本本身
     return runCatching {
         val importsDirectory = File(defaultRoot.canonicalFile, "Imports")
-        references.all { reference ->
+        references.mapNotNull { reference ->
+            if (reference.startsWith("content://", ignoreCase = true)) return@mapNotNull null
             val path = when {
                 reference.startsWith("/") -> reference
                 reference.startsWith("file:", ignoreCase = true) -> reference.toUri().path
                 else -> null
-            } ?: return@all false
-            val file = File(path).canonicalFile
-            val name = file.name
-            file.parentFile == importsDirectory &&
-                !ManagedDownloadPendingAudioWriteNames.isArtifactName(name) &&
-                !name.endsWith(".partial", ignoreCase = true) &&
-                !name.endsWith(".stale", ignoreCase = true) &&
-                !(name.startsWith(DOWNLOAD_STAGING_FILE_PREFIX) &&
-                    name.endsWith(DOWNLOAD_STAGING_FILE_SUFFIX))
-        }
-    }.getOrDefault(false)
+            } ?: return@runCatching null
+            val originalFile = File(path)
+            val file = originalFile.canonicalFile
+            if (file.parentFile != importsDirectory) return@runCatching null
+            // 临时文件的别名不能借用已完成文件的名称绕过门禁
+            if (listOf(originalFile.name, file.name).any { name ->
+                    ManagedDownloadPendingAudioWriteNames.isArtifactName(name) ||
+                        name.endsWith(".partial", ignoreCase = true) ||
+                        name.endsWith(".stale", ignoreCase = true) ||
+                        (name.startsWith(DOWNLOAD_STAGING_FILE_PREFIX) &&
+                            name.endsWith(DOWNLOAD_STAGING_FILE_SUFFIX))
+                }
+            ) return@runCatching null
+            file.absolutePath
+        }.firstOrNull()
+    }.getOrNull()
 }
 
 internal fun ManagedDownloadStorage.hasManagedDownloadIdentityHintImpl(song: SongItem): Boolean {

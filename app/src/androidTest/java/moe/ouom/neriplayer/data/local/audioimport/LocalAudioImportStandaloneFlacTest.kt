@@ -23,6 +23,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -252,6 +253,137 @@ class LocalAudioImportStandaloneFlacTest {
     }
 
     @Test
+    fun externalImportUsesItsOwnCopyInsteadOfReadableSourceAlias() = runBlocking {
+        AudioDownloadManager.initialize(context)
+        val sourceUri = createAudio(
+            fixtures.first().copy(fileName = "source-alias-${UUID.randomUUID()}.flac")
+        )
+        ManagedDownloadStorage.updateCustomDirectoryUri(targetTreeUri.toString())
+        val result = LocalAudioImportManager.importExternalSongs(context, listOf(sourceUri))
+        assertEquals(0, result.failedCount)
+        val importedSong = result.songs.single()
+        val importedFile = File(requireNotNull(importedSong.localFilePath))
+        try {
+            val songWithAlias = importedSong.copy(mediaUri = sourceUri.toString())
+            assertReadableAudio(sourceUri)
+            assertTrue(importedFile.isFile)
+            assertEquals(
+                importedFile.canonicalPath,
+                AudioDownloadManager.getLocalPlaybackUri(context, songWithAlias)
+            )
+            assertEquals(
+                LocalPlaybackReferenceResolution.Playable(importedFile.canonicalPath),
+                AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, songWithAlias)
+            )
+            for (rawReference in listOf(sourceUri.toString(), importedFile.absolutePath, null)) {
+                assertEquals(
+                    "The source alias must not replace the imported copy: raw=$rawReference",
+                    LocalPlaybackReferenceResolution.Playable(importedFile.canonicalPath),
+                    AudioDownloadManager.resolvePermittedLocalPlayback(context, songWithAlias, rawReference)
+                )
+            }
+            assertFalse(ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, songWithAlias))
+        } finally {
+            removeOwnedAudioAndSidecars(importedFile)
+        }
+    }
+
+    @Test
+    fun externalImportIgnoresPendingAliasAndSameSourceDownloadCache() = runBlocking {
+        AudioDownloadManager.initialize(context)
+        val sourceUri = createAudio(
+            fixtures.first().copy(fileName = "pending-alias-import-${UUID.randomUUID()}.flac")
+        )
+        ManagedDownloadStorage.updateCustomDirectoryUri(targetTreeUri.toString())
+        val result = LocalAudioImportManager.importExternalSongs(context, listOf(sourceUri))
+        assertEquals(0, result.failedCount)
+        val importedSong = result.songs.single()
+        val importedFile = File(requireNotNull(importedSong.localFilePath))
+        try {
+            val stableKey = "42|netease|"
+            val pendingFixture = fixtures.first().copy(
+                fileName = "pending-alias-${UUID.randomUUID()}.flac.npdl_pending.001.pending"
+            )
+            val pendingUri = createAudio(pendingFixture, targetRootUri)
+            val downloadedUri = createFinalizedDownload(stableKey)
+            val songWithAlias = importedSong.copy(
+                mediaUri = pendingUri.toString(),
+                sourceStableKey = stableKey
+            )
+            assertEquals("local", songWithAlias.channelId)
+            assertReadableAudio(pendingUri)
+            val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+            assertTrue(snapshot.pendingAudioEntries.any { it.name == pendingFixture.fileName })
+            val cachedAudio = ManagedDownloadStorage.peekDownloadedAudio(songWithAlias)
+            assertNotNull("Expected a real same-source SAF download cache hit", cachedAudio)
+            assertSameDocument(downloadedUri, Uri.parse(requireNotNull(cachedAudio).reference))
+            assertTrue(importedFile.isFile)
+            assertEquals(
+                importedFile.canonicalPath,
+                AudioDownloadManager.getLocalPlaybackUri(context, songWithAlias)
+            )
+            assertEquals(
+                LocalPlaybackReferenceResolution.Playable(importedFile.canonicalPath),
+                AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, songWithAlias)
+            )
+            for (rawReference in listOf(pendingUri.toString(), importedFile.absolutePath, null)) {
+                assertEquals(
+                    "Pending and cached download aliases must not replace the imported copy: raw=$rawReference",
+                    LocalPlaybackReferenceResolution.Playable(importedFile.canonicalPath),
+                    AudioDownloadManager.resolvePermittedLocalPlayback(context, songWithAlias, rawReference)
+                )
+            }
+            assertFalse(ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, songWithAlias))
+        } finally {
+            removeOwnedAudioAndSidecars(importedFile)
+        }
+    }
+
+    @Test
+    fun missingExternalImportDoesNotFallBackToReadableAliasOrSameSourceDownload() = runBlocking {
+        AudioDownloadManager.initialize(context)
+        val sourceUri = createAudio(
+            fixtures.first().copy(fileName = "missing-alias-import-${UUID.randomUUID()}.flac")
+        )
+        ManagedDownloadStorage.updateCustomDirectoryUri(targetTreeUri.toString())
+        val result = LocalAudioImportManager.importExternalSongs(context, listOf(sourceUri))
+        assertEquals(0, result.failedCount)
+        val importedSong = result.songs.single()
+        val importedFile = File(requireNotNull(importedSong.localFilePath))
+        try {
+            val stableKey = "42|netease|"
+            val downloadedUri = createFinalizedDownload(stableKey)
+            val songWithAlias = importedSong.copy(
+                mediaUri = sourceUri.toString(),
+                sourceStableKey = stableKey
+            )
+            assertEquals("local", songWithAlias.channelId)
+            ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
+            val cachedAudio = ManagedDownloadStorage.peekDownloadedAudio(songWithAlias)
+            assertNotNull("Expected a real same-source SAF download cache hit", cachedAudio)
+            assertSameDocument(downloadedUri, Uri.parse(requireNotNull(cachedAudio).reference))
+            assertTrue("Cannot remove the owned imported copy", importedFile.delete())
+            assertReadableAudio(sourceUri)
+            assertReadableAudio(downloadedUri)
+            assertNull(AudioDownloadManager.getLocalPlaybackUri(context, songWithAlias))
+            assertEquals(
+                LocalPlaybackReferenceResolution.Missing,
+                AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, songWithAlias)
+            )
+            for (rawReference in listOf(sourceUri.toString(), importedFile.absolutePath, null)) {
+                assertEquals(
+                    "A missing imported copy must not borrow another readable reference: raw=$rawReference",
+                    LocalPlaybackReferenceResolution.Missing,
+                    AudioDownloadManager.resolvePermittedLocalPlayback(context, songWithAlias, rawReference)
+                )
+            }
+            assertFalse(ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, songWithAlias))
+        } finally {
+            removeOwnedAudioAndSidecars(importedFile)
+        }
+    }
+
+    @Test
     fun defaultDownloadRootFileRemainsMissingWithAnotherSafDownloadRoot() = runBlocking {
         AudioDownloadManager.initialize(context)
         ManagedDownloadStorage.updateCustomDirectoryUri(targetTreeUri.toString())
@@ -271,6 +403,37 @@ class LocalAudioImportStandaloneFlacTest {
         } finally {
             removeOwnedAudioAndSidecars(audio)
         }
+    }
+
+    private fun createFinalizedDownload(stableKey: String): Uri {
+        val fixture = fixtures.first().copy(fileName = "same-source-download-${UUID.randomUUID()}.flac")
+        val audioUri = createAudio(fixture, targetRootUri)
+        val metadataUri = createDocument("${fixture.fileName}.npmeta.json", "application/json", targetRootUri)
+        val metadata = JSONObject().apply {
+            put("stableKey", stableKey)
+            put("songId", 42L)
+            put("identityAlbum", "netease")
+            put("name", fixture.title)
+            put("artist", fixture.artist)
+            put("mediaUri", audioUri.toString())
+            put("downloadFinalized", true)
+            put("createdAtMs", 123456L)
+        }
+        requireNotNull(context.contentResolver.openOutputStream(metadataUri)).use { output ->
+            output.write(metadata.toString().toByteArray(Charsets.UTF_8))
+        }
+        return audioUri
+    }
+
+    private fun assertReadableAudio(uri: Uri) {
+        requireNotNull(context.contentResolver.openInputStream(uri)).use { input ->
+            assertTrue("Expected a readable audio fixture: $uri", input.read() >= 0)
+        }
+    }
+
+    private fun assertSameDocument(expected: Uri, actual: Uri) {
+        assertEquals(expected.authority, actual.authority)
+        assertEquals(DocumentsContract.getDocumentId(expected), DocumentsContract.getDocumentId(actual))
     }
 
     private fun removeOwnedAudioAndSidecars(audio: File) {

@@ -1006,6 +1006,9 @@ object ManagedDownloadStorage {
     ): Boolean {
         return this.isLikelyManagedDownloadSongFastImpl(context, song)
     }
+    internal fun resolveIndependentExternalImportReference(context: Context, song: SongItem): String? {
+        return this.resolveIndependentExternalImportReferenceImpl(context, song)
+    }
     /**
      * 下载歌曲在目录索引恢复前仍保留远端来源标识, 可据此走下载侧载快路径
      */

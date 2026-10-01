@@ -115,6 +115,9 @@ internal class AudioDownloadPlaybackCoordinator(
         if (GlobalDownloadManager.isSongCancelled(songKey)) {
             return null
         }
+        resolveIndependentExternalImportPlayback(context, song)?.let { resolution ->
+            return (resolution as? LocalPlaybackReferenceResolution.Playable)?.reference
+        }
         val managedDownloadHint = runCatching {
             ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, song)
         }.getOrDefault(false)
@@ -193,6 +196,7 @@ internal class AudioDownloadPlaybackCoordinator(
         rawLocalReference: String?
     ): LocalPlaybackReferenceResolution = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
+        resolveIndependentExternalImportPlayback(appContext, song)?.let { return@withContext it }
         val reference = rawLocalReference?.trim()?.takeIf(String::isNotBlank)
         if (reference == null) {
             // 队列恢复可能先拿到歌曲身份，再异步补齐引用
@@ -329,6 +333,20 @@ internal class AudioDownloadPlaybackCoordinator(
                 song = song,
                 reference = reference
             )
+        )
+    }
+    private fun resolveIndependentExternalImportPlayback(
+        context: Context,
+        song: SongItem
+    ): LocalPlaybackReferenceResolution? {
+        val reference = ManagedDownloadStorage.resolveIndependentExternalImportReference(context, song)
+            ?: return null
+        // 副本缺失时也不借用 content 别名或同来源下载的完成桥
+        return selectPermittedLocalPlaybackResolution(
+            rawLocalReference = reference,
+            isManagedDownload = false,
+            verifiedManagedReference = null,
+            rawEvidence = ManagedDownloadReferenceLookup.inspect(context, reference)
         )
     }
     private fun resolveReadableManagedDownload(
@@ -781,6 +799,7 @@ internal class AudioDownloadPlaybackCoordinator(
         context: Context,
         song: SongItem
     ): LocalPlaybackReferenceResolution {
+        resolveIndependentExternalImportPlayback(context, song)?.let { return it }
         if (!mayHaveIndexedLocalDownload(context, song)) {
             return LocalPlaybackReferenceResolution.NotIndexed
         }

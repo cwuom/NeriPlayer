@@ -54,6 +54,7 @@ class LocalAudioPlaybackInstrumentedTest {
         val minimumPositionAdvanceMs = arguments.getString("minimumPositionAdvanceMs")
             ?.toLong() ?: 1_000L
         val timeoutMs = arguments.getString("playbackTimeoutMs")?.toLong() ?: 10_000L
+        val forceShellSampleCopy = arguments.getString("forceShellSampleCopy")?.toBooleanStrict() ?: false
         require(startPositionMs in 0L..3_600_000L)
         require(minimumPositionAdvanceMs in 1L..60_000L)
         require(timeoutMs in 1_000L..60_000L)
@@ -64,7 +65,7 @@ class LocalAudioPlaybackInstrumentedTest {
         val completed: Boolean
         val released: Boolean
         try {
-            copySample(source, sample)
+            copySample(source, sample, forceShellSampleCopy)
             probe.start(sample, startPositionMs)
             completed = probe.await(timeoutMs)
         } finally {
@@ -98,14 +99,19 @@ class LocalAudioPlaybackInstrumentedTest {
         assertNull("Player release failed: $diagnostic", probe.releaseFailure.get())
     }
 
-    private fun copySample(source: File, target: File) {
+    private fun copySample(source: File, target: File, forceShellSampleCopy: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val input = if (source.isFile && source.canRead()) {
+        val input = if (!forceShellSampleCopy && source.isFile && source.canRead()) {
             source.inputStream()
         } else {
-            // shell 可读取 /data/local/tmp, 复制到应用缓存后无需外部存储权限
-            val quotedPath = "'${source.absolutePath.replace("'", "'\\''")}'"
-            val command = "if [ -f $quotedPath ]; then head -c 67108865 $quotedPath; fi"
+            // 旧版 Android 直接按空白拆分命令, 不能使用 shell 脚本或引号
+            val path = source.absolutePath
+            require(path.matches(Regex("[A-Za-z0-9_./-]+"))) {
+                "Shell sample copy requires a path containing only ASCII letters, digits, '_', '.', '/', or '-'; " +
+                    "copy the sample to /data/local/tmp with a simple filename"
+            }
+            val command = "/system/bin/head -c 67108865 $path"
+            Log.i("NERI-LocalAudioPlaybackTest", "Copying playback sample via shell")
             ParcelFileDescriptor.AutoCloseInputStream(
                 instrumentation.uiAutomation.executeShellCommand(command)
             )
