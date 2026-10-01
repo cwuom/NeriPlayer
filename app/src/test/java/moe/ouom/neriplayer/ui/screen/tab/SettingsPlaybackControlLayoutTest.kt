@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.PlaybackControlSize
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutOwner
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.PlaybackControlLayoutSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.nowPlayingControlPlacementLabelRes
@@ -16,27 +16,27 @@ class SettingsPlaybackControlLayoutTest {
     @Test
     fun `control labels match every placement and size`() {
         assertEquals(
-            R.string.settings_nowplaying_control_placement_lower,
+            CoreCommonR.string.settings_nowplaying_control_placement_lower,
             nowPlayingControlPlacementLabelRes(NowPlayingControlPlacement.LOWER)
         )
         assertEquals(
-            R.string.settings_nowplaying_control_placement_bottom,
+            CoreCommonR.string.settings_nowplaying_control_placement_bottom,
             nowPlayingControlPlacementLabelRes(NowPlayingControlPlacement.BOTTOM)
         )
         assertEquals(
-            R.string.settings_nowplaying_control_placement_bottom_with_progress,
+            CoreCommonR.string.settings_nowplaying_control_placement_bottom_with_progress,
             nowPlayingControlPlacementLabelRes(NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS)
         )
         assertEquals(
-            R.string.settings_playback_control_size_small,
+            CoreCommonR.string.settings_playback_control_size_small,
             playbackControlSizeLabelRes(PlaybackControlSize.SMALL)
         )
         assertEquals(
-            R.string.settings_playback_control_size_medium,
+            CoreCommonR.string.settings_playback_control_size_medium,
             playbackControlSizeLabelRes(PlaybackControlSize.MEDIUM)
         )
         assertEquals(
-            R.string.settings_playback_control_size_large,
+            CoreCommonR.string.settings_playback_control_size_large,
             playbackControlSizeLabelRes(PlaybackControlSize.LARGE)
         )
     }

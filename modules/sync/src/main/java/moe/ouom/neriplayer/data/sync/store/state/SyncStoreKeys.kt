@@ -1,0 +1,24 @@
+package moe.ouom.neriplayer.data.sync.store.state
+
+internal const val GITHUB_PREFS_NAME = "github_secure_prefs"
+internal const val KEY_GITHUB_TOKEN = "github_token"
+internal const val KEY_REPO_OWNER = "repo_owner"
+internal const val KEY_REPO_NAME = "repo_name"
+internal const val KEY_DEVICE_ID = "device_id"
+internal const val KEY_LAST_SYNC_TIME = "last_sync_time"
+internal const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
+internal const val KEY_LAST_REMOTE_SHA = "last_remote_sha"
+internal const val KEY_PLAY_HISTORY_UPDATE_MODE = "play_history_update_mode"
+internal const val KEY_DELETED_PLAYLIST_IDS = "deleted_playlist_ids"
+internal const val KEY_DELETED_PLAYLIST_TIMESTAMPS = "deleted_playlist_timestamps"
+internal const val KEY_RECENT_PLAY_DELETIONS = "recent_play_deletions"
+internal const val KEY_PLAYLIST_USAGE_DELETIONS = "playlist_usage_deletions"
+internal const val KEY_PLAYLIST_SONG_DELETIONS = "playlist_song_deletions"
+internal const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
+internal const val KEY_DATA_SAVER_MODE = "data_saver_mode"
+internal const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
+internal const val KEY_SYNC_CAUSAL_COUNTER = "sync_causal_counter"
+internal const val MAX_RECENT_PLAY_DELETIONS = 500
+internal const val MAX_PLAYLIST_USAGE_DELETIONS = 500
+internal val syncMutationLock = Any()
+internal val syncCausalTokenLock = Any()

@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.lyrics
  * Created: 2025/8/13
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.Context
@@ -132,27 +134,26 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.settings.LyricFontScalePage
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
+import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
-import moe.ouom.neriplayer.ui.component.lyrics.flattenWordTimedEntries
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
@@ -292,8 +293,8 @@ fun LyricsScreen(
         }
     }
     val durationMs = currentSong?.durationMs ?: 0L
-    val favoriteActionLabel = stringResource(R.string.favorite_add)
-    val playlistAddActionLabel = stringResource(R.string.playlist_add_to)
+    val favoriteActionLabel = stringResource(CoreCommonR.string.favorite_add)
+    val playlistAddActionLabel = stringResource(CoreCommonR.string.playlist_add_to)
 
     val context = LocalContext.current
     val lowPowerLyricsRendering = remember(context) {
@@ -441,7 +442,7 @@ fun LyricsScreen(
             ) {
                 Icon(
                     Icons.Outlined.KeyboardArrowDown,
-                    contentDescription = stringResource(R.string.cd_back),
+                    contentDescription = stringResource(CoreCommonR.string.cd_back),
                     modifier = Modifier.size(lyricsTopActionIconSize)
                 )
             }
@@ -494,7 +495,7 @@ fun LyricsScreen(
             ) {
                 BoxWithConstraints {
                     NowPlayingSongTitle(
-                        text = currentSong?.displayName() ?: stringResource(R.string.lyrics_unknown_song),
+                        text = currentSong?.displayName() ?: stringResource(CoreCommonR.string.lyrics_unknown_song),
                         marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
                         style = MaterialTheme.typography.titleMedium,
                         color = LocalNeriTargetColorScheme.current.onSurface,
@@ -511,7 +512,7 @@ fun LyricsScreen(
                         onDismissRequest = { showSongNameMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.action_copy_song_name)) },
+                            text = { Text(stringResource(CoreCommonR.string.action_copy_song_name)) },
                             onClick = {
                                 currentSong?.displayName()?.let { text ->
                                     scope.launch {
@@ -525,7 +526,7 @@ fun LyricsScreen(
                 }
                 Box {
                     Text(
-                        text = currentSong?.displayArtist() ?: stringResource(R.string.lyrics_unknown_artist),
+                        text = currentSong?.displayArtist() ?: stringResource(CoreCommonR.string.lyrics_unknown_artist),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -554,7 +555,7 @@ fun LyricsScreen(
                         onDismissRequest = { showArtistMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.action_copy_artist)) },
+                            text = { Text(stringResource(CoreCommonR.string.action_copy_artist)) },
                             onClick = {
                                 currentSong?.displayArtist()?.let { text ->
                                     scope.launch {
@@ -616,7 +617,7 @@ fun LyricsScreen(
             ) {
                 Icon(
                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = if (isFavorite) stringResource(R.string.lyrics_favorited) else stringResource(R.string.lyrics_favorite),
+                    contentDescription = if (isFavorite) stringResource(CoreCommonR.string.lyrics_favorited) else stringResource(CoreCommonR.string.lyrics_favorite),
                     modifier = Modifier.size(lyricsTopActionIconSize),
                     tint = if (isFavorite) {
                         NowPlayingFavoriteIconColor
@@ -646,7 +647,7 @@ fun LyricsScreen(
             ) {
                 Icon(
                     Icons.Filled.MoreVert,
-                    contentDescription = stringResource(R.string.lyrics_more_options),
+                    contentDescription = stringResource(CoreCommonR.string.lyrics_more_options),
                     modifier = Modifier.size(lyricsTopActionIconSize)
                 )
             }
@@ -740,9 +741,9 @@ fun LyricsScreen(
                 (hasTranslation || hasPhonetic)
             val modeDescription = stringResource(
                 when (secondaryMode) {
-                    LyricsSecondaryLineMode.TRANSLATION -> R.string.lyrics_secondary_mode_translation
-                    LyricsSecondaryLineMode.PHONETIC -> R.string.lyrics_secondary_mode_phonetic
-                    LyricsSecondaryLineMode.NONE -> R.string.lyrics_secondary_mode_none
+                    LyricsSecondaryLineMode.TRANSLATION -> CoreCommonR.string.lyrics_secondary_mode_translation
+                    LyricsSecondaryLineMode.PHONETIC -> CoreCommonR.string.lyrics_secondary_mode_phonetic
+                    LyricsSecondaryLineMode.NONE -> CoreCommonR.string.lyrics_secondary_mode_none
                 }
             )
             key(lyricSourceKey) {
@@ -818,7 +819,7 @@ fun LyricsScreen(
                             ) {
                                 if (hasTranslation) {
                                     Text(
-                                        text = stringResource(R.string.lyrics_translation_short),
+                                        text = stringResource(CoreCommonR.string.lyrics_translation_short),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = if (secondaryMode == LyricsSecondaryLineMode.TRANSLATION) {
                                             LocalNeriTargetColorScheme.current.primary
@@ -836,7 +837,7 @@ fun LyricsScreen(
                                 }
                                 if (hasPhonetic) {
                                     Text(
-                                        text = stringResource(R.string.lyrics_phonetic_short),
+                                        text = stringResource(CoreCommonR.string.lyrics_phonetic_short),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = if (secondaryMode == LyricsSecondaryLineMode.PHONETIC) {
                                             LocalNeriTargetColorScheme.current.primary
@@ -908,7 +909,7 @@ fun LyricsScreen(
                 ) {
                     Icon(
                         Icons.Outlined.SkipPrevious,
-                        contentDescription = stringResource(R.string.lyrics_previous),
+                        contentDescription = stringResource(CoreCommonR.string.lyrics_previous),
                         modifier = Modifier.size(secondaryControlIconSize)
                     )
                 }
@@ -935,10 +936,10 @@ fun LyricsScreen(
                         isPlaying = isPlaybackControlPlaying,
                         isPlaybackWaiting = isPlaybackWaiting,
                         isAudioRouteMuted = isAudioRouteMuted,
-                        playContentDescription = stringResource(R.string.lyrics_play),
-                        pauseContentDescription = stringResource(R.string.lyrics_pause),
-                        restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
-                        waitingContentDescription = stringResource(R.string.player_waiting),
+                        playContentDescription = stringResource(CoreCommonR.string.lyrics_play),
+                        pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
+                        restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
+                        waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                         modifier = Modifier.size(primaryControlIconSize),
                         progressIndicatorSize = primaryControlIconSize
                     )
@@ -962,7 +963,7 @@ fun LyricsScreen(
                 ) {
                     Icon(
                         Icons.Outlined.SkipNext,
-                        contentDescription = stringResource(R.string.lyrics_next),
+                        contentDescription = stringResource(CoreCommonR.string.lyrics_next),
                         modifier = Modifier.size(secondaryControlIconSize)
                     )
                 }
@@ -1031,7 +1032,7 @@ fun LyricsScreen(
             )) {
                 Icon(
                     Icons.AutoMirrored.Outlined.QueueMusic,
-                    contentDescription = stringResource(R.string.lyrics_playlist),
+                    contentDescription = stringResource(CoreCommonR.string.lyrics_playlist),
                     modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
@@ -1054,7 +1055,7 @@ fun LyricsScreen(
                 )) {
                 Icon(
                     Icons.Outlined.Timer,
-                    contentDescription = stringResource(R.string.lyrics_timer),
+                    contentDescription = stringResource(CoreCommonR.string.lyrics_timer),
                     tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(toolbarLayout.iconSize)
                 )
@@ -1087,7 +1088,7 @@ fun LyricsScreen(
                 )) {
                 Icon(
                     audioDeviceIcon,
-                    contentDescription = stringResource(R.string.cd_audio_device),
+                    contentDescription = stringResource(CoreCommonR.string.cd_audio_device),
                     modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
@@ -1116,7 +1117,7 @@ fun LyricsScreen(
                 ) { _ ->
                     Icon(
                         imageVector = Icons.Outlined.LibraryMusic,
-                        contentDescription = stringResource(R.string.lyrics_back_to_cover),
+                        contentDescription = stringResource(CoreCommonR.string.lyrics_back_to_cover),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(toolbarLayout.iconSize)
                     )
@@ -1143,7 +1144,7 @@ fun LyricsScreen(
             )) {
                 Icon(
                     Icons.AutoMirrored.Outlined.PlaylistAdd,
-                    contentDescription = stringResource(R.string.lyrics_add_to_playlist),
+                    contentDescription = stringResource(CoreCommonR.string.lyrics_add_to_playlist),
                     modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
@@ -1211,7 +1212,7 @@ fun LyricsScreen(
                                 Spacer(modifier = Modifier.weight(1f))
                             Text(
                                 pluralStringResource(
-                                    R.plurals.lyrics_song_count,
+                                    CoreCommonR.plurals.lyrics_song_count,
                                     pl.songs.size,
                                     pl.songs.size
                                 ),
@@ -1292,7 +1293,7 @@ private fun LyricsContentPane(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                stringResource(R.string.lyrics_no_lyrics),
+                stringResource(CoreCommonR.string.lyrics_no_lyrics),
                 style = MaterialTheme.typography.headlineSmall
             )
         }

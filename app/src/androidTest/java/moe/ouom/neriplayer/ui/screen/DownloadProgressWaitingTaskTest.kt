@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.screen
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
@@ -9,9 +13,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -44,15 +48,15 @@ class DownloadProgressWaitingTaskTest {
                 composeRule.onAllNodesWithText(track.name).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText(track.name).assertIsDisplayed()
-            composeRule.onNodeWithContentDescription(context.getString(R.string.download_cancel_download))
+            composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.download_cancel_download))
                 .assertIsDisplayed()
             for (stage in listOf(
-                AudioDownloadManager.DownloadStage.WAITING_HOST,
-                AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP,
-                AudioDownloadManager.DownloadStage.WAITING_RETRY
+                DownloadStage.WAITING_HOST,
+                DownloadStage.WAITING_DELETE_CLEANUP,
+                DownloadStage.WAITING_RETRY
             )) {
                 composeRule.runOnIdle {
-                    store.restoreProgress(AudioDownloadManager.DownloadProgress(
+                    store.restoreProgress(DownloadProgress(
                         songKey = track.stableKey(), songId = track.id, fileName = "test.mp3",
                         bytesRead = 0L, totalBytes = 0L, speedBytesPerSec = 0L,
                         stage = stage, attemptId = attempt
@@ -62,7 +66,7 @@ class DownloadProgressWaitingTaskTest {
             }
             composeRule.runOnIdle { store.applyWaitingNetworkStatus(store.currentTasks()) }
             composeRule.onNodeWithText(track.name).assertIsDisplayed()
-            composeRule.onNodeWithContentDescription(context.getString(R.string.download_resume))
+            composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.download_resume))
                 .assertIsDisplayed()
             composeRule.runOnIdle {
                 store.updateTaskStatus(track.stableKey(), DownloadStatus.QUEUED, attempt)

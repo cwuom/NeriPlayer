@@ -53,15 +53,16 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
-import moe.ouom.neriplayer.util.network.hostMatchesAnyDomain
-import moe.ouom.neriplayer.util.network.isAllowedMainFrameRequest
+import moe.ouom.neriplayer.network.security.hostMatchesAnyDomain
+import moe.ouom.neriplayer.network.security.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 
 class NeteaseWebLoginActivity : ComponentActivity() {
@@ -120,7 +121,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             )
         }
         toolbar = MaterialToolbar(this).apply {
-            title = getString(R.string.netease_web_login)
+            title = getString(CoreCommonR.string.netease_web_login)
             setNavigationIcon(R.drawable.ic_arrow_back_24)
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.menu_netease_web_login)
@@ -241,7 +242,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             if (map.isEmpty()) {
                 showNeriViewSnackbar(
                     webView,
-                    getString(R.string.snackbar_cookie_empty),
+                    getString(CoreCommonR.string.snackbar_cookie_empty),
                     Snackbar.LENGTH_SHORT
                 )
                 return
@@ -253,7 +254,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         } catch (e: Throwable) {
             showNeriViewSnackbar(
                 webView,
-                getString(R.string.snackbar_read_failed, e.message ?: e.javaClass.simpleName),
+                getString(CoreCommonR.string.snackbar_read_failed, e.message ?: e.javaClass.simpleName),
                 Snackbar.LENGTH_LONG
             )
         }

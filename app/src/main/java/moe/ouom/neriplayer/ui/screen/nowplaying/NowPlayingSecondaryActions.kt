@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -51,28 +54,27 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTargetOptions
-import moe.ouom.neriplayer.core.api.bili.BiliVideoSkipTargetOption
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.platform.bilibili.skip.resolver.resolveBiliVideoSkipTargetOptions
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScalePage
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
+import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
@@ -141,9 +143,9 @@ private fun bluetoothAudioOutput(device: AudioDeviceInfo, context: Context): Pai
     Pair(readBluetoothDeviceName(device, context), Icons.Default.Headset)
 
 private fun readBluetoothDeviceName(device: AudioDeviceInfo, context: Context): String = try {
-    device.productName.toString().ifBlank { context.getString(R.string.nowplaying_bluetooth_device) }
+    device.productName.toString().ifBlank { context.getString(CoreCommonR.string.nowplaying_bluetooth_device) }
 } catch (_: SecurityException) {
-    context.getString(R.string.nowplaying_bluetooth_device)
+    context.getString(CoreCommonR.string.nowplaying_bluetooth_device)
 }
 
 private fun wiredOrSpeakerAudioOutput(
@@ -154,9 +156,9 @@ private fun wiredOrSpeakerAudioOutput(
         it.type in setOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
     }
     return if (hasWiredHeadset) {
-        Pair(context.getString(R.string.nowplaying_wired_headset), Icons.Default.Headset)
+        Pair(context.getString(CoreCommonR.string.nowplaying_wired_headset), Icons.Default.Headset)
     } else {
-        Pair(context.getString(R.string.nowplaying_phone_speaker), Icons.Default.SpeakerGroup)
+        Pair(context.getString(CoreCommonR.string.nowplaying_phone_speaker), Icons.Default.SpeakerGroup)
     }
 }
 
@@ -235,7 +237,7 @@ internal fun NeteaseArtistPickerSheet(
                 .padding(bottom = 16.dp)
         ) {
             Text(
-                text = stringResource(R.string.artist_choose_title),
+                text = stringResource(CoreCommonR.string.artist_choose_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
             )
@@ -266,7 +268,7 @@ internal fun YouTubeMusicCreatorPickerSheet(
                 .padding(bottom = 16.dp)
         ) {
             Text(
-                text = stringResource(R.string.youtube_creator_choose_title),
+                text = stringResource(CoreCommonR.string.youtube_creator_choose_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
             )
@@ -818,7 +820,7 @@ private fun MoreOptionsBiliVideoSkipContent(
     actions: MoreOptionsBiliSkipActions
 ) {
     BiliVideoSkipIntervalsContent(
-        title = stringResource(R.string.bili_video_skip_title),
+        title = stringResource(CoreCommonR.string.bili_video_skip_title),
         targetResolverKey = actualSong.stableKey(),
         loadTargetOptions = actions.loadTargetOptions,
         initialTarget = currentBiliTarget,

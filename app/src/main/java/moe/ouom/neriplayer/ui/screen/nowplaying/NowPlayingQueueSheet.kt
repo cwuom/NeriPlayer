@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -92,16 +95,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
@@ -476,14 +478,14 @@ private fun QueueRowCheckmark(selected: Boolean) {
     if (selected) {
         Icon(
             imageVector = Icons.Filled.CheckBox,
-            contentDescription = stringResource(R.string.common_selected),
+            contentDescription = stringResource(CoreCommonR.string.common_selected),
             tint = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(end = 10.dp)
         )
     } else {
         Icon(
             imageVector = Icons.Filled.CheckBoxOutlineBlank,
-            contentDescription = stringResource(R.string.action_select),
+            contentDescription = stringResource(CoreCommonR.string.action_select),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(end = 10.dp)
         )
@@ -569,7 +571,7 @@ private fun QueueRowCurrentMarker(visible: Boolean) {
     if (visible) {
         Icon(
             imageVector = Icons.Outlined.PlayArrow,
-            contentDescription = stringResource(R.string.player_now_playing),
+            contentDescription = stringResource(CoreCommonR.string.player_now_playing),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 8.dp)
         )
@@ -618,7 +620,7 @@ private fun QueueRowReorderHandle(reorderState: ReorderableLazyListState) {
     ) {
         Icon(
             imageVector = Icons.Filled.DragHandle,
-            contentDescription = stringResource(R.string.common_drag_handle),
+            contentDescription = stringResource(CoreCommonR.string.common_drag_handle),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -637,24 +639,24 @@ private fun QueueRowMoreMenu(
         IconButton(onClick = { expanded = true }) {
             Icon(
                 imageVector = Icons.Filled.MoreVert,
-                contentDescription = stringResource(R.string.common_more_actions),
+                contentDescription = stringResource(CoreCommonR.string.common_more_actions),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             QueueRowMenuAction(
-                label = stringResource(R.string.local_playlist_play_next),
+                label = stringResource(CoreCommonR.string.local_playlist_play_next),
                 icon = Icons.Outlined.SkipNext,
                 onClick = { onPlayNext(); expanded = false }
             )
             QueueRowMenuAction(
-                label = stringResource(R.string.playlist_add_to_end),
+                label = stringResource(CoreCommonR.string.playlist_add_to_end),
                 icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
                 onClick = { onAddToEnd(); expanded = false }
             )
             QueueRowFavoriteAction(isFavoriteSong) { onFavoriteToggle(); expanded = false }
             QueueRowMenuAction(
-                label = stringResource(R.string.nowplaying_queue_remove),
+                label = stringResource(CoreCommonR.string.nowplaying_queue_remove),
                 icon = Icons.Outlined.DeleteOutline,
                 onClick = { onRemoveFromQueue(); expanded = false }
             )
@@ -672,7 +674,7 @@ private fun QueueRowFavoriteAction(isFavoriteSong: Boolean, onClick: () -> Unit)
 }
 
 private fun queueFavoriteLabel(isFavoriteSong: Boolean): Int =
-    if (isFavoriteSong) R.string.favorite_remove else R.string.favorite_add
+    if (isFavoriteSong) CoreCommonR.string.favorite_remove else CoreCommonR.string.favorite_add
 
 private fun queueFavoriteIcon(isFavoriteSong: Boolean): ImageVector =
     if (isFavoriteSong) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder
@@ -780,9 +782,9 @@ private fun QueueQuickActionItems(
         QueueSourceAction(hasSourceRoute, onOpenSource)
         QueueLocateAction(currentIndex, onLocateCurrent)
         NowPlayingQueueQuickActionButton(
-            label = stringResource(R.string.action_enter_multi_select),
+            label = stringResource(CoreCommonR.string.action_enter_multi_select),
             icon = Icons.Filled.CheckBox,
-            contentDescription = stringResource(R.string.action_enter_multi_select),
+            contentDescription = stringResource(CoreCommonR.string.action_enter_multi_select),
             onClick = onEnterSelection
         )
     }
@@ -792,9 +794,9 @@ private fun QueueQuickActionItems(
 private fun QueueSourceAction(visible: Boolean, onClick: () -> Unit) {
     if (!visible) return
     NowPlayingQueueQuickActionButton(
-        label = stringResource(R.string.cd_open_current_playback_source),
+        label = stringResource(CoreCommonR.string.cd_open_current_playback_source),
         icon = Icons.Outlined.LibraryMusic,
-        contentDescription = stringResource(R.string.cd_open_current_playback_source),
+        contentDescription = stringResource(CoreCommonR.string.cd_open_current_playback_source),
         onClick = onClick
     )
 }
@@ -803,9 +805,9 @@ private fun QueueSourceAction(visible: Boolean, onClick: () -> Unit) {
 private fun QueueLocateAction(currentIndex: Int, onClick: () -> Unit) {
     if (currentIndex < 0) return
     NowPlayingQueueQuickActionButton(
-        label = stringResource(R.string.cd_locate_playing),
+        label = stringResource(CoreCommonR.string.cd_locate_playing),
         icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
-        contentDescription = stringResource(R.string.cd_locate_playing),
+        contentDescription = stringResource(CoreCommonR.string.cd_locate_playing),
         onClick = onClick
     )
 }
@@ -815,7 +817,7 @@ private fun QueueQuickActionToggle(expanded: Boolean, onClick: () -> Unit) {
     HapticFloatingActionButton(onClick = onClick, hapticEffect = HapticFeedbackEffect.Click) {
         Icon(
             imageVector = if (expanded) Icons.Outlined.Close else Icons.Filled.MoreVert,
-            contentDescription = stringResource(R.string.cd_queue_quick_actions)
+            contentDescription = stringResource(CoreCommonR.string.cd_queue_quick_actions)
         )
     }
 }
@@ -839,18 +841,18 @@ private fun NowPlayingQueueSelectionToolbar(
         HapticIconButton(onClick = onExitSelection) {
             Icon(
                 imageVector = Icons.Outlined.Close,
-                contentDescription = stringResource(R.string.action_cancel)
+                contentDescription = stringResource(CoreCommonR.string.action_cancel)
             )
         }
         Column(Modifier.weight(1f)) {
             Text(
-                text = stringResource(R.string.common_selected),
+                text = stringResource(CoreCommonR.string.common_selected),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = pluralStringResource(
-                    R.plurals.common_selected_count,
+                    CoreCommonR.plurals.common_selected_count,
                     selectedCount,
                     selectedCount
                 ),
@@ -862,7 +864,7 @@ private fun NowPlayingQueueSelectionToolbar(
             QueueSelectAllIcon(allSelected)
         }
         HapticTextButton(onClick = onInvertSelection) {
-            Text(stringResource(R.string.action_inverse_select))
+            Text(stringResource(CoreCommonR.string.action_inverse_select))
         }
         HapticIconButton(
             enabled = canExport,
@@ -870,7 +872,7 @@ private fun NowPlayingQueueSelectionToolbar(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                contentDescription = stringResource(R.string.cd_export_playlist)
+                contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
             )
         }
     }
@@ -884,7 +886,7 @@ private fun QueueSelectAllIcon(allSelected: Boolean) {
 
 @Composable
 private fun queueSelectAllDescription(allSelected: Boolean): String =
-    stringResource(if (allSelected) R.string.action_deselect_all else R.string.action_select_all)
+    stringResource(if (allSelected) CoreCommonR.string.action_deselect_all else CoreCommonR.string.action_select_all)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1126,13 +1128,13 @@ internal fun NowPlayingQueueSheet(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                text = stringResource(R.string.playlist_queue),
+                                text = stringResource(CoreCommonR.string.playlist_queue),
                                 style = MaterialTheme.typography.headlineSmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = pluralStringResource(
-                                    R.plurals.nowplaying_queue_count_format,
+                                    CoreCommonR.plurals.nowplaying_queue_count_format,
                                     displayedQueue.size,
                                     displayedQueue.size
                                 ),
@@ -1162,7 +1164,7 @@ internal fun NowPlayingQueueSheet(
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         text = stringResource(
-                                            R.string.nowplaying_queue_current_position,
+                                            CoreCommonR.string.nowplaying_queue_current_position,
                                             currentIndexInQueueEntries + 1
                                         ),
                                         style = MaterialTheme.typography.labelMedium,
@@ -1290,7 +1292,7 @@ internal fun NowPlayingQueueSheet(
 
     if (showExportSheet) {
         PlaylistExportSheet(
-            title = stringResource(R.string.playlist_export_to_local),
+            title = stringResource(CoreCommonR.string.playlist_export_to_local),
             playlists = allLocalPlaylists.filterNot {
                 LocalFilesPlaylist.isSystemPlaylist(it, context)
             },
@@ -1352,7 +1354,7 @@ private fun NowPlayingQueueIndexJumpDialog(
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.nowplaying_queue_jump_title)) },
+        title = { Text(stringResource(CoreCommonR.string.nowplaying_queue_jump_title)) },
         text = {
             QueueIndexJumpContent(input, queueSize, isInputError, onInputChange, onSubmit)
         },
@@ -1361,12 +1363,12 @@ private fun NowPlayingQueueIndexJumpDialog(
                 onClick = onSubmit,
                 enabled = targetIndex != null
             ) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         },
         dismissButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -1390,7 +1392,7 @@ private fun QueueIndexJumpContent(
         MiuixSettingsTextField(
             value = input,
             onValueChange = { onInputChange(filterNowPlayingQueueIndexInput(it)) },
-            placeholder = { Text(stringResource(R.string.nowplaying_queue_jump_input_label)) },
+            placeholder = { Text(stringResource(CoreCommonR.string.nowplaying_queue_jump_input_label)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number,
@@ -1405,7 +1407,7 @@ private fun QueueIndexJumpContent(
 @Composable
 private fun QueueIndexJumpSupportText(queueSize: Int, isInputError: Boolean) {
     Text(
-        text = stringResource(R.string.nowplaying_queue_jump_input_supporting, queueSize),
+        text = stringResource(CoreCommonR.string.nowplaying_queue_jump_input_supporting, queueSize),
         style = MaterialTheme.typography.bodySmall,
         color = if (isInputError) MaterialTheme.colorScheme.error
         else MaterialTheme.colorScheme.onSurfaceVariant

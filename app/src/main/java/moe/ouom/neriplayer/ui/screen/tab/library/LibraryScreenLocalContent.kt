@@ -90,21 +90,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
+import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.artist.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
@@ -149,7 +149,7 @@ internal fun LocalPlaylistList(
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
-    val defaultPlaylistName = composeResources.getString(R.string.library_create_playlist_default)
+    val defaultPlaylistName = composeResources.getString(CoreCommonR.string.library_create_playlist_default)
     val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsStateWithLifecycle(
         initialValue = false
@@ -206,18 +206,18 @@ internal fun LocalPlaylistList(
         val trimmedInput = newName.trim().take(maxNameLength)
         val finalName = trimmedInput.ifBlank { defaultPlaylistName }.take(maxNameLength)
 
-        val favoritesName = composeResources.getString(R.string.favorite_my_music)
-        val localFilesName = composeResources.getString(R.string.local_files)
+        val favoritesName = composeResources.getString(CoreCommonR.string.favorite_my_music)
+        val localFilesName = composeResources.getString(CoreCommonR.string.local_files)
         if (FavoritesPlaylist.matches(finalName, context)) {
-            nameError = composeResources.getString(R.string.library_name_reserved, favoritesName)
+            nameError = composeResources.getString(CoreCommonR.string.library_name_reserved, favoritesName)
             return false
         }
         if (LocalFilesPlaylist.matches(finalName, context)) {
-            nameError = composeResources.getString(R.string.library_name_reserved, localFilesName)
+            nameError = composeResources.getString(CoreCommonR.string.library_name_reserved, localFilesName)
             return false
         }
         if (playlists.any { it.name.equals(finalName, ignoreCase = true) }) {
-            nameError = composeResources.getString(R.string.library_name_exists)
+            nameError = composeResources.getString(CoreCommonR.string.library_name_exists)
             return false
         }
 
@@ -316,14 +316,14 @@ internal fun LocalPlaylistList(
                 item(key = "local_artist_empty") {
                     LibrarySearchEmptyCard(
                         titleResId = if (localSearchQuery.isBlank()) {
-                            R.string.library_local_artist_empty
+                            CoreCommonR.string.library_local_artist_empty
                         } else {
-                            R.string.library_local_search_empty
+                            CoreCommonR.string.library_local_search_empty
                         },
                         hintResId = if (localSearchQuery.isBlank()) {
-                            R.string.library_local_artist_hint
+                            CoreCommonR.string.library_local_artist_hint
                         } else {
-                            R.string.library_local_search_empty_hint
+                            CoreCommonR.string.library_local_search_empty_hint
                         },
                         iconIsArtist = true
                     )
@@ -372,7 +372,7 @@ internal fun LocalPlaylistList(
                         headlineContent = {
                             Text(
                                 pluralStringResource(
-                                    R.plurals.common_selected_count,
+                                    CoreCommonR.plurals.common_selected_count,
                                     selectedIds.size,
                                     selectedIds.size
                                 )
@@ -385,7 +385,7 @@ internal fun LocalPlaylistList(
                             HapticIconButton(onClick = { exitSelection() }) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.action_exit_multi_select)
+                                    contentDescription = stringResource(CoreCommonR.string.action_exit_multi_select)
                                 )
                             }
                         },
@@ -402,9 +402,9 @@ internal fun LocalPlaylistList(
                                 ) {
                                     Text(
                                         if (allSelected) {
-                                            stringResource(R.string.action_deselect_all)
+                                            stringResource(CoreCommonR.string.action_deselect_all)
                                         } else {
-                                            stringResource(R.string.action_select_all)
+                                            stringResource(CoreCommonR.string.action_select_all)
                                         }
                                     )
                                 }
@@ -415,7 +415,7 @@ internal fun LocalPlaylistList(
                                     enabled = selectedIds.isNotEmpty(),
                                     onClick = { deleteSelected() }
                                 ) {
-                                    Text(stringResource(R.string.common_delete_selected))
+                                    Text(stringResource(CoreCommonR.string.common_delete_selected))
                                 }
                             }
                         }
@@ -438,7 +438,7 @@ internal fun LocalPlaylistList(
                     .clickable(enabled = !selectionMode) { showDialog = true }
             ) {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.library_create_new)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.library_create_new)) },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
                     )
@@ -452,7 +452,7 @@ internal fun LocalPlaylistList(
                         newName = ""
                         nameError = null
                     },
-                    title = { Text(stringResource(R.string.playlist_create)) },
+                    title = { Text(stringResource(CoreCommonR.string.playlist_create)) },
                     text = {
                         MiuixSettingsDialogContent(verticalSpacing = 12.dp) {
                             MiuixSettingsTextField(
@@ -461,7 +461,7 @@ internal fun LocalPlaylistList(
                                     newName = it.take(maxNameLength)
                                     if (nameError != null) nameError = null
                                 },
-                                placeholder = { Text(stringResource(R.string.playlist_enter_name)) },
+                                placeholder = { Text(stringResource(CoreCommonR.string.playlist_enter_name)) },
                                 singleLine = true,
                                 modifier = Modifier.focusRequester(focusRequester),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -481,7 +481,7 @@ internal fun LocalPlaylistList(
                             onClick = { tryCreate() },
                             enabled = newName.trim().isNotBlank()
                         ) {
-                            Text(stringResource(R.string.action_create))
+                            Text(stringResource(CoreCommonR.string.action_create))
                         }
                     },
                     dismissButton = {
@@ -491,7 +491,7 @@ internal fun LocalPlaylistList(
                                 newName = ""
                                 nameError = null
                             }
-                        ) { Text(stringResource(R.string.action_cancel)) }
+                        ) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                     }
                 )
             }
@@ -499,11 +499,11 @@ internal fun LocalPlaylistList(
             if (showDeleteSelectedConfirm) {
                 AlertDialog(
                     onDismissRequest = { showDeleteSelectedConfirm = false },
-                    title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+                    title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
                     text = {
                         Text(
                             pluralStringResource(
-                                R.plurals.library_delete_selected_confirm,
+                                CoreCommonR.plurals.library_delete_selected_confirm,
                                 selectedIds.size,
                                 selectedIds.size
                             )
@@ -516,12 +516,12 @@ internal fun LocalPlaylistList(
                                 exitSelection()
                                 onDelete(idsToDelete)
                             }
-                        ) { Text(stringResource(R.string.action_delete)) }
+                        ) { Text(stringResource(CoreCommonR.string.action_delete)) }
                     },
                     dismissButton = {
                         HapticTextButton(
                             onClick = { showDeleteSelectedConfirm = false }
-                        ) { Text(stringResource(R.string.action_cancel)) }
+                        ) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                     }
                 )
             }
@@ -531,8 +531,8 @@ internal fun LocalPlaylistList(
         if (localSearchQuery.isNotBlank() && !hasPlaylistSearchMatches) {
             item(key = "local_playlist_search_empty") {
                 LibrarySearchEmptyCard(
-                    titleResId = R.string.library_local_search_empty,
-                    hintResId = R.string.library_local_search_empty_hint,
+                    titleResId = CoreCommonR.string.library_local_search_empty,
+                    hintResId = CoreCommonR.string.library_local_search_empty_hint,
                     iconIsArtist = false
                 )
             }
@@ -566,7 +566,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(R.plurals.library_song_count, system.songs.size, system.songs.size),
+                                pluralStringResource(CoreCommonR.plurals.library_song_count, system.songs.size, system.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -670,7 +670,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(R.plurals.library_song_count, pl.songs.size, pl.songs.size),
+                                pluralStringResource(CoreCommonR.plurals.library_song_count, pl.songs.size, pl.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -726,7 +726,7 @@ internal fun LocalPlaylistList(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.DragHandle,
-                                        contentDescription = stringResource(R.string.common_drag_handle),
+                                        contentDescription = stringResource(CoreCommonR.string.common_drag_handle),
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
@@ -735,7 +735,7 @@ internal fun LocalPlaylistList(
                                     HapticIconButton(onClick = { showMenu = true }) {
                                         Icon(
                                             imageVector = Icons.Filled.MoreVert,
-                                            contentDescription = stringResource(R.string.common_more_options)
+                                            contentDescription = stringResource(CoreCommonR.string.common_more_options)
                                         )
                                     }
                                     DropdownMenu(
@@ -743,7 +743,7 @@ internal fun LocalPlaylistList(
                                         onDismissRequest = { showMenu = false }
                                     ) {
                                         DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.action_rename)) },
+                                            text = { Text(stringResource(CoreCommonR.string.action_rename)) },
                                             onClick = {
                                                 showMenu = false
                                                 renameText = pl.name.take(maxNameLength)
@@ -751,7 +751,7 @@ internal fun LocalPlaylistList(
                                             }
                                         )
                                         DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.action_delete)) },
+                                            text = { Text(stringResource(CoreCommonR.string.action_delete)) },
                                             onClick = {
                                                 showMenu = false
                                                 showDeleteDialog = true
@@ -767,7 +767,7 @@ internal fun LocalPlaylistList(
                 if (showRenameDialog) {
                     MiuixSettingsDialog(
                         onDismissRequest = { showRenameDialog = false },
-                        title = { Text(stringResource(R.string.action_rename)) },
+                        title = { Text(stringResource(CoreCommonR.string.action_rename)) },
                         text = {
                             MiuixSettingsDialogContent(verticalSpacing = 12.dp) {
                                 MiuixSettingsTextField(
@@ -788,12 +788,12 @@ internal fun LocalPlaylistList(
                                     }
                                 },
                                 enabled = renameText.trim().isNotBlank()
-                            ) { Text(stringResource(R.string.action_confirm)) }
+                            ) { Text(stringResource(CoreCommonR.string.action_confirm)) }
                         },
                         dismissButton = {
                             MiuixSettingsTextButton(
                                 onClick = { showRenameDialog = false }
-                            ) { Text(stringResource(R.string.action_cancel)) }
+                            ) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                         }
                     )
                 }
@@ -801,9 +801,9 @@ internal fun LocalPlaylistList(
                 if (showDeleteDialog) {
                     AlertDialog(
                         onDismissRequest = { showDeleteDialog = false },
-                        title = { Text(stringResource(R.string.action_delete)) },
+                        title = { Text(stringResource(CoreCommonR.string.action_delete)) },
                         text = {
-                            Text(stringResource(R.string.library_delete_playlist_confirm, displayName))
+                            Text(stringResource(CoreCommonR.string.library_delete_playlist_confirm, displayName))
                         },
                         confirmButton = {
                             HapticTextButton(
@@ -812,12 +812,12 @@ internal fun LocalPlaylistList(
                                     showDeleteDialog = false
                                     onDelete(listOf(playlistId))
                                 }
-                            ) { Text(stringResource(R.string.action_delete)) }
+                            ) { Text(stringResource(CoreCommonR.string.action_delete)) }
                         },
                         dismissButton = {
                             HapticTextButton(
                                 onClick = { showDeleteDialog = false }
-                            ) { Text(stringResource(R.string.action_cancel)) }
+                            ) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                         }
                     )
                 }
@@ -852,7 +852,7 @@ internal fun LocalPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                pluralStringResource(R.plurals.library_song_count, system.songs.size, system.songs.size),
+                                pluralStringResource(CoreCommonR.plurals.library_song_count, system.songs.size, system.songs.size),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -930,7 +930,7 @@ internal fun LocalLibraryHeaderContent(
                 LibraryInlineSearchField(
                     query = searchQuery,
                     onQueryChange = onSearchQueryChange,
-                    placeholderResId = R.string.library_local_playlist_search_hint
+                    placeholderResId = CoreCommonR.string.library_local_playlist_search_hint
                 )
             }
         }
@@ -955,7 +955,7 @@ internal fun LocalArtistSearchAndSortRow(
             value = query,
             onValueChange = onQueryChange,
             modifier = Modifier.weight(1f),
-            placeholder = { Text(stringResource(R.string.library_local_artist_search_hint)) },
+            placeholder = { Text(stringResource(CoreCommonR.string.library_local_artist_search_hint)) },
             singleLine = true,
             shape = LibrarySearchFieldShape,
             trailingIcon = {
@@ -963,7 +963,7 @@ internal fun LocalArtistSearchAndSortRow(
                     HapticIconButton(onClick = { onQueryChange("") }) {
                         Icon(
                             imageVector = Icons.Filled.Close,
-                            contentDescription = stringResource(R.string.action_clear)
+                            contentDescription = stringResource(CoreCommonR.string.action_clear)
                         )
                     }
                 }
@@ -974,7 +974,7 @@ internal fun LocalArtistSearchAndSortRow(
             HapticIconButton(onClick = { menuExpanded = true }) {
                 Icon(
                     imageVector = Icons.Filled.MoreVert,
-                    contentDescription = stringResource(R.string.library_local_artist_sort)
+                    contentDescription = stringResource(CoreCommonR.string.library_local_artist_sort)
                 )
             }
             DropdownMenu(
@@ -983,7 +983,7 @@ internal fun LocalArtistSearchAndSortRow(
             ) {
                 LocalArtistSortMenuItem(
                     selected = sortMode == LocalArtistSortMode.SONG_COUNT,
-                    text = stringResource(R.string.library_local_artist_sort_count),
+                    text = stringResource(CoreCommonR.string.library_local_artist_sort_count),
                     onClick = {
                         onSortModeChange(LocalArtistSortMode.SONG_COUNT)
                         menuExpanded = false
@@ -991,7 +991,7 @@ internal fun LocalArtistSearchAndSortRow(
                 )
                 LocalArtistSortMenuItem(
                     selected = sortMode == LocalArtistSortMode.RECENT_ADDED,
-                    text = stringResource(R.string.library_local_artist_sort_recent),
+                    text = stringResource(CoreCommonR.string.library_local_artist_sort_recent),
                     onClick = {
                         onSortModeChange(LocalArtistSortMode.RECENT_ADDED)
                         menuExpanded = false
@@ -999,7 +999,7 @@ internal fun LocalArtistSearchAndSortRow(
                 )
                 LocalArtistSortMenuItem(
                     selected = sortMode == LocalArtistSortMode.NAME,
-                    text = stringResource(R.string.library_local_artist_sort_name),
+                    text = stringResource(CoreCommonR.string.library_local_artist_sort_name),
                     onClick = {
                         onSortModeChange(LocalArtistSortMode.NAME)
                         menuExpanded = false
@@ -1024,7 +1024,7 @@ internal fun LocalArtistSortMenuItem(
             if (selected) {
                 Icon(
                     imageVector = Icons.Filled.Check,
-                    contentDescription = stringResource(R.string.common_selected)
+                    contentDescription = stringResource(CoreCommonR.string.common_selected)
                 )
             } else {
                 Spacer(modifier = Modifier.size(24.dp))
@@ -1065,7 +1065,7 @@ internal fun LocalCategoryTabs(
                 Tab(
                     selected = selectedCategory == LOCAL_CATEGORY_PLAYLIST,
                     onClick = onPlaylistSelected,
-                    text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
+                    text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_playlists)) },
                     icon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.QueueMusic,
@@ -1076,7 +1076,7 @@ internal fun LocalCategoryTabs(
                 Tab(
                     selected = selectedCategory == LOCAL_CATEGORY_ARTIST,
                     onClick = onArtistSelected,
-                    text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
+                    text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_artists)) },
                     icon = {
                         Icon(
                             imageVector = Icons.Filled.AccountCircle,
@@ -1109,7 +1109,7 @@ internal fun LibraryInlineSearchField(
                 HapticIconButton(onClick = { onQueryChange("") }) {
                     Icon(
                         imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.action_clear)
+                        contentDescription = stringResource(CoreCommonR.string.action_clear)
                     )
                 }
             }

@@ -1,0 +1,13 @@
+:common
+:network
+:model
+:database
+:playback:logic
+:playback:runtime
+:download:logic
+:download:runtime
+:lyrics
+:platform
+:local
+:sync
+:listentogether

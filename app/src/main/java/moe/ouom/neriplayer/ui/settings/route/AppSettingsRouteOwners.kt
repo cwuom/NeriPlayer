@@ -12,21 +12,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
-import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.isCurrentBuildDimensity
-import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.local.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner
 import moe.ouom.neriplayer.ui.settings.owner.AppSettingsCacheClearOwner
 import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
 import moe.ouom.neriplayer.ui.settings.owner.formatExtraCacheClearResult
-import moe.ouom.neriplayer.util.format.formatFileSize
+import moe.ouom.neriplayer.common.format.formatFileSize
 
 @Composable
 private fun rememberInitialAdvancedBlurQuality() = remember {
@@ -101,18 +101,18 @@ internal fun rememberAppSettingsCacheClearOwner(application: Application): AppSe
                 formatExtraCacheClearResult(
                     result = result,
                     partialMessage = {
-                        resources.getString(R.string.storage_extra_cache_clear_partial)
+                        resources.getString(CoreCommonR.string.storage_extra_cache_clear_partial)
                     },
                     roomCompleteMessage = { freed, reusable ->
                         resources.getString(
-                            R.string.storage_extra_cache_clear_room_complete,
+                            CoreCommonR.string.storage_extra_cache_clear_room_complete,
                             formatFileSize(freed),
                             formatFileSize(reusable)
                         )
                     },
                     completeMessage = { freed ->
                         resources.getString(
-                            R.string.storage_extra_cache_clear_complete,
+                            CoreCommonR.string.storage_extra_cache_clear_complete,
                             formatFileSize(freed)
                         )
                     }

@@ -1,8 +1,9 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Base64
 import androidx.documentfile.provider.DocumentFile
@@ -74,19 +75,12 @@ class LocalAudioImportStandaloneFlacTest {
     fun managedFolderDoesNotTrustPartialMediaStoreResults() = runBlocking {
         val uri = createAudio(fixtures.first())
         createAudio(fixtures.last())
-        val indexedSong = LocalAudioImportManager.buildQuickImportedSong(
-            seed = QuickImportedSongSeed(
-                sourceRef = uri.toString(),
-                displayName = fixtures.first().fileName,
-                title = null,
-                artist = null,
-                album = null,
-                durationMs = null
-            ),
-            unknownArtistLabel = "Unknown Artist"
+        val indexedSong = LocalAudioImportTestSupport.buildQuickImportedSong(
+            sourceRef = uri.toString(),
+            displayName = fixtures.first().fileName
         )
 
-        val result = LocalAudioImportManager.scanFolderSongsWithMediaStoreResultForTest(
+        val result = LocalAudioImportTestSupport.scanWithMediaStoreResult(
             context = context,
             folderUri = treeUri,
             mediaStoreResult = LocalAudioImportResult(
@@ -112,14 +106,9 @@ class LocalAudioImportStandaloneFlacTest {
     fun documentFileFallbackKeepsStandaloneFlacCandidates() = runBlocking {
         fixtures.forEach(::createAudio)
         val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
-        val result = LocalAudioImportManager.collectFolderCandidatesWithDocumentFile(
+        val result = LocalAudioImportTestSupport.collectDocumentFileCandidates(
             context = context,
             root = requireNotNull(DocumentFile.fromTreeUri(context, treeUri)),
-            progress = LocalAudioScanProgressEmitter(
-                scanId = 1L,
-                startedAt = SystemClock.elapsedRealtime(),
-                onProgress = {}
-            ),
             managedDownloadGate = ManagedDownloadCandidatePublicationGate(
                 snapshot = snapshot,
                 treeDocumentId = ManagedDownloadMigrationTestDocumentProvider.SOURCE_ROOT_ID
@@ -127,7 +116,7 @@ class LocalAudioImportStandaloneFlacTest {
         )
 
         assertEquals(0, result.failedCount)
-        assertEquals(fixtures.map { it.fileName }.toSet(), result.candidates.map { it.displayName }.toSet())
+        assertEquals(fixtures.map { it.fileName }.toSet(), result.candidateDisplayNames.toSet())
     }
 
     @Test

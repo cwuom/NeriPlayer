@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
 
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.metadata.shouldTryPreferredLyricSource
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong

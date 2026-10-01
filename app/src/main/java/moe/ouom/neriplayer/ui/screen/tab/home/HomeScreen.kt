@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import android.app.Application
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -115,24 +116,23 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.playlist.usage.buildLocalPlaylistUsageLookup
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteasePlaylistSectionState
@@ -148,9 +148,9 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.platform.youtube.api.parser.YouTubeMusicParser
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.format.formatPlayCount
@@ -334,10 +334,10 @@ fun HomeScreen(
     }
 
     val titleOptions = listOf(
-        stringResource(R.string.app_name),
-        stringResource(R.string.home_title_brand_loud),
-        stringResource(R.string.home_title_brand_wave),
-        stringResource(R.string.home_title_brand_call)
+        stringResource(CoreCommonR.string.app_name),
+        stringResource(CoreCommonR.string.home_title_brand_loud),
+        stringResource(CoreCommonR.string.home_title_brand_wave),
+        stringResource(CoreCommonR.string.home_title_brand_call)
     ).distinct()
     val titleSeed = rememberSaveable { (0..Int.MAX_VALUE).random() }
     val appBarTitle = titleOptions[titleSeed % titleOptions.size]
@@ -353,11 +353,11 @@ fun HomeScreen(
     )
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val guessYouLikeTitle = stringResource(R.string.home_ytmusic_guess_you_like)
-    val dailyDiscoverTitle = stringResource(R.string.home_ytmusic_daily_discover)
-    val moreRecommendationsTitle = stringResource(R.string.home_ytmusic_more_recommendations)
-    val favoriteAddedText = stringResource(R.string.favorite_added)
-    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    val guessYouLikeTitle = stringResource(CoreCommonR.string.home_ytmusic_guess_you_like)
+    val dailyDiscoverTitle = stringResource(CoreCommonR.string.home_ytmusic_daily_discover)
+    val moreRecommendationsTitle = stringResource(CoreCommonR.string.home_ytmusic_more_recommendations)
+    val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
+    val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
     val ytmSections = remember(ui.ytMusicHomeShelves.items) {
         classifyYouTubeMusicShelves(ui.ytMusicHomeShelves.items)
     }
@@ -448,7 +448,7 @@ fun HomeScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Refresh,
-                            contentDescription = stringResource(R.string.recommend_refresh)
+                            contentDescription = stringResource(CoreCommonR.string.recommend_refresh)
                         )
                     }
                 },
@@ -478,9 +478,9 @@ fun HomeScreen(
                     ) {
                         Text(
                             text = if (offlineMode) {
-                                stringResource(R.string.home_offline_no_continue)
+                                stringResource(CoreCommonR.string.home_offline_no_continue)
                             } else {
-                                stringResource(R.string.home_all_cards_hidden)
+                                stringResource(CoreCommonR.string.home_all_cards_hidden)
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -490,7 +490,7 @@ fun HomeScreen(
                 }
 
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
-                val homeLoadingText = stringResource(R.string.home_loading)
+                val homeLoadingText = stringResource(CoreCommonR.string.home_loading)
                 val scrollAnchorIndexes = linkedMapOf<String, Int>()
                 var nextGridItemIndex = 0
                 fun registerGridItemKey(key: String): String {
@@ -518,7 +518,7 @@ fun HomeScreen(
                         ) {
                             SectionHeader(
                                 icon = Icons.Outlined.History,
-                                title = stringResource(R.string.player_continue)
+                                title = stringResource(CoreCommonR.string.player_continue)
                             )
                         }
                         item(
@@ -771,7 +771,7 @@ fun HomeScreen(
                                 ) {
                                     SectionHeader(
                                         icon = Icons.Outlined.Explore,
-                                        title = stringResource(R.string.home_netease_radar_playlists)
+                                        title = stringResource(CoreCommonR.string.home_netease_radar_playlists)
                                     )
                                 }
                                 sectionContent(
@@ -1068,7 +1068,7 @@ private fun SectionErrorState(detail: String) {
             style = MaterialTheme.typography.bodyMedium
         )
         Text(
-            text = stringResource(R.string.home_retry_hint),
+            text = stringResource(CoreCommonR.string.home_retry_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1158,7 +1158,7 @@ private fun SongRowMini(
             ) {
                 Icon(
                     imageVector = Icons.Filled.MoreVert,
-                    contentDescription = stringResource(R.string.common_more_actions),
+                    contentDescription = stringResource(CoreCommonR.string.common_more_actions),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1168,7 +1168,7 @@ private fun SongRowMini(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                    text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
@@ -1181,7 +1181,7 @@ private fun SongRowMini(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                    text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
@@ -1198,9 +1198,9 @@ private fun SongRowMini(
                         Text(
                             stringResource(
                                 if (isFavorite) {
-                                    R.string.favorite_remove
+                                    CoreCommonR.string.favorite_remove
                                 } else {
-                                    R.string.favorite_add
+                                    CoreCommonR.string.favorite_add
                                 }
                             )
                         )
@@ -1221,7 +1221,7 @@ private fun SongRowMini(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_copy_song_info)) },
+                    text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.ContentCopy,
@@ -1235,7 +1235,7 @@ private fun SongRowMini(
                                     ClipData.newPlainText("text", buildHomeSongInfo(song))
                                 )
                             )
-                            onShowSnackbar(composeResources.getString(R.string.toast_copied))
+                            onShowSnackbar(composeResources.getString(CoreCommonR.string.toast_copied))
                         }
                         showMenu = false
                     }
@@ -1290,8 +1290,8 @@ private fun RadarPlaylistCard(
     val scope = rememberCoroutineScope()
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     var showMenu by remember { mutableStateOf(false) }
-    val unfavoritedText = stringResource(R.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(R.string.favorite_success)
+    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
 
     Column(
         modifier = modifier
@@ -1330,7 +1330,7 @@ private fun RadarPlaylistCard(
                 )
             }
             Text(
-                text = stringResource(R.string.home_netease_radar_badge),
+                text = stringResource(CoreCommonR.string.home_netease_radar_badge),
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(8.dp)
@@ -1353,7 +1353,7 @@ private fun RadarPlaylistCard(
             )
             Text(
                 text = stringResource(
-                    R.string.home_play_count_format,
+                    CoreCommonR.string.home_play_count_format,
                     formatPlayCount(context, playlist.playCount),
                     playlist.trackCount
                 ),
@@ -1372,9 +1372,9 @@ private fun RadarPlaylistCard(
                 text = {
                     Text(
                         if (isFavorite) {
-                            stringResource(R.string.home_unfavorite_playlist)
+                            stringResource(CoreCommonR.string.home_unfavorite_playlist)
                         } else {
-                            stringResource(R.string.home_favorite_playlist)
+                            stringResource(CoreCommonR.string.home_favorite_playlist)
                         }
                     )
                 },
@@ -1426,8 +1426,8 @@ fun PlaylistCard(
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     var showMenu by remember { mutableStateOf(false) }
 
-    val unfavoritedText = stringResource(R.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(R.string.favorite_success)
+    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
 
     Column(
         modifier = Modifier
@@ -1460,7 +1460,7 @@ fun PlaylistCard(
             )
             Text(
                 text = stringResource(
-                    R.string.home_play_count_format,
+                    CoreCommonR.string.home_play_count_format,
                     formatPlayCount(context, playlist.playCount),
                     playlist.trackCount
                 ),
@@ -1479,9 +1479,9 @@ fun PlaylistCard(
                 text = {
                     Text(
                         if (isFavorite) {
-                            stringResource(R.string.home_unfavorite_playlist)
+                            stringResource(CoreCommonR.string.home_unfavorite_playlist)
                         } else {
-                            stringResource(R.string.home_favorite_playlist)
+                            stringResource(CoreCommonR.string.home_favorite_playlist)
                         }
                     )
                 },
@@ -1534,8 +1534,8 @@ private fun YtMusicPlaylistCard(
         playlist.favoriteId()
     }
     var showMenu by remember { mutableStateOf(false) }
-    val unfavoritedText = stringResource(R.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(R.string.favorite_success)
+    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
 
     Column(
         modifier = Modifier
@@ -1585,9 +1585,9 @@ private fun YtMusicPlaylistCard(
                 text = {
                     Text(
                         if (isFavorite) {
-                            stringResource(R.string.home_unfavorite_playlist)
+                            stringResource(CoreCommonR.string.home_unfavorite_playlist)
                         } else {
-                            stringResource(R.string.home_favorite_playlist)
+                            stringResource(CoreCommonR.string.home_favorite_playlist)
                         }
                     )
                 },
@@ -1644,8 +1644,8 @@ private fun YtMusicHomeItemCard(
         playlist?.favoriteId()
     }
     var showMenu by remember { mutableStateOf(false) }
-    val unfavoritedText = stringResource(R.string.home_unfavorited)
-    val favoriteSuccessText = stringResource(R.string.favorite_success)
+    val unfavoritedText = stringResource(CoreCommonR.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(CoreCommonR.string.favorite_success)
 
     Column(
         modifier = Modifier
@@ -1701,9 +1701,9 @@ private fun YtMusicHomeItemCard(
                     text = {
                         Text(
                             if (isFavorite) {
-                                stringResource(R.string.home_unfavorite_playlist)
+                                stringResource(CoreCommonR.string.home_unfavorite_playlist)
                             } else {
-                                stringResource(R.string.home_favorite_playlist)
+                                stringResource(CoreCommonR.string.home_favorite_playlist)
                             }
                         )
                     },

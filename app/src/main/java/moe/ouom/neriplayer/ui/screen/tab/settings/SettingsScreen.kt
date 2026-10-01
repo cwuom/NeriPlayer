@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.data.ltw.validation.format
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -59,28 +60,28 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostBindings
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.PlaybackServiceIdleShutdownSetting
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsTrafficManagementSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.PlaybackServiceIdleShutdownSetting
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.SettingsAudioQualitySection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.lyrics.SettingsLyricsSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.appearance.SettingsMotionSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.SettingsPlaybackSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.traffic.SettingsTrafficManagementSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.UsbExclusiveSettingsSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.YouTubePlaybackSourceSetting
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.usb.UsbExclusiveSettingsSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.playback.YouTubePlaybackSourceSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
@@ -281,7 +282,7 @@ internal fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(stringResource(R.string.settings_title))
+            Text(stringResource(CoreCommonR.string.settings_title))
             ThemeModeActionButton(
                 isDarkTheme = environment.isDarkTheme,
                 onToggleRequest = environment.onThemeToggleRequest
@@ -370,16 +371,16 @@ internal fun SettingsScreen(
                                     ),
                                     leadingContent = {
                                         Icon(
-                                            painter = painterResource(id = R.drawable.ic_i18n),
-                                            contentDescription = stringResource(R.string.settings_internationalization),
+                                            painter = painterResource(id = CoreCommonR.drawable.ic_i18n),
+                                            contentDescription = stringResource(CoreCommonR.string.settings_internationalization),
                                             modifier = Modifier.size(24.dp),
                                             tint = MaterialTheme.colorScheme.onSurface
                                         )
                                     },
-                                    headlineContent = { Text(stringResource(R.string.settings_internationalization)) },
+                                    headlineContent = { Text(stringResource(CoreCommonR.string.settings_internationalization)) },
                                     supportingContent = {
                                         Text(
-                                            stringResource(R.string.settings_internationalization_desc)
+                                            stringResource(CoreCommonR.string.settings_internationalization_desc)
                                         )
                                     },
                                     trailingContent = {
@@ -391,15 +392,15 @@ internal fun SettingsScreen(
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                                 )
                                 MiuixSettingsSectionIntro(
-                                    title = stringResource(R.string.settings_ui_scale),
-                                    description = stringResource(R.string.settings_ui_scale_global_desc)
+                                    title = stringResource(CoreCommonR.string.settings_ui_scale),
+                                    description = stringResource(CoreCommonR.string.settings_ui_scale_global_desc)
                                 )
                                 AutoSettingsListItem(
                                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
                                     leadingContent = {
                                         Icon(
                                             imageVector = Icons.Outlined.ZoomInMap,
-                                            contentDescription = stringResource(R.string.settings_ui_scale),
+                                            contentDescription = stringResource(CoreCommonR.string.settings_ui_scale),
                                             modifier = Modifier.size(24.dp),
                                             tint = MaterialTheme.colorScheme.onSurface
                                         )
@@ -407,7 +408,7 @@ internal fun SettingsScreen(
                                     supportingContent = {
                                         Text(
                                             stringResource(
-                                                R.string.settings_ui_scale_current,
+                                                CoreCommonR.string.settings_ui_scale_current,
                                                 "%.2f".format(appearanceState.visualBackground.uiDensityScale)
                                             )
                                         )
@@ -423,8 +424,8 @@ internal fun SettingsScreen(
                         SettingsPage.Theme to {
                             miuixSettingsSectionCardItem(key = "${selectedPage.name}:mode") {
                                 MiuixSettingsSectionIntro(
-                                    title = stringResource(R.string.settings_theme_mode),
-                                    description = stringResource(R.string.settings_theme_mode_desc)
+                                    title = stringResource(CoreCommonR.string.settings_theme_mode),
+                                    description = stringResource(CoreCommonR.string.settings_theme_mode_desc)
                                 )
                                 ThemeModeSelectorListItem(
                                     isDarkTheme = environment.isDarkTheme,
@@ -445,15 +446,15 @@ internal fun SettingsScreen(
                             }
                             miuixSettingsSectionCardItem(key = "${selectedPage.name}:dynamic_color") {
                                 MiuixSettingsSectionIntro(
-                                    title = stringResource(R.string.settings_theme_color_section),
-                                    description = stringResource(R.string.settings_theme_color_section_desc)
+                                    title = stringResource(CoreCommonR.string.settings_theme_color_section),
+                                    description = stringResource(CoreCommonR.string.settings_theme_color_section_desc)
                                 )
                                 AutoSettingsListItem(
                                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DYNAMIC_COLOR),
                                     leadingContent = {
                                         Icon(
                                             imageVector = Icons.Outlined.Colorize,
-                                            contentDescription = stringResource(R.string.settings_dynamic_color),
+                                            contentDescription = stringResource(CoreCommonR.string.settings_dynamic_color),
                                             tint = MaterialTheme.colorScheme.onSurface
                                         )
                                     },
@@ -478,7 +479,7 @@ internal fun SettingsScreen(
                                     )
                                 }
                                 Text(
-                                    text = stringResource(R.string.settings_theme_palette_hint),
+                                    text = stringResource(CoreCommonR.string.settings_theme_palette_hint),
                                     modifier = Modifier.padding(
                                         start = 16.dp,
                                         end = 16.dp,
@@ -724,7 +725,7 @@ internal fun SettingsScreen(
                                     leadingContent = {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Outlined.AltRoute,
-                                            contentDescription = stringResource(R.string.settings_bypass_proxy),
+                                            contentDescription = stringResource(CoreCommonR.string.settings_bypass_proxy),
                                             modifier = Modifier.size(24.dp),
                                             tint = MaterialTheme.colorScheme.onSurface
                                         )
@@ -844,7 +845,7 @@ internal fun SettingsScreen(
                                         Icon(
                                             imageVector = Icons.Outlined.LibraryMusic,
                                             contentDescription = stringResource(
-                                                R.string.settings_netease_local_source_fallback
+                                                CoreCommonR.string.settings_netease_local_source_fallback
                                             ),
                                             modifier = Modifier.size(24.dp),
                                             tint = MaterialTheme.colorScheme.onSurface
@@ -869,9 +870,9 @@ internal fun SettingsScreen(
                                     ),
                                     leadingContent = {
                                         Icon(
-                                            painter = painterResource(R.drawable.ic_bilibili),
+                                            painter = painterResource(CoreCommonR.drawable.ic_bilibili),
                                             contentDescription = stringResource(
-                                                R.string.settings_netease_auto_source_switch
+                                                CoreCommonR.string.settings_netease_auto_source_switch
                                             ),
                                             modifier = Modifier.size(24.dp),
                                             tint = MaterialTheme.colorScheme.onSurface
@@ -984,7 +985,7 @@ internal fun SettingsScreen(
                                     openStorageSystemSettings(context) {
                                         showSettingsMessage(
                                             composeResources.getString(
-                                                R.string.storage_open_system_settings_failed
+                                                CoreCommonR.string.storage_open_system_settings_failed
                                             )
                                         )
                                     }

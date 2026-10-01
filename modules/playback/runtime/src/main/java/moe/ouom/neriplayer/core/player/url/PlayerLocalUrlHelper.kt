@@ -1,0 +1,35 @@
+package moe.ouom.neriplayer.core.player.url
+
+import android.content.Context
+import android.net.Uri
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.deriveCodecLabel
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.media.localMediaUri
+
+internal fun buildLocalPlaybackAudioInfo(song: SongItem, context: Context): PlaybackAudioInfo? {
+    val localUri = song.localMediaUri() ?: return null
+    return buildLocalPlaybackAudioInfo(localUri, context)
+}
+
+internal fun buildLocalPlaybackAudioInfo(localUri: Uri, context: Context): PlaybackAudioInfo? {
+    return runCatching {
+        LocalMediaSupport.inspectQuick(
+            context = context,
+            uri = localUri,
+            includeAudioTrackInfo = true
+        )
+    }.getOrNull()?.let { details ->
+        PlaybackAudioInfo(
+            source = PlaybackAudioSource.LOCAL,
+            codecLabel = deriveCodecLabel(details.audioMimeType ?: details.mimeType),
+            mimeType = details.audioMimeType ?: details.mimeType,
+            bitrateKbps = details.bitrateKbps,
+            sampleRateHz = details.sampleRateHz,
+            bitDepth = details.bitsPerSample,
+            channelCount = details.channelCount
+        )
+    }
+}

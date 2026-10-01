@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,16 +44,16 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.platform.netease.api.client.mergeNeteaseSessionCookies
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
-import moe.ouom.neriplayer.util.platform.LanguageManager
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.platform.netease.neteaseRadarCacheContext
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -848,18 +850,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val localizedContext = localizedAppContext()
         return when (error) {
             is IOException -> localizedContext.getString(
-                R.string.home_error_network,
+                CoreCommonR.string.home_error_network,
                 error.message ?: error.javaClass.simpleName
             )
             is ApiCodeException -> {
                 if (error.code == 50000005) {
-                    localizedContext.getString(R.string.home_login_required)
+                    localizedContext.getString(CoreCommonR.string.home_login_required)
                 } else {
-                    localizedContext.getString(R.string.error_api_code, error.code)
+                    localizedContext.getString(CoreCommonR.string.error_api_code, error.code)
                 }
             }
             else -> localizedContext.getString(
-                R.string.home_error_unknown,
+                CoreCommonR.string.home_error_unknown,
                 error.message ?: error.javaClass.simpleName
             )
         }

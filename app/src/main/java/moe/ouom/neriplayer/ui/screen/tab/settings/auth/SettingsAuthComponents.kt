@@ -37,7 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
@@ -53,7 +53,7 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
         MiuixSettingsTextField(
             value = state.phone,
             onValueChange = vm::onPhoneChange,
-            label = { Text(stringResource(R.string.settings_phone_number_hint)) },
+            label = { Text(stringResource(CoreCommonR.string.settings_phone_number_hint)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -64,7 +64,7 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
         MiuixSettingsTextField(
             value = state.captcha,
             onValueChange = vm::onCaptchaChange,
-            label = { Text(stringResource(R.string.login_sms_code)) },
+            label = { Text(stringResource(CoreCommonR.string.login_sms_code)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -79,13 +79,13 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
             if (state.sending) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.size(8.dp))
-                Text(stringResource(R.string.login_sending))
+                Text(stringResource(CoreCommonR.string.login_sending))
             } else {
                 Text(
                     if (state.countdownSec > 0) {
-                        stringResource(R.string.settings_resend_code_countdown, state.countdownSec)
+                        stringResource(CoreCommonR.string.settings_resend_code_countdown, state.countdownSec)
                     } else {
-                        stringResource(R.string.login_send_code)
+                        stringResource(CoreCommonR.string.login_send_code)
                     }
                 )
             }
@@ -100,9 +100,9 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
             if (state.loggingIn) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.size(8.dp))
-                Text(stringResource(R.string.login_logging_in))
+                Text(stringResource(CoreCommonR.string.login_logging_in))
             } else {
-                Text(stringResource(R.string.login_title))
+                Text(stringResource(CoreCommonR.string.login_title))
             }
         }
     }

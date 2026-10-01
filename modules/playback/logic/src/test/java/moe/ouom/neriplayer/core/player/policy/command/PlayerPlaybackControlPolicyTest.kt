@@ -1,0 +1,122 @@
+package moe.ouom.neriplayer.core.player.policy.command
+
+import androidx.media3.common.Player
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PlayerPlaybackControlPolicyTest {
+    @Test
+    fun `toggle pauses every active intent and resumes an inactive transport`() {
+        assertTrue(shouldPausePlaybackWhenToggling(true, false, false, false, false))
+        assertTrue(shouldPausePlaybackWhenToggling(false, false, true, false, false))
+        assertTrue(shouldPausePlaybackWhenToggling(false, false, false, true, false))
+        assertTrue(shouldPausePlaybackWhenToggling(false, false, false, false, true))
+        assertFalse(shouldPausePlaybackWhenToggling(false, false, false, false, false))
+    }
+
+    @Test
+    fun `resume request shows pause button immediately`() {
+        val shouldShowPause = shouldShowPauseButtonForPlaybackControls(
+            resumePlaybackRequested = true,
+            pendingPauseJobActive = false
+        )
+
+        assertTrue(shouldShowPause)
+    }
+
+    @Test
+    fun `pause request keeps play button visible immediately`() {
+        val shouldShowPause = shouldShowPauseButtonForPlaybackControls(
+            resumePlaybackRequested = false,
+            pendingPauseJobActive = false
+        )
+
+        assertFalse(shouldShowPause)
+    }
+
+    @Test
+    fun `pending pause keeps play button visible even before fade completes`() {
+        val shouldShowPause = shouldShowPauseButtonForPlaybackControls(
+            resumePlaybackRequested = true,
+            pendingPauseJobActive = true
+        )
+
+        assertFalse(shouldShowPause)
+    }
+
+    @Test
+    fun `toggle prefers play when pause fade is still pending`() {
+        val shouldPause = shouldPausePlaybackWhenToggling(
+            resumePlaybackRequested = false,
+            pendingPauseJobActive = true,
+            playerIsPlaying = true,
+            playerPlayWhenReady = true,
+            playJobActive = false
+        )
+
+        assertFalse(shouldPause)
+    }
+
+    @Test
+    fun `audio focus loss clears visual playback intent`() {
+        val shouldClear = shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+            playWhenReady = false,
+            playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS,
+            pendingPauseJobActive = false,
+            playJobActive = false
+        )
+
+        assertTrue(shouldClear)
+    }
+
+    @Test
+    fun `pending local pause keeps external callback from overriding local transition`() {
+        val shouldClear = shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+            playWhenReady = false,
+            playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS,
+            pendingPauseJobActive = true,
+            playJobActive = false
+        )
+
+        assertFalse(shouldClear)
+    }
+
+    @Test
+    fun `buffering style user intent is kept for non external play when ready reasons`() {
+        val shouldClear = shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+            playWhenReady = false,
+            playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST,
+            pendingPauseJobActive = false,
+            playJobActive = false
+        )
+
+        assertFalse(shouldClear)
+    }
+
+    @Test
+    fun `listen together noisy pause resumes silently only for muted listener route loss`() {
+        assertTrue(
+            shouldResumeSilentlyForListenTogetherNoisyPause(
+                playWhenReady = false,
+                playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY,
+                muteListenTogetherListenerForAudioRouteLoss = true
+            )
+        )
+        assertFalse(
+            shouldResumeSilentlyForListenTogetherNoisyPause(
+                playWhenReady = false,
+                playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS,
+                muteListenTogetherListenerForAudioRouteLoss = true
+            )
+        )
+        assertFalse(
+            shouldResumeSilentlyForListenTogetherNoisyPause(
+                playWhenReady = false,
+                playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY,
+                muteListenTogetherListenerForAudioRouteLoss = false
+            )
+        )
+    }
+
+}

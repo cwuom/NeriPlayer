@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.data.sync.host.createWebDavSyncClient
+
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,15 +10,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
-import moe.ouom.neriplayer.data.sync.webdav.WebDavApiClient
-import moe.ouom.neriplayer.data.sync.webdav.WebDavAuthException
-import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
+import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncInProgressException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.data.sync.model.SyncResult
+import moe.ouom.neriplayer.data.model.sync.SyncResult
 
 class WebDavSyncViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(WebDavSyncUiState())
@@ -61,7 +62,7 @@ class WebDavSyncViewModel : ViewModel() {
         val normalizedBasePath = basePath.trim()
         if (normalizedServerUrl.isBlank() || normalizedUsername.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(
-                errorMessage = appContext.getString(R.string.webdav_required_fields)
+                errorMessage = appContext.getString(CoreCommonR.string.webdav_required_fields)
             )
             return
         }
@@ -70,7 +71,7 @@ class WebDavSyncViewModel : ViewModel() {
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                WebDavApiClient(appContext, normalizedUsername, password)
+                createWebDavSyncClient(appContext, normalizedUsername, password)
                     .validateConnection(normalizedServerUrl, normalizedBasePath)
             }
 
@@ -87,15 +88,15 @@ class WebDavSyncViewModel : ViewModel() {
                     serverUrl = normalizedServerUrl,
                     basePath = normalizedBasePath,
                     username = normalizedUsername,
-                    successMessage = appContext.getString(R.string.webdav_validate_success)
+                    successMessage = appContext.getString(CoreCommonR.string.webdav_validate_success)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isValidating = false,
                     errorMessage = appContext.getString(
-                        R.string.webdav_validate_failed,
+                        CoreCommonR.string.webdav_validate_failed,
                         result.exceptionOrNull()?.message
-                            ?: appContext.getString(R.string.webdav_sync_failed_message)
+                            ?: appContext.getString(CoreCommonR.string.webdav_sync_failed_message)
                     )
                 )
             }
@@ -133,14 +134,14 @@ class WebDavSyncViewModel : ViewModel() {
                 if (error is WebDavAuthException) {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = appContext.getString(R.string.webdav_auth_failed)
+                        errorMessage = appContext.getString(CoreCommonR.string.webdav_auth_failed)
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
                         errorMessage = appContext.getString(
-                            R.string.webdav_sync_failed,
-                            error?.message ?: appContext.getString(R.string.webdav_sync_failed_message)
+                            CoreCommonR.string.webdav_sync_failed,
+                            error?.message ?: appContext.getString(CoreCommonR.string.webdav_sync_failed_message)
                         )
                     )
                 }

@@ -15,7 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds

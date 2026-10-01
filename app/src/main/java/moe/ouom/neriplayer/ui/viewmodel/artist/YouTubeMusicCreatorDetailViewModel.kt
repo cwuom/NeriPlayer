@@ -14,16 +14,16 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorDetail
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItem
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
-import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.platform.youtube.api.transport.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
 data class YouTubeMusicCreatorDetailUiState(
@@ -87,7 +87,7 @@ class YouTubeMusicCreatorDetailViewModel(
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = getApplication<Application>().getString(
-                        R.string.youtube_creator_load_failed,
+                        CoreCommonR.string.youtube_creator_load_failed,
                         error.message ?: error.javaClass.simpleName
                     )
                 )
@@ -157,7 +157,7 @@ class YouTubeMusicCreatorDetailViewModel(
 
     private fun creatorItemsError(sectionTitle: String, error: Exception): String {
         return getApplication<Application>().getString(
-            R.string.youtube_creator_items_load_failed,
+            CoreCommonR.string.youtube_creator_items_load_failed,
             sectionTitle,
             error.message ?: error.javaClass.simpleName
         )

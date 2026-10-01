@@ -16,9 +16,9 @@ import moe.ouom.neriplayer.core.download.manager.catalog.cancelScheduledDownload
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.reloadDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.restorePersistedDownloadedSongs
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshPreserveReason
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshPreserveReason
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test

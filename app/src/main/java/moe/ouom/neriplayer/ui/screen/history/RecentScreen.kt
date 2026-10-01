@@ -23,7 +23,9 @@ package moe.ouom.neriplayer.ui.screen.history
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -100,7 +102,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -111,9 +113,8 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
@@ -125,7 +126,7 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
-import moe.ouom.neriplayer.util.search.SearchTextMatcher
+import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,8 +157,8 @@ fun RecentScreen(
     val favoriteSongs = remember(allLocalPlaylists, context) {
         FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty()
     }
-    val favoriteAddedText = stringResource(R.string.favorite_added)
-    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
+    val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
     fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
         val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
         scope.launchLocalPlaylistMutation(
@@ -240,12 +241,12 @@ fun RecentScreen(
             topBar = {
                 if (!selectionMode) {
                     TopAppBar(
-                        title = { Text(stringResource(R.string.recent_title)) },
+                        title = { Text(stringResource(CoreCommonR.string.recent_title)) },
                         navigationIcon = {
                             HapticIconButton(onClick = onBack) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(R.string.cd_back)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_back)
                                 )
                             }
                         },
@@ -256,7 +257,7 @@ fun RecentScreen(
                             }) {
                                 Icon(
                                     Icons.Filled.Search,
-                                    contentDescription = stringResource(R.string.cd_search)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_search)
                                 )
                             }
 
@@ -269,7 +270,7 @@ fun RecentScreen(
                             ) {
                                 Icon(
                                     Icons.Filled.PlayArrow,
-                                    contentDescription = stringResource(R.string.cd_play_all)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_play_all)
                                 )
                             }
 
@@ -285,7 +286,7 @@ fun RecentScreen(
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                    contentDescription = stringResource(R.string.cd_shuffle)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_shuffle)
                                 )
                             }
 
@@ -296,7 +297,7 @@ fun RecentScreen(
                             ) {
                                 Icon(
                                     Icons.Filled.ClearAll,
-                                    contentDescription = stringResource(R.string.cd_clear)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_clear)
                                 )
                             }
                         },
@@ -313,7 +314,7 @@ fun RecentScreen(
                         title = {
                             Text(
                                 pluralStringResource(
-                                    R.plurals.common_selected_count,
+                                    CoreCommonR.plurals.common_selected_count,
                                     selectedKeys.size,
                                     selectedKeys.size
                                 )
@@ -323,7 +324,7 @@ fun RecentScreen(
                             HapticIconButton(onClick = { exitSelection() }) {
                                 Icon(
                                     Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.cd_exit_select)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_exit_select)
                                 )
                             }
                         },
@@ -338,9 +339,9 @@ fun RecentScreen(
                             }) {
                                 Text(
                                     if (allSelected) {
-                                        stringResource(R.string.action_deselect_all)
+                                        stringResource(CoreCommonR.string.action_deselect_all)
                                     } else {
-                                        stringResource(R.string.action_select_all)
+                                        stringResource(CoreCommonR.string.action_select_all)
                                     }
                                 )
                             }
@@ -360,7 +361,7 @@ fun RecentScreen(
                             ) {
                                 Icon(
                                     Icons.Outlined.DeleteForever,
-                                    contentDescription = stringResource(R.string.action_delete)
+                                    contentDescription = stringResource(CoreCommonR.string.action_delete)
                                 )
                             }
 
@@ -377,7 +378,7 @@ fun RecentScreen(
                                         exitSelection()
                                     }
                                 }
-                            ) { Text(stringResource(R.string.player_play_selected)) }
+                            ) { Text(stringResource(CoreCommonR.string.player_play_selected)) }
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -394,7 +395,7 @@ fun RecentScreen(
                         .fillMaxSize()
                         .padding(padding),
                     contentAlignment = Alignment.Center
-                ) { Text(stringResource(R.string.recent_no_history)) }
+                ) { Text(stringResource(CoreCommonR.string.recent_no_history)) }
                 return@Scaffold
             }
 
@@ -410,7 +411,7 @@ fun RecentScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
-                        placeholder = { Text(stringResource(R.string.search_recent)) },
+                        placeholder = { Text(stringResource(CoreCommonR.string.search_recent)) },
                         singleLine = true
                     )
                 }
@@ -457,7 +458,7 @@ fun RecentScreen(
                                     IconButton(onClick = { showMenu = true }) {
                                         Icon(
                                             Icons.Filled.MoreVert,
-                                            contentDescription = stringResource(R.string.cd_more)
+                                            contentDescription = stringResource(CoreCommonR.string.cd_more)
                                         )
                                     }
                                     DropdownMenu(
@@ -466,7 +467,7 @@ fun RecentScreen(
                                     ) {
                                         DropdownMenuItem(
                                             text = {
-                                                Text(stringResource(R.string.local_playlist_play_next))
+                                                Text(stringResource(CoreCommonR.string.local_playlist_play_next))
                                             },
                                             leadingIcon = {
                                                 Icon(
@@ -481,7 +482,7 @@ fun RecentScreen(
                                         )
                                         DropdownMenuItem(
                                             text = {
-                                                Text(stringResource(R.string.playlist_add_to_end))
+                                                Text(stringResource(CoreCommonR.string.playlist_add_to_end))
                                             },
                                             leadingIcon = {
                                                 Icon(
@@ -499,9 +500,9 @@ fun RecentScreen(
                                                 Text(
                                                     stringResource(
                                                         if (isFavoriteSong) {
-                                                            R.string.favorite_remove
+                                                            CoreCommonR.string.favorite_remove
                                                         } else {
-                                                            R.string.favorite_add
+                                                            CoreCommonR.string.favorite_add
                                                         }
                                                     )
                                                 )
@@ -536,16 +537,16 @@ fun RecentScreen(
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            title = { Text(stringResource(R.string.recent_clear)) },
-            text = { Text(stringResource(R.string.recent_clear_confirm)) },
+            title = { Text(stringResource(CoreCommonR.string.recent_clear)) },
+            text = { Text(stringResource(CoreCommonR.string.recent_clear_confirm)) },
             confirmButton = {
                 HapticTextButton(onClick = {
                     repo.clear()
                     showClearConfirm = false
-                }) { Text(stringResource(R.string.action_clear)) }
+                }) { Text(stringResource(CoreCommonR.string.action_clear)) }
             },
             dismissButton = {
-                HapticTextButton(onClick = { showClearConfirm = false }) { Text(stringResource(R.string.action_cancel)) }
+                HapticTextButton(onClick = { showClearConfirm = false }) { Text(stringResource(CoreCommonR.string.action_cancel)) }
             }
         )
     }
@@ -555,17 +556,17 @@ fun RecentScreen(
         val deleteCount = pendingDeleteSongs.size
         val deleteMessage = if (deleteCount <= 1) {
             val songName = pendingDeleteSongs.firstOrNull()?.displayName().orEmpty()
-            stringResource(R.string.download_delete_confirm, songName)
+            stringResource(CoreCommonR.string.download_delete_confirm, songName)
         } else {
             pluralStringResource(
-                R.plurals.download_delete_selected_confirm,
+                CoreCommonR.plurals.download_delete_selected_confirm,
                 deleteCount,
                 deleteCount
             )
         }
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
             text = { Text(deleteMessage) },
             confirmButton = {
                 HapticTextButton(onClick = {
@@ -577,11 +578,11 @@ fun RecentScreen(
                     }
                     pendingDeleteSongs = emptyList()
                     showDeleteConfirm = false
-                }) { Text(stringResource(R.string.action_delete)) }
+                }) { Text(stringResource(CoreCommonR.string.action_delete)) }
             },
             dismissButton = {
                 HapticTextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -713,7 +714,7 @@ private fun RecentRowRich(
             SongDownloadSubtitle(
                 text = secondaryText,
                 downloaded = downloaded,
-                contentDescription = stringResource(R.string.cd_downloaded)
+                contentDescription = stringResource(CoreCommonR.string.cd_downloaded)
             )
         }
 

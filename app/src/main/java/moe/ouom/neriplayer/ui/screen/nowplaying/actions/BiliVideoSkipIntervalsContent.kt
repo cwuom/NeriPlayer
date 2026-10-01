@@ -53,12 +53,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliVideoSkipTargetOption
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
-import moe.ouom.neriplayer.data.platform.bili.normalizeBiliVideoSkipIntervals
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
+import moe.ouom.neriplayer.platform.bilibili.skip.policy.normalizeBiliVideoSkipIntervals
 
 private const val MAX_BILI_VIDEO_SKIP_TIMESTAMP_MS = 24L * 60L * 60L * 1_000L
 internal const val BILI_VIDEO_SKIP_SMALL_SEEK_STEP_MS = 1_000L
@@ -190,12 +190,12 @@ internal fun BiliVideoSkipIntervalsContent(
     var intervalPendingDeletion by remember { mutableStateOf<BiliVideoSkipInterval?>(null) }
     var showClearConfirmation by remember { mutableStateOf(false) }
 
-    val invalidTimeText = stringResource(R.string.bili_video_skip_invalid_time)
-    val invalidRangeText = stringResource(R.string.bili_video_skip_invalid_range)
-    val exceedsDurationText = stringResource(R.string.bili_video_skip_exceeds_duration)
-    val saveFailedText = stringResource(R.string.bili_video_skip_save_failed)
-    val deleteConfirmationText = stringResource(R.string.bili_video_skip_delete_confirm)
-    val clearConfirmationText = stringResource(R.string.bili_video_skip_clear_confirm)
+    val invalidTimeText = stringResource(CoreCommonR.string.bili_video_skip_invalid_time)
+    val invalidRangeText = stringResource(CoreCommonR.string.bili_video_skip_invalid_range)
+    val exceedsDurationText = stringResource(CoreCommonR.string.bili_video_skip_exceeds_duration)
+    val saveFailedText = stringResource(CoreCommonR.string.bili_video_skip_save_failed)
+    val deleteConfirmationText = stringResource(CoreCommonR.string.bili_video_skip_delete_confirm)
+    val clearConfirmationText = stringResource(CoreCommonR.string.bili_video_skip_clear_confirm)
 
     LaunchedEffect(targetResolverKey, retryToken) {
         isLoading = true
@@ -277,7 +277,7 @@ internal fun BiliVideoSkipIntervalsContent(
             IconButton(onClick = onDismiss) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.action_back)
+                    contentDescription = stringResource(CoreCommonR.string.action_back)
                 )
             }
             Spacer(Modifier.width(4.dp))
@@ -302,12 +302,12 @@ internal fun BiliVideoSkipIntervalsContent(
 
             loadFailed || selectedTarget == null -> {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.bili_video_skip_load_failed)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.bili_video_skip_load_failed)) },
                     trailingContent = {
                         IconButton(onClick = { retryToken++ }) {
                             Icon(
                                 imageVector = Icons.Outlined.Refresh,
-                                contentDescription = stringResource(R.string.action_retry)
+                                contentDescription = stringResource(CoreCommonR.string.action_retry)
                             )
                         }
                     }
@@ -365,7 +365,7 @@ internal fun BiliVideoSkipIntervalsContent(
                             saveInputDraft(updatedStartText = it)
                             inputError = null
                         },
-                        label = { Text(stringResource(R.string.bili_video_skip_start)) },
+                        label = { Text(stringResource(CoreCommonR.string.bili_video_skip_start)) },
                         singleLine = true,
                         modifier = Modifier
                             .weight(1f)
@@ -379,7 +379,7 @@ internal fun BiliVideoSkipIntervalsContent(
                             saveInputDraft(updatedEndText = it)
                             inputError = null
                         },
-                        label = { Text(stringResource(R.string.bili_video_skip_end)) },
+                        label = { Text(stringResource(CoreCommonR.string.bili_video_skip_end)) },
                         singleLine = true,
                         modifier = Modifier
                             .weight(1f)
@@ -401,7 +401,7 @@ internal fun BiliVideoSkipIntervalsContent(
                                 saveInputDraft(updatedStartText = timestamp)
                             }
                         ) {
-                            Text(stringResource(R.string.bili_video_skip_use_current_start))
+                            Text(stringResource(CoreCommonR.string.bili_video_skip_use_current_start))
                         }
                         TextButton(
                             onClick = {
@@ -411,7 +411,7 @@ internal fun BiliVideoSkipIntervalsContent(
                                 saveInputDraft(updatedEndText = timestamp)
                             }
                         ) {
-                            Text(stringResource(R.string.bili_video_skip_use_current_end))
+                            Text(stringResource(CoreCommonR.string.bili_video_skip_use_current_end))
                         }
                     }
                     Row(
@@ -433,7 +433,7 @@ internal fun BiliVideoSkipIntervalsContent(
                             enabled = canControlPlayback,
                             modifier = Modifier.size(48.dp)
                         ) {
-                            Text(stringResource(R.string.bili_video_skip_rewind_five_seconds_short))
+                            Text(stringResource(CoreCommonR.string.bili_video_skip_rewind_five_seconds_short))
                         }
                         IconButton(
                             onClick = {
@@ -449,7 +449,7 @@ internal fun BiliVideoSkipIntervalsContent(
                             enabled = canControlPlayback,
                             modifier = Modifier.size(48.dp)
                         ) {
-                            Text(stringResource(R.string.bili_video_skip_rewind_one_second_short))
+                            Text(stringResource(CoreCommonR.string.bili_video_skip_rewind_one_second_short))
                         }
                         IconButton(
                             onClick = { onTogglePlayback?.invoke() },
@@ -464,9 +464,9 @@ internal fun BiliVideoSkipIntervalsContent(
                                 },
                                 contentDescription = stringResource(
                                     if (currentPlaybackIsPlaying) {
-                                        R.string.player_pause
+                                        CoreCommonR.string.player_pause
                                     } else {
-                                        R.string.player_play
+                                        CoreCommonR.string.player_play
                                     }
                                 )
                             )
@@ -486,7 +486,7 @@ internal fun BiliVideoSkipIntervalsContent(
                             modifier = Modifier.size(48.dp)
                         ) {
                             Text(
-                                stringResource(R.string.bili_video_skip_forward_one_second_short)
+                                stringResource(CoreCommonR.string.bili_video_skip_forward_one_second_short)
                             )
                         }
                         IconButton(
@@ -504,7 +504,7 @@ internal fun BiliVideoSkipIntervalsContent(
                             modifier = Modifier.size(48.dp)
                         ) {
                             Text(
-                                stringResource(R.string.bili_video_skip_forward_five_seconds_short)
+                                stringResource(CoreCommonR.string.bili_video_skip_forward_five_seconds_short)
                             )
                         }
                     }
@@ -550,13 +550,13 @@ internal fun BiliVideoSkipIntervalsContent(
                         .padding(top = 8.dp)
                         .testTag(BILI_VIDEO_SKIP_ADD_BUTTON_TEST_TAG)
                 ) {
-                    Text(stringResource(R.string.bili_video_skip_add))
+                    Text(stringResource(CoreCommonR.string.bili_video_skip_add))
                 }
 
                 Spacer(Modifier.height(12.dp))
                 if (draftIntervals.isEmpty()) {
                     Text(
-                        text = stringResource(R.string.bili_video_skip_empty),
+                        text = stringResource(CoreCommonR.string.bili_video_skip_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 12.dp)
@@ -579,7 +579,7 @@ internal fun BiliVideoSkipIntervalsContent(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Delete,
-                                        contentDescription = stringResource(R.string.action_delete)
+                                        contentDescription = stringResource(CoreCommonR.string.action_delete)
                                     )
                                 }
                             }
@@ -601,7 +601,7 @@ internal fun BiliVideoSkipIntervalsContent(
                         enabled = draftIntervals.isNotEmpty() && !isSaving,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(stringResource(R.string.bili_video_skip_clear))
+                        Text(stringResource(CoreCommonR.string.bili_video_skip_clear))
                     }
                     Button(
                         onClick = {
@@ -625,7 +625,7 @@ internal fun BiliVideoSkipIntervalsContent(
                         enabled = !isSaving,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(stringResource(R.string.bili_video_skip_save))
+                        Text(stringResource(CoreCommonR.string.bili_video_skip_save))
                     }
                 }
             }
@@ -636,7 +636,7 @@ internal fun BiliVideoSkipIntervalsContent(
     intervalPendingDeletion?.let { interval ->
         AlertDialog(
             onDismissRequest = { intervalPendingDeletion = null },
-            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
             text = { Text(deleteConfirmationText) },
             confirmButton = {
                 TextButton(
@@ -647,12 +647,12 @@ internal fun BiliVideoSkipIntervalsContent(
                         intervalPendingDeletion = null
                     }
                 ) {
-                    Text(stringResource(R.string.action_delete))
+                    Text(stringResource(CoreCommonR.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { intervalPendingDeletion = null }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -661,7 +661,7 @@ internal fun BiliVideoSkipIntervalsContent(
     if (showClearConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
-            title = { Text(stringResource(R.string.dialog_confirm_clear)) },
+            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_clear)) },
             text = { Text(clearConfirmationText) },
             confirmButton = {
                 TextButton(
@@ -672,12 +672,12 @@ internal fun BiliVideoSkipIntervalsContent(
                         showClearConfirmation = false
                     }
                 ) {
-                    Text(stringResource(R.string.bili_video_skip_clear))
+                    Text(stringResource(CoreCommonR.string.bili_video_skip_clear))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirmation = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )

@@ -45,7 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -275,7 +275,7 @@ internal fun YouTubeMusicExploreContent(
                     )
                     Spacer(Modifier.height(8.dp))
                     HapticTextButton(onClick = onRetry) {
-                        Text(stringResource(R.string.action_retry))
+                        Text(stringResource(CoreCommonR.string.action_retry))
                     }
                 }
             }
@@ -288,7 +288,7 @@ internal fun YouTubeMusicExploreContent(
                 Alignment.Center
             ) {
                 Text(
-                    stringResource(R.string.explore_tag_youtube_music),
+                    stringResource(CoreCommonR.string.explore_tag_youtube_music),
                     style = MaterialTheme.typography.bodyLarge
                 )
             }

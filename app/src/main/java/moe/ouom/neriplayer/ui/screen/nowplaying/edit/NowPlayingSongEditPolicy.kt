@@ -1,23 +1,24 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.edit
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+
 import android.content.Context
 import android.net.Uri
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
-import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
+import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayName
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 
 internal fun shouldFetchOriginalSongInfo(song: SongItem): Boolean {

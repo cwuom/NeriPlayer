@@ -69,6 +69,8 @@ def read_methods(xml, sources, scope):
             source = sources.get((package.get("name", ""), owner.get("sourcefilename")))
             if source is None:
                 continue
+            # 纯接口会出现在类报告中, 但没有可执行方法和复杂度计数
+            seen_sources.add(source)
             for method in owner.findall("method"):
                 counter = method.find("counter[@type='COMPLEXITY']")
                 if counter is None:
@@ -83,7 +85,6 @@ def read_methods(xml, sources, scope):
                 if identity in identities:
                     raise ValueError(f"Duplicate method in coverage report: {identity}")
                 identities.add(identity)
-                seen_sources.add(source)
                 owner_name = owner.attrib["name"].replace("/", ".")
                 method_scope = (source, owner_name, method.attrib["name"])
                 if method_scope in method_scopes:

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.widget
 
+import moe.ouom.neriplayer.core.player.presentation.widget.derivePlaybackWidgetThemeColors
+import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetThemeColors
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color

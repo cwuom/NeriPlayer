@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -79,11 +81,11 @@ import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
@@ -179,9 +181,9 @@ fun LyricShareSheet(
         ) {
             LyricShareHeader(
                 coverUrl = coverUrl,
-                title = stringResource(R.string.lyric_share_selected_lines, selectedLines.size),
+                title = stringResource(CoreCommonR.string.lyric_share_selected_lines, selectedLines.size),
                 subtitle = stringResource(
-                    R.string.lyric_share_character_count,
+                    CoreCommonR.string.lyric_share_character_count,
                     selectedCharCount
                 )
             )
@@ -266,7 +268,7 @@ fun LyricShareSheet(
                             }
                             result.onFailure {
                                 onShowMessage(
-                                    composeResources.getString(R.string.lyric_share_card_failed)
+                                    composeResources.getString(CoreCommonR.string.lyric_share_card_failed)
                                 )
                             }.onSuccess {
                                 onDismiss()
@@ -396,7 +398,7 @@ private fun LyricShareActions(
         ) {
             Icon(
                 Icons.Outlined.ContentCopy,
-                contentDescription = stringResource(R.string.lyric_share_copy_lyrics)
+                contentDescription = stringResource(CoreCommonR.string.lyric_share_copy_lyrics)
             )
         }
         FilledTonalButton(
@@ -405,7 +407,7 @@ private fun LyricShareActions(
         ) {
             Icon(
                 Icons.Outlined.Share,
-                contentDescription = stringResource(R.string.lyric_share_song)
+                contentDescription = stringResource(CoreCommonR.string.lyric_share_song)
             )
         }
         FilledTonalButton(
@@ -415,7 +417,7 @@ private fun LyricShareActions(
         ) {
             Icon(
                 Icons.Outlined.Wallpaper,
-                contentDescription = stringResource(R.string.lyric_share_card)
+                contentDescription = stringResource(CoreCommonR.string.lyric_share_card)
             )
         }
     }
@@ -484,7 +486,7 @@ private suspend fun shareSong(
             LocalMediaSupport.shareSongFile(context, song)
         }.getOrElse { false }
         if (!shared) {
-            onShowMessage(context.getString(R.string.local_song_share_failed))
+            onShowMessage(context.getString(CoreCommonR.string.local_song_share_failed))
         }
         return
     }
@@ -494,7 +496,7 @@ private suspend fun shareSong(
         "${song.displayName()} - ${song.displayArtist()}"
     } else {
         context.getString(
-            R.string.nowplaying_share_song,
+            CoreCommonR.string.nowplaying_share_song,
             song.displayName(),
             song.displayArtist(),
             shareUrl,

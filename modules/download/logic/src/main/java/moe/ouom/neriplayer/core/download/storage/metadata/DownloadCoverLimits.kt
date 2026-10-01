@@ -1,0 +1,29 @@
+package moe.ouom.neriplayer.core.download.storage.metadata
+
+import moe.ouom.neriplayer.common.units.MEBIBYTE_BYTES
+import java.io.IOException
+
+/** 下载封面 source 和解码阶段共用的资源边界 */
+const val MAX_SOURCE_COVER_BYTES = 16 * MEBIBYTE_BYTES
+const val MAX_COVER_PIXELS = 16_000_000L
+const val COVER_STREAM_BUFFER_SIZE_BYTES = 64 * 1024
+
+fun isCoverPixelBudgetWithin(
+    width: Int,
+    height: Int,
+    maxPixels: Long = MAX_COVER_PIXELS
+): Boolean {
+    if (width <= 0 || height <= 0 || maxPixels <= 0L) return false
+    return width.toLong() * height.toLong() <= maxPixels
+}
+
+class CoverSourceTooLargeException(
+    val actualBytes: Long,
+    val maxBytes: Long = MAX_SOURCE_COVER_BYTES
+) : IOException("cover exceeds source limit: $actualBytes > $maxBytes")
+
+class CoverPixelBudgetExceededException(
+    val width: Int,
+    val height: Int,
+    val maxPixels: Long = MAX_COVER_PIXELS
+) : IOException("cover pixel budget exceeded: ${width}x$height > $maxPixels")

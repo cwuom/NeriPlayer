@@ -37,10 +37,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingSongTitle
 
 internal data class NowPlayingTrackDisplay(
@@ -143,7 +143,7 @@ private fun NowPlayingTrackTitle(
             onDismissRequest = owner::closeNameMenu
         ) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_copy_song_name)) },
+                text = { Text(stringResource(CoreCommonR.string.action_copy_song_name)) },
                 onClick = { owner.copyName(displayName) }
             )
         }
@@ -197,7 +197,7 @@ private fun NowPlayingArtistCopyMenu(
         onDismissRequest = owner.closeArtistMenuAction
     ) {
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.action_copy_artist)) },
+            text = { Text(stringResource(CoreCommonR.string.action_copy_artist)) },
             onClick = owner.artistCopyAction(displayArtist)
         )
     }

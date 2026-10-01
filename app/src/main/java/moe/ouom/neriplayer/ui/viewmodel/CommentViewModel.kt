@@ -13,21 +13,21 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.comment.CommentApiException
-import moe.ouom.neriplayer.core.comment.model.COMMENT_PAGE_SIZE
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentPlatform
-import moe.ouom.neriplayer.core.comment.model.CommentPage
-import moe.ouom.neriplayer.core.comment.model.CommentSource
-import moe.ouom.neriplayer.core.comment.model.CommentSort
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
-import moe.ouom.neriplayer.core.comment.model.commentLengthLimit
-import moe.ouom.neriplayer.core.comment.model.SongComment
-import moe.ouom.neriplayer.core.comment.repository.CommentRepository
-import moe.ouom.neriplayer.core.comment.repository.commentRepositoryFor
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.collections.mergeDistinctBy
-import moe.ouom.neriplayer.util.concurrent.RequestGeneration
+import moe.ouom.neriplayer.platform.comments.CommentApiException
+import moe.ouom.neriplayer.data.model.comments.COMMENT_PAGE_SIZE
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentPlatform
+import moe.ouom.neriplayer.data.model.comments.CommentPage
+import moe.ouom.neriplayer.data.model.comments.CommentSource
+import moe.ouom.neriplayer.data.model.comments.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.commentLengthLimit
+import moe.ouom.neriplayer.data.model.comments.SongComment
+import moe.ouom.neriplayer.platform.comments.repository.CommentRepository
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.collections.mergeDistinctBy
+import moe.ouom.neriplayer.common.concurrent.RequestGeneration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -143,7 +143,7 @@ internal class CommentViewModel : ViewModel() {
     private var sendJob: Job? = null
 
     /** 仓库工厂, 单元测试可替换 (生产环境即按平台分发) */
-    internal var repositoryFactory: (CommentPlatform) -> CommentRepository = ::commentRepositoryFor
+    internal var repositoryFactory: (CommentPlatform) -> CommentRepository = { AppContainer.commentRepositoryFor(it) }
 
     /**
      * 歌曲切换 / 打开评论弹窗时调用。

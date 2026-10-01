@@ -42,16 +42,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.toPlaybackSongItem
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
-import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import kotlin.math.ceil
@@ -385,7 +385,7 @@ private fun ContinueCardDetails(displayName: String, trackCount: Int) {
             style = MaterialTheme.typography.titleSmall
         )
         Text(
-            text = pluralStringResource(R.plurals.home_song_count_format, trackCount, trackCount),
+            text = pluralStringResource(CoreCommonR.plurals.home_song_count_format, trackCount, trackCount),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
@@ -401,7 +401,7 @@ private fun ContinueRemoveMenu(
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.continue_playing_remove)) },
+            text = { Text(stringResource(CoreCommonR.string.continue_playing_remove)) },
             leadingIcon = {
                 Icon(imageVector = Icons.Outlined.DeleteForever, contentDescription = null)
             },

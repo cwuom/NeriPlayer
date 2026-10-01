@@ -22,6 +22,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
  * File: moe.ouom.neriplayer.ui.screen.nowplaying.lyrics/NowPlayingLyricsEditor
  */
 
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.ClipData
 import android.content.Context
 import androidx.activity.compose.BackHandler
@@ -96,23 +97,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchConfidence
-import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
-import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
-import moe.ouom.neriplayer.core.api.lyrics.defaultEditableLyricMatchSources
-import moe.ouom.neriplayer.core.api.lyrics.editableLyricMatchResultComparator
-import moe.ouom.neriplayer.core.api.lyrics.normalizeLyricMatchText
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
+import moe.ouom.neriplayer.platform.lyrics.matching.defaultEditableLyricMatchSources
+import moe.ouom.neriplayer.platform.lyrics.matching.editableLyricMatchResultComparator
+import moe.ouom.neriplayer.platform.lyrics.matching.normalizeLyricMatchText
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
 import moe.ouom.neriplayer.util.format.formatDuration
 
@@ -445,10 +446,10 @@ fun LyricsEditorSheet(
             query = query,
             sources = sources,
             preferWordTimed = preferWordTimedLyrics,
-            noSourceMessage = resources.getString(R.string.lyrics_match_no_source_selected),
+            noSourceMessage = resources.getString(CoreCommonR.string.lyrics_match_no_source_selected),
             errorMessage = { error ->
                 resources.getString(
-                    R.string.lyrics_match_error,
+                    CoreCommonR.string.lyrics_match_error,
                     editableLyricMatchFailureDescription(error)
                 )
             }
@@ -471,12 +472,12 @@ fun LyricsEditorSheet(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.music_edit_lyrics),
+                text = stringResource(CoreCommonR.string.music_edit_lyrics),
                 style = MaterialTheme.typography.titleMedium
             )
 
             HapticTextButton(onClick = ::dismissLyricsEditor, enabled = !isSaving) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
 
@@ -513,7 +514,7 @@ fun LyricsEditorSheet(
             ) {
                 Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.lyrics_match_action), maxLines = 1)
+                Text(stringResource(CoreCommonR.string.lyrics_match_action), maxLines = 1)
             }
         }
 
@@ -530,7 +531,7 @@ fun LyricsEditorSheet(
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f)
             ) {
-                Text(stringResource(R.string.action_clear))
+                Text(stringResource(CoreCommonR.string.action_clear))
             }
 
             HapticTextButton(
@@ -542,7 +543,7 @@ fun LyricsEditorSheet(
                 modifier = Modifier.weight(1f),
                 enabled = !isSaving
             ) {
-                Text(stringResource(R.string.action_paste))
+                Text(stringResource(CoreCommonR.string.action_paste))
             }
 
             HapticTextButton(
@@ -560,7 +561,7 @@ fun LyricsEditorSheet(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text(stringResource(R.string.music_save_changes))
+                    Text(stringResource(CoreCommonR.string.music_save_changes))
                 }
             }
         }
@@ -585,8 +586,8 @@ fun LyricsEditorSheet(
     if (showLocalMetadataWriteBackConfirm) {
         AlertDialog(
             onDismissRequest = { showLocalMetadataWriteBackConfirm = false },
-            title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
-            text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
+            title = { Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_title)) },
+            text = { Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_message)) },
             confirmButton = {
                 HapticTextButton(
                     onClick = {
@@ -594,7 +595,7 @@ fun LyricsEditorSheet(
                         saveLyrics(writeLocalMetadata = true)
                     }
                 ) {
-                    Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+                    Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_write))
                 }
             },
             dismissButton = {
@@ -604,7 +605,7 @@ fun LyricsEditorSheet(
                         saveLyrics(writeLocalMetadata = false)
                     }
                 ) {
-                    Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                    Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_app_only))
                 }
             }
         )
@@ -613,8 +614,8 @@ fun LyricsEditorSheet(
     if (showEmbeddedLyricsOverwriteConfirm) {
         AlertDialog(
             onDismissRequest = { showEmbeddedLyricsOverwriteConfirm = false },
-            title = { Text(stringResource(R.string.local_lyrics_embedded_overwrite_title)) },
-            text = { Text(stringResource(R.string.local_lyrics_embedded_overwrite_message)) },
+            title = { Text(stringResource(CoreCommonR.string.local_lyrics_embedded_overwrite_title)) },
+            text = { Text(stringResource(CoreCommonR.string.local_lyrics_embedded_overwrite_message)) },
             confirmButton = {
                 HapticTextButton(
                     onClick = {
@@ -622,14 +623,14 @@ fun LyricsEditorSheet(
                         saveLyrics(writeLocalMetadata = true)
                     }
                 ) {
-                    Text(stringResource(R.string.local_lyrics_embedded_overwrite_confirm))
+                    Text(stringResource(CoreCommonR.string.local_lyrics_embedded_overwrite_confirm))
                 }
             },
             dismissButton = {
                 HapticTextButton(
                     onClick = { showEmbeddedLyricsOverwriteConfirm = false }
                 ) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -651,9 +652,9 @@ private fun firstLyricsClipboardItemText(data: ClipData, context: Context): Stri
 private fun LyricsEditorTabs(owner: NowPlayingLyricsEditorOwner) {
     val selectedTab by owner.selectedTabState
     val labels = listOf(
-        R.string.lyrics_original,
-        R.string.lyrics_translation,
-        R.string.lyrics_romanized
+        CoreCommonR.string.lyrics_original,
+        CoreCommonR.string.lyrics_translation,
+        CoreCommonR.string.lyrics_romanized
     )
     PrimaryTabRow(
         selectedTabIndex = selectedTab,
@@ -690,9 +691,9 @@ private fun LyricsEditorTextInput(owner: NowPlayingLyricsEditorOwner, modifier: 
         owner.romanizedLyricsTextState
     )[selectedTab.coerceIn(0, 2)]
     val hint = listOf(
-        R.string.lyrics_editor_hint_original,
-        R.string.lyrics_editor_hint_translation,
-        R.string.lyrics_editor_hint_romanized
+        CoreCommonR.string.lyrics_editor_hint_original,
+        CoreCommonR.string.lyrics_editor_hint_translation,
+        CoreCommonR.string.lyrics_editor_hint_romanized
     )[selectedTab.coerceIn(0, 2)]
     OutlinedTextField(
         value = textState.value,
@@ -745,17 +746,17 @@ private fun LyricMatchResultsSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.lyrics_match_title),
+                    text = stringResource(CoreCommonR.string.lyrics_match_title),
                     style = MaterialTheme.typography.titleMedium
                 )
                 HapticTextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = stringResource(R.string.lyrics_match_sources),
+                    text = stringResource(CoreCommonR.string.lyrics_match_sources),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -788,8 +789,8 @@ private fun LyricMatchResultsSheet(
                     value = query,
                     onValueChange = onQueryChange,
                     modifier = Modifier.weight(1f),
-                    label = { Text(stringResource(R.string.lyrics_match_keyword)) },
-                    placeholder = { Text(stringResource(R.string.lyrics_match_keyword_hint)) },
+                    label = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword)) },
+                    placeholder = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword_hint)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(
@@ -803,14 +804,14 @@ private fun LyricMatchResultsSheet(
                 ) {
                     Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.lyrics_match_search), maxLines = 1)
+                    Text(stringResource(CoreCommonR.string.lyrics_match_search), maxLines = 1)
                 }
             }
 
             if (isLoading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    text = stringResource(R.string.lyrics_match_loading),
+                    text = stringResource(CoreCommonR.string.lyrics_match_loading),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -826,7 +827,7 @@ private fun LyricMatchResultsSheet(
 
             if (!isLoading && hasSearched && errorMessage == null && results.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.lyrics_match_empty),
+                    text = stringResource(CoreCommonR.string.lyrics_match_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -903,26 +904,26 @@ private fun buildLyricMatchMetaText(result: RankedEditableLyricMatch): String {
         lyricMatchWordTimingLabel(result),
         lyricMatchDurationLabel(result.candidate.durationMs),
         lyricMatchDurationDeltaLabel(result.durationDeltaMs),
-        stringResource(R.string.lyrics_match_score, result.score),
+        stringResource(CoreCommonR.string.lyrics_match_score, result.score),
         stringResource(result.confidence.stringResId())
     ).joinToString(" · ")
 }
 
 @Composable
 private fun lyricMatchWordTimingLabel(result: RankedEditableLyricMatch): String? =
-    if (result.hasWordTiming) stringResource(R.string.lyrics_match_word_timed) else null
+    if (result.hasWordTiming) stringResource(CoreCommonR.string.lyrics_match_word_timed) else null
 
 private fun lyricMatchDurationLabel(durationMs: Long): String? =
     if (durationMs > 0L) formatDuration(durationMs) else null
 
 @Composable
 private fun lyricMatchDurationDeltaLabel(deltaMs: Long?): String? =
-    deltaMs?.let { stringResource(R.string.lyrics_match_duration_delta, formatDuration(it)) }
+    deltaMs?.let { stringResource(CoreCommonR.string.lyrics_match_duration_delta, formatDuration(it)) }
 
 internal fun EditableLyricMatchConfidence.stringResId(): Int = when (this) {
-    EditableLyricMatchConfidence.HIGH -> R.string.lyrics_match_confidence_high
-    EditableLyricMatchConfidence.MEDIUM -> R.string.lyrics_match_confidence_medium
-    EditableLyricMatchConfidence.LOW -> R.string.lyrics_match_confidence_low
+    EditableLyricMatchConfidence.HIGH -> CoreCommonR.string.lyrics_match_confidence_high
+    EditableLyricMatchConfidence.MEDIUM -> CoreCommonR.string.lyrics_match_confidence_medium
+    EditableLyricMatchConfidence.LOW -> CoreCommonR.string.lyrics_match_confidence_low
 }
 
 internal fun defaultEditableLyricsMatchKeyword(song: SongItem): String {
@@ -968,11 +969,11 @@ private val lyricMatchSelectableSources = listOf(
 
 internal fun EditableLyricMatchSource.stringResId(): Int {
     return when (this) {
-        EditableLyricMatchSource.KUGOU -> R.string.lyrics_match_source_kugou
-        EditableLyricMatchSource.CLOUD_MUSIC -> R.string.lyrics_match_source_cloud_music
-        EditableLyricMatchSource.QQ_MUSIC -> R.string.lyrics_match_source_qq_music
-        EditableLyricMatchSource.AMLL_TTML -> R.string.lyrics_match_source_amll_ttml
-        EditableLyricMatchSource.LRCLIB -> R.string.lyrics_match_source_lrclib
-        EditableLyricMatchSource.YOUTUBE_MUSIC -> R.string.lyrics_match_source_youtube_music
+        EditableLyricMatchSource.KUGOU -> CoreCommonR.string.lyrics_match_source_kugou
+        EditableLyricMatchSource.CLOUD_MUSIC -> CoreCommonR.string.lyrics_match_source_cloud_music
+        EditableLyricMatchSource.QQ_MUSIC -> CoreCommonR.string.lyrics_match_source_qq_music
+        EditableLyricMatchSource.AMLL_TTML -> CoreCommonR.string.lyrics_match_source_amll_ttml
+        EditableLyricMatchSource.LRCLIB -> CoreCommonR.string.lyrics_match_source_lrclib
+        EditableLyricMatchSource.YOUTUBE_MUSIC -> CoreCommonR.string.lyrics_match_source_youtube_music
     }
 }

@@ -1,0 +1,1445 @@
+package moe.ouom.neriplayer.platform.netease.api.client
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.netease/NeteaseClient
+ * Created: 2025/8/10
+ */
+
+import moe.ouom.neriplayer.platform.netease.api.crypto.NeteaseCrypto
+import moe.ouom.neriplayer.data.model.netease.crypto.CryptoMode
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteasePlaylistAddTracksParams
+import moe.ouom.neriplayer.common.json.JsonUtil.jsonQuote
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.network.http.awaitResponse
+import moe.ouom.neriplayer.network.http.isTransientHttp2StreamReset
+import moe.ouom.neriplayer.common.io.readBytesLimited
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.network.http.nonReplayable
+import okhttp3.Cookie
+import okio.ByteString.Companion.encodeUtf8
+import okhttp3.CookieJar
+import okhttp3.FormBody
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.brotli.dec.BrotliInputStream
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.nio.charset.StandardCharsets
+import java.security.SecureRandom
+import java.util.Locale
+import java.util.zip.GZIPInputStream
+import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+
+internal fun mergeNeteaseRequestCookies(
+    persistedCookies: Map<String, String>,
+    runtimeCookies: Map<String, String>,
+    requestContextCookies: Map<String, String> = emptyMap()
+): Map<String, String> {
+    return LinkedHashMap<String, String>().apply {
+        requestContextCookies.forEach { (name, value) ->
+            if (name.isNotBlank() && value.isNotBlank()) {
+                put(name, value)
+            }
+        }
+        persistedCookies.forEach { (name, value) ->
+            if (name.isNotBlank() && value.isNotBlank()) {
+                put(name, value)
+            }
+        }
+        runtimeCookies.forEach { (name, value) ->
+            if (name.isNotBlank() && value.isNotBlank()) {
+                put(name, value)
+            }
+        }
+        putIfAbsent("os", "pc")
+        putIfAbsent("appver", "8.10.35")
+    }
+}
+
+fun mergeNeteaseSessionCookies(
+    persistedCookies: Map<String, String>,
+    runtimeCookies: Map<String, String>
+): Map<String, String> {
+    val result = persistedCookies.toMutableMap()
+    listOf("NMTID", "__csrf").forEach { name ->
+        runtimeCookies[name]
+            ?.takeIf(String::isNotBlank)
+            ?.let { value -> result[name] = value }
+    }
+    return result
+}
+
+internal fun shouldPreheatNeteaseWeapiSession(
+    persistedCookies: Map<String, String>,
+    requestCookies: Map<String, String>,
+    usePersistedCookies: Boolean
+): Boolean {
+    return usePersistedCookies &&
+        !persistedCookies["MUSIC_U"].isNullOrBlank() &&
+        requestCookies["__csrf"].isNullOrBlank()
+}
+
+internal fun buildNeteaseRadarPlaylistMetadataParams(playlistId: Long): Map<String, Any> {
+    require(playlistId > 0L) { "playlistId must be positive" }
+    return linkedMapOf(
+        "id" to playlistId.toString(),
+        "n" to "1",
+        "s" to "0",
+        "uiPlaylistType" to "MGC"
+    )
+}
+
+private const val NETEASE_MAIN_HOST = "music.163.com"
+private const val NETEASE_REQUEST_OS = "pc"
+private const val NETEASE_REQUEST_APP_VERSION = "8.10.35"
+
+private fun newNeteaseSessionCookieValue(): String {
+    val bytes = ByteArray(16)
+    SecureRandom().nextBytes(bytes)
+    val hex = "0123456789abcdef"
+    return buildString(bytes.size * 2) {
+        bytes.forEach { byte ->
+            val value = byte.toInt() and 0xff
+            append(hex[value ushr 4])
+            append(hex[value and 0x0f])
+        }
+    }
+}
+
+private fun normalizeNeteasePersistedCookies(cookies: Map<String, String>): Map<String, String> {
+    return cookies.toMutableMap().apply {
+        putIfAbsent("os", NETEASE_REQUEST_OS)
+        putIfAbsent("appver", NETEASE_REQUEST_APP_VERSION)
+    }.toMap()
+}
+
+private fun neteaseAuthCookieFingerprint(cookies: Map<String, String>): String {
+    return cookies
+        .filterKeys { key ->
+            key !in setOf("NMTID", "__csrf", "_ntes_nuid", "__remember_me", "os", "appver")
+        }
+        .entries
+        .sortedBy { entry -> entry.key }
+        .joinToString("\u0000") { entry -> "${entry.key}=${entry.value}" }
+}
+
+internal class NeteaseRequestSession(
+    initialPersistedCookies: Map<String, String>
+) {
+    private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
+    private val cookieLock = Any()
+    private var persistedCookies = initialPersistedCookies
+    private val requestContextCookies = mapOf(
+        "__remember_me" to "true",
+        "_ntes_nuid" to newNeteaseSessionCookieValue(),
+        "NMTID" to newNeteaseSessionCookieValue()
+    )
+    internal val personalizedSessionLock = Any()
+    private var preheatedAuthCookieFingerprint: String? = null
+
+    internal val cookieJar = object : CookieJar {
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            saveResponseCookies(cookies)
+        }
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> {
+            return requestCookiesForUrl(url)
+                .map { (name, value) ->
+                    Cookie.Builder()
+                        .name(name)
+                        .value(value)
+                        .hostOnlyDomain(url.host)
+                        .path("/")
+                        .build()
+                }
+        }
+    }
+
+    internal val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
+        // use a dynamic ProxySelector so bypass can be toggled at runtime
+        .proxySelector(DynamicProxySelector)
+        .build()
+    internal val http1RetryClient: OkHttpClient = okHttpClient.newBuilder()
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .build()
+
+    fun hasLogin(): Boolean = synchronized(cookieLock) {
+        !persistedCookies["MUSIC_U"].isNullOrBlank()
+    }
+
+    fun persistedCookiesSnapshot(): Map<String, String> = synchronized(cookieLock) {
+        persistedCookies
+    }
+
+    fun authCookieFingerprint(): String = synchronized(cookieLock) {
+        neteaseAuthCookieFingerprint(persistedCookies)
+    }
+
+    fun replacePersistedCookies(snapshot: Map<String, String>) {
+        synchronized(cookieLock) {
+            persistedCookies = snapshot
+            cookieStore.clear()
+            seedCookieJarFromPersistedLocked("music.163.com", snapshot)
+            seedCookieJarFromPersistedLocked("interface.music.163.com", snapshot)
+            preheatedAuthCookieFingerprint = null
+        }
+    }
+
+    init {
+        synchronized(cookieLock) {
+            seedCookieJarFromPersistedLocked("music.163.com", persistedCookies)
+            seedCookieJarFromPersistedLocked("interface.music.163.com", persistedCookies)
+        }
+    }
+
+    private fun seedCookieJarFromPersistedLocked(
+        host: String,
+        snapshot: Map<String, String>
+    ) {
+        val list = cookieStore.getOrPut(host) { mutableListOf() }
+        snapshot.forEach { (name, value) ->
+            val c = Cookie.Builder()
+                .name(name)
+                .value(value)
+                .domain(host)    // 域 Cookie
+                .path("/")
+                .build()
+            list.removeAll { it.sameCookieIdentity(c) }
+            list.add(c)
+        }
+    }
+
+    fun cookiesSnapshot(): Map<String, String> {
+        return synchronized(cookieLock) {
+            evictExpiredCookiesLocked()
+            val result = LinkedHashMap<String, String>()
+            cookieStore.values.forEach { list -> list.forEach { cookie -> result[cookie.name] = cookie.value } }
+            result
+        }
+    }
+
+    fun requestCookiesForUrl(requestUrl: HttpUrl): Map<String, String> {
+        return synchronized(cookieLock) {
+            requestCookiesForUrlLocked(requestUrl)
+        }
+    }
+
+    fun hasPreheatedPersonalizedSession(
+        fingerprint: String,
+        requestUrl: HttpUrl
+    ): Boolean {
+        synchronized(cookieLock) {
+            return preheatedAuthCookieFingerprint == fingerprint &&
+                !requestCookiesForUrlLocked(requestUrl)["__csrf"].isNullOrBlank()
+        }
+    }
+
+    fun markPersonalizedSessionPreheated(
+        fingerprint: String,
+        requestUrl: HttpUrl
+    ) {
+        synchronized(cookieLock) {
+            preheatedAuthCookieFingerprint = if (
+                neteaseAuthCookieFingerprint(persistedCookies) == fingerprint &&
+                !requestCookiesForUrlLocked(requestUrl)["__csrf"].isNullOrBlank()
+            ) {
+                fingerprint
+            } else {
+                null
+            }
+        }
+    }
+
+    fun needsWeapiSessionPreheat(
+        requestUrl: HttpUrl,
+        usePersistedCookies: Boolean
+    ): Boolean {
+        return synchronized(cookieLock) {
+            shouldPreheatNeteaseWeapiSession(
+                persistedCookies = persistedCookies,
+                requestCookies = requestCookiesForUrlLocked(requestUrl),
+                usePersistedCookies = usePersistedCookies
+            )
+        }
+    }
+
+    private fun saveResponseCookies(cookies: List<Cookie>) {
+        synchronized(cookieLock) {
+            cookies.forEach { fresh ->
+                removeStoredCookie(fresh)
+                if (fresh.isUsableCookie()) {
+                    cookieStore.getOrPut(fresh.domain) { mutableListOf() }.add(fresh)
+                }
+            }
+        }
+    }
+
+    private fun removeStoredCookie(cookie: Cookie) {
+        cookieStore.values.forEach { cookies ->
+            cookies.removeAll { it.sameCookieIdentity(cookie) }
+        }
+    }
+
+    private fun Cookie.isUsableCookie(): Boolean {
+        return value.isNotBlank() && expiresAt > System.currentTimeMillis()
+    }
+
+    private fun Cookie.sameCookieIdentity(other: Cookie): Boolean {
+        return name == other.name && domain == other.domain && path == other.path
+    }
+
+    private fun requestCookiesForUrlLocked(requestUrl: HttpUrl): Map<String, String> {
+        evictExpiredCookiesLocked()
+        val storedCookies = LinkedHashMap<String, String>()
+        cookieStore.values
+            .asSequence()
+            .flatMap { it.asSequence() }
+            .filter { cookie -> cookie.matches(requestUrl) }
+            .sortedWith(
+                compareBy<Cookie> { cookie -> cookie.domain.length }
+                    .thenBy { cookie -> cookie.path.length }
+                    .thenBy { cookie -> cookie.name }
+            )
+            .forEach { cookie -> storedCookies[cookie.name] = cookie.value }
+        return mergeNeteaseRequestCookies(
+            persistedCookies = persistedCookies,
+            runtimeCookies = storedCookies,
+            requestContextCookies = requestContextCookies
+        )
+    }
+
+    private fun evictExpiredCookiesLocked() {
+        val now = System.currentTimeMillis()
+        cookieStore.values.forEach { cookies ->
+            cookies.removeAll { it.expiresAt <= now }
+        }
+    }
+}
+
+internal class NeteaseRequestSessionStore {
+    private val sessionLock = Any()
+
+    @Volatile
+    private var activeSession = NeteaseRequestSession(emptyMap())
+
+    fun currentSession(): NeteaseRequestSession = activeSession
+
+    fun setPersistedCookies(cookies: Map<String, String>): NeteaseRequestSession {
+        val snapshot = normalizeNeteasePersistedCookies(cookies)
+        return synchronized(sessionLock) {
+            val current = activeSession
+            if (current.persistedCookiesSnapshot() == snapshot) {
+                return@synchronized current
+            }
+            if (current.authCookieFingerprint() != neteaseAuthCookieFingerprint(snapshot)) {
+                NeteaseRequestSession(snapshot).also { replacement ->
+                    activeSession = replacement
+                }
+            } else {
+                current.replacePersistedCookies(snapshot)
+                current
+            }
+        }
+    }
+
+    fun logout() {
+        synchronized(sessionLock) {
+            activeSession = NeteaseRequestSession(emptyMap())
+        }
+    }
+}
+
+class NeteaseClient(
+    private val commentCheckToken: suspend () -> String
+) {
+    private companion object {
+        const val MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
+    }
+
+    private val sessionStore = NeteaseRequestSessionStore()
+    private val neteaseMainUrl = "https://$NETEASE_MAIN_HOST/".toHttpUrl()
+
+    fun evictConnections() {
+        sessionStore.currentSession().okHttpClient.connectionPool.evictAll()
+    }
+
+    /** 是否已登录 */
+    fun hasLogin(): Boolean = sessionStore.currentSession().hasLogin()
+
+    fun commentCacheSessionKey(): String? =
+        sessionStore.currentSession().persistedCookiesSnapshot()["MUSIC_U"]
+            ?.takeIf { it.isNotBlank() }?.encodeUtf8()?.sha256()?.hex()
+
+    /** 设置/更新持久化 Cookie, 并把它们注入到本实例的 CookieJar */
+    fun setPersistedCookies(cookies: Map<String, String>) {
+        sessionStore.setPersistedCookies(cookies)
+    }
+
+    /**
+     * Returns a snapshot of all cookies currently in memory, flattened by name.
+     * Later occurrences override earlier ones.
+     */
+    fun getCookies(): Map<String, String> = sessionStore.currentSession().cookiesSnapshot()
+
+    /** Returns the exact Cookie context used for music.163.com requests. */
+    fun getNeteaseRequestCookies(): Map<String, String> {
+        return sessionStore.currentSession().requestCookiesForUrl(neteaseMainUrl)
+    }
+
+    fun logout() {
+        sessionStore.logout()
+    }
+
+    /** Preheats the personalized session once for the current login identity. */
+    @Throws(IOException::class)
+    fun ensurePersonalizedSession() {
+        ensurePersonalizedSession(sessionStore.currentSession())
+    }
+
+    private fun ensurePersonalizedSession(session: NeteaseRequestSession) {
+        if (!session.hasLogin()) return
+        val fingerprint = session.authCookieFingerprint()
+        synchronized(session.personalizedSessionLock) {
+            if (session.hasPreheatedPersonalizedSession(fingerprint, neteaseMainUrl)) return
+
+            ensureWeapiSession(session)
+            session.markPersonalizedSessionPreheated(fingerprint, neteaseMainUrl)
+        }
+    }
+
+    /** 访问一次站点首页, 通常会下发 __csrf 等 Cookie */
+    @Throws(IOException::class)
+    fun ensureWeapiSession() {
+        ensureWeapiSession(sessionStore.currentSession())
+    }
+
+    private fun ensureWeapiSession(session: NeteaseRequestSession) {
+        requestForSession(
+            session = session,
+            url = "https://music.163.com/",
+            params = emptyMap(),
+            mode = CryptoMode.API,
+            method = "GET",
+            usePersistedCookies = true
+        )
+    }
+
+    @Throws(IOException::class)
+    fun request(
+        url: String,
+        params: Map<String, Any>,
+        mode: CryptoMode = CryptoMode.WEAPI,
+        method: String = "POST",
+        usePersistedCookies: Boolean = true,
+        retryHttp1OnStreamReset: Boolean = false
+    ): String {
+        return requestForSession(
+            session = sessionStore.currentSession(),
+            url = url,
+            params = params,
+            mode = mode,
+            method = method,
+            usePersistedCookies = usePersistedCookies,
+            retryHttp1OnStreamReset = retryHttp1OnStreamReset
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun requestForSession(
+        session: NeteaseRequestSession,
+        url: String,
+        params: Map<String, Any>,
+        mode: CryptoMode,
+        method: String,
+        usePersistedCookies: Boolean,
+        retryHttp1OnStreamReset: Boolean = false
+    ): String {
+        ensureWeapiSessionIfNeeded(session, mode, usePersistedCookies)
+        val request = buildRequest(
+            url = url,
+            params = params,
+            mode = mode,
+            method = method,
+            usePersistedCookies = usePersistedCookies,
+            session = session
+        )
+        return try {
+            executeRequest(session.okHttpClient, request)
+        } catch (error: IOException) {
+            if (!retryHttp1OnStreamReset || !error.isTransientHttp2StreamReset()) throw error
+            NPLogger.w(
+                "NERI-NeteaseClient",
+                "HTTP/2 stream reset for $url, retrying with HTTP/1.1: ${error.message.orEmpty()}"
+            )
+            executeRequest(session.http1RetryClient, request)
+        }
+    }
+
+    private suspend fun requestCancellable(
+        url: String,
+        params: Map<String, Any>,
+        mode: CryptoMode = CryptoMode.WEAPI,
+        method: String = "POST",
+        usePersistedCookies: Boolean = true,
+        retryHttp1OnStreamReset: Boolean = false,
+        session: NeteaseRequestSession = sessionStore.currentSession()
+    ): String {
+        if (mode == CryptoMode.WEAPI) {
+            withContext(Dispatchers.IO) {
+                ensureWeapiSessionIfNeeded(session, mode, usePersistedCookies)
+            }
+        }
+        val request = buildRequest(
+            url = url,
+            params = params,
+            mode = mode,
+            method = method,
+            usePersistedCookies = usePersistedCookies,
+            session = session
+        )
+        return try {
+            executeRequestCancellable(session.okHttpClient, request)
+        } catch (error: IOException) {
+            if (!retryHttp1OnStreamReset || !error.isTransientHttp2StreamReset()) throw error
+            NPLogger.w(
+                "NERI-NeteaseClient",
+                "HTTP/2 stream reset for $url, retrying with HTTP/1.1: ${error.message.orEmpty()}"
+            )
+            executeRequestCancellable(session.http1RetryClient, request)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun ensureWeapiSessionIfNeeded(
+        session: NeteaseRequestSession,
+        mode: CryptoMode,
+        usePersistedCookies: Boolean
+    ) {
+        if (mode != CryptoMode.WEAPI) return
+        val needsPreheat = session.needsWeapiSessionPreheat(
+            requestUrl = neteaseMainUrl,
+            usePersistedCookies = usePersistedCookies
+        )
+        if (!needsPreheat) return
+
+        ensurePersonalizedSession(session)
+
+        val stillMissingCsrf = session.needsWeapiSessionPreheat(
+            requestUrl = neteaseMainUrl,
+            usePersistedCookies = usePersistedCookies
+        )
+        if (stillMissingCsrf) {
+            throw IOException("NetEase session preheat did not provide __csrf")
+        }
+    }
+
+    private fun buildRequest(
+        url: String,
+        params: Map<String, Any>,
+        mode: CryptoMode,
+        method: String,
+        usePersistedCookies: Boolean,
+        session: NeteaseRequestSession
+    ): Request {
+        val requestUrl = url.toHttpUrl()
+
+        NPLogger.d("NERI-NeteaseClient", "call $url, $method, $mode")
+        val bodyParams: Map<String, String> = when (mode) {
+            CryptoMode.WEAPI -> NeteaseCrypto.weApiEncrypt(params)
+            CryptoMode.EAPI  -> NeteaseCrypto.eApiEncrypt(requestUrl.encodedPath, params)
+            CryptoMode.LINUX -> NeteaseCrypto.linuxApiEncrypt(params)
+            CryptoMode.API   -> params.mapValues { it.value.toString() }
+        }
+
+        var reqUrl = requestUrl
+        val builder = Request.Builder()
+            .header("Accept", "*/*")
+            .header("Accept-Language", "zh-CN,zh-Hans;q=0.9")
+            .header("Connection", "keep-alive")
+            .header("Referer", "https://music.163.com")
+            .header("Host", requestUrl.host)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; NeriPlayer) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+
+        // WEAPI 的 csrf_token 优先用持久化 Cookie, 再回退本地 CookieJar
+        if (mode == CryptoMode.WEAPI) {
+            val csrf = if (usePersistedCookies) {
+                session.requestCookiesForUrl(requestUrl)["__csrf"].orEmpty()
+            } else {
+                ""
+            }
+            reqUrl = requestUrl.newBuilder()
+                .setQueryParameter("csrf_token", csrf)
+                .build()
+        }
+
+        builder.url(reqUrl)
+
+        when (method.uppercase(Locale.getDefault())) {
+            "POST" -> {
+                val formBodyBuilder = FormBody.Builder(StandardCharsets.UTF_8)
+                bodyParams.forEach { (k, v) -> formBodyBuilder.add(k, v) }
+                builder.post(formBodyBuilder.build())
+            }
+            "GET" -> {
+                val urlBuilder = reqUrl.newBuilder()
+                bodyParams.forEach { (k, v) -> urlBuilder.addQueryParameter(k, v) }
+                builder.url(urlBuilder.build())
+            }
+            else -> throw IllegalArgumentException("不支持的请求方法: $method")
+        }
+
+        return builder.build()
+    }
+
+    @Throws(IOException::class)
+    private fun executeRequest(client: OkHttpClient, request: Request): String {
+        client.newCall(request).execute().use { resp ->
+            return readResponseString(resp)
+        }
+    }
+
+    private suspend fun executeRequestCancellable(client: OkHttpClient, request: Request): String {
+        return client.newCall(request).awaitResponse(::readResponseString)
+    }
+
+    private fun readResponseString(response: Response): String {
+        val responseBody = response.body
+        val encoding = response.header("Content-Encoding")?.lowercase(Locale.getDefault())
+        val bytes = when (encoding) {
+            "br" -> BrotliInputStream(responseBody.byteStream()).use {
+                it.readBytesLimited(MAX_RESPONSE_BYTES)
+            }
+            "gzip" -> GZIPInputStream(responseBody.byteStream()).use {
+                it.readBytesLimited(MAX_RESPONSE_BYTES)
+            }
+            else -> responseBody.byteStream().use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
+        }
+        if (!response.isSuccessful) {
+            val message = String(bytes, StandardCharsets.UTF_8)
+            throw IOException("HTTP ${response.code}: $message")
+        }
+        return String(bytes, StandardCharsets.UTF_8)
+    }
+
+    @Throws(IOException::class)
+    fun callWeApi(path: String, params: Map<String, Any>, usePersistedCookies: Boolean = true): String {
+        val p = if (path.startsWith("/")) path else "/$path"
+        val url = "https://music.163.com/weapi$p"
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies)
+    }
+
+    @Throws(IOException::class)
+    fun callEApi(
+        path: String,
+        params: Map<String, Any>,
+        usePersistedCookies: Boolean = true,
+        retryHttp1OnStreamReset: Boolean = false
+    ): String {
+        val p = if (path.startsWith("/")) path else "/$path"
+        val url = "https://interface.music.163.com/eapi$p"
+        return request(
+            url = url,
+            params = params,
+            mode = CryptoMode.EAPI,
+            method = "POST",
+            usePersistedCookies = usePersistedCookies,
+            retryHttp1OnStreamReset = retryHttp1OnStreamReset
+        )
+    }
+
+    @Throws(IOException::class)
+    fun callLinuxApi(path: String, params: Map<String, Any>, usePersistedCookies: Boolean = true): String {
+        val p = if (path.startsWith("/")) path else "/$path"
+        val url = "https://music.163.com/api$p"
+        return request(url, params, CryptoMode.LINUX, "POST", usePersistedCookies)
+    }
+
+    // 认证相关
+    @Throws(IOException::class)
+    fun loginByPhone(phone: String, password: String, countryCode: Int = 86, remember: Boolean = true): String {
+        val params = mutableMapOf<String, Any>(
+            "phone" to phone,
+            "countrycode" to countryCode,
+            "remember" to remember.toString(),
+            "password" to NeteaseCrypto.md5Hex(password),
+            "type" to "1"
+        )
+        return callEApi("/w/login/cellphone", params, usePersistedCookies = false)
+    }
+
+    @Throws(IOException::class)
+    fun sendCaptcha(phone: String, ctcode: Int = 86): String {
+        val url = "https://interface.music.163.com/weapi/sms/captcha/sent"
+        val params = mapOf("cellphone" to phone, "ctcode" to ctcode.toString())
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = false)
+    }
+
+    @Throws(IOException::class)
+    fun verifyCaptcha(phone: String, captcha: String, ctcode: Int = 86): String {
+        val url = "https://interface.music.163.com/weapi/sms/captcha/verify"
+        val params = mapOf("cellphone" to phone, "captcha" to captcha, "ctcode" to ctcode.toString())
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = false)
+    }
+
+    @Throws(IOException::class)
+    fun loginByCaptcha(phone: String, captcha: String, ctcode: Int = 86, remember: Boolean = true): String {
+        val params = mutableMapOf<String, Any>(
+            "phone" to phone,
+            "countrycode" to ctcode.toString(),
+            "remember" to remember.toString(),
+            "type" to "1",
+            "captcha" to captcha
+        )
+        return callEApi("/w/login/cellphone", params, usePersistedCookies = false)
+    }
+
+    // 业务接口
+    @Throws(IOException::class)
+    fun getRecommendedPlaylists(
+        limit: Int = 30,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val url = "https://music.163.com/weapi/personalized/playlist"
+        val params = mapOf("limit" to limit.toString())
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
+    }
+
+    @Throws(IOException::class)
+    fun getDailyRecommendedPlaylists(): String {
+        return callWeApi("/v1/discovery/recommend/resource", emptyMap(), usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getDailyRecommendedSongs(afresh: Boolean = false): String {
+        return callWeApi(
+            "/v3/discovery/recommend/songs",
+            mapOf("afresh" to afresh.toString()),
+            usePersistedCookies = true
+        )
+    }
+
+    @Throws(IOException::class)
+    fun getPersonalFmSongs(): String {
+        return callWeApi("/v1/radio/get", emptyMap(), usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getPersonalizedNewSongs(
+        limit: Int = 30,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val params = mapOf(
+            "type" to "recommend",
+            "limit" to limit.toString(),
+            "areaId" to "0"
+        )
+        return callWeApi("/personalized/newsong", params, usePersistedCookies = usePersistedCookies)
+    }
+
+    @Throws(IOException::class)
+    fun getTopPlaylists(
+        cat: String = "全部",
+        order: String = "hot",
+        limit: Int = 30,
+        offset: Int = 0,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val params = mapOf<String, Any>(
+            "cat" to cat,
+            "order" to order,
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+            "total" to "true"
+        )
+        return callWeApi("/playlist/list", params, usePersistedCookies = usePersistedCookies)
+    }
+
+    @Throws(IOException::class)
+    fun searchSongs(
+        keyword: String,
+        limit: Int = 30,
+        offset: Int = 0,
+        type: Int = 1,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val url = "https://music.163.com/weapi/cloudsearch/get/web"
+        val params = mutableMapOf<String, Any>(
+            "s" to keyword,
+            "type" to type.toString(),
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+            "total" to "true"
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
+    }
+
+    suspend fun searchSongsCancellable(
+        keyword: String,
+        limit: Int = 30,
+        offset: Int = 0,
+        type: Int = 1,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val url = "https://music.163.com/weapi/cloudsearch/get/web"
+        val params = mutableMapOf<String, Any>(
+            "s" to keyword,
+            "type" to type.toString(),
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+            "total" to "true"
+        )
+        return requestCancellable(
+            url = url,
+            params = params,
+            mode = CryptoMode.WEAPI,
+            method = "POST",
+            usePersistedCookies = usePersistedCookies
+        )
+    }
+
+    /**
+     * 获取下载链接
+     * 如果已登录但拿不到 URL, 先预热拿 __csrf 再重试一次
+     * @param songId 歌曲 ID
+     * @param level 音质 (standard, exhigh, lossless, hires, jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带))
+     * */
+    @Throws(IOException::class)
+    fun getSongDownloadUrl(songId: Long, level: String = "lossless"): String {
+        fun call(usePersistedCookies: Boolean): String {
+            val params = mutableMapOf<String, Any>(
+                "ids" to "[$songId]",
+                "level" to level,
+                "encodeType" to "flac",
+            )
+            return callEApi(
+                "/song/enhance/player/url/v1",
+                params,
+                usePersistedCookies = usePersistedCookies,
+                retryHttp1OnStreamReset = true
+            )
+        }
+
+        val preferPersistedCookies = hasLogin()
+        var resp = call(usePersistedCookies = preferPersistedCookies)
+        return try {
+            val code = JSONObject(resp).optInt("code", -1)
+            if (code == 301 && hasLogin()) {
+                try { ensureWeapiSession() } catch (_: Exception) {}
+                resp = call(usePersistedCookies = true)
+            }
+            resp
+        } catch (_: Exception) {
+            resp
+        }
+    }
+
+    @Throws(IOException::class)
+    fun getSongUrl(songId: Long, bitrate: Int = 320000): String {
+        val url = "https://music.163.com/weapi/song/enhance/player/url"
+        val params = mutableMapOf<String, Any>(
+            "ids" to "[$songId]",
+            "br" to bitrate.toString()
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getSongDetail(ids: List<Long>): String {
+        require(ids.isNotEmpty()) { "ids must not be empty" }
+        val url = "https://music.163.com/weapi/v3/song/detail"
+        val idsParam = ids.joinToString(",")
+        val detailParam = ids.joinToString(
+            separator = ",",
+            prefix = "[",
+            postfix = "]"
+        ) { id -> """{"id":$id}""" }
+        val params = mapOf(
+            "c" to detailParam,
+            "ids" to "[$idsParam]"
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    suspend fun getSongDetailCancellable(ids: List<Long>): String {
+        require(ids.isNotEmpty()) { "ids must not be empty" }
+        val url = "https://music.163.com/weapi/v3/song/detail"
+        val idsParam = ids.joinToString(",")
+        val detailParam = ids.joinToString(
+            separator = ",",
+            prefix = "[",
+            postfix = "]"
+        ) { id -> """{"id":$id}""" }
+        val params = mapOf(
+            "c" to detailParam,
+            "ids" to "[$idsParam]"
+        )
+        return requestCancellable(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getUserPlaylists(userId: Long, offset: Int = 0, limit: Int = 30): String {
+        val url = "https://music.163.com/weapi/user/playlist"
+        val params = mutableMapOf<String, Any>(
+            "uid" to userId.toString(),
+            "offset" to offset.toString(),
+            "limit" to limit.toString(),
+            "includeVideo" to "true"
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }  
+    
+    @Throws(IOException::class)
+    fun getUserAlbums(userId: Long, offset: Int = 0, limit: Int = 30): String {
+        val url = "https://interface3.music.163.com/eapi/mine/rn/resource/list"
+        val params = mutableMapOf<String, Any>(
+            "userId" to userId.toString(),
+            "offset" to offset.toString(),
+            "limit" to limit.toString(),
+            "pageType" to "3",
+            "needRcmd" to "0",
+            "isVistor" to "false",
+            "includeStarPodcast" to "true"
+        )
+        return request(url, params, CryptoMode.EAPI, "POST", usePersistedCookies = true)
+    }
+    
+    @Throws(IOException::class)
+    fun getUserDjRadios(userId: Long, offset: Int = 0, limit: Int = 30): String {
+        val url = "https://music.163.com/weapi/user/djradio/get/subed"
+        val params = mutableMapOf<String, Any>(
+            "uid" to userId.toString(),
+            "offset" to offset.toString(),
+            "limit" to limit.toString()
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getAlbumDetail(albumId: Long, n: Int = 100000, s: Int = 8): String {
+        require(albumId > 0L) { "albumId must be positive" }
+        val url = "https://interface.music.163.com/weapi/v1/album/$albumId"
+        val params = mutableMapOf<String, Any>(
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return request(
+            url = url,
+            params = params,
+            mode = CryptoMode.WEAPI,
+            method = "POST",
+            usePersistedCookies = true,
+            retryHttp1OnStreamReset = true
+        )
+    }
+
+    @Throws(IOException::class)
+    fun getArtistDetail(artistId: Long): String {
+        val url = "https://music.163.com/api/artist/head/info/get"
+        val params = mapOf("id" to artistId.toString())
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getArtistDynamic(artistId: Long): String {
+        val url = "https://music.163.com/api/artist/detail/dynamic"
+        val params = mapOf("id" to artistId.toString())
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getArtistSongs(
+        artistId: Long,
+        order: String = "hot",
+        offset: Int = 0,
+        limit: Int = 50
+    ): String {
+        val url = "https://music.163.com/api/v1/artist/songs"
+        val params = mapOf(
+            "id" to artistId.toString(),
+            "private_cloud" to "true",
+            "work_type" to "1",
+            "order" to order,
+            "offset" to offset.toString(),
+            "limit" to limit.toString()
+        )
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getArtistAlbums(
+        artistId: Long,
+        offset: Int = 0,
+        limit: Int = 30
+    ): String {
+        val url = "https://music.163.com/api/artist/albums/$artistId"
+        val params = mapOf(
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+            "total" to "true"
+        )
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getPlaylistDetail(playlistId: Long, n: Int = 100000, s: Int = 8): String {
+        val url = "https://music.163.com/api/v6/playlist/detail"
+        val params = mutableMapOf<String, Any>(
+            "id" to playlistId.toString(),
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    suspend fun getPlaylistDetailCancellable(
+        playlistId: Long,
+        n: Int = 100000,
+        s: Int = 8
+    ): String {
+        val url = "https://music.163.com/api/v6/playlist/detail"
+        val params = mapOf<String, Any>(
+            "id" to playlistId.toString(),
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return requestCancellable(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    /** 雷达普通详情接口返回当前推荐周期的标题和封面，曲目仍由 v6 接口加载 */
+    suspend fun getRadarPlaylistMetadataCancellable(playlistId: Long): String {
+        val url = "https://music.163.com/api/playlist/detail"
+        val params = buildNeteaseRadarPlaylistMetadataParams(playlistId)
+        return requestCancellable(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>): String {
+        return callWeApi(
+            path = "/playlist/manipulate/tracks",
+            params = buildNeteasePlaylistAddTracksParams(playlistId, songIds),
+            usePersistedCookies = true
+        )
+    }
+
+    @Throws(IOException::class)
+    fun getDjRadioDetail(radioId: Long, n: Int = 100000, s: Int = 8): String {
+        val url = "https://music.163.com/api/v6/playlist/detail"
+        val params = mutableMapOf<String, Any>(
+            "id" to radioId.toString(),
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getRelatedPlaylists(playlistId: Long): String {
+        return try {
+            val html = request(
+                url = "https://music.163.com/playlist",
+                params = mapOf("id" to playlistId.toString()),
+                mode = CryptoMode.API,
+                method = "GET",
+                usePersistedCookies = true
+            )
+
+            val regex = Regex(
+                pattern = """<div class="cver u-cover u-cover-3">[\s\S]*?<img src="([^"]+)">[\s\S]*?<a class="sname f-fs1 s-fc0" href="([^"]+)"[^>]*>([^<]+?)</a>[\s\S]*?<a class="nm nm f-thide s-fc3" href="([^"]+)"[^>]*>([^<]+?)</a>""",
+                options = setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+            )
+
+            val items = mutableListOf<String>()
+
+            for (m in regex.findAll(html)) {
+                val coverRaw = m.groupValues[1]
+                val cover = coverRaw.replace(Regex("""\?param=\d+y\d+$"""), "")
+                val playlistHref = m.groupValues[2]
+                val playlistName = m.groupValues[3]
+                val userHref = m.groupValues[4]
+                val nickname = m.groupValues[5]
+
+                val playlistIdStr = playlistHref.removePrefix("/playlist?id=")
+                val userIdStr = userHref.removePrefix("/user/home?id=")
+
+                val itemJson = """
+                    {
+                      "creator": { "userId": ${jsonQuote(userIdStr)}, "nickname": ${jsonQuote(nickname)} },
+                      "coverImgUrl": ${jsonQuote(cover)},
+                      "name": ${jsonQuote(playlistName)},
+                      "id": ${jsonQuote(playlistIdStr)}
+                    }
+                """.trimIndent()
+                items.add(itemJson)
+            }
+
+            """
+                { "code": 200, "playlists": [${items.joinToString(",")}] }
+            """.trimIndent()
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "error")} }"""
+        }
+    }
+
+    @Throws(IOException::class)
+    fun getHighQualityTags(): String {
+        val url = "https://music.163.com/api/playlist/highquality/tags"
+        val params = emptyMap<String, Any>()
+        NPLogger.d("NERI-Netease", "getHighQualityTags calling")
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getHighQualityPlaylists(
+        cat: String = "全部",
+        limit: Int = 50,
+        before: Long = 0L
+    ): String {
+        val params = mapOf<String, Any>(
+            "cat" to cat,
+            "limit" to limit,
+            "lasttime" to before,
+            "total" to true
+        )
+        return callWeApi("/playlist/highquality/list", params, usePersistedCookies = true)
+    }
+
+    /**
+     * 获取用户创建的歌单
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量, 分页用
+     * @param limit  每页返回数量
+     */
+    @Throws(IOException::class)
+    fun getUserCreatedPlaylists(userId: Long, offset: Int = 0, limit: Int = 1000): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserPlaylists(uid, offset, limit)
+        return try {
+            val root = JSONObject(raw)
+            val code = root.optInt("code", 200)
+            val list = root.optJSONArray("playlist") ?: JSONArray()
+            val created = JSONArray()
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                val subscribed = pl.optBoolean("subscribed", false)
+                val creatorId = pl.optJSONObject("creator")?.optLong("userId") ?: -1L
+                if (creatorId == uid || !subscribed) {
+                    created.put(pl)
+                }
+            }
+            JSONObject().apply {
+                put("code", code)
+                put("playlist", created)
+                put("count", created.length())
+            }.toString()
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+
+    /**
+     * 获取用户收藏的专辑
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量, 分页用
+     * @param limit  每页返回数量
+     */
+    @Throws(IOException::class)
+    fun getUserStaredAlbums(userId: Long, offset: Int = 0, limit: Int = 1000): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserAlbums(uid, offset, limit)
+        return try {
+            val root = JSONObject(raw)
+            val code = root.optInt("code", 200)
+            val list = root.optJSONObject("data")?.optJSONObject("mainCollectInfo")?.optJSONObject("mineAllTabDto")?.optJSONArray("dataList") ?: JSONArray()
+            val created = JSONArray()
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                created.put(pl)
+                
+            }
+            JSONObject().apply {
+                put("code", code)
+                put("playlist", created)
+                put("count", created.length())
+            }.toString()
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+    
+    /**
+     * 获取用户收藏的歌单
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量, 分页用
+     * @param limit  每页返回数量
+     */
+    @Throws(IOException::class)
+    fun getUserSubscribedPlaylists(userId: Long, offset: Int = 0, limit: Int = 1000): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserPlaylists(uid, offset, limit)
+        return try {
+            val root = JSONObject(raw)
+            val code = root.optInt("code", 200)
+            val list = root.optJSONArray("playlist") ?: JSONArray()
+            val subs = JSONArray()
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                if (pl.optBoolean("subscribed", false)) subs.put(pl)
+            }
+            JSONObject().apply {
+                put("code", code)
+                put("playlist", subs)
+                put("count", subs.length())
+            }.toString()
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+
+    /**
+     * 获取"我喜欢的音乐"歌单 ID
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     */
+    @Throws(IOException::class)
+    fun getLikedPlaylistId(userId: Long): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserPlaylists(uid, 0, 1000)
+        return try {
+            val root = JSONObject(raw)
+            val list = root.optJSONArray("playlist") ?: JSONArray()
+            var likedId: Long? = null
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                val specialType = pl.optInt("specialType", 0)
+                val name = pl.optString("name", "")
+                val creatorId = pl.optJSONObject("creator")?.optLong("userId") ?: -1L
+                if (creatorId == uid && (specialType == 5 || name.contains("我喜欢的音乐"))) {
+                    likedId = pl.optLong("id")
+                    break
+                }
+            }
+            if (likedId != null) {
+                """{ "code": 200, "playlistId": $likedId }"""
+            } else {
+                """{ "code": 404, "msg": "liked playlist not found" }"""
+            }
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+
+    /**
+     * 获取用户喜欢的所有歌曲 ID
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     */
+    @Throws(IOException::class)
+    fun getUserLikedSongIds(userId: Long): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val url = "https://music.163.com/weapi/song/like/get"
+        val params = mapOf("uid" to uid.toString())
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    /**
+     * 喜欢/取消喜欢一首歌
+     * @param songId 歌曲 ID
+     * @param like 是否喜欢 (true=喜欢, false=取消喜欢)
+     * @param time 可选参数, 时间戳
+     */
+    @Throws(IOException::class)
+    fun likeSong(songId: Long, like: Boolean = true, time: Long? = null): String {
+        val params = mutableMapOf<String, Any>(
+            "trackId" to songId.toString(),
+            "like" to like.toString()
+        )
+        time?.let { params["time"] = it.toString() }
+        return callWeApi("/song/like", params, usePersistedCookies = true)
+    }
+
+    /**
+     * 获取当前登录用户的账户信息 (包含 userId)
+     */
+    @Throws(IOException::class)
+    fun getCurrentUserAccount(): String {
+        return callWeApi("/w/nuser/account/get", emptyMap(), usePersistedCookies = true)
+    }
+
+    /**
+     * 获取当前登录用户的 userId
+     */
+    @Throws(IOException::class)
+    fun getCurrentUserId(): Long {
+        val raw = getCurrentUserAccount()
+        val root = JSONObject(raw)
+        if (root.optInt("code", -1) != 200) {
+            throw IllegalStateException("获取用户信息失败: $raw")
+        }
+        val profile = root.optJSONObject("profile")
+        return profile?.optLong("userId")
+            ?: throw IllegalStateException("未找到 userId: $raw")
+    }
+
+    @Throws(IOException::class)
+    fun getLyricNew(
+        songId: Long,
+    ): String {
+        val params = mutableMapOf<String, Any>(
+            "id" to songId.toString(),
+            "cp" to "false",
+            "lv" to 0,
+            "tv" to 1,
+            "rv" to 0,
+            "yv" to 1,
+            "ytv" to 1,
+            "yrv" to 0,
+        )
+
+        fun call(): String = this.callEApi(
+            "/song/lyric/v1",
+            params,
+            usePersistedCookies = true,
+            retryHttp1OnStreamReset = true
+        )
+
+        var resp = call()
+        try {
+            val code = JSONObject(resp).optInt("code", 200)
+            if (code == 301 && this.hasLogin()) {
+                try { this.ensureWeapiSession() } catch (_: Exception) {}
+                resp = call()
+            }
+        } catch (_: Exception) { }
+        return resp
+    }
+
+    // 最新排序必须使用上一页的游标，不能用 offset 替代时间边界
+    suspend fun getSongCommentsCancellable(
+        songId: Long,
+        page: Int = 1,
+        pageSize: Int = 20,
+        sortType: Int = 2,
+        cursor: String? = null,
+    ): String {
+        require(songId > 0L) { "songId 必须为正数" }
+        require(page > 0 && pageSize in 1..100)
+        require(sortType in setOf(2, 3, 99))
+        require(sortType != 3 || page == 1 || !cursor.isNullOrBlank())
+        val offset = (page.toLong() - 1L) * pageSize
+        val nextCursor = when (sortType) {
+            2 -> "normalHot#$offset"
+            3 -> if (page == 1) "0" else requireNotNull(cursor)
+            else -> offset.toString()
+        }
+        return requestCancellable(
+            url = "https://music.163.com/api/v2/resource/comments",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "pageNo" to page,
+                "pageSize" to pageSize,
+                "sortType" to sortType,
+                "cursor" to nextCursor,
+                "showInner" to true
+            ),
+            mode = CryptoMode.API,
+        )
+    }
+
+    suspend fun setSongCommentLiked(songId: Long, commentId: String, liked: Boolean): String {
+        require(songId > 0L && (commentId.toLongOrNull() ?: 0L) > 0L)
+        val session = sessionStore.currentSession()
+        if (!session.hasLogin()) return "{\"code\":301}"
+        withContext(Dispatchers.IO) {
+            ensureWeapiSessionIfNeeded(session, CryptoMode.WEAPI, usePersistedCookies = true)
+        }
+        val checkToken = commentCheckToken()
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        check(checkToken.isNotBlank()) { "NetEase comment verification unavailable" }
+        val action = if (liked) "like" else "unlike"
+        return requestCancellable(
+            url = "https://music.163.com/weapi/v1/comment/$action",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "commentId" to commentId,
+                "like" to liked,
+                "checkToken" to checkToken,
+                "csrf_token" to session.requestCookiesForUrl(neteaseMainUrl)["__csrf"].orEmpty()
+            ),
+            mode = CryptoMode.WEAPI,
+            session = session
+        )
+    }
+
+    suspend fun getSongCommentReplies(
+        songId: Long,
+        rootId: String,
+        pageSize: Int,
+        cursor: String?
+    ): String {
+        require(songId > 0L && (rootId.toLongOrNull() ?: 0L) > 0L)
+        require(pageSize in 1..100)
+        return requestCancellable(
+            url = "https://music.163.com/weapi/resource/comment/floor/get",
+            params = mapOf(
+                "threadId" to "R_SO_4_$songId",
+                "parentCommentId" to rootId,
+                "limit" to pageSize,
+                "time" to (cursor ?: "-1")
+            )
+        )
+    }
+
+    suspend fun sendSongComment(songId: Long, content: String, replyToId: String? = null): String {
+        require(songId > 0L && content.isNotBlank())
+        require(replyToId == null || (replyToId.toLongOrNull() ?: 0L) > 0L)
+        val session = sessionStore.currentSession()
+        if (!session.hasLogin()) return "{\"code\":301}"
+        withContext(Dispatchers.IO) {
+            ensureWeapiSessionIfNeeded(session, CryptoMode.WEAPI, usePersistedCookies = true)
+        }
+        val checkToken = commentCheckToken()
+        if (sessionStore.currentSession() !== session) return "{\"code\":301}"
+        check(checkToken.isNotBlank()) { "NetEase comment verification unavailable" }
+        val path = if (replyToId == null) "resource/comments/add" else "v1/resource/comments/reply"
+        val params = mutableMapOf<String, Any>(
+            "threadId" to "R_SO_4_$songId",
+            "content" to content,
+            "checkToken" to checkToken,
+            "csrf_token" to session.requestCookiesForUrl(neteaseMainUrl)["__csrf"].orEmpty()
+        )
+        replyToId?.let { params["commentId"] = it }
+        val request = buildRequest(
+            "https://music.163.com/weapi/$path",
+            params, CryptoMode.WEAPI, "POST", true, session
+        ).let { it.newBuilder().post(requireNotNull(it.body).nonReplayable()).build() }
+        // 发评没有幂等键，连接失败时交给用户核对，不能自动重发
+        val client = session.okHttpClient.newBuilder()
+            .retryOnConnectionFailure(false)
+            .followRedirects(false)
+            .build()
+        return executeRequestCancellable(client, request)
+    }
+}

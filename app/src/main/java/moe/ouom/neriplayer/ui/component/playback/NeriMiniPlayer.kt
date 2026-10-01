@@ -84,7 +84,7 @@ import coil.compose.AsyncImagePainter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -900,10 +900,10 @@ fun NeriMiniPlayer(
                         isPlaying = isPlaying,
                         isPlaybackWaiting = isPlaybackWaiting,
                         isAudioRouteMuted = isAudioRouteMuted,
-                        playContentDescription = stringResource(R.string.lyrics_play),
-                        pauseContentDescription = stringResource(R.string.lyrics_pause),
-                        restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
-                        waitingContentDescription = stringResource(R.string.player_waiting),
+                        playContentDescription = stringResource(CoreCommonR.string.lyrics_play),
+                        pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
+                        restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
+                        waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         progressIndicatorSize = 22.dp,
                         progressStrokeWidth = 2.dp

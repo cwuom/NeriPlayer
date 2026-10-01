@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BILI_VIDEO_SKIP_SMALL_SEEK_STEP_MS
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.appendBiliVideoSkipInterval
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.formatBiliVideoSkipTimestamp

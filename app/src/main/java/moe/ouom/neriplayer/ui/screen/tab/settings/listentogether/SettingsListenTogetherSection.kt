@@ -19,7 +19,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 
 @Composable
@@ -42,12 +42,12 @@ private fun SettingsListenTogetherJoinItem(controller: SettingsListenTogetherCon
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.MeetingRoom,
-                contentDescription = stringResource(R.string.listen_together_join_room),
+                contentDescription = stringResource(CoreCommonR.string.listen_together_join_room),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.listen_together_join_room)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.listen_together_join_room)) },
         supportingContent = {
             Text(stringResource(listenTogetherJoinDescriptionId(controller.isInRoom)))
         },
@@ -62,12 +62,12 @@ private fun SettingsListenTogetherServerItem(controller: SettingsListenTogetherC
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Link,
-                contentDescription = stringResource(R.string.settings_listen_together_server_title),
+                contentDescription = stringResource(CoreCommonR.string.settings_listen_together_server_title),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_listen_together_server_title)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_listen_together_server_title)) },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -86,19 +86,19 @@ private fun SettingsListenTogetherNicknameItem(controller: SettingsListenTogethe
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.FormatSize,
-                contentDescription = stringResource(R.string.settings_listen_together_default_nickname_title),
+                contentDescription = stringResource(CoreCommonR.string.settings_listen_together_default_nickname_title),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_listen_together_default_nickname_title)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_listen_together_default_nickname_title)) },
         supportingContent = {
             Text(
                 listenTogetherNicknameDescription(
                     isInRoom = controller.isInRoom,
                     nickname = controller.currentNickname,
-                    disabledText = stringResource(R.string.settings_listen_together_default_nickname_disabled),
-                    unsetText = stringResource(R.string.settings_listen_together_default_nickname_unset)
+                    disabledText = stringResource(CoreCommonR.string.settings_listen_together_default_nickname_disabled),
+                    unsetText = stringResource(CoreCommonR.string.settings_listen_together_default_nickname_unset)
                 )
             )
         },
@@ -113,12 +113,12 @@ private fun SettingsListenTogetherIdentityItem(controller: SettingsListenTogethe
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.RestartAlt,
-                contentDescription = stringResource(R.string.listen_together_reset_uuid),
+                contentDescription = stringResource(CoreCommonR.string.listen_together_reset_uuid),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.listen_together_reset_uuid)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.listen_together_reset_uuid)) },
         supportingContent = {
             Text(stringResource(listenTogetherIdentityDescriptionId(controller.isInRoom)))
         },
@@ -130,12 +130,12 @@ private fun Modifier.listenTogetherRoomActionModifier(isInRoom: Boolean, onClick
     if (isInRoom) this.alpha(0.5f) else this.settingsItemClickable(onClick = onClick)
 
 internal fun listenTogetherJoinDescriptionId(isInRoom: Boolean): Int =
-    if (isInRoom) R.string.settings_listen_together_join_room_disabled
-    else R.string.settings_listen_together_join_room_desc
+    if (isInRoom) CoreCommonR.string.settings_listen_together_join_room_disabled
+    else CoreCommonR.string.settings_listen_together_join_room_desc
 
 internal fun listenTogetherIdentityDescriptionId(isInRoom: Boolean): Int =
-    if (isInRoom) R.string.listen_together_reset_uuid_disabled
-    else R.string.settings_listen_together_reset_identity_desc
+    if (isInRoom) CoreCommonR.string.listen_together_reset_uuid_disabled
+    else CoreCommonR.string.settings_listen_together_reset_identity_desc
 
 internal fun listenTogetherNicknameDescription(
     isInRoom: Boolean,

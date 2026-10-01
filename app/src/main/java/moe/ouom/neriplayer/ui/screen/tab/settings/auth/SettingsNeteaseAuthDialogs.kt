@@ -34,7 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.activity.auth.NeteaseQrLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -64,8 +64,8 @@ internal fun SettingsNeteaseAuthDialogs(
 
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
-            title = stringResource(R.string.settings_netease_saved_cookie_title),
-            message = stringResource(R.string.settings_netease_saved_cookie_message),
+            title = stringResource(CoreCommonR.string.settings_netease_saved_cookie_title),
+            message = stringResource(CoreCommonR.string.settings_netease_saved_cookie_message),
             onDismiss = onDismissSavedCookieDialog,
             onContinueLogin = {
                 onDismissSavedCookieDialog()
@@ -81,8 +81,8 @@ internal fun SettingsNeteaseAuthDialogs(
     if (showConfirmDialog) {
         MiuixSettingsDialog(
             onDismissRequest = onDismissConfirmDialog,
-            title = { Text(stringResource(R.string.login_confirm_send_code)) },
-            text = { Text(stringResource(R.string.login_send_code_to, confirmPhoneMasked ?: "")) },
+            title = { Text(stringResource(CoreCommonR.string.login_confirm_send_code)) },
+            text = { Text(stringResource(CoreCommonR.string.login_send_code_to, confirmPhoneMasked ?: "")) },
             confirmButton = {
                 MiuixSettingsTextButton(
                     onClick = {
@@ -90,17 +90,17 @@ internal fun SettingsNeteaseAuthDialogs(
                         vm.sendCaptcha(ctcode = "86")
                     }
                 ) {
-                    Text(stringResource(R.string.action_send))
+                    Text(stringResource(CoreCommonR.string.action_send))
                 }
             },
             dismissButton = {
                 MiuixSettingsTextButton(
                     onClick = {
                         onDismissConfirmDialog()
-                        onInlineMsgChange(composeResources.getString(R.string.sync_send_cancelled))
+                        onInlineMsgChange(composeResources.getString(CoreCommonR.string.sync_send_cancelled))
                     }
                 ) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -120,7 +120,7 @@ internal fun SettingsNeteaseAuthDialogs(
                     val json = result.data?.getStringExtra(NeteaseQrLoginActivity.RESULT_COOKIE) ?: "{}"
                     vm.importCookiesFromMap(parseCookieMap(json))
                 } else {
-                    onInlineMsgChange(composeResources.getString(R.string.settings_cookie_cancelled))
+                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_cancelled))
                 }
             }
             val defaultBrowserLogin: () -> Unit = {
@@ -132,25 +132,25 @@ internal fun SettingsNeteaseAuthDialogs(
         }
 
         SettingsCookieLoginSheet(
-            title = stringResource(R.string.login_netease),
+            title = stringResource(CoreCommonR.string.login_netease),
             initialTab = initialTab,
             inlineMsg = inlineMsg,
             onInlineMsgChange = onInlineMsgChange,
             onDismiss = onDismissSheet,
-            browserTabLabel = stringResource(R.string.login_qr),
-            browserButtonLabel = stringResource(R.string.login_start_netease_qr),
+            browserTabLabel = stringResource(CoreCommonR.string.login_qr),
+            browserButtonLabel = stringResource(CoreCommonR.string.login_start_netease_qr),
             browserHintContent = {
                 Text(
-                    stringResource(R.string.settings_netease_login_browser_hint),
+                    stringResource(CoreCommonR.string.settings_netease_login_browser_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
-            cookieLabel = stringResource(R.string.login_paste_cookie_hint),
+            cookieLabel = stringResource(CoreCommonR.string.login_paste_cookie_hint),
             onBrowserLogin = launchBrowserLogin,
             onSaveCookie = { rawCookie ->
                 if (rawCookie.isBlank()) {
-                    onInlineMsgChange(composeResources.getString(R.string.settings_cookie_input_hint))
+                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_input_hint))
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }

@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui
 
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows

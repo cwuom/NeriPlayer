@@ -15,16 +15,16 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.local.media.displayName
+import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 internal fun trafficRiskNetworkLabelResource(networkType: TrafficNetworkType): Int = when (networkType) {
-    TrafficNetworkType.ROAMING -> R.string.traffic_risk_network_roaming
-    TrafficNetworkType.MOBILE -> R.string.traffic_risk_network_mobile
-    TrafficNetworkType.WIFI -> R.string.traffic_risk_network_wifi
+    TrafficNetworkType.ROAMING -> CoreCommonR.string.traffic_risk_network_roaming
+    TrafficNetworkType.MOBILE -> CoreCommonR.string.traffic_risk_network_mobile
+    TrafficNetworkType.WIFI -> CoreCommonR.string.traffic_risk_network_wifi
 }
 
 internal fun formatTrafficRiskDownloadMessage(
@@ -48,11 +48,11 @@ private fun trafficRiskDownloadMessage(
         request = request,
         networkLabel = networkLabel,
         singleMessage = { network, songName ->
-            resources.getString(R.string.traffic_risk_download_single_message, network, songName)
+            resources.getString(CoreCommonR.string.traffic_risk_download_single_message, network, songName)
         },
         batchMessage = { count, network ->
             resources.getQuantityString(
-                R.plurals.traffic_risk_download_batch_message, count, network, count
+                CoreCommonR.plurals.traffic_risk_download_batch_message, count, network, count
             )
         }
     )
@@ -69,16 +69,16 @@ internal fun TrafficRiskDownloadDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.traffic_risk_download_title)) },
+        title = { Text(stringResource(CoreCommonR.string.traffic_risk_download_title)) },
         text = { Text(message) },
         confirmButton = {
             HapticTextButton(onClick = onConfirm) {
-                Text(stringResource(R.string.traffic_risk_download_confirm))
+                Text(stringResource(CoreCommonR.string.traffic_risk_download_confirm))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -95,14 +95,14 @@ internal fun MobileDataDownloadInterruptionDialog(
 
     AlertDialog(
         onDismissRequest = onWaitWifi,
-        title = { Text(stringResource(R.string.mobile_data_download_interruption_title)) },
+        title = { Text(stringResource(CoreCommonR.string.mobile_data_download_interruption_title)) },
         confirmButton = {},
         dismissButton = {},
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     pluralStringResource(
-                        R.plurals.mobile_data_download_interruption_message,
+                        CoreCommonR.plurals.mobile_data_download_interruption_message,
                         request.taskCount,
                         networkLabel,
                         request.taskCount
@@ -113,10 +113,10 @@ internal fun MobileDataDownloadInterruptionDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     HapticTextButton(onClick = onWaitWifi) {
-                        Text(stringResource(R.string.mobile_data_download_wait_wifi))
+                        Text(stringResource(CoreCommonR.string.mobile_data_download_wait_wifi))
                     }
                     HapticTextButton(onClick = onContinue) {
-                        Text(stringResource(R.string.traffic_risk_download_confirm))
+                        Text(stringResource(CoreCommonR.string.traffic_risk_download_confirm))
                     }
                 }
                 Row(
@@ -126,7 +126,7 @@ internal fun MobileDataDownloadInterruptionDialog(
                 ) {
                     HapticTextButton(onClick = onCancelAll) {
                         Text(
-                            stringResource(R.string.mobile_data_download_cancel_all),
+                            stringResource(CoreCommonR.string.mobile_data_download_cancel_all),
                             color = MaterialTheme.colorScheme.error
                         )
                     }
@@ -147,36 +147,36 @@ internal fun UsbExclusiveBackgroundPermissionDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(stringResource(R.string.settings_usb_exclusive_background_permission_title))
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_title))
         },
         confirmButton = {},
         dismissButton = {},
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.settings_usb_exclusive_background_permission_desc))
+                Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_desc))
                 if (!batteryOptimizationAllowed) {
                     HapticTextButton(
                         onClick = onRequestBatteryOptimization,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_battery))
+                        Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_battery))
                     }
                 }
                 HapticTextButton(
                     onClick = onOpenAppSettings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.settings_usb_exclusive_background_permission_app_settings))
+                    Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_app_settings))
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
                     HapticTextButton(onClick = onNeverShowAgain) {
-                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_never))
+                        Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_never))
                     }
                     HapticTextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_later))
+                        Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_permission_later))
                     }
                 }
             }

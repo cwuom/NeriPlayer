@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.lyrics.parser.findCurrentLineIndex
+
 import android.content.Context
 import android.os.SystemClock
 import androidx.compose.runtime.Composable

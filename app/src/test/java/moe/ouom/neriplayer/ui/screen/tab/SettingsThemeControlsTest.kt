@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.ui.geometry.Offset
-import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.AutoThemeModeController
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.ThemeRevealRequest
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.resolveAutoThemeToggle

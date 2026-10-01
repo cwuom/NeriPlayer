@@ -23,7 +23,8 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.identity
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
 import android.net.Uri
 import android.os.SystemClock
@@ -43,27 +44,26 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanPhase
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanProgress
 import moe.ouom.neriplayer.data.local.audioimport.localSongSourceModificationComparator
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
-import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseRemotePlaylist
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncResult
+import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.util.Locale
 
 data class LocalPlaylistDetailUiState(
@@ -952,9 +952,9 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     private fun hasMeaningfulScanMetadata(song: SongItem): Boolean {
-        val unknownArtist = app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist)
+        val unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist)
         val fileTitle = song.localFileName
-            ?.substringBeforeLast('.', song.localFileName)
+            ?.substringBeforeLast('.')
             ?.trim()
             .orEmpty()
         val hasTitleMetadata = song.name.isNotBlank() &&
@@ -968,7 +968,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     private fun shouldHydrateScanPreviewMetadata(song: SongItem): Boolean {
         // 文件名或下载 metadata 已经给出有效身份时, 不再为首屏重复打开音频容器
-        val unknownArtist = app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist)
+        val unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist)
         val artistNeedsRepair = song.artist.trim().let { artist ->
             artist.isBlank() ||
                 artist.equals(unknownArtist, ignoreCase = true) ||
@@ -979,7 +979,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
         if (!artistNeedsRepair && hasMeaningfulScanMetadata(song)) return false
         val fileTitle = song.localFileName
-            ?.substringBeforeLast('.', song.localFileName)
+            ?.substringBeforeLast('.')
             ?.trim()
             .orEmpty()
         return artistNeedsRepair ||

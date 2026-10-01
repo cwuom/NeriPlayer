@@ -3,8 +3,9 @@ package moe.ouom.neriplayer
 import android.content.Context
 import android.content.res.Resources
 import android.os.LocaleList
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.util.format.formatDurationSec
-import moe.ouom.neriplayer.util.format.formatFileSize
+import moe.ouom.neriplayer.common.format.formatFileSize
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -17,8 +18,8 @@ class ExampleUnitTest {
     @Test
     fun `formatPlayCount rounds to chinese units`() {
         val context = mockContext(Locale.SIMPLIFIED_CHINESE)
-        `when`(context.getString(R.string.number_ten_thousand, 9.9)).thenReturn("9.9万")
-        `when`(context.getString(R.string.number_hundred_million, 1.0)).thenReturn("1.0亿")
+        `when`(context.getString(CoreCommonR.string.number_ten_thousand, 9.9)).thenReturn("9.9万")
+        `when`(context.getString(CoreCommonR.string.number_hundred_million, 1.0)).thenReturn("1.0亿")
 
         assertEquals("9.9万", formatPlayCount(context, 99_000))
         assertEquals("1.0亿", formatPlayCount(context, 100_000_000))
@@ -28,9 +29,9 @@ class ExampleUnitTest {
     @Test
     fun `formatPlayCount rounds to english units`() {
         val context = mockContext(Locale.US)
-        `when`(context.getString(R.string.number_thousand, 2.5)).thenReturn("2.5K")
-        `when`(context.getString(R.string.number_million, 3.0)).thenReturn("3.0M")
-        `when`(context.getString(R.string.number_billion, 1.2)).thenReturn("1.2B")
+        `when`(context.getString(CoreCommonR.string.number_thousand, 2.5)).thenReturn("2.5K")
+        `when`(context.getString(CoreCommonR.string.number_million, 3.0)).thenReturn("3.0M")
+        `when`(context.getString(CoreCommonR.string.number_billion, 1.2)).thenReturn("1.2B")
 
         assertEquals("2.5K", formatPlayCount(context, 2_500))
         assertEquals("3.0M", formatPlayCount(context, 3_000_000))

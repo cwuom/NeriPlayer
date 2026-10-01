@@ -8,7 +8,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPendingActionPort
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPendingGateway
@@ -128,7 +128,7 @@ class SettingsDownloadDirectoryPendingOwnerTest {
         val preparing = mutableStateOf(false)
         val job = mutableStateOf<Job?>(null)
         private val resources = mock(Resources::class.java).apply {
-            `when`(getString(R.string.settings_download_directory_pick_failed, "provider failed"))
+            `when`(getString(CoreCommonR.string.settings_download_directory_pick_failed, "provider failed"))
                 .thenReturn("failed:provider failed")
         }
         val owner = DownloadDirectoryPendingOwner(

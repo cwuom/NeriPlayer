@@ -42,13 +42,13 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.debug.UsbAudioOutputDebugInfo
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.playback.usb.UsbAudioOutputDebugInfo
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
-import moe.ouom.neriplayer.core.player.debug.UsbHostDeviceDebugInfo
+import moe.ouom.neriplayer.data.model.playback.usb.UsbHostDeviceDebugInfo
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 @Composable
 fun UsbExclusiveDebugScreen() {
@@ -98,7 +98,7 @@ fun UsbExclusiveDebugScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = stringResource(R.string.debug_usb_exclusive_title),
+            text = stringResource(CoreCommonR.string.debug_usb_exclusive_title),
             style = MaterialTheme.typography.titleLarge
         )
 
@@ -116,9 +116,9 @@ fun UsbExclusiveDebugScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Refresh,
-                    contentDescription = stringResource(R.string.action_refresh)
+                    contentDescription = stringResource(CoreCommonR.string.action_refresh)
                 )
-                Text(stringResource(R.string.action_refresh))
+                Text(stringResource(CoreCommonR.string.action_refresh))
             }
             OutlinedButton(
                 onClick = {
@@ -129,9 +129,9 @@ fun UsbExclusiveDebugScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Outlined.ContentCopy,
-                    contentDescription = stringResource(R.string.debug_usb_exclusive_copy_report)
+                    contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_copy_report)
                 )
-                Text(stringResource(R.string.debug_usb_exclusive_copy_report))
+                Text(stringResource(CoreCommonR.string.debug_usb_exclusive_copy_report))
             }
         }
 
@@ -149,9 +149,9 @@ fun UsbExclusiveDebugScreen() {
         ) {
             Icon(
                 imageVector = Icons.Outlined.Usb,
-                contentDescription = stringResource(R.string.debug_usb_exclusive_request_permission)
+                contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_request_permission)
             )
-            Text(stringResource(R.string.debug_usb_exclusive_request_permission))
+            Text(stringResource(CoreCommonR.string.debug_usb_exclusive_request_permission))
         }
 
         Row(
@@ -174,9 +174,9 @@ fun UsbExclusiveDebugScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Usb,
-                    contentDescription = stringResource(R.string.debug_usb_exclusive_start_native_tone)
+                    contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_start_native_tone)
                 )
-                Text(stringResource(R.string.debug_usb_exclusive_start_native_tone))
+                Text(stringResource(CoreCommonR.string.debug_usb_exclusive_start_native_tone))
             }
             OutlinedButton(
                 onClick = {
@@ -191,49 +191,49 @@ fun UsbExclusiveDebugScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Stop,
-                    contentDescription = stringResource(R.string.debug_usb_exclusive_stop_native_tone)
+                    contentDescription = stringResource(CoreCommonR.string.debug_usb_exclusive_stop_native_tone)
                 )
-                Text(stringResource(R.string.debug_usb_exclusive_stop_native_tone))
+                Text(stringResource(CoreCommonR.string.debug_usb_exclusive_stop_native_tone))
             }
         }
 
         if (copied) {
             Text(
-                text = stringResource(R.string.log_copied),
+                text = stringResource(CoreCommonR.string.log_copied),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
-        DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_summary)) {
-            DebugRow(stringResource(R.string.debug_usb_exclusive_mode), snapshot.systemRouteSummary)
+        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_summary)) {
+            DebugRow(stringResource(CoreCommonR.string.debug_usb_exclusive_mode), snapshot.systemRouteSummary)
             DebugRow(
-                stringResource(R.string.debug_usb_exclusive_limitation),
+                stringResource(CoreCommonR.string.debug_usb_exclusive_limitation),
                 snapshot.systemRouteLimitation
             )
             DebugRow(
-                stringResource(R.string.settings_usb_exclusive_playback),
+                stringResource(CoreCommonR.string.settings_usb_exclusive_playback),
                 snapshot.usbExclusivePlaybackEnabled.yesNoText()
             )
             DebugRow(
-                stringResource(R.string.settings_allow_mixed_playback),
+                stringResource(CoreCommonR.string.settings_allow_mixed_playback),
                 snapshot.allowMixedPlaybackEnabled.yesNoText()
             )
             DebugRow(
-                stringResource(R.string.debug_usb_exclusive_player_state),
+                stringResource(CoreCommonR.string.debug_usb_exclusive_player_state),
                 "init=${snapshot.playerInitialized}, playing=${snapshot.playerPlaying}"
             )
             DebugRow(
-                stringResource(R.string.debug_usb_exclusive_current_output),
+                stringResource(CoreCommonR.string.debug_usb_exclusive_current_output),
                 "${snapshot.currentPlayerDeviceType ?: "none"}:${snapshot.currentPlayerDeviceName ?: "none"}"
             )
             DebugRow(
-                stringResource(R.string.debug_usb_exclusive_last_permission),
+                stringResource(CoreCommonR.string.debug_usb_exclusive_last_permission),
                 snapshot.lastPermissionEvent?.compactLine() ?: "none"
             )
         }
 
-        DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_native_runtime)) {
+        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_native_runtime)) {
             DebugRow("Native", snapshot.nativeExclusiveSummary)
             DebugRow("Available", nativeState.available.yesNoText())
             DebugRow("Opened", nativeState.opened.yesNoText())
@@ -258,10 +258,10 @@ fun UsbExclusiveDebugScreen() {
             DebugRow("Error", nativeState.lastError ?: "none")
         }
 
-        DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_audio_outputs)) {
+        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_audio_outputs)) {
             if (snapshot.audioOutputs.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.debug_usb_exclusive_empty),
+                    text = stringResource(CoreCommonR.string.debug_usb_exclusive_empty),
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
@@ -271,10 +271,10 @@ fun UsbExclusiveDebugScreen() {
             }
         }
 
-        DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_usb_host)) {
+        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_usb_host)) {
             if (snapshot.usbHostDevices.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.debug_usb_exclusive_empty),
+                    text = stringResource(CoreCommonR.string.debug_usb_exclusive_empty),
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
@@ -284,7 +284,7 @@ fun UsbExclusiveDebugScreen() {
             }
         }
 
-        DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_report)) {
+        DebugCard(title = stringResource(CoreCommonR.string.debug_usb_exclusive_section_report)) {
             Text(
                 text = snapshot.toReport(),
                 style = MaterialTheme.typography.bodySmall,

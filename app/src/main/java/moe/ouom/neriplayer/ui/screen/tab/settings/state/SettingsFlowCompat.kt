@@ -29,10 +29,10 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.util.units.day
-import moe.ouom.neriplayer.util.units.hour
-import moe.ouom.neriplayer.util.units.minute
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.units.day
+import moe.ouom.neriplayer.common.units.hour
+import moe.ouom.neriplayer.common.units.minute
 
 /** 兼容性：统一走生命周期感知收集，避免设置页后台继续订阅 */
 @Composable
@@ -51,9 +51,9 @@ internal fun formatSyncTime(timestamp: Long): String {
     val daysAgo = (diff / 1.day).toInt()
 
     return when {
-        diff < 1.minute -> stringResource(R.string.time_just_now)
-        diff < 1.hour -> pluralStringResource(R.plurals.time_minutes_ago, minutesAgo, minutesAgo)
-        diff < 1.day -> pluralStringResource(R.plurals.time_hours_ago, hoursAgo, hoursAgo)
-        else -> pluralStringResource(R.plurals.time_days_ago, daysAgo, daysAgo)
+        diff < 1.minute -> stringResource(CoreCommonR.string.time_just_now)
+        diff < 1.hour -> pluralStringResource(CoreCommonR.plurals.time_minutes_ago, minutesAgo, minutesAgo)
+        diff < 1.day -> pluralStringResource(CoreCommonR.plurals.time_hours_ago, hoursAgo, hoursAgo)
+        else -> pluralStringResource(CoreCommonR.plurals.time_days_ago, daysAgo, daysAgo)
     }
 }

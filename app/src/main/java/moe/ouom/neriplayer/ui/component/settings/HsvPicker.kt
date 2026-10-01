@@ -52,7 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import android.graphics.Color as AndroidColor
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 @Composable
 fun HsvPicker(
@@ -102,7 +102,7 @@ fun HsvPicker(
         }
 
         // Hue 0..360
-        Text(stringResource(R.string.color_hue))
+        Text(stringResource(CoreCommonR.string.color_hue))
         Slider(
             value = hsv[0],
             onValueChange = { hsv = floatArrayOf(it, hsv[1], hsv[2]) },
@@ -110,7 +110,7 @@ fun HsvPicker(
         )
 
         // Saturation 0..1
-        Text(stringResource(R.string.color_saturation))
+        Text(stringResource(CoreCommonR.string.color_saturation))
         Slider(
             value = hsv[1],
             onValueChange = { hsv = floatArrayOf(hsv[0], it, hsv[2]) },
@@ -118,7 +118,7 @@ fun HsvPicker(
         )
 
         // Value 0..1
-        Text(stringResource(R.string.color_value))
+        Text(stringResource(CoreCommonR.string.color_value))
         Slider(
             value = hsv[2],
             onValueChange = { hsv = floatArrayOf(hsv[0], hsv[1], it) },

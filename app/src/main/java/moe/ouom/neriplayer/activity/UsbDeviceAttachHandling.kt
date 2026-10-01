@@ -4,7 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal const val USB_DEVICE_ATTACHED_ACTIVITY_ALIAS_NAME =
     "moe.ouom.neriplayer.activity.UsbDeviceAttachedActivityAlias"

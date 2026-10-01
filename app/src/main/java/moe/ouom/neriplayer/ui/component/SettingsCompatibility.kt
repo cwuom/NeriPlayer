@@ -17,7 +17,7 @@ fun HsvPicker(
 @Composable
 fun LanguageSettingItem(
     modifier: Modifier = Modifier,
-    onLanguageChanged: (moe.ouom.neriplayer.util.platform.LanguageManager.Language) -> Unit = {}
+    onLanguageChanged: (moe.ouom.neriplayer.common.locale.LanguageManager.Language) -> Unit = {}
 ) {
     moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem(
         modifier = modifier,

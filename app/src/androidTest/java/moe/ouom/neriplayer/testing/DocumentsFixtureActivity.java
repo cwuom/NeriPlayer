@@ -17,12 +17,24 @@ public final class DocumentsFixtureActivity extends Activity {
     public static final String RECEIVER = "receiver";
     public static final String TARGET_PACKAGE = "targetPackage";
     public static final String SETUP = "setup";
+    public static final String REQUEST_ID = "requestId";
+    public static final String CANCEL = "moe.ouom.neriplayer.test.CANCEL_DOCUMENTS_FIXTURE";
+    private static final int PICK_TREE = 1;
     private ResultReceiver receiver;
+    private ResultReceiver cleanupReceiver;
+    private Bundle pendingResult;
+    private int pendingCode = RESULT_CANCELED;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        receiver = resultReceiver();
+        receiver = resultReceiver(getIntent());
+        if (CANCEL.equals(getIntent().getAction())) {
+            cleanupReceiver = receiver;
+            receiver = null;
+            finishAndRemoveTask();
+            return;
+        }
         if (state != null) return;
         try {
             Bundle setup = getIntent().getBundleExtra(SETUP);
@@ -30,8 +42,7 @@ public final class DocumentsFixtureActivity extends Activity {
                 Bundle result = getContentResolver().call(
                     Uri.parse("content://" + ManagedDownloadDelayedDocumentsProvider.AUTHORITY),
                     ManagedDownloadDelayedDocumentsProvider.SETUP, null, setup);
-                Objects.requireNonNull(receiver).send(RESULT_OK, result);
-                finish();
+                complete(RESULT_OK, result);
             } else {
                 Uri initial = Objects.requireNonNull(getIntent().getData());
                 startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
@@ -39,7 +50,7 @@ public final class DocumentsFixtureActivity extends Activity {
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                         | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                         | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                        | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION), 1);
+                        | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION), PICK_TREE);
             }
         } catch (RuntimeException error) {
             fail(error.toString());
@@ -47,9 +58,35 @@ public final class DocumentsFixtureActivity extends Activity {
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        ResultReceiver callback = resultReceiver(intent);
+        if (CANCEL.equals(intent.getAction())
+            && Objects.equals(intent.getStringExtra(REQUEST_ID), getIntent().getStringExtra(REQUEST_ID))) {
+            cleanupReceiver = callback;
+            finishActivity(PICK_TREE);
+            fail("directory fixture was cancelled");
+        } else if (callback != null) {
+            Bundle result = new Bundle();
+            result.putString("error", "another directory fixture is still active");
+            callback.send(RESULT_CANCELED, result);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 在销毁回调中通知测试，窗口焦点恢复仍由后续 UI 断言确认
+        if (isFinishing()) {
+            if (receiver != null && pendingResult != null) receiver.send(pendingCode, pendingResult);
+            if (cleanupReceiver != null) cleanupReceiver.send(RESULT_OK, Bundle.EMPTY);
+        }
+    }
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != 1) return;
+        if (requestCode != PICK_TREE || isFinishing()) return;
         try {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
                 throw new IllegalStateException("directory grant was cancelled");
@@ -65,8 +102,7 @@ public final class DocumentsFixtureActivity extends Activity {
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
             Bundle result = new Bundle();
             result.putString("treeUri", tree.toString());
-            Objects.requireNonNull(receiver).send(RESULT_OK, result);
-            finish();
+            complete(RESULT_OK, result);
         } catch (RuntimeException error) {
             fail(error.toString());
         }
@@ -75,16 +111,21 @@ public final class DocumentsFixtureActivity extends Activity {
     private void fail(String message) {
         Bundle result = new Bundle();
         result.putString("error", message);
-        Objects.requireNonNull(receiver).send(RESULT_CANCELED, result);
-        finish();
+        complete(RESULT_CANCELED, result);
+    }
+
+    private void complete(int code, Bundle result) {
+        pendingCode = code;
+        pendingResult = result;
+        finishAndRemoveTask();
     }
 
     @SuppressWarnings("deprecation")
-    private ResultReceiver resultReceiver() {
+    private ResultReceiver resultReceiver(Intent intent) {
         // 旧版本只能通过未指定类型的 Parcelable API 读取回调
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return getIntent().getParcelableExtra(RECEIVER, ResultReceiver.class);
+            return intent.getParcelableExtra(RECEIVER, ResultReceiver.class);
         }
-        return getIntent().getParcelableExtra(RECEIVER);
+        return intent.getParcelableExtra(RECEIVER);
     }
 }

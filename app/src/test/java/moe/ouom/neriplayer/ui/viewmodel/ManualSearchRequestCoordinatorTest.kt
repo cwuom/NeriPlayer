@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

@@ -35,9 +35,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.SongComment
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.comments.SongComment
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatPlayCount
@@ -59,11 +59,11 @@ internal fun CommentItem(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val anonymous = stringResource(R.string.comment_anonymous_user)
+    val anonymous = stringResource(CoreCommonR.string.comment_anonymous_user)
     val username = comment.username.trim().ifBlank { anonymous }
     val timeText = comment.createTime?.takeIf { it > 0L }?.let { formatDate(it) }
-    val likeAction = stringResource(if (comment.isLiked) R.string.comment_unlike else R.string.comment_like)
-    val likeState = stringResource(if (comment.isLiked) R.string.comment_liked else R.string.comment_not_liked)
+    val likeAction = stringResource(if (comment.isLiked) CoreCommonR.string.comment_unlike else CoreCommonR.string.comment_like)
+    val likeState = stringResource(if (comment.isLiked) CoreCommonR.string.comment_liked else CoreCommonR.string.comment_not_liked)
 
     CommentActionBox(comment, comment.id, replyEnabled, onReply, modifier.fillMaxWidth()) {
         Surface(
@@ -104,7 +104,7 @@ internal fun CommentItem(
                     comment.userLevel?.let { level ->
                         Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
                             Text(
-                                text = stringResource(R.string.comment_user_level_format, level),
+                                text = stringResource(CoreCommonR.string.comment_user_level_format, level),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -113,7 +113,7 @@ internal fun CommentItem(
                         Spacer(Modifier.width(10.dp))
                     }
                     Text(
-                        text = stringResource(R.string.comment_floor_format, floor),
+                        text = stringResource(CoreCommonR.string.comment_floor_format, floor),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -133,8 +133,8 @@ internal fun CommentItem(
                     if ((comment.replyCount ?: 0L) > 0L || comment.previewReplies.isNotEmpty() || hasReplyThread) {
                         HapticTextButton(onClick = onToggleReplies, modifier = Modifier.weight(1f), enabled = hasReplyThread || !offlineMode) {
                             Text(
-                                text = if (repliesExpanded) stringResource(R.string.comment_collapse_replies)
-                                    else stringResource(R.string.comment_reply_count_format,
+                                text = if (repliesExpanded) stringResource(CoreCommonR.string.comment_collapse_replies)
+                                    else stringResource(CoreCommonR.string.comment_reply_count_format,
                                         formatPlayCount(context, comment.replyCount ?: comment.previewReplies.size.toLong())),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
@@ -146,7 +146,7 @@ internal fun CommentItem(
                             enabled = replyEnabled,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(stringResource(R.string.comment_reply))
+                            Text(stringResource(CoreCommonR.string.comment_reply))
                         }
                     }
                     HapticTextButton(

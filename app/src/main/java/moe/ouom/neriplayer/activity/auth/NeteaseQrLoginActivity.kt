@@ -45,11 +45,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginClient
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.platform.netease.api.auth.NeteaseQrLoginClient
+import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -161,7 +162,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         }
         appBar.addView(
             MaterialToolbar(this).apply {
-                title = getString(R.string.netease_qr_login)
+                title = getString(CoreCommonR.string.netease_qr_login)
                 setNavigationIcon(R.drawable.ic_arrow_back_24)
                 setNavigationOnClickListener { finish() }
                 setBackgroundColor(Color.TRANSPARENT)
@@ -178,14 +179,14 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         val actionWidthPx = minOf(420.dp(), resources.displayMetrics.widthPixels - 48.dp()).coerceAtLeast(228.dp())
 
         val titleText = TextView(this).apply {
-            text = getString(R.string.netease_qr_login_title)
+            text = getString(CoreCommonR.string.netease_qr_login_title)
             gravity = Gravity.CENTER
             textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(onSurface)
         }
         val subtitleText = TextView(this).apply {
-            text = getString(R.string.netease_qr_login_subtitle)
+            text = getString(CoreCommonR.string.netease_qr_login_subtitle)
             gravity = Gravity.CENTER
             textSize = 14f
             setLineSpacing(2.dp().toFloat(), 1f)
@@ -235,7 +236,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             setTextColor(onSurfaceVariant)
         }
         retryButton = MaterialButton(this).apply {
-            text = getString(R.string.netease_qr_login_retry)
+            text = getString(CoreCommonR.string.netease_qr_login_retry)
             cornerRadius = 20.dp()
             minHeight = 52.dp()
             insetTop = 0
@@ -245,7 +246,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             setOnClickListener { startQrLogin() }
         }
         webFallbackButton = MaterialButton(this).apply {
-            text = getString(R.string.netease_qr_login_web_fallback)
+            text = getString(CoreCommonR.string.netease_qr_login_web_fallback)
             cornerRadius = 20.dp()
             minHeight = 50.dp()
             insetTop = 0
@@ -303,8 +304,8 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         NPLogger.d(LOG_TAG, "Start QR login")
         pollJob = lifecycleScope.launch {
             setLoadingState(true)
-            setStatus(getString(R.string.netease_qr_login_loading))
-            hintText.text = getString(R.string.netease_qr_login_hint)
+            setStatus(getString(CoreCommonR.string.netease_qr_login_loading))
+            hintText.text = getString(CoreCommonR.string.netease_qr_login_hint)
             qrImage.setImageDrawable(null)
 
             val session = try {
@@ -313,7 +314,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
                 throw error
             } catch (error: Exception) {
                 setLoadingState(false)
-                setErrorStatus(getString(R.string.netease_qr_login_failed, error.readableMessage()))
+                setErrorStatus(getString(CoreCommonR.string.netease_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Create QR login session failed", error)
                 return@launch
             }
@@ -329,14 +330,14 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             }
             qrImage.setImageBitmap(bitmap)
             setLoadingState(false)
-            setStatus(getString(R.string.netease_qr_login_waiting))
+            setStatus(getString(CoreCommonR.string.netease_qr_login_waiting))
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 pollQrLogin(session)
             }
         }
     }
 
-    private suspend fun pollQrLogin(session: moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginSession) {
+    private suspend fun pollQrLogin(session: moe.ouom.neriplayer.data.model.netease.auth.NeteaseQrLoginSession) {
         while (shouldPollNeteaseQrLogin(lifecycle.currentState, hasReturned)) {
             pollRound += 1
             NPLogger.d(LOG_TAG, "Poll round=$pollRound")
@@ -345,7 +346,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                setErrorStatus(getString(R.string.netease_qr_login_failed, error.readableMessage()))
+                setErrorStatus(getString(CoreCommonR.string.netease_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Check QR login failed", error)
                 return
             }
@@ -355,20 +356,20 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             )
 
             when (check.code) {
-                801 -> setStatus(getString(R.string.netease_qr_login_waiting))
-                802 -> setStatus(getString(R.string.netease_qr_login_scanned))
+                801 -> setStatus(getString(CoreCommonR.string.netease_qr_login_waiting))
+                802 -> setStatus(getString(CoreCommonR.string.netease_qr_login_scanned))
                 803 -> {
                     finishWithCookies(check.cookies)
                     return
                 }
                 800 -> {
-                    setErrorStatus(getString(R.string.netease_qr_login_expired))
+                    setErrorStatus(getString(CoreCommonR.string.netease_qr_login_expired))
                     return
                 }
                 else -> {
                     val message = check.message.ifBlank { "code=${check.code}" }
                     NPLogger.w(LOG_TAG, "Unexpected QR status code=${check.code} message=$message")
-                    setErrorStatus(getString(R.string.netease_qr_login_failed, message))
+                    setErrorStatus(getString(CoreCommonR.string.netease_qr_login_failed, message))
                     return
                 }
             }
@@ -384,7 +385,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
                 "hasMusicU=${normalized["MUSIC_U"].isNullOrBlank().not()} hasCsrf=${normalized["__csrf"].isNullOrBlank().not()}"
         )
         if (normalized["MUSIC_U"].isNullOrBlank()) {
-            setErrorStatus(getString(R.string.netease_qr_login_cookie_incomplete))
+            setErrorStatus(getString(CoreCommonR.string.netease_qr_login_cookie_incomplete))
             NPLogger.w(LOG_TAG, "QR login confirmed but cookie is incomplete, keys=${cookies.keys}")
             return
         }

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.onboarding
 
-import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 
 internal fun shouldBlockStartupOnboardingThemeToggle(
     captureInFlight: Boolean,

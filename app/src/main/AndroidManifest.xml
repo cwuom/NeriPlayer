@@ -46,13 +46,6 @@
         android:name=".NeriPlayerApplication"
         tools:targetApi="33">
 
-        <meta-data android:name="lyricon_module" android:value="true" />
-        <meta-data android:name="lyricon_module_author" android:value="NeriPlayer" />
-        <meta-data android:name="lyricon_module_description" android:value="NeriPlayer Lyricon Provider" />
-        <meta-data
-            android:name="lyricon_module_tags"
-            android:resource="@array/lyricon_module_tags" />
-
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
@@ -121,15 +114,6 @@
             android:process=":netease_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
-        <receiver
-            android:name=".data.auth.web.NeteaseWebViewLoginStateClearReceiver"
-            android:exported="false"
-            android:process=":netease_login"
-        >
-            <intent-filter>
-                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
-            </intent-filter>
-        </receiver>
         <activity
             android:name=".activity.auth.BiliWebLoginActivity"
             android:exported="false"
@@ -142,49 +126,12 @@
             android:process=":bili_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
-        <receiver
-            android:name=".data.auth.web.BiliWebViewLoginStateClearReceiver"
-            android:exported="false"
-            android:process=":bili_web_login"
-        >
-            <intent-filter>
-                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
-            </intent-filter>
-        </receiver>
         <activity
             android:name=".activity.auth.YouTubeWebLoginActivity"
             android:exported="false"
             android:process=":youtube_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
-        <receiver
-            android:name=".data.auth.web.YouTubeWebViewLoginStateClearReceiver"
-            android:exported="false"
-            android:process=":youtube_web_login"
-        >
-            <intent-filter>
-                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
-            </intent-filter>
-        </receiver>
-        <service
-            android:name="moe.ouom.neriplayer.core.player.service.AudioPlayerService"
-            android:exported="false"
-            android:stopWithTask="false"
-            android:foregroundServiceType="mediaPlayback">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </service>
-        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
-        <service
-            android:name=".core.download.execution.uidt.UidtDownloadJobService"
-            android:exported="true"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            tools:targetApi="34" />
 
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"

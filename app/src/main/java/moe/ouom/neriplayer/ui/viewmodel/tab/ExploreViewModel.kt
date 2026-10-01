@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/11
  */
 
+import moe.ouom.neriplayer.core.player.persistence.toSongItem
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -33,26 +34,30 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
-import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchFilter
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResult
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResultType
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliSongAlbum
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
-import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
-import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
-import moe.ouom.neriplayer.util.search.SearchTextMatcher
+import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseSongDetail
+import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.platform.youtube.api.transport.youtubeMusicThumbnailUrl
+import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import moe.ouom.neriplayer.util.search.searchValues
 import org.json.JSONObject
 
@@ -585,8 +590,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     it.copy(
                         searching = false,
                         searchError = app.getString(
-                            R.string.error_bilibili_search,
-                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                            CoreCommonR.string.error_bilibili_search,
+                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -708,8 +713,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = app.getString(
-                        R.string.error_load_playlist,
-                        e.message ?: app.getString(R.string.github_sync_failed_message)
+                        CoreCommonR.string.error_load_playlist,
+                        e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
                     ),
                     playlists = if (shouldRestorePreviousContent) previousPlaylists else emptyList(),
                     selectedTag = if (shouldRestorePreviousContent) previousTag else realCat
@@ -785,8 +790,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     it.copy(
                         searching = false,
                         searchError = app.getString(
-                            R.string.error_netease_search,
-                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                            CoreCommonR.string.error_netease_search,
+                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -809,7 +814,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         searchMoreJob?.cancel()
         invalidateSearchRequest()
         _uiState.value = _uiState.value.withNeteaseAuthRequired(
-            error = app.getString(R.string.netease_login_required_search)
+            error = app.getString(CoreCommonR.string.netease_login_required_search)
         )
     }
 
@@ -821,7 +826,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     updateSearchStateIfCurrent(requestVersion, SearchSource.LINK_RECOGNITION) {
                         it.copy(
                             searching = false,
-                            searchError = app.getString(R.string.explore_link_invalid),
+                            searchError = app.getString(CoreCommonR.string.explore_link_invalid),
                             searchResults = emptyList(),
                             searchItems = emptyList(),
                             searchHasMore = false,
@@ -858,8 +863,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     it.copy(
                         searching = false,
                         searchError = app.getString(
-                            R.string.error_link_recognition,
-                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                            CoreCommonR.string.error_link_recognition,
+                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -907,9 +912,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 fetchLinkedYouTubePlaylist(target.playlistId)
             )
             is ExploreLinkTarget.Unsupported -> ExploreSearchResult.Notice(
-                title = app.getString(R.string.explore_link_unsupported_title),
+                title = app.getString(CoreCommonR.string.explore_link_unsupported_title),
                 message = app.getString(
-                    R.string.explore_link_unsupported_message,
+                    CoreCommonR.string.explore_link_unsupported_message,
                     target.platform,
                     target.type
                 )
@@ -921,21 +926,21 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         val finalUrl = expandExploreRedirectUrl(url, AppContainer.sharedOkHttpClient)
         return recognizeExploreLink(finalUrl)
             ?.takeIf { it !is ExploreLinkTarget.BiliShortLink }
-            ?: error(app.getString(R.string.explore_link_invalid))
+            ?: error(app.getString(CoreCommonR.string.explore_link_invalid))
     }
 
     private suspend fun resolveNeteaseShortLink(url: String): ExploreLinkTarget {
         val finalUrl = expandExploreRedirectUrl(url, AppContainer.sharedOkHttpClient)
         return recognizeExploreLink(finalUrl)
             ?.takeIf { it !is ExploreLinkTarget.NeteaseShortLink }
-            ?: error(app.getString(R.string.explore_link_invalid))
+            ?: error(app.getString(CoreCommonR.string.explore_link_invalid))
     }
 
     private fun fetchLinkedNeteaseSong(songId: Long): SongItem {
         val raw = neteaseClient.getSongDetail(listOf(songId))
         return parseNeteaseSongDetail(raw) ?: SongItem(
             id = songId,
-            name = app.getString(R.string.explore_link_netease_song_fallback, songId),
+            name = app.getString(CoreCommonR.string.explore_link_netease_song_fallback, songId),
             artist = "",
             album = "",
             albumId = 0L,
@@ -956,7 +961,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }.getOrElse {
             PlaylistSummary(
                 id = playlistId,
-                name = app.getString(R.string.explore_link_netease_playlist_fallback, playlistId),
+                name = app.getString(CoreCommonR.string.explore_link_netease_playlist_fallback, playlistId),
                 picUrl = "",
                 playCount = 0L,
                 trackCount = 0
@@ -974,7 +979,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             NeteaseSearchArtistResult(
                 artist = NeteaseArtistSummary(
                     id = artistId,
-                    name = app.getString(R.string.explore_link_netease_artist_fallback, artistId)
+                    name = app.getString(CoreCommonR.string.explore_link_netease_artist_fallback, artistId)
                 ),
                 picUrl = null,
                 musicSize = 0,
@@ -990,7 +995,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             ?.let { biliClient.getVideoBasicInfoByBvid(it) }
             ?: target.avid
                 ?.let { biliClient.getVideoBasicInfoByAvid(it) }
-            ?: error(app.getString(R.string.explore_link_invalid))
+            ?: error(app.getString(CoreCommonR.string.explore_link_invalid))
         val collectionTarget = info.toExploreLinkCollectionTarget(target)
         if (collectionTarget != null) {
             return ExploreSearchResult.BilibiliPlaylist(
@@ -1023,11 +1028,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         collected.firstOrNull { it.fid == folderId || it.mediaId == folderId }?.let { folder ->
             return hydrateLinkedBiliFolder(folder, BiliPlaylistKind.COLLECTED_FAVORITE)
         }
-        error(app.getString(R.string.explore_link_invalid))
+        error(app.getString(CoreCommonR.string.explore_link_invalid))
     }
 
     private suspend fun hydrateLinkedBiliFolder(
-        folder: BiliClient.FavFolder,
+        folder: FavFolder,
         fallbackKind: BiliPlaylistKind
     ): BiliPlaylist {
         if (folder.itemType == BILI_RESOURCE_TYPE_COLLECTION) {
@@ -1054,7 +1059,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             fid = 0L,
             mid = meta.mid.takeIf { it > 0L } ?: ownerMid,
             title = meta.title.ifBlank {
-                app.getString(R.string.explore_link_bili_playlist_fallback, seasonId)
+                app.getString(CoreCommonR.string.explore_link_bili_playlist_fallback, seasonId)
             },
             count = meta.total,
             coverUrl = meta.coverUrl,
@@ -1062,7 +1067,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    private fun BiliClient.FavFolder.toExploreBiliPlaylist(
+    private fun FavFolder.toExploreBiliPlaylist(
         fallbackKind: BiliPlaylistKind
     ): BiliPlaylist {
         val resolvedKind = if (itemType == BILI_RESOURCE_TYPE_COLLECTION) {
@@ -1075,7 +1080,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             fid = fid,
             mid = mid,
             title = title.ifBlank {
-                app.getString(R.string.explore_link_bili_playlist_fallback, mediaId)
+                app.getString(CoreCommonR.string.explore_link_bili_playlist_fallback, mediaId)
             },
             count = count,
             coverUrl = coverUrl.replaceFirst("http://", "https://"),
@@ -1106,9 +1111,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         val metadata = runCatching {
             AppContainer.youtubeMusicClient.getVideoMetadata(target.videoId)
         }.getOrNull()
-        val displayAlbum = app.getString(R.string.youtube_search_type_video)
+        val displayAlbum = app.getString(CoreCommonR.string.youtube_search_type_video)
         val displayName = metadata?.title.orEmpty().ifBlank {
-            app.getString(R.string.explore_link_youtube_video_fallback, target.videoId)
+            app.getString(CoreCommonR.string.explore_link_youtube_video_fallback, target.videoId)
         }
         val displayArtist = metadata?.authorName.orEmpty().ifBlank { "YouTube" }
         val coverUrl = metadata?.thumbnailUrl.orEmpty().ifBlank {
@@ -1143,7 +1148,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 browseId = detail.browseId.ifBlank { browseId },
                 playlistId = detail.playlistId.ifBlank { playlistId.removePrefix("VL") },
                 title = detail.title.ifBlank {
-                    app.getString(R.string.explore_link_youtube_playlist_fallback, playlistId)
+                    app.getString(CoreCommonR.string.explore_link_youtube_playlist_fallback, playlistId)
                 },
                 subtitle = detail.subtitle,
                 coverUrl = detail.coverUrl,
@@ -1153,7 +1158,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             YouTubeMusicPlaylist(
                 browseId = browseId,
                 playlistId = playlistId.removePrefix("VL"),
-                title = app.getString(R.string.explore_link_youtube_playlist_fallback, playlistId),
+                title = app.getString(CoreCommonR.string.explore_link_youtube_playlist_fallback, playlistId),
                 subtitle = "",
                 coverUrl = "",
                 trackCount = 0
@@ -1169,7 +1174,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         val playlist = root.optJSONObject("playlist")
             ?: return PlaylistSummary(
                 id = fallbackId,
-                name = app.getString(R.string.explore_link_netease_playlist_fallback, fallbackId),
+                name = app.getString(CoreCommonR.string.explore_link_netease_playlist_fallback, fallbackId),
                 picUrl = "",
                 playCount = 0L,
                 trackCount = 0
@@ -1178,7 +1183,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             id = playlist.optLong("id", fallbackId),
             name = playlist.optString(
                 "name",
-                app.getString(R.string.explore_link_netease_playlist_fallback, fallbackId)
+                app.getString(CoreCommonR.string.explore_link_netease_playlist_fallback, fallbackId)
             ),
             picUrl = playlist.optString("coverImgUrl", "")
                 .replaceFirst("http://", "https://"),
@@ -1194,7 +1199,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         val root = JSONObject(raw)
         val artist = root.optJSONObject("data")?.optJSONObject("artist")
             ?: root.optJSONObject("artist")
-        val fallbackName = app.getString(R.string.explore_link_netease_artist_fallback, fallbackId)
+        val fallbackName = app.getString(CoreCommonR.string.explore_link_netease_artist_fallback, fallbackId)
         if (artist == null) {
             return NeteaseSearchArtistResult(
                 artist = NeteaseArtistSummary(id = fallbackId, name = fallbackName),
@@ -1255,7 +1260,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    suspend fun getVideoInfoByAvid(avid: Long): BiliClient.VideoBasicInfo {
+    suspend fun getVideoInfoByAvid(avid: Long): VideoBasicInfo {
         return withContext(Dispatchers.IO) {
             biliClient.getVideoBasicInfoByAvid(avid)
         }
@@ -1268,7 +1273,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
      * @param coverUrl 视频封面
      * @return 转换后的 SongItem
      */
-    fun toSongItem(page: BiliClient.VideoPage, basicInfo: BiliClient.VideoBasicInfo, coverUrl: String): SongItem {
+    fun toSongItem(page: VideoPage, basicInfo: VideoBasicInfo, coverUrl: String): SongItem {
         return buildBiliPartSong(page, basicInfo, coverUrl)
     }
 
@@ -1326,8 +1331,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     it.copy(
                         searching = false,
                         searchError = app.getString(
-                            R.string.error_youtube_search,
-                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                            CoreCommonR.string.error_youtube_search,
+                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
                         ),
                         searchResults = emptyList(),
                         searchItems = emptyList(),
@@ -1408,18 +1413,18 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun searchErrorMessage(source: SearchSource, error: Exception): String {
-        val fallback = error.message ?: app.getString(R.string.github_sync_failed_message)
+        val fallback = error.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
         return when (source) {
-            SearchSource.NETEASE -> app.getString(R.string.error_netease_search, fallback)
-            SearchSource.BILIBILI -> app.getString(R.string.error_bilibili_search, fallback)
-            SearchSource.YOUTUBE_MUSIC -> app.getString(R.string.error_youtube_search, fallback)
-            SearchSource.LINK_RECOGNITION -> app.getString(R.string.error_link_recognition, fallback)
+            SearchSource.NETEASE -> app.getString(CoreCommonR.string.error_netease_search, fallback)
+            SearchSource.BILIBILI -> app.getString(CoreCommonR.string.error_bilibili_search, fallback)
+            SearchSource.YOUTUBE_MUSIC -> app.getString(CoreCommonR.string.error_youtube_search, fallback)
+            SearchSource.LINK_RECOGNITION -> app.getString(CoreCommonR.string.error_link_recognition, fallback)
         }
     }
 }
 
 /** Bilibili 搜索结果到通用 SongItem 的转换器 */
-private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
+private fun SearchVideoItem.toSongItem(): SongItem {
     return SongItem(
         id = this.aid, // 使用 avid 作为唯一ID
         name = this.titlePlain,
@@ -1433,7 +1438,7 @@ private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
     )
 }
 
-private fun BiliClient.VideoBasicInfo.toSongItem(): SongItem {
+private fun VideoBasicInfo.toSongItem(): SongItem {
     return SongItem(
         id = aid,
         name = title,
@@ -1447,7 +1452,7 @@ private fun BiliClient.VideoBasicInfo.toSongItem(): SongItem {
     )
 }
 
-internal fun BiliClient.VideoBasicInfo.toExploreLinkSong(
+internal fun VideoBasicInfo.toExploreLinkSong(
     target: ExploreLinkTarget.BiliVideo
 ): SongItem {
     val selectedPage = target.cid
@@ -1464,7 +1469,7 @@ internal fun BiliClient.VideoBasicInfo.toExploreLinkSong(
     } ?: toSongItem()
 }
 
-internal fun BiliClient.VideoBasicInfo.toExploreLinkCollectionTarget(
+internal fun VideoBasicInfo.toExploreLinkCollectionTarget(
     target: ExploreLinkTarget.BiliVideo
 ): ExploreLinkTarget.BiliCollection? {
     if (!target.isCollectionShare) return null
@@ -1483,8 +1488,8 @@ private fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
     val displayArtist = artist.ifBlank { "YouTube" }
     val displayAlbum = album.ifBlank {
         when (type) {
-            YouTubeMusicSearchResultType.Song -> app.getString(R.string.youtube_search_type_song)
-            YouTubeMusicSearchResultType.Video -> app.getString(R.string.youtube_search_type_video)
+            YouTubeMusicSearchResultType.Song -> app.getString(CoreCommonR.string.youtube_search_type_song)
+            YouTubeMusicSearchResultType.Video -> app.getString(CoreCommonR.string.youtube_search_type_video)
         }
     }
     return SongItem(

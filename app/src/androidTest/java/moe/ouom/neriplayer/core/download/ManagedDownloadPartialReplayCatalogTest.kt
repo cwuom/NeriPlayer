@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.core.download.manager.batch.clearPersistedDownloadCle
 import moe.ouom.neriplayer.core.download.manager.batch.finishReleasedTaskClearState
 import moe.ouom.neriplayer.core.download.manager.catalog.cancelScheduledDownloadedSongsCatalogPersist
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test

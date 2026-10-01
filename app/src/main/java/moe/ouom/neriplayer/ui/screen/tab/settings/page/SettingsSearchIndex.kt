@@ -3,12 +3,12 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.page
 import android.content.Context
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
-import moe.ouom.neriplayer.util.search.SearchTextMatcher
+import moe.ouom.neriplayer.common.search.SearchTextMatcher
 
 internal data class SettingsSearchEntry(
     val id: String,
@@ -417,8 +417,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
     return listOf(
         entry(
             page = SettingsPage.General,
-            titleRes = R.string.language_setting_title,
-            descriptionRes = R.string.language_select_title,
+            titleRes = CoreCommonR.string.language_setting_title,
+            descriptionRes = CoreCommonR.string.language_select_title,
             id = "language",
             aliases = listOf(
                 "语言设置",
@@ -440,8 +440,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.General,
-            titleRes = R.string.settings_internationalization,
-            descriptionRes = R.string.settings_internationalization_desc,
+            titleRes = CoreCommonR.string.settings_internationalization,
+            descriptionRes = CoreCommonR.string.settings_internationalization_desc,
             id = "internationalization",
             aliases = listOf(
                 "国际化",
@@ -458,8 +458,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Accounts,
-            titleRes = R.string.settings_netease,
-            descriptionRes = R.string.settings_netease_status_missing,
+            titleRes = CoreCommonR.string.settings_netease,
+            descriptionRes = CoreCommonR.string.settings_netease_status_missing,
             id = "netease_login",
             aliases = listOf(
                 "netease",
@@ -479,8 +479,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Accounts,
-            titleRes = R.string.settings_bilibili,
-            descriptionRes = R.string.settings_bili_status_missing,
+            titleRes = CoreCommonR.string.settings_bilibili,
+            descriptionRes = CoreCommonR.string.settings_bili_status_missing,
             id = "bili_login",
             aliases = listOf(
                 "bili",
@@ -500,8 +500,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Accounts,
-            titleRes = R.string.common_youtube,
-            descriptionRes = R.string.settings_youtube_status_missing,
+            titleRes = CoreCommonR.string.common_youtube,
+            descriptionRes = CoreCommonR.string.settings_youtube_status_missing,
             id = "youtube_login",
             aliases = listOf(
                 "youtube",
@@ -520,36 +520,36 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Theme,
-            titleRes = R.string.settings_theme_mode,
-            descriptionRes = R.string.settings_theme_mode_desc,
+            titleRes = CoreCommonR.string.settings_theme_mode,
+            descriptionRes = CoreCommonR.string.settings_theme_mode_desc,
             id = "theme_mode",
             aliases = listOf("dark", "light", "system", "auto", "shense", "qianse", "zidong")
         ),
         entry(
             page = SettingsPage.Theme,
-            titleRes = R.string.settings_theme_palette_style,
-            descriptionRes = R.string.settings_theme_palette_style_desc,
+            titleRes = CoreCommonR.string.settings_theme_palette_style,
+            descriptionRes = CoreCommonR.string.settings_theme_palette_style_desc,
             id = "theme_palette_style",
             aliases = listOf("palette", "color", "kolor", "monet", "seban", "quse")
         ),
         entry(
             page = SettingsPage.Theme,
-            titleRes = R.string.settings_theme_color_spec,
-            descriptionRes = R.string.settings_theme_color_spec_desc,
+            titleRes = CoreCommonR.string.settings_theme_color_spec,
+            descriptionRes = CoreCommonR.string.settings_theme_color_spec_desc,
             id = "theme_color_spec",
             aliases = listOf("color spec", "material", "2021", "2025", "secai", "guifan")
         ),
         entry(
             page = SettingsPage.Theme,
-            titleRes = R.string.settings_theme_color,
-            descriptionRes = R.string.settings_theme_color_desc,
+            titleRes = CoreCommonR.string.settings_theme_color,
+            descriptionRes = CoreCommonR.string.settings_theme_color_desc,
             id = "theme_seed_color",
             aliases = listOf("accent", "seed", "custom color", "zhutise", "yanse")
         ),
         entry(
             page = SettingsPage.Personalization,
-            titleRes = R.string.settings_nowplaying_control_placement,
-            descriptionRes = R.string.settings_nowplaying_control_placement_desc,
+            titleRes = CoreCommonR.string.settings_nowplaying_control_placement,
+            descriptionRes = CoreCommonR.string.settings_nowplaying_control_placement_desc,
             id = "nowplaying_control_placement",
             aliases = listOf(
                 "播放按钮位置",
@@ -566,8 +566,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Personalization,
-            titleRes = R.string.settings_nowplaying_control_size,
-            descriptionRes = R.string.settings_nowplaying_control_size_desc,
+            titleRes = CoreCommonR.string.settings_nowplaying_control_size,
+            descriptionRes = CoreCommonR.string.settings_nowplaying_control_size_desc,
             id = "nowplaying_control_size",
             aliases = listOf(
                 "播放按钮大小",
@@ -581,8 +581,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Personalization,
-            titleRes = R.string.settings_lyrics_control_size,
-            descriptionRes = R.string.settings_lyrics_control_size_desc,
+            titleRes = CoreCommonR.string.settings_lyrics_control_size,
+            descriptionRes = CoreCommonR.string.settings_lyrics_control_size_desc,
             id = "lyrics_control_size",
             aliases = listOf(
                 "歌词页控件大小",
@@ -596,8 +596,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.playlist_export,
-            descriptionRes = R.string.playlist_export_desc,
+            titleRes = CoreCommonR.string.playlist_export,
+            descriptionRes = CoreCommonR.string.playlist_export_desc,
             id = "playlist_export",
             aliases = listOf(
                 "导出歌单",
@@ -616,8 +616,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.playlist_import,
-            descriptionRes = R.string.playlist_import_desc,
+            titleRes = CoreCommonR.string.playlist_import,
+            descriptionRes = CoreCommonR.string.playlist_import_desc,
             id = "playlist_import",
             aliases = listOf(
                 "导入歌单",
@@ -636,8 +636,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.settings_export_config,
-            descriptionRes = R.string.settings_export_config_desc,
+            titleRes = CoreCommonR.string.settings_export_config,
+            descriptionRes = CoreCommonR.string.settings_export_config_desc,
             id = "config_export",
             aliases = listOf(
                 "导出配置",
@@ -657,8 +657,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.settings_import_config,
-            descriptionRes = R.string.settings_import_config_desc,
+            titleRes = CoreCommonR.string.settings_import_config,
+            descriptionRes = CoreCommonR.string.settings_import_config_desc,
             id = "config_import",
             aliases = listOf(
                 "导入配置",
@@ -678,8 +678,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.github_auto_sync,
-            descriptionRes = R.string.sync_config_desc,
+            titleRes = CoreCommonR.string.github_auto_sync,
+            descriptionRes = CoreCommonR.string.sync_config_desc,
             id = "github_sync",
             aliases = listOf("github", "git", "token", "sync", "tongbu", "beifen"),
             targetId = "manual:github_sync",
@@ -687,8 +687,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.webdav_sync_title,
-            descriptionRes = R.string.webdav_sync_desc,
+            titleRes = CoreCommonR.string.webdav_sync_title,
+            descriptionRes = CoreCommonR.string.webdav_sync_desc,
             id = "webdav_sync",
             aliases = listOf("webdav", "dav", "sync", "tongbu", "beifen", "server", "url"),
             targetId = "manual:webdav_sync",
@@ -696,8 +696,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.sync_auto,
-            descriptionRes = R.string.sync_auto_desc,
+            titleRes = CoreCommonR.string.sync_auto,
+            descriptionRes = CoreCommonR.string.sync_auto_desc,
             id = "github_auto_sync",
             aliases = listOf(
                 "github",
@@ -714,8 +714,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.Backup,
-            titleRes = R.string.webdav_sync_title,
-            descriptionRes = R.string.webdav_auto_sync_desc,
+            titleRes = CoreCommonR.string.webdav_sync_title,
+            descriptionRes = CoreCommonR.string.webdav_auto_sync_desc,
             id = "webdav_auto_sync",
             aliases = listOf("webdav", "dav", "sync", "auto sync", "zidongtongbu", "tongbu"),
             targetId = "manual:webdav_auto_sync",
@@ -723,8 +723,8 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.ListenTogether,
-            titleRes = R.string.listen_together_join_room,
-            descriptionRes = R.string.settings_listen_together_join_room_desc,
+            titleRes = CoreCommonR.string.listen_together_join_room,
+            descriptionRes = CoreCommonR.string.settings_listen_together_join_room_desc,
             id = "listen_together_join_room",
             aliases = listOf(
                 "listen together",
@@ -740,30 +740,30 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.ListenTogether,
-            titleRes = R.string.settings_listen_together_server_title,
-            descriptionRes = R.string.settings_listen_together_expand,
+            titleRes = CoreCommonR.string.settings_listen_together_server_title,
+            descriptionRes = CoreCommonR.string.settings_listen_together_expand,
             id = "listen_together_server",
             aliases = listOf("listen together", "lt", "worker", "room", "server", "url", "yiqiting")
         ),
         entry(
             page = SettingsPage.ListenTogether,
-            titleRes = R.string.settings_listen_together_default_nickname_title,
-            descriptionRes = R.string.listen_together_nickname,
+            titleRes = CoreCommonR.string.settings_listen_together_default_nickname_title,
+            descriptionRes = CoreCommonR.string.listen_together_nickname,
             id = "listen_together_nickname",
             aliases = listOf("nickname", "name", "uuid", "shenfen", "nicheng", "yiqiting")
         ),
         entry(
             page = SettingsPage.Storage,
-            titleRes = R.string.settings_clear_cache,
-            descriptionRes = R.string.settings_clear_cache_desc,
+            titleRes = CoreCommonR.string.settings_clear_cache,
+            descriptionRes = CoreCommonR.string.settings_clear_cache_desc,
             id = "clear_cache",
             aliases = listOf("cache", "clean", "qingli", "huancun", "storage", "space"),
             targetId = "manual:clear_cache"
         ),
         entry(
             page = SettingsPage.About,
-            titleRes = R.string.settings_about,
-            descriptionRes = R.string.settings_about_desc,
+            titleRes = CoreCommonR.string.settings_about,
+            descriptionRes = CoreCommonR.string.settings_about_desc,
             id = "about_debug",
             aliases = listOf("about", "version", "debug", "banben", "tiaoshi")
         )

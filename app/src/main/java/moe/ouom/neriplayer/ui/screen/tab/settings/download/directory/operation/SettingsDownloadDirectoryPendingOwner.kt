@@ -7,7 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
@@ -99,7 +99,7 @@ internal class DownloadDirectoryPendingOwner(
             .onFailure { error ->
                 actions.failMigration()
                 onInlineMessageChange(resources.getString(
-                    R.string.settings_download_directory_pick_failed,
+                    CoreCommonR.string.settings_download_directory_pick_failed,
                     error.message ?: ""
                 ))
             }

@@ -9,12 +9,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryAvailability
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.probeConfiguredDownloadRoot
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.resolveDownloadDirectoryAvailability
-import moe.ouom.neriplayer.util.time.elapsedMillisSince
+import moe.ouom.neriplayer.common.time.elapsedMillisSince
 
 internal interface DownloadDirectoryResetGateway {
     suspend fun availability(currentUri: String?): DownloadDirectoryAvailability
@@ -91,7 +91,7 @@ internal class DownloadDirectoryResetOwner(
             "directory_preflight stage=source_availability status=retryable " +
                 "errorType=${downloadDirectoryProviderFailureType(failure.error.cause)}"
         )
-        val message = resources.getString(R.string.managed_library_processing_retry)
+        val message = resources.getString(CoreCommonR.string.managed_library_processing_retry)
         onInlineMessageChange(message)
         onShowMessage(message)
     }

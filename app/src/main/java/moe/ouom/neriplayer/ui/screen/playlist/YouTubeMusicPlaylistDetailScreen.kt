@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -106,14 +108,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
@@ -143,7 +144,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -209,7 +210,7 @@ fun YouTubeMusicPlaylistDetailScreen(
     fun showWaitForFullLoadMessage() {
         scope.launch {
             snackbarHostState.showNeriSnackbar(
-                composeResources.getString(R.string.youtube_music_playlist_wait_full_load)
+                composeResources.getString(CoreCommonR.string.youtube_music_playlist_wait_full_load)
             )
         }
     }
@@ -227,8 +228,8 @@ fun YouTubeMusicPlaylistDetailScreen(
     }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsState()
-    val favoriteAddedText = stringResource(R.string.favorite_added)
-    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
+    val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
     fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
         val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
         scope.launchLocalPlaylistMutation(
@@ -413,7 +414,7 @@ fun YouTubeMusicPlaylistDetailScreen(
         resolvedPlaylist.creatorName.takeIf { it.isNotBlank() },
         resolvedPlaylist.subtitle.takeIf { it.isNotBlank() },
         stringResource(
-            R.string.library_favorite_source_format,
+            CoreCommonR.string.library_favorite_source_format,
             resolvedTrackCount,
             "YouTube Music"
         )
@@ -467,7 +468,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         HapticIconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.action_back)
+                                contentDescription = stringResource(CoreCommonR.string.action_back)
                             )
                         }
                     },
@@ -484,13 +485,13 @@ fun YouTubeMusicPlaylistDetailScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Search,
-                                contentDescription = stringResource(R.string.cd_search_songs)
+                                contentDescription = stringResource(CoreCommonR.string.cd_search_songs)
                             )
                         }
                         HapticIconButton(onClick = viewModel::retry) {
                             Icon(
                                 imageVector = Icons.Filled.Refresh,
-                                contentDescription = stringResource(R.string.action_refresh)
+                                contentDescription = stringResource(CoreCommonR.string.action_refresh)
                             )
                         }
                         HapticIconButton(
@@ -525,9 +526,9 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     Icons.Outlined.FavoriteBorder
                                 },
                                 contentDescription = if (isFavorite) {
-                                    stringResource(R.string.action_unfavorite)
+                                    stringResource(CoreCommonR.string.action_unfavorite)
                                 } else {
-                                    stringResource(R.string.action_favorite_playlist)
+                                    stringResource(CoreCommonR.string.action_favorite_playlist)
                                 },
                                 tint = playlistTopBarContentColor
                             )
@@ -536,7 +537,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                             HapticIconButton(onClick = { showDownloadManager = true }) {
                                 Icon(
                                     Icons.Outlined.Download,
-                                    contentDescription = stringResource(R.string.cd_download_manager),
+                                    contentDescription = stringResource(CoreCommonR.string.cd_download_manager),
                                     tint = playlistTopBarContentColor
                                 )
                             }
@@ -558,7 +559,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                R.plurals.common_selected_count,
+                                CoreCommonR.plurals.common_selected_count,
                                 selectedKeys.size,
                                 selectedKeys.size
                             )
@@ -566,7 +567,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     },
                     navigationIcon = {
                         HapticIconButton(onClick = { exitSelection() }) {
-                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(CoreCommonR.string.cd_exit_select))
                         }
                     },
                     actions = {
@@ -582,9 +583,9 @@ fun YouTubeMusicPlaylistDetailScreen(
                             Icon(
                                 imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                                 contentDescription = if (allSelected) {
-                                    stringResource(R.string.action_deselect_all)
+                                    stringResource(CoreCommonR.string.action_deselect_all)
                                 } else {
-                                    stringResource(R.string.action_select_all)
+                                    stringResource(CoreCommonR.string.action_select_all)
                                 }
                             )
                         }
@@ -596,7 +597,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                contentDescription = stringResource(R.string.cd_export_playlist)
+                                contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
                             )
                         }
                         HapticIconButton(
@@ -612,7 +613,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         ) {
                             Icon(
                                 Icons.Outlined.Download,
-                                contentDescription = stringResource(R.string.cd_download_selected)
+                                contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
                             )
                         }
                     },
@@ -639,7 +640,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                 offlineMode = offlineMode,
                 query = searchQuery,
                 onQueryChange = { searchQuery = it },
-                placeholder = stringResource(R.string.playlist_search_hint),
+                placeholder = stringResource(CoreCommonR.string.playlist_search_hint),
                 inputState = searchInputState,
                 onFocusChanged = { dockedSearchFocused = it },
                 focusRequester = if (searchFieldFocusInHeader) {
@@ -682,7 +683,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                             PlaylistModernHeroSearchField(
                                                 query = searchQuery,
                                                 onQueryChange = { searchQuery = it },
-                                                placeholder = stringResource(R.string.playlist_search_hint),
+                                                placeholder = stringResource(CoreCommonR.string.playlist_search_hint),
                                                 inputState = searchInputState,
                                                 onFocusChanged = { headerSearchFocused = it },
                                                 focusRequester = if (searchFieldFocusInHeader) {
@@ -764,7 +765,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     ErrorBlock(
                                         message = if (requestedTracksUnavailable) {
                                             stringResource(
-                                                R.string.youtube_music_playlist_tracks_unavailable
+                                                CoreCommonR.string.youtube_music_playlist_tracks_unavailable
                                             )
                                         } else {
                                             requestedError.orEmpty()
@@ -783,9 +784,9 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 ) {
                                     EmptyBlock(
                                         text = if (searchQuery.isBlank()) {
-                                            stringResource(R.string.library_youtube_music_empty)
+                                            stringResource(CoreCommonR.string.library_youtube_music_empty)
                                         } else {
-                                            stringResource(R.string.search_no_match)
+                                            stringResource(CoreCommonR.string.search_no_match)
                                         }
                                     )
                                 }
@@ -838,7 +839,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                             GlobalDownloadManager.startDownload(context, song)
                                             scope.launch {
                                                 snackbarHostState.showNeriSnackbar(
-                                                    composeResources.getString(R.string.download_starting, song.displayName())
+                                                    composeResources.getString(CoreCommonR.string.download_starting, song.displayName())
                                                 )
                                             }
                                         },
@@ -876,7 +877,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                            contentDescription = stringResource(R.string.cd_locate_playing)
+                            contentDescription = stringResource(CoreCommonR.string.cd_locate_playing)
                         )
                     }
                 }
@@ -885,7 +886,7 @@ fun YouTubeMusicPlaylistDetailScreen(
         
         if (showExportSheet) {
             PlaylistExportSheet(
-                title = stringResource(R.string.playlist_export_to_local),
+                title = stringResource(CoreCommonR.string.playlist_export_to_local),
                 playlists = allPlaylists.filterNot {
                     LocalFilesPlaylist.isSystemPlaylist(it, context)
                 },
@@ -932,7 +933,7 @@ fun YouTubeMusicPlaylistDetailScreen(
 
         if (showExportAllSheet) {
             PlaylistExportSheet(
-                title = stringResource(R.string.playlist_export_to_local),
+                title = stringResource(CoreCommonR.string.playlist_export_to_local),
                 playlists = allPlaylists.filterNot {
                     LocalFilesPlaylist.isSystemPlaylist(it, context)
                 },
@@ -1005,11 +1006,11 @@ private fun PartialPlaylistBlock(onRetry: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = stringResource(R.string.youtube_music_playlist_partial_loaded),
+                text = stringResource(CoreCommonR.string.youtube_music_playlist_partial_loaded),
                 color = playlistModernListSecondaryContentColor()
             )
             HapticTextButton(onClick = onRetry) {
-                Text(stringResource(R.string.action_refresh))
+                Text(stringResource(CoreCommonR.string.action_refresh))
             }
         }
     }
@@ -1026,7 +1027,7 @@ private fun LoadingBlock() {
     ) {
         CircularProgressIndicator()
         Spacer(modifier = Modifier.width(12.dp))
-        Text(text = stringResource(R.string.playlist_loading_content))
+        Text(text = stringResource(CoreCommonR.string.playlist_loading_content))
     }
 }
 
@@ -1043,11 +1044,11 @@ private fun ErrorBlock(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = stringResource(R.string.playlist_load_failed_format, message),
+            text = stringResource(CoreCommonR.string.playlist_load_failed_format, message),
             color = MaterialTheme.colorScheme.error
         )
         HapticTextButton(onClick = onRetry) {
-            Text(text = stringResource(R.string.action_retry))
+            Text(text = stringResource(CoreCommonR.string.action_retry))
         }
     }
 }
@@ -1201,7 +1202,7 @@ private fun YouTubeMusicSongRow(
                 IconButton(onClick = { showMenu = true }) {
                     Icon(
                         imageVector = Icons.Filled.MoreVert,
-                        contentDescription = stringResource(R.string.common_more_actions),
+                        contentDescription = stringResource(CoreCommonR.string.common_more_actions),
                         tint = playlistModernListSecondaryContentColor()
                     )
                 }
@@ -1210,7 +1211,7 @@ private fun YouTubeMusicSongRow(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                    text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
@@ -1223,7 +1224,7 @@ private fun YouTubeMusicSongRow(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                    text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
@@ -1240,9 +1241,9 @@ private fun YouTubeMusicSongRow(
                         Text(
                             stringResource(
                                 if (isFavorite) {
-                                    R.string.favorite_remove
+                                    CoreCommonR.string.favorite_remove
                                 } else {
-                                    R.string.favorite_add
+                                    CoreCommonR.string.favorite_add
                                 }
                             )
                         )
@@ -1263,7 +1264,7 @@ private fun YouTubeMusicSongRow(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.download_to_local)) },
+                    text = { Text(stringResource(CoreCommonR.string.download_to_local)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Download,
@@ -1276,7 +1277,7 @@ private fun YouTubeMusicSongRow(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_copy_song_info)) },
+                    text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.ContentCopy,
@@ -1294,7 +1295,7 @@ private fun YouTubeMusicSongRow(
                                 )
                             )
                             snackbarHostState.showNeriSnackbar(
-                                composeResources.getString(R.string.toast_copied)
+                                composeResources.getString(CoreCommonR.string.toast_copied)
                             )
                         }
                         showMenu = false

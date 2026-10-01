@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.stableKey
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -80,9 +80,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
-import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanPhase
+import moe.ouom.neriplayer.data.model.local.LocalAudioScanProgress
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
@@ -90,7 +90,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
-import moe.ouom.neriplayer.util.search.SearchTextMatcher
+import moe.ouom.neriplayer.common.search.SearchTextMatcher
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun LocalScanPreviewScreen(
@@ -179,19 +179,19 @@ internal fun LocalScanPreviewScreen(
         }
     }
     val allDisplayedSelected = displayedKeys.isNotEmpty() && displayedKeys.all(selectedKeys::contains)
-    val resolvedTitle = title ?: stringResource(R.string.local_playlist_scan_preview_title)
+    val resolvedTitle = title ?: stringResource(CoreCommonR.string.local_playlist_scan_preview_title)
     val resolvedSearchPlaceholder =
-        searchPlaceholder ?: stringResource(R.string.local_playlist_scan_preview_search)
+        searchPlaceholder ?: stringResource(CoreCommonR.string.local_playlist_scan_preview_search)
     val resolvedEmptyText = emptyText ?: when {
         hideDuplicateMetadataSongs || (metadataOnly && hideExistingLocalPlaylistSongs) -> {
-            stringResource(R.string.local_playlist_scan_filtered_empty)
+            stringResource(CoreCommonR.string.local_playlist_scan_filtered_empty)
         }
-        metadataOnly -> stringResource(R.string.local_playlist_scan_metadata_empty)
-        hideExistingLocalPlaylistSongs -> stringResource(R.string.local_playlist_scan_existing_empty)
-        else -> stringResource(R.string.download_scan_empty)
+        metadataOnly -> stringResource(CoreCommonR.string.local_playlist_scan_metadata_empty)
+        hideExistingLocalPlaylistSongs -> stringResource(CoreCommonR.string.local_playlist_scan_existing_empty)
+        else -> stringResource(CoreCommonR.string.download_scan_empty)
     }
     val resolvedActionLabel = actionLabel?.invoke(selectedKeys.size)
-        ?: stringResource(R.string.download_scan_add_selected, selectedKeys.size)
+        ?: stringResource(CoreCommonR.string.download_scan_add_selected, selectedKeys.size)
     val showBusy = isScanning || isBusy
 
     BackHandler(onBack = onBack)
@@ -211,7 +211,7 @@ internal fun LocalScanPreviewScreen(
                     HapticIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
+                            contentDescription = stringResource(CoreCommonR.string.action_back)
                         )
                     }
                 },
@@ -233,7 +233,7 @@ internal fun LocalScanPreviewScreen(
                             HapticIconButton(onClick = { showMoreMenu = true }) {
                                 Icon(
                                     Icons.Filled.MoreVert,
-                                    contentDescription = stringResource(R.string.common_more_options)
+                                    contentDescription = stringResource(CoreCommonR.string.common_more_options)
                                 )
                             }
                             DropdownMenu(
@@ -243,7 +243,7 @@ internal fun LocalScanPreviewScreen(
                                 if (metadataFilterAvailable) {
                                     DropdownMenuItem(
                                         text = {
-                                            Text(stringResource(R.string.local_playlist_scan_filter_metadata))
+                                            Text(stringResource(CoreCommonR.string.local_playlist_scan_filter_metadata))
                                         },
                                         trailingIcon = {
                                             Checkbox(
@@ -260,7 +260,7 @@ internal fun LocalScanPreviewScreen(
                                 if (existingLocalPlaylistSongsFilterAvailable) {
                                     DropdownMenuItem(
                                         text = {
-                                            Text(stringResource(R.string.local_playlist_scan_filter_existing))
+                                            Text(stringResource(CoreCommonR.string.local_playlist_scan_filter_existing))
                                         },
                                         trailingIcon = {
                                             Checkbox(
@@ -281,7 +281,7 @@ internal fun LocalScanPreviewScreen(
                                         text = {
                                             Text(
                                                 stringResource(
-                                                    R.string.local_playlist_scan_filter_duplicates
+                                                    CoreCommonR.string.local_playlist_scan_filter_duplicates
                                                 )
                                             )
                                         },
@@ -328,7 +328,7 @@ internal fun LocalScanPreviewScreen(
                     }
                     Text(
                         text = pluralStringResource(
-                            R.plurals.common_selected_count,
+                            CoreCommonR.plurals.common_selected_count,
                             selectedKeys.size,
                             selectedKeys.size
                         ),
@@ -378,7 +378,7 @@ internal fun LocalScanPreviewScreen(
                         CircularProgressIndicator()
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = stringResource(R.string.download_scanning),
+                                text = stringResource(CoreCommonR.string.download_scanning),
                                 style = MaterialTheme.typography.bodyLarge
                             )
                             Spacer(Modifier.height(4.dp))
@@ -389,38 +389,38 @@ internal fun LocalScanPreviewScreen(
                             Text(
                                 text = when (scanProgress.phase) {
                                     LocalAudioScanPhase.PREPARING -> pluralStringResource(
-                                        R.plurals.local_playlist_scan_progress_preparing,
+                                        CoreCommonR.plurals.local_playlist_scan_progress_preparing,
                                         phaseElapsedSeconds,
                                         phaseElapsedSeconds
                                     )
                                     LocalAudioScanPhase.READING_DOWNLOAD_INDEX -> pluralStringResource(
-                                        R.plurals.local_playlist_scan_progress_download_index,
+                                        CoreCommonR.plurals.local_playlist_scan_progress_download_index,
                                         phaseElapsedSeconds,
                                         phaseElapsedSeconds
                                     )
                                     LocalAudioScanPhase.QUERYING_MEDIA_STORE -> pluralStringResource(
-                                        R.plurals.local_playlist_scan_progress_media_store,
+                                        CoreCommonR.plurals.local_playlist_scan_progress_media_store,
                                         phaseElapsedSeconds,
                                         phaseElapsedSeconds
                                     )
                                     LocalAudioScanPhase.TRAVERSING -> pluralStringResource(
-                                        R.plurals.local_playlist_scan_progress_traversing,
+                                        CoreCommonR.plurals.local_playlist_scan_progress_traversing,
                                         scanProgress.visitedDirectories,
                                         scanProgress.visitedDirectories,
                                         scanProgress.discoveredSongs
                                     )
                                     LocalAudioScanPhase.HYDRATING_METADATA -> stringResource(
-                                        R.string.local_playlist_scan_progress_metadata,
+                                        CoreCommonR.string.local_playlist_scan_progress_metadata,
                                         scanProgress.processed,
                                         scanProgress.total
                                     )
                                     LocalAudioScanPhase.BUILDING_ENTRIES -> stringResource(
-                                        R.string.local_playlist_scan_progress_building,
+                                        CoreCommonR.string.local_playlist_scan_progress_building,
                                         scanProgress.processed,
                                         scanProgress.total
                                     )
                                     LocalAudioScanPhase.COMPLETED -> pluralStringResource(
-                                        R.plurals.local_playlist_scan_progress_completed,
+                                        CoreCommonR.plurals.local_playlist_scan_progress_completed,
                                         scanProgress.discoveredSongs,
                                         scanProgress.discoveredSongs
                                     )
@@ -463,9 +463,9 @@ internal fun LocalScanPreviewScreen(
                     ) {
                         Text(
                             if (allDisplayedSelected) {
-                                stringResource(R.string.action_deselect_all)
+                                stringResource(CoreCommonR.string.action_deselect_all)
                             } else {
-                                stringResource(R.string.action_select_all)
+                                stringResource(CoreCommonR.string.action_select_all)
                             }
                         )
                     }
@@ -479,7 +479,7 @@ internal fun LocalScanPreviewScreen(
                             )
                         }
                     ) {
-                        Text(stringResource(R.string.action_inverse_select))
+                        Text(stringResource(CoreCommonR.string.action_inverse_select))
                     }
                 }
 

@@ -55,14 +55,14 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliSongAlbum
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.navigation.animateMainTabDetailCloseRootRevealFraction
 import moe.ouom.neriplayer.ui.navigation.clipMainTabDetailCloseRoot
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
@@ -160,7 +160,7 @@ fun ExploreHostScreen(
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
     onSongPlayNext: (SongItem) -> Unit = {},
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     coherentFeedbackEnabled: Boolean = false,
     renderScene: @Composable (
         revealTopFraction: Float,

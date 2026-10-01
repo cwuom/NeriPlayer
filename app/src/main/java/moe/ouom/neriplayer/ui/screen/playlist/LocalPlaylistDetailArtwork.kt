@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
-
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -46,9 +46,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
@@ -228,7 +228,7 @@ internal fun shouldResolveLocalPlaylistRowArtworkFallback(): Boolean = true
 
 internal fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean {
     val fileTitle = fileName.substringBeforeLast('.', fileName).trim()
-    val unknownArtist = context.getString(R.string.music_unknown_artist)
+    val unknownArtist = context.getString(CoreCommonR.string.music_unknown_artist)
     val hasTitleMetadata = name.isNotBlank() &&
         (fileTitle.isBlank() || !name.equals(fileTitle, ignoreCase = true))
     val hasArtistMetadata = artist.trim().isNotBlank() &&

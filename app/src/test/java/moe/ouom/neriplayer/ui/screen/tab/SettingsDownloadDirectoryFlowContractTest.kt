@@ -2,9 +2,9 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.isDownloadDirectoryChangeEnabled
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DirectoryChangeBlockReason
@@ -291,7 +291,7 @@ class SettingsDownloadDirectoryFlowContractTest {
     @Test
     fun `migration preflight enumerates each root once without reading every sidecar`() {
         val storageSource = locateProjectFile(
-            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/facade/" +
+            "modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/storage/facade/" +
                 "ManagedDownloadStorageFacadeSetup.kt"
         ).readText()
         val presenceProbe = storageSource
@@ -314,9 +314,9 @@ class SettingsDownloadDirectoryFlowContractTest {
     fun `populated migration target shows localized conflict semantics`() {
         val source = settingsSource()
         val localizedResources = listOf(
-            "app/src/main/res/values/strings_settings_general.xml",
-            "app/src/main/res/values-zh/strings_settings_general.xml",
-            "app/src/main/res/values-en/strings_settings_general.xml"
+            "modules/common/src/main/res/values/strings_settings_general.xml",
+            "modules/common/src/main/res/values-zh/strings_settings_general.xml",
+            "modules/common/src/main/res/values-en/strings_settings_general.xml"
         ).map { path -> locateProjectFile(path).readText() }
 
         assertTrue(source.contains("targetNonEmpty"))
@@ -364,9 +364,9 @@ class SettingsDownloadDirectoryFlowContractTest {
     @Test
     fun `generic retry copy does not claim the readable directory is unavailable`() {
         val localizedResources = listOf(
-            "app/src/main/res/values/strings_settings_general.xml",
-            "app/src/main/res/values-zh/strings_settings_general.xml",
-            "app/src/main/res/values-en/strings_settings_general.xml"
+            "modules/common/src/main/res/values/strings_settings_general.xml",
+            "modules/common/src/main/res/values-zh/strings_settings_general.xml",
+            "modules/common/src/main/res/values-en/strings_settings_general.xml"
         ).map { path -> locateProjectFile(path).readText() }
 
         localizedResources.forEach { resources ->

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
+import moe.ouom.neriplayer.data.model.download.DownloadProgress
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -7,16 +9,16 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.ui.screen.download.DownloadProgressScreen
@@ -48,8 +50,8 @@ class DownloadProgressContentTest {
             attemptId = 1L
         )
         val replacement = request.copy(operationId = "${request.operationId}-replacement", attemptId = 2L)
-        val pendingText = context.resources.getQuantityString(R.plurals.download_tasks_count, 1, 1)
-        val emptyText = context.getString(R.string.download_no_tasks)
+        val pendingText = context.resources.getQuantityString(CoreCommonR.plurals.download_tasks_count, 1, 1)
+        val emptyText = context.getString(CoreCommonR.string.download_no_tasks)
         fun awaitText(text: String) {
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
@@ -99,7 +101,7 @@ class DownloadProgressContentTest {
                 durationMs = 1_000L,
                 coverUrl = null
             ),
-            progress = AudioDownloadManager.DownloadProgress(
+            progress = DownloadProgress(
                 songKey = "test-song",
                 songId = 1L,
                 fileName = "test-song.mp3",
@@ -118,7 +120,7 @@ class DownloadProgressContentTest {
         }
 
         composeRule.onNodeWithText(
-            context.getString(R.string.download_waiting_network_recovery)
+            context.getString(CoreCommonR.string.download_waiting_network_recovery)
         ).assertExists()
     }
 }

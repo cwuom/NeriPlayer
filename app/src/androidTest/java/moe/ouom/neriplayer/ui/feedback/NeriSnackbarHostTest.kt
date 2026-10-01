@@ -20,7 +20,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -123,7 +123,7 @@ class NeriSnackbarHostTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithContentDescription(
-            context.getString(R.string.cd_close)
+            context.getString(CoreCommonR.string.cd_close)
         ).performClick()
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithTag(NeriSnackbarTestTag)

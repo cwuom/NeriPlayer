@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.navigation
 
+import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutAction
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

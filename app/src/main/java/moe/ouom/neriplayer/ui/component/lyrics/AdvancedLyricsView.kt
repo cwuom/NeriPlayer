@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.isNeteaseYrc
+import moe.ouom.neriplayer.lyrics.parser.isTtmlLyrics
+import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc
+
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,7 +34,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import kotlin.math.abs
 import kotlin.math.max
 

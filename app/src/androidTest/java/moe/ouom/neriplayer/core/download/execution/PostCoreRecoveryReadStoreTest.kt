@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.runtime.PostCoreDownloadRecoveryResult
 import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadsForWorkerImpl
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
-import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomReadStore
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.persistence.PostCoreRecoveryReadStore

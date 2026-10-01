@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/11
  */
 
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,18 +38,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
+import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
@@ -180,7 +181,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val mid = biliCookieRepo.getCookiesOnce()["DedeUserID"]?.toLongOrNull() ?: 0L
                 if (mid == 0L) {
-                    _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(R.string.error_get_user_id))
+                    _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(CoreCommonR.string.error_get_user_id))
                     return@launch
                 }
                 val mapped = withContext(Dispatchers.IO) {
@@ -225,7 +226,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun mapBiliFolders(
-        folders: List<BiliClient.FavFolder>,
+        folders: List<FavFolder>,
         kind: BiliPlaylistKind,
         currentMid: Long
     ): List<BiliPlaylist> = coroutineScope {
@@ -243,7 +244,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun mapBiliFolder(
-        folder: BiliClient.FavFolder,
+        folder: FavFolder,
         kind: BiliPlaylistKind,
         currentMid: Long
     ): BiliPlaylist? {
@@ -259,7 +260,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 .onFailure { error ->
                     NPLogger.e(
                         "LibraryViewModel-Bili",
-                        getApplication<Application>().getString(R.string.music_get_detail_failed),
+                        getApplication<Application>().getString(CoreCommonR.string.music_get_detail_failed),
                         error
                     )
                 }
@@ -450,7 +451,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         return result
     }
 
-    private fun moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
+    private fun moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
         return hasSavedAuthMaterial()
     }
 

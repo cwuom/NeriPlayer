@@ -8,7 +8,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryAvailability
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryResetActionPort
@@ -112,7 +112,7 @@ class SettingsDownloadDirectoryResetOwnerTest {
         val preparing = mutableStateOf(false)
         val job = mutableStateOf<Job?>(null)
         private val resources = mock(Resources::class.java).apply {
-            `when`(getString(R.string.managed_library_processing_retry)).thenReturn("retry")
+            `when`(getString(CoreCommonR.string.managed_library_processing_retry)).thenReturn("retry")
         }
         val owner = DownloadDirectoryResetOwner(
             gateway = gateway,

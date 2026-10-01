@@ -36,20 +36,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
-import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
-import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
-import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
+import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
@@ -75,15 +75,15 @@ internal fun SettingsPersonalizationStartCard(
     val autoShowKeyboard by autoSettingsRepository.autoShowKeyboardFlow.collectAsState(initial = false)
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
-            title = stringResource(R.string.settings_personalization_start_section),
-            description = stringResource(R.string.settings_personalization_start_section_desc)
+            title = stringResource(CoreCommonR.string.settings_personalization_start_section),
+            description = stringResource(CoreCommonR.string.settings_personalization_start_section_desc)
         )
         AutoSettingsListItem(
             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DEFAULT_START_DESTINATION),
             leadingContent = {
                 Icon(
                     imageVector = Icons.Outlined.Home,
-                    contentDescription = stringResource(R.string.settings_default_start_screen),
+                    contentDescription = stringResource(CoreCommonR.string.settings_default_start_screen),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -91,7 +91,7 @@ internal fun SettingsPersonalizationStartCard(
             supportingContent = {
                 Text(
                     stringResource(
-                        R.string.settings_default_start_screen_desc,
+                        CoreCommonR.string.settings_default_start_screen_desc,
                         defaultStartDestinationLabel
                     )
                 )
@@ -141,11 +141,11 @@ internal fun SettingsPersonalizationHomeCard(
 ) {
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
-            title = stringResource(R.string.settings_personalization_home_section),
-            description = stringResource(R.string.settings_personalization_home_section_desc)
+            title = stringResource(CoreCommonR.string.settings_personalization_home_section),
+            description = stringResource(CoreCommonR.string.settings_personalization_home_section_desc)
         )
         SettingsHomeCardSwitch(
-            title = stringResource(R.string.player_continue),
+            title = stringResource(CoreCommonR.string.player_continue),
             icon = Icons.Outlined.History,
             checked = showHomeContinueCard,
             onCheckedChange = onShowHomeContinueCardChange,
@@ -198,7 +198,7 @@ internal fun SettingsPersonalizationHomeCard(
 
         LazyAnimatedVisibility(visible = !homeStartAvailable) {
             Text(
-                text = stringResource(R.string.settings_home_hidden_notice),
+                text = stringResource(CoreCommonR.string.settings_home_hidden_notice),
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -234,8 +234,8 @@ internal fun SettingsPersonalizationPlaybackInfoCard(
         .nowPlayingProgressShowAudioSpecFlow.collectAsState(initial = true)
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
-            title = stringResource(R.string.settings_personalization_playback_info_section),
-            description = stringResource(R.string.settings_personalization_playback_info_section_desc)
+            title = stringResource(CoreCommonR.string.settings_personalization_playback_info_section),
+            description = stringResource(CoreCommonR.string.settings_personalization_playback_info_section_desc)
         )
         PersonalizationSwitchItem(
             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.SHOW_COVER_SOURCE_BADGE),
@@ -343,8 +343,8 @@ internal fun SettingsPersonalizationControlsCard(
     )
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
-            title = stringResource(R.string.settings_personalization_playback_controls_section),
-            description = stringResource(R.string.settings_personalization_playback_controls_section_desc)
+            title = stringResource(CoreCommonR.string.settings_personalization_playback_controls_section),
+            description = stringResource(CoreCommonR.string.settings_personalization_playback_controls_section_desc)
         )
         PersonalizationSwitchItem(
             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ALWAYS_USE_NEW_TAB_STYLE),
@@ -431,7 +431,7 @@ internal fun resolveToolbarDockSwitchState(
 private fun toolbarDockSupportingContent(showExplanation: Boolean): (@Composable () -> Unit)? =
     if (showExplanation) {
         {
-            Text(stringResource(R.string.settings_nowplaying_toolbar_dock_disabled_by_control_position))
+            Text(stringResource(CoreCommonR.string.settings_nowplaying_toolbar_dock_disabled_by_control_position))
         }
     } else {
         null
@@ -454,15 +454,15 @@ internal fun SettingsPersonalizationBackgroundCard(
 ) {
     PersonalizationCardContainer {
         MiuixSettingsSectionIntro(
-            title = stringResource(R.string.settings_personalization_background_section),
-            description = stringResource(R.string.settings_personalization_background_section_desc)
+            title = stringResource(CoreCommonR.string.settings_personalization_background_section),
+            description = stringResource(CoreCommonR.string.settings_personalization_background_section_desc)
         )
         AutoSettingsListItem(
             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_URI),
             leadingContent = {
                 Icon(
                     imageVector = Icons.Outlined.Wallpaper,
-                    contentDescription = stringResource(R.string.settings_custom_background),
+                    contentDescription = stringResource(CoreCommonR.string.settings_custom_background),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -470,9 +470,9 @@ internal fun SettingsPersonalizationBackgroundCard(
             supportingContent = {
                 Text(
                     if (backgroundImageUri != null) {
-                        stringResource(R.string.settings_background_change)
+                        stringResource(CoreCommonR.string.settings_background_change)
                     } else {
-                        stringResource(R.string.settings_background_select)
+                        stringResource(CoreCommonR.string.settings_background_select)
                     }
                 )
             },
@@ -485,7 +485,7 @@ internal fun SettingsPersonalizationBackgroundCard(
         LazyAnimatedVisibility(visible = backgroundImageUri != null) {
             Column {
                 MiuixSettingsTextButton(onClick = onClearBackgroundImage) {
-                    Text(stringResource(R.string.background_clear))
+                    Text(stringResource(CoreCommonR.string.background_clear))
                 }
 
                 AutoSettingsListItem(
@@ -576,8 +576,8 @@ private fun LyricsTranslationControls(
     onHighlightFinished: (() -> Unit)?
 ) {
     MiuixSettingsSectionIntro(
-        title = stringResource(R.string.settings_lyrics_appearance_section),
-        description = stringResource(R.string.settings_lyrics_appearance_section_desc)
+        title = stringResource(CoreCommonR.string.settings_lyrics_appearance_section),
+        description = stringResource(CoreCommonR.string.settings_lyrics_appearance_section_desc)
     )
     ShowLyricTranslationSwitch(
         autoSettingsRepository = autoSettingsRepository,
@@ -648,15 +648,15 @@ private fun CoverLyricsScaleControls(
     onHighlightFinished: (() -> Unit)?
 ) {
     MiuixSettingsSectionIntro(
-        title = stringResource(R.string.settings_lyrics_cover_page_section),
-        description = stringResource(R.string.settings_lyrics_cover_page_section_desc)
+        title = stringResource(CoreCommonR.string.settings_lyrics_cover_page_section),
+        description = stringResource(CoreCommonR.string.settings_lyrics_cover_page_section_desc)
     )
     LyricScaleRow(
         setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE),
         currentScale = lyricFontScales.coverLyric,
         target = LyricFontScaleTarget.COVER_LYRIC,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(R.string.settings_lyrics_sample),
+        sampleText = stringResource(CoreCommonR.string.settings_lyrics_sample),
         sampleBaseSizeSp = 18f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
@@ -669,7 +669,7 @@ private fun CoverLyricsScaleControls(
         currentScale = lyricFontScales.coverTranslation,
         target = LyricFontScaleTarget.COVER_TRANSLATION,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+        sampleText = stringResource(CoreCommonR.string.settings_lyrics_translation_sample),
         sampleBaseSizeSp = 14f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
@@ -686,15 +686,15 @@ private fun LyricsPageScaleControls(
     onHighlightFinished: (() -> Unit)?
 ) {
     MiuixSettingsSectionIntro(
-        title = stringResource(R.string.settings_lyrics_page_section),
-        description = stringResource(R.string.settings_lyrics_page_section_desc)
+        title = stringResource(CoreCommonR.string.settings_lyrics_page_section),
+        description = stringResource(CoreCommonR.string.settings_lyrics_page_section_desc)
     )
     LyricScaleRow(
         setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE),
         currentScale = lyricFontScales.lyricsPageLyric,
         target = LyricFontScaleTarget.LYRICS_PAGE_LYRIC,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(R.string.settings_lyrics_sample),
+        sampleText = stringResource(CoreCommonR.string.settings_lyrics_sample),
         sampleBaseSizeSp = 20f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
@@ -707,7 +707,7 @@ private fun LyricsPageScaleControls(
         currentScale = lyricFontScales.lyricsPageTranslation,
         target = LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION,
         onLyricFontScaleChange = onLyricFontScaleChange,
-        sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+        sampleText = stringResource(CoreCommonR.string.settings_lyrics_translation_sample),
         sampleBaseSizeSp = 16f,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
@@ -842,7 +842,7 @@ private fun LyricFontScaleSettingsItem(
             Column(Modifier.fillMaxWidth()) {
                 Text(
                     text = stringResource(
-                        R.string.settings_lyrics_font_scale_value,
+                        CoreCommonR.string.settings_lyrics_font_scale_value,
                         (pendingScale * 100).roundToInt()
                     ),
                     style = MaterialTheme.typography.bodySmall,

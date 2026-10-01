@@ -14,7 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
@@ -57,7 +57,7 @@ internal class SettingsAccountAuthController(
             NeteaseAuthEvent.LoginSuccess -> {
                 dialogs.showNeteaseSavedCookieDialog = false
                 dialogs.showNeteaseSheet = false
-                dialogs.loginSuccessTitleRes = R.string.settings_netease_login_success
+                dialogs.loginSuccessTitleRes = CoreCommonR.string.settings_netease_login_success
                 onInlineMessageChange.value(null)
                 neteaseVm.refreshAuthHealth()
             }
@@ -70,7 +70,7 @@ internal class SettingsAccountAuthController(
             BiliAuthEvent.LoginSuccess -> {
                 dialogs.showBiliSavedCookieDialog = false
                 dialogs.showBiliSheet = false
-                dialogs.loginSuccessTitleRes = R.string.settings_bili_login_success
+                dialogs.loginSuccessTitleRes = CoreCommonR.string.settings_bili_login_success
                 onInlineMessageChange.value(null)
                 biliVm.refreshAuthHealth()
             }
@@ -83,7 +83,7 @@ internal class SettingsAccountAuthController(
             YouTubeAuthEvent.LoginSuccess -> {
                 dialogs.showYouTubeSavedCookieDialog = false
                 dialogs.showYouTubeSheet = false
-                dialogs.loginSuccessTitleRes = R.string.settings_youtube_login_success
+                dialogs.loginSuccessTitleRes = CoreCommonR.string.settings_youtube_login_success
                 onInlineMessageChange.value(null)
                 youtubeVm.refreshAuthHealth()
             }

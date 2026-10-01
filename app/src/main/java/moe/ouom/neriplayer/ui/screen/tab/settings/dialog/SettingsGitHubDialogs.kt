@@ -47,7 +47,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -87,7 +87,7 @@ internal fun SettingsGitHubDialogs(
 
         MiuixSettingsDialog(
             onDismissRequest = dismissConfigDialog,
-            title = { Text(stringResource(R.string.sync_config)) },
+            title = { Text(stringResource(CoreCommonR.string.sync_config)) },
             text = {
                 Column(
                     modifier = Modifier
@@ -110,19 +110,19 @@ internal fun SettingsGitHubDialogs(
                         )
                     }
                     Text(
-                        stringResource(R.string.sync_step1_token),
+                        stringResource(CoreCommonR.string.sync_step1_token),
                         style = MaterialTheme.typography.titleSmall
                     )
                     MiuixSettingsTextField(
                         value = githubToken,
                         onValueChange = { githubToken = it },
-                        label = { Text(stringResource(R.string.settings_github_token_label)) },
-                        placeholder = { Text(stringResource(R.string.settings_github_token_placeholder)) },
+                        label = { Text(stringResource(CoreCommonR.string.settings_github_token_label)) },
+                        placeholder = { Text(stringResource(CoreCommonR.string.settings_github_token_placeholder)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        stringResource(R.string.settings_github_token_permission),
+                        stringResource(CoreCommonR.string.settings_github_token_permission),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -135,17 +135,17 @@ internal fun SettingsGitHubDialogs(
                             context.startActivity(intent)
                         }
                     ) {
-                        Text(stringResource(R.string.sync_create_token))
+                        Text(stringResource(CoreCommonR.string.sync_create_token))
                     }
 
                     if (githubState.tokenValid) {
                         Text(
-                            stringResource(R.string.sync_step2_repo),
+                            stringResource(CoreCommonR.string.sync_step2_repo),
                             style = MaterialTheme.typography.titleSmall
                         )
 
                         MiuixSettingsChoiceRow(
-                            title = stringResource(R.string.sync_create_new_repo),
+                            title = stringResource(CoreCommonR.string.sync_create_new_repo),
                             selected = !useExistingRepo,
                             onClick = { useExistingRepo = false }
                         )
@@ -154,14 +154,14 @@ internal fun SettingsGitHubDialogs(
                             MiuixSettingsTextField(
                                 value = githubRepoName,
                                 onValueChange = { githubRepoName = it },
-                                label = { Text(stringResource(R.string.sync_repo_name)) },
+                                label = { Text(stringResource(CoreCommonR.string.sync_repo_name)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
 
                         MiuixSettingsChoiceRow(
-                            title = stringResource(R.string.sync_use_existing_repo),
+                            title = stringResource(CoreCommonR.string.sync_use_existing_repo),
                             selected = useExistingRepo,
                             onClick = { useExistingRepo = true }
                         )
@@ -170,8 +170,8 @@ internal fun SettingsGitHubDialogs(
                             MiuixSettingsTextField(
                                 value = existingRepoName,
                                 onValueChange = { existingRepoName = it },
-                                label = { Text(stringResource(R.string.sync_repo_full_name)) },
-                                placeholder = { Text(stringResource(R.string.settings_sync_repo_placeholder)) },
+                                label = { Text(stringResource(CoreCommonR.string.sync_repo_full_name)) },
+                                placeholder = { Text(stringResource(CoreCommonR.string.settings_sync_repo_placeholder)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -183,7 +183,7 @@ internal fun SettingsGitHubDialogs(
                 when {
                     githubState.isConfigured -> {
                         MiuixSettingsButton(onClick = dismissConfigDialog) {
-                            Text(stringResource(R.string.action_close))
+                            Text(stringResource(CoreCommonR.string.action_close))
                         }
                     }
                     !githubState.tokenValid -> {
@@ -198,7 +198,7 @@ internal fun SettingsGitHubDialogs(
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text(stringResource(R.string.sync_verify_token))
+                            Text(stringResource(CoreCommonR.string.sync_verify_token))
                         }
                     }
                     else -> {
@@ -219,14 +219,14 @@ internal fun SettingsGitHubDialogs(
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text(stringResource(R.string.action_done))
+                            Text(stringResource(CoreCommonR.string.action_done))
                         }
                     }
                 }
             },
             dismissButton = {
                 MiuixSettingsTextButton(onClick = dismissConfigDialog) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -235,8 +235,8 @@ internal fun SettingsGitHubDialogs(
     if (showClearGitHubConfigDialog) {
         MiuixSettingsDialog(
             onDismissRequest = { onShowClearGitHubConfigDialogChange(false) },
-            title = { Text(stringResource(R.string.sync_clear_config)) },
-            text = { Text(stringResource(R.string.sync_clear_config_desc)) },
+            title = { Text(stringResource(CoreCommonR.string.sync_clear_config)) },
+            text = { Text(stringResource(CoreCommonR.string.sync_clear_config_desc)) },
             confirmButton = {
                 MiuixSettingsTextButton(
                     onClick = {
@@ -245,14 +245,14 @@ internal fun SettingsGitHubDialogs(
                     }
                 ) {
                     Text(
-                        stringResource(R.string.action_confirm_clear),
+                        stringResource(CoreCommonR.string.action_confirm_clear),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
             },
             dismissButton = {
                 MiuixSettingsTextButton(onClick = { onShowClearGitHubConfigDialogChange(false) }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )

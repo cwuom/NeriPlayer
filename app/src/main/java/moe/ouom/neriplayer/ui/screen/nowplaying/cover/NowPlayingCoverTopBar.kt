@@ -26,7 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingFavoriteIconColor
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransitionElement
@@ -43,13 +43,13 @@ internal fun nowPlayingFavoritePresentation(
 ): NowPlayingFavoritePresentation = if (isFavorite) {
     NowPlayingFavoritePresentation(
         icon = Icons.Filled.Favorite,
-        labelRes = R.string.nowplaying_favorited,
+        labelRes = CoreCommonR.string.nowplaying_favorited,
         tint = NowPlayingFavoriteIconColor
     )
 } else {
     NowPlayingFavoritePresentation(
         icon = Icons.Outlined.FavoriteBorder,
-        labelRes = R.string.nowplaying_favorite,
+        labelRes = CoreCommonR.string.nowplaying_favorite,
         tint = defaultTint
     )
 }
@@ -87,7 +87,7 @@ internal fun NowPlayingCoverTopBar(
             ) {
                 Icon(
                     Icons.Outlined.KeyboardArrowDown,
-                    contentDescription = stringResource(R.string.action_back),
+                    contentDescription = stringResource(CoreCommonR.string.action_back),
                     modifier = Modifier.size(iconSize)
                 )
             }
@@ -122,7 +122,7 @@ internal fun NowPlayingCoverTopBar(
                 ) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = stringResource(R.string.nowplaying_more_options),
+                        contentDescription = stringResource(CoreCommonR.string.nowplaying_more_options),
                         modifier = Modifier.size(iconSize)
                     )
                 }
@@ -190,7 +190,7 @@ private fun NowPlayingCommentButton(
         ) {
             Icon(
                 Icons.AutoMirrored.Outlined.Comment,
-                contentDescription = stringResource(R.string.comment_entry),
+                contentDescription = stringResource(CoreCommonR.string.comment_entry),
                 modifier = Modifier.size(iconSize)
             )
         }

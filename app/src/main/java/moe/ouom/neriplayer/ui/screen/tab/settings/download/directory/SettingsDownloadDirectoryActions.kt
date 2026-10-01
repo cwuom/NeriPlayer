@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.res.Resources
 import androidx.compose.runtime.State
 import kotlinx.coroutines.CoroutineScope
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.AndroidDownloadDirectoryPreparationGateway
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.DownloadDirectoryMigrationRecoveryController
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationActionPort

@@ -115,7 +115,7 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Local persistence**: debounced playback/traffic-stat writes, lifecycle flushes,
   atomic file replacement, and local-playlist/SAF initialization readiness.
 
-Related tests live under `app/src/test/` and `app/src/androidTest/`.
+Related JVM tests live in app and library `src/test/` directories; device tests are under `app/src/androidTest/`.
 When changing these areas, search for neighboring tests first, then add coverage
 for the new behavior.
 
@@ -195,20 +195,23 @@ Security reminders:
 
 #### Root modules
 
-- `:app`
-  - Main Android application.
-- `:ksp-annotations` / `:ksp-processor`
-  - KSP-generated settings schema, keys, backup allowlists, and UI metadata.
-- `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`
-  - Lyrics parsing and Compose lyrics UI submodules.
-- `build-logic`
-  - Android/Kotlin/Compose convention plugins.
-- `buildSrc`
-  - Retained auxiliary Gradle build logic.
-- `np-submodule/NeriPlayer-LTW`
-  - Listen Together Cloudflare Workers server.
-- `np-submodule/miuix`
-  - Vendored upstream Miuix source/docs tree, not part of the current app module graph.
+The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 13 owned libraries once for builds, coverage, lint, and structural checks. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
+
+- Infrastructure: `:common`, `:network`, `:model`, `:database`. Models have no project implementation dependencies; the database owns historical Room schemas and complete upgrade paths.
+- Playback: `:playback:logic` contains policy/runtime/audio/queue; `:playback:runtime` owns the engine, service, USB, source resolution, and integration. Nine policy leaf packages retain narrow dependencies; USB policy stays in runtime. Downloads are accessed through `PlayerDownloadAccess`.
+- Downloads: `:download:logic` owns reusable rules and storage helpers; `:download:runtime` owns Room, SAF, recovery, and services. Rules cannot depend on runtime; Worker and JobService class names remain stable.
+- Lyrics: `:lyrics` owns parsing, transforms, shared time offsets, and external lyric output. Its `lyrics/lyricon` owns SDKs and position feeds, while `lyrics/output` manages asynchronous request generations, cancellation, and offset snapshots. Playback supplies lyrics through a narrow loading port and provides snapshots; lyrics cannot depend on platform or player implementations.
+- Platforms: `:platform` owns Bilibili, NetEase, and YouTube protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback. `api` describes the internal protocol responsibility and cannot read account repositories, Room, or player state. Platforms retain package dependency boundaries. YouTube JS assets and consumer R8 rules stay here; `api(:lyrics)` exports parsing capabilities.
+- Local data: `:local` groups settings, media, playlists, statistics, backup, traffic, and sync adapters. It owns business mappings, host interfaces, WorkManager adapters, and settings KSP; screen rendering stays in app.
+- Sync: `:sync` combines GitHub/WebDAV transport, encrypted credentials, device identity, causal counters, sessions, sanitization, merging, and Worker policies. Transport and calculation packages retain separate dependency allowlists; local repository adapters stay in `:local`. Deletion records and mutation versions commit atomically.
+- Listen Together: `:listentogether` owns protocol, transport, identity rules, and sessions. Protocol code uses only models, serialization, and the standard library; host interfaces provide playback, resources, and Android services.
+- App and tooling: `:app` owns Android entry points, Compose screens, and assembly. KSP tools, upstream lyric modules, `build-logic`, `buildSrc`, and the Listen Together server are outside the 13-library count. The vendored Miuix source/docs tree is outside the app graph.
+
+Libraries cannot reference app, screens, or `AppContainer`, and the graph must remain acyclic. `:playback:runtime` may use its own `PlayerManager`. Live settings use providers; the host injects HTTP, account, and device-token capabilities. Room business mappings belong to local/platform repositories; database and rule components must not depend on runtime implementations.
+
+New libraries use `build-logic.android.feature-library` and register their actual Gradle path in `gradle/owned-modules.txt`; no separate coverage list is required. Tests stay with implementations in `src/test` / `src/androidTest`, with host integration tests in app. Module ownership changes retain production packages and class names. Internal source directories match packages; path contracts, fixtures, resources, and CRAP selectors are maintained together.
+
+`verifyModuleBoundaries` checks registrations, actual locations, domain dependencies, cycles, forbidden imports, source ownership, and package alignment. Library files stay below 2000 lines; library and app `APP_FAMILIES` directories contain at most 16 direct source files. Compiled package-level dependency gates preserve calculation isolation.
 
 #### Android client key paths
 
@@ -243,6 +246,7 @@ Security reminders:
     word/character highlighting, translation/phonetic display, click-to-seek,
     and long-press callbacks.
   - `LyricShareSheet.kt`: lyric-line selection, copy, song sharing, and lyric card generation.
+  - LRC/YRC/TTML parsing and translation alignment live in `modules/lyrics`; shared lyric contracts belong to the `lyrics` package in `:model`.
   - The old `AppleMusicLyric` name exists only as an `@Deprecated` wrapper in
     `ui/component/LyricsCompatibility.kt`. New code should use `SyncedLyricsView`.
 
@@ -273,43 +277,54 @@ Security reminders:
   - First-run onboarding for language, platform accounts, permission guidance,
     playback controls, GitHub sync, and personalization.
 
-- `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `netease/`: NetEase endpoints, crypto, and account capabilities.
-  - `bili/`: Bilibili search, QR login, favorites, collections, playback info,
-    and audio playback resolution.
-    Explore link recognition preserves Bilibili selected parts, `cid`, and
-    `season_id` context; changes should check both `ExploreLinkRecognizer` and
-    `ExploreViewModel`.
-  - `youtube/`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
-    PoToken, and JS Challenge support.
-  - `search/`: playback metadata/lyrics completion APIs. Current implementations:
-    `CloudMusicSearchApi` and `QQMusicSearchApi`.
-  - `lyrics/`: external lyrics sources. Current implementation: `LrcLibClient`.
+- `modules/platform/src/main/java/moe/ouom/neriplayer/platform/`
+  - `netease/api`: clients, crypto, request parameters, and QR authentication protocols.
+  - `bilibili/api`: search, QR login, favorites, collections, and playback information. Repositories and skip policies live in the same library under `platform/bilibili`.
+    Explore link recognition preserves selected parts, `cid`, and `season_id`; check `ExploreLinkRecognizer` and `ExploreViewModel` when changing it.
+  - `youtube/api`: YouTube Music clients, PoToken, JS Challenge, request/response parsing. Protocol models belong to `:model`. Authentication persistence and caches live in the same library under `platform/youtube`.
+  - `lyrics/api`: LrcLib, Kugou, and AMLL service access; source repositories, matching, and fallback live in the same library under `platform/lyrics`.
+  - `search/api`: `SearchApi`, NetEase, and QQ metadata search services. `SearchManager` lives in the same library under `platform/lyrics`, and shared music models belong to `modules/model`.
+  - `AppContainer` assembles clients and routing with HTTP, debug configuration, and live settings providers; libraries do not read the container or player singleton.
+  - `PlainLyrics.kt` in `modules/lyrics` provides shared timeline conversion.
 
-- `app/src/main/java/moe/ouom/neriplayer/core/player/`
+- `modules/platform/src/main/java/moe/ouom/neriplayer/platform/comments/`
+  - Comment sources, parsing, pagination, and caches; comment contracts belong to `:model`;  `AppContainer` injects client providers and cache instances.
+  - The host owns cache lifetime. Libraries do not access the global container. Repository tests belong to the module; ViewModel integration tests remain in `app`.
+  - Source tags belong to `:model`; Bilibili legacy playback identity resolution lives in the same library under `platform/bilibili/playback/resolver` and does not depend on the player singleton.
+
+- `modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`: unified Media3 ExoPlayer management, playback resolution, queue,
     cache, state recovery, retry, and playback policy.
   - `service/AudioPlayerService.kt`: foreground playback service, media notification,
     MediaSession, and media button handling.
-  - `download/AudioDownloadManager.kt`: resolves platform playback and saves downloads;
-    `DownloadParallelism.kt` defines concurrency boundaries.
+  - Downloads belong to `:download:runtime`; playback uses the `PlayerDownloadAccess` interface.
   - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
-  - `engine/`: Media3 audio processors, including loudness normalization,
-    channel balance, and high-resolution output processing.
-  - `playback/PlaybackStatsTracker.kt`: playback stats tracking. Playback commands
-    and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
-  - `PlayerQueueSnapshot` holds the queue and current index together;
-    `PlayerQueueStateStore` publishes that state for persistence and presentation.
-    Use `publishCurrentQueue` to replace a queue and `updateCurrentQueue` for
-    moves, removal, insertion, and shuffling. Compute from the latest snapshot
-    inside the lock; keep player and disk operations outside it.
+  - `engine/`: Media3 renderers and data sources. PCM normalization, channel balance,
+    and reactive audio signals belong to `:playback:logic` under `audio/processing` and `audio/reactive`.
+  - `modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/runtime/stats/PlaybackStatsTracker.kt`
+    tracks playback statistics in `:playback:logic`. Playback commands and queue
+    advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
+  - `queue/state` and `queue/policy` in `:playback:logic` hold state ownership
+    and editing/navigation rules. Queue contracts belong to `:model` under `playback/queue`.
+    `PlayerQueueSnapshot` holds the list and current index. `PlayerQueueSessionSnapshot`
+    combines the queue, shuffle mode, and restore order; `PlayerQueueStateStore`
+    publishes the complete session. Use `startPlayback`, `setLocalShuffle`, and
+    `restoreSession` for playlist starts, local shuffle changes, and persisted-session
+    hydration so queue and restore data change in one transaction.
+    Use `publishCurrentQueue` for remote queue updates and `updateCurrentQueue` for
+    moves, removal, and insertion. Compute from the latest snapshot inside the lock;
+    keep player and disk operations outside it.
     Async metadata updates use `updateQueuedSong` to preserve the current selection.
     UI reorders provide order only; song content comes from the latest queue.
     Reject stale reorders when duplicate songs cannot be matched unambiguously,
     and retain the current queue if restoring pre-shuffle order is ambiguous.
-    Queue transactions keep the list and index consistent; the current-song Flow
-    and Media3 side effects still require their own thread-boundary checks.
-  - `persistence/PlaybackStatePersistenceCoordinator.kt` owns save requests and delays.
+    Clearing the queue also clears its restore order. Persistence reads one session
+    snapshot to avoid mixing different versions of shuffle state. The current-song
+    Flow and Media3 side effects still require their own thread-boundary checks.
+    `session/PlayerQueueSessionBindings` adapts new-engine initialization, local/remote
+    playlist starts, and persisted-state restoration. `verifyDomainDependencies`
+    checks direct JVM dependencies of the queue package, which cannot reference this host adapter.
+  - `runtime/persistence/PlaybackStatePersistenceCoordinator.kt` in `:playback:logic` owns save requests and delays.
     Call `prepareStatePersist` or `scheduleStatePersist` at the synchronous event
     boundary to capture a complete snapshot and issue a request before awaiting
     stats writes or other async work. Writes are serial; superseded queued requests
@@ -319,7 +334,8 @@ Security reminders:
     storage completion callbacks must not change current playback state.
     `RestoredPlaybackState` keeps absent, paused, and pending auto-resume states
     together instead of independently changing the restored position and flags.
-  - `RefreshInFlightController` alone owns active URL refresh state.
+  - `runtime/refresh` in `:playback:logic` owns request contracts and effect admission;
+    `RefreshInFlightController` alone owns active URL refresh state.
     Matching parameters can share an active request, but completion, cancellation,
     and writeback use its `RefreshRequestHandle` identity so an older request
     cannot affect a newer one. Watchdogs read the controller directly.
@@ -338,7 +354,9 @@ Security reminders:
   - `resolver/youtube/YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`, and
     `prefetch/YouTubePrefetchRunner.kt`: YouTube Music playback compatibility policies.
   - `metadata/`: lyrics, metadata, and external Bluetooth lyrics handling.
-  - `model/`: player-specific state models. Cross-layer song models do not live here.
+  - Playback state contracts live in the `playback` package of `:model`; pure policy
+    decisions belong to `:playback:logic`, while presentation adapters and effects
+    belong to `:playback:runtime` and app.
     Shuffle display state is represented by `PlayerQueueDisplayState`; avoid
     returning to implicit index-remapping semantics for a shuffled queue.
   - `usb/`: split into `device/`, `path/`, `session/`, `sink/`, `system/`, and
@@ -348,7 +366,7 @@ Security reminders:
     PCM-float conversion, UAC2 explicit feedback, coordinated AudioSink
     reconfiguration, dynamic transfer scaling, and backpressure stall recovery.
 
-- `app/src/main/java/moe/ouom/neriplayer/core/download/`
+- `modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt`: global download tasks and downloaded song list.
   - `ManagedDownloadStorage.kt` is the facade for app-managed and SAF storage.
     Implementation details are split across `storage/commit/`, `delete/`, `lookup/`,
@@ -357,23 +375,21 @@ Security reminders:
   - `policy/DownloadLifecyclePolicies.kt`: recovery, cancellation cleanup, and fast-settle policies.
   - `naming/ManagedDownloadNaming.kt`: filename templates and legacy filename compatibility.
   - `metadata/DownloadedAudioTagWriter.kt`: audio tag writing; `catalog/` owns
-    downloaded-song catalog models.
+    downloaded-song catalog access and projections.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/startup/`
   - Startup stages and decisions are split across `app/`, `crash/`, `download/`,
     `logging/`, `permission/`, `player/`, `safemode/`, `sync/`, and `theme/`.
     `MainActivity` coordinates these components with the UI lifecycle.
 
-- `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `model/`: shared `SongItem`, `SongIdentity`, and media model extensions used
-    by playback, playlists, downloads, sync, Listen Together, and UI.
-  - `settings/`: `DataStore` settings, KSP schema, bootstrap snapshot, theme snapshot,
-    and playback preference snapshot.
-  - `auth/`: NetEase, Bilibili, and YouTube cookie/auth storage and validation.
-  - `platform/netease/`: NetEase platform-side caches, currently including playlist detail cache.
+- `modules/local/src/main/java/moe/ouom/neriplayer/data/`
+  - `identity/`: song identity conversion; `SongIdentity` and `SongItem` belong to `modules/model`.
+  - `settings/`: `DataStore` settings, KSP schema, and preference mapping; snapshot contracts belong to `:model` under `settings`.
+  - `auth/`: shared Web login state and the YouTube credential rotation Worker; platform cookie/auth repositories live in `:platform` under `data/auth` and `platform/youtube/auth`.
+  - Platform caches belong to `:platform`; local playlist orchestration and shared cache-table schemas belong to `:local` and `:database`, respectively.
   - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
   - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
-    background metadata hydration, and local artist aggregation models.
+    background metadata hydration, and local artist aggregation.
   - `local/audioimport/`, `local/media/`: local audio import, fast scans,
     background metadata hydration, cover fallback resolution, and sharing.
   - `playlist/favorite/`, `playlist/usage/`: favorite playlists, followed artists,
@@ -381,28 +397,38 @@ Security reminders:
   - `history/`, `stats/`: recent plays, playback stats, and day/week/month/year/all-time aggregation.
   - `backup/`: playlist JSON backup/import and diff analysis.
   - `config/`: full app config import/export.
-  - `sync/model/`: payload and conflict models shared by GitHub and WebDAV.
-  - `sync/`: provider-neutral coordination, preferences, and cover mapping.
-  - `sync/github/`: GitHub transport, three-way merge, serialization, Data Saver,
-    and secure storage.
-  - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
+  - `sync/host/`: Android repository snapshots, resource resolution, and persistence adapters; `AndroidSyncMergeHost` supplies system-playlist identities and messages through interfaces.
+  - `sync/cover/`: cover mapping persistence and legacy JSON import; failed imports retain legacy data and block cleanup.
+  - `sync/github/` and `sync/webdav/`: provider backends and compatible Worker entry points; `sync/work/` owns WorkManager, validated-network, and notification adapters.
+  - App has no production `data/sync` sources.
 
-- `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - `protocol/` defines room, event, and transport models; `network/` owns
-    HTTP/WebSocket and reconnect behavior; `playback/` owns queues, authoritative
-    stream links, and position sync. `control/`, `session/`, `invite/`, `mapping/`,
-    and `validation/` own their corresponding policies and boundaries.
-  - The root retains `ListenTogetherSessionManager.kt` and a few compatibility
-    entry points. New protocol logic should not keep accumulating in the root package.
+- `modules/sync/src/main/java/moe/ouom/neriplayer/`
+  - `api/sync/`: GitHub/WebDAV transport, response reading, and conditional writes.
+  - `data/sync/store/`: encrypted credentials, preferences, device identity, causal counters, and deletion state.
+  - `data/sync/merge/`: merge entry points, host contracts, conflicts, ordering, and statistics under `engine`, `host`, `playlist`, `song`, `history`, and `stats`.
+  - `data/sync/runtime/`, `codec/`, `sanitize/`, `change/`, `mapping/stats/`, `remote/`, `retry/`, and `schedule/`: sessions, compatible codecs, sanitization, change detection, stat mapping, remote protection, retries, and Worker policies.
+  - Sync payload and conflict contracts belong to `:model`. `verifyDomainDependencies` retains separate transport and calculation allowlists, rejecting direct Android repository or player dependencies.
+
+- `modules/listentogether/src/main/java/moe/ouom/neriplayer/api/ltw/`
+  - HTTP, WebSocket, server URL validation, and reconnect policies using protocol models and an injected HTTP client.
+
+- `modules/listentogether/src/main/java/moe/ouom/neriplayer/data/ltw/`
+  - `ListenTogetherSessionManager` assembles session components; `playback/` owns queues, authoritative streams, and position synchronization.
+  - `control/`, `session/`, `invite/`, `mapping/`, and `validation/` own controls, sessions, invites, song mapping, and input boundaries.
+  - Room, event, and transport models live in `modules/model` under `ltw`; `api/ltw` in `modules/listentogether` owns transport, and `listentogether/protocol` owns bounded reading and message codecs.
+  - App supplies platform interfaces under `core/di/ltw`; the player supplies playback and song mapping under `core/player/ltw`. Production sources cannot remain in `app/listentogether`.
 
 - `app/src/main/cpp/`
   - Native crash handling lives under `crash/`. USB code is split across
     `usb/exclusive/`, `usb/feedback/`, `usb/iso/`, `usb/pcm/`, `usb/uac1/`,
     and `usb/uac2/`, with matching host tests under `tests/usb/`.
 
-- `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
+- `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`
   - Lyricon integration and SuperLyric output for current song, playback state, position,
     word-level lyrics, and translations.
+  - The same library's `lyrics/output/` owns the output controller, asynchronous
+    request generations, cancellation, and offset snapshots; position anchors and
+    coordination state remain internal.
 
 - `app/src/main/java/moe/ouom/neriplayer/navigation/`
   - `LauncherShortcuts.kt` maps app-icon shortcuts to navigation or playback requests.
@@ -561,7 +587,7 @@ Security reminders:
 
 Use this when integrating a new platform into `Explore` search or discovery.
 
-1. Implement a client or repository under `core/api/`.
+1. Implement the client under `api/<platform>` in `modules/platform`, with caching and business orchestration in the corresponding responsibility packages of the same library. Maintain protocol-to-business package dependency rules.
 2. Add request, pagination, and state mapping in `ExploreViewModel`.
 3. Add platform tabs and result UI in `ExploreScreen` / host screens.
 4. If playback is needed, connect the platform to `PlayerManager` playback resolution.
@@ -571,9 +597,9 @@ Use this when integrating a new platform into `Explore` search or discovery.
 
 Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
-1. Implement a new `SearchApi` under `core/api/search/`.
+1. Implement the `SearchApi` contract under `platform/search/api` in `:platform`; shared music DTOs remain in `:model`.
 2. Register the singleton in `AppContainer`.
-3. Add routing, matching, and fallback logic in `SearchManager`.
+3. Register routing in the provider for `AppContainer.searchManager`; maintain and test matching and fallback rules under `platform/lyrics` in `:platform`.
 4. Add `MusicPlatform`, string resources, and debug probes as needed.
 
 #### 3. Add an online playback platform
@@ -671,8 +697,8 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 7. Modify GitHub / WebDAV sync
 
-1. Understand `data/sync/model/SyncDataModels.kt` and
-   `data/sync/github/SyncDataSerializer.kt` compatibility first. Shared payload
+1. Understand `data/model/sync/SyncDataModels.kt` and
+   `data/sync/codec/SyncDataSerializer.kt` in `:sync` compatibility first. Shared payload
    models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
    and playback stats. Data Saver writes raw `GZIP(ProtoBuf)` to `backup-raw.bin`,
@@ -691,9 +717,11 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. Missing-field or malformed snapshots must be cleaned before merging. `SyncSong`
    needs at least one of id, audioId, or mediaUri; deletion records also need a
    valid deletion time; songs with missing `addedAt` are low-priority display items.
-6. `CoverUrlMapper.kt` lives in provider-neutral `data/sync/`. Most merge logic
-   lives in `GitHubSyncManager.kt`; WebDAV reuses the same data model and much of
-   the merge behavior.
+6. `CoverUrlMapper.kt` lives in provider-neutral `data/sync/`. Both GitHub and WebDAV
+   use `data/sync/merge/engine/SyncDataMerger.kt` for initial uploads and merging snapshots.
+   Shared components own business rules; the host resolves messages and system
+   playlists. `SyncSession` coordinates conflict retries, local mutation-version checks,
+   and persistence confirmation; backends provide transport and remote-version interfaces.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`. GitHub writes must use
    the remote branch head and a non-force update, failing on conflicts rather than
@@ -702,6 +730,15 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    unconditional retry.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
+9. Preference file names, keys, Worker class names, work names, and input keys are upgrade contracts and must remain stable across module moves.
+   Device ID reads and first creation share one lock; causal counters and deletion state retain atomic commits.
+   Every new sync file enters the directory-wide CRAP gate, failing when any method exceeds 9.
+
+```bash
+./gradlew :sync:verifyCrap :sync:verifyDomainDependencies :sync:lintDebug
+./gradlew :local:verifySyncIntegrationCrap
+./gradlew :local:verifyCrap :local:lintDebug
+```
 
 #### 8. Modify download storage
 
@@ -738,7 +775,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 10. Modify storage usage and cache cleanup
 
-1. Entry points are `data/storage/StorageUsageAnalyzer.kt` and
+1. Entry points are `data/local/storage/StorageUsageAnalyzer.kt` and
    `SettingsStorageCacheSection.kt`.
 2. When adding a cache directory, decide whether it belongs to cleanable cache,
    downloaded content, diagnostics, or app data.
@@ -760,7 +797,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 12. Modify Lyricon integration
 
-1. The integration entry point is `core/lyricon/LyriconManager.kt`.
+1. SDK integration lives in `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`; output controllers live under `lyrics/output/` in the same module. Playback supplies lyrics, preferences, progress, and lifecycle snapshots rather than managing SDKs.
 2. The setting key is `lyricon_enabled`, and playback lifecycle keeps it in sync.
 3. Lyrics use `LyricEntry`; word-level data comes from `WordTiming`, and
    translations are matched to original lines by timestamp tolerance.
@@ -774,7 +811,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 13. Modify Listen Together
 
-1. Android client logic is under `listentogether/`.
+1. Client sessions, HTTP/WebSocket transport, codecs, and bounded reading live together in `modules/listentogether`, under the existing `data/ltw`, `api/ltw`, and `listentogether/protocol` packages. Protocol models remain in `modules/model`. App binds platform capabilities under `core/di/ltw`; player adapters live in `modules/playback/runtime` under `core/player/ltw`.
 2. Server logic is under `np-submodule/NeriPlayer-LTW`.
 3. Protocol field changes must stay compatible across the Android client and Worker,
    and tests must be updated.
@@ -800,6 +837,13 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 10. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
    and request de-duplication as protocol boundaries, not just UI validation details.
 11. Settings support custom server URLs and availability tests. Do not hard-code a single server.
+12. HTTP control fallback responses must match the server, room, user, and credential snapshot. Leaving, disconnecting, or changing sessions cancels old work; cancellation must not enter error or reconnect handling.
+13. Queue mutation construction and replay must preserve duplicate occurrence identity, consecutive insertion order, and the current track. Run the module round-trip tests after changes.
+
+```bash
+./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug
+./gradlew :app:testDebugUnitTest --tests "*ListenTogether*"
+```
 
 #### 14. Modify main navigation and glass transitions
 
@@ -877,13 +921,13 @@ Before submitting, consider at least these checks:
    ```
 2. Unit tests:
    ```bash
-   ./gradlew :app:testDebugUnitTest
+   ./gradlew :app:verifyCrap
    ```
 3. If you changed auth-dependent flows, playback resolution, or other integration-heavy
    behavior, optional smoke tests are available:
    ```bash
    ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
-   ./gradlew :app:testDebugUnitTest \
+   ./gradlew :platform:testDebugUnitTest \
      -DrunYouTubePlaybackSmoke=true \
      -DyoutubeSmokeVideoId=<id> \
      [-DyoutubeSmokeForceRefresh=true] \
@@ -921,7 +965,7 @@ Before submitting, consider at least these checks:
    `npm run check` runs `node --check`, protocol tests, and
    `wrangler deploy --dry-run`. Protocol or room-state changes still need real
    create/join/WebSocket flow verification.
-8. Add unit tests under `app/src/test/`.
+8. Add unit tests to the owning module's `src/test/`; keep host integration tests in `app/src/test/`.
    Add device or Compose UI tests under `app/src/androidTest/`.
 9. If behavior changes affect README, settings copy, user flows, or sync formats,
    update documentation in the same PR.
@@ -929,19 +973,26 @@ Before submitting, consider at least these checks:
 CRAP gate and responsibility boundaries:
 
 ```bash
-./gradlew :app:verifyCrap
+./gradlew verifyModularization
 ```
 
-The task uses Debug JVM JaCoCo coverage to report every JVM method that maps to
-app main source, with a separate list of scores above 8. In
+The task checks module boundaries, runs app and owned-library lint and JVM tests,
+and combines JaCoCo coverage to report every JVM method mapped to app or library
+main source, with a separate list of scores above 8. In
 `config/quality/crap-scope.json`, `source_patterns` covers complete source files
 and `method_scopes` covers affected methods in the original entry points.
 Any scoped method with CRAP above 9 fails the gate; methods outside the scope
 remain in the full report. JaCoCo complexity coverage approximates path coverage;
 the score does not cover native code or replace a coupling review.
 Both `:app:check` and Android CI run the gate. Reports are under
-`app/build/reports/crap/`; see the [quality guide](tools_pub/quality/README.md)
+`app/build/reports/crap/`; see the [quality guide](tools_pub/quality/README_EN.md)
 for the calculation and prerequisites.
+
+Both `:playback:logic` and `:playback:runtime` expose `verifyCrap` through `build-logic.android.module-quality`.
+Each gate uses module-local coverage and the matching rules from the shared scope; an empty selected scope fails.
+The policy, runtime, PCM, host interface, USB policy, and widget presentation packages include new files automatically.
+App player adapters participate in the combined app gate. Run `:playback:runtime:connectedDebugAndroidTest` for
+the migrated lyrics rendering, Room queue, decoder, and playback range instrumentation tests.
 
 `OwnedMainSourceLineBudgetTest` keeps the owned main-source files split in this
 refactor and their extracted components strictly below 2000 physical lines.
@@ -956,14 +1007,15 @@ splitting a directory, update its required paths and scanned scope.
 Extract state, async jobs, and cleanup into the component responsible for them,
 and access external capabilities through narrow interfaces. Player and global
 service access for the extracted `PlayerManager` components belongs in their
-`PlayerManager*Port` adapters. Listen Together components under `session/` own
-room state, membership, connection recovery, and control results separately.
+`PlayerManager*Port` adapters. Listen Together components under `:listentogether`'s `session/` own
+membership, room state, connection recovery, and control results; platform and player implementations use injected host interfaces. Wake locks are released with the session, async owners cancel their jobs, and components cannot read the global container.
 `NowPlayingScreen`, `SettingsScreen`, and `NeriApp` compose pages and feature
 components; editing sessions, directory selection, settings domain bindings,
 and navigation effects belong to the corresponding components. Do not move
 logic into extension files with the original entry point as receiver or make
 new components read its internal state.
 
+Storage code in `:local` uses `source`, `scan`, `accounting`, `cleanup`, and `policy` packages; its contracts belong to `:model` under `storage`.
 For storage analysis, `StorageUsageScanner` collects snapshots through data-source
 interfaces and `StorageUsagePresenter` reads only snapshots and string resources.
 `StorageCacheCleaner` uses file and platform cleanup ports; Room and global

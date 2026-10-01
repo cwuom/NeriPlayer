@@ -48,9 +48,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -127,17 +127,17 @@ internal fun StatsOverviewCard(
             StatMetric(
                 icon = Icons.Outlined.Headphones,
                 value = totalPlayCount.toString(),
-                label = stringResource(R.string.stats_total_plays)
+                label = stringResource(CoreCommonR.string.stats_total_plays)
             )
             StatMetric(
                 icon = Icons.Outlined.AccessTime,
                 value = formatListenDuration(totalListenMs),
-                label = stringResource(R.string.stats_total_time)
+                label = stringResource(CoreCommonR.string.stats_total_time)
             )
             StatMetric(
                 icon = Icons.Outlined.LibraryMusic,
                 value = trackCount.toString(),
-                label = stringResource(R.string.stats_track_count)
+                label = stringResource(CoreCommonR.string.stats_track_count)
             )
         }
     }
@@ -194,7 +194,7 @@ internal fun TopTracksBarChart(
             .padding(horizontal = 8.dp)
     ) {
         Text(
-            stringResource(R.string.stats_top_tracks),
+            stringResource(CoreCommonR.string.stats_top_tracks),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 12.dp)
@@ -340,7 +340,7 @@ internal fun StatTrackRow(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         pluralStringResource(
-                            R.plurals.stats_play_count_value,
+                            CoreCommonR.plurals.stats_play_count_value,
                             stat.playCount,
                             stat.playCount
                         ),
@@ -362,11 +362,11 @@ private fun TrackStat.displayName(): String = customName ?: name
 private fun TrackStat.displayArtist(): String = customArtist ?: artist
 
 private fun PlaybackStatsPeriod.labelResId(): Int = when (this) {
-    PlaybackStatsPeriod.DAY -> R.string.stats_period_day
-    PlaybackStatsPeriod.WEEK -> R.string.stats_period_week
-    PlaybackStatsPeriod.MONTH -> R.string.stats_period_month
-    PlaybackStatsPeriod.YEAR -> R.string.stats_period_year
-    PlaybackStatsPeriod.ALL -> R.string.stats_period_all
+    PlaybackStatsPeriod.DAY -> CoreCommonR.string.stats_period_day
+    PlaybackStatsPeriod.WEEK -> CoreCommonR.string.stats_period_week
+    PlaybackStatsPeriod.MONTH -> CoreCommonR.string.stats_period_month
+    PlaybackStatsPeriod.YEAR -> CoreCommonR.string.stats_period_year
+    PlaybackStatsPeriod.ALL -> CoreCommonR.string.stats_period_all
 }
 
 private fun formatListenDuration(ms: Long): String {

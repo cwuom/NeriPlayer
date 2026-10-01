@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.viewmodel.auth
  * Created: 2026/3/16
  */
 
+import moe.ouom.neriplayer.platform.youtube.api.auth.fromJson
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -34,15 +37,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
-import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
-import moe.ouom.neriplayer.data.auth.youtube.parseYouTubeAuthBundleFromRaw
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
+import moe.ouom.neriplayer.platform.youtube.api.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.platform.youtube.auth.parseYouTubeAuthBundleFromRaw
 
 data class YouTubeAuthUiState(
     val health: YouTubeAuthHealth = evaluateYouTubeAuthHealth(YouTubeAuthBundle()),
@@ -109,7 +112,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             )
             _events.send(
                 YouTubeAuthEvent.ShowSnack(
-                    getApplication<Application>().getString(R.string.auth_cookie_cleared)
+                    getApplication<Application>().getString(CoreCommonR.string.auth_cookie_cleared)
                 )
             )
         }
@@ -121,7 +124,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importCookiesFromRaw(raw: String) {
         if (raw.isBlank()) {
-            emitSnack(getApplication<Application>().getString(R.string.auth_cookie_empty))
+            emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_empty))
             return
         }
 
@@ -130,7 +133,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             savedAt = System.currentTimeMillis()
         )
         if (parsedBundle == null) {
-            emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
+            emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_invalid))
             return
         }
 
@@ -146,7 +149,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             if (health.state == YouTubeAuthState.Missing) {
                 _events.send(
                     YouTubeAuthEvent.ShowSnack(
-                        getApplication<Application>().getString(R.string.settings_youtube_auth_missing)
+                        getApplication<Application>().getString(CoreCommonR.string.settings_youtube_auth_missing)
                     )
                 )
                 return@launch

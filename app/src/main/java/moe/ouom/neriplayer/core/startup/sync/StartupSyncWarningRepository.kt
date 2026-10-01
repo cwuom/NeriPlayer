@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.startup.sync
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 
 internal interface StartupSyncWarningStore {
     suspend fun loadState(): StartupSyncWarningState

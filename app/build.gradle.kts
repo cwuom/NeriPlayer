@@ -12,8 +12,27 @@ plugins {
     id("build-logic.android.application")
     id("build-logic.android.compose")
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.ksp)
     id("kotlin-parcelize")
+}
+
+val ownedLibraryPaths = rootProject.file("gradle/owned-modules.txt")
+    .readLines().filter { it.isNotBlank() }
+val libraryCoverageClasses = configurations.create("libraryCoverageClasses") {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+val libraryCoverageExecution = configurations.create("libraryCoverageExecution") {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+val coverageSources = tasks.register<Sync>("collectCoverageSources") {
+    (listOf(project.path) + ownedLibraryPaths).forEach { module ->
+        listOf("java", "kotlin").forEach { language ->
+            from(project(module).layout.projectDirectory.dir("src/main/$language"))
+        }
+    }
+    into(layout.buildDirectory.dir("reports/crap/sources"))
+    duplicatesStrategy = DuplicatesStrategy.FAIL
 }
 
 val isGithubPullRequest = providers.environmentVariable("GITHUB_EVENT_NAME").orNull == "pull_request"
@@ -133,7 +152,7 @@ android {
 
     sourceSets {
         getByName("androidTest") {
-            assets.directories.add("schemas")
+            assets.directories.add(project(":database").layout.projectDirectory.dir("schemas").asFile.path)
         }
     }
 
@@ -205,6 +224,25 @@ gradle.taskGraph.whenReady {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     exclude("**/com/mocharealm/accompanist/lyrics/ui/utils/String.kt")
+    if (name.endsWith("AndroidTestKotlin") || name.endsWith("UnitTestKotlin")) {
+        // 应用集成测试继续验证下载内部恢复状态，业务编译仍遵守模块可见性
+        val compileClasspathName = name.removePrefix("compile").removeSuffix("Kotlin")
+            .replaceFirstChar(Char::lowercaseChar) + "CompileClasspath"
+        val downloadIntegrationClasses = providers.provider {
+            configurations.getByName(compileClasspathName).incoming.artifactView {
+                attributes.attribute(
+                    org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
+                    "android-classes-jar"
+                )
+                componentFilter { component ->
+                    component is org.gradle.api.artifacts.component.ProjectComponentIdentifier &&
+                        component.projectPath == ":download:runtime"
+                }
+            }.files
+        }
+        friendPaths.from(downloadIntegrationClasses)
+        dependsOn(downloadIntegrationClasses)
+    }
 }
 
 tasks.withType<Test>().configureEach {
@@ -242,29 +280,59 @@ abstract class ProjectCoverageReport : JacocoReport() {
     abstract val projectDirectories: ListProperty<Directory>
 }
 
+abstract class DomainDependencyCheck : Exec() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val projectJars: ListProperty<RegularFile>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val projectDirectories: ListProperty<Directory>
+}
+
+val verifyDomainDependencies = tasks.register<DomainDependencyCheck>("verifyDomainDependencies") {
+    group = "verification"
+    description = "Check compiled app and library rules against explicit domain dependencies."
+    dependsOn(libraryCoverageClasses)
+    inputs.files(libraryCoverageClasses)
+    workingDir(rootProject.projectDir)
+    inputs.files(rootProject.file("tools_pub/quality/domain_dependencies.py"),
+        rootProject.file("config/quality/domain-dependencies.json"))
+    doFirst {
+        val executableSuffix = if (System.getProperty("os.name").startsWith("Windows")) ".exe" else ""
+        val jdkBin = File(System.getProperty("java.home"), "bin")
+        val artifacts = projectJars.get().map { it.asFile } + projectDirectories.get().map { it.asFile } +
+            libraryCoverageClasses.files
+        commandLine(listOf(
+            "python3", "-B", "tools_pub/quality/domain_dependencies.py",
+            "--config", rootProject.file("config/quality/domain-dependencies.json").absolutePath,
+            "--jdeps", File(jdkBin, "jdeps$executableSuffix").absolutePath,
+            "--javap", File(jdkBin, "javap$executableSuffix").absolutePath,
+            "--output", layout.buildDirectory.file("reports/domain-dependencies/report.json").get().asFile.absolutePath
+        ) + artifacts.flatMap { listOf("--input", it.absolutePath) })
+    }
+}
+
 val crapExecutionData = providers.provider {
     tasks.named<Test>("testDebugUnitTest").get()
         .extensions.getByType<JacocoTaskExtension>().destinationFile
         ?: throw GradleException("Debug JVM coverage destination is missing")
 }
 
-val verifyCrapExecutionData = tasks.register("verifyCrapExecutionData") {
-    dependsOn("testDebugUnitTest")
-    doLast {
-        val executionFile = crapExecutionData.get()
-        if (!executionFile.isFile || executionFile.length() == 0L) {
-            throw GradleException("Missing or empty coverage execution data: $executionFile")
-        }
-    }
+val verifyCrapExecutionData = tasks.register<VerifyCoverageExecutionData>("verifyCrapExecutionData") {
+    dependsOn("testDebugUnitTest", libraryCoverageExecution)
+    executionData.from(crapExecutionData, libraryCoverageExecution)
 }
 
 val crapCoverageReport = tasks.register<ProjectCoverageReport>("crapCoverageReport") {
     group = "verification"
-    description = "Collect coverage for all app Kotlin and Java classes."
-    dependsOn(verifyCrapExecutionData)
+    description = "Collect coverage for app and owned library Kotlin and Java classes."
+    dependsOn(verifyCrapExecutionData, coverageSources, libraryCoverageExecution)
     executionData.setFrom(crapExecutionData)
+    executionData.from(libraryCoverageExecution)
     classDirectories.from(projectJars, projectDirectories)
-    sourceDirectories.from(layout.projectDirectory.dir("src/main/java"))
+    classDirectories.from(libraryCoverageClasses)
+    sourceDirectories.from(coverageSources)
     reports {
         xml.required.set(true)
         xml.outputLocation.set(layout.buildDirectory.file("reports/crap/coverage.xml"))
@@ -274,6 +342,13 @@ val crapCoverageReport = tasks.register<ProjectCoverageReport>("crapCoverageRepo
 }
 
 androidComponents.onVariants(androidComponents.selector().withBuildType("debug")) { variant ->
+    variant.artifacts.forScope(ScopedArtifacts.Scope.PROJECT)
+        .use(verifyDomainDependencies)
+        .toGet(
+            ScopedArtifact.CLASSES,
+            DomainDependencyCheck::projectJars,
+            DomainDependencyCheck::projectDirectories
+        )
     variant.artifacts.forScope(ScopedArtifacts.Scope.PROJECT)
         .use(crapCoverageReport)
         .toGet(
@@ -289,15 +364,17 @@ val crapToolTests = tasks.register<Exec>("crapToolTests") {
     commandLine("python3", "-B", "-m", "unittest", "discover", "-s", "tools_pub/quality", "-p", "test_*.py")
 }
 
+verifyDomainDependencies.configure { dependsOn(crapToolTests) }
+
 val crapReport = tasks.register<Exec>("crapReport") {
     group = "verification"
-    description = "List all app method scores and every CRAP score greater than 8."
+    description = "List all owned app/library method scores and every CRAP score greater than 8."
     dependsOn(crapCoverageReport, crapToolTests)
     workingDir(rootProject.projectDir)
     commandLine(
         "python3", "-B", "tools_pub/quality/crap_report.py",
         "--xml", layout.buildDirectory.file("reports/crap/coverage.xml").get().asFile,
-        "--source-root", layout.projectDirectory.dir("src/main/java").asFile,
+        "--source-root", coverageSources.get().destinationDir,
         "--scope", rootProject.file("config/quality/crap-scope.json"),
         "--output", layout.buildDirectory.dir("reports/crap").get().asFile,
         "--report-only"
@@ -313,11 +390,7 @@ val verifyCrap = tasks.register<Exec>("verifyCrap") {
 }
 
 tasks.named("check") {
-    dependsOn(verifyCrap)
-}
-
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+    dependsOn(verifyCrap, verifyDomainDependencies)
 }
 
 androidComponents {
@@ -340,8 +413,13 @@ androidComponents {
 }
 
 dependencies {
+    testImplementation(testFixtures(project(":common")))
+    ownedLibraryPaths.forEach { module ->
+        implementation(project(module))
+        add(libraryCoverageClasses.name, project(mapOf("path" to module, "configuration" to "coverageClassesElements")))
+        add(libraryCoverageExecution.name, project(mapOf("path" to module, "configuration" to "coverageExecutionElements")))
+    }
     implementation(project(":ksp-annotations"))
-    ksp(project(":ksp-processor"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
@@ -375,19 +453,15 @@ dependencies {
     androidTestImplementation(libs.kotlinx.coroutines.android)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(testFixtures(project(":local")))
     implementation(libs.androidx.animation)
     implementation(libs.accompanist.navigation.animation)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
 
-    implementation(libs.dec)
-    implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
-    implementation(libs.lyricon.provider)
     implementation(libs.zxing.core)
-    implementation(libs.tiny.pinyin)
 
     implementation(project(":accompanist-lyrics-core"))
     implementation(project(":accompanist-lyrics-ui"))
@@ -421,12 +495,10 @@ dependencies {
 
     // WorkManager - 后台同步
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.androidx.javascriptengine)
 
     implementation(libs.androidx.webkit)
 
     // 取主题色
     implementation(libs.androidx.palette.ktx)
 
-    implementation(libs.superlyricapi)
 }

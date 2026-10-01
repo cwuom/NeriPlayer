@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.onboarding
 
-import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

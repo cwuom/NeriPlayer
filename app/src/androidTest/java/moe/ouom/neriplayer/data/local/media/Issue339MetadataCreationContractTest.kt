@@ -5,8 +5,8 @@ import android.provider.DocumentsContract
 import android.system.Os
 import android.system.OsConstants
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.After
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 

@@ -44,21 +44,21 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_LOUDNESS_GAIN_MB
-import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_PITCH
-import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_SPEED
-import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_LOUDNESS_GAIN_MB
-import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_PITCH
-import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_SPEED
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresets
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
-import moe.ouom.neriplayer.core.player.model.formatEqualizerFrequencyLabel
-import moe.ouom.neriplayer.core.player.model.formatPlaybackGainLabel
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
-import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_LOUDNESS_GAIN_MB
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_SPEED
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_LOUDNESS_GAIN_MB
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_SPEED
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresets
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.formatEqualizerFrequencyLabel
+import moe.ouom.neriplayer.data.model.playback.formatPlaybackGainLabel
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
+import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -106,17 +106,17 @@ fun PlaybackSoundSheet(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         Text(
-            text = androidx.compose.ui.res.stringResource(R.string.nowplaying_audio_effects_title),
+            text = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_audio_effects_title),
             style = MaterialTheme.typography.titleMedium
         )
         Text(
-            text = androidx.compose.ui.res.stringResource(R.string.nowplaying_audio_effects_hint),
+            text = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_audio_effects_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         PlaybackControlCard(
-            title = androidx.compose.ui.res.stringResource(R.string.nowplaying_playback_speed),
+            title = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_playback_speed),
             valueLabel = formatMultiplier(state.speed),
             quickPresets = SPEED_QUICK_PRESETS,
             currentValue = state.speed,
@@ -127,7 +127,7 @@ fun PlaybackSoundSheet(
         )
 
         PlaybackControlCard(
-            title = androidx.compose.ui.res.stringResource(R.string.nowplaying_playback_pitch),
+            title = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_playback_pitch),
             valueLabel = formatMultiplier(state.pitch),
             quickPresets = PITCH_QUICK_PRESETS,
             currentValue = state.pitch,
@@ -154,7 +154,7 @@ fun PlaybackSoundSheet(
                 var showLoudnessInputDialog by remember { mutableStateOf(false) }
                 if (showLoudnessInputDialog) {
                     PlaybackDecimalValueInputDialog(
-                        title = androidx.compose.ui.res.stringResource(R.string.nowplaying_loudness_enhancer),
+                        title = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_loudness_enhancer),
                         initialText = formatInputDecimal(loudnessSliderValue / 100f, fractionDigits = 1),
                         rangeStartText = formatPlaybackGainLabel(MIN_PLAYBACK_LOUDNESS_GAIN_MB),
                         rangeEndText = formatPlaybackGainLabel(MAX_PLAYBACK_LOUDNESS_GAIN_MB),
@@ -180,16 +180,16 @@ fun PlaybackSoundSheet(
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = androidx.compose.ui.res.stringResource(R.string.nowplaying_loudness_enhancer),
+                            text = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_loudness_enhancer),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
                             text = if (state.audioSessionId == null) {
-                                androidx.compose.ui.res.stringResource(R.string.nowplaying_equalizer_wait_for_session)
+                                androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_equalizer_wait_for_session)
                             } else if (!state.loudnessEnhancerAvailable) {
-                                androidx.compose.ui.res.stringResource(R.string.nowplaying_loudness_unsupported)
+                                androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_loudness_unsupported)
                             } else {
-                                androidx.compose.ui.res.stringResource(R.string.nowplaying_loudness_desc)
+                                androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_loudness_desc)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -264,11 +264,11 @@ fun PlaybackSoundSheet(
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = androidx.compose.ui.res.stringResource(R.string.nowplaying_equalizer),
+                            text = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_equalizer),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
-                            text = androidx.compose.ui.res.stringResource(R.string.nowplaying_equalizer_presets),
+                            text = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_equalizer_presets),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -281,11 +281,11 @@ fun PlaybackSoundSheet(
 
                 val infoText = when {
                     state.audioSessionId == null ->
-                        androidx.compose.ui.res.stringResource(R.string.nowplaying_equalizer_wait_for_session)
+                        androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_equalizer_wait_for_session)
                     state.equalizerEnabled && !state.equalizerAvailable ->
-                        androidx.compose.ui.res.stringResource(R.string.nowplaying_equalizer_unsupported)
+                        androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_equalizer_unsupported)
                     else ->
-                        androidx.compose.ui.res.stringResource(R.string.nowplaying_audio_effects_desc)
+                        androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_audio_effects_desc)
                 }
                 Text(
                     text = infoText,
@@ -309,7 +309,7 @@ fun PlaybackSoundSheet(
                 HorizontalDivider()
 
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.nowplaying_equalizer_manual_bands),
+                    text = androidx.compose.ui.res.stringResource(CoreCommonR.string.nowplaying_equalizer_manual_bands),
                     style = MaterialTheme.typography.titleSmall
                 )
 
@@ -361,7 +361,7 @@ fun PlaybackSoundSheet(
             onClick = onReset,
             modifier = Modifier.align(Alignment.End)
         ) {
-            Text(stringResource(R.string.nowplaying_audio_effects_reset))
+            Text(stringResource(CoreCommonR.string.nowplaying_audio_effects_reset))
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -370,7 +370,7 @@ fun PlaybackSoundSheet(
             onClick = onDismiss,
             modifier = Modifier.align(Alignment.End)
         ) {
-            Text(stringResource(R.string.action_done))
+            Text(stringResource(CoreCommonR.string.action_done))
         }
     }
 }
@@ -490,9 +490,9 @@ private fun PlaybackDecimalValueInputDialog(
     val parsedValue = parseValue(inputText)
     val errorText = when {
         inputText.isBlank() -> null
-        parsedValue == null -> stringResource(R.string.nowplaying_value_input_invalid)
+        parsedValue == null -> stringResource(CoreCommonR.string.nowplaying_value_input_invalid)
         !isValueInRange(parsedValue) -> stringResource(
-            R.string.nowplaying_value_input_range,
+            CoreCommonR.string.nowplaying_value_input_range,
             rangeStartText,
             rangeEndText
         )
@@ -516,13 +516,13 @@ private fun PlaybackDecimalValueInputDialog(
                     value = inputText,
                     onValueChange = { inputText = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.nowplaying_value_input_label)) },
+                    label = { Text(stringResource(CoreCommonR.string.nowplaying_value_input_label)) },
                     singleLine = true,
                     isError = errorText != null,
                     supportingText = {
                         Text(
                             text = errorText ?: stringResource(
-                                R.string.nowplaying_value_input_range,
+                                CoreCommonR.string.nowplaying_value_input_range,
                                 rangeStartText,
                                 rangeEndText
                             )
@@ -543,12 +543,12 @@ private fun PlaybackDecimalValueInputDialog(
                 onClick = commitValue,
                 enabled = canCommit
             ) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )

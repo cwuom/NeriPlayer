@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.ui.screen.download.DownloadSelectionState
 import moe.ouom.neriplayer.ui.screen.download.captureSongsPendingDelete
 import moe.ouom.neriplayer.ui.screen.download.isAllDownloadedSongsSelected

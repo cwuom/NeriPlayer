@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.widget
 
+import moe.ouom.neriplayer.core.player.presentation.widget.buildPlaybackWidgetState
+import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Chronometer

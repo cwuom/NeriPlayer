@@ -16,7 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.LikelyNetworkTransportAvailability
 import moe.ouom.neriplayer.data.traffic.currentLikelyNetworkTransportAvailability
 import moe.ouom.neriplayer.data.traffic.hasLikelyInternetAccess

@@ -15,7 +15,7 @@ import moe.ouom.neriplayer.core.download.storage.migration.progress.selectActive
 import moe.ouom.neriplayer.core.download.storage.migration.progress.selectMigrationProgressCheckpoint
 import moe.ouom.neriplayer.core.download.storage.migration.progress.shouldPreserveMigrationUiAfterWorkInfo
 import moe.ouom.neriplayer.core.download.storage.migration.progress.shouldResumePersistedMigrationAfterWorkInfo
-import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationCheckpointStore
+import moe.ouom.neriplayer.core.download.storage.migration.access.DownloadMigrationCheckpoints
 
 internal const val MIGRATION_CHECKPOINT_RETRY_DELAY_MS = 1_000L
 internal const val MIGRATION_SNAPSHOT_READ_RETRY_LIMIT = 3
@@ -73,7 +73,7 @@ internal fun shouldStopMigrationRecoveryAfterNoProgress(
 /** 同时读取 WorkManager 和持久检查点，避免缺少任务行时抹掉界面状态 */
 internal fun readPersistedMigrationUiSnapshot(context: Context): PersistedMigrationUiSnapshot {
     val appContext = context.applicationContext
-    val checkpointStore = ManagedDownloadMigrationCheckpointStore(appContext)
+    val checkpointStore = DownloadMigrationCheckpoints(appContext)
     val requestResult = readMigrationRequest(checkpointStore)
     val journalResult = readMigrationJournal(checkpointStore)
     val workInfoResult = readMigrationWorkInfos(appContext)
@@ -98,11 +98,11 @@ internal fun composePersistedMigrationReadResults(
 }
 
 private fun readMigrationRequest(
-    checkpointStore: ManagedDownloadMigrationCheckpointStore
+    checkpointStore: DownloadMigrationCheckpoints
 ): Result<ManagedMigrationRequest?> = runCatching { checkpointStore.readRequest() }
 
 private fun readMigrationJournal(
-    checkpointStore: ManagedDownloadMigrationCheckpointStore
+    checkpointStore: DownloadMigrationCheckpoints
 ): Result<ManagedMigrationReplacementJournal?> = runCatching { checkpointStore.readReplacementJournal() }
 
 private fun readMigrationWorkInfos(context: Context): Result<List<WorkInfo>> = runCatching {

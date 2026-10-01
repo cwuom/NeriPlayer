@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider

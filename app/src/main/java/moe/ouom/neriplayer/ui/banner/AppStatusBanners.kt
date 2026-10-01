@@ -35,9 +35,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import kotlin.math.abs
 
@@ -65,7 +65,7 @@ internal fun OfflineModeBottomBanner() {
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
         Text(
-            text = stringResource(R.string.offline_mode_bottom_hint),
+            text = stringResource(CoreCommonR.string.offline_mode_bottom_hint),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
         )
@@ -171,9 +171,9 @@ internal fun managedProcessingTitleResource(
     reason: ManagedLibraryProcessingReason?
 ): Int? = when (reason) {
     ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE ->
-        R.string.managed_library_processing_upgrade_title
+        CoreCommonR.string.managed_library_processing_upgrade_title
     ManagedLibraryProcessingReason.DIRECTORY_CHANGE ->
-        R.string.managed_library_processing_directory_title
+        CoreCommonR.string.managed_library_processing_directory_title
     null -> null
 }
 
@@ -181,17 +181,17 @@ internal fun managedProcessingStageResource(
     stage: ManagedDownloadStorage.MigrationStage?
 ): Int? = when (stage) {
     ManagedDownloadStorage.MigrationStage.PREPARING ->
-        R.string.settings_download_directory_migrating_stage_preparing
+        CoreCommonR.string.settings_download_directory_migrating_stage_preparing
     ManagedDownloadStorage.MigrationStage.COPYING ->
-        R.string.settings_download_directory_migrating_stage_copying
+        CoreCommonR.string.settings_download_directory_migrating_stage_copying
     ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
-        R.string.settings_download_directory_migrating_stage_rewriting
+        CoreCommonR.string.settings_download_directory_migrating_stage_rewriting
     ManagedDownloadStorage.MigrationStage.VERIFYING ->
-        R.string.settings_download_directory_migrating_stage_verifying
+        CoreCommonR.string.settings_download_directory_migrating_stage_verifying
     ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
-        R.string.settings_download_directory_migrating_stage_cleanup
+        CoreCommonR.string.settings_download_directory_migrating_stage_cleanup
     ManagedDownloadStorage.MigrationStage.FINALIZING ->
-        R.string.settings_download_directory_migrating
+        CoreCommonR.string.settings_download_directory_migrating
     null -> null
 }
 
@@ -242,13 +242,13 @@ internal fun managedProcessingBytes(
     val bytes = when (progress.stage) {
         ManagedDownloadStorage.MigrationStage.VERIFYING ->
             ManagedProcessingBytes(
-                R.string.settings_download_directory_migrating_verification_progress_bytes,
+                CoreCommonR.string.settings_download_directory_migrating_verification_progress_bytes,
                 progress.verifiedBytes,
                 progress.verificationBytesTotal
             )
         ManagedDownloadStorage.MigrationStage.COPYING ->
             ManagedProcessingBytes(
-                R.string.settings_download_directory_migrating_progress_bytes,
+                CoreCommonR.string.settings_download_directory_migrating_progress_bytes,
                 progress.copiedBytes,
                 progress.totalBytes
             )
@@ -368,7 +368,7 @@ private fun ManagedProcessingHeader(
         IconButton(enabled = interactive, onClick = { onCollapsedChange(true) }) {
             Icon(
                 imageVector = Icons.Outlined.ExpandLess,
-                contentDescription = stringResource(R.string.action_collapse)
+                contentDescription = stringResource(CoreCommonR.string.action_collapse)
             )
         }
     }
@@ -379,9 +379,9 @@ private fun ManagedProcessingSubtitle(waitingForRetry: Boolean) {
     Text(
         text = stringResource(
             if (waitingForRetry) {
-                R.string.managed_library_processing_retry
+                CoreCommonR.string.managed_library_processing_retry
             } else {
-                R.string.managed_library_processing_subtitle
+                CoreCommonR.string.managed_library_processing_subtitle
             }
         ),
         style = MaterialTheme.typography.bodySmall,
@@ -420,7 +420,7 @@ private fun ManagedProcessingCountText(count: ManagedProcessingCount?) {
     val visibleCount = count ?: return
     Text(
         text = stringResource(
-            R.string.managed_library_processing_progress,
+            CoreCommonR.string.managed_library_processing_progress,
             visibleCount.processed,
             visibleCount.total
         ),
@@ -448,7 +448,7 @@ internal data class ManagedProcessingFileRow(val fileName: String) : ManagedProc
     @Composable
     override fun Render() {
         Text(
-            text = stringResource(R.string.settings_download_directory_migrating_current, fileName),
+            text = stringResource(CoreCommonR.string.settings_download_directory_migrating_current, fileName),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1

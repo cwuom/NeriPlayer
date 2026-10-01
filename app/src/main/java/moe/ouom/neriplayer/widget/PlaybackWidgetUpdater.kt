@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.widget
 
+import moe.ouom.neriplayer.core.player.presentation.widget.shouldShowPlaybackWidgetFallbackBackground
+import moe.ouom.neriplayer.core.player.presentation.widget.shouldRetainPlaybackWidgetVisuals
+import moe.ouom.neriplayer.core.player.presentation.widget.shouldUseCachedPlaybackWidgetArtwork
+import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
+import moe.ouom.neriplayer.core.player.presentation.widget.PLAYBACK_WIDGET_PROGRESS_MAX
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -17,9 +22,10 @@ import android.widget.RemoteViews
 import androidx.annotation.LayoutRes
 import androidx.annotation.RequiresApi
 import androidx.core.content.edit
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import java.io.File
 import java.io.FileOutputStream
@@ -278,15 +284,15 @@ internal object PlaybackWidgetUpdater {
         }
         views.setImageViewResource(
             R.id.widget_play_pause,
-            if (state.isPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
+            if (state.isPlaying) CoreCommonR.drawable.round_pause_24 else CoreCommonR.drawable.round_play_arrow_24,
         )
         if (hasProgress) {
             views.setImageViewResource(
                 R.id.widget_favorite,
                 if (state.isFavorite) {
-                    R.drawable.ic_baseline_favorite_24
+                    CoreCommonR.drawable.ic_baseline_favorite_24
                 } else {
-                    R.drawable.ic_outline_favorite_24
+                    CoreCommonR.drawable.ic_outline_favorite_24
                 },
             )
         }
@@ -391,27 +397,27 @@ internal object PlaybackWidgetUpdater {
         }
         views.setContentDescription(
             R.id.widget_play_pause_touch,
-            context.getString(if (state.isPlaying) R.string.player_pause else R.string.player_play),
+            context.getString(if (state.isPlaying) CoreCommonR.string.player_pause else CoreCommonR.string.player_play),
         )
         views.setContentDescription(
             R.id.widget_previous_touch,
-            context.getString(R.string.player_previous),
+            context.getString(CoreCommonR.string.player_previous),
         )
-        views.setContentDescription(R.id.widget_next_touch, context.getString(R.string.player_next))
+        views.setContentDescription(R.id.widget_next_touch, context.getString(CoreCommonR.string.player_next))
         if (hasProgress) {
             views.setContentDescription(
                 R.id.widget_favorite_touch,
                 context.getString(
-                    if (state.isFavorite) R.string.favorite_remove else R.string.favorite_add,
+                    if (state.isFavorite) CoreCommonR.string.favorite_remove else CoreCommonR.string.favorite_add,
                 ),
             )
             views.setContentDescription(
                 R.id.widget_floating_lyrics_touch,
                 context.getString(
                     if (state.isFloatingLyricsEnabled) {
-                        R.string.notification_hide_floating_lyrics
+                        CoreCommonR.string.notification_hide_floating_lyrics
                     } else {
-                        R.string.notification_show_floating_lyrics
+                        CoreCommonR.string.notification_show_floating_lyrics
                     },
                 ),
             )
@@ -429,9 +435,9 @@ internal object PlaybackWidgetUpdater {
             views.setImageViewResource(
                 R.id.widget_floating_lyrics,
                 if (state.isFloatingLyricsEnabled) {
-                    R.drawable.ic_lyrics_off_24
+                    CoreCommonR.drawable.ic_lyrics_off_24
                 } else {
-                    R.drawable.ic_lyrics_24
+                    CoreCommonR.drawable.ic_lyrics_24
                 },
             )
         }
@@ -794,11 +800,11 @@ internal object PlaybackWidgetUpdater {
             return PlaybackWidgetState.idle(context)
         }
         return PlaybackWidgetState(
-            title = prefs.getString(KEY_TITLE, null) ?: context.getString(R.string.app_name),
+            title = prefs.getString(KEY_TITLE, null) ?: context.getString(CoreCommonR.string.app_name),
             subtitle = prefs.getString(KEY_SUBTITLE, null)
-                ?: context.getString(R.string.widget_playback_idle_subtitle),
+                ?: context.getString(CoreCommonR.string.widget_playback_idle_subtitle),
             status = prefs.getString(KEY_STATUS, null)
-                ?: context.getString(R.string.widget_playback_ready),
+                ?: context.getString(CoreCommonR.string.widget_playback_ready),
             positionMs = prefs.getLong(KEY_POSITION_MS, 0L).coerceAtLeast(0L),
             elapsedText = prefs.getString(KEY_ELAPSED_TEXT, null) ?: "0:00",
             durationText = prefs.getString(KEY_DURATION_TEXT, null) ?: "0:00",

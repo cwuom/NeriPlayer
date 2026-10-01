@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.util
 
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.playbackVisualKey
-import moe.ouom.neriplayer.data.model.playbackVisualKeyAliases
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.identity.playbackVisualKey
+import moe.ouom.neriplayer.data.identity.playbackVisualKeyAliases
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

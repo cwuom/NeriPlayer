@@ -1,0 +1,30 @@
+package moe.ouom.neriplayer.data.model.history
+
+data class PlayedEntry(
+    val id: Long,
+    val name: String,
+    val artist: String,
+    val album: String,
+    val albumId: Long = 0L,
+    val durationMs: Long,
+    val resumePositionMs: Long = 0L,
+    val coverUrl: String?,
+    val mediaUri: String? = null,
+    val matchedLyric: String? = null,
+    val matchedTranslatedLyric: String? = null,
+    val customCoverUrl: String? = null,
+    val customName: String? = null,
+    val customArtist: String? = null,
+    val originalName: String? = null,
+    val originalArtist: String? = null,
+    val originalCoverUrl: String? = null,
+    val originalLyric: String? = null,
+    val originalTranslatedLyric: String? = null,
+    val localFileName: String? = null,
+    val localFilePath: String? = null,
+    val channelId: String? = null,
+    val audioId: String? = null,
+    val subAudioId: String? = null,
+    val sourceStableKey: String? = null,
+    val playedAt: Long
+)

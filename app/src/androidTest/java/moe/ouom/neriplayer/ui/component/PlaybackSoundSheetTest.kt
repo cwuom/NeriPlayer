@@ -8,11 +8,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
-import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
-import moe.ouom.neriplayer.core.player.model.defaultPlaybackEqualizerBands
-import moe.ouom.neriplayer.core.player.model.formatPlaybackGainLabel
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.defaultPlaybackEqualizerBands
+import moe.ouom.neriplayer.data.model.playback.formatPlaybackGainLabel
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -64,7 +64,7 @@ class PlaybackSoundSheetTest {
 
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText(
-                context.getString(R.string.nowplaying_audio_effects_title)
+                context.getString(CoreCommonR.string.nowplaying_audio_effects_title)
             ).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.waitUntil(timeoutMillis = 3_000) {
@@ -75,10 +75,10 @@ class PlaybackSoundSheetTest {
         composeRule.onNodeWithText(formatPlaybackGainLabel(1_200)).performScrollTo().performClick()
         composeRule.onNodeWithText("Rock").performScrollTo().performClick()
         composeRule.onNodeWithText(
-            context.getString(R.string.nowplaying_audio_effects_reset)
+            context.getString(CoreCommonR.string.nowplaying_audio_effects_reset)
         ).performScrollTo().performClick()
         composeRule.onNodeWithText(
-            context.getString(R.string.action_done)
+            context.getString(CoreCommonR.string.action_done)
         ).performScrollTo().performClick()
 
         composeRule.runOnIdle {

@@ -11,11 +11,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.DownloadDirectoryMigrationRecoveryController
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.DownloadDirectoryMigrationRecoveryGateway
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.MIGRATION_SNAPSHOT_READ_RETRY_LIMIT
@@ -356,7 +356,7 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
             override suspend fun updateSharedProgress(operationId: String, processed: Int, total: Int) = Unit
         }
         val resources = mock(Resources::class.java)
-        `when`(resources.getQuantityString(R.plurals.settings_download_directory_migrated, 0, 0))
+        `when`(resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrated, 0, 0))
             .thenReturn("migrated")
         val controller = controller(gateway, resources = resources)
         controller.recordActiveWorkId("active-work")
@@ -382,7 +382,7 @@ class SettingsDownloadDirectoryMigrationRecoveryTest {
             override suspend fun updateSharedProgress(operationId: String, processed: Int, total: Int) = Unit
         }
         val resources = mock(Resources::class.java)
-        `when`(resources.getQuantityString(R.plurals.settings_download_directory_migrated, 0, 0))
+        `when`(resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrated, 0, 0))
             .thenReturn("migrated")
         val controller = controller(gateway, resources = resources)
         controller.recordActiveWorkId("finished-work")

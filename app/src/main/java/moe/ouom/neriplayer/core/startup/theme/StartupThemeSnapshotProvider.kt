@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.startup.theme
 
 import android.content.Context
-import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
+import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.appearance.readThemePreferenceSnapshotSync
 
 internal object StartupThemeSnapshotProvider {
     fun read(

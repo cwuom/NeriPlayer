@@ -1,5 +1,14 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaCovers
+import moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaDownloads
+import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
+import moe.ouom.neriplayer.core.crash.ExceptionHandler
+import org.junit.Before
+
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+
 import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
@@ -9,7 +18,7 @@ import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.model.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -27,8 +36,18 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class LocalAudioImportManagerTest {
+    @Before
+    fun bindMediaHost() {
+        LocalMediaHostAccess.bind(
+            downloads = AndroidLocalMediaDownloads,
+            covers = AndroidLocalMediaCovers,
+            crashLogs = CrashLogCleanup(ExceptionHandler::clearCrashLogs)
+        )
+    }
+
 
     @get:Rule
     val tempFolder = TemporaryFolder()
@@ -339,7 +358,7 @@ class LocalAudioImportManagerTest {
         val completedAudio = managedAudioEntry(name = "managed.mp3")
 
         fun gate(
-            metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+            metadata: DownloadedAudioMetadata?,
             rootEntriesComplete: Boolean = true,
             audio: ManagedDownloadStorage.StoredEntry = completedAudio
         ): ManagedDownloadCandidatePublicationGate {
@@ -358,7 +377,7 @@ class LocalAudioImportManagerTest {
         }
 
         fun publication(
-            metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+            metadata: DownloadedAudioMetadata?,
             rootEntriesComplete: Boolean = true,
             audio: ManagedDownloadStorage.StoredEntry = completedAudio
         ): ManagedDownloadCandidatePublication {
@@ -372,7 +391,7 @@ class LocalAudioImportManagerTest {
         assertEquals(
             ManagedDownloadCandidatePublication.FINALIZED,
             publication(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
                 )
@@ -381,7 +400,7 @@ class LocalAudioImportManagerTest {
         assertEquals(
             ManagedDownloadCandidatePublication.FINALIZED,
             publication(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
                 )
@@ -391,7 +410,7 @@ class LocalAudioImportManagerTest {
         assertEquals(
             ManagedDownloadCandidatePublication.WITHHELD,
             publication(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = false,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
                 )
@@ -400,7 +419,7 @@ class LocalAudioImportManagerTest {
         assertEquals(
             ManagedDownloadCandidatePublication.WITHHELD,
             publication(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED
                 )
@@ -409,7 +428,7 @@ class LocalAudioImportManagerTest {
         assertEquals(
             ManagedDownloadCandidatePublication.WITHHELD,
             publication(
-                ManagedDownloadStorage.DownloadedAudioMetadata(
+                DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
                 )
@@ -418,7 +437,7 @@ class LocalAudioImportManagerTest {
         assertEquals(
             ManagedDownloadCandidatePublication.WITHHELD,
             publication(
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
                 ),
@@ -432,7 +451,7 @@ class LocalAudioImportManagerTest {
         assertEquals(
             ManagedDownloadCandidatePublication.WITHHELD,
             publication(
-                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                metadata = DownloadedAudioMetadata(
                     downloadFinalized = true,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
                 ),
@@ -553,7 +572,7 @@ class LocalAudioImportManagerTest {
             ),
             emptySnapshot.copy(
                 pendingMetadataByAudioName = mapOf(
-                    "song.flac" to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    "song.flac" to DownloadedAudioMetadata(
                         downloadFinalized = false
                     )
                 )

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
-import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
+import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionHeader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

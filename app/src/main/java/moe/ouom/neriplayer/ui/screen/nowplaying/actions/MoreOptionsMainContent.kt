@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+import moe.ouom.neriplayer.data.ltw.validation.format
+
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,25 +59,25 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.model.isDownloadTaskCancellable
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -145,7 +149,7 @@ internal fun MoreOptionsMainContent(
         )
         if (PlayerManager.isBiliTrack(originalSong)) {
             ListItem(
-                headlineContent = { Text(stringResource(R.string.bili_video_skip_manage)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.bili_video_skip_manage)) },
                 leadingContent = { Icon(Icons.Outlined.SkipNext, null) },
                 modifier = Modifier.clickable(onClick = onOpenBiliVideoSkip)
             )
@@ -158,7 +162,7 @@ internal fun MoreOptionsMainContent(
         )
         PlaybackStatsAction(originalSong)
         ListItem(
-            headlineContent = { Text(stringResource(R.string.listen_together_title)) },
+            headlineContent = { Text(stringResource(CoreCommonR.string.listen_together_title)) },
             leadingContent = { Icon(Icons.Outlined.Headphones, null) },
             modifier = Modifier.clickable(onClick = onOpenListenTogether)
         )
@@ -175,7 +179,7 @@ private fun MetadataAndPlaybackActions(
     onShowQualitySwitch: () -> Unit
 ) {
     ListItem(
-        headlineContent = { Text(stringResource(R.string.music_get_info)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.music_get_info)) },
         leadingContent = { Icon(Icons.Outlined.Info, null) },
         modifier = Modifier.clickable(
             enabled = !isDismissing,
@@ -183,13 +187,13 @@ private fun MetadataAndPlaybackActions(
         )
     )
     ListItem(
-        headlineContent = { Text(stringResource(R.string.music_edit_info)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.music_edit_info)) },
         leadingContent = { Icon(Icons.Outlined.Edit, null) },
         modifier = Modifier.clickable(onClick = onOpenEditInfo)
     )
     if (audioInfo?.qualityOptions.orEmpty().size > 1) {
         ListItem(
-            headlineContent = { Text(stringResource(R.string.nowplaying_quality_switch_title)) },
+            headlineContent = { Text(stringResource(CoreCommonR.string.nowplaying_quality_switch_title)) },
             leadingContent = { Icon(Icons.Outlined.MusicNote, null) },
             supportingContent = audioInfo?.qualityLabel
                 ?.takeIf { it.isNotBlank() }
@@ -198,9 +202,9 @@ private fun MetadataAndPlaybackActions(
         )
     }
     ListItem(
-        headlineContent = { Text(stringResource(R.string.nowplaying_audio_effects_title)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.nowplaying_audio_effects_title)) },
         leadingContent = { Icon(Icons.Outlined.Tune, null) },
-        supportingContent = { Text(stringResource(R.string.nowplaying_audio_effects_desc)) },
+        supportingContent = { Text(stringResource(CoreCommonR.string.nowplaying_audio_effects_desc)) },
         modifier = Modifier.clickable(onClick = onOpenPlaybackSound)
     )
 }
@@ -214,7 +218,7 @@ private fun DownloadOrDetailsAction(
 ) {
     if (isLocalSong) {
         ListItem(
-            headlineContent = { Text(stringResource(R.string.local_song_open_details)) },
+            headlineContent = { Text(stringResource(CoreCommonR.string.local_song_open_details)) },
             leadingContent = { Icon(Icons.Outlined.Info, null) },
             modifier = Modifier.clickable(onClick = onShowSongDetails)
         )
@@ -264,9 +268,9 @@ private fun downloadActionLabel(task: DownloadTask?): Int {
     return when (task?.status) {
         DownloadStatus.QUEUED,
         DownloadStatus.DOWNLOADING,
-        DownloadStatus.WAITING_NETWORK -> R.string.download_cancel_download
-        DownloadStatus.FAILED -> R.string.action_retry
-        else -> R.string.download_to_local
+        DownloadStatus.WAITING_NETWORK -> CoreCommonR.string.download_cancel_download
+        DownloadStatus.FAILED -> CoreCommonR.string.action_retry
+        else -> CoreCommonR.string.download_to_local
     }
 }
 
@@ -300,16 +304,16 @@ internal fun DownloadProgressContent(task: DownloadTask?) {
             }
         }
 
-        progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
+        progress?.stage == DownloadStage.FINALIZING -> {
             Column {
-                Text(stringResource(R.string.download_finalizing))
+                Text(stringResource(CoreCommonR.string.download_finalizing))
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
         }
 
         task?.status == DownloadStatus.WAITING_NETWORK -> {
             Column {
-                Text(stringResource(R.string.download_waiting_network_recovery))
+                Text(stringResource(CoreCommonR.string.download_waiting_network_recovery))
                 progress?.let { retainedProgress ->
                     Text(
                         formatDownloadTransferProgress(
@@ -355,7 +359,7 @@ internal fun DownloadProgressContent(task: DownloadTask?) {
                 }
             }
         }
-        task?.status == DownloadStatus.FAILED -> Text(stringResource(R.string.download_failed))
+        task?.status == DownloadStatus.FAILED -> Text(stringResource(CoreCommonR.string.download_failed))
     }
 }
 
@@ -370,17 +374,17 @@ private fun LyricsAndAlbumActions(
     snackbarHostState: SnackbarHostState
 ) {
     ListItem(
-        headlineContent = { Text(stringResource(R.string.lyrics_adjust_behavior)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.lyrics_adjust_behavior)) },
         leadingContent = { Icon(Icons.Outlined.Timer, null) },
         modifier = Modifier.clickable(onClick = onOpenLyricBehavior)
     )
     ListItem(
-        headlineContent = { Text(stringResource(R.string.lyrics_font_size)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.lyrics_font_size)) },
         leadingContent = { Icon(Icons.Outlined.FormatSize, null) },
         supportingContent = {
             Text(
                 stringResource(
-                    R.string.settings_lyrics_font_scale_pair_value,
+                    CoreCommonR.string.settings_lyrics_font_scale_pair_value,
                     (lyricFontScale * 100).roundToInt(),
                     (translationFontScale * 100).roundToInt()
                 )
@@ -409,12 +413,12 @@ private fun LyricsAndAlbumActions(
         if (album != null) {
             onEnterAlbum(album)
         } else {
-            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.music_get_detail_failed))
+            snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.music_get_detail_failed))
         }
     }
 
     ListItem(
-        headlineContent = { Text(stringResource(R.string.music_view_album, albumName)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.music_view_album, albumName)) },
         leadingContent = {
             if (resolvingAlbum) {
                 CircularProgressIndicator(
@@ -443,7 +447,7 @@ private fun ShareSongAction(
     val composeResources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
     ListItem(
-        headlineContent = { Text(stringResource(R.string.action_share)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.action_share)) },
         leadingContent = { Icon(Icons.Outlined.Share, null) },
         modifier = Modifier.clickable {
             if (song.isLocalSong()) {
@@ -455,7 +459,7 @@ private fun ShareSongAction(
                         onDismissSheet {}
                     } else {
                         snackbarHostState.showNeriSnackbar(
-                            composeResources.getString(R.string.local_song_share_failed)
+                            composeResources.getString(CoreCommonR.string.local_song_share_failed)
                         )
                     }
                 }
@@ -467,7 +471,7 @@ private fun ShareSongAction(
                 "${song.displayName()} - ${song.displayArtist()}"
             } else {
                 composeResources.getString(
-                    R.string.nowplaying_share_song,
+                    CoreCommonR.string.nowplaying_share_song,
                     song.displayName(),
                     song.displayArtist(),
                     shareUrl,
@@ -494,7 +498,7 @@ private fun PlaybackStatsAction(song: SongItem) {
     val resolvedTrackStat = trackStat ?: return
     var showDialog by remember { mutableStateOf(false) }
     ListItem(
-        headlineContent = { Text(stringResource(R.string.stats_title)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.stats_title)) },
         leadingContent = { Icon(Icons.Outlined.BarChart, null) },
         modifier = Modifier.clickable { showDialog = true }
     )
@@ -517,16 +521,16 @@ private fun PlaybackStatsAction(song: SongItem) {
     AlertDialog(
         onDismissRequest = { showDialog = false },
         icon = { Icon(Icons.Outlined.BarChart, null) },
-        title = { Text(stringResource(R.string.stats_title)) },
+        title = { Text(stringResource(CoreCommonR.string.stats_title)) },
         shape = RoundedCornerShape(28.dp),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatsCard(R.string.stats_song_first_played, firstPlayedText)
-                StatsCard(R.string.stats_song_total_listen, totalListenText)
+                StatsCard(CoreCommonR.string.stats_song_first_played, firstPlayedText)
+                StatsCard(CoreCommonR.string.stats_song_total_listen, totalListenText)
                 StatsCard(
-                    labelRes = R.string.stats_song_play_count_label,
+                    labelRes = CoreCommonR.string.stats_song_play_count_label,
                     value = pluralStringResource(
-                        R.plurals.stats_play_count_value,
+                        CoreCommonR.plurals.stats_play_count_value,
                         resolvedTrackStat.playCount,
                         resolvedTrackStat.playCount
                     )
@@ -535,7 +539,7 @@ private fun PlaybackStatsAction(song: SongItem) {
         },
         confirmButton = {
             HapticTextButton(onClick = { showDialog = false }) {
-                Text(stringResource(R.string.action_close))
+                Text(stringResource(CoreCommonR.string.action_close))
             }
         }
     )

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.local.media.metadata.isStandaloneContentMetadataTarget
+
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.graphics.Bitmap

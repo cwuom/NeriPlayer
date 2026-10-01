@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
+
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
@@ -109,7 +111,7 @@ class LocalAudioImportSafLyricsTest {
             Issue339LyricsTestDocumentProvider.ROOT_ID
         )
 
-        val result = LocalAudioImportManager.scanFolderSongsWithMediaStoreResultForTest(
+        val result = LocalAudioImportTestSupport.scanWithMediaStoreResult(
             context = targetContext,
             folderUri = treeUri,
             mediaStoreResult = LocalAudioImportResult(
@@ -267,7 +269,7 @@ class LocalAudioImportSafLyricsTest {
         )
         var cancelled = false
         try {
-            LocalAudioImportManager.scanFolderSongsWithMediaStoreResultForTest(
+            LocalAudioImportTestSupport.scanWithMediaStoreResult(
                 context = targetContext,
                 folderUri = treeUri,
                 mediaStoreResult = LocalAudioImportResult(

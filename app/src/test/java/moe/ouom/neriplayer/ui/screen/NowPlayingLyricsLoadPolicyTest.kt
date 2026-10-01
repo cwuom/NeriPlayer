@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem

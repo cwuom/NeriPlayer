@@ -15,21 +15,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
-import moe.ouom.neriplayer.ui.component.lyrics.resolveLocalLyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
+import moe.ouom.neriplayer.lyrics.parser.resolveLocalLyricsEditorSeed
+import moe.ouom.neriplayer.lyrics.parser.resolveLyricsEditorSeed
+import moe.ouom.neriplayer.lyrics.parser.toEditableLyricsText
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 
@@ -530,7 +530,7 @@ internal class NowPlayingSongEditOwner(
     ) {
         NPLogger.e("NowPlayingSongEdit", "保存歌曲信息失败", error)
         snackbarHostState.showNeriSnackbar(
-            message = resources.getString(R.string.toast_save_failed, error.message.orEmpty()),
+            message = resources.getString(CoreCommonR.string.toast_save_failed, error.message.orEmpty()),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )
@@ -689,7 +689,7 @@ internal class NowPlayingSongEditOwner(
         resources: Resources
     ) {
         if (!saved) showSaveFailure(
-            snackbarHostState, resources, R.string.local_song_metadata_write_failed
+            snackbarHostState, resources, CoreCommonR.string.local_song_metadata_write_failed
         )
     }
 
@@ -700,7 +700,7 @@ internal class NowPlayingSongEditOwner(
     ) {
         NPLogger.e("NowPlayingSongEdit", "回写填充歌词失败", error)
         snackbarHostState.showNeriSnackbar(
-            message = resources.getString(R.string.toast_save_failed, error.message.orEmpty()),
+            message = resources.getString(CoreCommonR.string.toast_save_failed, error.message.orEmpty()),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )
@@ -753,7 +753,7 @@ internal class NowPlayingSongEditOwner(
             onSuccess = { imported -> publishImportedCoverUri(imported, snackbarHostState, resources) },
             onFailure = { error ->
                 NPLogger.e("NowPlayingSongEdit", "导入本地封面失败", error)
-                showSaveFailure(snackbarHostState, resources, R.string.music_cover_import_failed)
+                showSaveFailure(snackbarHostState, resources, CoreCommonR.string.music_cover_import_failed)
             }
         )
     }
@@ -764,7 +764,7 @@ internal class NowPlayingSongEditOwner(
         resources: Resources
     ) {
         if (imported == null) {
-            showSaveFailure(snackbarHostState, resources, R.string.music_cover_import_failed)
+            showSaveFailure(snackbarHostState, resources, CoreCommonR.string.music_cover_import_failed)
             return
         }
         applyImportedCoverUri(imported)
@@ -1095,7 +1095,7 @@ internal class NowPlayingSongEditOwner(
         composeResources: Resources
     ) {
         snackbarHostState.showNeriSnackbar(
-            message = composeResources.getString(R.string.settings_download_directory_permission_lost),
+            message = composeResources.getString(CoreCommonR.string.settings_download_directory_permission_lost),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )

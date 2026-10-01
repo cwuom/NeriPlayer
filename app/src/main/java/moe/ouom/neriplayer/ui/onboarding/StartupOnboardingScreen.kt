@@ -91,16 +91,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
-import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
@@ -129,8 +129,8 @@ import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
 import moe.ouom.neriplayer.ui.haptic.HapticButton
 import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
-import moe.ouom.neriplayer.util.platform.LanguageManager
-import moe.ouom.neriplayer.util.platform.getDisplayName
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.common.locale.getDisplayName
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -142,7 +142,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
 import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -507,7 +507,7 @@ fun StartupOnboardingScreen(
                     inlineMessage = null
                     showNeteaseSheet = false
                     loginSuccessTitle = composeResources.getString(
-                        R.string.settings_netease_login_success
+                        CoreCommonR.string.settings_netease_login_success
                     )
                     neteaseVm.refreshAuthHealth()
                 }
@@ -524,7 +524,7 @@ fun StartupOnboardingScreen(
                     inlineMessage = null
                     showBiliSheet = false
                     loginSuccessTitle = composeResources.getString(
-                        R.string.settings_bili_login_success
+                        CoreCommonR.string.settings_bili_login_success
                     )
                     biliVm.refreshAuthHealth()
                 }
@@ -541,7 +541,7 @@ fun StartupOnboardingScreen(
                     inlineMessage = null
                     showYouTubeSheet = false
                     loginSuccessTitle = composeResources.getString(
-                        R.string.settings_youtube_login_success
+                        CoreCommonR.string.settings_youtube_login_success
                     )
                     youTubeVm.refreshAuthHealth()
                 }
@@ -1017,7 +1017,7 @@ fun StartupOnboardingScreen(
                                 color = colorScheme.secondaryContainer
                             ) {
                                 Text(
-                                    text = stringResource(R.string.onboarding_badge),
+                                    text = stringResource(CoreCommonR.string.onboarding_badge),
                                     modifier = Modifier.padding(
                                         horizontal = 12.dp,
                                         vertical = 6.dp
@@ -1029,14 +1029,14 @@ fun StartupOnboardingScreen(
                             }
                             Spacer(Modifier.height(14.dp))
                             Text(
-                                text = stringResource(R.string.onboarding_title),
+                                text = stringResource(CoreCommonR.string.onboarding_title),
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = colorScheme.onSurface
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                text = stringResource(R.string.onboarding_subtitle),
+                                text = stringResource(CoreCommonR.string.onboarding_subtitle),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = colorScheme.onSurfaceVariant
                             )
@@ -1051,7 +1051,7 @@ fun StartupOnboardingScreen(
                             Spacer(Modifier.height(10.dp))
                             Text(
                                 text = stringResource(
-                                    R.string.onboarding_step_counter,
+                                    CoreCommonR.string.onboarding_step_counter,
                                     stepIndex + 1,
                                     steps.size
                                 ),
@@ -1110,7 +1110,7 @@ fun StartupOnboardingScreen(
                                         enabled = canNavigateBack,
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text(stringResource(R.string.action_back))
+                                        Text(stringResource(CoreCommonR.string.action_back))
                                     }
                                 } else {
                                     Spacer(Modifier.weight(1f))
@@ -1124,9 +1124,9 @@ fun StartupOnboardingScreen(
                                 ) {
                                     Text(
                                         text = if (stepIndex == steps.lastIndex) {
-                                            stringResource(R.string.onboarding_learning_enter_app)
+                                            stringResource(CoreCommonR.string.onboarding_learning_enter_app)
                                         } else {
-                                            stringResource(R.string.onboarding_action_next)
+                                            stringResource(CoreCommonR.string.onboarding_action_next)
                                         }
                                     )
                                 }
@@ -1295,8 +1295,8 @@ private fun LanguageContent(
 ) {
     StepHeader(
         icon = Icons.Outlined.Language,
-        title = stringResource(R.string.onboarding_language_title),
-        description = stringResource(R.string.onboarding_language_desc)
+        title = stringResource(CoreCommonR.string.onboarding_language_title),
+        description = stringResource(CoreCommonR.string.onboarding_language_desc)
     )
     Spacer(Modifier.height(18.dp))
     LanguageManager.Language.entries.forEach { language ->
@@ -1328,8 +1328,8 @@ private fun PlatformContent(
 ) {
     StepHeader(
         icon = Icons.Outlined.Tune,
-        title = stringResource(R.string.onboarding_platforms_title),
-        description = stringResource(R.string.onboarding_platforms_desc)
+        title = stringResource(CoreCommonR.string.onboarding_platforms_title),
+        description = stringResource(CoreCommonR.string.onboarding_platforms_desc)
     )
     Spacer(Modifier.height(18.dp))
     inlineMessage?.let {
@@ -1337,51 +1337,51 @@ private fun PlatformContent(
         Spacer(Modifier.height(14.dp))
     }
     PlatformCard(
-        icon = painterResource(R.drawable.ic_bilibili),
-        title = stringResource(R.string.platform_bilibili),
+        icon = painterResource(CoreCommonR.drawable.ic_bilibili),
+        title = stringResource(CoreCommonR.string.platform_bilibili),
         status = statusTextForSavedCookie(biliState),
         connected = biliState == SavedCookieAuthState.Valid,
         actionText = if (hasSavedBiliCookies) {
-            stringResource(R.string.onboarding_platform_action_manage)
+            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
         } else if (biliState == SavedCookieAuthState.Valid) {
-            stringResource(R.string.onboarding_platform_action_logout)
+            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
         } else {
-            stringResource(R.string.onboarding_platform_action_connect)
+            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
         },
         onClick = if (hasSavedBiliCookies) onManageBili else onOpenBili
     )
     Spacer(Modifier.height(12.dp))
     PlatformCard(
-        icon = painterResource(R.drawable.ic_netease_cloud_music),
-        title = stringResource(R.string.platform_netease),
+        icon = painterResource(CoreCommonR.drawable.ic_netease_cloud_music),
+        title = stringResource(CoreCommonR.string.platform_netease),
         status = statusTextForSavedCookie(neteaseState),
         connected = neteaseState == SavedCookieAuthState.Valid,
         actionText = if (hasSavedNeteaseCookies) {
-            stringResource(R.string.onboarding_platform_action_manage)
+            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
         } else if (neteaseState == SavedCookieAuthState.Valid) {
-            stringResource(R.string.onboarding_platform_action_logout)
+            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
         } else {
-            stringResource(R.string.onboarding_platform_action_connect)
+            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
         },
         onClick = if (hasSavedNeteaseCookies) onManageNetease else onOpenNetease
     )
     Spacer(Modifier.height(12.dp))
     PlatformCard(
-        icon = painterResource(R.drawable.ic_youtube),
-        title = stringResource(R.string.common_youtube),
+        icon = painterResource(CoreCommonR.drawable.ic_youtube),
+        title = stringResource(CoreCommonR.string.common_youtube),
         status = statusTextForYouTube(youTubeState),
         connected = youTubeState == YouTubeAuthState.Valid,
         actionText = if (hasSavedYouTubeAuth) {
-            stringResource(R.string.onboarding_platform_action_manage)
+            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
         } else if (youTubeState == YouTubeAuthState.Valid) {
-            stringResource(R.string.onboarding_platform_action_logout)
+            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
         } else {
-            stringResource(R.string.onboarding_platform_action_connect)
+            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
         },
         onClick = if (hasSavedYouTubeAuth) onManageYouTube else onOpenYouTube
     )
     Spacer(Modifier.height(18.dp))
-    HintCard(body = stringResource(R.string.onboarding_platforms_hint))
+    HintCard(body = stringResource(CoreCommonR.string.onboarding_platforms_hint))
 }
 
 @Composable
@@ -1408,13 +1408,13 @@ private fun PersonalizeContent(
 
     StepHeader(
         icon = Icons.Outlined.Palette,
-        title = stringResource(R.string.onboarding_personalize_title),
-        description = stringResource(R.string.onboarding_personalize_desc)
+        title = stringResource(CoreCommonR.string.onboarding_personalize_title),
+        description = stringResource(CoreCommonR.string.onboarding_personalize_desc)
     )
     Spacer(Modifier.height(18.dp))
     HintCard(
-        title = stringResource(R.string.settings_ui_scale),
-        body = stringResource(R.string.onboarding_ui_scale_hint, (pendingUiScale * 100).roundToInt())
+        title = stringResource(CoreCommonR.string.settings_ui_scale),
+        body = stringResource(CoreCommonR.string.onboarding_ui_scale_hint, (pendingUiScale * 100).roundToInt())
     ) {
         Slider(
             value = pendingUiScale,
@@ -1426,11 +1426,11 @@ private fun PersonalizeContent(
     }
     Spacer(Modifier.height(14.dp))
     HintCard(
-        title = stringResource(R.string.onboarding_theme_mode_title),
+        title = stringResource(CoreCommonR.string.onboarding_theme_mode_title),
         body = if (isDarkTheme) {
-            stringResource(R.string.settings_theme_toggle_light)
+            stringResource(CoreCommonR.string.settings_theme_toggle_light)
         } else {
-            stringResource(R.string.settings_theme_toggle_dark)
+            stringResource(CoreCommonR.string.settings_theme_toggle_dark)
         }
     ) {
         Row(
@@ -1445,8 +1445,8 @@ private fun PersonalizeContent(
     }
     Spacer(Modifier.height(14.dp))
     HintCard(
-        title = stringResource(R.string.background_custom),
-        body = stringResource(R.string.onboarding_background_hint)
+        title = stringResource(CoreCommonR.string.background_custom),
+        body = stringResource(CoreCommonR.string.onboarding_background_hint)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HapticOutlinedButton(
@@ -1457,9 +1457,9 @@ private fun PersonalizeContent(
             ) {
                 Text(
                     if (backgroundImageUri == null) {
-                        stringResource(R.string.onboarding_background_select)
+                        stringResource(CoreCommonR.string.onboarding_background_select)
                     } else {
-                        stringResource(R.string.onboarding_background_change)
+                        stringResource(CoreCommonR.string.onboarding_background_change)
                     },
                     maxLines = 1,
                     softWrap = false,
@@ -1474,7 +1474,7 @@ private fun PersonalizeContent(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.onboarding_background_clear),
+                        text = stringResource(CoreCommonR.string.onboarding_background_clear),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis
@@ -1483,14 +1483,14 @@ private fun PersonalizeContent(
             }
         }
         if (backgroundImageUri != null) {
-            Text(stringResource(R.string.background_blur), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(CoreCommonR.string.background_blur), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
             Slider(
                 value = backgroundImageBlur,
                 onValueChange = onBackgroundBlurChange,
                 onValueChangeFinished = { onBackgroundBlurCommit(backgroundImageBlur) },
                 valueRange = 0f..25f
             )
-            Text(stringResource(R.string.background_opacity), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(CoreCommonR.string.background_opacity), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
             Slider(
                 value = backgroundImageAlpha,
                 onValueChange = onBackgroundAlphaChange,
@@ -1502,11 +1502,11 @@ private fun PersonalizeContent(
     if (enhancedAdvancedBlurAvailable) {
         Spacer(Modifier.height(14.dp))
         HintCard(
-            title = stringResource(R.string.settings_enhanced_advanced_blur),
+            title = stringResource(CoreCommonR.string.settings_enhanced_advanced_blur),
             body = if (backgroundImageUri == null) {
-                stringResource(R.string.onboarding_enhanced_blur_no_background_desc)
+                stringResource(CoreCommonR.string.onboarding_enhanced_blur_no_background_desc)
             } else {
-                stringResource(R.string.onboarding_enhanced_blur_background_desc)
+                stringResource(CoreCommonR.string.onboarding_enhanced_blur_background_desc)
             }
         ) {
             Row(
@@ -1515,7 +1515,7 @@ private fun PersonalizeContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.onboarding_enhanced_blur_switch_title),
+                    text = stringResource(CoreCommonR.string.onboarding_enhanced_blur_switch_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.onSurface
@@ -1529,7 +1529,7 @@ private fun PersonalizeContent(
     }
     Spacer(Modifier.height(14.dp))
     Text(
-        text = stringResource(R.string.onboarding_complete_hint),
+        text = stringResource(CoreCommonR.string.onboarding_complete_hint),
         style = MaterialTheme.typography.bodyMedium,
         color = colors.onSurfaceVariant
     )
@@ -1626,19 +1626,19 @@ private fun StartupNoPlatformWarningDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(stringResource(R.string.onboarding_platforms_no_login_title))
+            Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_title))
         },
         text = {
-            Text(stringResource(R.string.onboarding_platforms_no_login_desc))
+            Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_desc))
         },
         confirmButton = {
             HapticTextButton(onClick = onContinue) {
-                Text(stringResource(R.string.onboarding_platforms_no_login_continue))
+                Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_continue))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.onboarding_platforms_no_login_connect))
+                Text(stringResource(CoreCommonR.string.onboarding_platforms_no_login_connect))
             }
         }
     )
@@ -1652,19 +1652,19 @@ private fun StartupEnhancedAdvancedBlurPromptDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(stringResource(R.string.onboarding_enhanced_blur_prompt_title))
+            Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_title))
         },
         text = {
-            Text(stringResource(R.string.onboarding_enhanced_blur_prompt_desc))
+            Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_desc))
         },
         confirmButton = {
             HapticTextButton(onClick = onEnable) {
-                Text(stringResource(R.string.onboarding_enhanced_blur_prompt_enable))
+                Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_enable))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.onboarding_enhanced_blur_prompt_not_now))
+                Text(stringResource(CoreCommonR.string.onboarding_enhanced_blur_prompt_not_now))
             }
         }
     )
@@ -1683,9 +1683,9 @@ private fun StartupNotificationPermissionWarningDialog(
             Text(
                 stringResource(
                     if (isFinalWarning) {
-                        R.string.onboarding_notification_permission_final_warning_title
+                        CoreCommonR.string.onboarding_notification_permission_final_warning_title
                     } else {
-                        R.string.onboarding_notification_permission_warning_title
+                        CoreCommonR.string.onboarding_notification_permission_warning_title
                     }
                 )
             )
@@ -1694,9 +1694,9 @@ private fun StartupNotificationPermissionWarningDialog(
             Text(
                 stringResource(
                     if (isFinalWarning) {
-                        R.string.onboarding_notification_permission_final_warning_desc
+                        CoreCommonR.string.onboarding_notification_permission_final_warning_desc
                     } else {
-                        R.string.onboarding_notification_permission_warning_desc
+                        CoreCommonR.string.onboarding_notification_permission_warning_desc
                     }
                 )
             )
@@ -1706,9 +1706,9 @@ private fun StartupNotificationPermissionWarningDialog(
                 Text(
                     stringResource(
                         if (isFinalWarning) {
-                            R.string.onboarding_notification_permission_final_request
+                            CoreCommonR.string.onboarding_notification_permission_final_request
                         } else {
-                            R.string.onboarding_notification_permission_request_again
+                            CoreCommonR.string.onboarding_notification_permission_request_again
                         }
                     )
                 )
@@ -1719,9 +1719,9 @@ private fun StartupNotificationPermissionWarningDialog(
                 Text(
                     stringResource(
                         if (isFinalWarning) {
-                            R.string.onboarding_notification_permission_final_skip
+                            CoreCommonR.string.onboarding_notification_permission_final_skip
                         } else {
-                            R.string.onboarding_notification_permission_skip
+                            CoreCommonR.string.onboarding_notification_permission_skip
                         }
                     )
                 )
@@ -1733,17 +1733,17 @@ private fun StartupNotificationPermissionWarningDialog(
 @Composable
 private fun statusTextForSavedCookie(state: SavedCookieAuthState): String {
     return when (state) {
-        SavedCookieAuthState.Valid -> stringResource(R.string.onboarding_platform_status_connected)
-        SavedCookieAuthState.Checking -> stringResource(R.string.onboarding_platform_status_not_connected)
-        SavedCookieAuthState.Missing -> stringResource(R.string.onboarding_platform_status_not_connected)
+        SavedCookieAuthState.Valid -> stringResource(CoreCommonR.string.onboarding_platform_status_connected)
+        SavedCookieAuthState.Checking -> stringResource(CoreCommonR.string.onboarding_platform_status_not_connected)
+        SavedCookieAuthState.Missing -> stringResource(CoreCommonR.string.onboarding_platform_status_not_connected)
     }
 }
 
 @Composable
 private fun statusTextForYouTube(state: YouTubeAuthState): String {
     return when (state) {
-        YouTubeAuthState.Valid -> stringResource(R.string.onboarding_platform_status_connected)
-        YouTubeAuthState.Missing -> stringResource(R.string.onboarding_platform_status_not_connected)
+        YouTubeAuthState.Valid -> stringResource(CoreCommonR.string.onboarding_platform_status_connected)
+        YouTubeAuthState.Missing -> stringResource(CoreCommonR.string.onboarding_platform_status_not_connected)
     }
 }
 

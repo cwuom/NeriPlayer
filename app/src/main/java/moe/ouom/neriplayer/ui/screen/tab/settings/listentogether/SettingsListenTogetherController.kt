@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.listentogether
 
+import moe.ouom.neriplayer.data.ltw.validation.format
+
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.Resources
@@ -19,19 +21,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
-import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
-import moe.ouom.neriplayer.listentogether.invite.ListenTogetherInvite
-import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
-import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
-import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
-import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
-import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
-import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
-import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherServerTestResult
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
-import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
+import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
+import moe.ouom.neriplayer.data.ltw.invite.configuredListenTogetherBaseUrlOrNull
+import moe.ouom.neriplayer.data.ltw.invite.isDefaultListenTogetherBaseUrl
+import moe.ouom.neriplayer.data.ltw.invite.parseListenTogetherInvite
+import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherInviteJoinBaseUrl
+import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
+import moe.ouom.neriplayer.data.model.ltw.ListenTogetherServerTestResult
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
+import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherNickname
 
 internal fun isDefaultListenTogetherSettingsServer(input: String): Boolean =
     input.isBlank() || configuredListenTogetherBaseUrlOrNull(input)
@@ -51,10 +53,10 @@ internal fun listenTogetherServerTestMessageId(
     result: ListenTogetherServerTestResult,
     usingDefaultServer: Boolean
 ): Int = when {
-    result.ok && usingDefaultServer -> R.string.settings_listen_together_server_test_success_default
-    result.ok -> R.string.settings_listen_together_server_test_success_custom
-    result.message == "invalid_response" -> R.string.settings_listen_together_server_test_invalid
-    else -> R.string.settings_listen_together_server_test_failed
+    result.ok && usingDefaultServer -> CoreCommonR.string.settings_listen_together_server_test_success_default
+    result.ok -> CoreCommonR.string.settings_listen_together_server_test_success_custom
+    result.message == "invalid_response" -> CoreCommonR.string.settings_listen_together_server_test_invalid
+    else -> CoreCommonR.string.settings_listen_together_server_test_failed
 }
 
 internal fun normalizedSettingsListenTogetherServerInput(input: String): String? {
@@ -243,11 +245,11 @@ internal class SettingsListenTogetherController(
         if (joining) return
         val invite = parseListenTogetherInvite(inviteInput)
         if (invite == null) {
-            inviteError = resources.getString(R.string.settings_listen_together_join_invite_invalid)
+            inviteError = resources.getString(CoreCommonR.string.settings_listen_together_join_invite_invalid)
             return
         }
         if (isInRoom) {
-            inviteError = resources.getString(R.string.settings_listen_together_join_room_disabled)
+            inviteError = resources.getString(CoreCommonR.string.settings_listen_together_join_room_disabled)
             return
         }
         scope.launch { joinRoom(invite) }
@@ -291,7 +293,7 @@ internal class SettingsListenTogetherController(
 
     fun resetServerInput() {
         serverInput = ""
-        serverTestMessage = resources.getString(R.string.settings_listen_together_server_reset_done)
+        serverTestMessage = resources.getString(CoreCommonR.string.settings_listen_together_server_reset_done)
     }
 
     fun dismissServerDialog() {
@@ -321,7 +323,7 @@ internal class SettingsListenTogetherController(
 
     private fun formatServerTestResult(result: ListenTogetherServerTestResult, usingDefault: Boolean): String {
         val messageId = listenTogetherServerTestMessageId(result, usingDefault)
-        return if (messageId == R.string.settings_listen_together_server_test_failed) {
+        return if (messageId == CoreCommonR.string.settings_listen_together_server_test_failed) {
             resources.getString(messageId, result.message)
         } else {
             resources.getString(messageId)
@@ -336,14 +338,14 @@ internal class SettingsListenTogetherController(
             serverInput = normalized
             showServerDialog = false
             serverTestMessage = null
-            showMessage(R.string.settings_listen_together_server_saved)
+            showMessage(CoreCommonR.string.settings_listen_together_server_saved)
         }
     }
 
     private fun validatedServerInput(): String? {
         val normalized = normalizedSettingsListenTogetherServerInput(serverInput)
         if (normalized == null) {
-            serverTestMessage = resources.getString(R.string.settings_listen_together_server_input_invalid)
+            serverTestMessage = resources.getString(CoreCommonR.string.settings_listen_together_server_input_invalid)
         }
         return normalized
     }
@@ -377,7 +379,7 @@ internal class SettingsListenTogetherController(
             preferences.setNickname(value)
             showNicknameDialog = false
             nicknameError = null
-            showMessage(R.string.settings_listen_together_default_nickname_saved)
+            showMessage(CoreCommonR.string.settings_listen_together_default_nickname_saved)
         }
     }
 
@@ -393,7 +395,7 @@ internal class SettingsListenTogetherController(
         scope.launch {
             preferences.resetUserUuid()
             showResetUuidDialog = false
-            showMessage(R.string.listen_together_reset_uuid_done)
+            showMessage(CoreCommonR.string.listen_together_reset_uuid_done)
         }
     }
 

@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.component.download
 
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadStage
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,33 +22,33 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.DownloadStatus
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.formatDownloadTransferProgress
-import moe.ouom.neriplayer.core.download.model.hasDownloadTaskStartedWork
-import moe.ouom.neriplayer.core.download.model.visibleDownloadProgressTasks
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.download.DownloadStatus
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
+import moe.ouom.neriplayer.core.download.presentation.hasDownloadTaskStartedWork
+import moe.ouom.neriplayer.core.download.presentation.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 
 internal fun downloadStageLabelResource(
-    stage: AudioDownloadManager.DownloadStage
+    stage: DownloadStage
 ): Int? {
     return when (stage) {
-        AudioDownloadManager.DownloadStage.WAITING_HOST -> R.string.download_waiting_host
-        AudioDownloadManager.DownloadStage.WAITING_DELETE_CLEANUP ->
-            R.string.download_waiting_delete_cleanup
-        AudioDownloadManager.DownloadStage.RESOLVING_SOURCE -> R.string.download_resolving_source
-        AudioDownloadManager.DownloadStage.PREPARING_STORAGE ->
-            R.string.download_preparing_storage
-        AudioDownloadManager.DownloadStage.VERIFYING_AUDIO -> R.string.download_verifying_audio
-        AudioDownloadManager.DownloadStage.COMMITTING_CORE -> R.string.download_committing_core
-        AudioDownloadManager.DownloadStage.ASSETS_ENRICHING ->
-            R.string.download_assets_enriching
-        AudioDownloadManager.DownloadStage.WAITING_RETRY -> R.string.download_waiting_retry
-        AudioDownloadManager.DownloadStage.TRANSFERRING,
-        AudioDownloadManager.DownloadStage.FINALIZING -> null
+        DownloadStage.WAITING_HOST -> CoreCommonR.string.download_waiting_host
+        DownloadStage.WAITING_DELETE_CLEANUP ->
+            CoreCommonR.string.download_waiting_delete_cleanup
+        DownloadStage.RESOLVING_SOURCE -> CoreCommonR.string.download_resolving_source
+        DownloadStage.PREPARING_STORAGE ->
+            CoreCommonR.string.download_preparing_storage
+        DownloadStage.VERIFYING_AUDIO -> CoreCommonR.string.download_verifying_audio
+        DownloadStage.COMMITTING_CORE -> CoreCommonR.string.download_committing_core
+        DownloadStage.ASSETS_ENRICHING ->
+            CoreCommonR.string.download_assets_enriching
+        DownloadStage.WAITING_RETRY -> CoreCommonR.string.download_waiting_retry
+        DownloadStage.TRANSFERRING,
+        DownloadStage.FINALIZING -> null
     }
 }
 
@@ -84,11 +87,11 @@ fun ActiveDownloadTaskList(
 
                     when {
                         progress != null && progress.stage !=
-                            AudioDownloadManager.DownloadStage.TRANSFERRING &&
-                            progress.stage != AudioDownloadManager.DownloadStage.FINALIZING &&
-                            progress.stage != AudioDownloadManager.DownloadStage.WAITING_RETRY -> {
+                            DownloadStage.TRANSFERRING &&
+                            progress.stage != DownloadStage.FINALIZING &&
+                            progress.stage != DownloadStage.WAITING_RETRY -> {
                             val stageLabel = downloadStageLabelResource(progress.stage)
-                                ?: R.string.download_progress
+                                ?: CoreCommonR.string.download_progress
                             Text(
                                 text = stringResource(stageLabel),
                                 style = MaterialTheme.typography.bodySmall,
@@ -107,9 +110,9 @@ fun ActiveDownloadTaskList(
                             )
                         }
 
-                        progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
+                        progress?.stage == DownloadStage.FINALIZING -> {
                             Text(
-                                text = stringResource(R.string.download_finalizing),
+                                text = stringResource(CoreCommonR.string.download_finalizing),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -121,13 +124,13 @@ fun ActiveDownloadTaskList(
                             )
                         }
 
-                        progress?.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY -> {
+                        progress?.stage == DownloadStage.WAITING_RETRY -> {
                             Text(
                                 text = stringResource(
                                     if (task.status == DownloadStatus.WAITING_NETWORK) {
-                                        R.string.download_waiting_network_recovery
+                                        CoreCommonR.string.download_waiting_network_recovery
                                     } else {
-                                        R.string.download_waiting_retry
+                                        CoreCommonR.string.download_waiting_retry
                                     }
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
@@ -190,11 +193,11 @@ fun ActiveDownloadTaskList(
                             Text(
                                 text = stringResource(
                                     when (task.status) {
-                                        DownloadStatus.QUEUED -> R.string.download_queued_status
+                                        DownloadStatus.QUEUED -> CoreCommonR.string.download_queued_status
                                         DownloadStatus.WAITING_NETWORK ->
-                                            R.string.download_waiting_network_recovery
-                                        DownloadStatus.DOWNLOADING -> R.string.download_waiting_host
-                                        else -> R.string.download_progress
+                                            CoreCommonR.string.download_waiting_network_recovery
+                                        DownloadStatus.DOWNLOADING -> CoreCommonR.string.download_waiting_host
+                                        else -> CoreCommonR.string.download_progress
                                     }
                                 ),
                                 style = MaterialTheme.typography.bodySmall,

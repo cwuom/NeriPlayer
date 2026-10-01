@@ -34,6 +34,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadCommitSnapshotRetryTest {
@@ -42,7 +43,7 @@ class ManagedDownloadCommitSnapshotRetryTest {
         withStorage {
             val foreignBytes = byteArrayOf(9, 8, 7)
             val foreign = createDocument(FILE_NAME, foreignBytes)
-            val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            val metadata = DownloadedAudioMetadata(
                 stableKey = "concurrent|netease|",
                 songId = 42L,
                 name = "Concurrent song",

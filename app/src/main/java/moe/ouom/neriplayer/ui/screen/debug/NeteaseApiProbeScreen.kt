@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseApiProbeViewModel
 
@@ -88,11 +88,11 @@ fun NeteaseApiProbeScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = stringResource(R.string.debug_netease_probe),
+            text = stringResource(CoreCommonR.string.debug_netease_probe),
             style = MaterialTheme.typography.titleLarge
         )
         Text(
-            text = stringResource(R.string.debug_netease_desc),
+            text = stringResource(CoreCommonR.string.debug_netease_desc),
             style = MaterialTheme.typography.bodyMedium
         )
 
@@ -108,7 +108,7 @@ fun NeteaseApiProbeScreen() {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.debug_netease_probe_section_auth),
+                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_auth),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
@@ -130,21 +130,21 @@ fun NeteaseApiProbeScreen() {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.debug_netease_probe_section_inputs),
+                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_inputs),
                     style = MaterialTheme.typography.titleMedium
                 )
                 OutlinedTextField(
                     value = ui.keyword,
                     onValueChange = vm::onKeywordChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.debug_netease_probe_input_keyword)) },
+                    label = { Text(stringResource(CoreCommonR.string.debug_netease_probe_input_keyword)) },
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = ui.songId,
                     onValueChange = vm::onSongIdChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.debug_netease_probe_input_song_id)) },
+                    label = { Text(stringResource(CoreCommonR.string.debug_netease_probe_input_song_id)) },
                     singleLine = true
                 )
             }
@@ -162,74 +162,74 @@ fun NeteaseApiProbeScreen() {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.debug_netease_probe_section_actions),
+                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_actions),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Button(
                     onClick = { vm.callAllAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_call_all_copy)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_call_all_copy)) }
 
                 OutlinedButton(
                     onClick = { vm.callAccountAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_account_only)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_account_only)) }
 
                 OutlinedButton(
                     onClick = { vm.callUserIdAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_userid_only)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_userid_only)) }
 
                 OutlinedButton(
                     onClick = { vm.callCreatedPlaylistsAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_created_playlists)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_created_playlists)) }
 
                 OutlinedButton(
                     onClick = { vm.callStaredAlbums() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_stared_albums)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_stared_albums)) }
 
                 OutlinedButton(
                     onClick = { vm.callSubscribedPlaylistsAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_subscribed_playlists)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_subscribed_playlists)) }
 
                 OutlinedButton(
                     onClick = { vm.callLikedPlaylistIdAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_liked_playlist_id)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_liked_playlist_id)) }
 
                 OutlinedButton(
                     onClick = { vm.callLyric33894312AndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_lyric_sample)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_lyric_sample)) }
 
                 OutlinedButton(
                     onClick = vm::callSearchAndCopy,
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_netease_probe_action_search)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_netease_probe_action_search)) }
 
                 OutlinedButton(
                     onClick = vm::callSongDetailAndCopy,
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_netease_probe_action_song_detail)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_netease_probe_action_song_detail)) }
 
                 OutlinedButton(
                     onClick = vm::callSongLyricAndCopy,
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_netease_probe_action_song_lyric)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_netease_probe_action_song_lyric)) }
 
                 if (ui.running) {
                     Spacer(Modifier.height(8.dp))
@@ -251,17 +251,17 @@ fun NeteaseApiProbeScreen() {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.debug_netease_probe_section_result),
+                    text = stringResource(CoreCommonR.string.debug_netease_probe_section_result),
                     style = MaterialTheme.typography.titleMedium
                 )
-                Text(stringResource(R.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(CoreCommonR.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = ui.resultSummary.ifBlank { stringResource(R.string.debug_netease_probe_summary_empty) },
+                    text = ui.resultSummary.ifBlank { stringResource(CoreCommonR.string.debug_netease_probe_summary_empty) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
-                    text = ui.lastJsonPreview.ifBlank { stringResource(R.string.debug_netease_probe_raw_empty) },
+                    text = ui.lastJsonPreview.ifBlank { stringResource(CoreCommonR.string.debug_netease_probe_raw_empty) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )

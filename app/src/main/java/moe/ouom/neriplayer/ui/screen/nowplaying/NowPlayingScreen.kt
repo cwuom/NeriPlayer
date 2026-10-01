@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.ui.screen.nowplaying
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.identity.sameIdentityAs
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -104,46 +106,45 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
-import moe.ouom.neriplayer.core.comment.resolveCommentSource
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.platform.comments.resolveCommentSource
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.DownloadTask
-import moe.ouom.neriplayer.core.download.model.shouldHideRemoteDownloadAction
+import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.core.download.presentation.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.forSource
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.forSource
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
-import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
+import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.playbackVisualKey
-import moe.ouom.neriplayer.data.model.playbackVisualKeyAliases
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.data.local.media.displayName
+import moe.ouom.neriplayer.data.identity.playbackVisualKey
+import moe.ouom.neriplayer.data.identity.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
-import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.DEFAULT_KUGOU_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.LyricFontScalePage
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.settings.LyricFontScales
-import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
-import moe.ouom.neriplayer.data.settings.ThemeDefaults
-import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
+import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.comment.CommentSheet
@@ -639,7 +640,7 @@ fun NowPlayingScreen(
         if (song == null || actualCoverUrl.isNullOrBlank()) {
             screenScope.launch {
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.cover_download_unavailable)
+                    composeResources.getString(CoreCommonR.string.cover_download_unavailable)
                 )
             }
         } else {
@@ -650,13 +651,13 @@ fun NowPlayingScreen(
                     suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
                 ).onSuccess { fileName ->
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.cover_download_success, fileName)
+                        composeResources.getString(CoreCommonR.string.cover_download_success, fileName)
                     )
                 }.onFailure { error ->
                     val errorMessage =
-                        error.message ?: composeResources.getString(R.string.download_failed)
+                        error.message ?: composeResources.getString(CoreCommonR.string.download_failed)
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.cover_download_failed, errorMessage)
+                        composeResources.getString(CoreCommonR.string.cover_download_failed, errorMessage)
                     )
                 }
             }
@@ -671,7 +672,7 @@ fun NowPlayingScreen(
         } else {
             screenScope.launch {
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.cover_download_permission_required)
+                    composeResources.getString(CoreCommonR.string.cover_download_permission_required)
                 )
             }
         }
@@ -751,7 +752,7 @@ fun NowPlayingScreen(
         val distinctArtists = artists.distinctBy { it.id }
         when (distinctArtists.size) {
             0 -> screenScope.launch {
-                snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.artist_not_available))
+                snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.artist_not_available))
             }
 
             1 -> openResolvedArtist(distinctArtists.first())
@@ -766,7 +767,7 @@ fun NowPlayingScreen(
         when (distinctCreators.size) {
             0 -> screenScope.launch {
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.youtube_creator_not_available)
+                    composeResources.getString(CoreCommonR.string.youtube_creator_not_available)
                 )
             }
 
@@ -788,7 +789,7 @@ fun NowPlayingScreen(
                 onError = {
                     resolvingArtistNavigation = false
                     screenScope.launch {
-                        snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.artist_not_available))
+                        snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.artist_not_available))
                     }
                 }
             )
@@ -811,7 +812,7 @@ fun NowPlayingScreen(
                     resolvingBiliUploader = false
                     screenScope.launch {
                         snackbarHostState.showNeriSnackbar(
-                            composeResources.getString(R.string.bili_uploader_owner_unavailable)
+                            composeResources.getString(CoreCommonR.string.bili_uploader_owner_unavailable)
                         )
                     }
                 },
@@ -820,7 +821,7 @@ fun NowPlayingScreen(
                     screenScope.launch {
                         snackbarHostState.showNeriSnackbar(
                             composeResources.getString(
-                                R.string.bili_uploader_open_failed,
+                                CoreCommonR.string.bili_uploader_open_failed,
                                 error.message ?: error.javaClass.simpleName
                             )
                         )
@@ -847,7 +848,7 @@ fun NowPlayingScreen(
                     screenScope.launch {
                         snackbarHostState.showNeriSnackbar(
                             composeResources.getString(
-                                R.string.youtube_creator_open_failed,
+                                CoreCommonR.string.youtube_creator_open_failed,
                                 error.message ?: error.javaClass.simpleName
                             )
                         )
@@ -1169,7 +1170,7 @@ fun NowPlayingScreen(
                                     ) {
                                         Icon(
                                             Icons.Outlined.Shuffle,
-                                            contentDescription = stringResource(R.string.player_shuffle),
+                                            contentDescription = stringResource(CoreCommonR.string.player_shuffle),
                                             modifier = Modifier.size(secondaryIconSize),
                                             tint = if (shuffleEnabled) {
                                                 nowPlayingActiveIconColor
@@ -1192,7 +1193,7 @@ fun NowPlayingScreen(
                                     ) {
                                         Icon(
                                             Icons.Outlined.SkipPrevious,
-                                            contentDescription = stringResource(R.string.player_previous),
+                                            contentDescription = stringResource(CoreCommonR.string.player_previous),
                                             modifier = Modifier.size(secondaryIconSize)
                                         )
                                     }
@@ -1213,10 +1214,10 @@ fun NowPlayingScreen(
                                             isPlaying = isPlaybackControlPlaying,
                                             isPlaybackWaiting = isPlaybackWaiting,
                                             isAudioRouteMuted = isAudioRouteMuted,
-                                            playContentDescription = stringResource(R.string.player_play),
-                                            pauseContentDescription = stringResource(R.string.player_pause),
-                                            restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
-                                            waitingContentDescription = stringResource(R.string.player_waiting),
+                                            playContentDescription = stringResource(CoreCommonR.string.player_play),
+                                            pauseContentDescription = stringResource(CoreCommonR.string.player_pause),
+                                            restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
+                                            waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                                             modifier = Modifier.size(primaryIconSize),
                                             progressIndicatorSize = primaryIconSize
                                         )
@@ -1235,7 +1236,7 @@ fun NowPlayingScreen(
                                     ) {
                                         Icon(
                                             Icons.Outlined.SkipNext,
-                                            contentDescription = stringResource(R.string.player_next),
+                                            contentDescription = stringResource(CoreCommonR.string.player_next),
                                             modifier = Modifier.size(secondaryIconSize)
                                         )
                                     }
@@ -1250,7 +1251,7 @@ fun NowPlayingScreen(
                                             } else {
                                                 Icons.Outlined.Repeat
                                             },
-                                            contentDescription = stringResource(R.string.player_repeat),
+                                            contentDescription = stringResource(CoreCommonR.string.player_repeat),
                                             modifier = Modifier.size(secondaryIconSize),
                                             tint = if (repeatMode != Player.REPEAT_MODE_OFF) {
                                                 nowPlayingActiveIconColor
@@ -1298,7 +1299,7 @@ fun NowPlayingScreen(
                                 val willFav = nextFavoriteStateAfterTap(isFavorite)
                                 launchWithLocalSyncWarning(
                                     song = song,
-                                    actionLabel = composeResources.getString(R.string.favorite_add),
+                                    actionLabel = composeResources.getString(CoreCommonR.string.favorite_add),
                                     warnForLocalSync = willFav
                                 ) {
                                     favOverride = willFav
@@ -1309,7 +1310,7 @@ fun NowPlayingScreen(
                         val onCoverPreviewUnavailable: () -> Unit = {
                             screenScope.launch {
                                 snackbarHostState.showNeriSnackbar(
-                                    composeResources.getString(R.string.cover_preview_unavailable)
+                                    composeResources.getString(CoreCommonR.string.cover_preview_unavailable)
                                 )
                             }
                         }
@@ -1595,7 +1596,7 @@ fun NowPlayingScreen(
                                                 )
                                                 Spacer(Modifier.height(12.dp))
                                                 Text(
-                                                    text = stringResource(R.string.lyrics_no_lyrics),
+                                                    text = stringResource(CoreCommonR.string.lyrics_no_lyrics),
                                                     style = MaterialTheme.typography.titleMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     textAlign = TextAlign.Center
@@ -1701,7 +1702,7 @@ fun NowPlayingScreen(
 
                     if (showQualitySwitchDialog && currentPlaybackAudioInfo != null) {
                         NowPlayingQualityOptionsDialog(
-                            title = stringResource(R.string.nowplaying_quality_switch_title),
+                            title = stringResource(CoreCommonR.string.nowplaying_quality_switch_title),
                             selectedKey = currentPlaybackAudioInfo
                                 ?.source
                                 ?.let(preferredQualityKeys::forSource)
@@ -1736,7 +1737,7 @@ fun NowPlayingScreen(
                                             .clickable {
                                                 launchWithLocalSyncWarning(
                                                     song = currentSong,
-                                                    actionLabel = composeResources.getString(R.string.playlist_add_to)
+                                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
                                                 ) {
                                                     PlayerManager.addCurrentToPlaylist(pl.id)
                                                     showAddSheet = false
@@ -1749,7 +1750,7 @@ fun NowPlayingScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text(
                                             pluralStringResource(
-                                                R.plurals.nowplaying_song_count_format,
+                                                CoreCommonR.plurals.nowplaying_song_count_format,
                                                 pl.songs.size,
                                                 pl.songs.size
                                             ),

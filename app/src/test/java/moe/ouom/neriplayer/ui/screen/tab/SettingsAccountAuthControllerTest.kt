@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountAuthController
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAuthDialogState
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
@@ -46,7 +46,7 @@ class SettingsAccountAuthControllerTest {
         controller.onNeteaseEvent(NeteaseAuthEvent.LoginSuccess)
         assertFalse(dialogs.showNeteaseSheet)
         assertFalse(dialogs.showNeteaseSavedCookieDialog)
-        assertEquals(R.string.settings_netease_login_success, dialogs.loginSuccessTitleRes)
+        assertEquals(CoreCommonR.string.settings_netease_login_success, dialogs.loginSuccessTitleRes)
         assertEquals(listOf(null, null, "netease error", null), messages)
         verify(neteaseVm).refreshAuthHealth()
         controller.actions.dismissLoginSuccess()
@@ -62,7 +62,7 @@ class SettingsAccountAuthControllerTest {
         assertEquals(1, dialogs.biliTab.intValue)
         assertFalse(dialogs.showBiliSheet)
         assertFalse(dialogs.showBiliSavedCookieDialog)
-        assertEquals(R.string.settings_bili_login_success, dialogs.loginSuccessTitleRes)
+        assertEquals(CoreCommonR.string.settings_bili_login_success, dialogs.loginSuccessTitleRes)
         verify(biliVm).refreshAuthHealth()
 
         controller.actions.openYouTubeAtTab(2)
@@ -72,7 +72,7 @@ class SettingsAccountAuthControllerTest {
         assertEquals(2, dialogs.youtubeTab.intValue)
         assertFalse(dialogs.showYouTubeSheet)
         assertFalse(dialogs.showYouTubeSavedCookieDialog)
-        assertEquals(R.string.settings_youtube_login_success, dialogs.loginSuccessTitleRes)
+        assertEquals(CoreCommonR.string.settings_youtube_login_success, dialogs.loginSuccessTitleRes)
         assertEquals(listOf(null, null, "bili error", null, null, null, "youtube error", null), messages)
         verify(youtubeVm).refreshAuthHealth()
     }

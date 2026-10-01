@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.lyrics.parser.findBestMatchingTranslation
+import moe.ouom.neriplayer.lyrics.parser.findCurrentLineIndex
+import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp

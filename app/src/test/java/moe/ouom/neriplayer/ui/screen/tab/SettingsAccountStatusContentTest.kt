@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import android.content.res.Resources
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountEntryAction
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.accountStatusText
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.hasValidSavedCookieHealth
@@ -21,38 +21,38 @@ class SettingsAccountStatusContentTest {
 
     @Test
     fun `valid account shows supplied relative saved time`() {
-        `when`(resources.getString(R.string.settings_bili_status_valid, "relative"))
+        `when`(resources.getString(CoreCommonR.string.settings_bili_status_valid, "relative"))
             .thenReturn("valid relative")
 
         val actual = accountStatusText(
             resources, true, true, "relative",
-            R.string.settings_bili_status_valid,
-            R.string.settings_bili_status_saved_invalid,
-            R.string.settings_bili_status_missing
+            CoreCommonR.string.settings_bili_status_valid,
+            CoreCommonR.string.settings_bili_status_saved_invalid,
+            CoreCommonR.string.settings_bili_status_missing
         )
 
         assertEquals("valid relative", actual)
-        verify(resources).getString(R.string.settings_bili_status_valid, "relative")
+        verify(resources).getString(CoreCommonR.string.settings_bili_status_valid, "relative")
     }
 
     @Test
     fun `expired saved credentials and missing credentials use different status`() {
-        `when`(resources.getString(R.string.settings_youtube_status_saved_invalid))
+        `when`(resources.getString(CoreCommonR.string.settings_youtube_status_saved_invalid))
             .thenReturn("saved invalid")
-        `when`(resources.getString(R.string.settings_youtube_status_missing))
+        `when`(resources.getString(CoreCommonR.string.settings_youtube_status_missing))
             .thenReturn("missing")
 
         val saved = accountStatusText(
             resources, false, true, "unused",
-            R.string.settings_youtube_status_valid,
-            R.string.settings_youtube_status_saved_invalid,
-            R.string.settings_youtube_status_missing
+            CoreCommonR.string.settings_youtube_status_valid,
+            CoreCommonR.string.settings_youtube_status_saved_invalid,
+            CoreCommonR.string.settings_youtube_status_missing
         )
         val missing = accountStatusText(
             resources, false, false, "unused",
-            R.string.settings_youtube_status_valid,
-            R.string.settings_youtube_status_saved_invalid,
-            R.string.settings_youtube_status_missing
+            CoreCommonR.string.settings_youtube_status_valid,
+            CoreCommonR.string.settings_youtube_status_saved_invalid,
+            CoreCommonR.string.settings_youtube_status_missing
         )
 
         assertEquals("saved invalid", saved)

@@ -34,10 +34,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
+import moe.ouom.neriplayer.network.http.parsing.parseRawCookieText
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import org.json.JSONObject
@@ -106,7 +106,7 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
             )
             _events.send(
                 BiliAuthEvent.ShowSnack(
-                    getApplication<Application>().getString(R.string.auth_cookie_cleared)
+                    getApplication<Application>().getString(CoreCommonR.string.auth_cookie_cleared)
                 )
             )
         }
@@ -121,7 +121,7 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
             if (map.isEmpty()) {
                 _events.send(
                     BiliAuthEvent.ShowSnack(
-                        getApplication<Application>().getString(R.string.auth_cookie_empty)
+                        getApplication<Application>().getString(CoreCommonR.string.auth_cookie_empty)
                     )
                 )
                 return@launch
@@ -129,7 +129,7 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
             if (map["SESSDATA"].isNullOrBlank()) {
                 _events.send(
                     BiliAuthEvent.ShowSnack(
-                        getApplication<Application>().getString(R.string.auth_cookie_invalid)
+                        getApplication<Application>().getString(CoreCommonR.string.auth_cookie_invalid)
                     )
                 )
                 return@launch

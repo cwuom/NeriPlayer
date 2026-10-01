@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component.playback
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.os.SystemClock
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -52,14 +54,14 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -185,7 +187,7 @@ fun SongMetadataSearchContent(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Text(stringResource(R.string.action_done))
+            Text(stringResource(CoreCommonR.string.action_done))
         }
     }
 }
@@ -204,7 +206,7 @@ private fun MetadataSearchInput(
         value = state.keyword,
         onValueChange = onKeywordChange,
         enabled = enabled && !state.isApplyingMetadata,
-        label = { Text(stringResource(R.string.search_keywords)) },
+        label = { Text(stringResource(CoreCommonR.string.search_keywords)) },
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focusRequester)
@@ -216,7 +218,7 @@ private fun MetadataSearchInput(
             ) {
                 Icon(
                     Icons.Filled.Search,
-                    contentDescription = stringResource(R.string.cd_search)
+                    contentDescription = stringResource(CoreCommonR.string.cd_search)
                 )
             }
         },
@@ -229,7 +231,7 @@ private fun MetadataSearchInput(
         !state.isCloudMusicAvailable
     ) {
         Text(
-            text = stringResource(R.string.netease_login_required_metadata),
+            text = stringResource(CoreCommonR.string.netease_login_required_metadata),
             modifier = Modifier.padding(horizontal = 16.dp),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodySmall
@@ -296,7 +298,7 @@ private fun MetadataSearchResults(
             }
             else -> {
                 Text(
-                    text = state.error ?: stringResource(R.string.nowplaying_no_search_result),
+                    text = state.error ?: stringResource(CoreCommonR.string.nowplaying_no_search_result),
                     modifier = Modifier.align(Alignment.Center),
                     color = if (state.error != null) {
                         MaterialTheme.colorScheme.error
@@ -364,7 +366,7 @@ private suspend fun awaitPlaybackStartupSettle(
 @Composable
 private fun musicPlatformLabel(platform: MusicPlatform): String {
     return when (platform) {
-        MusicPlatform.CLOUD_MUSIC -> stringResource(R.string.platform_netease_short)
-        MusicPlatform.QQ_MUSIC -> stringResource(R.string.settings_qq_music)
+        MusicPlatform.CLOUD_MUSIC -> stringResource(CoreCommonR.string.platform_netease_short)
+        MusicPlatform.QQ_MUSIC -> stringResource(CoreCommonR.string.settings_qq_music)
     }
 }

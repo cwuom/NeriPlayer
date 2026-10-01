@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import android.content.res.Resources
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyException
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryChangeGuardGateway
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryChangeGuardOwner
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationErrorPresenter
@@ -39,7 +39,7 @@ class SettingsDownloadDirectoryGuardOwnerTest {
             processing = ManagedLibraryProcessingState.Running(
                 operationId = "op",
                 reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
-                phase = moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                phase = moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase.REBUILDING_INDEX
             )
         }
 
@@ -61,10 +61,10 @@ class SettingsDownloadDirectoryGuardOwnerTest {
     @Test
     fun `preparation errors distinguish processing lease from provider detail`() {
         val resources = mock(Resources::class.java)
-        `when`(resources.getString(R.string.managed_library_processing_subtitle)).thenReturn("processing")
-        `when`(resources.getString(R.string.settings_download_directory_pick_failed, "provider"))
+        `when`(resources.getString(CoreCommonR.string.managed_library_processing_subtitle)).thenReturn("processing")
+        `when`(resources.getString(CoreCommonR.string.settings_download_directory_pick_failed, "provider"))
             .thenReturn("failed:provider")
-        `when`(resources.getString(R.string.settings_download_directory_pick_failed, "IllegalStateException"))
+        `when`(resources.getString(CoreCommonR.string.settings_download_directory_pick_failed, "IllegalStateException"))
             .thenReturn("failed:type")
         val messages = mutableListOf<String>()
         val presenter = DownloadDirectoryPreparationErrorPresenter(
@@ -89,8 +89,8 @@ class SettingsDownloadDirectoryGuardOwnerTest {
         var migrating = false
         var processing: ManagedLibraryProcessingState = ManagedLibraryProcessingState.Idle
         private val resources = mock(Resources::class.java).apply {
-            `when`(getString(R.string.managed_library_processing_subtitle)).thenReturn("processing")
-            `when`(getString(R.string.settings_download_directory_change_blocked_active_download))
+            `when`(getString(CoreCommonR.string.managed_library_processing_subtitle)).thenReturn("processing")
+            `when`(getString(CoreCommonR.string.settings_download_directory_change_blocked_active_download))
                 .thenReturn("downloads")
         }
         val owner = DownloadDirectoryChangeGuardOwner(

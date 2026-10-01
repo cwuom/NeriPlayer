@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.ui
 
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.banner.DeterminateManagedProcessingIndicator
 import moe.ouom.neriplayer.ui.banner.HiddenManagedProcessingRow
 import moe.ouom.neriplayer.ui.banner.IndeterminateManagedProcessingIndicator
@@ -65,27 +65,27 @@ class AppStatusBannerPolicyTest {
     fun titleAndMigrationStageLabelsCoverTheActivePhases() {
         assertNull(managedProcessingTitleResource(null))
         assertEquals(
-            R.string.managed_library_processing_upgrade_title,
+            CoreCommonR.string.managed_library_processing_upgrade_title,
             managedProcessingTitleResource(ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE)
         )
         assertEquals(
-            R.string.managed_library_processing_directory_title,
+            CoreCommonR.string.managed_library_processing_directory_title,
             managedProcessingTitleResource(ManagedLibraryProcessingReason.DIRECTORY_CHANGE)
         )
 
         val labels = mapOf(
             ManagedDownloadStorage.MigrationStage.PREPARING to
-                R.string.settings_download_directory_migrating_stage_preparing,
+                CoreCommonR.string.settings_download_directory_migrating_stage_preparing,
             ManagedDownloadStorage.MigrationStage.COPYING to
-                R.string.settings_download_directory_migrating_stage_copying,
+                CoreCommonR.string.settings_download_directory_migrating_stage_copying,
             ManagedDownloadStorage.MigrationStage.REWRITING_METADATA to
-                R.string.settings_download_directory_migrating_stage_rewriting,
+                CoreCommonR.string.settings_download_directory_migrating_stage_rewriting,
             ManagedDownloadStorage.MigrationStage.VERIFYING to
-                R.string.settings_download_directory_migrating_stage_verifying,
+                CoreCommonR.string.settings_download_directory_migrating_stage_verifying,
             ManagedDownloadStorage.MigrationStage.CLEANING_UP to
-                R.string.settings_download_directory_migrating_stage_cleanup,
+                CoreCommonR.string.settings_download_directory_migrating_stage_cleanup,
             ManagedDownloadStorage.MigrationStage.FINALIZING to
-                R.string.settings_download_directory_migrating
+                CoreCommonR.string.settings_download_directory_migrating
         )
         assertNull(managedProcessingStageResource(null))
         labels.forEach { (stage, label) ->
@@ -93,7 +93,7 @@ class AppStatusBannerPolicyTest {
         }
         assertEquals(HiddenManagedProcessingRow, managedProcessingStageRow(null))
         assertEquals(
-            ManagedProcessingStageRow(R.string.settings_download_directory_migrating_stage_copying),
+            ManagedProcessingStageRow(CoreCommonR.string.settings_download_directory_migrating_stage_copying),
             managedProcessingStageRow(migration(ManagedDownloadStorage.MigrationStage.COPYING))
         )
         assertEquals(HiddenManagedProcessingRow, managedProcessingFileRow(null))
@@ -124,7 +124,7 @@ class AppStatusBannerPolicyTest {
         )
         assertEquals(
             ManagedProcessingBytes(
-                R.string.settings_download_directory_migrating_progress_bytes,
+                CoreCommonR.string.settings_download_directory_migrating_progress_bytes,
                 400,
                 1_000
             ),
@@ -144,7 +144,7 @@ class AppStatusBannerPolicyTest {
         )
         assertEquals(
             ManagedProcessingBytes(
-                R.string.settings_download_directory_migrating_verification_progress_bytes,
+                CoreCommonR.string.settings_download_directory_migrating_verification_progress_bytes,
                 300,
                 1_000
             ),

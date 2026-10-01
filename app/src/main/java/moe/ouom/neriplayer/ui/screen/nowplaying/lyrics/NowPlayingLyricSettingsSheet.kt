@@ -36,18 +36,18 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
-import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
-import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.lyrics.offset.LYRIC_DEFAULT_OFFSET_STEP_MS
+import moe.ouom.neriplayer.lyrics.offset.MAX_LYRIC_DEFAULT_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.lyrics.offset.MIN_LYRIC_DEFAULT_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
+import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import kotlin.math.roundToInt
@@ -81,12 +81,12 @@ internal fun lyricOffsetTextColor(
 }
 
 internal fun lyricSecondaryToggleTitle(hasTranslation: Boolean, hasPhonetic: Boolean): Int =
-    if (!hasTranslation && hasPhonetic) R.string.lyrics_secondary_mode_phonetic
-    else R.string.settings_show_lyric_translation
+    if (!hasTranslation && hasPhonetic) CoreCommonR.string.lyrics_secondary_mode_phonetic
+    else CoreCommonR.string.settings_show_lyric_translation
 
 internal fun lyricSecondaryToggleDescription(hasTranslation: Boolean, hasPhonetic: Boolean): Int =
-    if (!hasTranslation && hasPhonetic) R.string.lyrics_phonetic_only_desc
-    else R.string.settings_show_lyric_translation_desc
+    if (!hasTranslation && hasPhonetic) CoreCommonR.string.lyrics_phonetic_only_desc
+    else CoreCommonR.string.settings_show_lyric_translation_desc
 
 internal data class LyricTranslationToggleCopy(val title: Int, val description: Int)
 
@@ -99,9 +99,9 @@ internal fun lyricTranslationToggleCopy(
 )
 
 internal fun lyricPhoneticHint(translationEnabled: Boolean, hasPhonetic: Boolean): Int = when {
-    !translationEnabled -> R.string.lyrics_translation_use_phonetic_requires_translation
-    !hasPhonetic -> R.string.lyrics_translation_use_phonetic_unavailable
-    else -> R.string.lyrics_translation_use_phonetic_desc
+    !translationEnabled -> CoreCommonR.string.lyrics_translation_use_phonetic_requires_translation
+    !hasPhonetic -> CoreCommonR.string.lyrics_translation_use_phonetic_unavailable
+    else -> CoreCommonR.string.lyrics_translation_use_phonetic_desc
 }
 
 internal fun isLyricPhoneticSwitchEnabled(translationEnabled: Boolean, hasPhonetic: Boolean): Boolean =
@@ -306,7 +306,7 @@ private fun LyricBehaviorContent(
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(stringResource(R.string.lyrics_adjust_behavior), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(CoreCommonR.string.lyrics_adjust_behavior), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
 
         LyricTranslationToggle(
@@ -328,7 +328,7 @@ private fun LyricBehaviorContent(
         )
         Spacer(Modifier.height(16.dp))
         HapticTextButton(onClick = onDismiss) {
-            Text(stringResource(R.string.action_done))
+            Text(stringResource(CoreCommonR.string.action_done))
         }
     }
 }
@@ -375,7 +375,7 @@ private fun LyricPhoneticListItem(
     onCheckedChange: (Boolean) -> Unit
 ) {
     ListItem(
-        headlineContent = { Text(stringResource(R.string.lyrics_translation_use_phonetic)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.lyrics_translation_use_phonetic)) },
         supportingContent = {
             Text(stringResource(lyricPhoneticHint(translationEnabled, hasPhonetic)))
         },
@@ -394,7 +394,7 @@ private fun LyricPhoneticListItem(
 private fun LyricOffsetControls(state: LyricBehaviorSheetState, onCommit: () -> Unit) {
     val range = state.sliderRange
     Spacer(Modifier.height(16.dp))
-    Text(stringResource(R.string.lyrics_adjust_offset), style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(CoreCommonR.string.lyrics_adjust_offset), style = MaterialTheme.typography.titleSmall)
     Spacer(Modifier.height(8.dp))
     Text(
         text = formatLyricOffset(state.currentOffset),
@@ -406,7 +406,7 @@ private fun LyricOffsetControls(state: LyricBehaviorSheetState, onCommit: () -> 
             LocalContentColor.current
         )
     )
-    Text(stringResource(R.string.lyrics_offset_hint), style = MaterialTheme.typography.bodySmall)
+    Text(stringResource(CoreCommonR.string.lyrics_offset_hint), style = MaterialTheme.typography.bodySmall)
     Slider(
         value = state.currentOffset.toFloat(),
         onValueChange = state::setSliderValue,
@@ -485,10 +485,10 @@ private fun LyricFontSizeContent(
 
 @Composable
 private fun LyricFontSizeHeader() {
-    Text(stringResource(R.string.lyrics_font_size), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(CoreCommonR.string.lyrics_font_size), style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
     Text(
-        text = stringResource(R.string.settings_lyrics_font_scale_hint),
+        text = stringResource(CoreCommonR.string.settings_lyrics_font_scale_hint),
         style = MaterialTheme.typography.bodySmall
     )
 }
@@ -496,11 +496,11 @@ private fun LyricFontSizeHeader() {
 @Composable
 private fun LyricScaleSlider(state: LyricFontSizeSheetState, onCommit: (Float) -> Unit) {
     SheetLyricFontScaleSlider(
-        title = stringResource(R.string.settings_lyrics_lyric_font_size),
+        title = stringResource(CoreCommonR.string.settings_lyrics_lyric_font_size),
         currentScale = state.lyricValue,
         onScaleChange = state::updateLyricFromSlider,
         onScaleCommit = { onCommit(normalizeLyricFontScale(state.lyricValue)) },
-        sampleText = stringResource(R.string.nowplaying_lyrics_sample),
+        sampleText = stringResource(CoreCommonR.string.nowplaying_lyrics_sample),
         sampleBaseSizeSp = 18f
     )
 }
@@ -508,11 +508,11 @@ private fun LyricScaleSlider(state: LyricFontSizeSheetState, onCommit: (Float) -
 @Composable
 private fun TranslationScaleSlider(state: LyricFontSizeSheetState, onCommit: (Float) -> Unit) {
     SheetLyricFontScaleSlider(
-        title = stringResource(R.string.settings_lyrics_translation_font_size),
+        title = stringResource(CoreCommonR.string.settings_lyrics_translation_font_size),
         currentScale = state.translationValue,
         onScaleChange = state::updateTranslationFromSlider,
         onScaleCommit = { onCommit(normalizeLyricFontScale(state.translationValue)) },
-        sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+        sampleText = stringResource(CoreCommonR.string.settings_lyrics_translation_sample),
         sampleBaseSizeSp = 14f
     )
 }
@@ -531,7 +531,7 @@ private fun LyricFontSizeDone(
         onTranslationScaleCommit,
         onDismiss
     )) {
-        Text(stringResource(R.string.action_done))
+        Text(stringResource(CoreCommonR.string.action_done))
     }
 }
 

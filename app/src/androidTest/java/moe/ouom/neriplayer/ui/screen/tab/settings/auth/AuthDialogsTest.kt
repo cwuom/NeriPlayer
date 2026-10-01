@@ -10,7 +10,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
@@ -50,7 +50,7 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(R.string.settings_netease_login_success),
+                        inlineMsg = context.getString(CoreCommonR.string.settings_netease_login_success),
                         onInlineMsgChange = { },
                         showConfirmDialog = false,
                         confirmPhoneMasked = null,
@@ -62,15 +62,15 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.login_qr))
-        waitForText(context.getString(R.string.settings_netease_login_browser_hint))
-        waitForText(context.getString(R.string.login_start_netease_qr))
-        waitForText(context.getString(R.string.settings_netease_login_success))
-        composeRule.onAllNodesWithText(context.getString(R.string.action_ok)).assertCountEquals(0)
+        waitForText(context.getString(CoreCommonR.string.login_qr))
+        waitForText(context.getString(CoreCommonR.string.settings_netease_login_browser_hint))
+        waitForText(context.getString(CoreCommonR.string.login_start_netease_qr))
+        waitForText(context.getString(CoreCommonR.string.settings_netease_login_success))
+        composeRule.onAllNodesWithText(context.getString(CoreCommonR.string.action_ok)).assertCountEquals(0)
 
-        composeRule.onNodeWithText(context.getString(R.string.login_paste_cookie)).performClick()
-        waitForText(context.getString(R.string.login_paste_cookie_hint))
-        waitForText(context.getString(R.string.login_save_cookie))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.login_paste_cookie)).performClick()
+        waitForText(context.getString(CoreCommonR.string.login_paste_cookie_hint))
+        waitForText(context.getString(CoreCommonR.string.login_save_cookie))
     }
 
     @Test
@@ -100,9 +100,9 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_saved_cookie_continue))
+        waitForText(context.getString(CoreCommonR.string.settings_saved_cookie_continue))
         composeRule.onNodeWithText(
-            context.getString(R.string.settings_saved_cookie_continue)
+            context.getString(CoreCommonR.string.settings_saved_cookie_continue)
         ).performClick()
 
         composeRule.runOnIdle {
@@ -138,9 +138,9 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_saved_cookie_logout))
+        waitForText(context.getString(CoreCommonR.string.settings_saved_cookie_logout))
         composeRule.onNodeWithText(
-            context.getString(R.string.settings_saved_cookie_logout)
+            context.getString(CoreCommonR.string.settings_saved_cookie_logout)
         ).performClick()
 
         composeRule.runOnIdle {
@@ -179,9 +179,9 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_saved_cookie_continue))
+        waitForText(context.getString(CoreCommonR.string.settings_saved_cookie_continue))
         composeRule.onNodeWithText(
-            context.getString(R.string.settings_saved_cookie_continue)
+            context.getString(CoreCommonR.string.settings_saved_cookie_continue)
         ).performClick()
 
         composeRule.runOnIdle {
@@ -220,9 +220,9 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_saved_cookie_logout))
+        waitForText(context.getString(CoreCommonR.string.settings_saved_cookie_logout))
         composeRule.onNodeWithText(
-            context.getString(R.string.settings_saved_cookie_logout)
+            context.getString(CoreCommonR.string.settings_saved_cookie_logout)
         ).performClick()
 
         composeRule.runOnIdle {
@@ -243,7 +243,7 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(R.string.settings_youtube_login_success),
+                        inlineMsg = context.getString(CoreCommonR.string.settings_youtube_login_success),
                         onInlineMsgChange = { },
                         vm = vm,
                         onBrowserLogin = { }
@@ -252,12 +252,12 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_youtube_login_browser_hint))
-        waitForText(context.getString(R.string.settings_youtube_login_success))
-        composeRule.onAllNodesWithText(context.getString(R.string.action_ok)).assertCountEquals(0)
-        composeRule.onNodeWithText(context.getString(R.string.login_paste_cookie)).performClick()
-        waitForText(context.getString(R.string.login_paste_youtube_cookie_hint))
-        waitForText(context.getString(R.string.login_save_cookie))
+        waitForText(context.getString(CoreCommonR.string.settings_youtube_login_browser_hint))
+        waitForText(context.getString(CoreCommonR.string.settings_youtube_login_success))
+        composeRule.onAllNodesWithText(context.getString(CoreCommonR.string.action_ok)).assertCountEquals(0)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.login_paste_cookie)).performClick()
+        waitForText(context.getString(CoreCommonR.string.login_paste_youtube_cookie_hint))
+        waitForText(context.getString(CoreCommonR.string.login_save_cookie))
     }
 
     @Test
@@ -287,9 +287,9 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_saved_cookie_continue))
+        waitForText(context.getString(CoreCommonR.string.settings_saved_cookie_continue))
         composeRule.onNodeWithText(
-            context.getString(R.string.settings_saved_cookie_continue)
+            context.getString(CoreCommonR.string.settings_saved_cookie_continue)
         ).performClick()
 
         composeRule.runOnIdle {
@@ -325,9 +325,9 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_saved_cookie_logout))
+        waitForText(context.getString(CoreCommonR.string.settings_saved_cookie_logout))
         composeRule.onNodeWithText(
-            context.getString(R.string.settings_saved_cookie_logout)
+            context.getString(CoreCommonR.string.settings_saved_cookie_logout)
         ).performClick()
 
         composeRule.runOnIdle {
@@ -348,7 +348,7 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(R.string.settings_bili_login_success),
+                        inlineMsg = context.getString(CoreCommonR.string.settings_bili_login_success),
                         onInlineMsgChange = { },
                         vm = vm,
                         onBrowserLogin = { }
@@ -357,12 +357,12 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.settings_bili_login_browser_hint))
-        waitForText(context.getString(R.string.settings_bili_login_success))
-        composeRule.onAllNodesWithText(context.getString(R.string.action_ok)).assertCountEquals(0)
-        composeRule.onNodeWithText(context.getString(R.string.login_paste_cookie)).performClick()
-        waitForText(context.getString(R.string.login_paste_bili_cookie_hint))
-        waitForText(context.getString(R.string.login_save_cookie))
+        waitForText(context.getString(CoreCommonR.string.settings_bili_login_browser_hint))
+        waitForText(context.getString(CoreCommonR.string.settings_bili_login_success))
+        composeRule.onAllNodesWithText(context.getString(CoreCommonR.string.action_ok)).assertCountEquals(0)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.login_paste_cookie)).performClick()
+        waitForText(context.getString(CoreCommonR.string.login_paste_bili_cookie_hint))
+        waitForText(context.getString(CoreCommonR.string.login_save_cookie))
     }
 
     @Test
@@ -374,16 +374,16 @@ class AuthDialogsTest {
             MaterialTheme {
                 Box {
                     LoginSuccessDialog(
-                        title = context.getString(R.string.settings_youtube_login_success),
+                        title = context.getString(CoreCommonR.string.settings_youtube_login_success),
                         onDismiss = { dismissedCount++ }
                     )
                 }
             }
         }
 
-        waitForText(context.getString(R.string.settings_youtube_login_success))
-        waitForText(context.getString(R.string.action_ok))
-        composeRule.onNodeWithText(context.getString(R.string.action_ok)).performClick()
+        waitForText(context.getString(CoreCommonR.string.settings_youtube_login_success))
+        waitForText(context.getString(CoreCommonR.string.action_ok))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_ok)).performClick()
 
         composeRule.runOnIdle {
             assertEquals(1, dismissedCount)

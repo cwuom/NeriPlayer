@@ -18,19 +18,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingState
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 
 internal fun managedLibraryProcessingTitleId(reason: ManagedLibraryProcessingReason?): Int = when (reason) {
-    ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE -> R.string.managed_library_processing_upgrade_title
-    ManagedLibraryProcessingReason.DIRECTORY_CHANGE -> R.string.managed_library_processing_directory_title
-    null -> R.string.settings_download_directory_migrating
+    ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE -> CoreCommonR.string.managed_library_processing_upgrade_title
+    ManagedLibraryProcessingReason.DIRECTORY_CHANGE -> CoreCommonR.string.managed_library_processing_directory_title
+    null -> CoreCommonR.string.settings_download_directory_migrating
 }
 
 internal fun managedLibraryProcessingStageId(
@@ -39,19 +39,19 @@ internal fun managedLibraryProcessingStageId(
 ): Int = if (stage == null) managedLibraryProcessingPhaseId(phase) else migrationStageLabelId(stage)
 
 internal fun migrationStageLabelId(stage: ManagedDownloadStorage.MigrationStage): Int = when (stage) {
-    ManagedDownloadStorage.MigrationStage.PREPARING -> R.string.settings_download_directory_migrating_stage_preparing
-    ManagedDownloadStorage.MigrationStage.COPYING -> R.string.settings_download_directory_migrating_stage_copying
-    ManagedDownloadStorage.MigrationStage.REWRITING_METADATA -> R.string.settings_download_directory_migrating_stage_rewriting
-    ManagedDownloadStorage.MigrationStage.VERIFYING -> R.string.settings_download_directory_migrating_stage_verifying
-    ManagedDownloadStorage.MigrationStage.CLEANING_UP -> R.string.settings_download_directory_migrating_stage_cleanup
-    ManagedDownloadStorage.MigrationStage.FINALIZING -> R.string.settings_download_directory_migrating
+    ManagedDownloadStorage.MigrationStage.PREPARING -> CoreCommonR.string.settings_download_directory_migrating_stage_preparing
+    ManagedDownloadStorage.MigrationStage.COPYING -> CoreCommonR.string.settings_download_directory_migrating_stage_copying
+    ManagedDownloadStorage.MigrationStage.REWRITING_METADATA -> CoreCommonR.string.settings_download_directory_migrating_stage_rewriting
+    ManagedDownloadStorage.MigrationStage.VERIFYING -> CoreCommonR.string.settings_download_directory_migrating_stage_verifying
+    ManagedDownloadStorage.MigrationStage.CLEANING_UP -> CoreCommonR.string.settings_download_directory_migrating_stage_cleanup
+    ManagedDownloadStorage.MigrationStage.FINALIZING -> CoreCommonR.string.settings_download_directory_migrating
 }
 
 private fun managedLibraryProcessingPhaseId(phase: ManagedLibraryProcessingPhase?): Int = when (phase) {
-    ManagedLibraryProcessingPhase.UPGRADING_DATABASE -> R.string.managed_library_processing_upgrade_title
-    ManagedLibraryProcessingPhase.REBUILDING_INDEX -> R.string.settings_download_directory_preparing
-    ManagedLibraryProcessingPhase.WAITING_FOR_RETRY -> R.string.managed_library_processing_retry
-    null -> R.string.settings_download_directory_migrating_desc
+    ManagedLibraryProcessingPhase.UPGRADING_DATABASE -> CoreCommonR.string.managed_library_processing_upgrade_title
+    ManagedLibraryProcessingPhase.REBUILDING_INDEX -> CoreCommonR.string.settings_download_directory_preparing
+    ManagedLibraryProcessingPhase.WAITING_FOR_RETRY -> CoreCommonR.string.managed_library_processing_retry
+    null -> CoreCommonR.string.settings_download_directory_migrating_desc
 }
 
 internal fun managedLibraryProcessingCount(
@@ -145,14 +145,14 @@ private fun ManagedLibraryProcessingCardContent(
 }
 
 private fun managedLibraryProcessingDescriptionId(waitingForRetry: Boolean): Int =
-    if (waitingForRetry) R.string.managed_library_processing_retry
-    else R.string.settings_download_directory_migrating_desc
+    if (waitingForRetry) CoreCommonR.string.managed_library_processing_retry
+    else CoreCommonR.string.settings_download_directory_migrating_desc
 
 @Composable
 private fun ManagedLibraryProcessingCountLine(count: Pair<Int, Int>?) {
     if (count == null) return
     Text(
-        text = stringResource(R.string.managed_library_processing_progress, count.first, count.second),
+        text = stringResource(CoreCommonR.string.managed_library_processing_progress, count.first, count.second),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -203,7 +203,7 @@ internal fun visibleProcessingFileName(fileName: String?): String? =
 @Composable
 private fun ManagedLibraryProcessingCurrentFileText(visibleName: String) {
     Text(
-        text = stringResource(R.string.settings_download_directory_migrating_current, visibleName),
+        text = stringResource(CoreCommonR.string.settings_download_directory_migrating_current, visibleName),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -222,19 +222,19 @@ private fun DownloadDirectorySwitchWarningDialog(controller: DownloadDirectorySe
     if (!controller.showSwitchWarning) return
     MiuixSettingsDialog(
         onDismissRequest = controller.onDismissSwitchWarning,
-        title = { Text(stringResource(R.string.settings_download_directory_switch_warning_title)) },
-        text = { Text(stringResource(R.string.settings_download_directory_switch_warning_message)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_download_directory_switch_warning_title)) },
+        text = { Text(stringResource(CoreCommonR.string.settings_download_directory_switch_warning_message)) },
         confirmButton = {
             MiuixSettingsTextButton(
                 enabled = controller.changeEnabled,
                 onClick = controller.onConfirmSwitchWarning
             ) {
-                Text(stringResource(R.string.settings_download_directory_switch_warning_confirm))
+                Text(stringResource(CoreCommonR.string.settings_download_directory_switch_warning_confirm))
             }
         },
         dismissButton = {
             MiuixSettingsTextButton(onClick = controller.onDismissSwitchWarning) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -281,14 +281,14 @@ private fun DownloadDirectoryPendingChangeDialogContent(
 ) {
     MiuixSettingsDialog(
         onDismissRequest = port.onCancel,
-        title = { Text(stringResource(R.string.settings_download_directory_migrate_title)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_title)) },
         text = { DownloadDirectoryPendingChangeDescription(port) },
         confirmButton = {
             MiuixSettingsTextButton(
                 enabled = port.confirmEnabled,
                 onClick = port.onConfirm
             ) {
-                Text(stringResource(R.string.settings_download_directory_migrate_confirm))
+                Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_confirm))
             }
         },
         dismissButton = { DownloadDirectoryPendingChangeActions(port) }
@@ -298,7 +298,7 @@ private fun DownloadDirectoryPendingChangeDialogContent(
 @Composable
 private fun DownloadDirectoryPendingChangeDescription(port: PendingDownloadDirectoryDialogPort) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(stringResource(R.string.settings_download_directory_migrate_message, port.targetSummary))
+        Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_message, port.targetSummary))
         DownloadDirectoryTargetConflictWarning(port.showTargetConflictWarning)
     }
 }
@@ -307,7 +307,7 @@ private fun DownloadDirectoryPendingChangeDescription(port: PendingDownloadDirec
 private fun DownloadDirectoryTargetConflictWarning(visible: Boolean) {
     if (visible) {
         Text(
-            text = stringResource(R.string.settings_download_directory_migrate_conflict_warning),
+            text = stringResource(CoreCommonR.string.settings_download_directory_migrate_conflict_warning),
             color = MaterialTheme.colorScheme.error
         )
     }
@@ -328,7 +328,7 @@ private fun DownloadDirectoryCancelPendingChangeButton(
     port: PendingDownloadDirectoryDialogPort
 ) {
     MiuixSettingsTextButton(onClick = port.onCancel) {
-        Text(stringResource(R.string.settings_download_directory_migrate_cancel))
+        Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_cancel))
     }
 }
 
@@ -337,7 +337,7 @@ private fun DownloadDirectorySkipPendingChangeButton(
     port: PendingDownloadDirectoryDialogPort
 ) {
     MiuixSettingsTextButton(onClick = port.onSkip) {
-        Text(stringResource(R.string.settings_download_directory_migrate_skip))
+        Text(stringResource(CoreCommonR.string.settings_download_directory_migrate_skip))
     }
 }
 
@@ -346,17 +346,17 @@ private fun DownloadDirectoryPreparationDialog(controller: DownloadDirectorySett
     if (!controller.processingPresentation.showPreparation) return
     MiuixSettingsDialog(
         onDismissRequest = controller.onCancelPreparation,
-        title = { Text(stringResource(R.string.settings_download_directory_preparing)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_download_directory_preparing)) },
         text = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                Text(stringResource(R.string.settings_download_directory_preparing_desc))
+                Text(stringResource(CoreCommonR.string.settings_download_directory_preparing_desc))
             }
         },
         confirmButton = {},
         dismissButton = {
             MiuixSettingsTextButton(onClick = controller.onCancelPreparation) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -380,7 +380,7 @@ private fun verificationMigrationBytes(
     progress: ManagedDownloadStorage.MigrationProgress
 ): DownloadDirectoryMigrationBytes? = progress.takeIf { it.verificationBytesTotal > 0L }?.let {
     DownloadDirectoryMigrationBytes(
-        R.string.settings_download_directory_migrating_verification_progress_bytes,
+        CoreCommonR.string.settings_download_directory_migrating_verification_progress_bytes,
         it.verifiedBytes.coerceAtLeast(0L),
         it.verificationBytesTotal
     )
@@ -390,14 +390,14 @@ private fun copiedMigrationBytes(
     progress: ManagedDownloadStorage.MigrationProgress
 ): DownloadDirectoryMigrationBytes? = progress.takeIf { it.totalBytes > 0L }?.let {
     DownloadDirectoryMigrationBytes(
-        R.string.settings_download_directory_migrating_progress_bytes,
+        CoreCommonR.string.settings_download_directory_migrating_progress_bytes,
         it.copiedBytes.coerceAtLeast(0L),
         it.totalBytes
     )
 }
 
 internal fun downloadDirectoryMigrationStageId(stage: ManagedDownloadStorage.MigrationStage?): Int =
-    if (stage == null) R.string.settings_download_directory_migrating_desc
+    if (stage == null) CoreCommonR.string.settings_download_directory_migrating_desc
     else migrationStageLabelId(stage)
 
 @Composable
@@ -406,7 +406,7 @@ private fun DownloadDirectoryMigrationDialog(controller: DownloadDirectorySettin
     val presentation = downloadDirectoryMigrationDialogPresentation(controller.migrationProgress)
     MiuixSettingsDialog(
         onDismissRequest = {},
-        title = { Text(stringResource(R.string.settings_download_directory_migrating)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_download_directory_migrating)) },
         text = { DownloadDirectoryMigrationDialogContent(presentation) },
         confirmButton = {}
     )
@@ -458,7 +458,7 @@ private fun DownloadDirectoryMigrationFileCount(progress: ManagedDownloadStorage
     val resources = LocalResources.current
     Text(
         text = resources.getQuantityString(
-            R.plurals.settings_download_directory_migrating_progress_files,
+            CoreCommonR.plurals.settings_download_directory_migrating_progress_files,
             progress.stageTotal.coerceAtLeast(0),
             progress.stageProcessed.coerceAtLeast(0),
             progress.stageTotal.coerceAtLeast(0)

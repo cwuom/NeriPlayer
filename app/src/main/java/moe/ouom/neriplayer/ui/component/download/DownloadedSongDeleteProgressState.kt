@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.component.download
 
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeletePhase
-import moe.ouom.neriplayer.core.download.model.DownloadedSongDeleteProgress
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 
 internal fun isDownloadedSongDeletionRunning(progress: DownloadedSongDeleteProgress?): Boolean {
     return progress != null &&

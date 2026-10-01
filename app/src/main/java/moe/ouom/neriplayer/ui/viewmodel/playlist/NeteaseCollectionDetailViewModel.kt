@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  * Created: 2025/8/10
  */
 
+import moe.ouom.neriplayer.core.player.persistence.toSongItem
+import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionDetailUiState
+import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionHeader
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -38,24 +41,24 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.platform.netease.api.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteaseArtist
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistDetail
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistHeader
-import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistTrack
-import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteaseArtist
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistDetail
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistHeader
+import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistTrack
+import moe.ouom.neriplayer.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
+import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseRadarPlaylistDefinitions
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.parseNeteasePlaylistDetailSummaryOrNull
 import moe.ouom.neriplayer.ui.viewmodel.tab.toPlaylistSummary
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
@@ -809,9 +812,9 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     private fun parseDetailFromPlaylist(raw: String): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
-        val pl = root.optJSONObject("playlist") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "playlist"))
+        val pl = root.optJSONObject("playlist") ?: error(getApplication<Application>().getString(CoreCommonR.string.error_missing_node, "playlist"))
 
         val header = NeteaseCollectionHeader(
             id = pl.optLong("id"),
@@ -847,9 +850,9 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     ): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
-        val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "album"))
+        val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(CoreCommonR.string.error_missing_node, "album"))
         val cover = resolveNeteaseCollectionCoverUrl(
             primary = al.optString("picUrl", ""),
             fallback = coverFallback
@@ -947,7 +950,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     private fun parseSongDetail(raw: String): List<SongItem> {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
         val songs = root.optJSONArray("songs") ?: return emptyList()
         val out = mutableListOf<SongItem>()
         for (i in 0 until songs.length()) {

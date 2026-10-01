@@ -4,13 +4,13 @@ import android.app.Application
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
-import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshot
 
 internal class PlayerStartupBootstrapper(
     private val app: Application,

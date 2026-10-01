@@ -59,7 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.YouTubeApiProbeViewModel
 
@@ -89,11 +89,11 @@ fun YouTubeApiProbeScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = stringResource(R.string.debug_youtube_probe_title),
+            text = stringResource(CoreCommonR.string.debug_youtube_probe_title),
             style = MaterialTheme.typography.titleLarge
         )
         Text(
-            text = stringResource(R.string.debug_youtube_probe_desc),
+            text = stringResource(CoreCommonR.string.debug_youtube_probe_desc),
             style = MaterialTheme.typography.bodyMedium
         )
 
@@ -110,7 +110,7 @@ fun YouTubeApiProbeScreen() {
             ) {
                 Text(ui.authSummary, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = stringResource(R.string.debug_youtube_probe_section_inputs),
+                    text = stringResource(CoreCommonR.string.debug_youtube_probe_section_inputs),
                     style = MaterialTheme.typography.labelLarge
                 )
 
@@ -121,14 +121,14 @@ fun YouTubeApiProbeScreen() {
                     OutlinedTextField(
                         value = ui.hl,
                         onValueChange = vm::onHlChange,
-                        label = { Text(stringResource(R.string.debug_youtube_probe_input_hl)) },
+                        label = { Text(stringResource(CoreCommonR.string.debug_youtube_probe_input_hl)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = ui.gl,
                         onValueChange = vm::onGlChange,
-                        label = { Text(stringResource(R.string.debug_youtube_probe_input_gl)) },
+                        label = { Text(stringResource(CoreCommonR.string.debug_youtube_probe_input_gl)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
@@ -137,7 +137,7 @@ fun YouTubeApiProbeScreen() {
                 OutlinedTextField(
                     value = ui.videoId,
                     onValueChange = vm::onVideoIdChange,
-                    label = { Text(stringResource(R.string.debug_youtube_probe_input_video_id)) },
+                    label = { Text(stringResource(CoreCommonR.string.debug_youtube_probe_input_video_id)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -145,7 +145,7 @@ fun YouTubeApiProbeScreen() {
                 OutlinedTextField(
                     value = ui.browseId,
                     onValueChange = vm::onBrowseIdChange,
-                    label = { Text(stringResource(R.string.debug_youtube_probe_input_browse_id)) },
+                    label = { Text(stringResource(CoreCommonR.string.debug_youtube_probe_input_browse_id)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -155,7 +155,7 @@ fun YouTubeApiProbeScreen() {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = stringResource(R.string.debug_youtube_probe_force_refresh),
+                        text = stringResource(CoreCommonR.string.debug_youtube_probe_force_refresh),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Switch(
@@ -166,7 +166,7 @@ fun YouTubeApiProbeScreen() {
                 }
 
                 Text(
-                    text = stringResource(R.string.debug_youtube_probe_section_actions),
+                    text = stringResource(CoreCommonR.string.debug_youtube_probe_section_actions),
                     style = MaterialTheme.typography.labelLarge
                 )
 
@@ -175,7 +175,7 @@ fun YouTubeApiProbeScreen() {
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_action_bootstrap))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_action_bootstrap))
                 }
 
                 OutlinedButton(
@@ -183,7 +183,7 @@ fun YouTubeApiProbeScreen() {
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_action_home))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_action_home))
                 }
 
                 OutlinedButton(
@@ -191,7 +191,7 @@ fun YouTubeApiProbeScreen() {
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_action_library))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_action_library))
                 }
 
                 OutlinedButton(
@@ -199,7 +199,7 @@ fun YouTubeApiProbeScreen() {
                     enabled = !ui.running && ui.browseId.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_action_browse))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_action_browse))
                 }
 
                 OutlinedButton(
@@ -207,7 +207,7 @@ fun YouTubeApiProbeScreen() {
                     enabled = !ui.running && ui.videoId.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_action_player))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_action_player))
                 }
 
                 OutlinedButton(
@@ -215,7 +215,7 @@ fun YouTubeApiProbeScreen() {
                     enabled = !ui.running && ui.videoId.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_action_lyrics))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_action_lyrics))
                 }
 
                 OutlinedButton(
@@ -223,7 +223,7 @@ fun YouTubeApiProbeScreen() {
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_action_clear_auth))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_action_clear_auth))
                 }
 
                 if (ui.running) {
@@ -245,22 +245,22 @@ fun YouTubeApiProbeScreen() {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.debug_status, ui.status),
+                    text = stringResource(CoreCommonR.string.debug_status, ui.status),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    text = stringResource(R.string.debug_youtube_probe_section_result),
+                    text = stringResource(CoreCommonR.string.debug_youtube_probe_section_result),
                     style = MaterialTheme.typography.labelLarge
                 )
                 Text(
                     text = ui.summary.ifBlank {
-                        stringResource(R.string.debug_youtube_probe_summary_empty)
+                        stringResource(CoreCommonR.string.debug_youtube_probe_summary_empty)
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
                     text = ui.rawJson.ifBlank {
-                        stringResource(R.string.debug_youtube_probe_raw_empty)
+                        stringResource(CoreCommonR.string.debug_youtube_probe_raw_empty)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
@@ -269,13 +269,13 @@ fun YouTubeApiProbeScreen() {
                     onClick = vm::copyRawJson,
                     enabled = !ui.running && ui.rawJson.isNotBlank()
                 ) {
-                    Text(stringResource(R.string.debug_youtube_probe_copy_raw))
+                    Text(stringResource(CoreCommonR.string.debug_youtube_probe_copy_raw))
                 }
                 TextButton(
                     onClick = vm::clearPreview,
                     enabled = !ui.running
                 ) {
-                    Text(stringResource(R.string.debug_clear_preview))
+                    Text(stringResource(CoreCommonR.string.debug_clear_preview))
                 }
             }
         }

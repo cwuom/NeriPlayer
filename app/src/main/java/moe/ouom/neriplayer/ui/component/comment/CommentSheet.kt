@@ -53,11 +53,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.CommentError
-import moe.ouom.neriplayer.core.comment.model.CommentSource
-import moe.ouom.neriplayer.core.comment.model.CommentSort
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentSource
+import moe.ouom.neriplayer.data.model.comments.CommentSort
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -139,7 +139,7 @@ internal fun CommentSheetContent(
     onLoadReplies: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val sortLoadingDescription = stringResource(R.string.comment_sort_loading)
+    val sortLoadingDescription = stringResource(CoreCommonR.string.comment_sort_loading)
     val listState = rememberLazyListState()
     var replyFocusRequest by remember(ui.source) { mutableIntStateOf(0) }
     val requestReply: (CommentReplyTarget?) -> Unit = { target ->
@@ -194,12 +194,12 @@ internal fun CommentSheetContent(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.comment_title),
+                    text = stringResource(CoreCommonR.string.comment_title),
                     style = MaterialTheme.typography.headlineSmall
                 )
                 Text(
-                    text = ui.total?.let { stringResource(R.string.comment_total_format, formatPlayCount(context, it)) }
-                        ?: stringResource(R.string.comment_loading),
+                    text = ui.total?.let { stringResource(CoreCommonR.string.comment_total_format, formatPlayCount(context, it)) }
+                        ?: stringResource(CoreCommonR.string.comment_loading),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -272,9 +272,9 @@ internal fun CommentSheetContent(
                                     thread.hasMore -> HapticTextButton(
                                         onClick = { onLoadReplies(comment.id) }, enabled = !offlineMode,
                                         modifier = Modifier.fillMaxWidth()
-                                    ) { Text(stringResource(R.string.comment_more_replies)) }
+                                    ) { Text(stringResource(CoreCommonR.string.comment_more_replies)) }
                                     thread.comments.isEmpty() -> Text(
-                                        stringResource(R.string.comment_empty_replies), Modifier.padding(16.dp),
+                                        stringResource(CoreCommonR.string.comment_empty_replies), Modifier.padding(16.dp),
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
@@ -303,7 +303,7 @@ internal fun CommentSheetContent(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = stringResource(R.string.comment_no_more),
+                                    text = stringResource(CoreCommonR.string.comment_no_more),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -316,15 +316,15 @@ internal fun CommentSheetContent(
                 ui.likeError != null -> {
                     val message = stringResource(
                         when {
-                            ui.likeError == CommentError.PERMISSION -> R.string.comment_like_login_required
-                            ui.source?.platform == moe.ouom.neriplayer.core.comment.model.CommentPlatform.NETEASE &&
-                                ui.likeErrorCode == 250 -> R.string.comment_like_verification
-                            else -> R.string.comment_like_failed
+                            ui.likeError == CommentError.PERMISSION -> CoreCommonR.string.comment_like_login_required
+                            ui.source?.platform == moe.ouom.neriplayer.data.model.comments.CommentPlatform.NETEASE &&
+                                ui.likeErrorCode == 250 -> CoreCommonR.string.comment_like_verification
+                            else -> CoreCommonR.string.comment_like_failed
                         }
                     )
-                    ui.likeErrorCode?.let { stringResource(R.string.comment_error_code_format, message, it) } ?: message
+                    ui.likeErrorCode?.let { stringResource(CoreCommonR.string.comment_error_code_format, message, it) } ?: message
                 }
-                ui.error != null && ui.comments.isNotEmpty() -> stringResource(R.string.comment_reload_failed)
+                ui.error != null && ui.comments.isNotEmpty() -> stringResource(CoreCommonR.string.comment_reload_failed)
                 else -> null
             }
             if (failureText != null) {
@@ -336,7 +336,7 @@ internal fun CommentSheetContent(
                     Row(modifier = Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(failureText, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                         HapticIconButton(onClick = if (ui.likeError != null) onDismissLikeError else onDismissLoadError) {
-                            Icon(Icons.Outlined.Close, stringResource(R.string.comment_dismiss_error))
+                            Icon(Icons.Outlined.Close, stringResource(CoreCommonR.string.comment_dismiss_error))
                         }
                     }
                 }
@@ -350,7 +350,7 @@ internal fun CommentSheetContent(
 @Composable
 private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
     var expanded by remember(ui.source) { mutableStateOf(false) }
-    val description = stringResource(R.string.comment_sort)
+    val description = stringResource(CoreCommonR.string.comment_sort)
     Box {
         HapticTextButton(
             onClick = { expanded = true },
@@ -390,7 +390,7 @@ private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
 }
 
 private fun commentSortTextRes(sort: CommentSort): Int = when (sort) {
-    CommentSort.HOT -> R.string.comment_sort_hot
-    CommentSort.NEWEST -> R.string.comment_sort_newest
-    CommentSort.RECOMMENDED -> R.string.comment_sort_recommended
+    CommentSort.HOT -> CoreCommonR.string.comment_sort_hot
+    CommentSort.NEWEST -> CoreCommonR.string.comment_sort_newest
+    CommentSort.RECOMMENDED -> CoreCommonR.string.comment_sort_recommended
 }

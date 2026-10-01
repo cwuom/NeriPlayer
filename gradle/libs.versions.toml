@@ -1,4 +1,5 @@
 [versions]
+androidxAnnotation = "1.11.0"
 accompanistNavigationAnimation = "0.36.0"
 agp = "9.4.1"
 coilCompose = "2.7.0"
@@ -50,6 +51,7 @@ lyriconProvider = "0.1.70"
 zxingCore = "3.5.4"
 
 [libraries]
+androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidxAnnotation" }
 accompanist-navigation-animation = { module = "com.google.accompanist:accompanist-navigation-animation", version.ref = "accompanistNavigationAnimation" }
 android-tools = { module = "com.android.tools.build:gradle", version.ref = "agp" }
 androidx-animation = { module = "androidx.compose.animation:animation" }
@@ -62,6 +64,7 @@ androidx-media = { module = "androidx.media:media", version.ref = "media" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3Datasource" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
+androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3Exoplayer" }
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3ExoplayerHls" }
 androidx-palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = "paletteKtx" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }

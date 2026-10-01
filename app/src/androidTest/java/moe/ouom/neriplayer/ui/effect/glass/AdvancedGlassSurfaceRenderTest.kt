@@ -60,8 +60,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.tab.explore.ExploreGlassPillSurface
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
@@ -1338,7 +1338,7 @@ class AdvancedGlassSurfaceRenderTest {
     fun themeToggleClickabilityIsIndependentFromBackdropRegistration() {
         val darkThemeDescription = InstrumentationRegistry.getInstrumentation()
             .targetContext
-            .getString(R.string.settings_theme_toggle_dark)
+            .getString(CoreCommonR.string.settings_theme_toggle_dark)
         var toggleRequests = 0
         lateinit var titleSlotVisible: MutableState<Boolean>
 
@@ -1381,10 +1381,10 @@ class AdvancedGlassSurfaceRenderTest {
     fun settingsTopAppBarThemeToggleHandlesConsecutiveClicks() {
         val darkThemeDescription = InstrumentationRegistry.getInstrumentation()
             .targetContext
-            .getString(R.string.settings_theme_toggle_dark)
+            .getString(CoreCommonR.string.settings_theme_toggle_dark)
         val lightThemeDescription = InstrumentationRegistry.getInstrumentation()
             .targetContext
-            .getString(R.string.settings_theme_toggle_light)
+            .getString(CoreCommonR.string.settings_theme_toggle_light)
         var toggleRequests = 0
         lateinit var isDarkTheme: MutableState<Boolean>
 

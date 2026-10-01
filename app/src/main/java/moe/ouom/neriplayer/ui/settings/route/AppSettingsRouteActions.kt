@@ -7,14 +7,14 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.State
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
-import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
-import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner
@@ -258,7 +258,7 @@ internal class AppPlaybackSettingsActions(
             PlayerManager.setPlaybackHighResolutionOutputEnabled(enabled)
             AppFeedback.show(
                 context = context,
-                message = composeResources.getString(R.string.settings_restart_hint)
+                message = composeResources.getString(CoreCommonR.string.settings_restart_hint)
             )
         }
 

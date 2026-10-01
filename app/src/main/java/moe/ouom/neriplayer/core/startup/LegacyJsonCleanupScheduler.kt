@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.startup
 
+import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorageAccess
 import android.content.Context
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -12,17 +13,16 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingCoordinator
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingBusyException
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingPhase
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeCoordinator
-import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeResult
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupCoordinator
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupResult
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupStatus
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeCoordinator
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeResult
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupCoordinator
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupResult
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupStatus
 import kotlin.time.Duration.Companion.milliseconds
 
 internal object LegacyJsonCleanupScheduler {
@@ -84,7 +84,7 @@ internal object LegacyJsonCleanupScheduler {
                         }
                     }
                     val queueBootstrapSucceeded = runCatching {
-                        DownloadRecoveryRoomStore(appContext).bootstrapLegacyFilesOnce()
+                        DownloadLegacyStorageAccess.bootstrapLegacyQueues(appContext)
                         true
                     }.onFailure { error ->
                         NPLogger.w(

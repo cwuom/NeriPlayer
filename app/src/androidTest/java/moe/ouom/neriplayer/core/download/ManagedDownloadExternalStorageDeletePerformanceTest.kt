@@ -24,8 +24,8 @@ import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteI
 import moe.ouom.neriplayer.core.download.manager.catalog.cancelScheduledDownloadedSongsCatalogPersist
 import moe.ouom.neriplayer.core.download.manager.catalog.publishDownloadedSongs
 import moe.ouom.neriplayer.core.download.manager.catalog.findConfirmedMissingDownloadedSongs
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
-import moe.ouom.neriplayer.core.download.model.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedMediaStoreDelete
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.testing.DocumentsFixture

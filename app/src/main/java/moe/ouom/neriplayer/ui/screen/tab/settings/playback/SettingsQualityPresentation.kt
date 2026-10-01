@@ -2,28 +2,28 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.playback
 
 import android.content.Context
 import androidx.compose.runtime.Composable
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.normalizeMobileDataBiliAudioQuality
-import moe.ouom.neriplayer.data.settings.normalizeMobileDataNeteaseAudioQuality
-import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataBiliAudioQuality
+import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataNeteaseAudioQuality
+import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataYouTubeAudioQuality
 
 internal fun neteaseQualityLabelRes(value: String): Int? = when (value) {
-    "standard" -> R.string.settings_audio_quality_standard
-    "higher" -> R.string.settings_audio_quality_higher
-    "exhigh" -> R.string.settings_audio_quality_exhigh
-    "lossless" -> R.string.settings_audio_quality_lossless
-    "hires" -> R.string.quality_hires
-    "jyeffect" -> R.string.settings_audio_quality_jyeffect
-    "sky" -> R.string.settings_audio_quality_sky
-    "jymaster" -> R.string.settings_audio_quality_jymaster
+    "standard" -> CoreCommonR.string.settings_audio_quality_standard
+    "higher" -> CoreCommonR.string.settings_audio_quality_higher
+    "exhigh" -> CoreCommonR.string.settings_audio_quality_exhigh
+    "lossless" -> CoreCommonR.string.settings_audio_quality_lossless
+    "hires" -> CoreCommonR.string.quality_hires
+    "jyeffect" -> CoreCommonR.string.settings_audio_quality_jyeffect
+    "sky" -> CoreCommonR.string.settings_audio_quality_sky
+    "jymaster" -> CoreCommonR.string.settings_audio_quality_jymaster
     else -> null
 }
 
 internal fun youtubeQualityLabelRes(value: String): Int? = when (value) {
-    "low" -> R.string.settings_audio_quality_standard
-    "medium" -> R.string.settings_audio_quality_medium
-    "high" -> R.string.settings_audio_quality_high
-    "very_high" -> R.string.quality_very_high
+    "low" -> CoreCommonR.string.settings_audio_quality_standard
+    "medium" -> CoreCommonR.string.settings_audio_quality_medium
+    "high" -> CoreCommonR.string.settings_audio_quality_high
+    "very_high" -> CoreCommonR.string.quality_very_high
     else -> null
 }
 
@@ -31,16 +31,16 @@ internal fun biliQualityLabelRes(value: String): Int? =
     biliPremiumQualityLabelRes(value) ?: biliRegularQualityLabelRes(value)
 
 private fun biliPremiumQualityLabelRes(value: String): Int? = when (value) {
-    "dolby" -> R.string.settings_audio_quality_dolby
-    "hires" -> R.string.quality_hires
-    "lossless" -> R.string.settings_audio_quality_lossless
+    "dolby" -> CoreCommonR.string.settings_audio_quality_dolby
+    "hires" -> CoreCommonR.string.quality_hires
+    "lossless" -> CoreCommonR.string.settings_audio_quality_lossless
     else -> null
 }
 
 private fun biliRegularQualityLabelRes(value: String): Int? = when (value) {
-    "high" -> R.string.settings_audio_quality_high
-    "medium" -> R.string.settings_audio_quality_medium
-    "low" -> R.string.settings_audio_quality_low
+    "high" -> CoreCommonR.string.settings_audio_quality_high
+    "medium" -> CoreCommonR.string.settings_audio_quality_medium
+    "low" -> CoreCommonR.string.settings_audio_quality_low
     else -> null
 }
 

@@ -1,13 +1,15 @@
 package moe.ouom.neriplayer.data
 
+import moe.ouom.neriplayer.data.identity.stableKey
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.LocaleList
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
@@ -293,8 +295,8 @@ class SystemPlaylistIdentityTest {
         `when`(configuration.locales).thenReturn(locales)
         `when`(locales[0]).thenReturn(Locale.getDefault())
         `when`(context.createConfigurationContext(any(Configuration::class.java))).thenReturn(context)
-        `when`(context.getString(R.string.favorite_my_music)).thenReturn("我喜欢的音乐")
-        `when`(context.getString(R.string.local_files)).thenReturn("本地文件")
+        `when`(context.getString(CoreCommonR.string.favorite_my_music)).thenReturn("我喜欢的音乐")
+        `when`(context.getString(CoreCommonR.string.local_files)).thenReturn("本地文件")
         return context
     }
 }

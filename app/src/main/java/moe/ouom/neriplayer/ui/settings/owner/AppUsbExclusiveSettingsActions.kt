@@ -3,10 +3,10 @@ package moe.ouom.neriplayer.ui.settings.owner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.UsbExclusiveBitDepthMode
-import moe.ouom.neriplayer.data.settings.UsbExclusiveBufferProfile
-import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
-import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBufferProfile
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
 
 internal class AppUsbExclusiveSettingsActions(
     private val repo: SettingsRepository,

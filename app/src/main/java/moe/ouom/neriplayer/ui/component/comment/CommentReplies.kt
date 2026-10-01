@@ -26,10 +26,10 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.comment.model.CommentQuote
-import moe.ouom.neriplayer.core.comment.model.CommentReplyTarget
-import moe.ouom.neriplayer.core.comment.model.SongComment
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.comments.CommentQuote
+import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
+import moe.ouom.neriplayer.data.model.comments.SongComment
 
 @Composable
 internal fun CommentActionBox(
@@ -47,21 +47,21 @@ internal fun CommentActionBox(
     val reply = { onReply(CommentReplyTarget(comment.id, rootId, comment.username)) }
     Box(modifier.clip(shape).combinedClickable(
         onClick = { expanded = true },
-        onClickLabel = stringResource(R.string.comment_actions),
-        onLongClickLabel = stringResource(R.string.comment_actions),
+        onClickLabel = stringResource(CoreCommonR.string.comment_actions),
+        onLongClickLabel = stringResource(CoreCommonR.string.comment_actions),
         onLongClick = { expanded = true }
     )) {
         content()
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, shape = MaterialTheme.shapes.large) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.comment_copy)) },
+                text = { Text(stringResource(CoreCommonR.string.comment_copy)) },
                 onClick = {
                     expanded = false
                     scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("comment", comment.content))) }
                 }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.comment_reply)) },
+                text = { Text(stringResource(CoreCommonR.string.comment_reply)) },
                 enabled = replyEnabled,
                 onClick = { expanded = false; reply() }
             )
@@ -77,12 +77,12 @@ internal fun CommentQuotes(quotes: List<CommentQuote>) {
             quotes.forEach { quote ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        stringResource(R.string.comment_reply_to, quote.username.ifBlank { stringResource(R.string.comment_anonymous_user) }),
+                        stringResource(CoreCommonR.string.comment_reply_to, quote.username.ifBlank { stringResource(CoreCommonR.string.comment_anonymous_user) }),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        quote.content ?: stringResource(R.string.comment_deleted),
+                        quote.content ?: stringResource(CoreCommonR.string.comment_deleted),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -104,7 +104,7 @@ internal fun CommentReplyItem(
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    comment.username.ifBlank { stringResource(R.string.comment_anonymous_user) },
+                    comment.username.ifBlank { stringResource(CoreCommonR.string.comment_anonymous_user) },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )

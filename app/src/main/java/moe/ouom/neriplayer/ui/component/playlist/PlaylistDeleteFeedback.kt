@@ -6,10 +6,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongDeleteResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -62,7 +62,7 @@ internal fun showPlaylistDeleteResultGlobally(
             deleteResults = deleteResults
         )
     }.onFailure {
-        AppFeedback.show(context, context.getString(R.string.local_playlist_delete_failed))
+        AppFeedback.show(context, context.getString(CoreCommonR.string.local_playlist_delete_failed))
     }
 }
 
@@ -79,7 +79,7 @@ internal fun CoroutineScope.showPlaylistDeletedSnackbar(
     val deletedCount = deleteResults.size
     val displayName = deleteResults.singleOrNull()?.playlist?.name.orEmpty()
     val message = context.resources.getQuantityString(
-        R.plurals.local_playlist_delete_snackbar,
+        CoreCommonR.plurals.local_playlist_delete_snackbar,
         deletedCount,
         deletedCount,
         displayName
@@ -87,7 +87,7 @@ internal fun CoroutineScope.showPlaylistDeletedSnackbar(
     launch {
         val result = snackbarHostState.showNeriSnackbar(
             message = message,
-            actionLabel = context.getString(R.string.playlist_batch_export_undo),
+            actionLabel = context.getString(CoreCommonR.string.playlist_batch_export_undo),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )
@@ -98,13 +98,13 @@ internal fun CoroutineScope.showPlaylistDeletedSnackbar(
         }.getOrDefault(false)
         val undoMessage = if (undoSucceeded) {
             context.resources.getQuantityString(
-                R.plurals.local_playlist_delete_undone,
+                CoreCommonR.plurals.local_playlist_delete_undone,
                 deletedCount,
                 deletedCount,
                 displayName
             )
         } else {
-            context.getString(R.string.local_playlist_delete_undo_failed)
+            context.getString(CoreCommonR.string.local_playlist_delete_undo_failed)
         }
         snackbarHostState.showNeriSnackbar(undoMessage)
     }
@@ -116,13 +116,13 @@ internal fun showPlaylistDeletedGlobalSnackbar(
     deleteResults: List<LocalPlaylistDeleteResult>
 ) {
     if (deleteResults.isEmpty()) {
-        AppFeedback.show(context, context.getString(R.string.local_playlist_delete_failed))
+        AppFeedback.show(context, context.getString(CoreCommonR.string.local_playlist_delete_failed))
         return
     }
     val deletedCount = deleteResults.size
     val displayName = deleteResults.singleOrNull()?.playlist?.name.orEmpty()
     val message = context.resources.getQuantityString(
-        R.plurals.local_playlist_delete_snackbar,
+        CoreCommonR.plurals.local_playlist_delete_snackbar,
         deletedCount,
         deletedCount,
         displayName
@@ -130,7 +130,7 @@ internal fun showPlaylistDeletedGlobalSnackbar(
     AppFeedback.showWithAction(
         context = context,
         message = message,
-        actionLabel = context.getString(R.string.playlist_batch_export_undo),
+        actionLabel = context.getString(CoreCommonR.string.playlist_batch_export_undo),
         duration = SnackbarDuration.Long
     ) {
         val undoSucceeded = runLocalPlaylistMutationSafely("undoPlaylistDelete") {
@@ -138,13 +138,13 @@ internal fun showPlaylistDeletedGlobalSnackbar(
         }.getOrDefault(false)
         val undoMessage = if (undoSucceeded) {
             context.resources.getQuantityString(
-                R.plurals.local_playlist_delete_undone,
+                CoreCommonR.plurals.local_playlist_delete_undone,
                 deletedCount,
                 deletedCount,
                 displayName
             )
         } else {
-            context.getString(R.string.local_playlist_delete_undo_failed)
+            context.getString(CoreCommonR.string.local_playlist_delete_undo_failed)
         }
         AppFeedback.show(context, undoMessage)
     }
@@ -155,7 +155,7 @@ internal fun CoroutineScope.showPlaylistDeleteFailure(
     snackbarHostState: SnackbarHostState
 ) {
     launch {
-        snackbarHostState.showNeriSnackbar(context.getString(R.string.local_playlist_delete_failed))
+        snackbarHostState.showNeriSnackbar(context.getString(CoreCommonR.string.local_playlist_delete_failed))
     }
 }
 
@@ -171,14 +171,14 @@ internal fun CoroutineScope.showPlaylistSongDeletedSnackbar(
     }
     val deletedCount = deleteResults.size
     val message = context.resources.getQuantityString(
-        R.plurals.local_playlist_delete_songs_snackbar,
+        CoreCommonR.plurals.local_playlist_delete_songs_snackbar,
         deletedCount,
         deletedCount
     )
     launch {
         val result = snackbarHostState.showNeriSnackbar(
             message = message,
-            actionLabel = context.getString(R.string.playlist_batch_export_undo),
+            actionLabel = context.getString(CoreCommonR.string.playlist_batch_export_undo),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )
@@ -189,12 +189,12 @@ internal fun CoroutineScope.showPlaylistSongDeletedSnackbar(
         }.getOrDefault(false)
         val undoMessage = if (undoSucceeded) {
             context.resources.getQuantityString(
-                R.plurals.local_playlist_delete_songs_undone,
+                CoreCommonR.plurals.local_playlist_delete_songs_undone,
                 deletedCount,
                 deletedCount
             )
         } else {
-            context.getString(R.string.local_playlist_delete_songs_undo_failed)
+            context.getString(CoreCommonR.string.local_playlist_delete_songs_undo_failed)
         }
         snackbarHostState.showNeriSnackbar(undoMessage)
     }
@@ -206,7 +206,7 @@ internal fun CoroutineScope.showPlaylistSongDeleteFailure(
 ) {
     launch {
         snackbarHostState.showNeriSnackbar(
-            context.getString(R.string.local_playlist_delete_songs_failed)
+            context.getString(CoreCommonR.string.local_playlist_delete_songs_failed)
         )
     }
 }

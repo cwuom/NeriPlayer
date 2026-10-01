@@ -53,7 +53,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
@@ -231,7 +231,7 @@ internal fun SettingsSearchField(
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (query.isBlank()) {
                             Text(
-                                text = stringResource(R.string.settings_search_hint),
+                                text = stringResource(CoreCommonR.string.settings_search_hint),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -253,7 +253,7 @@ internal fun SettingsSearchResultsCard(
     MiuixSettingsSectionCard(modifier = modifier) {
         if (results.isEmpty()) {
             Text(
-                text = stringResource(R.string.settings_search_empty),
+                text = stringResource(CoreCommonR.string.settings_search_empty),
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

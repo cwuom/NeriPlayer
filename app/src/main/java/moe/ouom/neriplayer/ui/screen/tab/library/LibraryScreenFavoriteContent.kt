@@ -83,10 +83,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.tab.toBiliPlaylist
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
@@ -248,7 +248,7 @@ internal fun FavoritePlaylistList(
                                     exitEditMode()
                                 }
                             },
-                            text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
+                            text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_playlists)) },
                             icon = {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.QueueMusic,
@@ -264,7 +264,7 @@ internal fun FavoritePlaylistList(
                                     exitEditMode()
                                 }
                             },
-                            text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
+                            text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_artists)) },
                             icon = {
                                 Icon(
                                     imageVector = Icons.Filled.AccountCircle,
@@ -280,7 +280,7 @@ internal fun FavoritePlaylistList(
                                     exitEditMode()
                                 }
                             },
-                            text = { Text(stringResource(R.string.library_favorite_tab_hot)) },
+                            text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_hot)) },
                             icon = {
                                 Icon(
                                     imageVector = Icons.Outlined.Bolt,
@@ -297,7 +297,7 @@ internal fun FavoritePlaylistList(
                 LibraryInlineSearchField(
                     query = favoriteSearchQuery,
                     onQueryChange = { favoriteSearchQuery = it },
-                    placeholderResId = R.string.library_favorite_search_hint
+                    placeholderResId = CoreCommonR.string.library_favorite_search_hint
                 )
             }
         }
@@ -319,7 +319,7 @@ internal fun FavoritePlaylistList(
                         headlineContent = {
                             Text(
                                 pluralStringResource(
-                                    R.plurals.common_selected_count,
+                                    CoreCommonR.plurals.common_selected_count,
                                     selectedKeys.size,
                                     selectedKeys.size
                                 )
@@ -330,7 +330,7 @@ internal fun FavoritePlaylistList(
                             HapticIconButton(onClick = { exitEditMode() }) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.action_exit_multi_select)
+                                    contentDescription = stringResource(CoreCommonR.string.action_exit_multi_select)
                                 )
                             }
                         },
@@ -347,9 +347,9 @@ internal fun FavoritePlaylistList(
                                 ) {
                                     Text(
                                         if (allSelected) {
-                                            stringResource(R.string.action_deselect_all)
+                                            stringResource(CoreCommonR.string.action_deselect_all)
                                         } else {
-                                            stringResource(R.string.action_select_all)
+                                            stringResource(CoreCommonR.string.action_select_all)
                                         }
                                     )
                                 }
@@ -360,7 +360,7 @@ internal fun FavoritePlaylistList(
                                     enabled = selectedKeys.isNotEmpty(),
                                     onClick = { showDeleteSelectedConfirm = true }
                                 ) {
-                                    Text(stringResource(R.string.common_delete_selected))
+                                    Text(stringResource(CoreCommonR.string.common_delete_selected))
                                 }
                             }
                         }
@@ -387,10 +387,10 @@ internal fun FavoritePlaylistList(
                 ) { playlist ->
                     val titleResId = hotPlaylistTitleResId(playlist.period)
                     val subtitle = if (playlist.tracks.isEmpty()) {
-                        stringResource(R.string.library_hot_empty_hint)
+                        stringResource(CoreCommonR.string.library_hot_empty_hint)
                     } else {
                         stringResource(
-                            R.string.library_hot_playlist_summary,
+                            CoreCommonR.string.library_hot_playlist_summary,
                             playlist.tracks.size,
                             formatPlayCount(context, playlist.totalPlayCount)
                         )
@@ -451,11 +451,11 @@ internal fun FavoritePlaylistList(
                             Text(
                                 stringResource(
                                     if (isSearchEmpty) {
-                                        R.string.library_favorite_search_empty
+                                        CoreCommonR.string.library_favorite_search_empty
                                     } else if (isArtistCategory) {
-                                        R.string.library_no_favorite_artist
+                                        CoreCommonR.string.library_no_favorite_artist
                                     } else {
-                                        R.string.playlist_no_favorite
+                                        CoreCommonR.string.playlist_no_favorite
                                     }
                                 )
                             )
@@ -464,11 +464,11 @@ internal fun FavoritePlaylistList(
                             Text(
                                 stringResource(
                                     if (isSearchEmpty) {
-                                        R.string.library_favorite_search_empty_hint
+                                        CoreCommonR.string.library_favorite_search_empty_hint
                                     } else if (isArtistCategory) {
-                                        R.string.library_favorite_artist_hint
+                                        CoreCommonR.string.library_favorite_artist_hint
                                     } else {
-                                        R.string.playlist_favorite_hint
+                                        CoreCommonR.string.playlist_favorite_hint
                                     }
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -593,7 +593,7 @@ internal fun FavoritePlaylistList(
                             supportingContent = {
                                 Text(
                                     stringResource(
-                                        R.string.library_favorite_source_format,
+                                        CoreCommonR.string.library_favorite_source_format,
                                         favorite.trackCount,
                                         favoriteSourceLabel(favorite.source)
                                     ),
@@ -646,7 +646,7 @@ internal fun FavoritePlaylistList(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Filled.DragHandle,
-                                                contentDescription = stringResource(R.string.common_drag_handle),
+                                                contentDescription = stringResource(CoreCommonR.string.common_drag_handle),
                                                 modifier = Modifier.size(24.dp)
                                             )
                                         }
@@ -663,11 +663,11 @@ internal fun FavoritePlaylistList(
     if (showDeleteSelectedConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteSelectedConfirm = false },
-            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
             text = {
                 Text(
                     pluralStringResource(
-                        R.plurals.library_delete_selected_confirm,
+                        CoreCommonR.plurals.library_delete_selected_confirm,
                         selectedKeys.size,
                         selectedKeys.size
                     )
@@ -683,12 +683,12 @@ internal fun FavoritePlaylistList(
                         }
                     }
                 ) {
-                    Text(stringResource(R.string.action_delete))
+                    Text(stringResource(CoreCommonR.string.action_delete))
                 }
             },
             dismissButton = {
                 HapticTextButton(onClick = { showDeleteSelectedConfirm = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -702,7 +702,7 @@ internal fun favoriteSourceLabel(source: String): String {
         "neteaseAlbum" -> "Netease Album"
         "netease" -> "Netease"
         "bili" -> "Bilibili"
-        FAVORITE_SOURCE_NETEASE_ARTIST -> stringResource(R.string.library_favorite_source_artist)
+        FAVORITE_SOURCE_NETEASE_ARTIST -> stringResource(CoreCommonR.string.library_favorite_source_artist)
         else -> source
     }
 }
@@ -733,9 +733,9 @@ internal fun QqMusicPlaylistList(
                     .clip(cardShape)
             ) {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.library_qqmusic_coming)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.library_qqmusic_coming)) },
                     supportingContent = {
-                        Text(stringResource(R.string.library_coming_soon), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(CoreCommonR.string.library_coming_soon), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent

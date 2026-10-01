@@ -1,0 +1,40 @@
+package moe.ouom.neriplayer.data.model.local
+
+import android.net.Uri
+
+data class LocalMediaDetails(
+    val sourceUri: Uri,
+    val displayName: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val usesFallbackAlbum: Boolean,
+    val albumArtist: String?,
+    val composer: String?,
+    val genre: String?,
+    val year: Int?,
+    val trackNumber: Int?,
+    val discNumber: Int?,
+    val durationMs: Long,
+    val fileExtension: String?,
+    val mimeType: String?,
+    val audioMimeType: String?,
+    val bitrateKbps: Int?,
+    val sampleRateHz: Int?,
+    val channelCount: Int?,
+    val bitsPerSample: Int?,
+    val sizeBytes: Long?,
+    val lastModifiedMs: Long?,
+    val filePath: String?,
+    val coverUri: String?,
+    val coverSource: String?,
+    val lyricContent: String?,
+    val lyricPath: String?,
+    val lyricSource: String?,
+    val originalTitle: String?,
+    val originalArtist: String?,
+    val embeddedCover: Boolean,
+    val sourceStableKey: String? = null,
+    val translatedLyricContent: String? = null,
+    val romanizedLyricContent: String? = null
+)

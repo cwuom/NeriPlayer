@@ -1,18 +1,21 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.platform.bilibili.skip.storage.BiliVideoSkipRoomStore
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipDraft
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipInterval
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipSnapshot
 
 @RunWith(AndroidJUnit4::class)
 class BiliVideoSkipRoomStoreTest {
@@ -45,8 +48,8 @@ class BiliVideoSkipRoomStoreTest {
             store.replaceAll(listOf(rule), listOf(draft), now = 30L)
 
             assertEquals(
-                BiliVideoSkipRoomSnapshot(listOf(rule), listOf(draft)),
-                store.readIfRoomPrimary()
+                BiliVideoSkipSnapshot(listOf(rule), listOf(draft)),
+                store.readIfPrimary()
             )
             assertEquals(1, database.biliVideoSkipDao().getRules().size)
             assertEquals(2, database.biliVideoSkipDao().getIntervals().size)

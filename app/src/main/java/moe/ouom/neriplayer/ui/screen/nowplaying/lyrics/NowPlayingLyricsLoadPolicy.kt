@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
 
-import moe.ouom.neriplayer.core.api.lyrics.hasCollapsedTimedLyricTimeline
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.platform.lyrics.matching.hasCollapsedTimedLyricTimeline
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
@@ -9,11 +9,11 @@ import moe.ouom.neriplayer.core.player.metadata.resolveLyricTextForPlayback
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.settings.LyricSourcePreference
-import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
-import moe.ouom.neriplayer.ui.component.lyrics.flattenWordTimedEntries
-import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
 
 internal fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
     if (song == null) return null

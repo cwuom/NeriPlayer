@@ -30,12 +30,14 @@ import android.webkit.WebView
 import androidx.work.Configuration as WorkConfiguration
 import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.di.player.installPlayerDependencies
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.execution.scheduling.ids.newDownloadWorkManagerConfigurationBuilder
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
-import moe.ouom.neriplayer.core.download.storage.backend.PersistentManagedTemporaryWriteJournal
-import moe.ouom.neriplayer.core.lyricon.LyriconManager
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.download.storage.backend.recoverInterruptedManagedTemporaryWrites
+import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
@@ -45,12 +47,12 @@ import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
-import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataRecoveryStore
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
@@ -60,11 +62,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
     private var normalComponentsInitialized = false
 
     override val workManagerConfiguration: WorkConfiguration
-        get() = WorkConfiguration.Builder()
-            .setJobSchedulerJobIdRange(
-                WORK_MANAGER_JOB_ID_MIN,
-                WORK_MANAGER_JOB_ID_MAX
-            )
+        get() = newDownloadWorkManagerConfigurationBuilder()
             // 系统可能在重启恢复旧任务时拒绝调度，不能让库异常穿透到进程
             .setSchedulingExceptionHandler { error ->
                 NPLogger.e(
@@ -79,6 +77,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
     override fun onCreate() {
         super.onCreate()
         AppFeedback.initialize(this)
+        installPlayerDependencies(this)
         // 冷启动首个播放点击可能早于 Compose 的 SideEffect, 先把 Application 绑给播放器
         PlayerManager.bindApplication(this)
         val runningInMainProcess = AppProcessClassifier.isMainProcess(
@@ -142,7 +141,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
                 val recoveredMetadataWrites = LocalMediaMetadataRecoveryStore.recoverInterruptedWrites(
                     this@NeriPlayerApplication
                 )
-                val recoveredTemporaryWrites = PersistentManagedTemporaryWriteJournal.recover(
+                val recoveredTemporaryWrites = recoverInterruptedManagedTemporaryWrites(
                     this@NeriPlayerApplication
                 )
                 if (recoveredMetadataWrites > 0 || recoveredTemporaryWrites > 0) {
@@ -209,9 +208,6 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
         }
     }
 }
-
-private const val WORK_MANAGER_JOB_ID_MIN = 1_000
-private const val WORK_MANAGER_JOB_ID_MAX = 99_999
 
 internal fun shouldTrimUidtPendingJobs(runningInMainProcess: Boolean, sdkInt: Int): Boolean {
     return runningInMainProcess && sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE

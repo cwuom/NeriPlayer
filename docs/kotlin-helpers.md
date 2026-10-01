@@ -4,7 +4,7 @@
 
 ## 请求代次
 
-[`RequestGeneration`](../app/src/main/java/moe/ouom/neriplayer/util/concurrent/RequestGeneration.kt) 用于判断异步结果是否仍属于当前一轮请求。
+[`RequestGeneration`](../modules/common/src/main/java/moe/ouom/neriplayer/common/concurrent/RequestGeneration.kt) 用于判断异步结果是否仍属于当前一轮请求。
 
 ```kotlin
 private val requests = RequestGeneration()
@@ -30,7 +30,7 @@ fun refresh() {
 
 ## 时间和容量
 
-[`MeasureUnits`](../app/src/main/java/moe/ouom/neriplayer/util/units/MeasureUnits.kt) 提供单数形式的时间扩展，普通表达式优先使用这种写法：
+[`MeasureUnits`](../modules/common/src/main/java/moe/ouom/neriplayer/common/units/MeasureUnits.kt) 提供单数形式的时间扩展，普通表达式优先使用这种写法：
 
 ```kotlin
 val timeoutMs = 5.minute
@@ -51,7 +51,7 @@ private const val CHUNK_SIZE_BYTES = 4 * MEBIBYTE_BYTES
 
 变量和参数仍保留 `Ms`、`Nanos`、`Bytes` 等单位后缀。业务默认值由对应策略统一维护，例如缓存默认容量使用 `CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES`。
 
-[`elapsedMillisSince`](../app/src/main/java/moe/ouom/neriplayer/util/time/MonotonicTime.kt) 的输入必须来自 `System.nanoTime()`。
+[`elapsedMillisSince`](../modules/common/src/main/java/moe/ouom/neriplayer/common/time/MonotonicTime.kt) 的输入必须来自 `System.nanoTime()`。
 
 ```kotlin
 val startedAtNanos = System.nanoTime()
@@ -63,7 +63,7 @@ val elapsedMs = elapsedMillisSince(startedAtNanos)
 
 ## 播放器读取
 
-[`PlayerReadExtensions`](../app/src/main/java/moe/ouom/neriplayer/core/player/PlayerReadExtensions.kt) 提供 `currentPositionMsOr(fallbackMs)`、`durationMsOr(fallbackMs)` 和默认回退到零的属性。
+[`PlayerReadExtensions`](../modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/PlayerReadExtensions.kt) 提供 `currentPositionMsOr(fallbackMs)`、`durationMsOr(fallbackMs)` 和默认回退到零的属性。
 
 ```kotlin
 val positionMs = player.currentPositionMsOr(-1L)
@@ -74,7 +74,7 @@ val durationMs = player.durationMsOr(previousDurationMs)
 
 ## 协程结果
 
-[`runCatchingNonCancellation`](../app/src/main/java/moe/ouom/neriplayer/util/coroutines/RunCatchingNonCancellation.kt) 将普通 `Exception` 转为 `Result`，`CancellationException` 继续向上传播，`Error` 不被捕获。
+[`runCatchingNonCancellation`](../modules/common/src/main/java/moe/ouom/neriplayer/common/coroutines/RunCatchingNonCancellation.kt) 将普通 `Exception` 转为 `Result`，`CancellationException` 继续向上传播，`Error` 不被捕获。
 
 ```kotlin
 return runCatchingNonCancellation {
@@ -89,13 +89,13 @@ return runCatchingNonCancellation {
 
 ## PCM 要求
 
-[`pcmAudioRequirements`](../app/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PlaybackAudioOffloadPolicy.kt) 将现有音源兼容规则与音频处理条件映射为 `Set<PcmAudioRequirement>`。调用方用 `isNotEmpty()` 判断是否需要禁用卸载，并可记录全部原因。
+[`pcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PlaybackAudioOffloadPolicy.kt) 将现有音源兼容规则与音频处理条件映射为 `Set<PcmAudioRequirement>`。调用方用 `isNotEmpty()` 判断是否需要禁用卸载，并可记录全部原因。
 
 新增条件时，在这一个函数里更新判断，并为对应原因补测试。空集合只表示当前策略没有提出 PCM 要求，实际卸载能力仍由 Media3 和设备决定。音频路径的切换顺序继续保留在播放器调用点。
 
 ## JSON 对象数组映射
 
-[`mapObjectsNotNull`](../app/src/main/java/moe/ouom/neriplayer/util/json/JsonArrayExtensions.kt) 用于允许跳过非对象成员的 JSON 数组，统一索引遍历和 `optJSONObject` 判断。
+[`mapObjectsNotNull`](../modules/common/src/main/java/moe/ouom/neriplayer/common/json/JsonArrayExtensions.kt) 用于允许跳过非对象成员的 JSON 数组，统一索引遍历和 `optJSONObject` 判断。
 
 ```kotlin
 val artists = array.mapObjectsNotNull { item ->
@@ -112,7 +112,7 @@ JSON null、字符串、数字和嵌套数组会被跳过。对象按原顺序�
 
 ## 按身份合并列表
 
-[`mergeDistinctBy`](../app/src/main/java/moe/ouom/neriplayer/util/collections/CollectionMerge.kt) 先读取已有列表，再读取新列表，按调用方提供的身份键保留首次出现的条目。
+[`mergeDistinctBy`](../modules/common/src/main/java/moe/ouom/neriplayer/common/collections/CollectionMerge.kt) 先读取已有列表，再读取新列表，按调用方提供的身份键保留首次出现的条目。
 
 ```kotlin
 val merged = existing.mergeDistinctBy(incoming, limit = 100) { it.id }

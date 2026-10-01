@@ -6,10 +6,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongAddResult
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistSongAddResult
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -99,7 +99,7 @@ internal fun CoroutineScope.showPlaylistBatchExportFailure(
     snackbarHostState: SnackbarHostState
 ) {
     launch {
-        snackbarHostState.showNeriSnackbar(context.getString(R.string.playlist_export_failed))
+        snackbarHostState.showNeriSnackbar(context.getString(CoreCommonR.string.playlist_export_failed))
     }
 }
 
@@ -112,7 +112,7 @@ private fun CoroutineScope.showPlaylistBatchExportSnackbar(
 ) {
     val addedCount = addedSongs.size
     val message = context.resources.getQuantityString(
-        R.plurals.playlist_batch_export_success,
+        CoreCommonR.plurals.playlist_batch_export_success,
         addedCount,
         addedCount,
         targetPlaylistName
@@ -120,7 +120,7 @@ private fun CoroutineScope.showPlaylistBatchExportSnackbar(
     launch {
         val result = snackbarHostState.showNeriSnackbar(
             message = message,
-            actionLabel = context.getString(R.string.playlist_batch_export_undo),
+            actionLabel = context.getString(CoreCommonR.string.playlist_batch_export_undo),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )
@@ -130,9 +130,9 @@ private fun CoroutineScope.showPlaylistBatchExportSnackbar(
             undoOperation()
         }.getOrDefault(false)
         val undoMessage = if (undoSucceeded) {
-            context.getString(R.string.playlist_batch_export_undone, targetPlaylistName)
+            context.getString(CoreCommonR.string.playlist_batch_export_undone, targetPlaylistName)
         } else {
-            context.getString(R.string.playlist_batch_export_undo_failed)
+            context.getString(CoreCommonR.string.playlist_batch_export_undo_failed)
         }
         snackbarHostState.showNeriSnackbar(undoMessage)
     }

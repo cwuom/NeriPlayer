@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableIntStateOf
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutVersionTapOwner
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -27,7 +27,7 @@ class SettingsAboutInteractionsTest {
         owner.onVersionClick()
         assertEquals(0, count.intValue)
         assertEquals(1, enableCount)
-        assertEquals(listOf(R.string.debug_mode_opened), messages)
+        assertEquals(listOf(CoreCommonR.string.debug_mode_opened), messages)
     }
 
     @Test
@@ -43,6 +43,6 @@ class SettingsAboutInteractionsTest {
 
         owner.onVersionClick()
         assertEquals(3, count.intValue)
-        assertEquals(listOf(R.string.debug_mode_enabled), messages)
+        assertEquals(listOf(CoreCommonR.string.debug_mode_enabled), messages)
     }
 }

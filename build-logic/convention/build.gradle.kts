@@ -18,6 +18,7 @@ dependencies {
     implementation(libs.kotlin.gradle)
     implementation("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${libs.versions.kotlin.get()}")
     implementation(libs.eclipse.jgit)
+    testImplementation(libs.junit)
 }
 
 java {

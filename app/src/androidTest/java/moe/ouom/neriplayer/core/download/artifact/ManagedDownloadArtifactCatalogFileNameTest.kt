@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.ManagedLibraryItemRoomStore
 import moe.ouom.neriplayer.core.download.catalog.deserializeDownloadedSongsCatalog
 import moe.ouom.neriplayer.core.download.catalog.serializeDownloadedSongsCatalog
-import moe.ouom.neriplayer.core.download.model.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import org.junit.Assert.assertEquals

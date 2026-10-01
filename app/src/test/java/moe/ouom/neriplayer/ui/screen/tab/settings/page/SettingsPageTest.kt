@@ -4,8 +4,8 @@ import android.content.Context
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.util.search.SearchTextMatcher
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -105,17 +105,17 @@ class SettingsPageTest {
             return AutoSettingsMetadata.settings.first { it.keyName == keyName }.titleRes
         }
 
-        assertEquals(R.string.player_continue, titleRes("home_card_continue"))
+        assertEquals(CoreCommonR.string.player_continue, titleRes("home_card_continue"))
         assertEquals(
-            R.string.settings_home_card_netease_trending,
+            CoreCommonR.string.settings_home_card_netease_trending,
             titleRes("home_card_trending")
         )
         assertEquals(
-            R.string.settings_home_card_netease_radar,
+            CoreCommonR.string.settings_home_card_netease_radar,
             titleRes("home_card_radar")
         )
         assertEquals(
-            R.string.settings_home_card_netease_recommended,
+            CoreCommonR.string.settings_home_card_netease_recommended,
             titleRes("home_card_recommended")
         )
     }
@@ -781,16 +781,16 @@ class SettingsPageTest {
 
     private companion object {
         val TestSettingsStrings = mapOf(
-            R.string.playlist_export to "导出歌单",
-            R.string.playlist_import to "导入歌单",
-            R.string.playlist_export_desc to "将歌单导出为备份文件",
-            R.string.playlist_import_desc to "从备份文件恢复歌单",
-            R.string.settings_export_config to "导出配置文件",
-            R.string.settings_import_config to "导入配置文件",
-            R.string.settings_export_config_desc to "导出设置、登录信息和同步配置",
-            R.string.settings_import_config_desc to "从配置文件恢复设置、登录信息和同步配置",
-            R.string.settings_dynamic_island_lyrics_enabled to "灵动岛歌词",
-            R.string.settings_dynamic_island_lyrics_enabled_desc to "即使没有连接蓝牙设备，也会上传蓝牙歌词元数据"
+            CoreCommonR.string.playlist_export to "导出歌单",
+            CoreCommonR.string.playlist_import to "导入歌单",
+            CoreCommonR.string.playlist_export_desc to "将歌单导出为备份文件",
+            CoreCommonR.string.playlist_import_desc to "从备份文件恢复歌单",
+            CoreCommonR.string.settings_export_config to "导出配置文件",
+            CoreCommonR.string.settings_import_config to "导入配置文件",
+            CoreCommonR.string.settings_export_config_desc to "导出设置、登录信息和同步配置",
+            CoreCommonR.string.settings_import_config_desc to "从配置文件恢复设置、登录信息和同步配置",
+            CoreCommonR.string.settings_dynamic_island_lyrics_enabled to "灵动岛歌词",
+            CoreCommonR.string.settings_dynamic_island_lyrics_enabled_desc to "即使没有连接蓝牙设备，也会上传蓝牙歌词元数据"
         )
     }
 }

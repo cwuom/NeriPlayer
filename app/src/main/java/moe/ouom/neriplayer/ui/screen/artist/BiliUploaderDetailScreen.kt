@@ -88,9 +88,12 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentKind
+import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideo
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
+import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.theme.background.BlurTransformation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -134,7 +137,7 @@ fun BiliUploaderDetailScreen(
     uploader: BiliUploaderSummary,
     onBack: () -> Unit = {},
     onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     onContentClick: (BiliPlaylist) -> Unit = {},
     offlineMode: Boolean = false
 ) {
@@ -172,7 +175,7 @@ fun BiliUploaderDetailScreen(
                     HapticIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
+                            contentDescription = stringResource(CoreCommonR.string.cd_back)
                         )
                     }
                 },
@@ -192,7 +195,7 @@ fun BiliUploaderDetailScreen(
                         runCatching { viewModel.getVideoInfo(video.bvid) }
                             .onSuccess { info ->
                                 if (info.pages.size <= 1) {
-                                    onPlayAudio(ui.videos.map(BiliClient.UploaderVideo::toBiliVideoItem), index)
+                                    onPlayAudio(ui.videos.map(UploaderVideo::toBiliVideoItem), index)
                                 } else {
                                     onPlayParts(info, 0, video.coverUrl)
                                 }
@@ -226,14 +229,14 @@ private fun BiliUploaderContent(
     onRetry: () -> Unit,
     onLoadMoreVideos: () -> Unit,
     onLoadMoreContents: () -> Unit,
-    onVideoClick: (BiliClient.UploaderVideo, Int) -> Unit,
-    onContentClick: (BiliClient.UploaderContent) -> Unit,
+    onVideoClick: (UploaderVideo, Int) -> Unit,
+    onContentClick: (UploaderContent) -> Unit,
     offlineMode: Boolean,
     isTabletLayout: Boolean
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val collectionsEmptyText = stringResource(R.string.bili_uploader_collections_empty)
-    val seriesEmptyText = stringResource(R.string.bili_uploader_series_empty)
+    val collectionsEmptyText = stringResource(CoreCommonR.string.bili_uploader_collections_empty)
+    val seriesEmptyText = stringResource(CoreCommonR.string.bili_uploader_series_empty)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -295,7 +298,7 @@ private fun BiliUploaderContent(
             when (selectedTab) {
                 0 -> {
                     if (ui.videos.isEmpty()) {
-                        item { EmptyBlock(stringResource(R.string.bili_uploader_videos_empty)) }
+                        item { EmptyBlock(stringResource(CoreCommonR.string.bili_uploader_videos_empty)) }
                     } else {
                         itemsIndexed(ui.videos, key = { _, video -> video.bvid }) { index, video ->
                             BiliUploaderVideoRow(
@@ -354,9 +357,9 @@ private fun BiliUploaderContent(
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.BiliUploaderContentRows(
-    items: List<BiliClient.UploaderContent>,
+    items: List<UploaderContent>,
     emptyText: String,
-    onContentClick: (BiliClient.UploaderContent) -> Unit,
+    onContentClick: (UploaderContent) -> Unit,
     offlineMode: Boolean
 ) {
     if (items.isEmpty()) {
@@ -495,7 +498,7 @@ private fun BiliUploaderHeaderCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = stringResource(R.string.bili_uploader_mid, header?.mid ?: 0L),
+                        text = stringResource(CoreCommonR.string.bili_uploader_mid, header?.mid ?: 0L),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.82f),
                         maxLines = 1,
@@ -509,7 +512,7 @@ private fun BiliUploaderHeaderCard(
                 AssistChip(
                     onClick = {},
                     label = {
-                        Text(pluralStringResource(R.plurals.bili_uploader_video_count, videoCount, videoCount))
+                        Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_video_count, videoCount, videoCount))
                     }
                 )
                 AssistChip(
@@ -517,7 +520,7 @@ private fun BiliUploaderHeaderCard(
                     label = {
                         Text(
                             pluralStringResource(
-                                R.plurals.bili_uploader_collection_count,
+                                CoreCommonR.plurals.bili_uploader_collection_count,
                                 collectionCount,
                                 collectionCount
                             )
@@ -527,7 +530,7 @@ private fun BiliUploaderHeaderCard(
                 AssistChip(
                     onClick = {},
                     label = {
-                        Text(pluralStringResource(R.plurals.bili_uploader_series_count, seriesCount, seriesCount))
+                        Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_series_count, seriesCount, seriesCount))
                     }
                 )
             }
@@ -572,19 +575,19 @@ private fun BiliUploaderTabs(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { onTabSelected(0) },
-                    text = { Text(stringResource(R.string.bili_uploader_tab_videos)) },
+                    text = { Text(stringResource(CoreCommonR.string.bili_uploader_tab_videos)) },
                     icon = { Icon(Icons.Outlined.VideoLibrary, contentDescription = null) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { onTabSelected(1) },
-                    text = { Text(stringResource(R.string.bili_uploader_tab_collections)) },
+                    text = { Text(stringResource(CoreCommonR.string.bili_uploader_tab_collections)) },
                     icon = { Icon(Icons.Outlined.Folder, contentDescription = null) }
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { onTabSelected(2) },
-                    text = { Text(stringResource(R.string.bili_uploader_tab_series)) },
+                    text = { Text(stringResource(CoreCommonR.string.bili_uploader_tab_series)) },
                     icon = {
                         Icon(
                             Icons.AutoMirrored.Outlined.PlaylistPlay,
@@ -599,7 +602,7 @@ private fun BiliUploaderTabs(
 
 @Composable
 private fun BiliUploaderVideoRow(
-    video: BiliClient.UploaderVideo,
+    video: UploaderVideo,
     onClick: () -> Unit,
     offlineMode: Boolean
 ) {
@@ -659,7 +662,7 @@ private fun BiliUploaderVideoRow(
 
 @Composable
 private fun BiliUploaderContentRow(
-    content: BiliClient.UploaderContent,
+    content: UploaderContent,
     onClick: () -> Unit,
     offlineMode: Boolean
 ) {
@@ -705,7 +708,7 @@ private fun BiliUploaderContentRow(
                 overflow = TextOverflow.Ellipsis
             )
             val subtitle = content.description.ifBlank {
-                pluralStringResource(R.plurals.bili_uploader_content_count, content.total, content.total)
+                pluralStringResource(CoreCommonR.plurals.bili_uploader_content_count, content.total, content.total)
             }
             Text(
                 text = subtitle,
@@ -716,7 +719,7 @@ private fun BiliUploaderContentRow(
             )
         }
         Icon(
-            imageVector = if (content.kind == BiliClient.UploaderContentKind.COLLECTION) {
+            imageVector = if (content.kind == UploaderContentKind.COLLECTION) {
                 Icons.Outlined.Folder
             } else {
                 Icons.AutoMirrored.Outlined.PlaylistPlay
@@ -746,12 +749,12 @@ private fun BiliUploaderLoadMoreButton(
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            Text(stringResource(R.string.bili_uploader_load_more))
+            Text(stringResource(CoreCommonR.string.bili_uploader_load_more))
         }
     }
 }
 
-private fun BiliClient.UploaderContent.toBiliPlaylist(uploaderName: String): BiliPlaylist {
+private fun UploaderContent.toBiliPlaylist(uploaderName: String): BiliPlaylist {
     return BiliPlaylist(
         mediaId = id,
         fid = id,
@@ -760,8 +763,8 @@ private fun BiliClient.UploaderContent.toBiliPlaylist(uploaderName: String): Bil
         count = total,
         coverUrl = coverUrl,
         kind = when (kind) {
-            BiliClient.UploaderContentKind.COLLECTION -> BiliPlaylistKind.COLLECTION
-            BiliClient.UploaderContentKind.SERIES -> BiliPlaylistKind.SERIES
+            UploaderContentKind.COLLECTION -> BiliPlaylistKind.COLLECTION
+            UploaderContentKind.SERIES -> BiliPlaylistKind.SERIES
         },
         subtitle = uploaderName
     )

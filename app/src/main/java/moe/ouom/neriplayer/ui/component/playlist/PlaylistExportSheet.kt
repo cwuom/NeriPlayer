@@ -49,8 +49,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -81,7 +81,7 @@ internal fun PlaylistExportSheet(
     var newName by remember { mutableStateOf("") }
     var pendingExport by remember { mutableStateOf<PendingPlaylistExport?>(null) }
     val resolvedCreateActionLabel =
-        createActionLabel ?: stringResource(R.string.playlist_create_and_export)
+        createActionLabel ?: stringResource(CoreCommonR.string.playlist_create_and_export)
 
     fun clearPendingExport() {
         pendingExport = null
@@ -133,7 +133,7 @@ internal fun PlaylistExportSheet(
                 )
                 Text(
                     text = pluralStringResource(
-                        R.plurals.common_selected_count,
+                        CoreCommonR.plurals.common_selected_count,
                         selectedCount,
                         selectedCount
                     ),
@@ -144,7 +144,7 @@ internal fun PlaylistExportSheet(
                 MiuixSettingsTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
+                    placeholder = { Text(stringResource(CoreCommonR.string.playlist_create_name)) },
                     singleLine = true
                 )
 
@@ -199,11 +199,11 @@ internal fun PlaylistExportSheet(
             onDismissRequest = {
                 clearPendingExport()
             },
-            title = { Text(stringResource(R.string.playlist_batch_export_confirm_title)) },
+            title = { Text(stringResource(CoreCommonR.string.playlist_batch_export_confirm_title)) },
             text = {
                 Text(
                     pluralStringResource(
-                        R.plurals.playlist_batch_export_confirm_message,
+                        CoreCommonR.plurals.playlist_batch_export_confirm_message,
                         selectedCount,
                         selectedCount,
                         export.targetName
@@ -218,7 +218,7 @@ internal fun PlaylistExportSheet(
                         action()
                     }
                 ) {
-                    Text(stringResource(R.string.playlist_batch_export_confirm_button))
+                    Text(stringResource(CoreCommonR.string.playlist_batch_export_confirm_button))
                 }
             },
             dismissButton = {
@@ -227,7 +227,7 @@ internal fun PlaylistExportSheet(
                         clearPendingExport()
                     }
                 ) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -266,7 +266,7 @@ private fun PlaylistExportRow(
         )
         Text(
             text = pluralStringResource(
-                R.plurals.explore_song_count,
+                CoreCommonR.plurals.explore_song_count,
                 playlist.songs.size,
                 playlist.songs.size
             ),

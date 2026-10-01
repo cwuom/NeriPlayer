@@ -26,10 +26,6 @@
     <fields>;
     <init>(...);
 }
--keepclassmembers,allowoptimization class moe.ouom.neriplayer.core.player.model.** {
-    <fields>;
-    <init>(...);
-}
 -keepclassmembers,allowoptimization class moe.ouom.neriplayer.ui.viewmodel.tab.** {
     <fields>;
     <init>(...);
@@ -61,32 +57,11 @@
     );
 }
 
-# Lyricon 走 service 绑定和模型反射，这块先保守一点
--keep class io.github.proify.lyricon.** { *; }
--dontwarn io.github.proify.lyricon.**
-
-# SuperLyricApi 在系统服务兼容分支上比较脆，先别动它
--keep class com.hchen.superlyricapi.** { *; }
-
 # 这些库有自己的 consumer rules，这里只压掉可选依赖告警
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -dontwarn coil.util.CoilUtils
 -dontwarn androidx.media3.**
--dontwarn com.google.api.client.http.**
--dontwarn org.joda.time.**
--dontwarn com.google.re2j.**
--dontwarn java.beans.**
--dontwarn javax.script.**
--dontwarn org.mozilla.javascript.**
-
-# NewPipe extractor 用 Mozilla Rhino 求值 YouTube player.js。Rhino 通过固定类名反射
-# 加载 VMBridge 实现(org.mozilla.javascript.jdk18.VMBridge_jdk18 等),R8 一旦删除或改名
-# 这些类,运行时按原始类名反射失败 -> NoClassDefFoundError + "Failed to create VMBridge instance",
-# 导致签名/n 解密整条通道崩溃(issue #172/#257 的 YouTube 无法播放根因)。保留类名与成员
--keep class org.mozilla.javascript.** { *; }
--keep class org.mozilla.classfile.** { *; }
--dontwarn org.mozilla.classfile.**
 
 -dontwarn android.os.ServiceManager
 

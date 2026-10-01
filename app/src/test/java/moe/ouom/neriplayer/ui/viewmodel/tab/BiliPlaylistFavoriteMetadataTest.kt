@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

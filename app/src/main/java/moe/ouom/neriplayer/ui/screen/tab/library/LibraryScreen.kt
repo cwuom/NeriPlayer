@@ -69,14 +69,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylist
+import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist
-import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
-import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
@@ -90,13 +90,13 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 
 enum class LibraryTab(val labelResId: Int) {
-    LOCAL(R.string.library_tab_local),
-    FAVORITE(R.string.library_tab_favorite),
-    YTMUSIC(R.string.library_tab_youtube_music),
-    NETEASE(R.string.library_tab_netease),
-    NETEASEALBUM(R.string.library_tab_netease_album),
-    BILI(R.string.library_tab_bilibili),
-    QQMUSIC(R.string.library_tab_qqmusic)
+    LOCAL(CoreCommonR.string.library_tab_local),
+    FAVORITE(CoreCommonR.string.library_tab_favorite),
+    YTMUSIC(CoreCommonR.string.library_tab_youtube_music),
+    NETEASE(CoreCommonR.string.library_tab_netease),
+    NETEASEALBUM(CoreCommonR.string.library_tab_netease_album),
+    BILI(CoreCommonR.string.library_tab_bilibili),
+    QQMUSIC(CoreCommonR.string.library_tab_qqmusic)
 }
 
 internal const val NETEASE_CATEGORY_PLAYLIST = 0
@@ -117,8 +117,8 @@ internal val HotPlaylistPeriods = listOf(
 )
 
 internal fun hotPlaylistTitleResId(period: PlaybackStatsPeriod): Int = when (period) {
-    PlaybackStatsPeriod.MONTH -> R.string.library_hot_playlist_month
-    else -> R.string.library_hot_playlist_week
+    PlaybackStatsPeriod.MONTH -> CoreCommonR.string.library_hot_playlist_month
+    else -> CoreCommonR.string.library_hot_playlist_week
 }
 
 internal enum class LocalArtistSortMode {
@@ -241,7 +241,7 @@ fun LibraryScreen(
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val defaultPlaylistName = stringResource(R.string.library_create_playlist_default)
+    val defaultPlaylistName = stringResource(CoreCommonR.string.library_create_playlist_default)
     val localPlaylistRepo = remember(context) {
         LocalPlaylistRepository.getInstance(context)
     }
@@ -341,7 +341,7 @@ fun LibraryScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         LargeTopAppBar(
-            title = { Text(stringResource(R.string.library_title)) },
+            title = { Text(stringResource(CoreCommonR.string.library_title)) },
             scrollBehavior = scrollBehavior,
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
@@ -351,13 +351,13 @@ fun LibraryScreen(
                 HapticIconButton(onClick = onOpenStats) {
                     Icon(
                         Icons.Filled.BarChart,
-                        contentDescription = stringResource(R.string.stats_title)
+                        contentDescription = stringResource(CoreCommonR.string.stats_title)
                     )
                 }
                 HapticIconButton(onClick = onOpenRecent) {
                     Icon(
                         Icons.Outlined.History,
-                        contentDescription = stringResource(R.string.library_recent_played)
+                        contentDescription = stringResource(CoreCommonR.string.library_recent_played)
                     )
                 }
             }
