@@ -87,6 +87,8 @@
     <string name="webdav_validate_failed">WebDAV configuration failed: %s</string>
     <string name="webdav_required_fields">Please enter the server URL, username, and password</string>
     <string name="webdav_auth_failed">WebDAV username or password is invalid</string>
+    <string name="webdav_directory_missing">The WebDAV sync directory does not exist. Create the directory or check the sync path.</string>
+    <string name="webdav_access_denied">Cannot access the WebDAV sync directory. Check that it exists and that you have access permission.</string>
     <string name="webdav_sync_failed">WebDAV sync failed: %s</string>
     <string name="webdav_sync_failed_message">WebDAV sync failed</string>
     <string name="webdav_not_configured">WebDAV is not configured</string>

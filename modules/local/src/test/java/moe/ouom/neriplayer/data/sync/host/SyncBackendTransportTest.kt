@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavFileNotFoundException
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavConcurrencyToken
 import moe.ouom.neriplayer.data.sync.codec.SyncDataSerializer
@@ -98,6 +99,38 @@ class SyncBackendTransportTest {
     }
 
     @Test
+    fun `WebDAV missing parent directory fails instead of producing an initial upload snapshot`() = runTest {
+        val fixture = WebDavFixture()
+        fixture.readCode = 404
+        fixture.directoryCode = 404
+
+        val result = fixture.backend.fetch()
+
+        assertTrue(result.isFailure)
+        assertNull(result.getOrNull())
+        val error = result.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertFalse(error is WebDavFileNotFoundException)
+        assertFalse(error is WebDavAuthException)
+    }
+
+    @Test
+    fun `WebDAV forbidden file and parent directory reads fail without an authentication error`() = runTest {
+        for ((readCode, directoryCode) in listOf(403 to 207, 404 to 403)) {
+            val fixture = WebDavFixture()
+            fixture.readCode = readCode
+            fixture.directoryCode = directoryCode
+
+            val result = fixture.backend.fetch()
+
+            assertTrue(result.isFailure)
+            val error = result.exceptionOrNull()
+            assertTrue(error is IOException)
+            assertFalse(error is WebDavAuthException)
+        }
+    }
+
+    @Test
     fun `WebDAV revalidates fingerprint before fallback and propagates write failures`() = runTest {
         val fixture = WebDavFixture()
         val fingerprint = WebDavApiClient.calculateFingerprint(content)
@@ -173,16 +206,36 @@ class SyncBackendTransportTest {
         val storage = mock(SecureTokenStorage::class.java)
         val webDavStorage = mock(WebDavStorage::class.java)
         var readCode = 200
+        var directoryCode = 207
         var writeCode = 201
         var body = content
         var followUps = 0
         val writes = mutableListOf<Request>()
         private val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
-            if (request.method == "PUT") {
-                writes += request
-                response(request, writeCode, byteArrayOf())
-            } else response(request, readCode, body)
+            when (request.method) {
+                "PUT" -> {
+                    writes += request
+                    response(request, writeCode, byteArrayOf())
+                }
+                "PROPFIND" -> {
+                    val directoryBody = if (directoryCode == 207) {
+                        """
+                            <d:multistatus xmlns:d="DAV:">
+                                <d:response>
+                                    <d:href>/</d:href>
+                                    <d:propstat>
+                                        <d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>
+                                        <d:status>HTTP/1.1 200 OK</d:status>
+                                    </d:propstat>
+                                </d:response>
+                            </d:multistatus>
+                        """.trimIndent().toByteArray()
+                    } else byteArrayOf()
+                    response(request, directoryCode, directoryBody)
+                }
+                else -> response(request, readCode, body)
+            }
         }.build()
         val backend = WebDavSyncBackend(storage, webDavStorage, WebDavApiClient("test-user", "test-password", client, "auth"),
             "https://sync.test/backup", SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ })

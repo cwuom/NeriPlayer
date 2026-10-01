@@ -16,5 +16,7 @@ fun createWebDavSyncClient(context: Context, username: String, password: String)
     username = username,
     password = password,
     client = DataHttpClients.shared,
-    authFailureMessage = context.getString(CoreCommonR.string.webdav_auth_failed)
+    authFailureMessage = context.getString(CoreCommonR.string.webdav_auth_failed),
+    directoryMissingMessage = context.getString(CoreCommonR.string.webdav_directory_missing),
+    accessDeniedMessage = context.getString(CoreCommonR.string.webdav_access_denied)
 )

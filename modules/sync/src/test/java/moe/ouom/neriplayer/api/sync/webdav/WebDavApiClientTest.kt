@@ -44,7 +44,8 @@ class WebDavApiClientTest {
     @Test
     fun `validation treats missing target as usable but preserves authentication and server failures`() {
         for (status in listOf(200, 404)) assertTrue(api(SyncHttpFixture(status)).validateConnection("https://example.test", "").isSuccess)
-        for (status in listOf(401, 403)) assertTrue(api(SyncHttpFixture(status)).validateConnection("https://example.test", "").exceptionOrNull() is WebDavAuthException)
+        assertTrue(api(SyncHttpFixture(401)).validateConnection("https://example.test", "").exceptionOrNull() is WebDavAuthException)
+        assertTrue(api(SyncHttpFixture(403)).validateConnection("https://example.test", "").exceptionOrNull() is WebDavApiException)
         for (body in listOf("", "failure")) assertTrue(api(SyncHttpFixture(500, body.toByteArray())).validateConnection("https://example.test", "").exceptionOrNull() is WebDavApiException)
         assertTrue(api(SyncHttpFixture()).validateConnection("bad URL", "").isFailure)
     }
@@ -52,7 +53,8 @@ class WebDavApiClientTest {
     @Test
     fun `reads distinguish missing authentication and generic remote failure`() {
         assertTrue(api(SyncHttpFixture(404)).getFileContentStrict(remote).exceptionOrNull() is WebDavFileNotFoundException)
-        for (status in listOf(401, 403)) assertTrue(api(SyncHttpFixture(status)).getFileContentStrict(remote).exceptionOrNull() is WebDavAuthException)
+        assertTrue(api(SyncHttpFixture(401)).getFileContentStrict(remote).exceptionOrNull() is WebDavAuthException)
+        assertTrue(api(SyncHttpFixture(403)).getFileContentStrict(remote).exceptionOrNull() is WebDavApiException)
         for (body in listOf("", "failure")) assertTrue(api(SyncHttpFixture(500, body.toByteArray())).getFileContentStrict(remote).exceptionOrNull() is WebDavApiException)
     }
 
@@ -105,7 +107,7 @@ class WebDavApiClientTest {
             val client = api(SyncHttpFixture(status, body.toByteArray()))
             val error = client.updateFileContent(remote, byteArrayOf(1), createOnly = true).exceptionOrNull()
             when (status) {
-                401, 403 -> assertTrue(error is WebDavAuthException)
+                401 -> assertTrue(error is WebDavAuthException)
                 409, 412, 423 -> assertTrue(error is WebDavContentConflictException)
                 else -> assertTrue(error is WebDavApiException)
             }

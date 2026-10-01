@@ -1,0 +1,43 @@
+package moe.ouom.neriplayer.api.sync.webdav
+
+import moe.ouom.neriplayer.api.sync.http.SyncResponseBodyReader
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+
+internal class WebDavDirectoryProbe(
+    private val client: OkHttpClient,
+    private val authorizationHeader: String,
+    private val authFailureMessage: String,
+    private val directoryMissingMessage: String,
+    private val accessDeniedMessage: String
+) {
+    fun requireExists(remoteUrl: String) {
+        val fileUrl = remoteUrl.toHttpUrl()
+        val directoryUrl = fileUrl.newBuilder()
+            .removePathSegment(fileUrl.pathSegments.lastIndex)
+            .addPathSegment("")
+            .build()
+        // 文件 404 也可能来自父目录缺失，确认目录后才能进入首次上传
+        val request = Request.Builder()
+            .url(directoryUrl)
+            .header("Authorization", authorizationHeader)
+            .header("Depth", "0")
+            .method("PROPFIND", null)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val statusCode = WebDavDirectoryResponse.statusCode(response)
+            when {
+                statusCode in 200..299 -> Unit
+                statusCode == 401 -> throw WebDavAuthException(authFailureMessage)
+                statusCode == 403 -> throw WebDavAccessDeniedException(accessDeniedMessage)
+                statusCode == 404 -> throw WebDavDirectoryNotFoundException(directoryMissingMessage)
+                else -> {
+                    val body = if (response.code == 207) "" else SyncResponseBodyReader.readText(response.body)
+                    throw WebDavApiException(statusCode, "Failed to check WebDAV directory: $statusCode - $body")
+                }
+            }
+        }
+    }
+}
