@@ -25,21 +25,25 @@
 
 维护文档时建议按用途拆开看：
 
-- `README.md` / `README_EN.md`
+- [README.md](README.md) / [README_EN.md](README_EN.md)
   - 面向用户和新贡献者，说明项目定位、能力边界、安装构建、同步与隐私。
-- `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
+- [CONTRIBUTING.md](CONTRIBUTING.md) / [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md)
   - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
-- [`docs/kotlin-helpers.md`](docs/kotlin-helpers.md)
+- [docs/kotlin-helpers.md](docs/kotlin-helpers.md) /
+  [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md)
   - 说明请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。
-- `app/src/main/cpp/README.md`
+- [tools_pub/quality/README.md](tools_pub/quality/README.md) /
+  [tools_pub/quality/README_EN.md](tools_pub/quality/README_EN.md)
+  - 说明 CRAP、模块归属、依赖边界检查的范围、命令和验证限制。
+- [app/src/main/cpp/README.md](app/src/main/cpp/README.md)
   - 说明 NeriPlayer 自有 Native 源码的替代授权范围、第三方排除项和
     外部贡献所需的显式双授权声明。
-- `app/src/main/cpp/tests/usb/config/host-gate-contract.md`
+- [app/src/main/cpp/tests/usb/config/host-gate-contract.md](app/src/main/cpp/tests/usb/config/host-gate-contract.md)
   - 说明公开 Native USB host 门禁、CI 覆盖与真实设备验证边界。
-- `app/src/main/cpp/tests/usb/corpus/README.md` 与
-  `app/src/main/cpp/tests/usb/fixtures/README.md`
+- [app/src/main/cpp/tests/usb/corpus/README.md](app/src/main/cpp/tests/usb/corpus/README.md) 与
+  [app/src/main/cpp/tests/usb/fixtures/README.md](app/src/main/cpp/tests/usb/fixtures/README.md)
   - 说明公开测试语料/夹具只能使用合成或可审计资料，真实设备证据留在私有目录。
-- `np-submodule/NeriPlayer-LTW/README.md`
+- [np-submodule/NeriPlayer-LTW/README.md](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme)
   - 面向一起听服务端部署者，说明 Worker API、事件模型、部署和本地检查。
 
 行为变更如果影响用户理解，请同步更新 README；
@@ -56,7 +60,7 @@
 - **Gradle**：9.6.1
 - **compileSdk / targetSdk / minSdk**：37 / 36 / 28
 - **NDK**：`27.0.12077973`
-- **CMake**：`3.28.0+`
+- **CMake**：`3.22.1`，由 Android 构建脚本固定指定
 - **Node.js**：22，用于一起听 Worker 检查
 - **版本名格式**：`<git短哈希>.<MMddHHmm>`
 - **Release APK 文件名**：`NeriPlayer-<versionName>[-abi].apk`
@@ -85,7 +89,7 @@
   续传检查点、sidecar 文件、任务队列恢复、取消清理和 SAF 目录迁移。
 - **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计、
   缺字段快照清洗、JSON/ProtoBuf/Base64 格式兼容和 WebDAV 并发保护。
-- **本地数据**：歌单 JSON 原子写入、本地元信息补全、配置导入导出、
+- **本地数据**：歌单 Room 事务、旧 JSON 升级与原子回退、本地元信息补全、配置导入导出、
   授权加密存储和 DataStore 设置。
 - **歌词与播放页 UI**：`AdvancedLyricsView`、`SyncedLyricsView`、
   `LyricShareSheet`、歌词音译显示、日语歌词翻译间距、歌词长按分享和 Lyrics 全屏页。
@@ -100,7 +104,7 @@
 - **本地持久化**：播放/流量统计的批量写入、生命周期 flush、原子文件替换和
   SAF/本地歌单初始化就绪状态。
 
-对应测试分布在 app 与各库模块的 `src/test/`，设备测试位于 `app/src/androidTest/`。
+对应测试分布在 app 与各库模块的 `src/test/` 和 `src/androidTest/`。
 修改上述链路时，优先搜索同名目录或相邻测试类，再补新的覆盖。
 
 ---
@@ -233,7 +237,7 @@
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
   - `LibraryScreen.kt` 负责媒体库顶层分类，本地内容可在歌单/歌手之间切换，
-    收藏页可展示歌单和已关注艺术家。
+    收藏页可展示歌单、已关注艺术家和热点歌单。
   - `LocalArtistLibraryGrid.kt` 展示本地艺术家网格、空状态和艺术家卡片。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
@@ -324,7 +328,8 @@
   - `ManagedDownloadStorage.kt` 是应用目录/SAF 目录的外观入口；具体实现已拆到
     `storage/commit/`、`delete/`、`lookup/`、`migration/`、`recovery/`、
     `snapshot/`、`tree/` 与 `working/` 等子包。
-  - `task/DownloadTaskStore.kt` 持久化下载任务、状态、进度和 attemptId。
+  - `task/DownloadTaskStore.kt` 管理内存中的任务展示、状态、进度和 attemptId。
+  - `execution/persistence/DownloadExecutionRoomStore.kt` 通过 Room 持久化下载操作和恢复状态。
   - `policy/DownloadLifecyclePolicies.kt` 集中封装下载恢复、取消清理和快速结算策略。
   - `naming/ManagedDownloadNaming.kt` 管理下载文件名模板和历史命名兼容。
   - `metadata/DownloadedAudioTagWriter.kt` 写入音频标签；`catalog/` 管理已下载歌曲目录的读写与投影。
@@ -340,7 +345,7 @@
   - `auth/`：通用 Web 登录状态与 YouTube 凭据轮换 Worker；平台 Cookie / Auth 仓库位于 `:platform` 的 `data/auth` 和 `platform/youtube/auth`。
   - 平台缓存归 `:platform`，本地歌单编排和共享缓存表 schema 分别归 `:local` 与 `:database`。
   - `storage/`：存储占用分析、缓存分组和额外缓存清理。
-  - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容、
+  - `local/playlist/`：本地歌单 Room 读写、旧 JSON 升级与原子回退、系统歌单兼容、
     后台元信息补全和本地艺术家聚合。
   - `local/audioimport/`、`local/media/`：本地音频导入、快速扫描、
     后台元信息补全、封面回退和分享。
@@ -397,7 +402,7 @@
   不是在线艺术家资料库。
 - 网易云艺术家详情依赖网易云 artist 元数据和接口；
   关注状态会保存到本地收藏分类。
-- `Bilibili` 已支持搜索、收藏夹和音频播放/下载，以及评论阅读、楼中楼、复制、点赞、发评和回复。
+- `Bilibili` 已支持搜索、收藏夹和音频播放/下载，以及评论阅读、楼中楼、复制和登录后的点赞、发评与回复。
   链接识别支持选中分 P、合集分享和 `season_id` 上下文，但仍不代表完整 B 站客户端。
 - `YouTube Music` 已支持登录、匿名播放、首页/歌单浏览、详情、搜索和播放兼容；
   有效身份 Cookie 会保留并支持轮换，播放解析会复用 bootstrap/player.js/PoToken 与挑战
@@ -427,7 +432,7 @@
   - 直接 HTTP 传输通过工作文件大小 + `Range` 头续传
   - 需要显式 Range 的平台传输按字节偏移续传
   - HLS 下载通过 `.hls.json` 检查点按 segment 恢复
-- 工作文件位于 `cache/download_staging/`，并额外保存 `.resume.json`
+- 工作文件位于 `files/download_staging/`，并额外保存 `.resume.json`
   恢复元数据；应用启动和网络恢复后会尝试自动找回未完成下载。
 - 手动取消会回滚半成品并删除工作文件；只有网络策略暂停与可恢复错误重试
   才会保留断点。
@@ -501,7 +506,7 @@
 
 适用于把新平台接到 `Explore` 页搜索或发现流。
 
-1. 在 `modules/platform` 的 `api/<平台>` 包实现客户端，缓存和业务编排放在同库对应平台职责包中，并维护协议与业务之间的包级依赖规则。
+1. 在 `:platform` 的 `platform/<平台>/api` 包实现客户端，缓存和业务编排放在同库对应平台职责包中，并维护协议与业务之间的包级依赖规则。
 2. 在 `ExploreViewModel` 中增加请求、分页和状态映射。
 3. 在 `ExploreScreen` / Host 页面中补充平台标签和结果 UI。
 4. 如需播放，继续接入 `PlayerManager` 的音源解析链路。
@@ -518,7 +523,7 @@
 
 #### 3. 新增在线播放平台
 
-1. 参考 `bili/` 或 `youtube/` 设计客户端与播放仓库。
+1. 参考 `:platform` 中的 `platform/bilibili/` 或 `platform/youtube/` 设计客户端与播放仓库。
 2. 如需特殊 Header，扩展
    `core/player/engine/datasource/ConditionalHttpDataSourceFactory.kt`。
 3. 在 `core/player/url/` 与对应 `resolver/` 的 URL 解析链路接入平台。
@@ -636,7 +641,7 @@
    `task/DownloadTaskStore.kt`、`policy/DownloadLifecyclePolicies.kt`
    和相关单元测试。
 2. 同时考虑默认应用目录、SAF 自定义目录、迁移、历史命名、元数据文件和 `.nomedia`。
-3. 下载任务先写入 `cache/download_staging/`，再提交到正式目录；
+3. 下载任务先写入 `files/download_staging/`，再提交到正式目录；
    `.resume.json` 与 `.hls.json` 是续传恢复的一部分，不能当普通临时文件随意清理。
 4. 默认下载并发是 **6**，设置允许调整到 **1-8**；
    修改并发、重试或网络恢复时，请同步检查 `DownloadParallelism.kt`、
@@ -797,10 +802,10 @@ adb logcat | grep NeriPlayer
    ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
    ./gradlew :platform:testDebugUnitTest \
      -DrunYouTubePlaybackSmoke=true \
-     -DyoutubeSmokeVideoId=<id> \
-     [-DyoutubeSmokeForceRefresh=true] \
-     [-DyoutubeSmokeCookieFile=/absolute/path/to/cookies.json]
+     -DyoutubeSmokeVideoId=VIDEO_ID
    ```
+   将 `VIDEO_ID` 替换为实际视频 ID；需要时追加 `-DyoutubeSmokeForceRefresh=true`
+   或 `-DyoutubeSmokeCookieFile=/absolute/path/to/cookies.json`。
 4. 如修改资源、UI、导航、设置、同步或存储逻辑，建议执行：
    ```bash
    ./gradlew :app:lintDebug
@@ -829,10 +834,10 @@ adb logcat | grep NeriPlayer
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
-   这里的 `npm run check` 会依次执行 `node --check`、协议测试和
+   这里的 `npm run check` 会依次执行 Node.js 版本检查、`node --check`、协议测试和
    `wrangler deploy --dry-run`；协议或房间状态改动还需要实际验证 create/join/ws 流程。
 8. 新增单元测试放到被测代码所在模块的 `src/test/`，宿主集成测试放在 `app/src/test/`；
-   新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
+   新增设备或 Compose UI 测试放到对应模块的 `src/androidTest/`，应用宿主集成测试放到 `app/src/androidTest/`。
 9. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
 
 CRAP 质量门禁与职责拆分：
@@ -850,7 +855,13 @@ CRAP 质量门禁与职责拆分：
 `:app:check` 和 Android CI 均执行门禁；完整评分和范围报告位于
 `app/build/reports/crap/`，口径与依赖见 [质量检查说明](tools_pub/quality/README.md)。
 
-`OwnedMainSourceLineBudgetTest` 约束本轮拆分的自有主源码及拆出的组件严格少于 2000 物理行，
+`:playback:logic` 和 `:playback:runtime` 通过 `build-logic.android.module-quality` 提供 `verifyCrap`。
+独立门禁使用模块自己的覆盖率和共享配置中的对应范围，所选范围为空时失败；
+播放策略、运行协调、PCM、宿主接口、USB policy 和小组件呈现包自动包含新增文件。
+app 的播放器适配器参与聚合门禁。迁移到运行库的歌词渲染、Room 队列、解码器和播放 Range
+设备测试通过 `:playback:runtime:connectedDebugAndroidTest` 执行。
+
+`OwnedMainSourceLineBudgetTest` 约束受检自有主源码及组件严格少于 2000 物理行，
 USB `exclusive/` 下的自有 `.cpp` / `.h` 也在检查范围内。新增组件时应同步维护测试中的文件清单；
 第三方 libusb 和测试文件不属于这个行数上限。
 

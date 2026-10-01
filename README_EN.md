@@ -369,7 +369,7 @@ For release build and signing details, see
   YouTube can be fully disabled under Settings > General, which hides its entry
   points and stops related background warmups.
   Local content can switch between playlists/artists with search and artist
-  sorting; Favorites can switch between playlists/artists; NetEase can switch
+  sorting; Favorites can switch between playlists/artists/Hot; NetEase can switch
   between playlists/albums; Bilibili separates created favorites, subscribed
   favorites, and collections.
 - 🔍 **Layered search**:
@@ -670,7 +670,7 @@ For release build and signing details, see
 - Java 17 / Kotlin JVM 17
 - AGP `9.4.1` / Gradle `9.6.1`
 - NDK `27.0.12077973`
-- CMake `3.28.0+`
+- CMake `3.22.1`, pinned by the Android build script
 - Version name format: `<git_short_hash>.<MMddHHmm>`
 - Release APK filename: `NeriPlayer-<versionName>[-abi].apk`
 - Release builds are `arm64-v8a` by default. Use `-PbuildAllReleaseAbis=true`
@@ -705,7 +705,7 @@ Playback policy covers nine leaf packages: `audio`, `command`, `offload`, `pendi
 
 Shared contracts live in `modules/model`, retaining existing packages such as `data.model.<business>`. Screen-local state stays with UI, Room entities with the database, and private algorithm records with their implementation. Module directories and Kotlin packages express different scopes. Packages match their internal source directories. Class renames require checking actual save and read paths: persisted Workers, JNI exports, and Android component entry points must remain compatible, while fields, storage keys, and historical schemas remain unchanged.
 
-Modules own tests, resources, and consumer R8 rules; host integration tests stay in app. `:local` owns Room business mappings and local repository orchestration, while platform cache adapters belong to `:platform`. Historical schemas live in `modules/database/schemas`. Settings KSP runs in `:local`; Compose settings rendering stays in `app/ui/settings`. App has no production `data` directory; download upgrades and dependency assembly use `core/startup/legacy` and `core/integration`.
+Modules own tests, resources, and consumer R8 rules; host integration tests stay in app. `:local` owns Room business mappings and local repository orchestration, while platform cache adapters belong to `:platform`. Historical schemas live in `modules/database/schemas`. Settings KSP runs in `:local`; Compose settings rendering stays in [app settings screens](app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/). App has no production `data` directory; download upgrades and dependency assembly use `core/startup/legacy` and `core/integration`.
 
 Run `./gradlew verifyModularization` for structural boundaries, JVM tests, combined CRAP coverage, domain dependencies, and lint. Each module README lists focused tasks, for example:
 
@@ -746,7 +746,7 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - `Library` uses paged navigation for Local, Favorites, NetEase, YouTube Music,
   Bilibili, and the QQ Music placeholder. It also exposes Recent Plays and
   Playback Stats.
-- Local Library has playlist/artist categories; Favorites has playlist/artist
+- Local Library has playlist/artist categories; Favorites has playlist/artist/Hot
   categories; NetEase has playlist/album categories.
 - `LocalArtistDetailScreen` handles local artist pages with play-all,
   multi-select, playlist export, and batch downloads for online songs.
@@ -846,9 +846,11 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   follow-system behavior.
 - Platform cookies, YouTube auth data, GitHub tokens, and WebDAV passwords are
   stored locally with `Android Keystore + EncryptedSharedPreferences`.
-- Play history, playback stats, playlists, favorite snapshots, and mappings are
-  persisted through local files.
-- Local playlists are stored as JSON with atomic temp-file writes.
+- Local playlists, recent plays, playback stats, and favorite snapshots primarily
+  persist through `Room`; `:database` owns entities, DAOs, and migrations.
+- Legacy JSON remains an upgrade-import and failure-fallback path. Playlist JSON
+  import/export and remote sync formats are maintained by their own flows;
+  fallback files still use atomic writes.
 - Sync payloads shared by GitHub and WebDAV live in `:model` under `data/model/sync/`.
   `:sync` owns transport, encrypted credential state, sessions, compatible codecs,
   sanitization, merging, conflict handling, and Worker policies. Android repository
@@ -869,12 +871,13 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 
 - Downloads use a shared `OkHttpClient`, not the system `DownloadManager`.
 - Default download concurrency is **6**, configurable up to **8** in Settings.
-- Downloads are first written into `cache/download_staging` working files, then
+- Downloads are first written into `files/download_staging/` working files, then
   committed into the app-managed directory or a user-selected SAF directory.
   Audio metadata is prepared before commit, and lyrics, covers, `.npmeta.json`,
   and audio tags are written after the audio file is finalized.
-- `DownloadTaskStore` persists queued work and task state. On startup,
-  `GlobalDownloadManager` waits for active/queued work to settle before restoring
+- `DownloadExecutionRoomStore` persists download operations and recovery state
+  through Room; `DownloadTaskStore` owns in-memory task presentation and progress.
+  On startup, `GlobalDownloadManager` waits for active/queued work to settle before restoring
   unfinished tasks, so stale queues and new requests do not overwrite each other.
 - If completed audio can be found quickly through the download index or cached
   snapshot, the task is settled as complete without re-fetching the stream or

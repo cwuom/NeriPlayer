@@ -1,8 +1,10 @@
+[English](./kotlin-helpers_EN.md) | [中文](./kotlin-helpers.md)
+
 # Kotlin 辅助工具使用约定
 
 辅助工具负责重复的机械动作。请求何时失效、错误如何回退、何时切换播放路径，继续由业务调用点明确决定。
 
-## 请求代次
+## 请求代次 / Request generations
 
 [`RequestGeneration`](../modules/common/src/main/java/moe/ouom/neriplayer/common/concurrent/RequestGeneration.kt) 用于判断异步结果是否仍属于当前一轮请求。
 
@@ -28,7 +30,7 @@ fun refresh() {
 
 实际调用见 [`CommentViewModel`](../app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/CommentViewModel.kt) 和 [`NowPlayingViewModel`](../app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/NowPlayingViewModel.kt)。
 
-## 时间和容量
+## 时间和容量 / Time and capacity
 
 [`MeasureUnits`](../modules/common/src/main/java/moe/ouom/neriplayer/common/units/MeasureUnits.kt) 提供单数形式的时间扩展，普通表达式优先使用这种写法：
 
@@ -61,7 +63,7 @@ val elapsedMs = elapsedMillisSince(startedAtNanos)
 
 不要传入 `currentTimeMillis()`、`elapsedRealtime()` 或已经转换成毫秒的数值。是否将负值限制为零由调用点决定。
 
-## 播放器读取
+## 播放器读取 / Player reads
 
 [`PlayerReadExtensions`](../modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/PlayerReadExtensions.kt) 提供 `currentPositionMsOr(fallbackMs)`、`durationMsOr(fallbackMs)` 和默认回退到零的属性。
 
@@ -72,7 +74,7 @@ val durationMs = player.durationMsOr(previousDurationMs)
 
 正常读取的负值限制为零；只有读取抛异常才返回调用方指定的值。需要保留播放器原始负值的诊断代码继续直接读取。扩展不切换线程，调用方仍需遵守 Player 的应用线程要求。
 
-## 协程结果
+## 协程结果 / Coroutine results
 
 [`runCatchingNonCancellation`](../modules/common/src/main/java/moe/ouom/neriplayer/common/coroutines/RunCatchingNonCancellation.kt) 将普通 `Exception` 转为 `Result`，`CancellationException` 继续向上传播，`Error` 不被捕获。
 
@@ -87,13 +89,13 @@ return runCatchingNonCancellation {
 
 日志、回退、重试及 dispatcher 由调用点提供。带有专属恢复顺序、资源清理或不同异常分类的代码，应保留显式的 `try/catch/finally`。
 
-## PCM 要求
+## PCM 要求 / PCM requirements
 
 [`pcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PlaybackAudioOffloadPolicy.kt) 将现有音源兼容规则与音频处理条件映射为 `Set<PcmAudioRequirement>`。调用方用 `isNotEmpty()` 判断是否需要禁用卸载，并可记录全部原因。
 
-新增条件时，在这一个函数里更新判断，并为对应原因补测试。空集合只表示当前策略没有提出 PCM 要求，实际卸载能力仍由 Media3 和设备决定。音频路径的切换顺序继续保留在播放器调用点。
+新增条件时，在 [`PcmAudioRequirements`](../modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/policy/offload/PcmAudioRequirements.kt) 的对应规则中更新判断，通过 `pcmAudioRequirements` 统一返回原因，并为对应原因补测试。空集合只表示当前策略没有提出 PCM 要求，实际卸载能力仍由 Media3 和设备决定。音频路径的切换顺序继续保留在播放器调用点。
 
-## JSON 对象数组映射
+## JSON 对象数组映射 / JSON object array mapping
 
 [`mapObjectsNotNull`](../modules/common/src/main/java/moe/ouom/neriplayer/common/json/JsonArrayExtensions.kt) 用于允许跳过非对象成员的 JSON 数组，统一索引遍历和 `optJSONObject` 判断。
 
@@ -110,7 +112,7 @@ JSON null、字符串、数字和嵌套数组会被跳过。对象按原顺序�
 
 字段必填校验、默认值、去重和分页规则仍在调用点。数组本身缺失时是否使用空列表，也由调用方决定。要求每条记录都有效的协议或持久化格式，继续使用严格解析。
 
-## 按身份合并列表
+## 按身份合并列表 / Merging lists by identity
 
 [`mergeDistinctBy`](../modules/common/src/main/java/moe/ouom/neriplayer/common/collections/CollectionMerge.kt) 先读取已有列表，再读取新列表，按调用方提供的身份键保留首次出现的条目。
 

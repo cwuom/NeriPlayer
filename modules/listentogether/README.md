@@ -14,9 +14,9 @@ Sources are in `src/main/java/moe/ouom/neriplayer`.
 - `api/ltw`：HTTP、WebSocket 与重连 / HTTP, WebSocket, and reconnects
 - `listentogether/protocol`、`listentogether/profile`：消息编解码与身份校验 / message codecs and profile validation
 
-播放、歌曲映射与平台能力通过宿主接口注入；app 在 `core/di/ltw` 组装依赖。会话结束需调用 `close()` 释放唤醒锁并取消任务。
+播放、歌曲映射与平台能力通过宿主接口注入；app 在 `core/di/ltw` 组装依赖。退出当前房间调用 `leaveRoom()`；释放管理器实例时调用 `close()`。
 
-Playback, song mapping, and platform capabilities are injected through host interfaces; app assembles them in `core/di/ltw`. Call `close()` to release the wake lock and cancel session tasks.
+Playback, song mapping, and platform capabilities are injected through host interfaces; app assembles them in `core/di/ltw`. Use `leaveRoom()` to exit the current room; call `close()` when disposing of the manager instance.
 
 协议与服务端保持兼容。HTTP 响应上限为 2 MiB，WebSocket 文本上限为 2 × 1024 × 1024 个字符。共享音源只用于当前会话；远端控制使用 `REMOTE_SYNC`，避免重新向房间发送同一操作。
 
