@@ -23,8 +23,11 @@ class StorageCacheCleaner(
         return fileResult + clearPlatforms(selectedPlatforms)
     }
 
-    private suspend fun clearFiles(kind: StorageCacheKind): ExtraCacheClearResult =
-        locations.cacheFiles.getValue(kind).fold(emptyResult()) { total, file -> total + clearFile(file, kind) }
+    private suspend fun clearFiles(kind: StorageCacheKind): ExtraCacheClearResult {
+        // 下载暂存包含活动任务和待恢复凭据，普通缓存清理不能判定其所有权
+        if (kind == StorageCacheKind.DownloadStaging) return emptyResult(success = false)
+        return locations.cacheFiles.getValue(kind).fold(emptyResult()) { total, file -> total + clearFile(file, kind) }
+    }
 
     private suspend fun clearFile(file: File, kind: StorageCacheKind): ExtraCacheClearResult {
         val before = files.stats(file)

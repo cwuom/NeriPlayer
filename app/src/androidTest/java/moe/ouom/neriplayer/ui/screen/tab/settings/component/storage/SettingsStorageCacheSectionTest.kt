@@ -65,8 +65,6 @@ class SettingsStorageCacheSectionTest {
                     onClearAudioCacheChange = {},
                     clearImageCache = false,
                     onClearImageCacheChange = {},
-                    clearDownloadStagingCache = false,
-                    onClearDownloadStagingCacheChange = {},
                     clearSharedMediaCache = false,
                     onClearSharedMediaCacheChange = {},
                     clearLyricsCache = false,
@@ -83,7 +81,6 @@ class SettingsStorageCacheSectionTest {
                     onClearLogFilesChange = {},
                     clearCrashLogs = false,
                     onClearCrashLogsChange = {},
-                    downloadStagingClearEnabled = true,
                     onClearCacheClick = { _: StorageCacheClearOptions -> },
                     cardIndex = 1
                 )

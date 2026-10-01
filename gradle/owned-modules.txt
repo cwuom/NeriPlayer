@@ -1,5 +1,6 @@
 :common
 :network
+:native
 :model
 :database
 :playback:logic

@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.data.local.storage.scan
 
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.storage.cleanup.StorageCacheCleaner
 import moe.ouom.neriplayer.data.model.storage.ExtraCacheClearResult
@@ -112,6 +114,46 @@ class StorageUsageComponentsTest {
 
         assertEquals(ExtraCacheClearResult(false, 11, 0, 1), result)
         assertTrue(retained.exists())
+    }
+
+    @Test
+    fun delayedStagingClearPreservesNewDownloadsAndRecoveryFiles() = runBlocking {
+        val locations = locations()
+        val recoveryFiles = locations.downloadStagingDirs.flatMap { directory ->
+            listOf(
+                write(File(directory, "waiting-operation"), "npdl_waiting_audio.m4a.download", 7),
+                write(File(directory, "waiting-operation"), "npdl_waiting_audio.m4a.download.resume.json", 11),
+                write(File(directory, "paused-operation"), "npdl_paused_audio.m4a.download.hls.json", 13)
+            )
+        }
+        val shared = write(locations.sharedMediaDir, "shared", 17)
+        val options = StorageCacheClearOptions(downloadStaging = true, sharedMedia = true)
+        val clearStarted = CompletableDeferred<Unit>()
+        val continueClear = CompletableDeferred<Unit>()
+        val clearing = async {
+            clearStarted.complete(Unit)
+            continueClear.await()
+            StorageCacheCleaner(locations, TestCacheFiles(), TestPlatformCaches()).clear(options)
+        }
+        clearStarted.await()
+        val newDownloads = locations.downloadStagingDirs.map { directory ->
+            write(File(directory, "new-operation"), "npdl_new_audio.m4a.download", 19)
+        }
+        continueClear.complete(Unit)
+        val result = clearing.await()
+
+        assertEquals(ExtraCacheClearResult(false, 17, 0, 1), result)
+        assertFalse(shared.exists())
+        recoveryFiles.forEach { assertTrue(it.exists()) }
+        newDownloads.forEach { assertEquals(19L, it.length()) }
+    }
+
+    @Test
+    fun cleanerRejectsStagingSelectionWithoutClaimingFreedSpace() = runBlocking {
+        val result = StorageCacheCleaner(locations(), TestCacheFiles(), TestPlatformCaches())
+            .clear(StorageCacheClearOptions(downloadStaging = true))
+
+        assertEquals(ExtraCacheClearResult(false, 0, 0, 0), result)
     }
 
     @Test

@@ -11,6 +11,7 @@ android {
 dependencies {
     testImplementation(testFixtures(project(":common")))
     implementation(project(":common"))
+    implementation(project(":native"))
     implementation(project(":lyrics"))
     implementation(project(":network"))
     implementation(project(":playback:logic"))

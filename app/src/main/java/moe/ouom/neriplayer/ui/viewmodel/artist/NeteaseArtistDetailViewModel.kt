@@ -4,12 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -17,6 +19,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
 import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistsFromSongJson
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
@@ -25,6 +28,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 
 private const val TAG = "NERI-ArtistVM"
 private const val SONG_PAGE_SIZE = 50
@@ -55,9 +59,17 @@ data class NeteaseArtistDetailUiState(
     val albumsLoadingMore: Boolean = false
 )
 
-class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(application) {
-    private val client = AppContainer.neteaseClient
-    private val favoriteRepo = FavoritePlaylistRepository.getInstance(application)
+class NeteaseArtistDetailViewModel internal constructor(
+    application: Application,
+    private val client: NeteaseClient,
+    private val favoriteRepo: FavoritePlaylistRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application,
+        AppContainer.neteaseClient,
+        FavoritePlaylistRepository.getInstance(application)
+    )
     private val _uiState = MutableStateFlow(NeteaseArtistDetailUiState())
     val uiState: StateFlow<NeteaseArtistDetailUiState> = _uiState
 
@@ -65,6 +77,14 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
     private var songOffset: Int = 0
     private var albumOffset: Int = 0
     private var loadJob: Job? = null
+    @Volatile
+    private var artistGeneration = 0L
+
+    init {
+        viewModelScope.launch {
+            favoriteRepo.favorites.collect { refreshFollowState() }
+        }
+    }
 
     fun start(summary: NeteaseArtistSummary, forceRefresh: Boolean = false) {
         if (!forceRefresh && shouldKeepCurrentArtist(summary.id)) {
@@ -72,6 +92,8 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
             return
         }
 
+        artistGeneration += 1L
+        val generation = artistGeneration
         artistId = summary.id
         songOffset = 0
         albumOffset = 0
@@ -94,13 +116,23 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
         loadJob = viewModelScope.launch {
             try {
                 val loaded = loadInitial(summary)
-                if (artistId != summary.id) return@launch
+                if (artistGeneration != generation) return@launch
                 songOffset = loaded.songs.size
                 albumOffset = loaded.albums.size
-                _uiState.value = loaded.copy(loading = false, error = null)
+                _uiState.update { current ->
+                    loaded.copy(
+                        loading = false,
+                        error = null,
+                        followUpdating = current.followUpdating,
+                        header = loaded.header?.copy(
+                            followed = favoriteRepo.isFavorite(summary.id, FAVORITE_SOURCE_NETEASE_ARTIST)
+                        )
+                    )
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (artistGeneration != generation) return@launch
                 NPLogger.e(TAG, "load artist failed", e)
                 _uiState.update {
                     it.copy(
@@ -141,7 +173,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(songsLoadingMore = true) }
             runCatching {
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     parseArtistSongs(client.getArtistSongs(artistId, offset = songOffset, limit = SONG_PAGE_SIZE))
                 }
             }.onSuccess { page ->
@@ -165,7 +197,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(albumsLoadingMore = true) }
             runCatching {
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     parseArtistAlbums(client.getArtistAlbums(artistId, offset = albumOffset, limit = ALBUM_PAGE_SIZE))
                 }
             }.onSuccess { page ->
@@ -185,12 +217,19 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     fun toggleFollow() {
-        val header = _uiState.value.header ?: return
-        val targetFollowed = !header.followed
+        val current = _uiState.value
+        val header = current.header ?: return
+        if (current.followUpdating) return
+        val generation = artistGeneration
+        _uiState.update { it.copy(followUpdating = true, error = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(followUpdating = true) }
-            runCatching {
-                withContext(Dispatchers.IO) {
+            try {
+                val followed = withContext(ioDispatcher) {
+                    if (!favoriteRepo.awaitInitialized()) {
+                        throw IOException("Favorites are not initialized")
+                    }
+                    if (artistGeneration != generation) return@withContext null
+                    val targetFollowed = !favoriteRepo.isFavorite(header.id, FAVORITE_SOURCE_NETEASE_ARTIST)
                     if (targetFollowed) {
                         favoriteRepo.addFavorite(
                             id = header.id,
@@ -204,17 +243,25 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
                     } else {
                         favoriteRepo.removeFavorite(header.id, FAVORITE_SOURCE_NETEASE_ARTIST)
                     }
+                    if (!favoriteRepo.awaitInitialized()) {
+                        throw IOException("Artist follow change could not be saved")
+                    }
+                    favoriteRepo.isFavorite(header.id, FAVORITE_SOURCE_NETEASE_ARTIST)
                 }
-            }.onSuccess {
+                if (followed == null) return@launch
                 _uiState.update {
+                    if (artistGeneration != generation || it.header?.id != header.id) return@update it
                     it.copy(
                         followUpdating = false,
-                        header = it.header?.copy(followed = targetFollowed)
+                        header = it.header.copy(followed = followed)
                     )
                 }
-            }.onFailure { error ->
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 NPLogger.e(TAG, "toggle artist follow failed", error)
                 _uiState.update {
+                    if (artistGeneration != generation || it.header?.id != header.id) return@update it
                     it.copy(
                         followUpdating = false,
                         error = getApplication<Application>().getString(
@@ -228,11 +275,11 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     private suspend fun loadInitial(summary: NeteaseArtistSummary): NeteaseArtistDetailUiState = coroutineScope {
-        val detailDeferred = async(Dispatchers.IO) { client.getArtistDetail(summary.id) }
-        val songsDeferred = async(Dispatchers.IO) {
+        val detailDeferred = async(ioDispatcher) { client.getArtistDetail(summary.id) }
+        val songsDeferred = async(ioDispatcher) {
             client.getArtistSongs(summary.id, offset = 0, limit = SONG_PAGE_SIZE)
         }
-        val albumsDeferred = async(Dispatchers.IO) {
+        val albumsDeferred = async(ioDispatcher) {
             client.getArtistAlbums(summary.id, offset = 0, limit = ALBUM_PAGE_SIZE)
         }
 

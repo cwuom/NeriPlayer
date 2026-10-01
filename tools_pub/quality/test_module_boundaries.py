@@ -40,6 +40,44 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.module(":platform", ":model")
         self.assertEqual([], verify(self.root))
 
+    def native_module(self):
+        self.module(":native")
+        directory = self.root / "modules/native"
+        (directory / "src/main/java/sample/Sample.kt").unlink()
+        (directory / "build.gradle.kts").write_text(
+            'plugins { id("build-logic.android.library") }\n'
+        )
+        cpp = directory / "src/main/cpp"
+        cpp.mkdir(parents=True)
+        (cpp / "CMakeLists.txt").write_text("project(neri_native LANGUAGES C CXX)\n")
+        return directory
+
+    def test_accepts_native_library_without_jvm_sources(self):
+        self.native_module()
+        self.module(":playback:runtime", ":native")
+        self.assertEqual([], verify(self.root))
+
+    def test_rejects_native_implementation_left_in_app(self):
+        self.native_module()
+        (self.root / "app/src/main/cpp").mkdir(parents=True)
+        self.assertTrue(any("native implementation belongs in :native" in error
+                            for error in verify(self.root)))
+
+    def test_rejects_native_dependency_on_playback_runtime(self):
+        directory = self.native_module()
+        self.module(":playback:runtime")
+        build_file = directory / "build.gradle.kts"
+        build_file.write_text(build_file.read_text() +
+                              'dependencies { implementation(project(":playback:runtime")) }\n')
+        self.assertTrue(any("forbidden domain dependency" in error
+                            for error in verify(self.root)))
+
+    def test_rejects_missing_native_cmake_entrypoint(self):
+        directory = self.native_module()
+        (directory / "src/main/cpp/CMakeLists.txt").unlink()
+        self.assertTrue(any("missing native CMake entrypoint" in error
+                            for error in verify(self.root)))
+
     def test_accepts_model_contract_dependency_from_core_and_api(self):
         self.module(":model")
         self.module(":lyrics", ":model")

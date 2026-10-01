@@ -34,7 +34,6 @@ internal class SettingsStorageSelectionState {
     var showClearCacheDialog by mutableStateOf(false)
     var clearAudioCache by mutableStateOf(true)
     var clearImageCache by mutableStateOf(true)
-    var clearDownloadStagingCache by mutableStateOf(false)
     var clearSharedMediaCache by mutableStateOf(false)
     var clearLyricsCache by mutableStateOf(false)
     var clearNeteasePlaylistCache by mutableStateOf(false)
@@ -59,16 +58,13 @@ internal interface DownloadDirectoryStoragePort {
 }
 
 internal data class SettingsStoragePageAvailability(
-    val isCustomDirectory: Boolean,
-    val canClearDownloadStaging: Boolean
+    val isCustomDirectory: Boolean
 )
 
 internal fun settingsStoragePageAvailability(
-    directoryUri: String?,
-    hasActiveDownloadOperations: Boolean
+    directoryUri: String?
 ): SettingsStoragePageAvailability = SettingsStoragePageAvailability(
-    isCustomDirectory = !directoryUri.isNullOrBlank(),
-    canClearDownloadStaging = !hasActiveDownloadOperations
+    isCustomDirectory = !directoryUri.isNullOrBlank()
 )
 
 internal fun shouldShowSharedDownloadDirectoryProcessing(
@@ -154,9 +150,7 @@ internal fun LazyListScope.settingsStoragePageItems(
     highlightPulse: Int,
     onHighlightFinished: () -> Unit
 ) {
-    val availability = settingsStoragePageAvailability(
-        downloadDirectoryUri, directory.hasActiveDownloadOperations
-    )
+    val availability = settingsStoragePageAvailability(downloadDirectoryUri)
     for (cardIndex in 0..3) {
         item(key = "${SettingsPage.Storage.name}:card:$cardIndex") {
             SettingsStorageCacheSection(
@@ -182,8 +176,6 @@ internal fun LazyListScope.settingsStoragePageItems(
                 onClearAudioCacheChange = { selection.clearAudioCache = it },
                 clearImageCache = selection.clearImageCache,
                 onClearImageCacheChange = { selection.clearImageCache = it },
-                clearDownloadStagingCache = selection.clearDownloadStagingCache,
-                onClearDownloadStagingCacheChange = { selection.clearDownloadStagingCache = it },
                 clearSharedMediaCache = selection.clearSharedMediaCache,
                 onClearSharedMediaCacheChange = { selection.clearSharedMediaCache = it },
                 clearLyricsCache = selection.clearLyricsCache,
@@ -200,7 +192,6 @@ internal fun LazyListScope.settingsStoragePageItems(
                 onClearLogFilesChange = { selection.clearLogFiles = it },
                 clearCrashLogs = selection.clearCrashLogs,
                 onClearCrashLogsChange = { selection.clearCrashLogs = it },
-                downloadStagingClearEnabled = availability.canClearDownloadStaging,
                 onClearCacheClick = onClearCacheClick,
                 cardIndex = cardIndex,
                 highlightTargetId = highlightTargetId,

@@ -29,22 +29,18 @@ class SettingsStoragePageControllerTest {
     }
 
     @Test
-    fun `storage page availability follows directory and active operation independently`() {
+    fun `storage page availability follows directory selection`() {
         assertEquals(
-            SettingsStoragePageAvailability(false, true),
-            settingsStoragePageAvailability(null, false)
+            SettingsStoragePageAvailability(false),
+            settingsStoragePageAvailability(null)
         )
         assertEquals(
-            SettingsStoragePageAvailability(false, false),
-            settingsStoragePageAvailability("", true)
+            SettingsStoragePageAvailability(false),
+            settingsStoragePageAvailability("")
         )
         assertEquals(
-            SettingsStoragePageAvailability(true, true),
-            settingsStoragePageAvailability("content://selected", false)
-        )
-        assertEquals(
-            SettingsStoragePageAvailability(true, false),
-            settingsStoragePageAvailability("content://selected", true)
+            SettingsStoragePageAvailability(true),
+            settingsStoragePageAvailability("content://selected")
         )
     }
 
@@ -55,7 +51,6 @@ class SettingsStoragePageControllerTest {
         assertFalse(selection.showClearCacheDialog)
         assertTrue(selection.clearAudioCache)
         assertTrue(selection.clearImageCache)
-        assertFalse(selection.clearDownloadStagingCache)
         assertFalse(selection.clearSharedMediaCache)
         assertFalse(selection.clearLyricsCache)
         assertFalse(selection.clearNeteasePlaylistCache)
@@ -65,9 +60,9 @@ class SettingsStoragePageControllerTest {
         assertFalse(selection.clearLogFiles)
         assertFalse(selection.clearCrashLogs)
 
-        selection.clearDownloadStagingCache = true
-        assertTrue(selection.clearDownloadStagingCache)
-        assertFalse(selection.clearSharedMediaCache)
+        selection.clearSharedMediaCache = true
+        assertTrue(selection.clearSharedMediaCache)
+        assertFalse(selection.clearLyricsCache)
     }
 
     @Test

@@ -164,8 +164,6 @@ internal fun SettingsStorageCacheSection(
     onClearAudioCacheChange: (Boolean) -> Unit,
     clearImageCache: Boolean,
     onClearImageCacheChange: (Boolean) -> Unit,
-    clearDownloadStagingCache: Boolean,
-    onClearDownloadStagingCacheChange: (Boolean) -> Unit,
     clearSharedMediaCache: Boolean,
     onClearSharedMediaCacheChange: (Boolean) -> Unit,
     clearLyricsCache: Boolean,
@@ -182,7 +180,6 @@ internal fun SettingsStorageCacheSection(
     onClearLogFilesChange: (Boolean) -> Unit,
     clearCrashLogs: Boolean,
     onClearCrashLogsChange: (Boolean) -> Unit,
-    downloadStagingClearEnabled: Boolean,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     cardIndex: Int? = null,
     highlightTargetId: String? = null,
@@ -542,21 +539,6 @@ internal fun SettingsStorageCacheSection(
                         onCheckedChange = onClearImageCacheChange
                     )
                     CacheTypeRow(
-                        checked = clearDownloadStagingCache,
-                        title = stringResource(CoreCommonR.string.storage_type_download_staging),
-                        description = if (downloadStagingClearEnabled) {
-                            cacheTypeDescription(
-                                storageDetails = storageDetails,
-                                kind = StorageCacheKind.DownloadStaging,
-                                fallback = stringResource(CoreCommonR.string.storage_desc_download_staging)
-                            )
-                        } else {
-                            stringResource(CoreCommonR.string.storage_download_staging_active_desc)
-                        },
-                        enabled = downloadStagingClearEnabled,
-                        onCheckedChange = onClearDownloadStagingCacheChange
-                    )
-                    CacheTypeRow(
                         checked = clearSharedMediaCache,
                         title = stringResource(CoreCommonR.string.storage_type_shared_media),
                         description = cacheTypeDescription(
@@ -642,7 +624,6 @@ internal fun SettingsStorageCacheSection(
                 val clearOptions = StorageCacheClearOptions(
                     audioCache = clearAudioCache,
                     imageCache = clearImageCache,
-                    downloadStaging = clearDownloadStagingCache && downloadStagingClearEnabled,
                     sharedMedia = clearSharedMediaCache,
                     lyricsCache = clearLyricsCache,
                     neteasePlaylistCache = clearNeteasePlaylistCache,

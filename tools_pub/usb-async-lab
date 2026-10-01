@@ -4,7 +4,7 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly HOST_TEST_SOURCE="${REPO_ROOT}/app/src/main/cpp/tests/usb"
+readonly HOST_TEST_SOURCE="${REPO_ROOT}/modules/native/src/main/cpp/tests/usb"
 readonly WARNING_BASELINE="${HOST_TEST_SOURCE}/config/warning-baseline.txt"
 
 usage() {
@@ -798,7 +798,8 @@ gradle_gate() {
     [[ -n "${manifest}" ]] || die "gradle-gate requires --manifest"
     validate_manifest "${manifest}"
     case "${task}" in
-        :app:tasks|:app:externalNativeBuildDebug|:app:testDebugUnitTest|\
+        :app:tasks|:native:tasks|:native:externalNativeBuildDebug|\
+        :app:testDebugUnitTest|\
         :app:lintDebug|:app:assembleDebug)
             ;;
         *)

@@ -5,15 +5,23 @@ import android.content.ContextWrapper
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomStore
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.local.database.store.RepositoryCutoverKeys
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -30,6 +38,55 @@ class LegacyJsonCleanupCoordinatorTest {
         return object : ContextWrapper(ApplicationProvider.getApplicationContext()) {
             override fun getApplicationContext(): Context = this
             override fun getFilesDir(): File = files
+        }
+    }
+
+    @Test
+    fun cleanupCannotDeleteFavoriteFallbackWrittenAfterItsEligibilityCheck() = runTest {
+        val context = isolatedContext()
+        val database = Room.inMemoryDatabaseBuilder(
+            context, NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val beforeDelete = CountDownLatch(1)
+        val releaseDelete = CountDownLatch(1)
+        try {
+            setRoomPrimary(database, RepositoryCutoverKeys.FAVORITE_PLAYLIST)
+            val recoveryFile = writeLegacyFile(context, "favorite_playlists.json")
+            val coordinator = LegacyJsonCleanupCoordinator(context, database) { file ->
+                beforeDelete.countDown()
+                check(releaseDelete.await(5, TimeUnit.SECONDS))
+                file.delete()
+            }
+            val plan = coordinator.buildPlan()
+            val cleanup = async(Dispatchers.IO) { coordinator.execute(plan, confirmed = true) }
+            assertTrue(beforeDelete.await(5, TimeUnit.SECONDS))
+
+            val fallbackStarted = CompletableDeferred<Unit>()
+            val fallback = async(Dispatchers.IO) {
+                fallbackStarted.complete(Unit)
+                database.withTransaction {
+                    recoveryFile.writeText("new complete snapshot")
+                    setLegacyJsonPrimary(database, RepositoryCutoverKeys.FAVORITE_PLAYLIST)
+                    true
+                }
+            }
+            fallbackStarted.await()
+            // 已开始的回退必须等清理事务退出，不能在旧计划与删除之间写入
+            assertEquals(null, withContext(Dispatchers.IO) {
+                withTimeoutOrNull(250) { fallback.await() }
+            })
+            releaseDelete.countDown()
+            assertEquals(LegacyJsonCleanupStatus.COMPLETED, cleanup.await().status)
+            assertTrue(fallback.await())
+            assertEquals("new complete snapshot", recoveryFile.readText())
+
+            val freshPlan = coordinator.buildPlan()
+            assertTrue(freshPlan.blockedTargets.any { it.fileName == recoveryFile.name })
+            coordinator.execute(freshPlan, confirmed = true)
+            assertEquals("new complete snapshot", recoveryFile.readText())
+        } finally {
+            releaseDelete.countDown()
+            database.close()
         }
     }
 

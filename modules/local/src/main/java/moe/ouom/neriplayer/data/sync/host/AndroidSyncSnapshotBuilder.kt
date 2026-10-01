@@ -11,10 +11,10 @@ import moe.ouom.neriplayer.data.model.sync.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
-import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.stats.PlaybackStatsPersistenceSnapshot
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.mapping.fromFavoritePlaylist
@@ -41,9 +41,9 @@ internal class AndroidSyncSnapshotBuilder(
         val syncRecentPlays = buildRecentPlaySyncSnapshots(playHistoryRepo.historyFlow.value, ::getDeviceId, localizedContext)
         val syncRecentPlayDeletions = recentPlayDeletions()
         val syncPlaylistSongDeletions = playlistSongDeletions()
-        val playbackCounterSnapshot = playbackStatsRepo.syncCounterSnapshot()
-        val syncPlaybackStats = playbackStats(localizedContext, playbackCounterSnapshot)
-        val syncPlaybackStatBuckets = playbackBuckets(localizedContext, playbackCounterSnapshot)
+        val playbackSnapshot = playbackStatsRepo.syncSnapshot()
+        val syncPlaybackStats = playbackStats(localizedContext, playbackSnapshot)
+        val syncPlaybackStatBuckets = playbackBuckets(localizedContext, playbackSnapshot)
         val syncPlaylistUsageStats = playlistUsageRepo.syncStats()
         val localPlaylistPlaybackSnapshot = localPlaylistPlaybackStatsRepo.syncSnapshot()
         val syncBiliVideoSkipRules = videoSkipRules()
@@ -58,7 +58,7 @@ internal class AndroidSyncSnapshotBuilder(
             syncLog = emptyList(),
             recentPlayDeletions = syncRecentPlayDeletions,
             playbackStats = syncPlaybackStats,
-            playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value,
+            playbackStatsClearedAt = playbackSnapshot.clearedAt,
             playbackStatBuckets = syncPlaybackStatBuckets,
             playlistSongDeletions = syncPlaylistSongDeletions,
             playlistUsageStats = syncPlaylistUsageStats,
@@ -103,25 +103,25 @@ internal class AndroidSyncSnapshotBuilder(
         return syncBiliVideoSkipRules
     }
 
-    private fun playbackStats(localizedContext: Context, playbackCounterSnapshot: PlaybackStatsSyncCounterSnapshot): List<SyncTrackStat> {
-        val syncPlaybackStats = playbackStatsRepo.statsFlow.value
+    private fun playbackStats(localizedContext: Context, snapshot: PlaybackStatsPersistenceSnapshot): List<SyncTrackStat> {
+        val syncPlaybackStats = snapshot.stats
             .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
             .map { stat ->
                 SyncPlaybackStatMapper.fromTrackStat(
                     stat = stat,
-                    counterShards = playbackCounterSnapshot.trackShards(stat.identityKey)
+                    counterShards = snapshot.counterSnapshot.trackShards(stat.identityKey)
                 )
             }
         return syncPlaybackStats
     }
 
-    private fun playbackBuckets(localizedContext: Context, playbackCounterSnapshot: PlaybackStatsSyncCounterSnapshot): List<SyncPlaybackStatBucket> {
-        val syncPlaybackStatBuckets = playbackStatsRepo.dailyStatsFlow.value
+    private fun playbackBuckets(localizedContext: Context, snapshot: PlaybackStatsPersistenceSnapshot): List<SyncPlaybackStatBucket> {
+        val syncPlaybackStatBuckets = snapshot.dailyStats
             .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
             .map { bucket ->
                 SyncPlaybackStatMapper.fromPlaybackStatBucket(
                     bucket = bucket,
-                    counterShards = playbackCounterSnapshot.dailyShards(
+                    counterShards = snapshot.counterSnapshot.dailyShards(
                         dayStartAt = bucket.dayStartAt,
                         identityKey = bucket.identityKey
                     )

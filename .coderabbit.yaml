@@ -95,7 +95,7 @@ reviews:
         is nondeterministic, leaks shared state or resources, or targets the
         wrong Android API/lifecycle behavior. Do not request tests for purely
         mechanical changes or prescribe alternate test styles.
-    - path: "app/src/main/cpp/**"
+    - path: "modules/native/src/main/cpp/**"
       instructions: |
         Focus on memory safety, ownership, bounds checks, error propagation,
         thread safety, undefined behavior, JNI lifetime rules, and Android ABI

@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
+import java.io.IOException
 
 private data class PlaybackStatsCounterState(
     val epochStartedAt: Long = 0L,
@@ -28,7 +29,11 @@ internal class PlaybackStatsCounterStore(
     }
     private val lock = Any()
     private val syncStorage by lazy { SecureTokenStorage(context) }
-    private var state = load()
+    private var state = PlaybackStatsCounterState()
+
+    fun loadLegacy() {
+        updateState(load())
+    }
 
     fun snapshot(): PlaybackStatsSyncCounterSnapshot {
         val current = synchronized(lock) { state }
@@ -154,18 +159,21 @@ internal class PlaybackStatsCounterStore(
         return synchronized(lock) { state.epochStartedAt }
     }
 
-    fun persistLegacyProjection(): Boolean {
-        return persistToDisk(synchronized(lock) { state })
+    fun persistLegacyProjection(
+        snapshot: PlaybackStatsSyncCounterSnapshot,
+        epochStartedAt: Long
+    ): Boolean {
+        return persistToDisk(PlaybackStatsCounterState(
+            epochStartedAt = epochStartedAt,
+            trackShardsByIdentity = snapshot.trackShardsByIdentity,
+            dailyShardsByBucketKey = snapshot.dailyShardsByBucketKey
+        ))
     }
 
     private fun load(): PlaybackStatsCounterState {
-        return try {
-            if (!counterFile.exists()) return PlaybackStatsCounterState()
-            gson.fromJson(counterFile.readText(), PlaybackStatsCounterState::class.java)
-                ?: PlaybackStatsCounterState()
-        } catch (_: Throwable) {
-            PlaybackStatsCounterState()
-        }
+        if (!counterFile.exists()) return PlaybackStatsCounterState()
+        return gson.fromJson(counterFile.readText(), PlaybackStatsCounterState::class.java)
+            ?: throw IOException("Playback stats counter JSON has no valid state")
     }
 
     private fun updateState(nextState: PlaybackStatsCounterState) {

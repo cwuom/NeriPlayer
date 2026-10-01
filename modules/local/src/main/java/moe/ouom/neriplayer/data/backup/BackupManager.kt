@@ -98,6 +98,9 @@ class BackupManager(private val context: Context) {
             playlistRepo.requireInitialized()
             val historyRepo = PlayHistoryRepository.getInstance(context)
             val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
+            if (!playbackStatsRepo.awaitInitialized()) {
+                throw IOException("Playback stats initialization failed")
+            }
             val playlists = playlistRepo.playlists.value
 
             // 使用SyncPlaylist转换，确保使用网络地址
@@ -159,6 +162,9 @@ class BackupManager(private val context: Context) {
                 playlistRepo.requireInitialized()
                 val historyRepo = PlayHistoryRepository.getInstance(context)
                 val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
+                if (!playbackStatsRepo.awaitInitialized()) {
+                    throw IOException("Playback stats initialization failed")
+                }
                 val currentPlaylists = playlistRepo.playlists.value.toMutableList()
                 val playlistLookup = buildPlaylistLookup(currentPlaylists)
                 val syncStorage = SecureTokenStorage(context)

@@ -55,9 +55,39 @@ jobs:
           echo "target_sha=${target_sha}" >> "$GITHUB_OUTPUT"
           echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify the checked out release sources
+        run: |
+          ./gradlew testDebugUnitTest lintDebug \
+            --warning-mode all --stacktrace
+          if [[ -f tools_pub/quality/module_boundaries.py ]]; then
+            python3 -B tools_pub/quality/module_boundaries.py
+          fi
+
+      - name: Verify Native USB behavior
+        run: |
+          native_manifest=""
+          for candidate in \
+            modules/native/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
+            app/src/main/cpp/tests/usb/config/run-manifest.example.yaml; do
+            if [[ -f "${candidate}" ]]; then
+              native_manifest="${candidate}"
+              break
+            fi
+          done
+          if [[ -n "${native_manifest}" ]]; then
+            tools_pub/usb-async-lab host-test \
+              --manifest "${native_manifest}" \
+              --profile release-werror-asserts
+          elif [[ -f tools_pub/usb-async-lab ]]; then
+            echo "Native USB host test manifest is missing from this target ref." >&2
+            exit 1
+          else
+            echo "::notice::This target ref predates the Native USB host tests."
+          fi
+
       - name: Build signed Release APKs
         run: |
-          ./gradlew clean assembleRelease \
+          ./gradlew :app:assembleRelease \
             -PbuildAllReleaseAbis=true \
             -PbuildVersionTimestamp=${{ steps.meta.outputs.release_time }} \
             -PKEYSTORE_FILE=neri.jks \
@@ -65,6 +95,20 @@ jobs:
             -PKEY_ALIAS=key0 \
             -PKEY_PASSWORD=${{ secrets.KEY_PASSWORD }} \
             --warning-mode all --stacktrace
+
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification-${{ steps.meta.outputs.target_sha }}
+          path: |
+            **/build/test-results/**/*.xml
+            **/build/reports/lint-results-debug.*
+            .report/usb/execution/**/host-release-werror-asserts/**/ctest.xml
+            .report/usb/execution/**/host-release-werror-asserts/**/host-test.log
+            .report/usb/execution/**/host-release-werror-asserts/**/source-context.txt
+          include-hidden-files: true
+          if-no-files-found: warn
 
       - name: Generate release notes
         env:

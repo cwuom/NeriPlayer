@@ -27,25 +27,23 @@ implementation**. Keep documentation aligned with the source code and runtime be
 
 When maintaining docs, split them by audience:
 
-- [README.md](README.md) / [README_EN.md](README_EN.md)
+- [README_EN.md](README_EN.md)
   - For users and new contributors: project scope, feature boundaries,
     installation/builds, sync, and privacy.
-- [CONTRIBUTING.md](CONTRIBUTING.md) / [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md)
+- [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md)
   - For developers: module boundaries, extension paths, tests, and PR expectations.
-- [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md) /
-  [docs/kotlin-helpers.md](docs/kotlin-helpers.md)
+- [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md)
   - Usage and boundaries for request generations, units, player reads, and coroutine results.
-- [tools_pub/quality/README_EN.md](tools_pub/quality/README_EN.md) /
-  [tools_pub/quality/README.md](tools_pub/quality/README.md)
+- [tools_pub/quality/README_EN.md](tools_pub/quality/README_EN.md)
   - Scope, commands, and verification limits for CRAP, source ownership, and dependency checks.
-- [app/src/main/cpp/README.md](app/src/main/cpp/README.md)
+- [modules/native/src/main/cpp/README.md](modules/native/src/main/cpp/README.md)
   - Defines the alternative-license scope for NeriPlayer-owned native source,
     third-party exclusions, and the explicit dual-license statement required
     for external contributions to enter that scope.
-- [app/src/main/cpp/tests/usb/config/host-gate-contract.md](app/src/main/cpp/tests/usb/config/host-gate-contract.md)
+- [modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md](modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md)
   - Defines the public native USB host gate, CI coverage, and real-device boundary.
-- [app/src/main/cpp/tests/usb/corpus/README.md](app/src/main/cpp/tests/usb/corpus/README.md) and
-  [app/src/main/cpp/tests/usb/fixtures/README.md](app/src/main/cpp/tests/usb/fixtures/README.md)
+- [modules/native/src/main/cpp/tests/usb/corpus/README.md](modules/native/src/main/cpp/tests/usb/corpus/README.md) and
+  [modules/native/src/main/cpp/tests/usb/fixtures/README.md](modules/native/src/main/cpp/tests/usb/fixtures/README.md)
   - Define the synthetic/auditable boundary for public USB test corpus and fixtures;
     device-derived evidence stays in the private evidence tree.
 - [np-submodule/NeriPlayer-LTW/README.md](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme)
@@ -151,7 +149,7 @@ for the new behavior.
 ### Release Build
 
 Release builds enable minification and resource shrinking by default.
-A normal `assembleRelease` builds `arm64-v8a` only. Multi-ABI output requires an
+A normal `assembleRelease` packages `arm64-v8a` only in the APK. Multi-ABI output requires an
 extra Gradle property.
 
 1. Provide signing config in `~/.gradle/gradle.properties`, project Gradle
@@ -199,9 +197,10 @@ Security reminders:
 
 #### Root modules
 
-The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 13 owned libraries once for builds, coverage, lint, and structural checks. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
+The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 14 owned libraries once for builds, lint, and structural checks. Coverage includes libraries with Kotlin/Java production sources; `:native` uses independent host tests and four-ABI compilation. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
 
 - Infrastructure: `:common`, `:network`, `:model`, `:database`. Models have no project implementation dependencies; the database owns historical Room schemas and complete upgrade paths.
+- Native: `:native` owns the CMake build boundary, crash handling, USB protocols and PCM calculations, exclusive transport, and third-party libusb. App consumes its AAR; Kotlin playback sessions and the JNI bridge remain in `:playback:runtime`.
 - Playback: `:playback:logic` contains policy/runtime/audio/queue; `:playback:runtime` owns the engine, service, USB, source resolution, and integration. Nine policy leaf packages retain narrow dependencies; USB policy stays in runtime. Downloads are accessed through `PlayerDownloadAccess`.
 - Downloads: `:download:logic` owns reusable rules and storage helpers; `:download:runtime` owns Room, SAF, recovery, and services. Rules cannot depend on runtime; Worker and JobService class names remain stable.
 - Lyrics: `:lyrics` owns parsing, transforms, shared time offsets, and external lyric output. Its `lyrics/lyricon` owns SDKs and position feeds, while `lyrics/output` manages asynchronous request generations, cancellation, and offset snapshots. Playback supplies lyrics through a narrow loading port and provides snapshots; lyrics cannot depend on platform or player implementations.
@@ -209,11 +208,11 @@ The root [README_EN.md](README_EN.md#module-layout) is the entry point for the c
 - Local data: `:local` groups settings, media, playlists, statistics, backup, traffic, and sync adapters. It owns business mappings, host interfaces, WorkManager adapters, and settings KSP; screen rendering stays in app.
 - Sync: `:sync` combines GitHub/WebDAV transport, encrypted credentials, device identity, causal counters, sessions, sanitization, merging, and Worker policies. Transport and calculation packages retain separate dependency allowlists; local repository adapters stay in `:local`. Deletion records and mutation versions commit atomically.
 - Listen Together: `:listentogether` owns protocol, transport, identity rules, and sessions. Protocol code uses only models, serialization, and the standard library; host interfaces provide playback, resources, and Android services.
-- App and tooling: `:app` owns Android entry points, Compose screens, and assembly. KSP tools, upstream lyric modules, `build-logic`, `buildSrc`, and the Listen Together server are outside the 13-library count. The vendored Miuix source/docs tree is outside the app graph.
+- App and tooling: `:app` owns Android entry points, Compose screens, and assembly. KSP tools, upstream lyric modules, `build-logic`, `buildSrc`, and the Listen Together server are outside the 14-library count. The vendored Miuix source/docs tree is outside the app graph.
 
 Libraries cannot reference app, screens, or `AppContainer`, and the graph must remain acyclic. `:playback:runtime` may use its own `PlayerManager`. Live settings use providers; the host injects HTTP, account, and device-token capabilities. Room business mappings belong to local/platform repositories; database and rule components must not depend on runtime implementations.
 
-New libraries use `build-logic.android.feature-library` and register their actual Gradle path in `gradle/owned-modules.txt`; no separate coverage list is required. Tests stay with implementations in `src/test` / `src/androidTest`, with host integration tests in app. Module ownership changes retain production packages and class names. Internal source directories match packages; path contracts, fixtures, resources, and CRAP selectors are maintained together.
+Libraries with Kotlin/Java production sources use `build-logic.android.feature-library`; the pure-native `:native` module uses `build-logic.android.library` without JaCoCo or JVM tests. Owned libraries register their actual Gradle path in `gradle/owned-modules.txt`; no separate JVM coverage list is required. Tests stay with implementations in `src/test` / `src/androidTest`, with host integration tests in app. Module ownership changes retain production packages and class names. Internal source directories match packages; path contracts, fixtures, resources, and CRAP selectors are maintained together.
 
 `verifyModuleBoundaries` checks registrations, actual locations, domain dependencies, cycles, forbidden imports, source ownership, and package alignment. Library files stay below 2000 lines; library and app `APP_FAMILIES` directories contain at most 16 direct source files. Compiled package-level dependency gates preserve calculation isolation.
 
@@ -424,10 +423,12 @@ New libraries use `build-logic.android.feature-library` and register their actua
   - Room, event, and transport models live in `modules/model` under `ltw`; `api/ltw` in `modules/listentogether` owns transport, and `listentogether/protocol` owns bounded reading and message codecs.
   - App supplies platform interfaces under `core/di/ltw`; the player supplies playback and song mapping under `core/player/ltw`. Production sources cannot remain in `app/listentogether`.
 
-- `app/src/main/cpp/`
+- `modules/native/src/main/cpp/`
   - Native crash handling lives under `crash/`. USB code is split across
     `usb/exclusive/`, `usb/feedback/`, `usb/iso/`, `usb/pcm/`, `usb/uac1/`,
-    and `usb/uac2/`, with matching host tests under `tests/usb/`.
+    and `usb/uac2/`, with matching host tests under `tests/usb/`. Third-party libusb
+    and its Android configuration live in `third_party/libusb/`. CMake targets link
+    by responsibility; the `:native` AAR supplies `lib_neri.so`.
 
 - `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`
   - Lyricon integration and SuperLyric output for current song, playback state, position,
@@ -512,9 +513,10 @@ New libraries use `build-logic.android.feature-library` and register their actua
   cost as normal file IO.
 - Local audio sharing exposes a controlled URI directly when possible; content URIs
   that cannot be shared directly are copied to cache staging, which is cleanable.
-- Storage cleanup must only delete regenerable cache, download staging, and share
-  staging. Do not delete user-saved audio, downloaded lyrics/covers, or auth data
-  through normal cache cleanup.
+- Normal cache cleanup must only delete regenerable cache and share staging.
+  Download working files and resume state are managed by download recovery.
+  Do not delete recovery files, user-saved audio, downloaded lyrics/covers, or auth
+  data through normal cache cleanup.
 - Streaming cache and permanent downloads are separate features: cache uses
   `SimpleCache`; downloads are written by `AudioDownloadManager` and
   `ManagedDownloadStorage`.
@@ -788,8 +790,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 3. Cleanup actions must target regenerable content only. Downloaded songs,
    downloaded lyrics, download indexes, and auth data must not be removed by
    normal cache cleanup.
-4. When clearing download staging, respect current download task state. Staging
-   files for active tasks should wait until the task ends.
+4. Download staging contains working files, resume state, and HLS checkpoints;
+   normal cache cleanup must preserve them. Download recovery handles these files;
+   a UI task-state snapshot cannot authorize deleting the entire staging directory.
 
 #### 11. Modify NetEase playlist detail cache
 
@@ -919,6 +922,8 @@ adb logcat | grep NeriPlayer
 
 ### Testing & PR
 
+Automatic APK packaging waits for the existing JVM, lint, Worker, and emulator jobs and runs the Native Release host check before building. Manual Release verifies the actual `target_ref` checkout with JVM tests, lint, available module-boundary checks, and the Native Release host check before building signed APKs; reports are named with that checkout's SHA. Historical refs use their own native test layout, and a missing configuration in an existing test facility fails verification. Additional emulator, sanitizer, and physical DAC validation follows the risk of the change; physical hardware is not a prerequisite for every release.
+
 Before submitting, consider at least these checks:
 
 1. Debug build:
@@ -951,11 +956,11 @@ Before submitting, consider at least these checks:
    ```bash
    for profile in release-werror-asserts asan-ubsan tsan; do
      tools_pub/usb-async-lab host-test \
-       --manifest app/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
+       --manifest modules/native/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
        --profile "$profile"
    done
 
-   ./gradlew :app:externalNativeBuildDebug \
+   ./gradlew :native:externalNativeBuildDebug \
      --no-daemon \
      --warning-mode all \
      --stacktrace
@@ -1084,7 +1089,7 @@ Commit messages should follow Conventional Commits when possible, for example:
 - This project is licensed under **GPL-3.0**.
 - By submitting contributions, you agree to distribute your changes at least
   under GPL-3.0.
-- The alternative license in `app/src/main/cpp/README.md` covers only the listed
+- The alternative license in `modules/native/src/main/cpp/README.md` covers only the listed
   NeriPlayer-owned native source, not third-party code or other repository content.
 - A native PR does not itself grant the alternative license. Contributors who
   agree to dual licensing must record the README's statement in the PR, commit,

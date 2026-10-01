@@ -76,6 +76,7 @@ LIBRARY_OWNED_FAMILIES = (
 MODEL_MODULE = ":model"
 ALLOWED_DEPENDENCIES = {
     ":common": set(),
+    ":native": set(),
     ":network": {":common"},
     MODEL_MODULE: set(),
     ":database": {MODEL_MODULE},
@@ -94,7 +95,7 @@ ALLOWED_DEPENDENCIES = {
     },
     ":playback:runtime": {
         ":platform", ":common", ":database", ":listentogether", ":local", ":lyrics", MODEL_MODULE,
-        ":network", ":playback:logic", ":sync",
+        ":network", ":native", ":playback:logic", ":sync",
     },
 }
 CONFIGURED_DEPENDENCIES = {
@@ -430,7 +431,8 @@ def verify(root):
             errors.append(f"{name}: missing build.gradle.kts")
             continue
         script = build_file.read_text()
-        if 'id("build-logic.android.feature-library")' not in script:
+        convention = "library" if name == ":native" else "feature-library"
+        if f'id("build-logic.android.{convention}")' not in script:
             errors.append(f"{name}: must use the library verification convention")
         dependencies = set(PROJECT_REFERENCE.findall(script))
         configured = list(CONFIGURED_PROJECT_REFERENCE.finditer(script))
@@ -463,7 +465,12 @@ def verify(root):
                 verify_packages(root, source_root, errors)
                 if source_set == "main":
                     verify_directory_capacity(root, source_root, errors)
-        if not sources:
+        if name == ":native":
+            if sources:
+                errors.append(f"{name}: JNI callers belong in their business modules")
+            if not (directory / "src/main/cpp/CMakeLists.txt").is_file():
+                errors.append(f"{name}: missing native CMake entrypoint")
+        elif not sources:
             errors.append(f"{name}: no owned production sources")
         for source in sources:
             text = source.read_text()
@@ -537,6 +544,8 @@ def verify(root):
             errors.append(f"{source.relative_to(root)}: production code belongs in a library module")
         for family in APP_FAMILIES:
             verify_directory_capacity(root, app_sources / "moe/ouom/neriplayer" / family, errors)
+    if (root / "app/src/main/cpp").exists():
+        errors.append("app/src/main/cpp: native implementation belongs in :native")
     return errors
 
 

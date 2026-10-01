@@ -71,6 +71,19 @@ class StorageUsageAndroidTest {
     }
 
     @Test
+    fun directStagingCleanupPreservesWorkingFileAndResumeCredentials() {
+        val context = mockContext()
+        val directory = File(context.filesDir, "download_staging/waiting-operation").apply { mkdirs() }
+        val working = File(directory, "npdl_waiting_audio.m4a.download").apply { writeText("audio") }
+        val resume = File(directory, "npdl_waiting_audio.m4a.download.resume.json").apply { writeText("resume") }
+
+        assertFalse(AndroidStorageCacheFiles(context).clear(directory.parentFile!!, StorageCacheKind.DownloadStaging))
+
+        assertEquals("audio", working.readText())
+        assertEquals("resume", resume.readText())
+    }
+
+    @Test
     fun failedDirectoryDeletionDoesNotRecreateDirectory() {
         val directory = mock(File::class.java)
         `when`(directory.isFile).thenReturn(true)

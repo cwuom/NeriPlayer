@@ -1,0 +1,2 @@
+add_library(neri_crash OBJECT native_crash_handler.cpp)
+neri_configure_owned_native_target(neri_crash)
