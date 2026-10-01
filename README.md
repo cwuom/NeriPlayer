@@ -358,8 +358,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   不会把载波当作用户可听内容。
 - 💾 **可配置流媒体缓存**：
   使用 `SimpleCache + LRU` 缓存音频，默认上限 **1 GB**，
-  支持分别清理音频缓存、图片缓存、下载暂存、分享暂存和平台歌单缓存，
-  并可查看分组后的存储占用详情。
+  支持分别清理音频缓存、图片缓存、分享暂存和平台歌单缓存，
+  并可查看分组后的存储占用详情；下载暂存包含续传与恢复凭据，由下载恢复管理。
 - 🛰️ **脱机模式**：
   自动感知系统默认网络承载状态，脱机时停用在线探索和首页远程刷新，
   远程图片只走本地缓存；本地文件、已下载音频、播放缓存、歌单、
@@ -518,7 +518,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - CMake `3.22.1`，由 Android 构建脚本固定指定
 - 版本名格式：`<git短哈希>.<MMddHHmm>`
 - Release APK 文件名：`NeriPlayer-<versionName>[-abi].apk`
-- 默认 Release 只构建 `arm64-v8a`；多 ABI 构建需加
+- 默认 Release APK 只打包 `arm64-v8a`；多 ABI 输出需加
   `-PbuildAllReleaseAbis=true`
 - `.github/workflows/android_native_ci.yml` 会在 Native 相关变更时运行
   Release + `-Werror`、ASan+UBSan、TSan 三组 host CTest，并单独编译
@@ -526,12 +526,13 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 模块结构
 
-自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](gradle/owned-modules.txt) 统一登记，共 13 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
+自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](gradle/owned-modules.txt) 统一登记，共 14 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
 
 - [`:common`](modules/common/README.md)：共享工具、日志、文案、图标、语言能力和测试夹具。
 - [`:network`](modules/network/README.md)：通用 HTTP、Range、网络解析和 Web 登录基础能力。
 - [`:model`](modules/model/README.md)：按业务分类的数据模型、枚举和跨模块状态契约，不依赖项目实现。
 - [`:database`](modules/database/README.md)：Room 数据库、实体、DAO、历史 schema 与版本升级。
+- [`:native`](modules/native/README.md)：Native 崩溃处理、USB 协议与 PCM 计算、独占传输和第三方 libusb，生成并打包 `lib_neri.so`。
 - [`:playback:logic`](modules/playback/logic/README.md)：播放 policy、状态协调 runtime、PCM/audio 和队列 queue 规则，保持包级隔离。
 - [`:playback:runtime`](modules/playback/runtime/README.md)：Media3 引擎、播放服务、音源解析、USB 输出、系统音效、浮窗与蓝牙歌词及宿主接入。
 - [`:download:logic`](modules/download/logic/README.md)：下载准入、状态迁移、重试、调度、传输槽位、所有权、提交与元数据规则。
@@ -542,7 +543,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - [`:sync`](modules/sync/README.md)：GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。
 - [`:listentogether`](modules/listentogether/README.md)：一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。
 
-`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`build-logic` 和 `buildSrc` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 13 个自有 Android 库。
+`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`build-logic` 和 `buildSrc` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 14 个自有 Android 库。
 
 依赖按实际职责维护，不由目录分类推导层级。`:model` 不依赖项目实现，`:common` 不依赖业务领域；数据库、存储计算、歌词解析与播放/下载规则不得反向依赖仓库或 Android 运行实现。`:platform` 内的业务仓库消费对应协议，API 不反向读取账号仓库、Room 或播放器状态，各平台仍保持包级依赖边界。`:local` 消费数据库与领域服务，客户端的账号、凭据刷新和存储能力通过窄接口注入。所有库禁止依赖 app 或形成循环。
 
@@ -552,7 +553,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 各模块维护自己的测试、资源与 consumer R8 规则，宿主集成测试保留在 app。Room 业务映射与本地仓库编排位于 `:local`，平台缓存适配位于 `:platform`；历史 schema 位于 `modules/database/schemas`。设置 schema 在 `:local` 运行 KSP，Compose 设置渲染留在 [app 的设置页面](app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/)。`app` 不保留生产 `data` 目录，下载升级和依赖组装位于 `core/startup/legacy` 与 `core/integration`。
 
-运行 `./gradlew verifyModularization` 检查结构、JVM 测试、合并 CRAP 覆盖率、计算域依赖和 lint。针对性任务见各模块 README，例如：
+运行 `./gradlew verifyModularization` 检查结构、JVM 测试、合并 CRAP 覆盖率、计算域依赖和 lint。`:native` 参与登记、结构与 lint 检查；纯 Native 模块不生成 JaCoCo 数据，现有 JVM 模块的覆盖率范围保持完整。Native host 测试和四 ABI 编译通过独立 CI 与模块任务验证，入口见 [:native README](modules/native/README.md)。针对性任务见各模块 README，例如：
 
 ```bash
 ./gradlew :platform:verifyCrap :platform:verifyDomainDependencies :platform:lintDebug
@@ -563,7 +564,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 python3 -B tools_pub/quality/module_boundaries.py
 ```
 
-独立与聚合门禁保留相同范围和阈值，受检方法 CRAP 大于 9 即失败。库源码文件必须少于 2000 行，每个生产目录最多 16 个直接 Kotlin/Java 文件。FFmpeg AAR 和 USB native 库由应用统一打包；播放服务和 Kotlin 实现由 `:playback:runtime` 维护，app 通过 `core/di/player`、`core/di/ltw` 等接口组装。具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout) 与 [质量说明](tools_pub/quality/README.md)。
+独立与聚合门禁保留相同范围和阈值，受检方法 CRAP 大于 9 即失败。库源码文件必须少于 2000 行，每个生产目录最多 16 个直接 Kotlin/Java 文件。FFmpeg AAR 由应用打包，`lib_neri.so` 由 `:native` AAR 提供并随 app 打包；播放服务和 Kotlin 实现由 `:playback:runtime` 维护，app 通过 `core/di/player`、`core/di/ltw` 等接口组装。具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout) 与 [质量说明](tools_pub/quality/README.md)。
 
 ### 入口与导航
 
@@ -669,6 +670,7 @@ python3 -B tools_pub/quality/module_boundaries.py
   `Android Keystore + EncryptedSharedPreferences` 本地加密保存。
 - 本地歌单、最近播放、播放统计和收藏快照主要通过 `Room` 持久化，实体、DAO 与升级链由 `:database` 维护。
 - 旧 JSON 保留升级导入和故障回退路径；歌单 JSON 导入/导出与远端同步格式由各自流程维护，回退文件仍使用原子写入。
+- 收藏和播放统计的首次加载在 IO 协程中完成；主存读取失败时保留原数据，相关写入、备份与同步等待完整加载成功，可在后续操作中重试。
 - GitHub 与 WebDAV 共用的同步载荷模型位于 `:model` 的 `data/model/sync/`，
   传输、加密凭据状态、会话、兼容编解码、清洗、合并和调度策略由 `:sync` 维护，
   Android 仓库与 WorkManager 适配位于 `:local`。
@@ -706,7 +708,7 @@ python3 -B tools_pub/quality/module_boundaries.py
   但 Android 的 SAF 访问仍明显慢于应用私有目录，且空目录读取不会清除已有索引；
   只有确实需要外部目录时才建议切换。
 - `StorageUsageAnalyzer` 会按可清理缓存、下载内容、诊断文件和应用数据分组统计占用；
-  清理缓存只覆盖可再生成的缓存和暂存文件，不会删除用户主动保存的下载歌曲。
+  清理缓存只覆盖可再生成的缓存和分享暂存，保留下载工作文件、恢复凭据和已下载歌曲。
 - `LocalAudioImportManager` 支持导入外部音频、扫描设备音乐，
   并复制附近的 `lrc/txt` 歌词文件与 `cover/folder/front` 封面图。
 - 分享本地歌曲时会优先直接分享受控目录 URI；SAF/content URI 无法直接暴露时，
@@ -1030,7 +1032,7 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
 
 - ✅ 你可以自由使用、修改和分发本软件。
 - ⚠️ 按根目录 GPL-3.0 分发修改版时，须继续遵守 GPL-3.0。
-- 🧩 `app/src/main/cpp/README.md` 仅为其中列出的 NeriPlayer 自有 Native 源码
+- 🧩 `modules/native/src/main/cpp/README.md` 仅为其中列出的 NeriPlayer 自有 Native 源码
   提供附带署名条件的替代授权；第三方源码和未列入范围的仓库内容不适用。
 - ✍️ 外部 Native 贡献不会因提交 PR 自动进入替代授权范围，
   只有贡献者明确记录双授权同意时才适用。

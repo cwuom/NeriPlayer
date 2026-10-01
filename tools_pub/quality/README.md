@@ -20,9 +20,9 @@
 ./gradlew :app:crapReport
 ```
 
-`verifyModularization` 汇总结构检查、app 和自有库的 Debug JVM 测试、合并 CRAP 报告、域依赖、lint 和构建逻辑测试。`:app:check` 包含 CRAP 与域依赖检查。`:app:crapReport` 保留输入校验，但不会因分数超限而失败。
+`verifyModularization` 汇总结构检查、app 和自有 JVM 库的 Debug JVM 测试、合并 CRAP 报告、域依赖、lint 和构建逻辑测试。`:app:check` 包含 CRAP 与域依赖检查。`:app:crapReport` 保留输入校验，但不会因分数超限而失败。
 
-自有库由 [gradle/owned-modules.txt](../../gradle/owned-modules.txt) 登记。只检查受影响模块时可使用：
+14 个自有库由 [gradle/owned-modules.txt](../../gradle/owned-modules.txt) 登记。`:native` 是纯 Native Android library，参与登记、结构与 lint 检查，不生成 JaCoCo 执行数据、不创建 CRAP 或 JVM 测试任务；原有 Kotlin/Java 模块仍完整收集覆盖率。Native host 三组 profile 和四 ABI 编译由独立 CI 验证，命令见 [Native 模块](../../modules/native/README.md)。只检查受影响模块时可使用：
 
 ```bash
 ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
@@ -53,7 +53,7 @@
 
 [config/quality/crap-scope.json](../../config/quality/crap-scope.json) 使用 `source_patterns` 选择完整文件，使用 `method_scopes` 选择类与 JVM 方法名，包括构造方法和 Kotlin 默认参数方法。递归文件模式会包含新增文件与子目录；范围外的方法仍进入报告，但不决定门禁结果。
 
-`:app:verifyCrap` 通过 AGP `ScopedArtifact.CLASSES` 取得 app 和登记库自身的 Kotlin/Java 字节码，合并真实测试执行数据生成 JaCoCo XML。源码从各模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，重复路径、缺失或空执行数据都会失败。
+`:app:verifyCrap` 通过 AGP `ScopedArtifact.CLASSES` 取得 app 和登记库自身的 Kotlin/Java 字节码，合并真实测试执行数据生成 JaCoCo XML。源码从各 JVM 模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，重复路径、缺失或空执行数据都会失败。
 
 报告器遇到无效 XML、计数器、空配置、规则无匹配或缺少受检源码/方法时返回 2；超分返回 1。纯接口通过类记录验证源码存在，可执行默认实现仍计算分数。协程、lambda 与 Compose 字节码以 JaCoCo 内置过滤后的实际计数为准，源码分支数不等于报告中的 JVM 复杂度。
 

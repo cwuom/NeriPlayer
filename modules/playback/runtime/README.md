@@ -16,9 +16,9 @@ The app installs `PlayerDependencies` in `core/di/player`; `isInitialized()` che
 
 ## 兼容 / Compatibility
 
-[UsbExclusiveNativeBridge](src/main/java/moe/ouom/neriplayer/core/player/usb/transport/UsbExclusiveNativeBridge.kt) 的完整类名、native 方法名及 FFmpeg 回调须与 JNI 和 [consumer R8 规则](consumer-rules.pro) 一致；[Manifest](src/main/AndroidManifest.xml) 中的服务类名也须保持兼容。FFmpeg AAR 仅用作编译和测试接口，AAR 与 native 库由 app 打包。
+[UsbExclusiveNativeBridge](src/main/java/moe/ouom/neriplayer/core/player/usb/transport/UsbExclusiveNativeBridge.kt) 的完整类名、native 方法名及 FFmpeg 回调须与 JNI 和 [consumer R8 规则](consumer-rules.pro) 一致；[Manifest](src/main/AndroidManifest.xml) 中的服务类名也须保持兼容。FFmpeg AAR 仅用作编译和测试接口，由 app 打包；[`:native`](../../native/README.md) 维护 C/C++ 实现并通过 AAR 向 app 提供 `lib_neri.so`，Kotlin 桥仍在本模块。
 
-The fully qualified name and native methods of [UsbExclusiveNativeBridge](src/main/java/moe/ouom/neriplayer/core/player/usb/transport/UsbExclusiveNativeBridge.kt), plus FFmpeg callbacks, must match JNI and [consumer R8 rules](consumer-rules.pro). Service names in the [Manifest](src/main/AndroidManifest.xml) must remain compatible. The FFmpeg AAR supplies compile/test interfaces; app packages the AAR and native libraries.
+The fully qualified name and native methods of [UsbExclusiveNativeBridge](src/main/java/moe/ouom/neriplayer/core/player/usb/transport/UsbExclusiveNativeBridge.kt), plus FFmpeg callbacks, must match JNI and [consumer R8 rules](consumer-rules.pro). Service names in the [Manifest](src/main/AndroidManifest.xml) must remain compatible. The FFmpeg AAR supplies compile/test interfaces and is packaged by app. [`:native`](../../native/README.md) owns the C/C++ implementation and supplies `lib_neri.so` to app through its AAR; the Kotlin bridge stays in this module.
 
 ## 测试 / Tests
 

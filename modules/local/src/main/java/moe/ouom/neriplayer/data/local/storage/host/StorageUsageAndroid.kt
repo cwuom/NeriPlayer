@@ -64,6 +64,7 @@ class AndroidStorageCacheFiles(private val context: Context) : StorageCacheFileA
     override fun stats(file: File): FileStats = statsOf(file)
 
     override fun clear(file: File, kind: StorageCacheKind): Boolean = when (kind) {
+        StorageCacheKind.DownloadStaging -> false
         StorageCacheKind.LogFiles -> NPLogger.clearLogFiles(context)
         StorageCacheKind.CrashLogs -> LocalMediaHostAccess.crashLogs.clear(context)
         else -> clearDirectory(file)

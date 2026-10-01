@@ -5,14 +5,18 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.IOException
 
 @RunWith(AndroidJUnit4::class)
 class FavoritePlaylistRoomStoreTest {
@@ -129,6 +133,82 @@ class FavoritePlaylistRoomStoreTest {
             )
 
             assertEquals(listOf(updatedFirst), store.readIfRoomPrimary())
+            assertEquals(1, database.favoritePlaylistDao().getSongs().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun invalidSongPayloadRejectsSnapshotWithoutRemovingRecoverableRows() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val store = FavoritePlaylistRoomStore(database)
+            store.importLegacyAndPromote(listOf(favorite(1L, "Saved", listOf(testSong(1L, "Saved song")))))
+            val dao = database.favoritePlaylistDao()
+            val originalSong = dao.getSongs().single()
+            dao.upsertSongs(listOf(originalSong.copy(songPayloadJson = "null")))
+
+            assertTrue(runCatching { store.readIfRoomPrimary() }.isFailure)
+            assertEquals(1, dao.getPlaylists().size)
+            assertEquals("null", dao.getSongs().single().songPayloadJson)
+            assertEquals(
+                FavoritePlaylistRoomStore.ROOM_PRIMARY_STATE,
+                database.syncMetadataDao()
+                    .getMigrationMetadata(FavoritePlaylistRoomStore.CUTOVER_STATE_METADATA_KEY)?.value
+            )
+
+            dao.upsertSongs(listOf(originalSong))
+            assertEquals("Saved song", store.readIfRoomPrimary()?.single()?.songs?.single()?.name)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun legacyFallbackCommitsMarkerOnlyAfterSuccessfulSnapshot() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val store = FavoritePlaylistRoomStore(database)
+            val saved = favorite(1L, "Saved", listOf(testSong(1L, "Saved song")))
+            store.importLegacyAndPromote(listOf(saved))
+            var snapshotWrites = 0
+
+            assertFalse(store.commitLegacyFallback {
+                assertTrue(database.inTransaction())
+                snapshotWrites++
+                false
+            })
+            assertEquals(listOf(saved), store.readIfRoomPrimary())
+
+            listOf(IOException("Snapshot write unavailable"), CancellationException("Cancelled"))
+                .forEach { error ->
+                    val failure = runCatching {
+                        store.commitLegacyFallback {
+                            assertTrue(database.inTransaction())
+                            throw error
+                        }
+                    }.exceptionOrNull()
+                    assertEquals(error, failure)
+                    assertEquals(listOf(saved), store.readIfRoomPrimary())
+                }
+
+            assertTrue(store.commitLegacyFallback {
+                assertTrue(database.inTransaction())
+                snapshotWrites++
+                true
+            })
+            assertEquals(2, snapshotWrites)
+            assertEquals(
+                FavoritePlaylistRoomStore.LEGACY_JSON_STATE,
+                database.syncMetadataDao()
+                    .getMigrationMetadata(FavoritePlaylistRoomStore.CUTOVER_STATE_METADATA_KEY)?.value
+            )
+            assertEquals(1, database.favoritePlaylistDao().getPlaylists().size)
             assertEquals(1, database.favoritePlaylistDao().getSongs().size)
         } finally {
             database.close()

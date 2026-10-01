@@ -43,8 +43,8 @@ copyright or license notice.
 
 它不适用于带有独立版权或独立许可证声明的第三方源码，例如：
 
-- `libusb/` keeps following `LGPL-2.1-or-later` as declared in its file headers
-- `libusb/` 源码继续遵循文件头中声明的 `LGPL-2.1-or-later`
+- `third_party/libusb/` keeps following `LGPL-2.1-or-later` as declared in its file headers
+- `third_party/libusb/` 源码继续遵循文件头中声明的 `LGPL-2.1-or-later`
 - Imported test fixtures, traces, corpora, or specifications with their own notices
 - 带有独立声明的外部测试夹具、反馈轨迹、语料或规范资料
 - Any other file with an explicit third-party copyright or license notice
@@ -84,9 +84,9 @@ Suggested contribution statement / 建议的贡献声明：
 
 ```text
 I license my contribution under both GPL-3.0 and the NeriPlayer Native
-Attribution License in app/src/main/cpp/README.md.
+Attribution License in modules/native/src/main/cpp/README.md.
 
-我同意将本次贡献同时按 GPL-3.0 和 app/src/main/cpp/README.md 中的
+我同意将本次贡献同时按 GPL-3.0 和 modules/native/src/main/cpp/README.md 中的
 NeriPlayer Native Attribution License 授权。
 ```
 

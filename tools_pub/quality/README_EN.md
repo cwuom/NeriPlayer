@@ -22,13 +22,17 @@ Run from the repository root:
 ./gradlew :app:crapReport
 ```
 
-`verifyModularization` runs structural checks, app and owned-library Debug JVM tests,
+`verifyModularization` runs structural checks, app and owned JVM-library Debug tests,
 combined CRAP reporting, domain dependency checks, lint, and build-logic tests.
 `:app:check` includes CRAP and domain checks. `:app:crapReport` still validates its
 inputs, but does not fail for scores above the threshold.
 
-Owned libraries are registered in [gradle/owned-modules.txt](../../gradle/owned-modules.txt).
-For focused checks:
+The 14 owned libraries are registered in [gradle/owned-modules.txt](../../gradle/owned-modules.txt).
+`:native` is a pure-native Android library included in registration, structural checks,
+and lint. It creates no JaCoCo execution data, CRAP tasks, or JVM test tasks; existing
+Kotlin/Java modules retain complete coverage collection. The independent native CI
+checks all three host profiles and four Android ABIs; commands are in the
+[Native module README](../../modules/native/README.md). For focused checks:
 
 ```bash
 ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
@@ -81,7 +85,7 @@ still appear in reports but do not determine whether the gate passes.
 
 `:app:verifyCrap` obtains each module's own Kotlin/Java bytecode through AGP
 `ScopedArtifact.CLASSES` and combines real test execution data into JaCoCo XML.
-Sources from each module's `src/main/java` and `src/main/kotlin` are merged into
+Sources from each JVM module's `src/main/java` and `src/main/kotlin` are merged into
 `app/build/reports/crap/sources`. Duplicate paths and missing or empty execution
 data cause failure.
 

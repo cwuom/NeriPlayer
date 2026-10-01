@@ -94,6 +94,24 @@ class StorageUsagePresenterTest {
         assertEquals("resource-${CoreCommonR.string.storage_desc_netease_playlist_cache}", item.description)
     }
 
+    @Test
+    fun stagingUsageBelongsToDownloadsAndIsNotOfferedAsCleanableCache() {
+        val summary = StorageUsagePresenter(mockResources()).present(snapshot(
+            StorageUsageItemKind.DownloadStaging,
+            StorageUsageMeasurement(FileStats(30L, 2), "/staging")
+        ))
+        val section = summary.sections.single { section ->
+            section.items.any { it.kind == StorageUsageItemKind.DownloadStaging }
+        }
+        val item = section.items.single { it.kind == StorageUsageItemKind.DownloadStaging }
+
+        assertEquals("resource-${CoreCommonR.string.storage_group_downloads}", section.title)
+        assertNull(item.cacheKind)
+        assertEquals(30L, item.sizeBytes)
+        assertEquals(2, item.fileCount)
+        assertEquals("/staging", item.path)
+    }
+
     private fun mockResources(): Resources = mock(Resources::class.java).apply {
         `when`(getString(anyInt())).thenAnswer { "resource-${it.arguments[0]}" }
     }

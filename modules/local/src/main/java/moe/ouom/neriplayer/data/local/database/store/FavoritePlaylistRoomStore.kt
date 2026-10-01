@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.data.local.database.store
 
 import androidx.room.withTransaction
 import com.google.gson.Gson
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
@@ -14,13 +16,16 @@ internal class FavoritePlaylistRoomStore(
     private val gson: Gson = Gson()
 ) {
     suspend fun readIfRoomPrimary(): List<FavoritePlaylist>? {
-        if (database.syncMetadataDao()
+        return database.withTransaction {
+            if (database.syncMetadataDao()
                 .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
                 ?.value != ROOM_PRIMARY_STATE
-        ) {
-            return null
+            ) {
+                null
+            } else {
+                readPlaylists()
+            }
         }
-        return readPlaylists()
     }
 
     suspend fun importLegacyAndPromote(
@@ -75,6 +80,15 @@ internal class FavoritePlaylistRoomStore(
         }
     }
 
+    suspend fun commitLegacyFallback(writeSnapshot: () -> Boolean): Boolean {
+        return database.withTransaction {
+            if (!writeSnapshot()) return@withTransaction false
+            currentCoroutineContext().ensureActive()
+            markLegacyJsonPrimary()
+            true
+        }
+    }
+
     suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
         database.syncMetadataDao().upsertMigrationMetadata(
             metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
@@ -89,7 +103,7 @@ internal class FavoritePlaylistRoomStore(
                 songs.sortedBy(FavoritePlaylistSongEntity::displayPosition)
                     .map { song ->
                         runCatching {
-                            gson.fromJson(song.songPayloadJson, SongItem::class.java)
+                            requireNotNull(gson.fromJson(song.songPayloadJson, SongItem::class.java))
                         }.getOrElse { error ->
                             throw IllegalStateException(
                                 "Invalid favorite song payload at " +

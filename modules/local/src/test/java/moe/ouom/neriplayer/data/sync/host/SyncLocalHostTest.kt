@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.stats.PlaybackStatsPersistenceSnapshot
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import org.junit.After
@@ -48,6 +49,56 @@ class SyncLocalHostTest {
         assertEquals(listOf(1L, 4L), snapshot.recentPlays.map { it.songId })
         assertTrue(snapshot.recentPlays.all { it.deviceId == "device" })
         assertEquals(20L, snapshot.favoritePlaylists.single().id)
+    }
+
+    @Test
+    fun `statistics snapshot stays complete when live state is cleared during sync capture`() {
+        val fixture = Fixture()
+        val track = TrackStat(
+            id = 7, name = "song", artist = "artist", album = "netease", albumId = 8,
+            coverUrl = null, durationMs = 180_000, totalListenMs = 40_000, playCount = 1,
+            lastPlayedAt = 200, firstPlayedAt = 100, mediaUri = null, localFilePath = null,
+            localFileName = null, customName = null, customArtist = null, customCoverUrl = null,
+            identityKey = "track|7"
+        )
+        val bucket = PlaybackStatBucket(
+            dayStartAt = 100, id = track.id, name = track.name, artist = track.artist,
+            album = track.album, albumId = track.albumId, coverUrl = null, durationMs = track.durationMs,
+            totalListenMs = track.totalListenMs, playCount = track.playCount,
+            lastPlayedAt = track.lastPlayedAt, firstPlayedAt = track.firstPlayedAt,
+            mediaUri = null, localFilePath = null, localFileName = null, customName = null,
+            customArtist = null, customCoverUrl = null, identityKey = track.identityKey
+        )
+        val shard = SyncPlaybackCounterShard("device", 50, 40_000, 1, 100, 200)
+        val counters = PlaybackStatsSyncCounterSnapshot(
+            trackShardsByIdentity = mapOf(track.identityKey to listOf(shard)),
+            dailyShardsByBucketKey = mapOf(
+                PlaybackStatsSyncCounterSnapshot.dailyCounterKey(bucket.dayStartAt, bucket.identityKey) to listOf(shard)
+            )
+        )
+        val persisted = PlaybackStatsPersistenceSnapshot(listOf(track), listOf(bucket), counters, 50, 50)
+        val liveStats = MutableStateFlow(listOf(track))
+        val liveBuckets = MutableStateFlow(listOf(bucket))
+        val liveClearedAt = MutableStateFlow(50L)
+        `when`(fixture.stats.statsFlow).thenReturn(liveStats)
+        `when`(fixture.stats.dailyStatsFlow).thenReturn(liveBuckets)
+        `when`(fixture.stats.statsClearedAtFlow).thenReturn(liveClearedAt)
+        `when`(fixture.stats.syncSnapshot()).thenAnswer {
+            liveStats.value = emptyList()
+            liveBuckets.value = emptyList()
+            liveClearedAt.value = 300
+            persisted
+        }
+
+        val snapshot = fixture.builder.build(fixture.context)
+
+        assertEquals(40_000L, snapshot.playbackStats.single().totalListenMs)
+        assertEquals(listOf(shard), snapshot.playbackStats.single().counterShards)
+        assertEquals(40_000L, snapshot.playbackStatBuckets.single().totalListenMs)
+        assertEquals(listOf(shard), snapshot.playbackStatBuckets.single().counterShards)
+        assertEquals(50L, snapshot.playbackStatsClearedAt)
+        assertTrue(liveStats.value.isEmpty())
+        assertEquals(300L, liveClearedAt.value)
     }
 
     @Test
@@ -103,7 +154,9 @@ class SyncLocalHostTest {
             `when`(stats.statsFlow).thenReturn(MutableStateFlow(emptyList()))
             `when`(stats.dailyStatsFlow).thenReturn(MutableStateFlow(emptyList()))
             `when`(stats.statsClearedAtFlow).thenReturn(MutableStateFlow(0L))
-            `when`(stats.syncCounterSnapshot()).thenReturn(PlaybackStatsSyncCounterSnapshot())
+            `when`(stats.syncSnapshot()).thenReturn(PlaybackStatsPersistenceSnapshot(
+                emptyList(), emptyList(), PlaybackStatsSyncCounterSnapshot(), 0L, 0L
+            ))
             `when`(usage.syncStats()).thenReturn(emptyList())
             `when`(localStats.syncSnapshot()).thenReturn(LocalPlaylistPlaybackSyncSnapshot(emptyList(), emptyList()))
             `when`(skip.snapshot()).thenReturn(emptyList())

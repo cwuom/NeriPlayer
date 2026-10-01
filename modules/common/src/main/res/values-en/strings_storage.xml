@@ -19,7 +19,6 @@
     <string name="storage_extra_cache_clear_complete">Temporary cache cleared, freed %1$s</string>
     <string name="storage_extra_cache_clear_room_complete">Temporary cache cleared, freed %1$s; about %2$s of Room pages is reusable</string>
     <string name="storage_extra_cache_clear_partial">Some temporary cache files could not be cleared</string>
-    <string name="storage_download_staging_active_desc">Downloads are active. Staging files can be cleared after downloads finish</string>
     <string name="storage_group_cleanable_cache">Cleanable Cache</string>
     <string name="storage_group_downloads">Downloads</string>
     <string name="storage_group_app_data">App Data</string>
@@ -46,7 +45,7 @@
     <string name="storage_type_app_data">App Data</string>
     <string name="storage_desc_audio_cache">Audio segments cached during playback and safe to stream again</string>
     <string name="storage_desc_image_cache">Covers, avatars, and blurred background images that can be loaded again</string>
-    <string name="storage_desc_download_staging">Incomplete downloads, resume metadata, and HLS checkpoints</string>
+    <string name="storage_desc_download_staging">Incomplete downloads, resume metadata, and HLS checkpoints used for download recovery; managed by download recovery and retained when clearing caches</string>
     <string name="storage_desc_shared_media">Temporary copies created when sharing local music</string>
     <string name="storage_desc_lyrics_cache">Local copies of online lyrics that can be checked for updates</string>
     <string name="storage_desc_netease_playlist_cache">Room cache for NetEase playlist details, apportioned by SQLite pages and safe to fetch again</string>

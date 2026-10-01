@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.storage.presentation
 
 import moe.ouom.neriplayer.data.model.storage.DownloadIndexUsageStats
+import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
 import moe.ouom.neriplayer.data.model.storage.StorageUsageItem
 import moe.ouom.neriplayer.data.model.storage.StorageUsageItemKind
 import moe.ouom.neriplayer.data.model.storage.StorageUsageMeasurement
@@ -72,13 +73,14 @@ private data class ItemText(
 
 private data class SectionText(@param:StringRes val title: Int, val items: List<ItemText>)
 
-private val cacheKinds = storageCacheItemKinds.entries.associate { it.value to it.key }
+private val cacheKinds = storageCacheItemKinds.entries
+    .filter { it.key != StorageCacheKind.DownloadStaging }
+    .associate { it.value to it.key }
 
 private val sections = listOf(
     SectionText(CoreCommonR.string.storage_group_cleanable_cache, listOf(
         ItemText(StorageUsageItemKind.AudioCache, CoreCommonR.string.storage_type_audio_cache, CoreCommonR.string.storage_desc_audio_cache),
         ItemText(StorageUsageItemKind.ImageCache, CoreCommonR.string.storage_type_image_cache, CoreCommonR.string.storage_desc_image_cache),
-        ItemText(StorageUsageItemKind.DownloadStaging, CoreCommonR.string.storage_type_download_staging, CoreCommonR.string.storage_desc_download_staging),
         ItemText(StorageUsageItemKind.SharedMedia, CoreCommonR.string.storage_type_shared_media, CoreCommonR.string.storage_desc_shared_media),
         ItemText(StorageUsageItemKind.LyricsCache, CoreCommonR.string.storage_type_lyrics_cache, CoreCommonR.string.storage_desc_lyrics_cache),
         ItemText(StorageUsageItemKind.NeteasePlaylistCache, CoreCommonR.string.storage_type_netease_playlist_cache, CoreCommonR.string.storage_desc_netease_playlist_cache),
@@ -90,6 +92,7 @@ private val sections = listOf(
         ItemText(StorageUsageItemKind.CrashLogs, CoreCommonR.string.storage_type_crash_logs, CoreCommonR.string.storage_desc_crash_logs)
     )),
     SectionText(CoreCommonR.string.storage_group_downloads, listOf(
+        ItemText(StorageUsageItemKind.DownloadStaging, CoreCommonR.string.storage_type_download_staging, CoreCommonR.string.storage_desc_download_staging),
         ItemText(StorageUsageItemKind.DownloadedMusic, CoreCommonR.string.storage_type_downloaded_music, CoreCommonR.string.storage_desc_downloaded_music),
         ItemText(StorageUsageItemKind.DownloadedLyrics, CoreCommonR.string.storage_type_downloaded_lyrics, CoreCommonR.string.storage_desc_downloaded_lyrics),
         ItemText(StorageUsageItemKind.DownloadedCovers, CoreCommonR.string.storage_type_downloaded_covers, CoreCommonR.string.storage_desc_downloaded_covers),

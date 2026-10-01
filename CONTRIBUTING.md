@@ -25,23 +25,21 @@
 
 维护文档时建议按用途拆开看：
 
-- [README.md](README.md) / [README_EN.md](README_EN.md)
+- [README.md](README.md)
   - 面向用户和新贡献者，说明项目定位、能力边界、安装构建、同步与隐私。
-- [CONTRIBUTING.md](CONTRIBUTING.md) / [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
   - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
-- [docs/kotlin-helpers.md](docs/kotlin-helpers.md) /
-  [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md)
+- [docs/kotlin-helpers.md](docs/kotlin-helpers.md)
   - 说明请求代次、单位、播放器读取和协程结果等辅助工具的用法与边界。
-- [tools_pub/quality/README.md](tools_pub/quality/README.md) /
-  [tools_pub/quality/README_EN.md](tools_pub/quality/README_EN.md)
+- [tools_pub/quality/README.md](tools_pub/quality/README.md)
   - 说明 CRAP、模块归属、依赖边界检查的范围、命令和验证限制。
-- [app/src/main/cpp/README.md](app/src/main/cpp/README.md)
+- [modules/native/src/main/cpp/README.md](modules/native/src/main/cpp/README.md)
   - 说明 NeriPlayer 自有 Native 源码的替代授权范围、第三方排除项和
     外部贡献所需的显式双授权声明。
-- [app/src/main/cpp/tests/usb/config/host-gate-contract.md](app/src/main/cpp/tests/usb/config/host-gate-contract.md)
+- [modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md](modules/native/src/main/cpp/tests/usb/config/host-gate-contract.md)
   - 说明公开 Native USB host 门禁、CI 覆盖与真实设备验证边界。
-- [app/src/main/cpp/tests/usb/corpus/README.md](app/src/main/cpp/tests/usb/corpus/README.md) 与
-  [app/src/main/cpp/tests/usb/fixtures/README.md](app/src/main/cpp/tests/usb/fixtures/README.md)
+- [modules/native/src/main/cpp/tests/usb/corpus/README.md](modules/native/src/main/cpp/tests/usb/corpus/README.md) 与
+  [modules/native/src/main/cpp/tests/usb/fixtures/README.md](modules/native/src/main/cpp/tests/usb/fixtures/README.md)
   - 说明公开测试语料/夹具只能使用合成或可审计资料，真实设备证据留在私有目录。
 - [np-submodule/NeriPlayer-LTW/README.md](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme)
   - 面向一起听服务端部署者，说明 Worker API、事件模型、部署和本地检查。
@@ -133,7 +131,7 @@
 ### 构建发布版 / Release Build
 
 发布版默认启用混淆与资源收缩。
-普通 `assembleRelease` 默认只构建 `arm64-v8a`，手动多 ABI 构建需要额外参数。
+普通 `assembleRelease` 默认在 APK 中只打包 `arm64-v8a`，手动多 ABI 输出需要额外参数。
 
 1. 在 `~/.gradle/gradle.properties`、项目 Gradle properties 或命令行 `-P`
    中提供签名信息：
@@ -178,9 +176,10 @@
 
 #### 根模块
 
-自有库的入口与完整职责见根目录 [README.md](README.md#模块结构)。13 个库由 `gradle/owned-modules.txt` 统一登记，构建、覆盖率、lint 和结构检查读取同一份登记。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
+自有库的入口与完整职责见根目录 [README.md](README.md#模块结构)。14 个库由 `gradle/owned-modules.txt` 统一登记，构建、lint 和结构检查读取同一份登记；覆盖率只收集包含 Kotlin/Java 生产源码的库，`:native` 使用独立的 host 测试与四 ABI 编译。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
 
 - 基础能力：`:common`、`:network`、`:model`、`:database`。模型不依赖项目实现；历史 Room schema 和完整升级链由数据库维护。
+- Native：`:native` 维护 CMake 构建边界、崩溃处理、USB 协议与 PCM 计算、独占传输和第三方 libusb；app 消费它的 AAR，Kotlin 播放会话与 JNI 桥仍由 `:playback:runtime` 维护。
 - 播放：`:playback:logic` 集中 policy/runtime/audio/queue，`:playback:runtime` 维护引擎、服务、USB、音源解析与接入。policy 的九个叶子包保持窄依赖，USB policy 归运行库；下载只能通过 `PlayerDownloadAccess` 调用。
 - 下载：`:download:logic` 维护可复用规则与基础存储工具，`:download:runtime` 维护 Room、SAF、恢复和服务。规则不得依赖运行实现，Worker 与 JobService 的类全名保持稳定。
 - 歌词：`:lyrics` 维护解析、转换、共用时间偏移和词幕输出。SDK 和位置推送位于同库 `lyrics/lyricon`，`lyrics/output` 管理异步请求代次、取消与偏移快照；播放器通过窄加载端口提供歌词和快照。歌词库不依赖平台或播放器实现。
@@ -188,11 +187,11 @@
 - 本地数据：`:local` 按设置、媒体、歌单、统计、备份、流量与同步接入分包，维护业务映射、宿主接口和 WorkManager 适配。设置 schema 在此运行 KSP，页面渲染留在 app。
 - 同步：`:sync` 同时维护 GitHub/WebDAV 传输、加密凭据、设备身份、因果计数器、会话、清洗、合并与 Worker 策略。传输和计算组件仍受各自依赖白名单约束，本地仓库适配位于 `:local`；删除记录与 mutation version 原子提交。
 - 一起听：`:listentogether` 维护协议、传输、身份规则和客户端会话。协议只使用模型、序列化与标准库；业务通过宿主接口接入播放器、资源和 Android 服务。
-- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic`、`buildSrc` 和一起听服务端不计入 13 个库。Miuix 的上游源码与文档树不参与主应用构建。
+- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic`、`buildSrc` 和一起听服务端不计入 14 个库。Miuix 的上游源码与文档树不参与主应用构建。
 
 所有库禁止引用 app、页面或 `AppContainer`，依赖不得形成循环；`:playback:runtime` 内部可以使用自己的 `PlayerManager`。设置通过 provider 按需读取，HTTP 客户端、账号与设备令牌由宿主注入，不通过全局容器绕过接口。Room 业务映射随本地或平台仓库维护；数据库和规则组件不得反向引用运行实现。
 
-新增库使用 `build-logic.android.feature-library` convention，在 `gradle/owned-modules.txt` 登记真实 Gradle 路径，无需另行维护覆盖率列表。测试随实现放在该库 `src/test` / `src/androidTest`，宿主集成测试放在 app。模块目录归属调整不改变既有生产包名或类全名；源码内部包与目录保持一致，相关路径契约、测试夹具、资源与 CRAP 选择器一起维护。
+包含 Kotlin/Java 生产源码的库使用 `build-logic.android.feature-library` convention；纯 Native 的 `:native` 使用 `build-logic.android.library`，不接入 JaCoCo 或 JVM 测试。自有库均在 `gradle/owned-modules.txt` 登记真实 Gradle 路径，无需另行维护 JVM 覆盖率列表。测试随实现放在该库 `src/test` / `src/androidTest`，宿主集成测试放在 app。模块目录归属调整不改变既有生产包名或类全名；源码内部包与目录保持一致，相关路径契约、测试夹具、资源与 CRAP 选择器一起维护。
 
 `verifyModuleBoundaries` 检查登记与实际目录、领域依赖、循环、禁止导入、源码所有者和包目录一致性。库主源码少于 2000 行，库和 `APP_FAMILIES` 区域每个目录最多 16 个直接源码文件。包级计算域由编译字节码门禁继续隔离。
 
@@ -374,10 +373,11 @@
   - 房间、事件与传输模型位于 `modules/model` 的 `ltw` 包；`modules/listentogether` 内的 `api/ltw` 维护传输，`listentogether/protocol` 维护有界读取与消息编解码。
   - app 的 `core/di/ltw` 提供平台接口，播放器的 `core/player/ltw` 提供播放器和歌曲映射接口；`app/listentogether` 不得保留生产源码。
 
-- `app/src/main/cpp/`
+- `modules/native/src/main/cpp/`
   - Native 崩溃处理位于 `crash/`；USB 实现按 `usb/exclusive/`、
     `usb/feedback/`、`usb/iso/`、`usb/pcm/`、`usb/uac1/`、`usb/uac2/`
-    拆分，对应 host 测试位于 `tests/usb/`。
+    拆分，对应 host 测试位于 `tests/usb/`；第三方 libusb 和 Android 配置位于
+    `third_party/libusb/`。CMake 目标按职责链接，`lib_neri.so` 由 `:native` AAR 提供。
 
 - `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`
   - 词幕适配（Lyricon Provider）与 SuperLyric 输出，同步歌曲、播放状态、进度、逐字歌词和翻译。
@@ -443,8 +443,8 @@
   和普通文件系统一致。
 - 分享受控目录中的本地音频时优先直接暴露可读 URI；无法直接分享的 content URI
   才复制到缓存 staging，分享暂存属于可清理缓存。
-- 存储清理只能删除可再生成缓存、下载暂存和分享暂存；
-  不要通过“清缓存”删除用户主动下载的音频、歌词和封面。
+- 普通缓存清理只能删除可再生成缓存和分享暂存；下载工作文件与续传凭据由下载恢复管理。
+  不要通过“清缓存”删除这些恢复文件或用户主动下载的音频、歌词和封面。
 - 流媒体缓存与下载是两套能力：
   缓存使用 `SimpleCache`，下载由 `AudioDownloadManager` 与
   `ManagedDownloadStorage` 写入本地文件。
@@ -672,8 +672,8 @@
 2. 新增缓存目录时，要决定它属于可清理缓存、下载内容、诊断文件还是应用数据。
 3. 清理操作只能覆盖可再生成内容；
    下载歌曲、下载歌词、下载索引和授权数据不能被普通清缓存误删。
-4. 如果清理下载暂存，要尊重当前下载任务状态；
-   活跃任务的暂存文件应等任务结束后再处理。
+4. 下载暂存包含工作文件、续传凭据和 HLS 检查点，普通缓存清理必须保留；
+   相关文件由下载恢复流程处理，不能根据 UI 的任务状态快照决定整目录删除。
 
 #### 11. 修改网易云歌单详情缓存
 
@@ -787,6 +787,8 @@ adb logcat | grep NeriPlayer
 
 ### 测试与提交流程 / Testing & PR
 
+自动 APK 构建等待已有 JVM、lint、Worker 与模拟器作业，并在打包前运行 Native Release host 检查。手动 Release 对 `target_ref` 实际检出的源码先运行 JVM 测试、lint、可用的模块边界检查与 Native Release host 检查，再构建签名 APK；验证报告以该提交 SHA 命名。历史版本使用自身的新旧 Native 测试入口，存在测试设施但缺少配置时拒绝发布。额外模拟器、sanitizer 和真实 DAC 验证按相关变更风险执行，不把真实设备作为每次发布的前置条件。
+
 提交前建议至少完成以下检查：
 
 1. 能成功构建调试版：
@@ -818,11 +820,11 @@ adb logcat | grep NeriPlayer
    ```bash
    for profile in release-werror-asserts asan-ubsan tsan; do
      tools_pub/usb-async-lab host-test \
-       --manifest app/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
+       --manifest modules/native/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
        --profile "$profile"
    done
 
-   ./gradlew :app:externalNativeBuildDebug \
+   ./gradlew :native:externalNativeBuildDebug \
      --no-daemon \
      --warning-mode all \
      --stacktrace
@@ -926,7 +928,7 @@ Commit 信息建议遵循 Conventional Commits，
 - 项目仅供学习与研究使用，请勿用于非法用途。
 - 本项目使用 **GPL-3.0** 协议。
 - 提交贡献即表示你同意至少以 GPL-3.0 分发你的修改。
-- `app/src/main/cpp/README.md` 中的替代授权只覆盖明确列出的
+- `modules/native/src/main/cpp/README.md` 中的替代授权只覆盖明确列出的
   NeriPlayer 自有 Native 源码，不覆盖第三方代码或其他仓库内容。
 - Native PR 本身不代表授予替代授权；若贡献者同意双授权，必须在 PR、
   commit 或版权持有人接受的其他可审计记录中加入该 README 提供的声明。

@@ -475,8 +475,9 @@ For release build and signing details, see
   user content.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
-  cleanup for audio cache, image cache, download staging, share staging, and
-  platform playlist cache, with grouped storage usage details.
+  cleanup for audio cache, image cache, share staging, and platform playlist
+  cache, with grouped storage usage details. Download staging contains resume
+  and recovery state and is managed by download recovery.
 - 🛰️ **Offline mode**:
   automatically detects network availability, disables online Explore and remote
   Home refreshes while offline, and uses cached images only for remote artwork.
@@ -673,7 +674,7 @@ For release build and signing details, see
 - CMake `3.22.1`, pinned by the Android build script
 - Version name format: `<git_short_hash>.<MMddHHmm>`
 - Release APK filename: `NeriPlayer-<versionName>[-abi].apk`
-- Release builds are `arm64-v8a` by default. Use `-PbuildAllReleaseAbis=true`
+- Release APKs include `arm64-v8a` only by default. Use `-PbuildAllReleaseAbis=true`
   for multi-ABI output.
 - `.github/workflows/android_native_ci.yml` runs Release + `-Werror`,
   ASan+UBSan, and TSan host CTest profiles for native changes, then separately
@@ -681,12 +682,13 @@ For release build and signing details, see
 
 ### Module layout
 
-The project owns 13 Android libraries, registered once in [gradle/owned-modules.txt](gradle/owned-modules.txt). Top-level directories name business domains; playback and downloads retain separate rule and runtime build boundaries. Remote music, lyric, and metadata sources belong to `:platform`, with `api` describing its internal protocol responsibility. Shared models and host interfaces define public capability contracts.
+The project owns 14 Android libraries, registered once in [gradle/owned-modules.txt](gradle/owned-modules.txt). Top-level directories name business domains; playback and downloads retain separate rule and runtime build boundaries. Remote music, lyric, and metadata sources belong to `:platform`, with `api` describing its internal protocol responsibility. Shared models and host interfaces define public capability contracts.
 
 - [`:common`](modules/common/README.md): utilities, logging, shared text/icons, locale support, and test fixtures.
 - [`:network`](modules/network/README.md): HTTP, Range handling, network parsing, and Web login infrastructure.
 - [`:model`](modules/model/README.md): business models, enums, and cross-module state contracts without project implementation dependencies.
 - [`:database`](modules/database/README.md): Room database, entities, DAOs, historical schemas, and upgrades.
+- [`:native`](modules/native/README.md): Native crash handling, USB protocols and PCM calculations, exclusive transport, and third-party libusb; builds and packages `lib_neri.so`.
 - [`:playback:logic`](modules/playback/logic/README.md): policy decisions, runtime coordinators, PCM/audio processing, and queue rules with package-level isolation.
 - [`:playback:runtime`](modules/playback/runtime/README.md): Media3 engine, service, source resolution, USB output, effects, floating/Bluetooth lyrics, and host integration.
 - [`:download:logic`](modules/download/logic/README.md): admission, state transitions, retries, scheduling, permits, ownership, commit rules, and metadata codecs.
@@ -697,7 +699,7 @@ The project owns 13 Android libraries, registered once in [gradle/owned-modules.
 - [`:sync`](modules/sync/README.md): GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies.
 - [`:listentogether`](modules/listentogether/README.md): protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization.
 
-`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `build-logic` and `buildSrc` supply build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 13 owned Android libraries.
+`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `build-logic` and `buildSrc` supply build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 14 owned Android libraries.
 
 Dependencies follow responsibilities rather than directory categories. `:model` has no project implementation dependencies, and `:common` has no business-domain dependencies. Database, storage calculations, lyric parsing, and playback/download rules must not depend on repository or Android runtime implementations. Repositories inside `:platform` consume their corresponding protocols; APIs cannot read account repositories, Room, or player state, and each platform retains its package dependency boundary. `:local` consumes the database and domain services. Clients receive account, credential-refresh, and storage capabilities through narrow injected interfaces. No library may depend on app, and the graph must remain acyclic.
 
@@ -707,7 +709,7 @@ Shared contracts live in `modules/model`, retaining existing packages such as `d
 
 Modules own tests, resources, and consumer R8 rules; host integration tests stay in app. `:local` owns Room business mappings and local repository orchestration, while platform cache adapters belong to `:platform`. Historical schemas live in `modules/database/schemas`. Settings KSP runs in `:local`; Compose settings rendering stays in [app settings screens](app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/). App has no production `data` directory; download upgrades and dependency assembly use `core/startup/legacy` and `core/integration`.
 
-Run `./gradlew verifyModularization` for structural boundaries, JVM tests, combined CRAP coverage, domain dependencies, and lint. Each module README lists focused tasks, for example:
+Run `./gradlew verifyModularization` for structural boundaries, JVM tests, combined CRAP coverage, domain dependencies, and lint. `:native` participates in registration, structural checks, and lint. This pure-native module produces no JaCoCo data; coverage remains complete for existing JVM modules. Native host tests and all four ABI builds use the independent CI and module tasks documented in the [:native README](modules/native/README.md). Each module README lists focused tasks, for example:
 
 ```bash
 ./gradlew :platform:verifyCrap :platform:verifyDomainDependencies :platform:lintDebug
@@ -718,7 +720,7 @@ Run `./gradlew verifyModularization` for structural boundaries, JVM tests, combi
 python3 -B tools_pub/quality/module_boundaries.py
 ```
 
-Independent and aggregate gates retain the same scopes and threshold: a scoped CRAP score above 9 fails. Library files must stay below 2000 lines, with at most 16 direct Kotlin/Java files per production directory. App packages the FFmpeg AAR and USB native library; `:playback:runtime` owns the service and Kotlin implementation. App assembles capabilities in `core/di/player` and `core/di/ltw`. See the [contribution guide](CONTRIBUTING_EN.md#project-layout) and [quality guide](tools_pub/quality/README_EN.md).
+Independent and aggregate gates retain the same scopes and threshold: a scoped CRAP score above 9 fails. Library files must stay below 2000 lines, with at most 16 direct Kotlin/Java files per production directory. App packages the FFmpeg AAR and consumes `lib_neri.so` from the `:native` AAR; `:playback:runtime` owns the service and Kotlin implementation. App assembles capabilities in `core/di/player` and `core/di/ltw`. See the [contribution guide](CONTRIBUTING_EN.md#project-layout) and [quality guide](tools_pub/quality/README_EN.md).
 
 ### Entry point and navigation
 
@@ -851,6 +853,9 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - Legacy JSON remains an upgrade-import and failure-fallback path. Playlist JSON
   import/export and remote sync formats are maintained by their own flows;
   fallback files still use atomic writes.
+- Favorites and playback stats initially load on IO coroutines. A primary-store
+  read failure preserves original data; related writes, backups, and sync require
+  a complete successful load and can retry on later operations.
 - Sync payloads shared by GitHub and WebDAV live in `:model` under `data/model/sync/`.
   `:sync` owns transport, encrypted credential state, sessions, compatible codecs,
   sanitization, merging, conflict handling, and Worker policies. Android repository
@@ -901,8 +906,8 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   Android SAF access is still much slower than the app-private directory, so custom
   directories are recommended only when they are really needed.
 - `StorageUsageAnalyzer` groups storage into cleanable cache, downloaded content,
-  diagnostics, and app data. Cache cleanup removes regenerable cache/staging files,
-  not user-saved downloaded songs.
+  diagnostics, and app data. Cache cleanup removes regenerable cache and share
+  staging while preserving download working files, recovery state, and downloaded songs.
 - `LocalAudioImportManager` imports external audio, scans device music, and copies
   nearby `lrc/txt` lyrics and `cover/folder/front` images.
 - Local-song sharing exposes a controlled directory URI directly when possible;
@@ -1270,7 +1275,7 @@ This means:
 - ✅ You can freely use, modify, and distribute this software.
 - ⚠️ Modified distributions using the repository-root GPL-3.0 grant must keep
   complying with GPL-3.0.
-- 🧩 `app/src/main/cpp/README.md` provides a conditional attribution-based
+- 🧩 `modules/native/src/main/cpp/README.md` provides a conditional attribution-based
   alternative license only for the listed NeriPlayer-owned native source.
   Third-party code and repository content outside that scope are excluded.
 - ✍️ An external native contribution is not added to the alternative-license

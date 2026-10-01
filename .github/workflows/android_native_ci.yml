@@ -6,7 +6,7 @@ on:
       - master
     paths:
       - '.github/workflows/android_native_ci.yml'
-      - 'app/src/main/cpp/**'
+      - 'modules/native/**'
       - 'app/src/main/jniLibs/**'
       - 'app/build.gradle*'
       - 'build.gradle*'
@@ -21,7 +21,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/android_native_ci.yml'
-      - 'app/src/main/cpp/**'
+      - 'modules/native/**'
       - 'app/src/main/jniLibs/**'
       - 'app/build.gradle*'
       - 'build.gradle*'
@@ -84,7 +84,7 @@ jobs:
         run: |
           tools_pub/usb-async-lab host-test \
             --manifest \
-              app/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
+              modules/native/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
             --profile "${{ matrix.profile }}"
 
       - name: Upload Native host reports
@@ -128,7 +128,7 @@ jobs:
 
       - name: Build Android Native Debug libraries
         run: |
-          ./gradlew :app:externalNativeBuildDebug \
+          ./gradlew :native:externalNativeBuildDebug \
             --no-daemon \
             --warning-mode all \
             --stacktrace
@@ -136,7 +136,7 @@ jobs:
       - name: Verify Android Native ABI outputs
         run: |
           set -euo pipefail
-          readonly output_root="app/build/intermediates/cxx/Debug"
+          readonly output_root="modules/native/build/intermediates/cxx/Debug"
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
             output="$(
               find "${output_root}" \
@@ -159,10 +159,10 @@ jobs:
         with:
           name: android-native-build-logs
           path: |
-            app/build/intermediates/cxx/**/logs/**
-            app/.cxx/**/CMakeFiles/CMakeError.log
-            app/.cxx/**/CMakeFiles/CMakeOutput.log
-            app/.cxx/**/metadata_generation_command.txt
+            modules/native/build/intermediates/cxx/**/logs/**
+            modules/native/.cxx/**/CMakeFiles/CMakeError.log
+            modules/native/.cxx/**/CMakeFiles/CMakeOutput.log
+            modules/native/.cxx/**/metadata_generation_command.txt
             build/reports/problems/**
           include-hidden-files: true
           if-no-files-found: warn

@@ -231,7 +231,7 @@ class OwnedMainSourceLineBudgetTest {
             )
         }
 
-        val nativeSources = File(projectRoot, "app/src/main/cpp/usb/exclusive")
+        val nativeSources = File(projectRoot, "modules/native/src/main/cpp/usb/exclusive")
         assertTrue("缺少 USB 独占输出源码目录", nativeSources.isDirectory)
         val nativeFiles = nativeSources.listFiles().orEmpty()
             .filter { it.isFile && it.extension in setOf("cpp", "h") }

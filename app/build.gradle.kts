@@ -96,18 +96,6 @@ android {
         renderscriptTargetApi = 31
         renderscriptSupportModeEnabled = true
 
-        externalNativeBuild {
-            cmake {
-                cppFlags += listOf(
-                    "-fexceptions",
-                    "-frtti"
-                )
-                arguments += listOf(
-                    "-DANDROID_STL=c++_static",
-                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
-                )
-            }
-        }
     }
 
     buildTypes {
@@ -137,13 +125,6 @@ android {
     }
     buildFeatures {
         buildConfig = true
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
     }
 
     testOptions {
@@ -416,8 +397,11 @@ dependencies {
     testImplementation(testFixtures(project(":common")))
     ownedLibraryPaths.forEach { module ->
         implementation(project(module))
-        add(libraryCoverageClasses.name, project(mapOf("path" to module, "configuration" to "coverageClassesElements")))
-        add(libraryCoverageExecution.name, project(mapOf("path" to module, "configuration" to "coverageExecutionElements")))
+        // 纯 native 库由 CTest 验证，不提供 JVM 覆盖率产物
+        if (module != ":native") {
+            add(libraryCoverageClasses.name, project(mapOf("path" to module, "configuration" to "coverageClassesElements")))
+            add(libraryCoverageExecution.name, project(mapOf("path" to module, "configuration" to "coverageExecutionElements")))
+        }
     }
     implementation(project(":ksp-annotations"))
 

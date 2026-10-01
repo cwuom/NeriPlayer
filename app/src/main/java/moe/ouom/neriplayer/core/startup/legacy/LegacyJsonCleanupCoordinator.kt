@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.startup.legacy
 
 import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorageAccess
 import android.content.Context
+import androidx.room.withTransaction
 import java.io.File
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -56,7 +57,8 @@ internal data class LegacyJsonCleanupResult(
 internal class LegacyJsonCleanupCoordinator(
     private val context: Context,
     private val database: NeriUserDataDatabase =
-        NeriUserDataDatabase.getInstance(context.applicationContext)
+        NeriUserDataDatabase.getInstance(context.applicationContext),
+    private val deleteLegacyFile: (File) -> Boolean = File::delete
 ) {
     suspend fun buildPlan(): LegacyJsonCleanupPlan {
         val targets = TARGETS.map { target ->
@@ -95,36 +97,39 @@ internal class LegacyJsonCleanupCoordinator(
             )
         }
 
-        val freshPlan = buildPlan()
-        val blockedFiles = freshPlan.blockedTargets.map(LegacyJsonCleanupTarget::fileName)
-        val deleted = mutableListOf<String>()
-        val failed = mutableListOf<String>()
-        freshPlan.existingEligibleTargets.forEach { target ->
-            val file = File(context.filesDir, target.fileName)
-            if (file.delete()) {
-                deleted += target.fileName
-            } else if (file.exists()) {
-                failed += target.fileName
+        // 清理与仓库的 JSON 回退共用 Room 事务，避免检查后删除新写入的恢复文件
+        return database.withTransaction {
+            val freshPlan = buildPlan()
+            val blockedFiles = freshPlan.blockedTargets.map(LegacyJsonCleanupTarget::fileName)
+            val deleted = mutableListOf<String>()
+            val failed = mutableListOf<String>()
+            freshPlan.existingEligibleTargets.forEach { target ->
+                val file = File(context.filesDir, target.fileName)
+                if (deleteLegacyFile(file)) {
+                    deleted += target.fileName
+                } else if (file.exists()) {
+                    failed += target.fileName
+                }
             }
-        }
-        val status = when {
-            failed.isNotEmpty() -> LegacyJsonCleanupStatus.PARTIAL_FAILURE
-            blockedFiles.isNotEmpty() -> LegacyJsonCleanupStatus.BLOCKED
-            else -> LegacyJsonCleanupStatus.COMPLETED
-        }
-        database.syncMetadataDao().upsertMigrationMetadata(
-            MigrationMetadataEntity(
-                key = CLEANUP_AUDIT_METADATA_KEY,
-                value = buildAuditValue(status, deleted, failed, blockedFiles),
-                updatedAt = System.currentTimeMillis()
+            val status = when {
+                failed.isNotEmpty() -> LegacyJsonCleanupStatus.PARTIAL_FAILURE
+                blockedFiles.isNotEmpty() -> LegacyJsonCleanupStatus.BLOCKED
+                else -> LegacyJsonCleanupStatus.COMPLETED
+            }
+            database.syncMetadataDao().upsertMigrationMetadata(
+                MigrationMetadataEntity(
+                    key = CLEANUP_AUDIT_METADATA_KEY,
+                    value = buildAuditValue(status, deleted, failed, blockedFiles),
+                    updatedAt = System.currentTimeMillis()
+                )
             )
-        )
-        return LegacyJsonCleanupResult(
-            status = status,
-            deletedFiles = deleted,
-            failedFiles = failed,
-            blockedFiles = blockedFiles
-        )
+            LegacyJsonCleanupResult(
+                status = status,
+                deletedFiles = deleted,
+                failedFiles = failed,
+                blockedFiles = blockedFiles
+            )
+        }
     }
 
     private fun buildAuditValue(

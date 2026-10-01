@@ -29,7 +29,11 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -46,66 +50,103 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
+import java.io.IOException
 
 const val FAVORITE_SOURCE_NETEASE_ARTIST = "neteaseArtist"
 private const val TAG = "FavoritePlaylistRepo"
 
-class FavoritePlaylistRepository private constructor(private val context: Context) {
+class FavoritePlaylistRepository internal constructor(
+    private val context: Context,
+    private val roomStore: FavoritePlaylistRoomStore = FavoritePlaylistRoomStore(
+        NeriUserDataDatabase.getInstance(context.applicationContext)
+    ),
+    providedSyncStorage: SecureTokenStorage? = null,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+) {
     private val gson = Gson()
     private val file = File(context.filesDir, "favorite_playlists.json")
     private val mutex = Mutex()
     private val persistenceMutex = Mutex()
-    private val roomStore = FavoritePlaylistRoomStore(
-        NeriUserDataDatabase.getInstance(context.applicationContext)
-    )
     @Volatile
     private var roomStorageEnabled = true
-    private val syncStorage by lazy { SecureTokenStorage(context) }
+    @Volatile
+    private var initialLoadFailure: Exception? = null
+    @Volatile
+    private var initialized = false
+    private val initialLoad = CompletableDeferred<Unit>()
+    private val syncStorage by lazy { providedSyncStorage ?: SecureTokenStorage(context) }
 
-    private val initialSnapshots = load()
-    private val _snapshots = MutableStateFlow(initialSnapshots)
-    private val _favorites = MutableStateFlow(visibleFavorites(initialSnapshots))
-    private var persistedSnapshots = initialSnapshots
+    private val _snapshots = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
+    private val _favorites = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
+    @Volatile
+    private var persistedSnapshots = emptyList<FavoritePlaylist>()
     val favorites: StateFlow<List<FavoritePlaylist>> = _favorites
 
     init {
-        publishInMemory(initialSnapshots)
+        scope.launch {
+            try {
+                mutex.withLock { ensureInitializedLocked() }
+            } finally {
+                initialLoad.complete(Unit)
+            }
+        }
     }
 
-    private fun load(): List<FavoritePlaylist> {
-        val roomFavorites = runCatching {
-            runBlocking { roomStore.readIfRoomPrimary() }
-        }.onFailure { error ->
-            roomStorageEnabled = false
-            NPLogger.e(TAG, "读取 Room 收藏歌单失败，回退到 JSON", error)
-        }.getOrNull()
+    private suspend fun load(): List<FavoritePlaylist> {
+        // 只有确认 Room 尚未接管时才能读取和导入旧 JSON
+        val roomFavorites = roomStore.readIfRoomPrimary()
         if (roomFavorites != null) {
+            roomStorageEnabled = true
             LegacyJsonCleanupRequests.schedule(context, "favorite-playlist-room-load")
             return normalize(roomFavorites)
         }
 
-        val list = try {
-            if (!file.exists()) {
-                emptyList()
-            } else {
-                val type = object : TypeToken<List<FavoritePlaylist>>() {}.type
-                gson.fromJson<List<FavoritePlaylist>>(file.readText(), type).orEmpty()
-            }
-        } catch (_: Exception) {
+        val list = if (!file.exists()) {
             emptyList()
+        } else {
+            val type = object : TypeToken<List<FavoritePlaylist>>() {}.type
+            gson.fromJson<List<FavoritePlaylist>>(file.readText(), type)
+                ?: throw IOException("收藏歌单 JSON 没有有效列表")
         }
         val normalized = normalize(list)
         runCatching {
-            runBlocking {
-                roomStore.importLegacyAndPromote(normalized)
-            }
+            roomStore.importLegacyAndPromote(normalized)
             LegacyJsonCleanupRequests.schedule(context, "favorite-playlist-import")
             roomStorageEnabled = true
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             roomStorageEnabled = false
             NPLogger.e(TAG, "将收藏歌单 JSON 导入 Room 失败", error)
         }
         return normalized
+    }
+
+    private suspend fun tryLoad(): List<FavoritePlaylist>? {
+        return try {
+            load().also { initialLoadFailure = null }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            initialLoadFailure = error
+            NPLogger.e(TAG, "收藏歌单读取失败，保留原存储并等待重试", error)
+            null
+        }
+    }
+
+    private suspend fun ensureInitializedLocked(): Boolean {
+        if (initialized) return true
+        val loaded = tryLoad() ?: return false
+        publishInMemory(loaded)
+        persistedSnapshots = loaded
+        initialized = true
+        return true
+    }
+
+    suspend fun awaitInitialized(): Boolean = withContext(Dispatchers.IO) {
+        initialLoad.await()
+        mutex.withLock {
+            ensureInitializedLocked() &&
+                (_snapshots.value == persistedSnapshots || persist(_snapshots.value))
+        }
     }
 
     private fun saveToDisk(favorites: List<FavoritePlaylist>): Boolean {
@@ -150,10 +191,10 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         favorites: List<FavoritePlaylist>,
         triggerSync: Boolean = true,
         persist: Boolean = true
-    ) {
+    ): Boolean {
         val normalized = normalize(favorites)
         publishInMemory(normalized)
-        if (!persist) return
+        if (!persist) return true
 
         val persisted = persist(normalized)
         if (triggerSync) {
@@ -164,6 +205,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 NPLogger.w(TAG, "收藏歌单未成功落盘，跳过自动同步")
             }
         }
+        return persisted
     }
 
     private suspend fun persist(
@@ -177,6 +219,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                         next = favorites
                     )
                 }.onFailure { error ->
+                    if (error is CancellationException) throw error
                     roomStorageEnabled = false
                     NPLogger.e(TAG, "写入 Room 收藏歌单失败，回退到 JSON", error)
                 }.isSuccess
@@ -186,14 +229,13 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 }
             }
 
-            val legacySucceeded = saveToDisk(favorites)
-            if (legacySucceeded) {
-                runCatching { roomStore.markLegacyJsonPrimary() }
-                    .onFailure { error ->
-                        NPLogger.e(TAG, "标记收藏歌单 JSON 回退状态失败", error)
-                    }
-            }
-            persistedSnapshots = favorites
+            val legacySucceeded = runCatching {
+                roomStore.commitLegacyFallback { saveToDisk(favorites) }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                NPLogger.e(TAG, "保存收藏歌单 JSON 回退快照失败", error)
+            }.getOrDefault(false)
+            if (legacySucceeded) persistedSnapshots = favorites
             legacySucceeded
         }
     }
@@ -227,7 +269,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         songs: List<SongItem>
     ) {
         withContext(Dispatchers.IO) {
+            initialLoad.await()
             mutex.withLock {
+            if (!ensureInitializedLocked()) return@withContext
             val list = _snapshots.value.toMutableList()
             val existingIndex = list.indexOfFirst { it.id == id && it.source == source }
             val existing = list.getOrNull(existingIndex)
@@ -267,7 +311,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
 
     suspend fun removeFavorite(id: Long, source: String) {
         withContext(Dispatchers.IO) {
+            initialLoad.await()
             mutex.withLock {
+            if (!ensureInitializedLocked()) return@withContext
             val list = _snapshots.value.toMutableList()
             val existingIndex = list.indexOfFirst { it.id == id && it.source == source }
             if (existingIndex == -1) {
@@ -307,7 +353,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         songs: List<SongItem>
     ) {
         withContext(Dispatchers.IO) {
+            initialLoad.await()
             mutex.withLock {
+            if (!ensureInitializedLocked()) return@withContext
             val list = _snapshots.value.toMutableList()
             val existingIndex = list.indexOfFirst { it.id == id && it.source == source }
             if (existingIndex == -1) return@withContext
@@ -339,7 +387,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
 
     suspend fun reorderFavorites(newOrder: List<String>) {
         withContext(Dispatchers.IO) {
+            initialLoad.await()
             mutex.withLock {
+            if (!ensureInitializedLocked()) return@withContext
             val currentVisible = _favorites.value
             if (currentVisible.isEmpty()) return@withContext
 
@@ -372,8 +422,11 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
 
     suspend fun replaceFavoritesFromSync(favorites: List<FavoritePlaylist>) {
         withContext(Dispatchers.IO) {
+            initialLoad.await()
             mutex.withLock {
-                publish(favorites, triggerSync = false)
+                if (!ensureInitializedLocked() || !publish(favorites, triggerSync = false)) {
+                    throw IOException("收藏歌单同步数据未能保存", initialLoadFailure)
+                }
             }
         }
     }
@@ -383,12 +436,13 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         expectedMutationVersion: Long
     ): Boolean {
         return withContext(Dispatchers.IO) {
+            initialLoad.await()
             mutex.withLock {
+                if (!ensureInitializedLocked()) return@withLock false
                 if (syncStorage.getSyncMutationVersion() != expectedMutationVersion) {
                     return@withLock false
                 }
                 publish(favorites, triggerSync = false)
-                true
             }
         }
     }
@@ -402,7 +456,11 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     }
 
     fun getSyncSnapshots(): List<FavoritePlaylist> {
-        return _snapshots.value
+        val snapshots = _snapshots.value
+        if (!initialized || snapshots != persistedSnapshots) {
+            throw IOException("收藏歌单没有已保存的完整快照", initialLoadFailure)
+        }
+        return snapshots
     }
 
     companion object {

@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.data.local.database.store
 
 
 import androidx.room.withTransaction
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatCounterShardEntity
@@ -25,13 +27,16 @@ internal class PlaybackStatsRoomStore(
     private val database: NeriUserDataDatabase
 ) {
     suspend fun readIfRoomPrimary(): PlaybackStatsRoomSnapshot? {
-        if (database.syncMetadataDao()
+        return database.withTransaction {
+            if (database.syncMetadataDao()
                 .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
                 ?.value != ROOM_PRIMARY_STATE
-        ) {
-            return null
+            ) {
+                null
+            } else {
+                readSnapshot()
+            }
         }
-        return readSnapshot()
     }
 
     suspend fun importLegacyAndPromote(
@@ -164,6 +169,15 @@ internal class PlaybackStatsRoomStore(
                 counterEpochStartedAt = counterEpochStartedAt,
                 now = now
             )
+        }
+    }
+
+    suspend fun commitLegacyFallback(writeSnapshot: () -> Boolean): Boolean {
+        return database.withTransaction {
+            if (!writeSnapshot()) return@withTransaction false
+            currentCoroutineContext().ensureActive()
+            markLegacyJsonPrimary()
+            true
         }
     }
 

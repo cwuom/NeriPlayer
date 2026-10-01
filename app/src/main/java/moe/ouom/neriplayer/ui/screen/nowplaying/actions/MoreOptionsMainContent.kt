@@ -492,7 +492,8 @@ private fun PlaybackStatsAction(song: SongItem) {
     val songKey = remember(song) { song.stableKey() }
     val trackStat by produceState<TrackStat?>(initialValue = null, songKey) {
         value = withContext(Dispatchers.IO) {
-            AppContainer.playbackStatsRepo.getStatForTrack(songKey)
+            AppContainer.playbackStatsRepo.takeIf { it.awaitInitialized() }
+                ?.getStatForTrack(songKey)
         }
     }
     val resolvedTrackStat = trackStat ?: return
