@@ -2,8 +2,10 @@ package moe.ouom.neriplayer.api.sync.webdav
 
 import moe.ouom.neriplayer.api.sync.http.SyncResponseBodyReader
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 
 internal class WebDavDirectoryProbe(
     private val client: OkHttpClient,
@@ -23,7 +25,8 @@ internal class WebDavDirectoryProbe(
             .url(directoryUrl)
             .header("Authorization", authorizationHeader)
             .header("Depth", "0")
-            .method("PROPFIND", null)
+            .method("PROPFIND", "<d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/></d:prop></d:propfind>"
+                .toRequestBody("application/xml; charset=utf-8".toMediaType()))
             .build()
 
         client.newCall(request).execute().use { response ->

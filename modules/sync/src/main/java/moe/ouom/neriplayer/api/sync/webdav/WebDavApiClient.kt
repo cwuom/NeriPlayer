@@ -84,7 +84,10 @@ class WebDavApiClient(
             client.newCall(request).execute().use { response ->
                 when {
                     response.isSuccessful -> Unit
-                    response.code == 404 -> directoryProbe.requireExists(remoteUrl)
+                    response.code == 404 -> {
+                        response.close()
+                        directoryProbe.requireExists(remoteUrl)
+                    }
                     response.code == 401 -> {
                         throw WebDavAuthException(
                             authFailureMessage
@@ -133,6 +136,7 @@ class WebDavApiClient(
                     response.code == 403 -> throw WebDavAccessDeniedException(accessDeniedMessage)
 
                     response.code == 404 -> {
+                        response.close()
                         directoryProbe.requireExists(remoteUrl)
                         throw WebDavFileNotFoundException("Remote backup file not found: $remoteUrl")
                     }
@@ -174,12 +178,13 @@ class WebDavApiClient(
                 .put(content.toRequestBody(mediaType.toMediaType()))
                 .build()
 
-            client.newCall(request).execute().use { response ->
-                if (response.code == 404 || response.code == 409) {
-                    directoryProbe.requireExists(remoteUrl)
+            val (statusCode, writeResult) = client.newCall(request).execute().use { response ->
+                response.code to syncTransportResult {
+                    WebDavWriteResponse.parse(response, content, authFailureMessage, accessDeniedMessage)
                 }
-                WebDavWriteResponse.parse(response, content, authFailureMessage, accessDeniedMessage)
             }
+            if (statusCode == 404 || statusCode == 409) directoryProbe.requireExists(remoteUrl)
+            writeResult.getOrThrow()
         }.onFailure {
             NPLogger.e(TAG, "Update WebDAV file content failed", it)
         }
