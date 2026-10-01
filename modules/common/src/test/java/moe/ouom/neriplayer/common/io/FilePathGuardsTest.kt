@@ -70,7 +70,7 @@ class FilePathGuardsTest {
         assertTrue(isFileInsideDirectory(unreadableSong, unreadableDirectory))
         assertFalse(
             isFileInsideDirectory(
-                failingCanonicalFile(directory.parentFile.resolve("music-backup/song.flac")),
+                failingCanonicalFile(requireNotNull(directory.parentFile).resolve("music-backup/song.flac")),
                 unreadableDirectory
             )
         )

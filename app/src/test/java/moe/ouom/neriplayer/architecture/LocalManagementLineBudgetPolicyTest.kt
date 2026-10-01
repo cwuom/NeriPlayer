@@ -18,14 +18,14 @@ class LocalManagementLineBudgetPolicyTest {
         val root = temporaryFolder.newFolder("modular-project")
         File(root, "settings.gradle.kts").writeText("")
         File(root, "app/build.gradle.kts").apply {
-            parentFile.mkdirs()
+            requireNotNull(parentFile).mkdirs()
             writeText("")
         }
         File(
             root,
             "modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).apply {
-            parentFile.mkdirs()
+            requireNotNull(parentFile).mkdirs()
             writeText("object GlobalDownloadManager")
         }
 
@@ -38,7 +38,7 @@ class LocalManagementLineBudgetPolicyTest {
         val relativePath =
             "modules/local/src/main/java/moe/ouom/neriplayer/data/local/new/ExtractedOwner.kt"
         val oversized = File(root, relativePath)
-        oversized.parentFile.mkdirs()
+        requireNotNull(oversized.parentFile).mkdirs()
         writeLines(oversized, 2_000, "\n", false)
 
         val report = LocalManagementLineBudget.verify(root)
