@@ -36,7 +36,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSE
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LYRIC_SOURCE
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricDefaultOffsetMs
+import moe.ouom.neriplayer.lyrics.offset.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY

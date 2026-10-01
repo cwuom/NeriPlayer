@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
 import java.io.File

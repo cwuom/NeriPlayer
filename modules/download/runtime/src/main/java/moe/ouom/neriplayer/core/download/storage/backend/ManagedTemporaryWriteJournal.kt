@@ -6,9 +6,9 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
+import moe.ouom.neriplayer.common.io.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File

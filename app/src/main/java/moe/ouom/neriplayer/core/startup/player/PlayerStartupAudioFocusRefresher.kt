@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.startup.player
 
 import android.content.Context
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 

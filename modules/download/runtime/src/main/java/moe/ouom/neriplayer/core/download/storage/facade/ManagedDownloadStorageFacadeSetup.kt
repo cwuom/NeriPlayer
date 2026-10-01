@@ -28,10 +28,10 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationEntryCollector
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
-import moe.ouom.neriplayer.util.time.elapsedMillisSince
+import moe.ouom.neriplayer.common.time.elapsedMillisSince
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
 internal fun ManagedDownloadStorage.initializeImpl(context: Context) {

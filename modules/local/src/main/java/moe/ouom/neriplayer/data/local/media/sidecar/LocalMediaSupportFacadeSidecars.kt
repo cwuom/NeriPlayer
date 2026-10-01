@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.LyricKind
 import android.content.Context
 import android.net.Uri
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.util.network.isFileInsideDirectory
+import moe.ouom.neriplayer.common.io.isFileInsideDirectory
 import java.io.File
 import java.text.Normalizer
 

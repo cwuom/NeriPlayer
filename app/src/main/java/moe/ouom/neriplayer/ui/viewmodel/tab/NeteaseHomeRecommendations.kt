@@ -3,10 +3,10 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistSummaries
-import moe.ouom.neriplayer.util.collections.mergeDistinctBy
+import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistSummaries
+import moe.ouom.neriplayer.common.collections.mergeDistinctBy
 import org.json.JSONArray
 import org.json.JSONObject
 

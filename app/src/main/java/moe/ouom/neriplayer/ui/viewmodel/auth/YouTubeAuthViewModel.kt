@@ -23,9 +23,9 @@ package moe.ouom.neriplayer.ui.viewmodel.auth
  * Created: 2026/3/16
  */
 
-import moe.ouom.neriplayer.api.youtube.auth.fromJson
-import moe.ouom.neriplayer.api.youtube.auth.hasEffectiveAuth
-import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.fromJson
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,15 +37,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
-import moe.ouom.neriplayer.api.youtube.auth.evaluateYouTubeAuthHealth
-import moe.ouom.neriplayer.data.youtube.auth.parseYouTubeAuthBundleFromRaw
+import moe.ouom.neriplayer.platform.youtube.api.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.platform.youtube.auth.parseYouTubeAuthBundleFromRaw
 
 data class YouTubeAuthUiState(
     val health: YouTubeAuthHealth = evaluateYouTubeAuthHealth(YouTubeAuthBundle()),

@@ -39,7 +39,7 @@ import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceTok
 import moe.ouom.neriplayer.core.download.execution.host.DownloadExecutionHosts
 import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissionDeferredException
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
 import java.io.File

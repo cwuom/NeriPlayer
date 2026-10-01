@@ -175,18 +175,64 @@ class DomainDependenciesTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "invalid excluded classes"):
                     load_domains(self.config)
 
-    def test_bili_local_host_exclusion_does_not_hide_platform_skip_repositories(self):
+    def test_local_bili_host_is_outside_protected_platform_repositories(self):
         config = Path(__file__).resolve().parents[2] / "config/quality/domain-dependencies.json"
         domain = next(domain for domain in load_domains(config) if domain["name"] == "platform-bilibili-repository")
-        host = "moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepositoryProvider"
-        repository = "moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepository"
-        neighbor = host + "Neighbor"
+        host = "moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryProvider"
+        repository = "moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository"
+        neighbor = domain["package"] + "skip.BiliVideoSkipRepositoryNeighbor"
         selected = select_domains({host, host + "$create$1", repository, neighbor}, [domain])
         self.assertEqual({repository, neighbor}, set(selected))
         _, errors = check_class_dependencies(
             "\n".join(f"   {owner} -> {host} module" for owner in sorted(selected)), selected
         )
         self.assertEqual(2, len(errors), errors)
+
+    def test_child_domain_keeps_future_classes_and_nested_classes_protected(self):
+        parent = dict(self.domain, excluded_packages=["sample.domain.api."])
+        child = dict(self.domain, name="protocol", package="sample.domain.api.", bridges={})
+        classes = {
+            "sample.domain.Repository", "sample.domain.api.FutureClient",
+            "sample.domain.api.FutureClient$Request", "sample.domain.apiNeighbor.Policy",
+        }
+        selected = select_domains(classes, [parent, child])
+        self.assertEqual(classes, set(selected))
+        self.assertIs(child, selected["sample.domain.api.FutureClient"])
+        self.assertIs(child, selected["sample.domain.api.FutureClient$Request"])
+        self.assertIs(parent, selected["sample.domain.apiNeighbor.Policy"])
+        _, errors = check_class_dependencies(
+            "\n".join(f"   {owner} -> sample.runtime.PlayerManager module" for owner in classes), selected
+        )
+        self.assertEqual(4, len(errors), errors)
+
+    def test_parent_and_child_domains_cannot_call_each_other_implicitly(self):
+        parent = dict(self.domain, excluded_packages=["sample.domain.api."])
+        child = dict(self.domain, name="protocol", package="sample.domain.api.", bridges={})
+        selected = select_domains({"sample.domain.Repository", "sample.domain.api.Client"}, [parent, child])
+        _, errors = check_class_dependencies(
+            "   sample.domain.Repository -> sample.domain.api.Client module\n"
+            "   sample.domain.api.Client -> sample.domain.Repository module", selected
+        )
+        self.assertEqual(2, len(errors), errors)
+
+    def test_package_exclusions_reject_patterns_outside_and_entire_domain(self):
+        for exclusions in ("sample.domain.api.", ["sample.domain.api.*"], ["sample.domain.api"],
+                           ["sample.runtime."], ["sample.domain."], [""], [1],
+                           ["sample.domain.api.", "sample.domain.api."]):
+            with self.subTest(exclusions=exclusions):
+                self.domain["excluded_packages"] = exclusions
+                self.config.write_text(json.dumps([self.domain]))
+                with self.assertRaisesRegex(ValueError, "invalid excluded packages"):
+                    load_domains(self.config)
+
+    def test_package_exclusion_requires_its_own_protected_domain(self):
+        self.domain["excluded_packages"] = ["sample.domain.api."]
+        self.config.write_text(json.dumps([self.domain]))
+        with self.assertRaisesRegex(ValueError, "excluded package has no protected domain"):
+            load_domains(self.config)
+        child = dict(self.domain, name="protocol", package="sample.domain.api.", excluded_packages=[])
+        self.config.write_text(json.dumps([self.domain, child]))
+        self.assertEqual(2, len(load_domains(self.config)))
 
     def test_reads_jars_and_rejects_duplicate_classes(self):
         self.compile("public String key() { return sample.bridge.Identity.key(); }")

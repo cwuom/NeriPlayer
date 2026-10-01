@@ -7,7 +7,7 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.audio.processing.PlaybackVolumeBalanceState
 import moe.ouom.neriplayer.core.player.audio.processing.PlaybackVolumeNormalizationState
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB

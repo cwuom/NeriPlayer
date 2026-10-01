@@ -19,7 +19,7 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
-import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
+import moe.ouom.neriplayer.data.local.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.ManagedLibraryProcessingDetailsCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.download.SettingsDownloadQualityFollowPlaybackCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.download.SettingsDownloadSection

@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "moe.ouom.neriplayer.core.network"
+    namespace = "moe.ouom.neriplayer.network"
 }
 
 dependencies {

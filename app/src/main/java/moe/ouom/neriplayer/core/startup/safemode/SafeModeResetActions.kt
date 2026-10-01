@@ -4,10 +4,10 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
-import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository
+import moe.ouom.neriplayer.platform.netease.auth.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.web.clearAllWebViewLoginState
-import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
+import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.model.settings.bootstrap.BootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot

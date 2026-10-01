@@ -19,8 +19,8 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.common.io.ManagedDownloadAtomicFile
+import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.metadata.resolveCreatedAtConfidence
@@ -31,7 +31,7 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardReadR
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardStorage
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardWriteResult
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import java.io.File
 import java.io.IOException

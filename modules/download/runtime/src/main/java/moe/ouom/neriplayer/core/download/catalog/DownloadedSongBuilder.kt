@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.core.net.toUri
 import java.nio.ByteBuffer
 import java.security.MessageDigest
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
@@ -21,7 +21,7 @@ import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLookup
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 

@@ -136,7 +136,7 @@ class PlayerBoundariesTest(unittest.TestCase):
             "policy/audio", "policy/command", "policy/offload", "policy/pending",
             "policy/progress", "policy/service", "policy/skip", "policy/storage", "policy/wake",
             "runtime/refresh", "audio/processing", "audio/reactive",
-            "host", "integration/ltw", "presentation/widget", "policy/usb"
+            "host", "ltw", "presentation/widget", "policy/usb"
         )
         source_root = self.root / "future-sources"
         for family in families:
@@ -171,33 +171,33 @@ class PlayerBoundariesTest(unittest.TestCase):
     def test_lyricon_coordinator_ownership_does_not_move_other_player_lyrics(self):
         lyrics = self.add_module(":lyrics")
         playback = self.add_module(":playback:runtime")
-        self.source(lyrics / "src/main/java", "core/player/lyrics", "LyriconUpdateCoordinator")
+        self.source(lyrics / "src/main/java", "lyrics/output", "LyriconUpdateCoordinator")
         self.source(playback / "src/main/java", "core/player/lyrics", "FloatingLyricsOverlayManager")
         self.assertEqual([], verify(self.root))
-        self.source(playback / "src/main/java", "core/player/lyrics", "LyriconUpdateCoordinator")
+        self.source(playback / "src/main/java", "lyrics/output", "LyriconUpdateCoordinator")
         self.assertTrue(any("package belongs to :lyrics" in error for error in verify(self.root)))
 
     def test_lyricon_coordinator_cannot_bypass_ownership_by_renaming_its_file(self):
         playback = self.add_module(":playback:runtime")
-        self.source(playback / "src/main/java", "core/player/lyrics", "LyriconUpdateCoordinator")
-        directory = playback / "src/main/java/moe/ouom/neriplayer/core/player/lyrics"
+        self.source(playback / "src/main/java", "lyrics/output", "LyriconUpdateCoordinator")
+        directory = playback / "src/main/java/moe/ouom/neriplayer/lyrics/output"
         (directory / "LyriconUpdateCoordinator.kt").rename(directory / "OutputCoordinator.kt")
         self.assertTrue(any("package belongs to :lyrics" in error for error in verify(self.root)))
 
     def test_lyrics_output_integration_cannot_use_player_dependencies(self):
         lyrics = self.add_module(":lyrics")
-        self.source(lyrics / "src/main/java", "lyrics/integration")
-        source = lyrics / "src/main/java/moe/ouom/neriplayer/lyrics/integration/Sample.kt"
+        self.source(lyrics / "src/main/java", "lyrics/output")
+        source = lyrics / "src/main/java/moe/ouom/neriplayer/lyrics/output/Sample.kt"
         self.assertEqual([], verify(self.root))
         source.write_text(source.read_text() + "\nimport moe.ouom.neriplayer.core.player.host.PlayerDependencies\n")
         self.assertTrue(any("player implementation import" in error for error in verify(self.root)))
 
     def test_lyricon_output_implementations_require_lyrics_runtime(self):
         lyrics = self.add_module(":lyrics")
-        for family in ("core/lyricon", "lyrics/integration"):
+        for family in ("lyrics/lyricon", "lyrics/output"):
             self.source(lyrics / "src/main/java", family)
         self.assertEqual([], verify(self.root))
-        self.source(self.root / "modules/playback/logic/src/main/java", "core/lyricon")
+        self.source(self.root / "modules/playback/logic/src/main/java", "lyrics/lyricon")
         self.assertTrue(any("package belongs to :lyrics" in error for error in verify(self.root)))
 
     def test_future_policy_classes_cannot_reference_runtime_audio_or_queue(self):

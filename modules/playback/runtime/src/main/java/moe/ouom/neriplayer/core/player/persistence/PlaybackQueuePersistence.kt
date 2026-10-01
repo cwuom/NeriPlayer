@@ -10,8 +10,8 @@ import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.core.player.persistence.withPlaybackState
-import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 
 private fun <T> Gson.readJson(file: File, type: Type): T {
     file.inputStream().bufferedReader().use { reader ->

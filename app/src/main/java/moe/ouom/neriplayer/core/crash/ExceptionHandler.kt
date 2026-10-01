@@ -11,16 +11,16 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.util.crash.CrashLogFiles
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
-import moe.ouom.neriplayer.util.io.clearAllFiles
+import moe.ouom.neriplayer.common.io.clearAllFiles
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter

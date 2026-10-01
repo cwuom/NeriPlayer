@@ -34,7 +34,7 @@ import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.plan.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedMigrationReplacementPlan
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal class ManagedDownloadStorageCommitWriter(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,

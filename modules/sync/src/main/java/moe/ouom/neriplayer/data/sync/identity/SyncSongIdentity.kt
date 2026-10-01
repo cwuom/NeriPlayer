@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.data.sync.identity
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.sync.SyncSong
-import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 
 private const val YOUTUBE_MUSIC_IDENTITY_ALBUM = "youtube_music"
 

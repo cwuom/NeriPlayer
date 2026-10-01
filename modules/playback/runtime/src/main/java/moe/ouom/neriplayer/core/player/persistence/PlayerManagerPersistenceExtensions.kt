@@ -20,7 +20,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
@@ -59,13 +59,13 @@ import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.isReadableLocalFile
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
-import moe.ouom.neriplayer.data.settings.lyrics.rebaseLyricUserOffsetMs
-import moe.ouom.neriplayer.data.settings.lyrics.saturatingAddLyricOffsetMs
-import moe.ouom.neriplayer.data.settings.lyrics.shouldRebaseLyricOffsetForSource
+import moe.ouom.neriplayer.lyrics.offset.rebaseLyricUserOffsetMs
+import moe.ouom.neriplayer.lyrics.offset.saturatingAddLyricOffsetMs
+import moe.ouom.neriplayer.lyrics.offset.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.host.PlayerFeedback
 import java.io.File

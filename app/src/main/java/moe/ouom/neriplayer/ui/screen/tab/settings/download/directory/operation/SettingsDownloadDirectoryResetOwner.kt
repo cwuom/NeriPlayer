@@ -9,12 +9,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DownloadDirectoryAvailability
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.probeConfiguredDownloadRoot
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.resolveDownloadDirectoryAvailability
-import moe.ouom.neriplayer.util.time.elapsedMillisSince
+import moe.ouom.neriplayer.common.time.elapsedMillisSince
 
 internal interface DownloadDirectoryResetGateway {
     suspend fun availability(currentUri: String?): DownloadDirectoryAvailability

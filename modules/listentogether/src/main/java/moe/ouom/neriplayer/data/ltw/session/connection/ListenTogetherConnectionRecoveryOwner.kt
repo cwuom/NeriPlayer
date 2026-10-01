@@ -6,7 +6,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS
 import moe.ouom.neriplayer.api.ltw.reconnect.isTerminalListenTogetherReconnectError
 import moe.ouom.neriplayer.api.ltw.reconnect.listenTogetherReconnectDelayMs

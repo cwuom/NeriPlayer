@@ -8,7 +8,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal object UsbExclusiveDebugLogger {
     private const val TAG = "NERI-UsbExclusive"

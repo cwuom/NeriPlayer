@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavFileNotFoundException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException
 
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavConcurrencyToken
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavWriteResult

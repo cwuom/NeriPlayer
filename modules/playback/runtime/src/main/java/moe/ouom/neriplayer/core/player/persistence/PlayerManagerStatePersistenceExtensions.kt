@@ -9,12 +9,12 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaUrl
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
+import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
 
 internal typealias PlaybackStatePersistRequest =
     PlaybackStatePersistenceCoordinator.Request<PlaybackStatePersistenceSnapshot>

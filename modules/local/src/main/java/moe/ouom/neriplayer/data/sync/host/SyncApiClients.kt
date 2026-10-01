@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.sync.host
 import android.content.Context
 import moe.ouom.neriplayer.api.sync.github.GitHubApiClient
 import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.network.DataHttpClients
 
 fun createGitHubSyncClient(context: Context, token: String): GitHubApiClient = GitHubApiClient(

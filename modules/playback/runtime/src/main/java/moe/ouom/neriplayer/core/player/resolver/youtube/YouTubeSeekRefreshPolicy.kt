@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.resolver.youtube
 
-import moe.ouom.neriplayer.api.youtube.transport.range.YouTubeGoogleVideoRangeSupport
+import moe.ouom.neriplayer.platform.youtube.api.transport.range.YouTubeGoogleVideoRangeSupport
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -26,8 +26,8 @@ import moe.ouom.neriplayer.api.youtube.transport.range.YouTubeGoogleVideoRangeSu
 
 import java.net.URI
 import java.net.URLDecoder
-import moe.ouom.neriplayer.api.youtube.transport.isYouTubeGoogleVideoHost
-import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.platform.youtube.api.transport.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal object YouTubeSeekRefreshPolicy {

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.startup.logging
 
 import android.content.Context
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal object StartupLogInitializer {
     fun shouldEnableFileLogging(

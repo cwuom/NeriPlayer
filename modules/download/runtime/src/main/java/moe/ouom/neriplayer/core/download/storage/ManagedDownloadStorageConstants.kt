@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage
 
-import moe.ouom.neriplayer.util.units.DAY_MS
-import moe.ouom.neriplayer.util.units.MINUTE_MS
-import moe.ouom.neriplayer.util.units.SECOND_MS
+import moe.ouom.neriplayer.common.units.DAY_MS
+import moe.ouom.neriplayer.common.units.MINUTE_MS
+import moe.ouom.neriplayer.common.units.SECOND_MS
 
 internal const val ROOT_DIR_NAME = "NeriPlayer"
 internal const val LYRIC_SUBDIRECTORY = "Lyrics"

@@ -2,14 +2,14 @@
 
 package moe.ouom.neriplayer.core.player.engine.datasource
 
-import moe.ouom.neriplayer.core.network.range.ResumableHttpRangeSupport
+import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.IOException
 
 /**

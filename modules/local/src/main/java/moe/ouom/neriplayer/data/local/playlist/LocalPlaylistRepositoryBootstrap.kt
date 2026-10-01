@@ -10,7 +10,7 @@ import com.google.gson.stream.JsonToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.audioimport.localSongNewestFirstComparator
 import moe.ouom.neriplayer.data.local.audioimport.localSongSourceModificationComparator
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
@@ -25,7 +25,7 @@ import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 import java.io.StringReader

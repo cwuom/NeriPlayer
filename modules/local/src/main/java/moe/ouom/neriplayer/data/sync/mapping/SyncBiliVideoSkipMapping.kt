@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncBiliVideoSkipRule
 
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
-import moe.ouom.neriplayer.data.platform.bili.skip.policy.normalizeBiliVideoSkipIntervals
+import moe.ouom.neriplayer.platform.bilibili.skip.policy.normalizeBiliVideoSkipIntervals
 
 internal fun BiliVideoSkipRule.toSyncBiliVideoSkipRule(): SyncBiliVideoSkipRule {
     return SyncBiliVideoSkipRule(

@@ -15,11 +15,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
@@ -27,9 +27,9 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
-import moe.ouom.neriplayer.core.lyrics.resolveLocalLyricsEditorSeed
-import moe.ouom.neriplayer.core.lyrics.resolveLyricsEditorSeed
-import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText
+import moe.ouom.neriplayer.lyrics.parser.resolveLocalLyricsEditorSeed
+import moe.ouom.neriplayer.lyrics.parser.resolveLyricsEditorSeed
+import moe.ouom.neriplayer.lyrics.parser.toEditableLyricsText
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.ltw
 
-import moe.ouom.neriplayer.data.ltw.validation.sanitizeListenTogetherNicknameOrNull
+import moe.ouom.neriplayer.listentogether.profile.sanitizeListenTogetherNicknameOrNull
 import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherJoinSecret
 import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherRoomCreation

@@ -6,10 +6,10 @@ import moe.ouom.neriplayer.data.model.download.DownloadStage
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.PreExistingDownloadedAudioAction
+import moe.ouom.neriplayer.core.download.policy.PreExistingDownloadedAudioAction
 import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.resolvePreExistingDownloadedAudioAction
-import moe.ouom.neriplayer.core.download.shouldClearNetworkPolicyPauseAfterCancellationSettled
+import moe.ouom.neriplayer.core.download.policy.resolvePreExistingDownloadedAudioAction
+import moe.ouom.neriplayer.core.download.policy.shouldClearNetworkPolicyPauseAfterCancellationSettled
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmissionTicketOrNull
@@ -55,7 +55,7 @@ import moe.ouom.neriplayer.core.download.execution.worker.DownloadStorageRecover
 import moe.ouom.neriplayer.core.download.execution.worker.WifiBoundDownloadWakeWorker
 import moe.ouom.neriplayer.core.download.resource.DOWNLOAD_STORAGE_SPACE_ERROR_CODE
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.source.DownloadSourceUnavailableException
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityException

@@ -88,12 +88,12 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentKind
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
-import moe.ouom.neriplayer.api.bilibili.image.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.theme.background.BlurTransformation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight

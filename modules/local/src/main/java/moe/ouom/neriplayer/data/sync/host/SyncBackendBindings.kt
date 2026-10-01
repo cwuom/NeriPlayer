@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.sync.host
 
 import android.content.Context
 import androidx.annotation.StringRes
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncBackend
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncBackend
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.IOException
 
 internal fun createGitHubSyncBackend(context: Context, storage: SecureTokenStorage): GitHubSyncBackend {

@@ -182,7 +182,7 @@ private suspend fun clearCurrentProcessWebViewLoginState(
                     ?: WebLoginPlatform.entries.toSet()
             )
         }.onFailure { error ->
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+            moe.ouom.neriplayer.common.logging.NPLogger.w(
                 "NERI-WebLoginState",
                 "Could not snapshot WebView cookies before clearing",
                 error
@@ -193,7 +193,7 @@ private suspend fun clearCurrentProcessWebViewLoginState(
             cookieManager.removeSessionCookiesAwait()
             runCatching { clearKnownCookies(cookieManager, knownCookies) }
                 .onFailure { error ->
-                    moe.ouom.neriplayer.core.logging.NPLogger.w(
+                    moe.ouom.neriplayer.common.logging.NPLogger.w(
                         "NERI-WebLoginState",
                         "Could not expire known WebView cookies after full clear",
                         error
@@ -282,7 +282,7 @@ private suspend fun requestRemoteWebViewLoginStateClear(
                     ?: return
                 val component = ComponentName(appContext.packageName, receiverName)
                 if (!intent.getBooleanExtra(EXTRA_WEBVIEW_CLEAR_SUCCEEDED, false)) {
-                    moe.ouom.neriplayer.core.logging.NPLogger.w(
+                    moe.ouom.neriplayer.common.logging.NPLogger.w(
                         "NERI-WebLoginState",
                         "Remote WebView state clear failed: $receiverName"
                     )
@@ -312,7 +312,7 @@ private suspend fun requestRemoteWebViewLoginStateClear(
                 val missing = targetComponents
                     .map { it.className }
                     .filterNot { className -> completedTargets.containsClassName(className) }
-                moe.ouom.neriplayer.core.logging.NPLogger.w(
+                moe.ouom.neriplayer.common.logging.NPLogger.w(
                     "NERI-WebLoginState",
                     "Timed out clearing remote WebView state: ${missing.joinToString()}"
                 )

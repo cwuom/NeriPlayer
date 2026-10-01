@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
 import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
 import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 internal class AppSettingsHostEnvironment(
     val isDarkTheme: Boolean,

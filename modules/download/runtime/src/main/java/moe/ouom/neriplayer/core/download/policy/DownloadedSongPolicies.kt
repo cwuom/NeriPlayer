@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
 
-import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadSongDeletePlan
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeleteReferenceIndex
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem

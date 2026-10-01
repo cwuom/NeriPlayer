@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.ltw.session.control
 
 import moe.ouom.neriplayer.data.ltw.session.state.normalized
 import android.content.Context
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.ltw.control.controlledPlaybackCommandTypes
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses

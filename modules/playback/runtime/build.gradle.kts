@@ -19,7 +19,6 @@ dependencies {
     implementation(project(":listentogether"))
     implementation(project(":model"))
     implementation(project(":local"))
-    implementation(project(":storage"))
     implementation(project(":sync"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.media)

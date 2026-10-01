@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.ltw.mapping
 
 import android.net.Uri
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.ltw.playback.boundedAroundStableKey
 import moe.ouom.neriplayer.data.ltw.playback.currentTrack
 import moe.ouom.neriplayer.data.ltw.playback.isListenTogetherPlaybackModeQueueUpdate

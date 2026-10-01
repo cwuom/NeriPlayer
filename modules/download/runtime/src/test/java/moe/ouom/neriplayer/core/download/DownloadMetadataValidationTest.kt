@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadArtists
+import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadTitles
+import moe.ouom.neriplayer.core.download.policy.shouldRepairMetadataLessManagedDownload
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

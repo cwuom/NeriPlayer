@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.operation.content
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.boundManagedDownloadFileName
+import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.policy.size.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.findMetadataForAudioBlocking
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.isPendingAudioPromotionFinalNameCandidate
@@ -43,7 +43,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.FileDescriptor
 import java.io.FileOutputStream
 import java.io.File

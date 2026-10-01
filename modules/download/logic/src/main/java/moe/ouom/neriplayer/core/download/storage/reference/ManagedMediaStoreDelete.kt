@@ -8,7 +8,7 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 /** 系统提供映射和原 URI 的授权，删除后仍以 SAF 物理状态为准 */
 object ManagedMediaStoreDelete {

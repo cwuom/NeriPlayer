@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data
 
-import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.platform.youtube.api.auth.YouTubeCookieSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

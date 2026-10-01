@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.config
 
-import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import moe.ouom.neriplayer.data.model.config.AppConfigBackup
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.model.config.LanguageConfigSnapshot
@@ -16,11 +16,11 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
-import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
-import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
-import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
+import moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository
+import moe.ouom.neriplayer.platform.netease.auth.NeteaseCookieRepository
+import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.settings.SettingsKeys
@@ -37,8 +37,8 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.util.platform.LanguageManager
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 class ConfigFileManager(
     private val context: Context,

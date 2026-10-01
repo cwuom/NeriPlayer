@@ -1,11 +1,18 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES
+import moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES
+import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName
+import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
+import moe.ouom.neriplayer.core.download.naming.managedDownloadIdentityHash
+import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName
+import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

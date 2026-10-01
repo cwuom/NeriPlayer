@@ -41,24 +41,24 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.api.netease.client.mergeNeteaseSessionCookies
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.platform.netease.api.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteaseArtist
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistDetail
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistHeader
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistTrack
-import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
+import moe.ouom.neriplayer.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistSummaries
+import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseRadarPlaylistDefinitions
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.parseNeteasePlaylistDetailSummaryOrNull
 import moe.ouom.neriplayer.ui.viewmodel.tab.toPlaylistSummary
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 

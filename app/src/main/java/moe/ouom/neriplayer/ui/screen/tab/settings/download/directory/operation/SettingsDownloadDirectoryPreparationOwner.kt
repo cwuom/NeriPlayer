@@ -2,15 +2,15 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation
 
 import android.content.Context
 import android.content.res.Resources
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadDirectoryChangeDecision
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationPolicy
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.runDownloadDirectoryPreflight
-import moe.ouom.neriplayer.util.time.elapsedMillisSince
+import moe.ouom.neriplayer.common.time.elapsedMillisSince
 
 internal enum class DownloadDirectoryPreparationResult {
     KEEP_PERSISTED_PERMISSION,

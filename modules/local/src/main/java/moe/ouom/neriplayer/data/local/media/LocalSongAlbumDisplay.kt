@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.data.local.media
  */
 
 import android.content.Context
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 

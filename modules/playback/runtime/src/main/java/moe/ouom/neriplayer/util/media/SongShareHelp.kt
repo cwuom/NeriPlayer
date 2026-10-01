@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.util.media
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import java.net.URI
 import java.util.Locale
 

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.canSearchEditSong
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.musicPlatformLabelResource

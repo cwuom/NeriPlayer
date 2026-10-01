@@ -26,9 +26,9 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutatio
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.identity.stableKey as songStableKey
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.readBytesLimited
-import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.io.readBytesLimited
+import moe.ouom.neriplayer.lyrics.embedded.standardLyricsMetadataKeys
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream

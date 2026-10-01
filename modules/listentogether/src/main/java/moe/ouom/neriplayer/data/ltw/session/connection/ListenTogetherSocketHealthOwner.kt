@@ -5,7 +5,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.api.ltw.ws.LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS
 import moe.ouom.neriplayer.api.ltw.ws.shouldReconnectListenTogetherSocket
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState

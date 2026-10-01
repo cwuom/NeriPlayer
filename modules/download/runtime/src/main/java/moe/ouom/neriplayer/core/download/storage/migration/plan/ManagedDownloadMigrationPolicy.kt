@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.download.storage.MIGRATION_REWRITE_PARALLELISM
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_TREE_COPY_PARALLELISM
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_TREE_DELETE_PARALLELISM
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_TREE_REWRITE_PARALLELISM
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 

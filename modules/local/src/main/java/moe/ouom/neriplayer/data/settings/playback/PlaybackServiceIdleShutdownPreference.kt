@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.settings.playback
 
-import moe.ouom.neriplayer.util.units.minute
+import moe.ouom.neriplayer.common.units.minute
 
 const val DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES = 60
 

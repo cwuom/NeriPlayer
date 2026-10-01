@@ -154,6 +154,53 @@ internal fun hasWifiBoundNetworkPolicyDownloads(
         persistedQueuedCount > 0
 }
 
+internal fun wifiBoundDownloadTaskCount(
+    activeSongKeys: Collection<String>,
+    persistedSongKeys: Collection<String>
+): Int = (activeSongKeys + persistedSongKeys)
+    .asSequence()
+    .map(String::trim)
+    .filter(String::isNotBlank)
+    .toSet()
+    .size
+
+/** keeps legacy entries only when no known durable operation has superseded them */
+internal fun resolvePersistedWifiBoundRequirement(
+    fallbackRequiresWifi: Boolean,
+    hasKnownOperation: Boolean,
+    durableRequiresWifi: Boolean?
+): Boolean? {
+    return durableRequiresWifi ?: fallbackRequiresWifi.takeIf { !hasKnownOperation }
+}
+
+/** treats a completed recount as authoritative and preserves the fallback only on read failure */
+internal fun resolveMobileDataDownloadInterruptionTaskCount(
+    existingTaskCount: Int?,
+    observedTaskCount: Int?,
+    fallbackTaskCount: Int
+): Int {
+    val normalizedFallback = fallbackTaskCount.coerceAtLeast(1)
+    if (observedTaskCount != null) {
+        return observedTaskCount.coerceAtLeast(0)
+    }
+    return existingTaskCount
+        ?.coerceAtLeast(normalizedFallback)
+        ?: normalizedFallback
+}
+
+internal fun isMobileDataDownloadInterruptionSnapshotCurrent(
+    snapshotEpoch: Long?,
+    currentEpoch: Long
+): Boolean = snapshotEpoch == null || snapshotEpoch == currentEpoch
+
+internal fun isWifiBoundNetworkPolicyObservationCurrent(
+    snapshotEpoch: Long,
+    currentEpoch: Long,
+    currentNetworkType: TrafficNetworkType?
+): Boolean {
+    return snapshotEpoch == currentEpoch && currentNetworkType != TrafficNetworkType.WIFI
+}
+
 internal fun shouldKeepCancellationCleanup(
     currentGeneration: Long?,
     cancellationGeneration: Long?,

@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.model.playlist.localArtistStableKey
 import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 
 import android.content.Context
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.local.media.displayArtist

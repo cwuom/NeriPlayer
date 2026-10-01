@@ -195,17 +195,17 @@ Security reminders:
 
 #### Root modules
 
-The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 14 owned libraries once for builds, coverage, lint, and structural checks. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
+The root [README_EN.md](README_EN.md#module-layout) is the entry point for the complete module map. `gradle/owned-modules.txt` registers all 13 owned libraries once for builds, coverage, lint, and structural checks. Top-level names express business domains, with remote sources consolidated in `:platform`. Playback and downloads retain separate rule and runtime build boundaries.
 
-- Infrastructure: `:common`, `:network`, `:model`, `:database`, and `:storage`. Models have no project implementation dependencies; the database owns historical Room schemas and complete upgrade paths.
+- Infrastructure: `:common`, `:network`, `:model`, `:database`. Models have no project implementation dependencies; the database owns historical Room schemas and complete upgrade paths.
 - Playback: `:playback:logic` contains policy/runtime/audio/queue; `:playback:runtime` owns the engine, service, USB, source resolution, and integration. Nine policy leaf packages retain narrow dependencies; USB policy stays in runtime. Downloads are accessed through `PlayerDownloadAccess`.
 - Downloads: `:download:logic` owns reusable rules and storage helpers; `:download:runtime` owns Room, SAF, recovery, and services. Rules cannot depend on runtime; Worker and JobService class names remain stable.
-- Lyrics: `:lyrics` owns parsing, transforms, shared time offsets, and external lyric output. Its `core/lyricon` owns SDKs and position feeds, while `lyrics/integration` manages asynchronous request generations, cancellation, and offset snapshots. Playback supplies lyrics through a narrow loading port and provides snapshots; lyrics cannot depend on platform or player implementations.
+- Lyrics: `:lyrics` owns parsing, transforms, shared time offsets, and external lyric output. Its `lyrics/lyricon` owns SDKs and position feeds, while `lyrics/output` manages asynchronous request generations, cancellation, and offset snapshots. Playback supplies lyrics through a narrow loading port and provides snapshots; lyrics cannot depend on platform or player implementations.
 - Platforms: `:platform` owns Bilibili, NetEase, and YouTube protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback. `api` describes the internal protocol responsibility and cannot read account repositories, Room, or player state. Platforms retain package dependency boundaries. YouTube JS assets and consumer R8 rules stay here; `api(:lyrics)` exports parsing capabilities.
 - Local data: `:local` groups settings, media, playlists, statistics, backup, traffic, and sync adapters. It owns business mappings, host interfaces, WorkManager adapters, and settings KSP; screen rendering stays in app.
 - Sync: `:sync` combines GitHub/WebDAV transport, encrypted credentials, device identity, causal counters, sessions, sanitization, merging, and Worker policies. Transport and calculation packages retain separate dependency allowlists; local repository adapters stay in `:local`. Deletion records and mutation versions commit atomically.
 - Listen Together: `:listentogether` owns protocol, transport, identity rules, and sessions. Protocol code uses only models, serialization, and the standard library; host interfaces provide playback, resources, and Android services.
-- App and tooling: `:app` owns Android entry points, Compose screens, and assembly. KSP tools, upstream lyric modules, `build-logic`, `buildSrc`, and the Listen Together server are outside the 14-library count. The vendored Miuix source/docs tree is outside the app graph.
+- App and tooling: `:app` owns Android entry points, Compose screens, and assembly. KSP tools, upstream lyric modules, `build-logic`, `buildSrc`, and the Listen Together server are outside the 13-library count. The vendored Miuix source/docs tree is outside the app graph.
 
 Libraries cannot reference app, screens, or `AppContainer`, and the graph must remain acyclic. `:playback:runtime` may use its own `PlayerManager`. Live settings use providers; the host injects HTTP, account, and device-token capabilities. Room business mappings belong to local/platform repositories; database and rule components must not depend on runtime implementations.
 
@@ -277,20 +277,20 @@ New libraries use `build-logic.android.feature-library` and register their actua
   - First-run onboarding for language, platform accounts, permission guidance,
     playback controls, GitHub sync, and personalization.
 
-- `modules/platform/src/main/java/moe/ouom/neriplayer/api/`
-  - `netease/`: clients, crypto, request parameters, and QR authentication protocols.
-  - `bilibili/`: search, QR login, favorites, collections, and playback information. Repositories and skip policies live in the same library under `data/platform/bili`.
+- `modules/platform/src/main/java/moe/ouom/neriplayer/platform/`
+  - `netease/api`: clients, crypto, request parameters, and QR authentication protocols.
+  - `bilibili/api`: search, QR login, favorites, collections, and playback information. Repositories and skip policies live in the same library under `platform/bilibili`.
     Explore link recognition preserves selected parts, `cid`, and `season_id`; check `ExploreLinkRecognizer` and `ExploreViewModel` when changing it.
-  - `youtube/`: YouTube Music clients, PoToken, JS Challenge, request/response parsing. Protocol models belong to `:model`. Authentication persistence and caches live in the same library under `data/youtube`.
-  - `lyrics/`: LrcLib, Kugou, and AMLL service access; source repositories, matching, and fallback live in the same library under `data/lyrics`.
-  - `search/`: `SearchApi`, NetEase, and QQ metadata search services. `SearchManager` lives in the same library under `data/lyrics`, and shared music models belong to `modules/model`.
+  - `youtube/api`: YouTube Music clients, PoToken, JS Challenge, request/response parsing. Protocol models belong to `:model`. Authentication persistence and caches live in the same library under `platform/youtube`.
+  - `lyrics/api`: LrcLib, Kugou, and AMLL service access; source repositories, matching, and fallback live in the same library under `platform/lyrics`.
+  - `search/api`: `SearchApi`, NetEase, and QQ metadata search services. `SearchManager` lives in the same library under `platform/lyrics`, and shared music models belong to `modules/model`.
   - `AppContainer` assembles clients and routing with HTTP, debug configuration, and live settings providers; libraries do not read the container or player singleton.
   - `PlainLyrics.kt` in `modules/lyrics` provides shared timeline conversion.
 
-- `modules/platform/src/main/java/moe/ouom/neriplayer/core/comment/`
+- `modules/platform/src/main/java/moe/ouom/neriplayer/platform/comments/`
   - Comment sources, parsing, pagination, and caches; comment contracts belong to `:model`;  `AppContainer` injects client providers and cache instances.
   - The host owns cache lifetime. Libraries do not access the global container. Repository tests belong to the module; ViewModel integration tests remain in `app`.
-  - Source tags belong to `:model`; Bilibili legacy playback identity resolution lives in the same library under `data/platform/bili/playback/resolver` and does not depend on the player singleton.
+  - Source tags belong to `:model`; Bilibili legacy playback identity resolution lives in the same library under `platform/bilibili/playback/resolver` and does not depend on the player singleton.
 
 - `modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`: unified Media3 ExoPlayer management, playback resolution, queue,
@@ -385,7 +385,7 @@ New libraries use `build-logic.android.feature-library` and register their actua
 - `modules/local/src/main/java/moe/ouom/neriplayer/data/`
   - `identity/`: song identity conversion; `SongIdentity` and `SongItem` belong to `modules/model`.
   - `settings/`: `DataStore` settings, KSP schema, and preference mapping; snapshot contracts belong to `:model` under `settings`.
-  - `auth/`: shared Web login state and the YouTube credential rotation Worker; platform cookie/auth repositories live in `:platform` under `data/auth` and `data/youtube/auth`.
+  - `auth/`: shared Web login state and the YouTube credential rotation Worker; platform cookie/auth repositories live in `:platform` under `data/auth` and `platform/youtube/auth`.
   - Platform caches belong to `:platform`; local playlist orchestration and shared cache-table schemas belong to `:local` and `:database`, respectively.
   - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
   - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
@@ -423,10 +423,10 @@ New libraries use `build-logic.android.feature-library` and register their actua
     `usb/exclusive/`, `usb/feedback/`, `usb/iso/`, `usb/pcm/`, `usb/uac1/`,
     and `usb/uac2/`, with matching host tests under `tests/usb/`.
 
-- `modules/lyrics/src/main/java/moe/ouom/neriplayer/core/lyricon/`
+- `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`
   - Lyricon integration and SuperLyric output for current song, playback state, position,
     word-level lyrics, and translations.
-  - The same library's `lyrics/integration/` owns the output controller, asynchronous
+  - The same library's `lyrics/output/` owns the output controller, asynchronous
     request generations, cancellation, and offset snapshots; position anchors and
     coordination state remain internal.
 
@@ -597,9 +597,9 @@ Use this when integrating a new platform into `Explore` search or discovery.
 
 Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
-1. Implement the `SearchApi` contract under `api/search` in `:platform`; shared music DTOs remain in `:model`.
+1. Implement the `SearchApi` contract under `platform/search/api` in `:platform`; shared music DTOs remain in `:model`.
 2. Register the singleton in `AppContainer`.
-3. Register routing in the provider for `AppContainer.searchManager`; maintain and test matching and fallback rules under `data/lyrics` in `:platform`.
+3. Register routing in the provider for `AppContainer.searchManager`; maintain and test matching and fallback rules under `platform/lyrics` in `:platform`.
 4. Add `MusicPlatform`, string resources, and debug probes as needed.
 
 #### 3. Add an online playback platform
@@ -775,7 +775,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 10. Modify storage usage and cache cleanup
 
-1. Entry points are `data/storage/StorageUsageAnalyzer.kt` and
+1. Entry points are `data/local/storage/StorageUsageAnalyzer.kt` and
    `SettingsStorageCacheSection.kt`.
 2. When adding a cache directory, decide whether it belongs to cleanable cache,
    downloaded content, diagnostics, or app data.
@@ -797,7 +797,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 12. Modify Lyricon integration
 
-1. SDK integration lives in `modules/lyrics/src/main/java/moe/ouom/neriplayer/core/lyricon/`; output controllers live under `lyrics/integration/` in the same module. Playback supplies lyrics, preferences, progress, and lifecycle snapshots rather than managing SDKs.
+1. SDK integration lives in `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`; output controllers live under `lyrics/output/` in the same module. Playback supplies lyrics, preferences, progress, and lifecycle snapshots rather than managing SDKs.
 2. The setting key is `lyricon_enabled`, and playback lifecycle keeps it in sync.
 3. Lyrics use `LyricEntry`; word-level data comes from `WordTiming`, and
    translations are matched to original lines by timestamp tolerance.
@@ -985,7 +985,7 @@ Any scoped method with CRAP above 9 fails the gate; methods outside the scope
 remain in the full report. JaCoCo complexity coverage approximates path coverage;
 the score does not cover native code or replace a coupling review.
 Both `:app:check` and Android CI run the gate. Reports are under
-`app/build/reports/crap/`; see the [quality guide](tools_pub/quality/README.md)
+`app/build/reports/crap/`; see the [quality guide](tools_pub/quality/README_EN.md)
 for the calculation and prerequisites.
 
 Both `:playback:logic` and `:playback:runtime` expose `verifyCrap` through `build-logic.android.module-quality`.
@@ -1015,7 +1015,7 @@ and navigation effects belong to the corresponding components. Do not move
 logic into extension files with the original entry point as receiver or make
 new components read its internal state.
 
-`:storage` uses `source`, `scan`, `accounting`, `cleanup`, and `policy` packages; its contracts belong to `:model` under `storage`.
+Storage code in `:local` uses `source`, `scan`, `accounting`, `cleanup`, and `policy` packages; its contracts belong to `:model` under `storage`.
 For storage analysis, `StorageUsageScanner` collects snapshots through data-source
 interfaces and `StorageUsagePresenter` reads only snapshots and string resources.
 `StorageCacheCleaner` uses file and platform cleanup ports; Room and global

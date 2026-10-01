@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.shouldRunInitialDownloadScan
+import moe.ouom.neriplayer.core.download.policy.shouldRunInitialDownloadScan
 import moe.ouom.neriplayer.core.download.manager.admission.admitArtifactRecoveryMutation
 import moe.ouom.neriplayer.core.download.manager.admission.completeStartupProgressRestoreReady
 import moe.ouom.neriplayer.core.download.manager.admission.dismissMobileDataDownloadInterruptionRequest
@@ -70,7 +70,7 @@ import moe.ouom.neriplayer.core.download.execution.worker.WifiBoundDownloadWakeW
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupRecoveryJournal
 import moe.ouom.neriplayer.core.download.observability.DownloadStartupTrace
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableIntStateOf
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutVersionTapOwner
 import org.junit.Assert.assertEquals
 import org.junit.Test

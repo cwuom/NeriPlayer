@@ -8,11 +8,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockSegment
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockTarget
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliBvidOrNull
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliCidOrNull
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliBvidOrNull
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliCidOrNull
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.resolveBiliSong
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.skip.BiliSponsorBlockSkipTracker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema

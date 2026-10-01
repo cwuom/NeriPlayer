@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.operation.lifecycle
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.shouldDeferStartupManagedCleanup
+import moe.ouom.neriplayer.core.download.policy.shouldDeferStartupManagedCleanup
 import moe.ouom.neriplayer.core.download.storage.operation.collectManagedMigrationEntries
 import moe.ouom.neriplayer.core.download.storage.operation.content.backendReference
 import moe.ouom.neriplayer.core.download.storage.operation.content.buildMigrationTargetIndex
@@ -66,7 +66,7 @@ import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
 import java.io.IOException
 import java.util.Locale

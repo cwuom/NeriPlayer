@@ -19,9 +19,9 @@ import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.media.mergeLyricsForExternalPlayers
-import moe.ouom.neriplayer.util.network.isFileInsideDirectory
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.lyrics.embedded.mergeLyricsForExternalPlayers
+import moe.ouom.neriplayer.common.io.isFileInsideDirectory
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream

@@ -16,9 +16,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceGuard
-import moe.ouom.neriplayer.core.network.range.ChunkRequestIOException
-import moe.ouom.neriplayer.core.network.range.ResumableHttpRangeSupport
-import moe.ouom.neriplayer.api.youtube.transport.range.YouTubeGoogleVideoRangeSupport
+import moe.ouom.neriplayer.network.range.ChunkRequestIOException
+import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
+import moe.ouom.neriplayer.platform.youtube.api.transport.range.YouTubeGoogleVideoRangeSupport
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -918,7 +918,7 @@ internal class AudioDownloadFileTransfer(
 
     private object AudioDownloadLog {
         fun d(message: String) {
-            moe.ouom.neriplayer.core.logging.NPLogger.d("NERI-Downloader", message)
+            moe.ouom.neriplayer.common.logging.NPLogger.d("NERI-Downloader", message)
         }
     }
 

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
+import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 import moe.ouom.neriplayer.data.model.download.DownloadLibraryEntry
@@ -50,7 +52,7 @@ import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadStorageCo
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadTreeFileCommitter
 import moe.ouom.neriplayer.core.download.storage.commit.sameManagedMigrationStoredEntryIdentity
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
@@ -76,7 +78,7 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRe
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongItem

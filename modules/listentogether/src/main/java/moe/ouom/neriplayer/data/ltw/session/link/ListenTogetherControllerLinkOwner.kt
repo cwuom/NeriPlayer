@@ -7,7 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherStreamResolution
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.ltw.mapping.withStreamUrls
@@ -27,7 +27,7 @@ import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import moe.ouom.neriplayer.data.model.ltw.message.socket.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherTrack
-import moe.ouom.neriplayer.util.units.SECOND_MS
+import moe.ouom.neriplayer.common.units.SECOND_MS
 import kotlin.time.Duration.Companion.milliseconds
 
 interface ListenTogetherLinkSessionPort {

@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.service.artwork.resolveRemoteMetadataArtworkUri
 import moe.ouom.neriplayer.core.player.service.presentation.serviceMetadataSnapshot
 import moe.ouom.neriplayer.core.player.service.presentation.serviceMetadataText
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
 import moe.ouom.neriplayer.data.model.playback.SleepTimerState

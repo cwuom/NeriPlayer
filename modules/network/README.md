@@ -1,15 +1,15 @@
-# 🌐 网络基础能力
+# 网络 / Network
 
-`:network` 维护共用 HTTP 客户端基础、响应解析、Range 请求与续传边界、网络工具和网页登录辅助。音乐平台请求协议位于 `:platform` 的 `api` 包，同步与一起听传输随所属业务库维护，响应契约由 `:model` 提供。
+`:network` 提供 HTTP 协程适配、Cookie 和 Header 解析、Range 请求、代理选择、主机校验和网页登录辅助。平台请求协议由 `:platform` 维护，同步与一起听的传输实现在各自模块。
 
-生产代码按 `core/api`、`core/network/http/parser`、`core/network/range`、`core/network/weblogin` 和 `util/network` 组织。模块只依赖 `:common`，不读取账号仓库、播放器或应用容器。
+`:network` provides HTTP coroutine adapters, Cookie and Header parsing, ranged requests, proxy selection, host validation, and Web login helpers. Platform protocols belong to `:platform`; sync and Listen Together own their transports.
 
-修改响应体读取或 Range 行为时，应验证取消、截断响应、状态码与字节区间边界；平台特有的容错留在对应客户端，避免污染通用传输语义。
+源码在 `src/main/java/moe/ouom/neriplayer/network`，按 `http`、`range`、`proxy`、`security` 和 `weblogin` 分包。项目依赖只有 `:common`。`Call.awaitResponse` 传递取消并关闭响应，`nonReplayable` 阻止写请求自动重放。
 
-## 🧪 验证
+Sources are in `src/main/java/moe/ouom/neriplayer/network`, grouped into `http`, `range`, `proxy`, `security`, and `weblogin`. Its only project dependency is `:common`. `Call.awaitResponse` forwards cancellation and closes responses; `nonReplayable` prevents automatic replay of writes.
+
+## 测试 / Tests
 
 ```bash
 ./gradlew :network:testDebugUnitTest :network:lintDebug
 ```
-
-完整模块索引、源码容量与依赖约束见仓库根目录 [README](../../README.md#模块结构)，共享门禁见 [质量工具说明](../../tools_pub/quality/README.md)。

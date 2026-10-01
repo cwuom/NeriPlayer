@@ -1,15 +1,15 @@
-# 🧰 通用能力与资源
+# 通用工具 / Common
 
-`:common` 提供跨领域使用的日志、集合与 JSON 辅助、请求代次、协程取消保护、文件原子写入、时间与单位转换，以及应用共用的文案和图标资源。
+`:common` 提供日志、集合与 JSON 辅助、搜索匹配、时间与单位转换、请求代次、协程取消保护和文件原子写入，以及共用文案、图标和语言切换。
 
-实现位于 `core/logging`、`util` 和少量通用存储辅助包。它不依赖其它项目实现，不承载平台仓库、下载执行、播放会话或同步规则；具有业务含义的数据契约归 `:model`。
+`:common` provides logging, collection and JSON helpers, search matching, time and unit conversions, request generations, cancellation handling, and atomic file writes, plus shared strings, icons, and locale support.
 
-源码契约测试工具通过 test fixtures 供播放与下载运行库复用。通用能力的测试随实现维护在本库；新增工具应先确认多个领域实际需要同一语义。
+源码在 `src/main/java/moe/ouom/neriplayer/common`，资源在 `src/main/res`。模块不依赖其它项目实现；共享业务模型由 `:model` 维护。`src/testFixtures` 供播放和下载运行库复用。
 
-## 🧪 验证
+Sources are in `src/main/java/moe/ouom/neriplayer/common`, with resources in `src/main/res`. The module has no project implementation dependencies; shared business models belong to `:model`. Playback and download runtime libraries reuse `src/testFixtures`.
+
+## 测试 / Tests
 
 ```bash
 ./gradlew :common:testDebugUnitTest :common:lintDebug
 ```
-
-完整模块索引、源码容量与依赖约束见仓库根目录 [README](../../README.md#模块结构)，共享门禁见 [质量工具说明](../../tools_pub/quality/README.md)。

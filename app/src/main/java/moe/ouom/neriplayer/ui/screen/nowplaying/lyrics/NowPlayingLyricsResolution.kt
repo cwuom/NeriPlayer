@@ -4,13 +4,13 @@ import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.player.metadata.resolveLyricTextForPlayback
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
-import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries
-import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
-import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
-import moe.ouom.neriplayer.core.lyrics.resolvePreferredLyricContent
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.resolvePreferredLyricContent
 
 internal data class NowPlayingBackgroundRawLyrics(
     val original: String?,

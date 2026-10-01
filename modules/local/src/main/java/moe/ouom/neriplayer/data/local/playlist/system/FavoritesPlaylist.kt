@@ -24,10 +24,10 @@ package moe.ouom.neriplayer.data.local.playlist.system
  */
 
 import android.content.Context
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 object FavoritesPlaylist {
     const val SYSTEM_ID = -1001L

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.metadata
 
-import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
+import moe.ouom.neriplayer.common.units.MEBIBYTE_BYTES
 import java.io.IOException
 
 /** 下载封面 source 和解码阶段共用的资源边界 */

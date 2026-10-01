@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.home
 
 import android.content.res.Resources
 import androidx.compose.runtime.Composable
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 internal data class SettingsHomeCardCopy(
     val trendingLabelRes: Int,

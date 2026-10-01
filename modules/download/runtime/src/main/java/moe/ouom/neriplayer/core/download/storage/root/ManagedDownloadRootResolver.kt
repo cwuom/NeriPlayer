@@ -9,7 +9,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 
 private const val JVM_FALLBACK_DIRECTORY_NAME = "neriplayer-jvm"

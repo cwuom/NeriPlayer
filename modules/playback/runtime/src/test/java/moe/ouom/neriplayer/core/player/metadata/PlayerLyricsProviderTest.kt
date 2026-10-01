@@ -14,8 +14,8 @@ import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
-import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
-import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.network.http.isTransientHttp2StreamReset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

@@ -19,10 +19,10 @@ import moe.ouom.neriplayer.core.player.url.prepareExoPlayerCacheForPrefetch
 import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.prefetch.resolveYouTubeImmediatePlaybackWarmupTargets
 import moe.ouom.neriplayer.core.player.prefetch.resolveYouTubeWarmupTargets
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 private const val YOUTUBE_WARMUP_MIN_PREFETCH_BYTES = 256L * 1024L
 private const val YOUTUBE_WARMUP_FIRST_TRACK_PREFETCH_BYTES = 1536L * 1024L

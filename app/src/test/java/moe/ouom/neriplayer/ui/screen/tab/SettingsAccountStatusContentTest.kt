@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import android.content.res.Resources
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountEntryAction

@@ -4,10 +4,10 @@ import moe.ouom.neriplayer.core.download.host.DownloadHosts
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedDownloadArtifactRemovalResult
-import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactRemovalResult
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadSongDeletePlan
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.upsertDownloadedSongCatalog
+import moe.ouom.neriplayer.core.download.catalog.upsertDownloadedSongCatalog
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.batch.isFullLibraryDeleteCancellationSettled
@@ -49,10 +49,10 @@ import moe.ouom.neriplayer.data.model.download.EmptyScanDecision
 import moe.ouom.neriplayer.data.model.download.EmptyScanObservation
 import moe.ouom.neriplayer.data.model.download.ScanConfidence
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.ManagedDownloadMigrationCheckpointStore
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.util.time.elapsedMillisSince
+import moe.ouom.neriplayer.common.time.elapsedMillisSince
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 private const val MAX_AUTOMATIC_EMPTY_CONFIRMATIONS = 2

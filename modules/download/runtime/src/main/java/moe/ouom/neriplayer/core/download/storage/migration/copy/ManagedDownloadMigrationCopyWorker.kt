@@ -25,7 +25,7 @@ import moe.ouom.neriplayer.data.model.download.storage.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.commit.sameMigrationReplacementBackupIdentity
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import kotlin.time.Duration.Companion.milliseconds
 
 internal data class ManagedMigrationCopyResult(

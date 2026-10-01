@@ -1,17 +1,17 @@
 package moe.ouom.neriplayer.data.auth.web
 
-import moe.ouom.neriplayer.api.youtube.auth.isUsable
-import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.isUsable
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 
 import moe.ouom.neriplayer.data.model.bilibili.auth.BiliAuthBundle
-import moe.ouom.neriplayer.data.auth.bili.evaluateBiliAuthHealth
+import moe.ouom.neriplayer.platform.bilibili.auth.evaluateBiliAuthHealth
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.netease.auth.NeteaseAuthBundle
-import moe.ouom.neriplayer.data.auth.netease.evaluateNeteaseAuthHealth
-import moe.ouom.neriplayer.data.auth.netease.validateAndSanitizeNeteaseCookies
+import moe.ouom.neriplayer.platform.netease.auth.evaluateNeteaseAuthHealth
+import moe.ouom.neriplayer.platform.netease.auth.validateAndSanitizeNeteaseCookies
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
-import moe.ouom.neriplayer.api.youtube.auth.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.platform.youtube.api.auth.evaluateYouTubeAuthHealth
 
 private const val SYNTHETIC_SAVED_AT = 1L
 private const val SYNTHETIC_CHECKED_AT = 2L

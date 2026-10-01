@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.settings.storage
 
-import moe.ouom.neriplayer.util.units.GIBIBYTE_BYTES
-import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
+import moe.ouom.neriplayer.common.units.GIBIBYTE_BYTES
+import moe.ouom.neriplayer.common.units.MEBIBYTE_BYTES
 
 /**
  * keeps the cache setting representation shared by the settings UI and playback startup

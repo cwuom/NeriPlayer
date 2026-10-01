@@ -9,7 +9,7 @@ import kotlinx.coroutines.sync.Mutex
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal const val DIRECTORY_CHANGE_DOWNLOAD_DEFERRED_ERROR =
     "DIRECTORY_CHANGE_IN_PROGRESS"

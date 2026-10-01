@@ -5,7 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.VolumeProvider
 import android.media.session.MediaSession
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 
 private const val DEFAULT_MAX_MEDIA_VOLUME = 100

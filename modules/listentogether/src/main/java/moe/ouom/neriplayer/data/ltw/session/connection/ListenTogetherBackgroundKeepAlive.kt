@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.ltw.session.connection
 
 import android.content.Context
 import android.os.PowerManager
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal class ListenTogetherBackgroundKeepAlive {
     private val lock = Any()

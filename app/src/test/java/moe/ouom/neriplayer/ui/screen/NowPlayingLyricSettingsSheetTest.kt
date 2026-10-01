@@ -1,10 +1,10 @@
 package moe.ouom.neriplayer.ui.screen
 
 import androidx.compose.ui.graphics.Color
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.data.settings.lyrics.LYRIC_DEFAULT_OFFSET_STEP_MS
-import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_DEFAULT_OFFSET_MS
-import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_DEFAULT_OFFSET_MS
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.lyrics.offset.LYRIC_DEFAULT_OFFSET_STEP_MS
+import moe.ouom.neriplayer.lyrics.offset.MAX_LYRIC_DEFAULT_OFFSET_MS
+import moe.ouom.neriplayer.lyrics.offset.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricBehaviorSheetState

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.system
 
 import android.content.Context
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 /**
  * 记录独占会话生命周期, 但不修改系统全局音量

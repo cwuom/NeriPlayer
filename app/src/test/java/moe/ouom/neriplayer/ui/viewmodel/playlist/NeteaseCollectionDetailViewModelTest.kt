@@ -10,7 +10,7 @@ import org.junit.Test
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistDetail
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistHeader
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistTrack
-import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
+import moe.ouom.neriplayer.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseRadarPlaylistDefinitions
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist

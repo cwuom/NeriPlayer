@@ -28,14 +28,14 @@ import android.provider.DocumentsContract
 import android.system.Os
 import com.kyant.taglib.PropertyMap
 import com.kyant.taglib.TagLib
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
-import moe.ouom.neriplayer.util.media.NERI_ROMANIZED_LYRICS_METADATA_KEY
-import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.lyrics.embedded.NERI_ORIGINAL_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.lyrics.embedded.NERI_ROMANIZED_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.lyrics.embedded.translatedLyricsMetadataKeys
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File

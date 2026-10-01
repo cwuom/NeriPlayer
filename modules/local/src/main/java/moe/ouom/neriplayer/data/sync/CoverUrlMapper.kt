@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.data.sync
 
 import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.sync.cover.missingLocalCoverFile
 import moe.ouom.neriplayer.data.sync.policy.sanitizeCoverUrlForSync

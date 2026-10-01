@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.player.download.transfer.DownloadIntegrityExcept
 import moe.ouom.neriplayer.core.player.download.transfer.DownloadRangeRestartRequiredException
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.network.range.ChunkRequestIOException
+import moe.ouom.neriplayer.network.range.ChunkRequestIOException
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

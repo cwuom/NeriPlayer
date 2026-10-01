@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import coil.request.ImageRequest
 import coil.size.Size
 import coil.transform.Transformation

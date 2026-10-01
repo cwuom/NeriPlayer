@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.util.platform
 
+import moe.ouom.neriplayer.common.locale.LanguageManager
+
 import android.content.res.Configuration
 import android.os.Build
 import android.os.LocaleList
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

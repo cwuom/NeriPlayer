@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.presentation.widget
 
 import android.content.Context
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import java.util.Locale
 
 const val PLAYBACK_WIDGET_PROGRESS_MAX = 1000

@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
-import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
@@ -48,7 +48,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricDefaultOffsetMs
+import moe.ouom.neriplayer.lyrics.offset.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsLyricAlpha
 import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsTranslationAlpha
@@ -81,7 +81,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB

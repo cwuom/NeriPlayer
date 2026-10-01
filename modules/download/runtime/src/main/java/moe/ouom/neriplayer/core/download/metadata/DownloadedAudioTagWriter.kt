@@ -19,13 +19,13 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
-import moe.ouom.neriplayer.util.media.NERI_ROMANIZED_LYRICS_METADATA_KEY
-import moe.ouom.neriplayer.util.media.STANDARD_TRANSLATED_LYRICS_METADATA_KEY
-import moe.ouom.neriplayer.util.media.mergeLyricsForExternalPlayers
-import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
-import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.lyrics.embedded.NERI_ORIGINAL_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.lyrics.embedded.NERI_ROMANIZED_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.lyrics.embedded.STANDARD_TRANSLATED_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.lyrics.embedded.mergeLyricsForExternalPlayers
+import moe.ouom.neriplayer.lyrics.embedded.standardLyricsMetadataKeys
+import moe.ouom.neriplayer.lyrics.embedded.translatedLyricsMetadataKeys
 import org.json.JSONObject
 import java.util.Locale
 

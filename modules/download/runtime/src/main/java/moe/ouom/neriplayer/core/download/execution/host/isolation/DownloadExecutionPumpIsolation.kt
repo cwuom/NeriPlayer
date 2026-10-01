@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadExecutionResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 /**
  * 隔离同一批下载中的单项失败，避免一个 operation 取消时连带取消其他歌曲

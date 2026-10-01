@@ -73,7 +73,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCl
 import moe.ouom.neriplayer.data.model.download.storage.StorageConfidence
 import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
 import org.junit.Assert.assertEquals

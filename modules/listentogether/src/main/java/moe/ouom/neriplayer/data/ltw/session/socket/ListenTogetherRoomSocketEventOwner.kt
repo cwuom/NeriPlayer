@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.data.ltw.session.state.normalized
 import moe.ouom.neriplayer.data.ltw.session.state.shouldAcceptListenTogetherAuthoritativeQueueUpdate
 import moe.ouom.neriplayer.data.ltw.session.state.shouldDeferListenTogetherIncomingStateForLocalTrackFinish
 import moe.ouom.neriplayer.data.ltw.session.state.shouldIgnoreListenTogetherIncomingState
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.ltw.playback.currentStableKey
 import moe.ouom.neriplayer.data.ltw.playback.isListenTogetherQueueUpdateCause
 import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause

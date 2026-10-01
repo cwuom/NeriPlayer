@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.platform.bilibili.skip.storage.BiliVideoSkipRoomStore
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider

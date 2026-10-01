@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.testing
 
-import moe.ouom.neriplayer.api.youtube.auth.isUsable
-import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.isUsable
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 
 import android.app.Activity
 import android.content.BroadcastReceiver
@@ -9,7 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Base64
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.network.http.parser.parseRawCookieText
+import moe.ouom.neriplayer.network.http.parsing.parseRawCookieText
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 
 class DebugCookieImportReceiver : BroadcastReceiver() {

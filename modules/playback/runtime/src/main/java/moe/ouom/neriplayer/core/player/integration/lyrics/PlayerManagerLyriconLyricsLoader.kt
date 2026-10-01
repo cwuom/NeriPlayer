@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
-import moe.ouom.neriplayer.lyrics.integration.LyriconLyricsLoader
+import moe.ouom.neriplayer.lyrics.output.LyriconLyricsLoader
 
 internal object PlayerManagerLyriconLyricsLoader : LyriconLyricsLoader {
     override suspend fun load(

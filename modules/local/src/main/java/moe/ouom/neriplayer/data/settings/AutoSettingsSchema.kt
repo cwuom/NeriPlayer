@@ -24,7 +24,7 @@ import moe.ouom.neriplayer.data.settings.playback.DEFAULT_PLAYBACK_SERVICE_IDLE_
 import moe.ouom.neriplayer.data.settings.playback.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.playback.PlaybackSettingsSection
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.ksp.annotations.AutoSetting
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon

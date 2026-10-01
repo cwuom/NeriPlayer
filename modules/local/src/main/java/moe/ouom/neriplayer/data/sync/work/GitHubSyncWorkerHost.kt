@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.sync.work
 import android.content.Context
 import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
 import moe.ouom.neriplayer.data.settings.SettingsRepository

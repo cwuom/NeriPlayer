@@ -9,10 +9,10 @@ import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.policy.resolvedLocalFileName
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 
 internal const val MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX = ".managed-v1.json"
 internal const val CONFIRMED_EMPTY_CATALOG_MARKER_SUFFIX = ".confirmed-empty"

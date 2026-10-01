@@ -33,9 +33,9 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 

@@ -1,26 +1,26 @@
 package moe.ouom.neriplayer.core.player.host
 
-import moe.ouom.neriplayer.api.bilibili.client.BiliClient
-import moe.ouom.neriplayer.api.netease.client.NeteaseClient
-import moe.ouom.neriplayer.api.search.client.CloudMusicSearchApi
-import moe.ouom.neriplayer.api.youtube.client.YouTubeMusicClient
-import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
-import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
+import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
+import moe.ouom.neriplayer.platform.search.api.client.CloudMusicSearchApi
+import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
+import moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository
+import moe.ouom.neriplayer.platform.netease.auth.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
-import moe.ouom.neriplayer.data.lyrics.repository.AmllLyricsRepository
-import moe.ouom.neriplayer.data.lyrics.repository.EditableLyricsMatcher
-import moe.ouom.neriplayer.data.lyrics.repository.LrcLibLyricsRepository
-import moe.ouom.neriplayer.data.lyrics.repository.QQMusicLyricsRepository
-import moe.ouom.neriplayer.data.platform.bili.playback.BiliPlaybackRepository
-import moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepository
-import moe.ouom.neriplayer.data.platform.bili.skip.sponsorblock.BiliSponsorBlockRepository
+import moe.ouom.neriplayer.platform.lyrics.repository.AmllLyricsRepository
+import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher
+import moe.ouom.neriplayer.platform.lyrics.repository.LrcLibLyricsRepository
+import moe.ouom.neriplayer.platform.lyrics.repository.QQMusicLyricsRepository
+import moe.ouom.neriplayer.platform.bilibili.playback.BiliPlaybackRepository
+import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
+import moe.ouom.neriplayer.platform.bilibili.skip.sponsorblock.BiliSponsorBlockRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
-import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.youtube.repository.YouTubeMusicPlaybackRepository
+import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
+import moe.ouom.neriplayer.platform.youtube.repository.YouTubeMusicPlaybackRepository
 import okhttp3.OkHttpClient
 
 interface PlayerRepositoryDependencies {

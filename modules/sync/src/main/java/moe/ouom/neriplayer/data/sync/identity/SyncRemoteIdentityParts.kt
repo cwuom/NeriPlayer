@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.sync.identity
 
 import java.util.Locale
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 
 internal fun trimmedSyncIdentityPart(value: String?): String? = nonBlankSyncIdentityPart(value?.trim())
 

@@ -7,14 +7,14 @@ import moe.ouom.neriplayer.data.model.download.DownloadStage
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.buildExpectedDownloadArtists
-import moe.ouom.neriplayer.core.download.buildExpectedDownloadTitles
-import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
+import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadArtists
+import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadTitles
+import moe.ouom.neriplayer.core.download.catalog.downloadedSongPlaybackReferenceCandidates
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.shouldRepairDownloadedCover
-import moe.ouom.neriplayer.core.download.shouldRepairMetadataLessManagedDownload
-import moe.ouom.neriplayer.core.download.shouldTrustFastDownloadedSongCatalogHit
+import moe.ouom.neriplayer.core.download.policy.shouldRepairDownloadedCover
+import moe.ouom.neriplayer.core.download.policy.shouldRepairMetadataLessManagedDownload
+import moe.ouom.neriplayer.core.download.policy.shouldTrustFastDownloadedSongCatalogHit
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleDownloadedSongReferenceReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.updateDownloadProgress
@@ -32,7 +32,7 @@ import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.progress.forPublication
 import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed

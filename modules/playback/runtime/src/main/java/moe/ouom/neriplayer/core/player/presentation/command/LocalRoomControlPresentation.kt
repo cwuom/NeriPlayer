@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.presentation.command
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.policy.command.LocalRoomControlRestriction
 
 internal val LocalRoomControlRestriction.errorResId: Int?

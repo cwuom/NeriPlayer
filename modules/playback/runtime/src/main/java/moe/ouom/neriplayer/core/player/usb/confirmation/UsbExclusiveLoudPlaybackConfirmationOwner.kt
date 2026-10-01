@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.player.usb.confirmation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudPlaybackRisk
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource

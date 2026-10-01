@@ -4,7 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.api.sync.http.SyncResponseBodyReader
 import moe.ouom.neriplayer.api.sync.http.syncTransportResult
 import okhttp3.HttpUrl.Companion.toHttpUrl

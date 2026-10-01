@@ -9,7 +9,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import java.net.NetworkInterface
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 private const val NETWORK_STATUS_LOG_TAG = "NERI-NetworkStatus"
 

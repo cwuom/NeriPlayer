@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.github.GitHubFileNotFoundException
 import moe.ouom.neriplayer.api.sync.github.GitHubContentConflictException
 
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncRemoteSnapshot
 import moe.ouom.neriplayer.data.sync.codec.SyncDataSerializer

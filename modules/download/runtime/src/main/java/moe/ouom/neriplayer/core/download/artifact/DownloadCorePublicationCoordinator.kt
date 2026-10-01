@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.core.download.storage.operation.content.isVerifiedAud
 import moe.ouom.neriplayer.core.download.storage.operation.content.samePublicationReference
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata

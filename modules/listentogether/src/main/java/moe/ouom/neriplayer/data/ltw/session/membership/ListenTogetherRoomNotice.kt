@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.ltw.session.membership
 
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
-import moe.ouom.neriplayer.util.units.MINUTE_MS
+import moe.ouom.neriplayer.common.units.MINUTE_MS
 import java.util.concurrent.TimeUnit
 import moe.ouom.neriplayer.data.ltw.session.normalizedListenTogetherIdentity
 

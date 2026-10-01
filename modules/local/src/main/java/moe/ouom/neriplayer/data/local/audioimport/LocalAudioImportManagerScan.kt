@@ -8,7 +8,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
-import moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName
+import moe.ouom.neriplayer.data.model.download.naming.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport

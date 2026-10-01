@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
 import moe.ouom.neriplayer.data.local.playlist.artist.buildLocalArtistSummaries
@@ -55,8 +55,8 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.mapping.sanitizeCoverUrlForSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
-import moe.ouom.neriplayer.util.io.writeTextAtomically
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.io.writeTextAtomically
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.File
 import java.util.UUID
 

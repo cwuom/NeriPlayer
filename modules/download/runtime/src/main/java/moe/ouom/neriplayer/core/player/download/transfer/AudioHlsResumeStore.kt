@@ -8,8 +8,8 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.io.ManagedDownloadAtomicFile
+import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
 
 /**

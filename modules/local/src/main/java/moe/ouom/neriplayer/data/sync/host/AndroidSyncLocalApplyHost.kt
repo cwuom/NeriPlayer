@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.data.sync.host
 
 import android.content.Context
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.sync.SyncData
-import moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepository
+import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -15,7 +15,7 @@ import moe.ouom.neriplayer.data.sync.mapping.toBiliVideoSkipRuleOrNull
 import moe.ouom.neriplayer.data.sync.mapping.toFavoritePlaylist
 import moe.ouom.neriplayer.data.sync.mapping.SyncLocalRestoreMapping
 import moe.ouom.neriplayer.data.sync.runtime.SyncLocalApplyHost
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 internal class AndroidSyncLocalApplyHost(
     appContext: Context,

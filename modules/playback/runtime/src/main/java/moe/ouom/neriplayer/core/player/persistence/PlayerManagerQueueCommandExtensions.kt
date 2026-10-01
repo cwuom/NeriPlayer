@@ -2,7 +2,7 @@
 
 package moe.ouom.neriplayer.core.player.persistence
 
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource

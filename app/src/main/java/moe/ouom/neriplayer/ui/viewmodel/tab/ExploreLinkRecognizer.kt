@@ -4,7 +4,7 @@ import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
-import moe.ouom.neriplayer.util.network.awaitResponse
+import moe.ouom.neriplayer.network.http.awaitResponse
 import okhttp3.OkHttpClient
 import okhttp3.Request
 

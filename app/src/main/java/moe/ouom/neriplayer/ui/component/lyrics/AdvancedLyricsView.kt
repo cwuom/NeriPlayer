@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
-import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries
-import moe.ouom.neriplayer.core.lyrics.isNeteaseYrc
-import moe.ouom.neriplayer.core.lyrics.isTtmlLyrics
-import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
-import moe.ouom.neriplayer.core.lyrics.parseNeteaseLrc
+import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.isNeteaseYrc
+import moe.ouom.neriplayer.lyrics.parser.isTtmlLyrics
+import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize

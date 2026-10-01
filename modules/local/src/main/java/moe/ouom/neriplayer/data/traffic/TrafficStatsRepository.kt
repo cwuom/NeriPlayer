@@ -22,8 +22,8 @@ import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequ
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.TrafficStatsRoomStore
 import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 

@@ -25,6 +25,10 @@ SOURCE_SYMBOL = re.compile(
 )
 OWNED_MODULE_PATH = re.compile(r':[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?')
 MAX_DIRECTORY_SOURCES = 16
+STORAGE_CALCULATION_FAMILIES = tuple(
+    f"data.local.storage.{family}"
+    for family in ("accounting", "source", "scan", "cleanup", "policy")
+)
 SYNC_DOMAIN_FAMILIES = tuple(
     f"data/sync/{family}"
     for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize", "schedule")
@@ -64,7 +68,7 @@ LIBRARY_OWNED_FAMILIES = (
     "core/player/runtime", *PLAYER_POLICY_FAMILIES, *PLAYER_AUDIO_FAMILIES,
     "data/ltw",
     "listentogether",
-    "core/api", "core/lyrics", "core/lyricon", "lyrics/integration", "core/player/queue", "data/sync/merge",
+    "core/api", "common", "network", "platform", "lyrics", "core/player/queue", "data/sync/merge",
     *SYNC_DOMAIN_FAMILIES,
     "data/local/database/dao", "data/local/database/entity", "data/local/database/migration",
     *DOWNLOAD_RULE_FAMILIES,
@@ -75,7 +79,6 @@ ALLOWED_DEPENDENCIES = {
     ":network": {":common"},
     MODEL_MODULE: set(),
     ":database": {MODEL_MODULE},
-    ":storage": {MODEL_MODULE},
     ":playback:logic": {":common", MODEL_MODULE},
     ":download:logic": {":common", MODEL_MODULE},
     ":lyrics": {":common", MODEL_MODULE, ":accompanist-lyrics-core"},
@@ -84,42 +87,41 @@ ALLOWED_DEPENDENCIES = {
     ":listentogether": {":platform", ":common", MODEL_MODULE},
     ":local": {
         ":platform", ":common", ":database", ":download:logic", ":ksp-annotations",
-        ":listentogether", ":lyrics", MODEL_MODULE, ":network", ":storage", ":sync",
+        ":listentogether", ":lyrics", MODEL_MODULE, ":network", ":sync",
     },
     ":download:runtime": {
         ":platform", ":common", ":database", ":download:logic", ":local", ":lyrics", MODEL_MODULE, ":network",
     },
     ":playback:runtime": {
         ":platform", ":common", ":database", ":listentogether", ":local", ":lyrics", MODEL_MODULE,
-        ":network", ":playback:logic", ":storage", ":sync",
+        ":network", ":playback:logic", ":sync",
     },
 }
 CONFIGURED_DEPENDENCIES = {
     (":local", "ksp"): {":ksp-processor"},
     (":download:runtime", "testImplementation"): {":sync"},
 }
-# 已写入 Android 保存状态的 Parcelable 全名需要保持稳定
+# 旧 Parcelable 类型迁移前需要核对历史版本的状态读取方式
 LEGACY_MODEL_TYPES = {
     f"moe.ouom.neriplayer.ui.viewmodel.tab.{name}"
     for name in ("PlaylistSummary", "AlbumSummary", "BiliPlaylist", "BiliPlaylistKind", "YouTubeMusicPlaylist")
 }
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
-LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName")
 PACKAGE_OWNERS = {
-    **{f"moe.ouom.neriplayer.api.{platform}": ":platform"
+    **{f"moe.ouom.neriplayer.platform.{platform}.api": ":platform"
        for platform in ("bilibili", "netease", "youtube")},
-    "moe.ouom.neriplayer.api.lyrics": ":platform",
-    "moe.ouom.neriplayer.api.search": ":platform",
+    "moe.ouom.neriplayer.platform.lyrics.api": ":platform",
+    "moe.ouom.neriplayer.platform.search.api": ":platform",
     "moe.ouom.neriplayer.api.sync": ":sync",
     "moe.ouom.neriplayer.api.ltw": ":listentogether",
-    "moe.ouom.neriplayer.core.logging": ":common",
-    "moe.ouom.neriplayer.core.common": ":common",
-    "moe.ouom.neriplayer.core.comment": ":platform",
-    "moe.ouom.neriplayer.core.lyrics": ":lyrics",
-    "moe.ouom.neriplayer.core.lyricon": ":lyrics",
-    "moe.ouom.neriplayer.lyrics.integration": ":lyrics",
-    "moe.ouom.neriplayer.data.lyrics": ":platform",
+    "moe.ouom.neriplayer.common.logging": ":common",
+    "moe.ouom.neriplayer.common": ":common",
+    "moe.ouom.neriplayer.platform.comments": ":platform",
+    "moe.ouom.neriplayer.lyrics.parser": ":lyrics",
+    "moe.ouom.neriplayer.lyrics.lyricon": ":lyrics",
+    "moe.ouom.neriplayer.lyrics.output": ":lyrics",
+    "moe.ouom.neriplayer.platform.lyrics": ":platform",
     "moe.ouom.neriplayer.data.sync": ":sync",
     **{f"moe.ouom.neriplayer.data.sync.{family}": ":local"
        for family in ("cover", "github", "host", "mapping", "webdav", "work")},
@@ -142,16 +144,15 @@ PACKAGE_OWNERS = {
        for family in ("settings", "history", "identity", "backup", "config", "traffic", "search",
                       "auth", "network", "playlist", "stats", "storage", "listentogether",
                       "local.media", "local.audioimport", "local.playlist", "local.storage")},
-    "moe.ouom.neriplayer.data.auth.netease": ":platform",
-    "moe.ouom.neriplayer.data.auth.bili": ":platform",
-    "moe.ouom.neriplayer.data.youtube": ":platform",
-    **{f"moe.ouom.neriplayer.data.storage.{family}": ":storage"
-       for family in ("accounting", "source", "scan", "cleanup", "policy")},
-    "moe.ouom.neriplayer.data.platform.netease": ":platform",
-    "moe.ouom.neriplayer.data.platform.youtube": ":platform",
-    "moe.ouom.neriplayer.data.platform.bili": ":platform",
-    "moe.ouom.neriplayer.core.network": ":network",
-    "moe.ouom.neriplayer.util.network": ":network",
+    "moe.ouom.neriplayer.platform.netease.auth": ":platform",
+    "moe.ouom.neriplayer.platform.bilibili.auth": ":platform",
+    "moe.ouom.neriplayer.platform.youtube": ":platform",
+    "moe.ouom.neriplayer.platform.netease": ":platform",
+    "moe.ouom.neriplayer.platform.youtube.playlist": ":platform",
+    "moe.ouom.neriplayer.platform.bilibili": ":platform",
+    "moe.ouom.neriplayer.network": ":network",
+    "moe.ouom.neriplayer.lyrics": ":lyrics",
+    "moe.ouom.neriplayer.data.local.platform": ":local",
     "moe.ouom.neriplayer.core.player.queue": ":playback:logic",
     "moe.ouom.neriplayer.data.local.database": ":database",
     "moe.ouom.neriplayer.data.local.database.store": ":local",
@@ -159,20 +160,9 @@ PACKAGE_OWNERS = {
        for family in DOWNLOAD_RULE_FAMILIES},
 }
 SOURCE_OWNERS = {
-    "moe.ouom.neriplayer.core.api.NonReplayableRequestBody": ":network",
-    "moe.ouom.neriplayer.core.player.lyrics.LyriconUpdateCoordinator": ":lyrics",
-    "moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore": ":platform",
     "moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore": ":database",
-    "moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepositoryProvider": ":local",
-    "moe.ouom.neriplayer.data.settings.lyrics.LyricDefaultOffset": ":lyrics",
     "moe.ouom.neriplayer.data.sync.CoverUrlMapper": ":local",
-    "moe.ouom.neriplayer.util.media.EmbeddedLyricsCompatibility": ":lyrics",
 }
-TYPE_OWNERS = {
-    f"moe.ouom.neriplayer.core.player.lyrics.{name}": ":lyrics"
-    for name in ("LyriconUpdateCoordinator", "LyriconUpdateRequest")
-}
-TYPE_OWNERS["moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore"] = ":platform"
 FORBIDDEN_IMPORT = re.compile(
     r'^import moe\.ouom\.neriplayer\.(?:'
     r'core\.di\.|core\.player\.PlayerManager\b|ui\.|activity\.|'
@@ -182,38 +172,39 @@ PROJECT_SOURCE_REFERENCE = re.compile(
     r'\b(?:moe\.ouom\.neriplayer|io\.github\.proify\.lyricon|com\.hchen\.superlyricapi)'
     r'(?:\.[A-Za-z_]\w*)+(?:\.\*)?'
 )
+ROOM_SOURCE_REFERENCE = re.compile(r'\bandroidx\.room\.(?:[A-Za-z_]\w*\.)*(?:[A-Za-z_]\w*|\*)')
 SOURCE_COMMENTS_AND_LITERALS = re.compile(
     r'"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*[\s\S]*?\*/'
 )
 PROJECT_PACKAGE = "moe.ouom.neriplayer."
 METADATA_PARSER_REFERENCES = {
-    PROJECT_PACKAGE + "core.lyrics.normalizeLegacyLrcTimestamps",
-    PROJECT_PACKAGE + "core.lyrics.hasEditableLyricWordTiming",
+    PROJECT_PACKAGE + "lyrics.parser.normalizeLegacyLrcTimestamps",
+    PROJECT_PACKAGE + "lyrics.parser.hasEditableLyricWordTiming",
 }
 PROVIDER_PARSER_REFERENCES = METADATA_PARSER_REFERENCES | {
-    PROJECT_PACKAGE + "core.lyrics.hasWordTimedEntries",
-    PROJECT_PACKAGE + "core.lyrics.parseNeteaseLyricsAuto",
-    PROJECT_PACKAGE + "core.lyrics.convertPlainLyricsToEntries",
-    PROJECT_PACKAGE + "core.lyrics.toEditableLyricsText",
+    PROJECT_PACKAGE + "lyrics.parser.hasWordTimedEntries",
+    PROJECT_PACKAGE + "lyrics.parser.parseNeteaseLyricsAuto",
+    PROJECT_PACKAGE + "lyrics.parser.convertPlainLyricsToEntries",
+    PROJECT_PACKAGE + "lyrics.parser.toEditableLyricsText",
 }
 PACKAGE_DEPENDENCY_RULES = (
-    (("api.bilibili",), {":common", MODEL_MODULE, ":network"}, (), set()),
-    (("api.netease",), {":common", MODEL_MODULE, ":network"}, (), set()),
-    (("api.youtube",), {":common", MODEL_MODULE, ":network"}, (), set()),
-    (("api.lyrics", "api.search"), {":common", MODEL_MODULE, ":network"},
-     ("api.netease.client.NeteaseClient",), METADATA_PARSER_REFERENCES),
-    (("data.platform.bili", "data.auth.bili", "data.local.database.store.BiliVideoSkipRoomStore"),
-     {":common", MODEL_MODULE, ":network", ":database"}, ("api.bilibili",), set()),
-    (("data.platform.netease", "data.auth.netease"), {":common", MODEL_MODULE, ":database"},
-     ("api.netease",), set()),
-    (("data.platform.youtube", "data.youtube"), {":common", MODEL_MODULE, ":network", ":database"},
-     ("api.youtube",), set()),
-    (("core.comment",), {":common", MODEL_MODULE},
-     ("api.bilibili", "api.netease"), {
-         PROJECT_PACKAGE + "data.platform.bili.playback.resolver." + function
+    (("platform.bilibili.api",), {":common", MODEL_MODULE, ":network"}, (), set()),
+    (("platform.netease.api",), {":common", MODEL_MODULE, ":network"}, (), set()),
+    (("platform.youtube.api",), {":common", MODEL_MODULE, ":network"}, (), set()),
+    (("platform.lyrics.api", "platform.search.api"), {":common", MODEL_MODULE, ":network"},
+     ("platform.netease.api.client.NeteaseClient",), METADATA_PARSER_REFERENCES),
+    (("platform.bilibili", "platform.bilibili.auth", "platform.bilibili.skip.storage.BiliVideoSkipRoomStore"),
+     {":common", MODEL_MODULE, ":network", ":database"}, ("platform.bilibili.api",), set()),
+    (("platform.netease", "platform.netease.auth"), {":common", MODEL_MODULE, ":database"},
+     ("platform.netease.api",), set()),
+    (("platform.youtube.playlist", "platform.youtube"), {":common", MODEL_MODULE, ":network", ":database"},
+     ("platform.youtube.api",), set()),
+    (("platform.comments",), {":common", MODEL_MODULE},
+     ("platform.bilibili.api", "platform.netease.api"), {
+         PROJECT_PACKAGE + "platform.bilibili.playback.resolver." + function
          for function in ("biliBvidOrNull", "biliCidOrNull", "buildBiliSongAlbum", "resolveBiliSong")
      }),
-    (("data.lyrics",), {":common", MODEL_MODULE}, ("api.lyrics", "api.search", "api.youtube"),
+    (("platform.lyrics",), {":common", MODEL_MODULE}, ("platform.lyrics.api", "platform.search.api", "platform.youtube.api"),
      PROVIDER_PARSER_REFERENCES),
 )
 
@@ -321,7 +312,7 @@ def production_package_owners(root, modules):
 def reference_owner(reference, packages):
     owners = [
         (prefix, owner)
-        for collection in (packages, PACKAGE_OWNERS, SOURCE_OWNERS, TYPE_OWNERS)
+        for collection in (packages, PACKAGE_OWNERS, SOURCE_OWNERS)
         for prefix, owner in collection.items()
         if reference_matches(reference, prefix)
     ]
@@ -331,13 +322,16 @@ def reference_owner(reference, packages):
 def verify_package_dependencies(name, package, text, label, packages, errors):
     relative = package.removeprefix(PROJECT_PACKAGE)
     if name == ":lyrics":
-        parser = (relative == "core.lyrics" or relative.startswith("core.lyrics.")
-                  or label.name == "LyricDefaultOffset.kt"
-                  or label.name == "EmbeddedLyricsCompatibility.kt")
+        parser = any(reference_matches(relative, family)
+                     for family in ("lyrics.parser", "lyrics.offset", "lyrics.embedded"))
         allowed_modules = {MODEL_MODULE} if parser else {":common", MODEL_MODULE, ":lyrics"}
         roots, allowed_roots, allowed_references = (), (), set()
         if parser:
-            roots = ("core.lyrics",)
+            roots = ("lyrics.parser", "lyrics.offset", "lyrics.embedded")
+    elif name == ":local" and any(reference_matches(relative, family)
+                                  for family in STORAGE_CALCULATION_FAMILIES):
+        roots = STORAGE_CALCULATION_FAMILIES
+        allowed_modules, allowed_roots, allowed_references = {MODEL_MODULE}, (), set()
     else:
         if name != ":platform":
             return
@@ -353,6 +347,10 @@ def verify_package_dependencies(name, package, text, label, packages, errors):
     code = SOURCE_COMMENTS_AND_LITERALS.sub(
         lambda match: "" if match[0].startswith(("//", "/*")) else match[0], text
     )
+    if name == ":local" and any(reference_matches(relative, family)
+                                for family in STORAGE_CALCULATION_FAMILIES):
+        for reference in sorted(set(ROOM_SOURCE_REFERENCE.findall(code))):
+            errors.append(f"{label}: forbidden storage database dependency {reference}")
     for reference in sorted(set(PROJECT_SOURCE_REFERENCE.findall(code))):
         if reference == package:
             continue
@@ -361,7 +359,7 @@ def verify_package_dependencies(name, package, text, label, packages, errors):
             continue
         if reference in allowed_references or reference in LEGACY_MODEL_TYPES and MODEL_MODULE in allowed_modules:
             continue
-        if name == ":lyrics" and reference_matches(relative, "core.lyricon") and reference.startswith((
+        if name == ":lyrics" and reference_matches(relative, "lyrics.lyricon") and reference.startswith((
             "io.github.proify.lyricon.", "com.hchen.superlyricapi."
         )):
             continue
@@ -478,10 +476,6 @@ def verify(root):
                           if package[1] == prefix or package[1].startswith(prefix + ".")]
                 source_type = f"{package[1]}.{source.stem}"
                 owner = SOURCE_OWNERS.get(source_type)
-                for declaration in TYPE_DECLARATION.findall(text):
-                    type_owner = TYPE_OWNERS.get(f"{package[1]}.{declaration}")
-                    if type_owner is not None:
-                        owner = type_owner
                 if owner is None and owners:
                     _, owner = max(owners, key=lambda item: len(item[0]))
                 if owner is not None:

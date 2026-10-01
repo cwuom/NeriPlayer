@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.core.player.source
  */
 
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliSongAlbum
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliSongAlbum
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 

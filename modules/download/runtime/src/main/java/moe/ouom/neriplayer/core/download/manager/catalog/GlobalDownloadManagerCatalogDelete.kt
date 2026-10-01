@@ -4,12 +4,12 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadStage
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedDownloadSongDeletePlan
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadSongDeletePlan
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.downloadedSongPlaybackReferenceCandidates
-import moe.ouom.neriplayer.core.download.matchesDownloadedSongCatalogEntry
-import moe.ouom.neriplayer.core.download.mergeManagedRequestedReferences
-import moe.ouom.neriplayer.core.download.resolveDownloadedSongPlaybackReference
+import moe.ouom.neriplayer.core.download.catalog.downloadedSongPlaybackReferenceCandidates
+import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSongCatalogEntry
+import moe.ouom.neriplayer.core.download.cleanup.mergeManagedRequestedReferences
+import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutationForStableKeys
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrentForStableKeys
@@ -77,7 +77,7 @@ import moe.ouom.neriplayer.core.download.manager.batch.beginBatchDownloadPresent
 import moe.ouom.neriplayer.core.download.manager.batch.bindBatchDownloadPresentationAttempts
 import moe.ouom.neriplayer.core.download.execution.clear.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.playback.isReadableManagedAudioPlaybackAllowed
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport

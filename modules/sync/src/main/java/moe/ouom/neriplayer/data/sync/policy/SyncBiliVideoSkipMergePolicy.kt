@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncBiliVideoSkipInterval
 import moe.ouom.neriplayer.data.model.sync.SyncBiliVideoSkipRule
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
 import moe.ouom.neriplayer.data.model.bilibili.skip.MAX_BILI_VIDEO_SKIP_RULES
-import moe.ouom.neriplayer.data.platform.bili.skip.policy.normalizeBiliVideoSkipIntervals
+import moe.ouom.neriplayer.platform.bilibili.skip.policy.normalizeBiliVideoSkipIntervals
 
 object SyncBiliVideoSkipMergePolicy {
     fun sanitize(rules: Iterable<SyncBiliVideoSkipRule>): List<SyncBiliVideoSkipRule> {

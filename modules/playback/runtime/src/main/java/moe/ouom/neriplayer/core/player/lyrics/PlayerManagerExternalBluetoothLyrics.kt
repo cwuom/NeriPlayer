@@ -7,7 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
@@ -17,9 +17,9 @@ import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPay
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
-import moe.ouom.neriplayer.data.settings.lyrics.resolveEffectiveLyricOffsetMs
+import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
-import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 
 internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     externalBluetoothLyricsLoadJob?.cancel()

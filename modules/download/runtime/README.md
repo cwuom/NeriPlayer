@@ -1,21 +1,32 @@
-# 📥 下载执行与存储
+# 下载执行 / Download runtime
 
-`:download:runtime` 负责下载传输、Room 执行队列、批次与启动恢复、受管音频与侧载文件、目录迁移，以及 WorkManager 和 JobScheduler 接入。Worker 和 JobService 保留原有完整类名，以兼容已持久化的任务和系统入口
+`:download:runtime` 负责下载传输、Room 队列、受管文件、目录迁移和恢复，以及 WorkManager 与 JobScheduler 接入。
 
-下载准入、状态迁移、重试、传输槽位、所有权和元数据编解码规则位于 `:download:logic`；跨模块数据契约位于 `:model`。本模块通过 `host` 接口使用来源服务、凭据、歌词、流量、启动门控和播放能力，应用在 `core/integration/download` 安装完整接口集合后再启动下载
+`:download:runtime` owns transfers, Room queues, managed files, directory migration and recovery, and WorkManager/JobScheduler integration.
 
-模块不引用应用容器或播放器实现。共享 HTTP Range 能力位于 `:network`，平台响应解析和歌词来源位于 `:platform`，歌词解析位于 `:lyrics`。新增下载生产代码应放入本模块的职责子包或已有规则模块，`app/core/download` 和 `app/core/player/download` 由结构门禁禁止回流
+## 结构 / Layout
 
-界面通过 `presentation/progress` 查询执行进度，通过 `storage/migration/access` 读取迁移检查点。`integration/legacy` 提供旧数据交接所需的标记和维护操作；Room 执行存储与检查点写入器保持内部可见，调用方不直接操作这些实现
+主要入口是 [GlobalDownloadManager](src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt) 和 [ManagedDownloadStorage](src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt)。下载规则来自 `:download:logic`，来源、网络、歌词和存储接入使用 `:platform`、`:network`、`:lyrics`、`:database` 与 `:local`。
+
+The main entry points are [GlobalDownloadManager](src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt) and [ManagedDownloadStorage](src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt). Rules come from `:download:logic`; sources, networking, lyrics, and storage use `:platform`, `:network`, `:lyrics`, `:database`, and `:local`.
+
+app 在 `core/integration/download` 通过 `DownloadHosts.install(DownloadHostBindings(...))` 安装宿主接口后再启动下载。
+
+The app installs host interfaces through `DownloadHosts.install(DownloadHostBindings(...))` in `core/integration/download` before starting downloads.
+
+## 兼容 / Compatibility
+
+[后台 Worker](src/main/java/moe/ouom/neriplayer/core/download/execution/worker)、[ManagedDownloadMigrationWorker](src/main/java/moe/ouom/neriplayer/core/download/storage/migration/ManagedDownloadMigrationWorker.kt) 和 [Manifest](src/main/AndroidManifest.xml) 中的 `UidtDownloadJobService` 须保持完整类名兼容，以保留已持久化任务和系统入口。
+
+[Background Workers](src/main/java/moe/ouom/neriplayer/core/download/execution/worker), [ManagedDownloadMigrationWorker](src/main/java/moe/ouom/neriplayer/core/download/storage/migration/ManagedDownloadMigrationWorker.kt), and `UidtDownloadJobService` in the [Manifest](src/main/AndroidManifest.xml) must retain compatible fully qualified names for persisted jobs and system entry points.
+
+## 测试 / Tests
+
+在仓库根目录运行，设备测试使用 Android 模拟器。JVM 测试不能替代实际 Provider 的读写、权限丢失和进程恢复验证。
+
+Run from the repository root with an Android emulator for device tests. JVM tests do not replace actual Provider checks for I/O, permission loss, and process recovery.
 
 ```bash
-./gradlew :download:runtime:testDebugUnitTest
-./gradlew :download:logic:verifyCrap :download:runtime:verifyCrap
-./gradlew :download:runtime:lintDebug
+./gradlew :download:runtime:verifyCrap :download:runtime:lintDebug
+./gradlew :app:verifyDomainDependencies :app:connectedDebugAndroidTest
 ```
-
-JVM 测试随实现放在 `src/test`，共享源码契约工具使用 `:common` 的 test fixtures。应用及 Provider 集成测试保留在 app，仅 JVM 和设备测试编译通过 Kotlin friend paths 访问下载内部状态，业务代码仍使用公开接口。JVM 覆盖率不能替代设备上的文件与恢复行为验证
-
-`verifyCrap` 和 `check` 使用共享范围与真实 JaCoCo 执行数据。原有方法选择器继续有效，宿主接口、请求代次、通知刷新、任务编号、重试截止时间和单项异常隔离按职责目录整文件受检，app 的下载宿主实现由聚合门禁整目录检查，新文件自动纳入；范围内任意方法分数大于 9 会使 Android CI 失败。报告位于 `build/reports/crap`
-
-模块结构和质量约束见仓库根目录 [README](../../../README.md#模块结构) 与 [质量工具说明](../../../tools_pub/quality/README.md)

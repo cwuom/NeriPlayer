@@ -33,7 +33,7 @@ import moe.ouom.neriplayer.core.player.usb.device.matchesUsbExclusiveDeviceKey
 import moe.ouom.neriplayer.data.model.settings.usb.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.usb.toUsbExclusivePreferences
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.util.concurrent.atomic.AtomicBoolean
 
 object UsbExclusiveDiagnostics {

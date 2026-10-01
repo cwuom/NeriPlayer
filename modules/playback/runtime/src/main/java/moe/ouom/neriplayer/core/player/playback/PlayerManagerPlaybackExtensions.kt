@@ -19,11 +19,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.LocalPlaylistPlaybackSource
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
@@ -95,8 +95,8 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.api.youtube.transport.youtubeMusicThumbnailUrl
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.data.ltw.playback.shouldShowListenTogetherPreviewClipNotice
 import moe.ouom.neriplayer.core.player.host.PlayerFeedback
 import kotlin.time.Duration.Companion.milliseconds

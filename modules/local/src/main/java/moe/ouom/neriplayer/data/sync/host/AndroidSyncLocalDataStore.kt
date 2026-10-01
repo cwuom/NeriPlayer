@@ -4,7 +4,7 @@ import android.content.Context
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.sync.SyncData
-import moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepositoryProvider
+import moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryProvider
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataApplier
 import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataStore
 import moe.ouom.neriplayer.data.sync.sanitize.SyncDataSanitizer
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 internal class AndroidSyncLocalDataStore(
     private val appContext: Context,

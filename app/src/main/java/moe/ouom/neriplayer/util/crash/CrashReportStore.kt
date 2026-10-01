@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.util.crash
 import android.content.Context
 import android.net.Uri
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
 import java.io.FileOutputStream
 

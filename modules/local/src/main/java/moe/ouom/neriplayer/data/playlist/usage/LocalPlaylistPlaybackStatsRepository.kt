@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.data.model.stats.resolvePlaybackStatsTimeRange
@@ -27,7 +27,7 @@ import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePoli
 import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackBucket
 import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
 import java.util.UUID
 

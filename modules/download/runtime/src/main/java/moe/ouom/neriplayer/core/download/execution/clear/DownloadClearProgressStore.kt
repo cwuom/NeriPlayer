@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.execution.clear
 import android.content.Context
 import androidx.core.content.edit
 import moe.ouom.neriplayer.core.download.admission.DownloadClearVisibility
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 /** 保存清空阶段的轻量进度，进程被回收后可继续展示和收敛 */
 internal object PersistentDownloadClearProgressStore {

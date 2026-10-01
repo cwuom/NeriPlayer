@@ -2,12 +2,12 @@ package moe.ouom.neriplayer.ui.component.lyrics
 
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.lyrics.WordTiming
-import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries
-import moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto
-import moe.ouom.neriplayer.core.lyrics.parseTtmlLyrics
-import moe.ouom.neriplayer.core.lyrics.resolveLyricsEditorInitialText
-import moe.ouom.neriplayer.core.lyrics.resolvePreferredLyricContent
-import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.parseTtmlLyrics
+import moe.ouom.neriplayer.lyrics.parser.resolveLyricsEditorInitialText
+import moe.ouom.neriplayer.lyrics.parser.resolvePreferredLyricContent
+import moe.ouom.neriplayer.lyrics.parser.toEditableLyricsText
 
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine

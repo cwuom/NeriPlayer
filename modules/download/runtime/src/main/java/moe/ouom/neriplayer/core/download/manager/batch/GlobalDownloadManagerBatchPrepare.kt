@@ -4,10 +4,10 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.PreExistingDownloadedAudioAction
+import moe.ouom.neriplayer.core.download.policy.PreExistingDownloadedAudioAction
 import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.resolvePreExistingDownloadedAudioAction
-import moe.ouom.neriplayer.core.download.shouldDeferQueuedDownloadStartForNetwork
+import moe.ouom.neriplayer.core.download.policy.resolvePreExistingDownloadedAudioAction
+import moe.ouom.neriplayer.core.download.policy.shouldDeferQueuedDownloadStartForNetwork
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutationForStableKeys
 import moe.ouom.neriplayer.core.download.manager.admission.awaitDownloadAdmissionTicketForStableKeys
@@ -51,13 +51,13 @@ import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutation
 import moe.ouom.neriplayer.core.download.execution.worker.ForegroundDownloadWorker
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.core.player.download.network.resolveDownloadDispatchWindow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
-import moe.ouom.neriplayer.util.time.elapsedMillisSince
+import moe.ouom.neriplayer.common.time.elapsedMillisSince
 
 
 internal fun GlobalDownloadManager.startBatchDownload(

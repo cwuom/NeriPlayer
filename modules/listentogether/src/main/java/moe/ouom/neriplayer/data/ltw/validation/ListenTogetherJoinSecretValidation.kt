@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.ltw.validation
 
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 const val LISTEN_TOGETHER_JOIN_SECRET_MAX_LENGTH = 256
 

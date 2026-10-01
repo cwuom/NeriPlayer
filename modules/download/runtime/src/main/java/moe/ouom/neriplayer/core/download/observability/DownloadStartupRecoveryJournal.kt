@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.observability
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 /**
  * 记录跨进程的启动边界，仅用于诊断和恢复现场，不替代 Room 下载队列

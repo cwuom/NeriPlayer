@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
-import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseSearchPlaylists
-import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseSearchSongs
-import moe.ouom.neriplayer.util.json.mapObjectsNotNull
+import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseSearchPlaylists
+import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseSearchSongs
+import moe.ouom.neriplayer.common.json.mapObjectsNotNull
 import org.json.JSONObject
 
 internal data class ParsedNeteaseSearchResult(

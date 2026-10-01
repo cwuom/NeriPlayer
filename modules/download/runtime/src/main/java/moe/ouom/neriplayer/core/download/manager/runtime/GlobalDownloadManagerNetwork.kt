@@ -5,13 +5,13 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.PendingDownloadRecoveryCandidate
-import moe.ouom.neriplayer.core.download.hasWifiBoundNetworkPolicyDownloads
-import moe.ouom.neriplayer.core.download.isMobileDataDownloadInterruptionSnapshotCurrent
-import moe.ouom.neriplayer.core.download.resolveMobileDataDownloadInterruptionTaskCount
-import moe.ouom.neriplayer.core.download.shouldDeferPendingDownloadRecoveryForNetwork
-import moe.ouom.neriplayer.core.download.shouldDeferQueuedDownloadStartForNetwork
-import moe.ouom.neriplayer.core.download.shouldPauseDownloadForWifiDisconnect
+import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoveryCandidate
+import moe.ouom.neriplayer.core.download.policy.hasWifiBoundNetworkPolicyDownloads
+import moe.ouom.neriplayer.core.download.policy.isMobileDataDownloadInterruptionSnapshotCurrent
+import moe.ouom.neriplayer.core.download.policy.resolveMobileDataDownloadInterruptionTaskCount
+import moe.ouom.neriplayer.core.download.policy.shouldDeferPendingDownloadRecoveryForNetwork
+import moe.ouom.neriplayer.core.download.policy.shouldDeferQueuedDownloadStartForNetwork
+import moe.ouom.neriplayer.core.download.policy.shouldPauseDownloadForWifiDisconnect
 import moe.ouom.neriplayer.core.download.manager.admission.admitArtifactRecoveryMutation
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.dismissMobileDataDownloadInterruptionRequest
@@ -38,7 +38,7 @@ import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.worker.WifiBoundDownloadWakeWorker
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey

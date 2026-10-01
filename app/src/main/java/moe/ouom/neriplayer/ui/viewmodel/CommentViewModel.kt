@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.comment.CommentApiException
+import moe.ouom.neriplayer.platform.comments.CommentApiException
 import moe.ouom.neriplayer.data.model.comments.COMMENT_PAGE_SIZE
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
@@ -23,11 +23,11 @@ import moe.ouom.neriplayer.data.model.comments.CommentSort
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.data.model.comments.commentLengthLimit
 import moe.ouom.neriplayer.data.model.comments.SongComment
-import moe.ouom.neriplayer.core.comment.repository.CommentRepository
+import moe.ouom.neriplayer.platform.comments.repository.CommentRepository
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.collections.mergeDistinctBy
-import moe.ouom.neriplayer.util.concurrent.RequestGeneration
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.collections.mergeDistinctBy
+import moe.ouom.neriplayer.common.concurrent.RequestGeneration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**

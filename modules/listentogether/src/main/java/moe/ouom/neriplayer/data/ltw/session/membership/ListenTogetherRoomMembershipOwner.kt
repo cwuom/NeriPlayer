@@ -14,7 +14,7 @@ import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherMembershipCreden
 import moe.ouom.neriplayer.data.ltw.session.state.normalized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.api.ltw.ws.redactListenTogetherWsUrlForLog
 import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherInitialSnapshot

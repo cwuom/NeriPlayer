@@ -36,7 +36,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_M
 import moe.ouom.neriplayer.core.download.execution.state.isPostCoreDownloadOperationState
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey

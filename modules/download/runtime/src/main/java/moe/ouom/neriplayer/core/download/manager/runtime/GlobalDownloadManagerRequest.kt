@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadStage
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
-import moe.ouom.neriplayer.core.download.shouldDeferDownloadExecutionForNetwork
+import moe.ouom.neriplayer.core.download.policy.shouldDeferDownloadExecutionForNetwork
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.awaitDownloadAdmissionTicket
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
@@ -55,7 +55,7 @@ import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRE
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.execution.retry.ARTIFACT_LEASE_CONTENDED_ERROR_CODE
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey

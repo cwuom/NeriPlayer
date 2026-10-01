@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.sync.SyncSystemPlaylist
 import moe.ouom.neriplayer.data.sync.sanitize.SyncSanitizationHost
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 internal class AndroidSyncSanitizationHost(private val context: Context) : SyncSanitizationHost {
     override val localFilesPlaylistId = LocalFilesPlaylist.SYSTEM_ID

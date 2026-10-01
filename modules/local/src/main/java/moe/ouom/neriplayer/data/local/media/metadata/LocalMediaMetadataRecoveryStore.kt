@@ -14,8 +14,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.io.ManagedDownloadAtomicFile
+import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File

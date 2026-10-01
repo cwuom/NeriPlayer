@@ -27,7 +27,7 @@ import android.content.Context
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 // 设置文件损坏 (断电/杀进程导致 pb 截断) 时回退为空偏好 (各项走默认值)
 // 避免 dataStore.data 持续抛 CorruptionException 使主界面陷入崩溃-重启循环

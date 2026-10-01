@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.core.download.storage.snapshot
 
 import android.content.Context
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.IOException
 
 /** Compatibility adapter for code that still names the old Room store. */

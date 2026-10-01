@@ -26,7 +26,7 @@ def load_domains(path):
             "name", "package", "allowed_classes", "bridges", "descriptor_only"
         }
         if (not isinstance(domain, dict) or not required_fields.issubset(domain)
-                or set(domain) - required_fields - {"excluded_classes"}):
+                or set(domain) - required_fields - {"excluded_classes", "excluded_packages"}):
             raise ValueError("Invalid domain fields")
         name, package = domain["name"], domain["package"]
         if not isinstance(name, str) or not name or name in names:
@@ -41,6 +41,13 @@ def load_domains(path):
             for owner in excluded
         ) or len(set(excluded)) != len(excluded):
             raise ValueError(f"{name}: invalid excluded classes")
+        excluded_packages = domain.get("excluded_packages", [])
+        if not isinstance(excluded_packages, list) or not all(
+            isinstance(prefix, str) and prefix.startswith(package) and prefix != package
+            and re.fullmatch(r"(?:[a-zA-Z_]\w*\.)+", prefix)
+            for prefix in excluded_packages
+        ) or len(set(excluded_packages)) != len(excluded_packages):
+            raise ValueError(f"{name}: invalid excluded packages")
         allowed, bridges = domain["allowed_classes"], domain["bridges"]
         if not isinstance(allowed, list) or not all(isinstance(x, str) and x for x in allowed):
             raise ValueError(f"{name}: invalid allowed classes")
@@ -54,6 +61,11 @@ def load_domains(path):
             for owner, members in bridges.items()
         ):
             raise ValueError(f"{name}: invalid bridge members")
+    protected_packages = {domain["package"] for domain in domains}
+    for domain in domains:
+        for prefix in domain.get("excluded_packages", []):
+            if prefix not in protected_packages:
+                raise ValueError(f"{domain['name']}: excluded package has no protected domain: {prefix}")
     return domains
 
 
@@ -87,6 +99,7 @@ def select_domains(classes, domains):
             name for name in classes
             if name.startswith(domain["package"])
             and not any(name == owner or name.startswith(owner + "$") for owner in excluded)
+            and not any(name.startswith(prefix) for prefix in domain.get("excluded_packages", []))
         }
         if not matches:
             raise ValueError(f"{domain['name']}: no compiled classes in protected package")

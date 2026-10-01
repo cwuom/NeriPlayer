@@ -27,7 +27,7 @@ package moe.ouom.neriplayer.data.sync.webdav
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.host.createWebDavSyncBackend
@@ -36,7 +36,7 @@ import moe.ouom.neriplayer.data.sync.host.AndroidSyncLocalDataStore
 import moe.ouom.neriplayer.data.sync.host.AndroidSyncMergeHost
 import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
 import moe.ouom.neriplayer.data.sync.runtime.SyncSession
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 
 class WebDavSyncManager private constructor(context: Context) {
     private val appContext = context.applicationContext

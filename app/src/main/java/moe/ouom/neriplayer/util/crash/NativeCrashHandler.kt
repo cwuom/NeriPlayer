@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.util.crash
 import android.content.Context
 import android.os.Build
 import moe.ouom.neriplayer.BuildConfig
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 object NativeCrashHandler {
     private const val TAG = "NativeCrashHandler"

@@ -25,9 +25,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliSponsorBlockTarget
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.resolveBiliSong
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.storage.PlayerLocalPlaybackResolution as LocalPlaybackReferenceResolution
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
@@ -58,7 +58,7 @@ import moe.ouom.neriplayer.core.player.prefetch.consumeGenericUrlPrefetch
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
-import moe.ouom.neriplayer.api.netease.playback.parser.NeteasePlaybackResponseParser
+import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAutoBiliSource
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseMatchedLocalSource
 import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidates
@@ -68,9 +68,9 @@ import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.data.identity.recoverNeteaseRemoteSourceFromStaleLocalCopy
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.ltw.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
@@ -78,7 +78,7 @@ import moe.ouom.neriplayer.core.player.ltw.toListenTogetherTrackOrNull
 import moe.ouom.neriplayer.data.ltw.mapping.trustedListenTogetherStreamUrls
 import moe.ouom.neriplayer.data.ltw.playback.shouldPreferListenTogetherSourceBeforeNeteaseFallback
 import moe.ouom.neriplayer.data.ltw.playback.shouldSuppressListenTogetherResolverError
-import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
+import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 

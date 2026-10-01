@@ -21,11 +21,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommand
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.ltw.control.ListenTogetherEventFactory
 import moe.ouom.neriplayer.data.ltw.control.controlledPlaybackCommandTypes
 import moe.ouom.neriplayer.data.ltw.control.nextListenTogetherEventId
@@ -93,8 +93,8 @@ import moe.ouom.neriplayer.data.ltw.session.membership.resolveListenTogetherSess
 import moe.ouom.neriplayer.data.ltw.session.state.shouldApplyListenTogetherRoomStateToPlayer
 import moe.ouom.neriplayer.data.ltw.session.state.prepareListenTogetherSessionUpdate
 import moe.ouom.neriplayer.data.ltw.validation.requireValidListenTogetherRoomId
-import moe.ouom.neriplayer.util.units.MINUTE_MS
-import moe.ouom.neriplayer.util.units.SECOND_MS
+import moe.ouom.neriplayer.common.units.MINUTE_MS
+import moe.ouom.neriplayer.common.units.SECOND_MS
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 

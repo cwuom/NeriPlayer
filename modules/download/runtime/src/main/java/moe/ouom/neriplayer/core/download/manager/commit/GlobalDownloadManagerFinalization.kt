@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.core.download.manager.commit
 
 import moe.ouom.neriplayer.data.identity.stableKey
 
-import moe.ouom.neriplayer.core.download.CompletedDownloadFinalizationAction
+import moe.ouom.neriplayer.core.download.policy.CompletedDownloadFinalizationAction
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.resolveCompletedDownloadFinalizationAction
+import moe.ouom.neriplayer.core.download.policy.resolveCompletedDownloadFinalizationAction
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.admission.openDownloadAdmissionTicketOrNull
@@ -23,7 +23,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey

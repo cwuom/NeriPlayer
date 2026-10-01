@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.player.service.artwork
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal class PlaybackCoverSourceResolver(private val sources: PlaybackCoverSources) {

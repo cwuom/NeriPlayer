@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.sync.host
 
 import android.content.Context
 import androidx.annotation.StringRes
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.sync.merge.host.SyncMergeHost

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.audio.output
 
 import moe.ouom.neriplayer.core.player.host.settingsRepo
-import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences

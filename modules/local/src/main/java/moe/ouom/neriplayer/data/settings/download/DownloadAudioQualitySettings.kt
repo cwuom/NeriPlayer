@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.data.settings.setAutoSetting
 import moe.ouom.neriplayer.data.settings.valueOf
 import android.content.Context
 import kotlinx.coroutines.flow.first
-import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
+import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
 
 internal const val DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY = "exhigh"
 internal const val DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY = "high"

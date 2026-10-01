@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.ltw.session.control.shouldDropListenTogetherCont
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.ltw.control.buildListenTogetherForwardedControlSyntheticState
 import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause
 import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherEvent

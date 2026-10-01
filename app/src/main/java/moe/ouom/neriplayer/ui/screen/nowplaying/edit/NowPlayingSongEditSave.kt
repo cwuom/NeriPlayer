@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.edit
 
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal interface EditSongSaveSteps {

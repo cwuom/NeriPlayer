@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.audio.wake
 
 import android.content.Context
 import android.os.PowerManager
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.wake.PLAYBACK_TRANSITION_WAKE_LOCK_LEASE_MS
 import moe.ouom.neriplayer.core.player.policy.wake.shouldReleasePlaybackTransitionWakeLock
 

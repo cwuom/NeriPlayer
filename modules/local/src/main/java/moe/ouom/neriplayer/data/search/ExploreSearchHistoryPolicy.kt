@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.search
 
-import moe.ouom.neriplayer.util.search.SearchTextMatcher
+import moe.ouom.neriplayer.common.search.SearchTextMatcher
 
 internal const val DEFAULT_EXPLORE_SEARCH_HISTORY_LIMIT = 15
 

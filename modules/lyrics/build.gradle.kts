@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "moe.ouom.neriplayer.core.lyrics"
+    namespace = "moe.ouom.neriplayer.lyrics"
     defaultConfig.consumerProguardFiles("consumer-rules.pro")
 }
 

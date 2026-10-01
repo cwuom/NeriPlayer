@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.local.media.source
 
 import android.content.Context
 import java.io.File
-import moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName
+import moe.ouom.neriplayer.data.model.download.naming.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.download.DownloadLibraryEntry
 import moe.ouom.neriplayer.data.model.download.DownloadLibrarySnapshot

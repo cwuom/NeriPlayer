@@ -36,7 +36,7 @@ import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
 import moe.ouom.neriplayer.data.model.download.storage.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.backend.cleanupTerminalTemporaryWrites
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
 import java.util.UUID
 import org.json.JSONObject

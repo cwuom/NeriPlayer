@@ -28,8 +28,8 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
-import moe.ouom.neriplayer.util.media.NERI_ROMANIZED_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.lyrics.embedded.NERI_ORIGINAL_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.lyrics.embedded.NERI_ROMANIZED_LYRICS_METADATA_KEY
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows

@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.sync.work
 import android.content.Context
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
 import moe.ouom.neriplayer.data.sync.host.SyncPlaybackActivity

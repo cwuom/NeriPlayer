@@ -1,22 +1,33 @@
-# 📚 本地媒体与应用数据
+# 本地数据 / Local data
 
-`:local` 维护本地歌单与媒体、导入和侧载元数据、设置持久化、历史与统计、备份、流量、身份和应用数据编排。平台账号与缓存能力由 `:platform` 提供，数据库 schema 和 DAO 归 `:database`。
+`:local` 管理本地媒体、歌单、设置、历史、统计、备份、存储占用和缓存清理，并接入 GitHub/WebDAV 同步。
 
-源码保留 `data` 包名，按具体职责细分目录。共享契约来自 `:model`，文件能力来自 `:storage`，平台接入来自 `:platform`；模块同时使用下载基础、`:lyrics`、网络和一起听能力，不依赖播放器运行库或 app。
+`:local` manages local media, playlists, settings, history, statistics, backups, storage usage, cache cleanup, and GitHub/WebDAV sync integration.
 
-同步的 Android 宿主、歌曲与歌单映射、封面持久化、通知和 WorkManager 适配位于 `data/sync/host`、`mapping`、`cover`、`work`，通过 `:sync` 的接口连接会话。Worker 类全名、存储文件名和键名属于升级兼容边界。
+## 结构 / Layout
 
-设置 schema 在本库运行 KSP，Compose 设置渲染留在 app。歌词设置只维护读取与持久化，默认值选择、归一化与有效时间偏移计算由 `:lyrics` 共用。
+源码位于 `src/main/java/moe/ouom/neriplayer/data`。
 
-Room 执行存储、持久化实体和运行私有状态不作为业务调用接口；消费者使用映射、快照与宿主端口。新增生产代码不得回流 app 的 `data` 目录。
+Sources are in `src/main/java/moe/ouom/neriplayer/data`.
 
-`verifyCrap` 检查本库共享范围，`verifySyncIntegrationCrap` 独立检查整个同步 Android 适配目录，两者阈值均为任意受检方法大于 9 即失败。
+- `local`：媒体、导入与歌单 / media, imports, and playlists
+- `local/storage`：占用统计、扫描与清理 / storage accounting, scans, and cleanup
+- `settings`、`config`：设置与配置，KSP 在本库运行 / settings and configuration, with KSP run in this library
+- `history`、`stats`、`playlist`：历史与使用统计 / history and usage statistics
+- `backup`、`identity`、`traffic`：备份、歌曲身份与流量 / backups, song identity, and traffic
+- `sync`：本地仓库、封面与 WorkManager 适配 / local repository, cover, and WorkManager adapters
 
-## 🧪 验证
+Room 数据由 `:database` 保存，平台账号和缓存由 `:platform` 管理，同步会话由 `:sync` 执行。界面与播放器通过仓库和宿主接口访问本库。
+
+`:database` persists Room data, `:platform` manages platform accounts and caches, and `:sync` runs sync sessions. UI and playback access this library through repositories and host interfaces.
+
+缓存清理保留已下载的音频、歌词和封面。`ExtraCacheClearResult` 区分文件释放空间与 Room 可复用空间；删除记录不会立即缩小数据库文件。已有目录、索引文件名及同步 Worker 类名需保持升级兼容。
+
+Cache cleanup preserves downloaded audio, lyrics, and covers. `ExtraCacheClearResult` distinguishes freed file bytes from reusable Room space; deleting records does not immediately shrink the database file. Existing directories, index filenames, and sync Worker class names must remain compatible across upgrades.
+
+## 测试 / Tests
 
 ```bash
-./gradlew :local:verifyCrap :local:lintDebug
+./gradlew :local:testDebugUnitTest :local:verifyCrap :local:lintDebug
 ./gradlew :local:verifySyncIntegrationCrap
 ```
-
-完整模块索引、源码容量与依赖约束见仓库根目录 [README](../../README.md#模块结构)，共享门禁见 [质量工具说明](../../tools_pub/quality/README.md)。

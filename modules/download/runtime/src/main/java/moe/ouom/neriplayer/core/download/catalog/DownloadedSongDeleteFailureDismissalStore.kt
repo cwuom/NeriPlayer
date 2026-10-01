@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
 import androidx.core.content.edit
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal object DownloadedSongDeleteFailureDismissalStore {
     private const val TAG = "DownloadedSongDeleteFailureDismissal"

@@ -29,10 +29,10 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.util.units.day
-import moe.ouom.neriplayer.util.units.hour
-import moe.ouom.neriplayer.util.units.minute
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.units.day
+import moe.ouom.neriplayer.common.units.hour
+import moe.ouom.neriplayer.common.units.minute
 
 /** 兼容性：统一走生命周期感知收集，避免设置页后台继续订阅 */
 @Composable

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.biliQualityLabelRes
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.neteaseQualityLabelRes
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.youtubeQualityLabelRes

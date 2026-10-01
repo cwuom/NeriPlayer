@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource

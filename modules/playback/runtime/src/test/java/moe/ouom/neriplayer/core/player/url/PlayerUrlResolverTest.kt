@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player.url
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
-import moe.ouom.neriplayer.api.netease.playback.parser.NeteasePlaybackResponseParser
+import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

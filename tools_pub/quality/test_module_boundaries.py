@@ -76,6 +76,51 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.module(":local", ":platform")
         self.assertEqual([], verify(self.root))
 
+    def test_local_storage_calculations_cannot_read_repositories_or_room(self):
+        self.module(":local")
+        for family in ("accounting", "source", "scan", "cleanup", "policy"):
+            directory = self.root / f"modules/local/src/main/java/moe/ouom/neriplayer/data/local/storage/{family}"
+            directory.mkdir(parents=True)
+            (directory / "Future.kt").write_text(
+                f"package moe.ouom.neriplayer.data.local.storage.{family}\n"
+                "class Future(val database: moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase)\n"
+            )
+        errors = verify(self.root)
+        self.assertEqual(5, sum("forbidden package dependency" in error for error in errors), errors)
+
+    def test_local_storage_scanner_can_use_models_and_storage_ports(self):
+        self.module(":local")
+        directory = self.root / "modules/local/src/main/java/moe/ouom/neriplayer/data/local/storage/scan"
+        directory.mkdir(parents=True)
+        (directory / "Future.kt").write_text(
+            "package moe.ouom.neriplayer.data.local.storage.scan\n"
+            "import moe.ouom.neriplayer.data.model.storage.FileStats\n"
+            "import moe.ouom.neriplayer.data.local.storage.source.StorageUsageSource\n"
+            "class Future\n"
+        )
+        self.assertEqual([], verify(self.root))
+
+    def test_local_storage_calculations_cannot_import_room(self):
+        self.platform_source("data/local/storage/accounting", (
+            "import androidx.room.RoomDatabase\nclass Future(val database: RoomDatabase)"
+        ), module=":local")
+        self.assertTrue(any("forbidden storage database dependency" in error
+                            for error in verify(self.root)))
+
+    def test_local_storage_calculations_cannot_use_fully_qualified_room(self):
+        self.platform_source("data/local/storage/scan", (
+            "class Future(val database: androidx.room.RoomDatabase)"
+        ), module=":local")
+        self.assertTrue(any("forbidden storage database dependency" in error
+                            for error in verify(self.root)))
+
+    def test_local_storage_calculations_cannot_import_room_with_a_wildcard(self):
+        self.platform_source("data/local/storage/accounting", (
+            "import androidx.room.*\nclass Future(val database: RoomDatabase)"
+        ), module=":local")
+        self.assertTrue(any("forbidden storage database dependency" in error
+                            for error in verify(self.root)))
+
     def test_accepts_only_named_legacy_parcelable_imports(self):
         self.module(":model", source=(
             "package sample\n"
@@ -216,7 +261,7 @@ class ModuleBoundariesTest(unittest.TestCase):
     def test_rejects_production_sources_in_migrated_app_packages(self):
         self.module(":model")
         for language in ("java", "kotlin"):
-            for family in ("core/api/search", "core/api/lyrics", "core/lyrics", "data/sync/merge"):
+            for family in ("core/api/search", "core/api/lyrics", "lyrics/parser", "data/sync/merge"):
                 package = "moe/ouom/neriplayer/" + family + "/nested"
                 directory = self.root / "app/src/main" / language / package
                 directory.mkdir(parents=True)
@@ -286,8 +331,8 @@ class ModuleBoundariesTest(unittest.TestCase):
     def test_platform_authentication_stays_with_platform_data(self):
         self.module(":local")
         self.module(":platform")
-        for family in ("auth/netease", "auth/bili", "youtube/auth"):
-            package = "moe/ouom/neriplayer/data/" + family
+        for family in ("netease/auth", "bilibili/auth", "youtube/auth"):
+            package = "moe/ouom/neriplayer/platform/" + family
             directory = self.root / "modules/local/src/main/java" / package
             directory.mkdir(parents=True)
             (directory / "MisplacedAuth.kt").write_text(
@@ -589,10 +634,10 @@ class ModuleBoundariesTest(unittest.TestCase):
 
     def test_api_client_requires_platform_module(self):
         self.module(":local")
-        directory = self.root / "modules/local/src/main/java/moe/ouom/neriplayer/api/bilibili/client"
+        directory = self.root / "modules/local/src/main/java/moe/ouom/neriplayer/platform/bilibili/api/client"
         directory.mkdir(parents=True)
         (directory / "BiliClient.kt").write_text(
-            "package moe.ouom.neriplayer.api.bilibili.client\nclass BiliClient\n"
+            "package moe.ouom.neriplayer.platform.bilibili.api.client\nclass BiliClient\n"
         )
         self.assertTrue(any("package belongs to :platform" in error for error in verify(self.root)))
 
@@ -619,12 +664,12 @@ class ModuleBoundariesTest(unittest.TestCase):
     def test_lyric_default_offset_requires_parser_module(self):
         self.module(":local")
         self.module(":lyrics")
-        package = "moe/ouom/neriplayer/data/settings/lyrics"
+        package = "moe/ouom/neriplayer/lyrics/offset"
         directory = self.root / "modules/local/src/main/java" / package
         directory.mkdir(parents=True)
         source = directory / "LyricDefaultOffset.kt"
         source.write_text(
-            "package moe.ouom.neriplayer.data.settings.lyrics\nfun defaultOffset() = 0\n"
+            "package moe.ouom.neriplayer.lyrics.offset\nfun defaultOffset() = 0\n"
         )
         self.assertTrue(any("package belongs to :lyrics" in error for error in verify(self.root)))
         target = self.root / "modules/lyrics/src/main/java" / package
@@ -660,9 +705,9 @@ class ModuleBoundariesTest(unittest.TestCase):
     def test_merged_clients_cannot_import_account_repository_or_other_platform(self):
         self.module(":platform")
         for family, reference in (
-            ("api/bilibili/client", "data.auth.bili.BiliCookieRepository"),
-            ("api/netease/client", "data.platform.netease.NeteasePlaylistCacheRepository"),
-            ("api/youtube/client", "api.bilibili.client.BiliClient"),
+            ("platform/bilibili/api/client", "platform.bilibili.auth.BiliCookieRepository"),
+            ("platform/netease/api/client", "platform.netease.NeteasePlaylistCacheRepository"),
+            ("platform/youtube/api/client", "platform.bilibili.api.client.BiliClient"),
         ):
             directory = self.root / "modules/platform/src/main/java/moe/ouom/neriplayer" / family
             directory.mkdir(parents=True)
@@ -674,48 +719,48 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.assertEqual(3, sum("forbidden package dependency" in error for error in errors), errors)
 
     def test_merged_client_fully_qualified_reference_cannot_bypass_import_check(self):
-        self.platform_source("api/bilibili/client", (
-            "class Future(val cache: moe.ouom.neriplayer.data.platform.bili.BiliPlaylistRepository)"
+        self.platform_source("platform/bilibili/api/client", (
+            "class Future(val cache: moe.ouom.neriplayer.platform.bilibili.BiliPlaylistRepository)"
         ))
         self.assertTrue(any("forbidden package dependency" in error for error in verify(self.root)))
 
     def test_metadata_client_cannot_reach_remote_repository_or_lyric_output(self):
         self.module(":platform")
         for index, reference in enumerate((
-            "data.lyrics.repository.EditableLyricsMatcher", "core.lyricon.LyriconManager",
-            "lyrics.integration.LyriconPlaybackOutput", "data.local.database.NeriUserDataDatabase",
+            "platform.lyrics.repository.EditableLyricsMatcher", "lyrics.lyricon.LyriconManager",
+            "lyrics.output.LyriconPlaybackOutput", "data.local.database.NeriUserDataDatabase",
         )):
-            directory = self.root / "modules/platform/src/main/java/moe/ouom/neriplayer/api/lyrics/client"
+            directory = self.root / "modules/platform/src/main/java/moe/ouom/neriplayer/platform/lyrics/api/client"
             directory.mkdir(parents=True, exist_ok=True)
             (directory / f"Future{index}.kt").write_text(
-                "package moe.ouom.neriplayer.api.lyrics.client\n"
+                "package moe.ouom.neriplayer.platform.lyrics.api.client\n"
                 "import moe.ouom.neriplayer." + reference + f"\nclass Future{index}\n"
             )
         errors = verify(self.root)
         self.assertEqual(4, sum("forbidden package dependency" in error for error in errors), errors)
 
     def test_platform_repositories_cannot_cross_another_platform_repository(self):
-        self.platform_source("data/platform/bili", (
-            "import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicRepository\nclass Future"
+        self.platform_source("platform/bilibili", (
+            "import moe.ouom.neriplayer.platform.youtube.playlist.YouTubeMusicRepository\nclass Future"
         ))
         self.assertTrue(any("forbidden package dependency" in error for error in verify(self.root)))
 
     def test_lyrics_output_cannot_reach_provider_matching(self):
-        self.platform_source("lyrics/integration", (
-            "import moe.ouom.neriplayer.data.lyrics.repository.EditableLyricsMatcher\nclass Future"
+        self.platform_source("lyrics/output", (
+            "import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher\nclass Future"
         ), module=":lyrics")
         self.assertTrue(any("forbidden package dependency" in error for error in verify(self.root)))
 
     def test_provider_matching_cannot_reach_lyricon_or_superlyric_sdk(self):
         self.module(":platform")
         for index, reference in enumerate((
-            "moe.ouom.neriplayer.lyrics.integration.LyriconPlaybackOutput",
+            "moe.ouom.neriplayer.lyrics.output.LyriconPlaybackOutput",
             "io.github.proify.lyricon.provider.LyriconProvider", "com.hchen.superlyricapi.SuperLyricHelper",
         )):
-            directory = self.root / "modules/platform/src/main/java/moe/ouom/neriplayer/data/lyrics/matching"
+            directory = self.root / "modules/platform/src/main/java/moe/ouom/neriplayer/platform/lyrics/matching"
             directory.mkdir(parents=True, exist_ok=True)
             (directory / f"Future{index}.kt").write_text(
-                "package moe.ouom.neriplayer.data.lyrics.matching\n"
+                "package moe.ouom.neriplayer.platform.lyrics.matching\n"
                 f"import {reference}\nclass Future{index}\n"
             )
         errors = verify(self.root)
@@ -750,8 +795,8 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.assertEqual(len(names), len(domains))
         classes = {domain["package"] + "nested.Future" for domain in domains}
         selected = select_domains(classes, domains)
-        for target in ("moe.ouom.neriplayer.lyrics.integration.LyriconPlaybackOutput",
-                       "moe.ouom.neriplayer.core.lyricon.LyriconManager"):
+        for target in ("moe.ouom.neriplayer.lyrics.output.LyriconPlaybackOutput",
+                       "moe.ouom.neriplayer.lyrics.lyricon.LyriconManager"):
             with self.subTest(target=target):
                 _, errors = check_class_dependencies(
                     "\n".join(f"   {owner} -> {target} module" for owner in sorted(classes)), selected
@@ -779,12 +824,12 @@ class ModuleBoundariesTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         domains = {domain["name"]: domain for domain in load_domains(root / "config/quality/domain-dependencies.json")}
         for name, dependency in (
-            ("platform-bilibili-client", "data.auth.bili.BiliCookieRepository"),
-            ("platform-netease-client", "data.platform.netease.NeteasePlaylistCacheRepository"),
-            ("platform-youtube-client", "api.bilibili.client.BiliClient"),
-            ("platform-bilibili-repository", "data.platform.youtube.YouTubeMusicRepository"),
-            ("platform-netease-repository", "data.auth.bili.BiliCookieRepository"),
-            ("platform-youtube-repository", "data.platform.netease.NeteasePlaylistCacheRepository"),
+            ("platform-bilibili-client", "platform.bilibili.auth.BiliCookieRepository"),
+            ("platform-netease-client", "platform.netease.NeteasePlaylistCacheRepository"),
+            ("platform-youtube-client", "platform.bilibili.api.client.BiliClient"),
+            ("platform-bilibili-repository", "platform.youtube.playlist.YouTubeMusicRepository"),
+            ("platform-netease-repository", "platform.bilibili.auth.BiliCookieRepository"),
+            ("platform-youtube-repository", "platform.netease.NeteasePlaylistCacheRepository"),
         ):
             with self.subTest(name=name, dependency=dependency):
                 domain = domains[name]
@@ -797,13 +842,13 @@ class ModuleBoundariesTest(unittest.TestCase):
 
     def test_parser_and_shared_offset_cannot_reference_lyric_output_sdk(self):
         self.module(":lyrics")
-        for family, name in (("core/lyrics", "FutureParser"), ("data/settings/lyrics", "LyricDefaultOffset")):
+        for family, name in (("lyrics/parser", "FutureParser"), ("lyrics/offset", "LyricDefaultOffset")):
             directory = self.root / "modules/lyrics/src/main/java/moe/ouom/neriplayer" / family
             directory.mkdir(parents=True)
             (directory / f"{name}.kt").write_text(
                 "package moe.ouom.neriplayer." + family.replace("/", ".") + "\n"
                 "import io.github.proify.lyricon.provider.LyriconProvider\n"
-                "import moe.ouom.neriplayer.core.lyricon.LyriconManager\n"
+                "import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager\n"
                 f"class {name}\n"
             )
         errors = verify(self.root)
@@ -816,37 +861,37 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.assertEqual(1, len(domains))
         owner = domains[0]["package"] + "nested.Future"
         selected = select_domains({owner}, domains)
-        for dependency in ("moe.ouom.neriplayer.data.lyrics.repository.EditableLyricsMatcher",
-                           "moe.ouom.neriplayer.core.lyricon.LyriconManager",
+        for dependency in ("moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher",
+                           "moe.ouom.neriplayer.lyrics.lyricon.LyriconManager",
                            "io.github.proify.lyricon.provider.LyriconProvider"):
             with self.subTest(dependency=dependency):
                 _, errors = check_class_dependencies(f"   {owner} -> {dependency} module", selected)
                 self.assertEqual(1, len(errors), errors)
 
     def test_metadata_parser_helpers_remain_accessible_without_output(self):
-        self.platform_source("api/search/client", (
-            "import moe.ouom.neriplayer.api.netease.client.NeteaseClient\n"
-            "import moe.ouom.neriplayer.core.lyrics.normalizeLegacyLrcTimestamps\n"
+        self.platform_source("platform/search/api/client", (
+            "import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient\n"
+            "import moe.ouom.neriplayer.lyrics.parser.normalizeLegacyLrcTimestamps\n"
             "import moe.ouom.neriplayer.data.model.music.SongDetails\nclass Future"
         ))
         self.assertEqual([], verify(self.root))
 
     def test_source_guard_ignores_comments_but_keeps_qualified_code_after_url(self):
-        self.platform_source("api/bilibili/client", (
+        self.platform_source("platform/bilibili/api/client", (
             "// old location: moe.ouom.neriplayer.core.player.PlayerManager\n"
-            "/* old repository: moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository */\n"
+            "/* old repository: moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository */\n"
             'val url = "https://example.com"\nclass Future'
         ))
         self.assertEqual([], verify(self.root))
-        source = self.root / "modules/platform/src/main/java/moe/ouom/neriplayer/api/bilibili/client/Future.kt"
+        source = self.root / "modules/platform/src/main/java/moe/ouom/neriplayer/platform/bilibili/api/client/Future.kt"
         source.write_text(source.read_text() + (
-            "\nfun load() = moe.ouom.neriplayer.data.platform.bili.BiliPlaylistRepository()\n"
+            "\nfun load() = moe.ouom.neriplayer.platform.bilibili.BiliPlaylistRepository()\n"
         ))
         self.assertTrue(any("forbidden package dependency" in error for error in verify(self.root)))
 
     def test_bili_room_store_keeps_platform_boundary_after_file_rename(self):
-        self.platform_source("data/local/database/store", (
-            "import moe.ouom.neriplayer.data.platform.netease.NeteasePlaylistCacheRepository\n"
+        self.platform_source("platform/bilibili/skip/storage", (
+            "import moe.ouom.neriplayer.platform.netease.NeteasePlaylistCacheRepository\n"
             "class BiliVideoSkipRoomStore"
         ))
         self.assertTrue(any("forbidden package dependency" in error for error in verify(self.root)))

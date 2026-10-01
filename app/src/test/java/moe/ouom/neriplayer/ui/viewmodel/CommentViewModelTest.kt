@@ -13,7 +13,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import moe.ouom.neriplayer.core.comment.CommentApiException
+import moe.ouom.neriplayer.platform.comments.CommentApiException
 import moe.ouom.neriplayer.data.model.comments.COMMENT_PAGE_SIZE
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentPage
@@ -22,7 +22,7 @@ import moe.ouom.neriplayer.data.model.comments.CommentSource
 import moe.ouom.neriplayer.data.model.comments.CommentSort
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.data.model.comments.SongComment
-import moe.ouom.neriplayer.core.comment.repository.CommentRepository
+import moe.ouom.neriplayer.platform.comments.repository.CommentRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

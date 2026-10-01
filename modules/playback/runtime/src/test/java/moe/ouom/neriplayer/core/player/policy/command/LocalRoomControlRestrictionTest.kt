@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.player.presentation.command.errorResId
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test

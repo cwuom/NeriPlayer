@@ -33,9 +33,9 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.mapping.sanitizeCoverUrlForSync
 import java.util.Locale

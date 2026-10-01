@@ -101,7 +101,7 @@ internal fun DefaultDownloadExecutionHost.logTransferAdmissionRejected(
     attemptId: Long?,
     reason: String
 ) {
-    moe.ouom.neriplayer.core.logging.NPLogger.w(
+    moe.ouom.neriplayer.common.logging.NPLogger.w(
         "DownloadExecutionHost",
         "拒绝传输槽位: operationId=$operationId, attemptId=$attemptId, " +
             "reason=$reason, active=${activeTransferOwners.size}, " +
@@ -199,7 +199,7 @@ internal fun DefaultDownloadExecutionHost.rebindTransferReservationForCurrentAtt
     }
     val rebound = reservation.copy(attemptId = normalizedAttemptId)
     transferReservationOwners[operationId] = rebound
-    moe.ouom.neriplayer.core.logging.NPLogger.d(
+    moe.ouom.neriplayer.common.logging.NPLogger.d(
         "DownloadExecutionHost",
         "传输预留位跟随当前 durable attempt: operationId=$operationId, " +
             "from=${reservation.attemptId}, to=$normalizedAttemptId"

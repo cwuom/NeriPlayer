@@ -12,7 +12,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -21,12 +21,12 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapsh
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
-import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
+import moe.ouom.neriplayer.data.local.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner
 import moe.ouom.neriplayer.ui.settings.owner.AppSettingsCacheClearOwner
 import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
 import moe.ouom.neriplayer.ui.settings.owner.formatExtraCacheClearResult
-import moe.ouom.neriplayer.util.format.formatFileSize
+import moe.ouom.neriplayer.common.format.formatFileSize
 
 @Composable
 private fun rememberInitialAdvancedBlurQuality() = remember {

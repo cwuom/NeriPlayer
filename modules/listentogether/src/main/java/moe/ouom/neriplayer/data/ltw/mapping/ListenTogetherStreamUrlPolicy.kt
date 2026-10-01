@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.ltw.mapping
 
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull

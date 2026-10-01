@@ -12,8 +12,8 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_RESUME_METADAT
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.io.ManagedDownloadAtomicFile
 import java.io.File
 import java.security.MessageDigest
 

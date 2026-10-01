@@ -28,7 +28,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.runtime.PostCoreDownloadRecoveryResult
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import kotlin.time.Duration.Companion.milliseconds
 

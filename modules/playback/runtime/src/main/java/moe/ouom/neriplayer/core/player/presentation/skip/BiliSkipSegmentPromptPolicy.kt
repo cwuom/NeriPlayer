@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.presentation.skip
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.policy.skip.BiliSkipSegmentSource
 
 internal fun resolveBiliSkipSegmentPromptMessageRes(

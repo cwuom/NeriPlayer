@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.storage.operation.lifecycle.readTemporaryDirectoryEntries
 import moe.ouom.neriplayer.core.download.storage.operation.resolveRootBlocking
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal enum class ManagedDownloadFullDeleteBlockReason {
     INCOMPLETE_ENUMERATION,

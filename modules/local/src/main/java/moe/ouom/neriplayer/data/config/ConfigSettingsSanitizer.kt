@@ -4,8 +4,8 @@ import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
 
 import android.content.Context
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadParallelism
@@ -23,7 +23,7 @@ import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
-import moe.ouom.neriplayer.data.youtube.settings.YouTubePlaybackSourcePreferencePolicy
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsAlignment
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsAlpha
@@ -33,7 +33,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsMax
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsOutlineWidthDp
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsRenderStyle
-import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricDefaultOffsetMs
+import moe.ouom.neriplayer.lyrics.offset.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import java.util.Locale
 

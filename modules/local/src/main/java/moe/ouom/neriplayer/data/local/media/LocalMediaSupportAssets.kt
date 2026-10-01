@@ -14,7 +14,7 @@ import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
 import java.text.Normalizer
 import java.nio.charset.Charset

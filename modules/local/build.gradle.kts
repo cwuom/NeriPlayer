@@ -17,7 +17,6 @@ dependencies {
     api(project(":database"))
     api(project(":platform"))
     api(project(":sync"))
-    implementation(project(":storage"))
     implementation(project(":listentogether"))
     implementation(project(":common"))
     implementation(project(":download:logic"))

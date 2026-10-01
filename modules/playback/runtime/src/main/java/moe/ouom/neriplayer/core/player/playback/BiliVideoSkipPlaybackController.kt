@@ -10,12 +10,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliBvidOrNull
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.biliCidOrNull
-import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTarget
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliBvidOrNull
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.biliCidOrNull
+import moe.ouom.neriplayer.platform.bilibili.skip.resolver.resolveBiliVideoSkipTarget
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.platform.bili.skip.policy.BiliVideoSkipTracker
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.platform.bilibili.skip.policy.BiliVideoSkipTracker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import kotlin.time.Duration.Companion.milliseconds

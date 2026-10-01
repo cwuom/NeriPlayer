@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.recovery
 
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.applyUsbExclusivePlaybackPolicy
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.util.format
 
 import android.annotation.SuppressLint
 import android.content.Context
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.TimeUnit

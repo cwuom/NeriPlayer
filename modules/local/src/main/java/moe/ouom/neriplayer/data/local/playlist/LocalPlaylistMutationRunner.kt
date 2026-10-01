@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.data.local.playlist
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.coroutines.runCatchingNonCancellation
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
 
 suspend fun <T> runLocalPlaylistMutationSafely(
     operation: String,

@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 private const val BACKGROUND_BEHAVIOR_TAG = "NERI-BackgroundBehavior"
 private const val OPSTR_RUN_IN_BACKGROUND = "android:run_in_background"

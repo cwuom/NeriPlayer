@@ -34,7 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.resolveBiliSong
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.resolveBiliSong
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
@@ -46,10 +46,10 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
-import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistsFromSongDetail
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.util.concurrent.RequestGeneration
+import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistsFromSongDetail
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.concurrent.RequestGeneration
 
 private const val YOUTUBE_MUSIC_CREATOR_SEARCH_LIMIT = 8
 

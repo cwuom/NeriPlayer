@@ -45,12 +45,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.api.netease.auth.NeteaseQrLoginClient
-import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.platform.netease.api.auth.NeteaseQrLoginClient
+import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import org.json.JSONObject
 import kotlin.math.roundToInt

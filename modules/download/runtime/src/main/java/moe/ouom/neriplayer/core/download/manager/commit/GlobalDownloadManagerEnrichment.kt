@@ -2,11 +2,11 @@ package moe.ouom.neriplayer.core.download.manager.commit
 
 import moe.ouom.neriplayer.data.identity.stableKey
 
-import moe.ouom.neriplayer.core.download.DownloadedAudioTagWriter
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.runNonCancellableDownloadRollback
+import moe.ouom.neriplayer.core.download.policy.runNonCancellableDownloadRollback
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadClearFenceActive
 import moe.ouom.neriplayer.core.download.manager.admission.scheduleStartupArtifactRecovery
@@ -69,7 +69,7 @@ import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceTok
 import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
 import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.createdSidecarReferencesForDelete
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore

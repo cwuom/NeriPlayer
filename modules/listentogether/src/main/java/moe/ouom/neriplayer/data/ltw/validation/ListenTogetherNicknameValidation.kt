@@ -2,13 +2,10 @@ package moe.ouom.neriplayer.data.ltw.validation
 
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.data.ltw.profile.isValidListenTogetherNickname
-
-const val LISTEN_TOGETHER_NICKNAME_MIN_LENGTH =
-    moe.ouom.neriplayer.data.ltw.profile.LISTEN_TOGETHER_NICKNAME_MIN_LENGTH
-const val LISTEN_TOGETHER_NICKNAME_MAX_LENGTH =
-    moe.ouom.neriplayer.data.ltw.profile.LISTEN_TOGETHER_NICKNAME_MAX_LENGTH
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.listentogether.profile.LISTEN_TOGETHER_NICKNAME_MIN_LENGTH
+import moe.ouom.neriplayer.listentogether.profile.LISTEN_TOGETHER_NICKNAME_MAX_LENGTH
+import moe.ouom.neriplayer.listentogether.profile.isValidListenTogetherNickname
 
 fun validateListenTogetherNickname(nickname: String): ListenTogetherValidationError? {
     val normalized = nickname.trim()
@@ -30,9 +27,6 @@ fun validateListenTogetherNickname(nickname: String): ListenTogetherValidationEr
         else -> null
     }
 }
-
-fun sanitizeListenTogetherNicknameOrNull(nickname: String?): String? =
-    moe.ouom.neriplayer.data.ltw.profile.sanitizeListenTogetherNicknameOrNull(nickname)
 
 fun requireValidListenTogetherNickname(nickname: String, formatValidationError: (ListenTogetherValidationError) -> String): String {
     val normalized = nickname.trim()

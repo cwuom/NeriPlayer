@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.naming
 
+import moe.ouom.neriplayer.data.model.download.naming.ParsedManagedDownloadFileName
+
 import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadFileNameTemplate as normalizeDownloadFileNameTemplatePreference
@@ -11,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 
 const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %artist% - %album% - %source%"
 internal const val PREVIOUS_DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %artist% [%hash%]"

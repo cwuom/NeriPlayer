@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "moe.ouom.neriplayer.core.common"
+    namespace = "moe.ouom.neriplayer.common"
     testFixtures.enable = true
     buildFeatures.buildConfig = true
     defaultConfig.buildConfigField("String", "TAG", "\"[NeriPlayer]\"")

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.util.search
 
+import moe.ouom.neriplayer.common.search.SearchTextMatcher
+
 import android.content.Context
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.SongItem

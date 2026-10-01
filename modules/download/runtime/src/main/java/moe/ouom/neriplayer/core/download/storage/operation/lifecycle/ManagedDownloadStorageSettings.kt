@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.core.download.storage.operation.lifecycle
 
-import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
+import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplate
 import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
 
 internal class ManagedDownloadStorageSettings(
     private val defaultRootPathProvider: (Context) -> String

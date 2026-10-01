@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountAuthController
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAuthDialogState
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent

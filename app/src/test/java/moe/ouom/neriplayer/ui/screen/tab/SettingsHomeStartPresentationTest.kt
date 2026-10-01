@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.SettingsHomeCardCopy
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.effectiveSettingsStartDestination
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.isSettingsHomeStartAvailable

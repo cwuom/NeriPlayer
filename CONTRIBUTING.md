@@ -174,17 +174,17 @@
 
 #### 根模块
 
-自有库的入口与完整职责见根目录 [README.md](README.md#模块结构)。14 个库由 `gradle/owned-modules.txt` 统一登记，构建、覆盖率、lint 和结构检查读取同一份登记。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
+自有库的入口与完整职责见根目录 [README.md](README.md#模块结构)。13 个库由 `gradle/owned-modules.txt` 统一登记，构建、覆盖率、lint 和结构检查读取同一份登记。一级目录表达业务领域，远程来源集中在 `:platform`；播放和下载保留规则与运行实现两个构建边界。
 
-- 基础能力：`:common`、`:network`、`:model`、`:database`、`:storage`。模型不依赖项目实现；历史 Room schema 和完整升级链由数据库维护。
+- 基础能力：`:common`、`:network`、`:model`、`:database`。模型不依赖项目实现；历史 Room schema 和完整升级链由数据库维护。
 - 播放：`:playback:logic` 集中 policy/runtime/audio/queue，`:playback:runtime` 维护引擎、服务、USB、音源解析与接入。policy 的九个叶子包保持窄依赖，USB policy 归运行库；下载只能通过 `PlayerDownloadAccess` 调用。
 - 下载：`:download:logic` 维护可复用规则与基础存储工具，`:download:runtime` 维护 Room、SAF、恢复和服务。规则不得依赖运行实现，Worker 与 JobService 的类全名保持稳定。
-- 歌词：`:lyrics` 维护解析、转换、共用时间偏移和词幕输出。SDK 和位置推送位于同库 `core/lyricon`，`lyrics/integration` 管理异步请求代次、取消与偏移快照；播放器通过窄加载端口提供歌词和快照。歌词库不依赖平台或播放器实现。
+- 歌词：`:lyrics` 维护解析、转换、共用时间偏移和词幕输出。SDK 和位置推送位于同库 `lyrics/lyricon`，`lyrics/output` 管理异步请求代次、取消与偏移快照；播放器通过窄加载端口提供歌词和快照。歌词库不依赖平台或播放器实现。
 - 平台：`:platform` 维护 Bilibili、网易云和 YouTube 的请求协议、账号、缓存与业务，以及评论、歌词来源和元数据搜索、匹配与回退。`api` 是同库协议职责，禁止反向读取账号仓库、Room 和播放器；各平台按包保持依赖边界。YouTube JS assets 和 consumer R8 规则随平台维护，解析能力通过 `api(:lyrics)` 对外提供。
 - 本地数据：`:local` 按设置、媒体、歌单、统计、备份、流量与同步接入分包，维护业务映射、宿主接口和 WorkManager 适配。设置 schema 在此运行 KSP，页面渲染留在 app。
 - 同步：`:sync` 同时维护 GitHub/WebDAV 传输、加密凭据、设备身份、因果计数器、会话、清洗、合并与 Worker 策略。传输和计算组件仍受各自依赖白名单约束，本地仓库适配位于 `:local`；删除记录与 mutation version 原子提交。
 - 一起听：`:listentogether` 维护协议、传输、身份规则和客户端会话。协议只使用模型、序列化与标准库；业务通过宿主接口接入播放器、资源和 Android 服务。
-- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic`、`buildSrc` 和一起听服务端不计入 14 个库。Miuix 的上游源码与文档树不参与主应用构建。
+- 应用与工具：`:app` 维护 Android 入口、Compose 页面和依赖组装；KSP 工具、上游歌词子模块、`build-logic`、`buildSrc` 和一起听服务端不计入 13 个库。Miuix 的上游源码与文档树不参与主应用构建。
 
 所有库禁止引用 app、页面或 `AppContainer`，依赖不得形成循环；`:playback:runtime` 内部可以使用自己的 `PlayerManager`。设置通过 provider 按需读取，HTTP 客户端、账号与设备令牌由宿主注入，不通过全局容器绕过接口。Room 业务映射随本地或平台仓库维护；数据库和规则组件不得反向引用运行实现。
 
@@ -221,7 +221,7 @@
   - `AdvancedLyricsView.kt` 与 `SyncedLyricsView.kt` 负责高级歌词排版、
     逐字/逐词高亮、翻译/音译显示、点击跳转和长按回调。
   - `LyricShareSheet.kt` 负责歌词行选择、复制、歌曲分享和歌词卡片生成。
-  - LRC/YRC/TTML 解析和翻译对齐位于 `modules/lyrics` 的 `core.lyrics` 包；共享歌词数据位于 `:model` 的 `lyrics` 包。
+  - LRC/YRC/TTML 解析和翻译对齐位于 `modules/lyrics` 的 `lyrics.parser` 包；共享歌词数据位于 `:model` 的 `lyrics` 包。
   - 旧 `AppleMusicLyric` 名称只存在于 `ui/component/LyricsCompatibility.kt`
     的 `@Deprecated` 包装中，新代码统一使用 `SyncedLyricsView`。
 
@@ -249,20 +249,20 @@
 - `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
   - 首次启动引导，覆盖语言、平台账号、权限说明、播放控件、GitHub 同步和个性化设置。
 
-- `modules/platform/src/main/java/moe/ouom/neriplayer/api/`
-  - `netease/`：网易云客户端、加密、请求参数和二维码认证协议。
-  - `bilibili/`：搜索、二维码登录、收藏夹、合集和播放信息；仓库与跳过规则位于同库 `data/platform/bili`。
+- `modules/platform/src/main/java/moe/ouom/neriplayer/platform/`
+  - `netease/api`：网易云客户端、加密、请求参数和二维码认证协议。
+  - `bilibili/api`：搜索、二维码登录、收藏夹、合集和播放信息；仓库与跳过规则位于同库 `platform/bilibili`。
     Explore 链接识别会保留分 P、`cid` 和 `season_id` 上下文，改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
-  - `youtube/`：YouTube Music 客户端、PoToken、JS Challenge、请求/响应解析；协议模型位于 `:model`，认证持久化与缓存位于同库 `data/youtube`。
-  - `lyrics/`：LrcLib、Kugou 和 AMLL 服务访问；来源仓库、匹配与回退位于同库 `data/lyrics`。
-  - `search/`：`SearchApi`、网易云和 QQ 元数据搜索服务；`SearchManager` 位于同库 `data/lyrics`，共享音乐模型属于 `modules/model`。
+  - `youtube/api`：YouTube Music 客户端、PoToken、JS Challenge、请求/响应解析；协议模型位于 `:model`，认证持久化与缓存位于同库 `platform/youtube`。
+  - `lyrics/api`：LrcLib、Kugou 和 AMLL 服务访问；来源仓库、匹配与回退位于同库 `platform/lyrics`。
+  - `search/api`：`SearchApi`、网易云和 QQ 元数据搜索服务；`SearchManager` 位于同库 `platform/lyrics`，共享音乐模型属于 `modules/model`。
   - `AppContainer` 组装客户端与路由，注入 HTTP、调试配置和实时设置 provider；库不读取应用容器或播放器单例。
   - 纯文本歌词时间轴转换位于 `modules/lyrics` 的 `PlainLyrics.kt`，播放器与匹配器共享同一实现。
 
-- `modules/platform/src/main/java/moe/ouom/neriplayer/core/comment/`
+- `modules/platform/src/main/java/moe/ouom/neriplayer/platform/comments/`
   - 评论来源、解析、分页和缓存；评论数据契约属于 `:model`；客户端 provider 与缓存由 `AppContainer` 组装注入。
   - 缓存实例的生命周期由宿主决定，库内不读取全局容器；仓库测试位于该模块，ViewModel 集成测试位于 `app`。
-  - 歌曲来源标签属于 `:model`，Bilibili 历史播放身份解析属于同库 `data/platform/bili/playback/resolver`，无需引用播放器单例。
+  - 歌曲来源标签属于 `:model`，Bilibili 历史播放身份解析属于同库 `platform/bilibili/playback/resolver`，无需引用播放器单例。
 
 - `modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`：Media3 ExoPlayer 的统一管理层，
@@ -337,7 +337,7 @@
 - `modules/local/src/main/java/moe/ouom/neriplayer/data/`
   - `identity/`：歌曲身份转换；`SongIdentity` 与 `SongItem` 属于 `modules/model`。
   - `settings/`：`DataStore` 设置、KSP schema 和偏好映射；快照契约位于 `:model` 的 `settings` 包。
-  - `auth/`：通用 Web 登录状态与 YouTube 凭据轮换 Worker；平台 Cookie / Auth 仓库位于 `:platform` 的 `data/auth` 和 `data/youtube/auth`。
+  - `auth/`：通用 Web 登录状态与 YouTube 凭据轮换 Worker；平台 Cookie / Auth 仓库位于 `:platform` 的 `data/auth` 和 `platform/youtube/auth`。
   - 平台缓存归 `:platform`，本地歌单编排和共享缓存表 schema 分别归 `:local` 与 `:database`。
   - `storage/`：存储占用分析、缓存分组和额外缓存清理。
   - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容、
@@ -374,9 +374,9 @@
     `usb/feedback/`、`usb/iso/`、`usb/pcm/`、`usb/uac1/`、`usb/uac2/`
     拆分，对应 host 测试位于 `tests/usb/`。
 
-- `modules/lyrics/src/main/java/moe/ouom/neriplayer/core/lyricon/`
+- `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`
   - 词幕适配（Lyricon Provider）与 SuperLyric 输出，同步歌曲、播放状态、进度、逐字歌词和翻译。
-  - 同库 `lyrics/integration/` 维护输出控制器、异步请求代次、取消与偏移快照；位置锚点和协调器保持内部可见。
+  - 同库 `lyrics/output/` 维护输出控制器、异步请求代次、取消与偏移快照；位置锚点和协调器保持内部可见。
 
 - `app/src/main/java/moe/ouom/neriplayer/navigation/`
   - `LauncherShortcuts.kt` 负责桌面图标快捷方式到导航/播放请求的映射。
@@ -511,9 +511,9 @@
 
 适用于补封面、歌词、曲目信息，而不是扩展 `Explore` 页。
 
-1. 在 `:platform` 的 `api/search` 包实现 `SearchApi` 接口，共享音乐 DTO 保留在 `:model`。
+1. 在 `:platform` 的 `platform/search/api` 包实现 `SearchApi` 接口，共享音乐 DTO 保留在 `:model`。
 2. 在 `AppContainer` 中注册单例。
-3. 在 `AppContainer.searchManager` 的 provider 中登记路由；匹配和降级规则在 `:platform` 的 `data/lyrics` 包维护并测试。
+3. 在 `AppContainer.searchManager` 的 provider 中登记路由；匹配和降级规则在 `:platform` 的 `platform/lyrics` 包维护并测试。
 4. 视需要补充 `MusicPlatform`、字符串资源和调试探针。
 
 #### 3. 新增在线播放平台
@@ -662,7 +662,7 @@
 
 #### 10. 修改存储占用与缓存清理
 
-1. 入口在 `data/storage/StorageUsageAnalyzer.kt`
+1. 入口在 `data/local/storage/StorageUsageAnalyzer.kt`
    和 `SettingsStorageCacheSection.kt`。
 2. 新增缓存目录时，要决定它属于可清理缓存、下载内容、诊断文件还是应用数据。
 3. 清理操作只能覆盖可再生成内容；
@@ -680,7 +680,7 @@
 
 #### 12. 修改词幕适配
 
-1. 词幕 SDK 接入位于 `modules/lyrics/src/main/java/moe/ouom/neriplayer/core/lyricon/`，输出控制器位于同库 `lyrics/integration/`。播放器只提供歌词、偏好、进度与生命周期快照，不直接管理 SDK。
+1. 词幕 SDK 接入位于 `modules/lyrics/src/main/java/moe/ouom/neriplayer/lyrics/lyricon/`，输出控制器位于同库 `lyrics/output/`。播放器只提供歌词、偏好、进度与生命周期快照，不直接管理 SDK。
 2. 开关状态由设置项 `lyricon_enabled` 控制，并由播放器生命周期同步。
 3. 歌词数据使用 `LyricEntry`，逐字信息来自 `WordTiming`；
    翻译行按时间容差匹配到原文行。
@@ -863,7 +863,7 @@ USB `exclusive/` 下的自有 `.cpp` / `.h` 也在检查范围内。新增组件
 `NowPlayingScreen`、`SettingsScreen` 和 `NeriApp` 组合页面与功能组件，具体编辑会话、目录选择、
 设置领域绑定和导航副作用在对应组件中处理。不要把原入口作为 receiver 搬进扩展文件，
 也不要让新组件回读原入口的内部状态。
-`:storage` 按 `source`、`scan`、`accounting`、`cleanup` 和 `policy` 分类，数据契约集中在 `:model` 的 `storage` 包。
+`:local` 中的本地存储按 `source`、`scan`、`accounting`、`cleanup` 和 `policy` 分类，数据契约集中在 `:model` 的 `storage` 包。
 存储统计由 `StorageUsageScanner` 通过数据源接口采集快照，`StorageUsagePresenter`
 只读取快照和字符串资源；`StorageCacheCleaner` 通过文件和平台清理端口执行操作，Room 和全局服务访问集中在
 `StorageUsageAndroid.kt`。新增组件应保持这个单向依赖，并纳入完整文件门禁。

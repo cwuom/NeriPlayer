@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoor
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeCoordinator
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeResult
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupCoordinator

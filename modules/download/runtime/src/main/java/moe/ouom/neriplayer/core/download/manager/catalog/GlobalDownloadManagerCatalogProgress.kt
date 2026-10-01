@@ -29,7 +29,7 @@ import moe.ouom.neriplayer.core.download.catalog.applyDownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogDelta
 import moe.ouom.neriplayer.core.download.catalog.downloadedSongCatalogEntryKey
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.SongItem

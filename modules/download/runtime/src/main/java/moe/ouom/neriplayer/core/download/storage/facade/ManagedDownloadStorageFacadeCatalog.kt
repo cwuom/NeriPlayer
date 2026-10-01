@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.facade
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
+import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.operation.content.ensureManagedLibraryManifestForRoot
 import moe.ouom.neriplayer.core.download.storage.operation.content.fastIndexRootIdentity
@@ -63,7 +63,7 @@ import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildRes
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardWriteResult
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.remoteDownloadIdentityOrNull

@@ -71,7 +71,7 @@ import moe.ouom.neriplayer.core.download.storage.migration.recovery.mergePersist
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.migrationSourceEntryCount
 import moe.ouom.neriplayer.core.download.storage.migration.recovery.upgradeLegacyMigrationReplacementJournal
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import java.io.File

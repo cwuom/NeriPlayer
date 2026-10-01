@@ -2,13 +2,13 @@
 
 package moe.ouom.neriplayer.core.player.engine.datasource
 
-import moe.ouom.neriplayer.core.network.range.ResumableHttpRangeSupport
+import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
 import android.net.Uri
 import androidx.media3.datasource.DataSpec
 import moe.ouom.neriplayer.core.player.resolver.netease.normalizeNeteaseFlacResponseContentType
 import moe.ouom.neriplayer.core.player.resolver.netease.shouldUseNeteaseFlacResumableRange
 import moe.ouom.neriplayer.core.player.resolver.netease.validateNeteaseFlacRangeResponse
-import moe.ouom.neriplayer.api.youtube.transport.range.YouTubeGoogleVideoRangeSupport
+import moe.ouom.neriplayer.platform.youtube.api.transport.range.YouTubeGoogleVideoRangeSupport
 
 internal data class ResumableChunkedHttpRangePolicy(
     val shouldUse: (DataSpec) -> Boolean,

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.ltw.session.liveness
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.ltw.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
 import moe.ouom.neriplayer.data.ltw.playback.ListenTogetherPlaybackHost
 import moe.ouom.neriplayer.data.model.ltw.message.http.ListenTogetherStateResponse

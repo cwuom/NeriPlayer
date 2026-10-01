@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongSaveResult
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongSaveSteps

@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntr
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal class ManagedDownloadTreeDirectories(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,

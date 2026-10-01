@@ -11,7 +11,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import moe.ouom.neriplayer.util.concurrent.RequestGeneration
+import moe.ouom.neriplayer.common.concurrent.RequestGeneration
 import kotlin.time.Duration.Companion.milliseconds
 
 class PlaybackStatePersistenceCoordinator<Snapshot> {

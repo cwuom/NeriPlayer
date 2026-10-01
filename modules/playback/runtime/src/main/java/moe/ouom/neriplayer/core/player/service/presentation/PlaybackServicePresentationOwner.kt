@@ -27,7 +27,7 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState

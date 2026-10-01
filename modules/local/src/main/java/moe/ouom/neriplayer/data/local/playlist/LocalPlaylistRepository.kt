@@ -42,8 +42,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.api.netease.client.NeteaseClient
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -56,18 +56,18 @@ import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncPlan
 import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncResult
 import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
-import moe.ouom.neriplayer.data.platform.netease.playlist.NeteasePlaylistSync
-import moe.ouom.neriplayer.data.platform.netease.playlist.NeteasePlaylistSyncMessage
+import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistSync
+import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistSyncMessage
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
-import moe.ouom.neriplayer.data.settings.lyrics.rebaseLyricUserOffsetMs
-import moe.ouom.neriplayer.data.settings.lyrics.shouldRebaseLyricOffsetForSource
+import moe.ouom.neriplayer.lyrics.offset.rebaseLyricUserOffsetMs
+import moe.ouom.neriplayer.lyrics.offset.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
 import java.io.IOException
 

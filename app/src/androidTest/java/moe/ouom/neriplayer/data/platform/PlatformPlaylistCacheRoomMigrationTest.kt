@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheArtist
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
-import moe.ouom.neriplayer.data.platform.bili.cache.BiliCacheRepositories
+import moe.ouom.neriplayer.platform.bilibili.cache.BiliCacheRepositories
 import moe.ouom.neriplayer.data.model.bilibili.cache.archive.BiliArchiveContentCache
 import moe.ouom.neriplayer.data.model.bilibili.cache.favorite.BiliFavoriteFolderContentCache
 import moe.ouom.neriplayer.data.model.bilibili.cache.archive.CachedBiliArchiveVideo
@@ -22,11 +22,11 @@ import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteaseArtist
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistDetail
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistHeader
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistTrack
-import moe.ouom.neriplayer.data.platform.netease.NeteasePlaylistCacheRepository
-import moe.ouom.neriplayer.data.platform.netease.neteaseRadarPlaylistCacheKey
+import moe.ouom.neriplayer.platform.netease.NeteasePlaylistCacheRepository
+import moe.ouom.neriplayer.platform.netease.neteaseRadarPlaylistCacheKey
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistTrack
-import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
+import moe.ouom.neriplayer.platform.youtube.playlist.YouTubeMusicPlaylistCacheRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

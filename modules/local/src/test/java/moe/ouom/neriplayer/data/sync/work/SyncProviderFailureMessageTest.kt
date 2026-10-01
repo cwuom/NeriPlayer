@@ -5,7 +5,7 @@ import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify

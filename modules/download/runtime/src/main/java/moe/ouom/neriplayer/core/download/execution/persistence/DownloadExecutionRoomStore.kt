@@ -1257,7 +1257,7 @@ internal object DownloadExecutionRoomStore {
         reason: String,
         error: Throwable? = null
     ) {
-        moe.ouom.neriplayer.core.logging.NPLogger.w(
+        moe.ouom.neriplayer.common.logging.NPLogger.w(
             "DownloadExecutionRoomStore",
             "operation payload decode failed: " +
                 "operationId=${entity.operationId}, state=${entity.state}, " +

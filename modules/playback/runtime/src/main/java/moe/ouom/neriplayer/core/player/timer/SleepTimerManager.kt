@@ -35,8 +35,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.util.units.minute
-import moe.ouom.neriplayer.util.units.second
+import moe.ouom.neriplayer.common.units.minute
+import moe.ouom.neriplayer.common.units.second
 import kotlin.time.Duration.Companion.milliseconds
 
 /**

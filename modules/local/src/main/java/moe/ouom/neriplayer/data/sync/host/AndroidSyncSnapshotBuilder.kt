@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.sync.host
 
 import android.content.Context
 import android.os.Build
-import moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepository
+import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository

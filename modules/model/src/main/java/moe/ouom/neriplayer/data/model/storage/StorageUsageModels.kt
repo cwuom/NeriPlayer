@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.data.model.storage
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.data.storage.model/StorageUsageModels
+ * File: moe.ouom.neriplayer.data.model.storage/StorageUsageModels
  * Created: 2026/7/9
  */
 

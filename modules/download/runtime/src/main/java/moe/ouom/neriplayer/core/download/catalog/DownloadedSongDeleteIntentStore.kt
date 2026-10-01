@@ -7,8 +7,8 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.UUID
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 import org.json.JSONArray
 import org.json.JSONObject
 

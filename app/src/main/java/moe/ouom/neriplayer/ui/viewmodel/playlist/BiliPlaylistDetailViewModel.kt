@@ -34,7 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.platform.bili.playback.resolver.buildBiliPartSong
+import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourceItem
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourcePage
@@ -48,8 +48,8 @@ import moe.ouom.neriplayer.data.model.bilibili.cache.archive.CachedBiliArchiveVi
 import moe.ouom.neriplayer.data.model.bilibili.cache.favorite.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.collections.mergeDistinctBy
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.collections.mergeDistinctBy
 import java.io.IOException
 
 private const val TAG = "NERI-BiliPlaylistVM"

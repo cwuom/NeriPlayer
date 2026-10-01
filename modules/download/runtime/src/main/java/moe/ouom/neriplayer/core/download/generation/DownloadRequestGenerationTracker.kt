@@ -95,7 +95,7 @@ internal class DownloadRequestGenerationTracker {
         if (cancellationGeneration == null && !cancelled) {
             return false
         }
-        return moe.ouom.neriplayer.core.download.shouldKeepCancellationCleanup(
+        return moe.ouom.neriplayer.core.download.policy.shouldKeepCancellationCleanup(
             currentGeneration = generationsBySongKey[songKey],
             cancellationGeneration = cancellationGeneration,
             cancelled = cancelled

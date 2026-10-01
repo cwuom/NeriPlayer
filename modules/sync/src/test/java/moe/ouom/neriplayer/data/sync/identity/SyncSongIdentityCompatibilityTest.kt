@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.sync.identity
 
-import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import org.junit.Assert.assertEquals

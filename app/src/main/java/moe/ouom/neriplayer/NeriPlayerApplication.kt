@@ -36,8 +36,8 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.scheduling.ids.newDownloadWorkManagerConfigurationBuilder
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtDownloadJobService
 import moe.ouom.neriplayer.core.download.storage.backend.recoverInterruptedManagedTemporaryWrites
-import moe.ouom.neriplayer.core.lyricon.LyriconManager
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
@@ -52,7 +52,7 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.ui.feedback.AppFeedback

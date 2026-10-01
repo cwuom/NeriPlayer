@@ -5,10 +5,10 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.findDownloadedSongCatalogMatch
-import moe.ouom.neriplayer.core.download.resolveDownloadedPlaybackHydrationDelayMs
-import moe.ouom.neriplayer.core.download.resolveDownloadedSongPlaybackReference
-import moe.ouom.neriplayer.core.download.upsertDownloadedSongCatalog
+import moe.ouom.neriplayer.core.download.catalog.findDownloadedSongCatalogMatch
+import moe.ouom.neriplayer.core.download.policy.resolveDownloadedPlaybackHydrationDelayMs
+import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
+import moe.ouom.neriplayer.core.download.catalog.upsertDownloadedSongCatalog
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCatalogReconcile
 import moe.ouom.neriplayer.core.download.manager.catalog.beginDownloadedSongDeleteSession
 import moe.ouom.neriplayer.core.download.manager.catalog.deleteDownloadedSongsOnIo
@@ -57,7 +57,7 @@ import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import kotlin.time.Duration.Companion.milliseconds

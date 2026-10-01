@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.resource
 
 import android.os.StatFs
 import android.system.Os
-import moe.ouom.neriplayer.util.units.MEBIBYTE_BYTES
+import moe.ouom.neriplayer.common.units.MEBIBYTE_BYTES
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream

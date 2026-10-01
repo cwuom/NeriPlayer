@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState

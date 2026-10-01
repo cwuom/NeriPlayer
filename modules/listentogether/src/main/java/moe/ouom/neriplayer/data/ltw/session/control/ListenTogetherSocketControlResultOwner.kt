@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.data.ltw.session.connection.ListenTogetherConnectionR
 import moe.ouom.neriplayer.data.ltw.session.connection.ListenTogetherSocketHealthOwner
 import moe.ouom.neriplayer.data.ltw.session.link.ListenTogetherControllerLinkOwner
 import moe.ouom.neriplayer.data.model.ltw.session.AcceptedRoomState
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherAppliedEvent
 import moe.ouom.neriplayer.data.model.ltw.message.event.ListenTogetherCause
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState

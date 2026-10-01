@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.stats.*
 import moe.ouom.neriplayer.data.model.sync.*
-import moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepository
+import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository

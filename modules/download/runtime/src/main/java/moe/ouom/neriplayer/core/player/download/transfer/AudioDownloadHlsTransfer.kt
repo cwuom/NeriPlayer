@@ -25,9 +25,9 @@ import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceGuard
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
-import moe.ouom.neriplayer.util.io.readBytesLimited
+import moe.ouom.neriplayer.common.io.readBytesLimited
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response

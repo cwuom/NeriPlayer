@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.service.usb
 
 import android.media.VolumeProvider
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal interface UsbExclusiveVolumeRoutingPort {
     fun createProvider(): VolumeProvider

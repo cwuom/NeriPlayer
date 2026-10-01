@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.ltw.playback.ListenTogetherPlaybackHost
 import moe.ouom.neriplayer.data.ltw.playback.currentStableKey
 
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 
 internal class ListenTogetherListenerStallRecovery(

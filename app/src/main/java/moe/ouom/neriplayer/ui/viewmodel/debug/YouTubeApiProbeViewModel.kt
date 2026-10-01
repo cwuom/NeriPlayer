@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
  * Created: 2026/3/21
  */
 
-import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -37,9 +37,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicDebugProbeResult
-import moe.ouom.neriplayer.api.youtube.protocol.YouTubeMusicLocaleResolver
+import moe.ouom.neriplayer.platform.youtube.api.protocol.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform

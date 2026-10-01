@@ -31,7 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
 import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS

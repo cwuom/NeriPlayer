@@ -23,7 +23,7 @@ import moe.ouom.neriplayer.data.model.download.storage.StorageReference
 import moe.ouom.neriplayer.data.model.download.storage.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val MEDIA_STORE_DELETE_BATCH_SIZE = 128

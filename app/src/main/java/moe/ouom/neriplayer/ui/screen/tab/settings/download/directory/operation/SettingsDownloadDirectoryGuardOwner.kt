@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation
 
 import android.content.Context
 import android.content.res.Resources
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException

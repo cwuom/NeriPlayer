@@ -526,30 +526,29 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 模块结构
 
-自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](gradle/owned-modules.txt) 统一登记，共 14 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
+自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](gradle/owned-modules.txt) 统一登记，共 13 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
 
 - [`:common`](modules/common/README.md)：共享工具、日志、文案、图标、语言能力和测试夹具。
 - [`:network`](modules/network/README.md)：通用 HTTP、Range、网络解析和 Web 登录基础能力。
 - [`:model`](modules/model/README.md)：按业务分类的数据模型、枚举和跨模块状态契约，不依赖项目实现。
 - [`:database`](modules/database/README.md)：Room 数据库、实体、DAO、历史 schema 与版本升级。
-- [`:storage`](modules/storage/README.md)：通过数据源快照和清理端口维护存储统计、文件扫描与缓存清理。
 - [`:playback:logic`](modules/playback/logic/README.md)：播放 policy、状态协调 runtime、PCM/audio 和队列 queue 规则，保持包级隔离。
 - [`:playback:runtime`](modules/playback/runtime/README.md)：Media3 引擎、播放服务、音源解析、USB 输出、系统音效、浮窗与蓝牙歌词及宿主接入。
 - [`:download:logic`](modules/download/logic/README.md)：下载准入、状态迁移、重试、调度、传输槽位、所有权、提交与元数据规则。
 - [`:download:runtime`](modules/download/runtime/README.md)：下载执行、Room 队列、受管文件、迁移与恢复，以及 Worker 和 JobService。
-- [`:lyrics`](modules/lyrics/README.md)：LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及 Lyricon/SuperLyric 词幕输出协调。
+- [`:lyrics`](modules/lyrics/README.md)：LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及词幕（Lyricon）和 SuperLyric 接入。
 - [`:platform`](modules/platform/README.md)：Bilibili、网易云、YouTube 的协议、账号、缓存和业务能力，跨平台评论，以及歌词来源、元数据搜索、匹配与回退。
-- [`:local`](modules/local/README.md)：本地设置、媒体、歌单、历史与统计、备份、流量，以及 Android 同步宿主适配。
+- [`:local`](modules/local/README.md)：本地设置、媒体、歌单、历史与统计、备份、流量、存储统计与缓存清理，以及 Android 同步宿主适配。
 - [`:sync`](modules/sync/README.md)：GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。
 - [`:listentogether`](modules/listentogether/README.md)：一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。
 
-`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`build-logic` 和 `buildSrc` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 14 个自有 Android 库。
+`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`build-logic` 和 `buildSrc` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 13 个自有 Android 库。
 
 依赖按实际职责维护，不由目录分类推导层级。`:model` 不依赖项目实现，`:common` 不依赖业务领域；数据库、存储计算、歌词解析与播放/下载规则不得反向依赖仓库或 Android 运行实现。`:platform` 内的业务仓库消费对应协议，API 不反向读取账号仓库、Room 或播放器状态，各平台仍保持包级依赖边界。`:local` 消费数据库与领域服务，客户端的账号、凭据刷新和存储能力通过窄接口注入。所有库禁止依赖 app 或形成循环。
 
 `:playback:logic` 的 policy 只包含 `audio`、`command`、`offload`、`pending`、`progress`、`service`、`skip`、`storage`、`wake` 九个叶子包，不引用 runtime、audio 或 queue 实现；USB policy 仍归 `:playback:runtime`。`:platform` 依赖并公开 `:lyrics` 的解析能力；歌词来源仓库、匹配和回退留在平台，`:lyrics` 不依赖平台。词幕 SDK、位置推送与异步请求代次由歌词库维护，播放器通过窄加载端口提供歌词、偏好快照和生命周期输入。
 
-共享业务契约统一放入 `modules/model`，沿用 `data.model.<业务>` 等既有包名；页面私有状态随 UI 维护，Room 实体随数据库维护，私有算法中间状态随算法维护。物理模块目录与 Kotlin 包名表达不同层次，包名与源码内部目录一致，Parcelable、Room、序列化、JNI、服务和 Worker 的既有类全名保持稳定。
+共享业务契约统一放入 `modules/model`，沿用 `data.model.<业务>` 等既有包名；页面私有状态随 UI 维护，Room 实体随数据库维护，私有算法中间状态随算法维护。物理模块目录与 Kotlin 包名表达不同层次，包名与源码内部目录一致。调整类名时核对真实保存与读取方式；Worker 持久任务、JNI 导出和 Android 组件入口须保持兼容，字段、存储键与历史 schema 不能随目录整理改变。
 
 各模块维护自己的测试、资源与 consumer R8 规则，宿主集成测试保留在 app。Room 业务映射与本地仓库编排位于 `:local`，平台缓存适配位于 `:platform`；历史 schema 位于 `modules/database/schemas`。设置 schema 在 `:local` 运行 KSP，Compose 设置渲染留在 `app/ui/settings`。`app` 不保留生产 `data` 目录，下载升级和依赖组装位于 `core/startup/legacy` 与 `core/integration`。
 

@@ -23,14 +23,14 @@ package moe.ouom.neriplayer.data.auth.youtube
  * Created: 2026/7/27
  */
 
-import moe.ouom.neriplayer.api.youtube.auth.normalized
-import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
-import moe.ouom.neriplayer.data.youtube.auth.SharedPreferencesYouTubeCookieRotationStateStore
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.YouTubeCookieSupport
+import moe.ouom.neriplayer.platform.youtube.auth.SharedPreferencesYouTubeCookieRotationStateStore
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationOutcome
-import moe.ouom.neriplayer.data.youtube.auth.YouTubeCookieRotator
-import moe.ouom.neriplayer.data.youtube.auth.hasYouTubeRotationPrerequisites
-import moe.ouom.neriplayer.data.youtube.auth.web.applyYouTubeWebCookies
-import moe.ouom.neriplayer.data.youtube.auth.youtubeAuthRotationMutex
+import moe.ouom.neriplayer.platform.youtube.auth.YouTubeCookieRotator
+import moe.ouom.neriplayer.platform.youtube.auth.hasYouTubeRotationPrerequisites
+import moe.ouom.neriplayer.platform.youtube.auth.web.applyYouTubeWebCookies
+import moe.ouom.neriplayer.platform.youtube.auth.youtubeAuthRotationMutex
 import android.content.Context
 import android.webkit.CookieManager
 import androidx.work.Constraints
@@ -43,7 +43,7 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.network.DataHttpClients
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import java.util.concurrent.TimeUnit
 
 /**

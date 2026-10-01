@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.ltw.playback
 
 import android.os.SystemClock
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.ltw.mapping.ListenTogetherSongMapper
 import moe.ouom.neriplayer.data.ltw.playback.sync.ListenTogetherPlayerSyncPlan
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState

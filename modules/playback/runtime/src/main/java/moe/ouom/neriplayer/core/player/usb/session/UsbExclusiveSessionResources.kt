@@ -7,7 +7,7 @@ import android.hardware.usb.UsbConstants
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.usb.device.matchesUsbExclusiveDeviceKey
 import moe.ouom.neriplayer.core.player.usb.device.openPermittedUsbAudioDevice
 import moe.ouom.neriplayer.core.player.usb.device.usbExclusiveDeviceKey

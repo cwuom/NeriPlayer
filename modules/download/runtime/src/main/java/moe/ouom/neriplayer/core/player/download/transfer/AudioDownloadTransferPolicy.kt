@@ -15,14 +15,14 @@ import javax.net.ssl.SSLException
 import moe.ouom.neriplayer.core.download.policy.size.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.resource.watchdog.DownloadTransferStalledException
-import moe.ouom.neriplayer.core.network.range.ChunkRequestIOException
-import moe.ouom.neriplayer.core.network.range.ResumableHttpRangeSupport
-import moe.ouom.neriplayer.api.youtube.transport.range.YouTubeGoogleVideoRangeSupport
+import moe.ouom.neriplayer.network.range.ChunkRequestIOException
+import moe.ouom.neriplayer.network.range.ResumableHttpRangeSupport
+import moe.ouom.neriplayer.platform.youtube.api.transport.range.YouTubeGoogleVideoRangeSupport
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import okhttp3.Request
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal class DownloadRangeRestartRequiredException(
     cause: Throwable? = null

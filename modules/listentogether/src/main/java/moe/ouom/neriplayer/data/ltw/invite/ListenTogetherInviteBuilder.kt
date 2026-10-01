@@ -11,12 +11,6 @@ private const val LISTEN_TOGETHER_INVITE_SCHEME = "neriplayer"
 private const val LISTEN_TOGETHER_INVITE_HOST = "listen-together"
 internal const val LISTEN_TOGETHER_INVITE_JOIN_PATH = "join"
 
-fun buildListenTogetherUserUuid(): String =
-    moe.ouom.neriplayer.data.ltw.profile.buildListenTogetherUserUuid()
-
-fun buildDefaultListenTogetherNickname(): String =
-    moe.ouom.neriplayer.data.ltw.profile.buildDefaultListenTogetherNickname()
-
 fun buildListenTogetherInviteUri(
     roomId: String,
     inviterNickname: String? = null,

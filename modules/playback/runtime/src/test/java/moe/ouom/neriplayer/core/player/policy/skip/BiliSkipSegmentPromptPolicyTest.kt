@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.policy.skip
 
 import moe.ouom.neriplayer.core.player.presentation.skip.resolveBiliSkipSegmentPromptMessageRes
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

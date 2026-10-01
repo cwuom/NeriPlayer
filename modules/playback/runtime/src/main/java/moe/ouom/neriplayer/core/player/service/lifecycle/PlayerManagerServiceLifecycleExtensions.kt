@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.service.lifecycle
 
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist

@@ -97,23 +97,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
-import moe.ouom.neriplayer.data.lyrics.matching.defaultEditableLyricMatchSources
-import moe.ouom.neriplayer.data.lyrics.matching.editableLyricMatchResultComparator
-import moe.ouom.neriplayer.data.lyrics.matching.normalizeLyricMatchText
+import moe.ouom.neriplayer.platform.lyrics.matching.defaultEditableLyricMatchSources
+import moe.ouom.neriplayer.platform.lyrics.matching.editableLyricMatchResultComparator
+import moe.ouom.neriplayer.platform.lyrics.matching.normalizeLyricMatchText
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
 import moe.ouom.neriplayer.util.format.formatDuration
 

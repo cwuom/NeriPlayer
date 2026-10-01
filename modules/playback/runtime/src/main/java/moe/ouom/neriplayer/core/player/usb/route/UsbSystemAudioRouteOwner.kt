@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.route
 
 import kotlinx.coroutines.delay
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import kotlin.time.Duration.Companion.milliseconds
 

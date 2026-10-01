@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.runtime
 
 import moe.ouom.neriplayer.core.download.host.DownloadHosts
-import moe.ouom.neriplayer.api.youtube.auth.normalized
+import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.settings.download.normalized
@@ -28,13 +28,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.data.model.download.execution.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.boundManagedDownloadFileName
+import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.resource.permit.DownloadTransferPermitRegistry
 import moe.ouom.neriplayer.core.download.resource.DownloadStorageSpaceDeferredException
 import moe.ouom.neriplayer.core.download.resource.classifyDownloadStorageSpaceFailure
@@ -46,12 +46,12 @@ import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutation
 import moe.ouom.neriplayer.core.download.execution.host.DownloadTransferAdmissionDeferredException
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.policy.commit.shouldRollbackCancelledAudio
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.youtube.media.isYouTubeMusicSong
+import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
 import okhttp3.Request

@@ -25,9 +25,9 @@ package moe.ouom.neriplayer.ui.component.lyrics
 
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.lyrics.WordTiming
-import moe.ouom.neriplayer.core.lyrics.calculateLineProgress
-import moe.ouom.neriplayer.core.lyrics.findCurrentLineIndex
-import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.lyrics.parser.calculateLineProgress
+import moe.ouom.neriplayer.lyrics.parser.findCurrentLineIndex
+import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 import android.annotation.SuppressLint
 import android.graphics.Paint
 import android.graphics.Rect

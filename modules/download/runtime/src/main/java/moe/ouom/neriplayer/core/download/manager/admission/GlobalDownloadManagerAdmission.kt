@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.manager.admission
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.isWifiBoundNetworkPolicyObservationCurrent
+import moe.ouom.neriplayer.core.download.policy.isWifiBoundNetworkPolicyObservationCurrent
 import moe.ouom.neriplayer.core.download.manager.batch.cancellationOperationIdsForSong
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingAudioWritesFromRoot
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverUnfinalizedPublishedAudioFromRoot
@@ -26,7 +26,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_M
 import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.SongItem

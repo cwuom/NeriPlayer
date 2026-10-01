@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.host.media
 import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName
+import moe.ouom.neriplayer.data.model.download.naming.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver

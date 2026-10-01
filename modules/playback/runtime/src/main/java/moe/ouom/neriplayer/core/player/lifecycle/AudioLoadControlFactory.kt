@@ -4,7 +4,7 @@ package moe.ouom.neriplayer.core.player.lifecycle
 
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal data class AudioLoadControlPolicy(
     val minBufferMs: Int = 15_000,

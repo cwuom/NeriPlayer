@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.download.observability
 
 import java.util.concurrent.atomic.AtomicReference
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 /**
  * 记录一次启动恢复从意图到首个真实传输的单调时钟节点

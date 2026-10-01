@@ -1,5 +1,15 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilder
+import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogStore
+import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSong
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadDeletePlanner
+import moe.ouom.neriplayer.core.download.generation.DownloadRequestGenerationTracker
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
+import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoveryCandidate
+import moe.ouom.neriplayer.core.download.policy.runNonCancellableDownloadRollback
+import moe.ouom.neriplayer.core.download.task.DownloadTaskStore
 import moe.ouom.neriplayer.core.download.host.DownloadHosts
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -91,14 +101,14 @@ import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.progress.DownloadProgressProjectionStore
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.util.units.DAY_MS
+import moe.ouom.neriplayer.common.units.DAY_MS
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -886,7 +896,7 @@ object GlobalDownloadManager {
     internal fun buildDownloadedSongCatalogIndex(
         songs: List<DownloadedSong>
     ): DownloadedSongCatalogIndex {
-        return moe.ouom.neriplayer.core.download.buildDownloadedSongCatalogIndex(songs)
+        return moe.ouom.neriplayer.core.download.catalog.buildDownloadedSongCatalogIndex(songs)
     }
 
     internal data class FinalizedDownloadedAudioProbe(

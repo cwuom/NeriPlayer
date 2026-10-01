@@ -9,8 +9,8 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
 
 private data class PlaybackStatsCounterState(

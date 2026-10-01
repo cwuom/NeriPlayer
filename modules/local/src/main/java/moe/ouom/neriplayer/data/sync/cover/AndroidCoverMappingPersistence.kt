@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.sync.cover
 
 import android.content.Context
 import java.io.File
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.data.local.database.store.CoverUrlMappingRoomStore

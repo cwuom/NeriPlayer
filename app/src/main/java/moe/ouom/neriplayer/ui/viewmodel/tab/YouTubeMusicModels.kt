@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 
 fun YouTubeMusicPlaylist.favoriteId(): Long {
     return stableYouTubeMusicId(playlistId.ifBlank { browseId })

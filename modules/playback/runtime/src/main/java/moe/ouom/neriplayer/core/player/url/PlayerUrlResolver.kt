@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.url
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.data.model.playback.deriveCodecLabel
 import moe.ouom.neriplayer.data.model.playback.estimateBitrateKbps
 import moe.ouom.neriplayer.core.player.policy.audio.inferYouTubeQualityKeyFromBitrate
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
-import moe.ouom.neriplayer.api.netease.playback.parser.NeteasePlaybackResponseParser
+import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
 import java.net.URLDecoder
 import kotlin.math.abs
 import kotlin.math.max

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame

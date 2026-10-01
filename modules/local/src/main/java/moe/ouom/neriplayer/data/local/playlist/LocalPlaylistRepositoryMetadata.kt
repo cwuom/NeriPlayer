@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal suspend fun LocalPlaylistRepository.applySongMetadataUpdates(updates: List<SongMetadataUpdate>) {
     if (updates.isEmpty()) {

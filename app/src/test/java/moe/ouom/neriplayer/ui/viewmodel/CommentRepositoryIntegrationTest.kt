@@ -8,12 +8,12 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
-import moe.ouom.neriplayer.api.bilibili.client.BiliClient
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
-import moe.ouom.neriplayer.api.netease.client.NeteaseClient
-import moe.ouom.neriplayer.core.comment.CommentMemoryCache
+import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
+import moe.ouom.neriplayer.platform.comments.CommentMemoryCache
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.data.model.comments.CommentSource
@@ -32,9 +32,9 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import kotlin.time.Duration.Companion.milliseconds
-import moe.ouom.neriplayer.core.comment.repository.CommentRepository
-import moe.ouom.neriplayer.core.comment.repository.NeteaseCommentRepository
-import moe.ouom.neriplayer.core.comment.repository.BiliCommentRepository
+import moe.ouom.neriplayer.platform.comments.repository.CommentRepository
+import moe.ouom.neriplayer.platform.comments.repository.NeteaseCommentRepository
+import moe.ouom.neriplayer.platform.comments.repository.BiliCommentRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommentRepositoryIntegrationTest {

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.util
 
-import moe.ouom.neriplayer.util.network.shouldBlockMainFrameNavigation
+import moe.ouom.neriplayer.network.security.shouldBlockMainFrameNavigation
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

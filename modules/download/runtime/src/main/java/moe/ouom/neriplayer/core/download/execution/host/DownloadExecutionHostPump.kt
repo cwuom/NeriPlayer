@@ -347,7 +347,7 @@ internal suspend fun DefaultDownloadExecutionHost.releaseLostExecutionAdmissionI
         operationStore.releaseHostAdmissionSuspending(context, operationId)
     } catch (error: Throwable) {
         if (error is CancellationException) throw error
-        moe.ouom.neriplayer.core.logging.NPLogger.w(
+        moe.ouom.neriplayer.common.logging.NPLogger.w(
             "DownloadExecutionHost",
             "并发 claim 失败后回收孤立宿主准入失败: " +
                 "operationId=$operationId, error=${error.message}",
@@ -380,7 +380,7 @@ internal fun DefaultDownloadExecutionHost.releaseHostAdmissionIfIdle(
     val released = runCatching {
         operationStore.releaseHostAdmission(context, operationId)
     }.onFailure { error ->
-        moe.ouom.neriplayer.core.logging.NPLogger.w(
+        moe.ouom.neriplayer.common.logging.NPLogger.w(
             "DownloadExecutionHost",
             "释放空闲宿主准入失败，保留 owner 供后续重试: " +
                 "operationId=$operationId, error=${error.message}",
@@ -424,7 +424,7 @@ internal suspend fun DefaultDownloadExecutionHost.releaseHostAdmissionIfIdleSusp
         true
     } catch (error: Throwable) {
         if (error is CancellationException) throw error
-        moe.ouom.neriplayer.core.logging.NPLogger.w(
+        moe.ouom.neriplayer.common.logging.NPLogger.w(
             "DownloadExecutionHost",
             "释放空闲宿主准入失败，保留 owner 供后续重试: " +
                 "operationId=$operationId, error=${error.message}",

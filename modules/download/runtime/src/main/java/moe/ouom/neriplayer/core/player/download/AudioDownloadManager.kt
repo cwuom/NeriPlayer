@@ -104,10 +104,10 @@ import moe.ouom.neriplayer.core.download.resource.permit.DownloadTransferPermitR
 import moe.ouom.neriplayer.core.download.resource.watchdog.DownloadTransferWatchdog
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.stableKey
-import moe.ouom.neriplayer.api.youtube.transport.isTrustedYouTubeHost
+import moe.ouom.neriplayer.platform.youtube.api.transport.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.model.settings.download.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import okhttp3.Dispatcher

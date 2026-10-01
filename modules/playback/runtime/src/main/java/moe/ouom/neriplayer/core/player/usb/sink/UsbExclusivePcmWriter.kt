@@ -13,7 +13,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.locks.LockSupport
 import kotlin.math.abs
 import kotlin.math.max
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatSampleForNativePipeline
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics

@@ -8,9 +8,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import moe.ouom.neriplayer.core.lyrics.flattenWordTimedEntries as newFlattenWordTimedEntries
-import moe.ouom.neriplayer.core.lyrics.hasWordTimedEntries as newHasWordTimedEntries
-import moe.ouom.neriplayer.core.lyrics.toEditableLyricsText as newToEditableLyricsText
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries as newFlattenWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries as newHasWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.toEditableLyricsText as newToEditableLyricsText
 import moe.ouom.neriplayer.ui.component.lyrics.verticalEdgeFade as newVerticalEdgeFade
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -283,22 +283,22 @@ fun DebugActiveLine(
 }
 
 fun isNeteaseYrc(content: String): Boolean =
-    moe.ouom.neriplayer.core.lyrics.isNeteaseYrc(content)
+    moe.ouom.neriplayer.lyrics.parser.isNeteaseYrc(content)
 
 fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> =
-    moe.ouom.neriplayer.core.lyrics.parseNeteaseLyricsAuto(content)
+    moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto(content)
 
 fun calculateLineProgress(line: LyricEntry, currentTimeMs: Long): Float =
-    moe.ouom.neriplayer.core.lyrics.calculateLineProgress(line, currentTimeMs)
+    moe.ouom.neriplayer.lyrics.parser.calculateLineProgress(line, currentTimeMs)
 
 fun findCurrentLineIndex(lines: List<LyricEntry>, currentTimeMs: Long): Int =
-    moe.ouom.neriplayer.core.lyrics.findCurrentLineIndex(lines, currentTimeMs)
+    moe.ouom.neriplayer.lyrics.parser.findCurrentLineIndex(lines, currentTimeMs)
 
 fun parseNeteaseYrc(yrc: String): List<LyricEntry> =
-    moe.ouom.neriplayer.core.lyrics.parseNeteaseYrc(yrc)
+    moe.ouom.neriplayer.lyrics.parser.parseNeteaseYrc(yrc)
 
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> =
-    moe.ouom.neriplayer.core.lyrics.parseNeteaseLrc(lrc)
+    moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc(lrc)
 
 fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> =
     newFlattenWordTimedEntries()
@@ -314,7 +314,7 @@ fun resolvePreferredLyricContent(
     preferredNeteaseLyric: String,
     legacyLyric: String? = null
 ): String? =
-    moe.ouom.neriplayer.core.lyrics.resolvePreferredLyricContent(
+    moe.ouom.neriplayer.lyrics.parser.resolvePreferredLyricContent(
         matchedLyric = matchedLyric,
         preferredNeteaseLyric = preferredNeteaseLyric,
         legacyLyric = legacyLyric
@@ -324,7 +324,7 @@ internal fun resolveStoredLyricText(
     currentLyric: String?,
     legacyLyric: String?
 ): String? =
-    moe.ouom.neriplayer.core.lyrics.resolveStoredLyricText(
+    moe.ouom.neriplayer.lyrics.parser.resolveStoredLyricText(
         currentLyric = currentLyric,
         legacyLyric = legacyLyric
     )
@@ -337,7 +337,7 @@ internal fun resolveLyricsEditorInitialText(
     fallbackLyricsText: String?,
     legacyLyric: String? = null
 ): String =
-    moe.ouom.neriplayer.core.lyrics.resolveLyricsEditorInitialText(
+    moe.ouom.neriplayer.lyrics.parser.resolveLyricsEditorInitialText(
         matchedLyric = matchedLyric,
         preferredNeteaseLyric = preferredNeteaseLyric,
         displayedLyricsText = displayedLyricsText,
@@ -351,7 +351,7 @@ internal fun resolveLyricsEditorSeed(
     preparedLyrics: String? = null,
     preparedTranslatedLyrics: String? = null
 ): LyricsEditorSeed =
-    moe.ouom.neriplayer.core.lyrics.resolveLyricsEditorSeed(
+    moe.ouom.neriplayer.lyrics.parser.resolveLyricsEditorSeed(
         song = song,
         preparedLyrics = preparedLyrics,
         preparedTranslatedLyrics = preparedTranslatedLyrics
@@ -362,7 +362,7 @@ internal fun matchTranslationsToLineIndices(
     translations: List<LyricEntry>,
     toleranceMs: Long = 450L
 ): Map<Int, LyricEntry> =
-    moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices(
+    moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices(
         lines = lines,
         translations = translations,
         toleranceMs = toleranceMs
@@ -374,7 +374,7 @@ internal fun findBestMatchingTranslation(
     lineEndMs: Long,
     toleranceMs: Long = 1_500L
 ): LyricEntry? =
-    moe.ouom.neriplayer.core.lyrics.findBestMatchingTranslation(
+    moe.ouom.neriplayer.lyrics.parser.findBestMatchingTranslation(
         translations = translations,
         lineStartMs = lineStartMs,
         lineEndMs = lineEndMs,

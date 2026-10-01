@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.core.download.manager.facade
 
 import moe.ouom.neriplayer.core.download.host.DownloadHosts
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.shouldPauseDownloadsForWifiDisconnect
-import moe.ouom.neriplayer.core.download.shouldRevokeMobileDataDownloadOverrideForWifiDisconnect
+import moe.ouom.neriplayer.core.download.policy.shouldPauseDownloadsForWifiDisconnect
+import moe.ouom.neriplayer.core.download.policy.shouldRevokeMobileDataDownloadOverrideForWifiDisconnect
 import moe.ouom.neriplayer.core.download.manager.admission.admitArtifactRecoveryMutation
 import moe.ouom.neriplayer.core.download.manager.admission.dismissMobileDataDownloadInterruptionRequest
 import moe.ouom.neriplayer.core.download.manager.admission.isDownloadAdmissionTicketCurrent
@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecoveryWorker
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType

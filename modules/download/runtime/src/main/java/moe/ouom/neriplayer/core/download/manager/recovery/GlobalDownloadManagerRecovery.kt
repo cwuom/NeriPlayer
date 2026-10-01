@@ -5,10 +5,10 @@ import moe.ouom.neriplayer.data.model.download.DownloadProgress
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.PendingDownloadRecoveryCandidate
+import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoveryCandidate
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.mergePendingDownloadRecoveryCandidates
+import moe.ouom.neriplayer.core.download.policy.mergePendingDownloadRecoveryCandidates
 import moe.ouom.neriplayer.core.download.manager.admission.admitArtifactRecoveryMutation
 import moe.ouom.neriplayer.core.download.manager.admission.admitDownloadMutation
 import moe.ouom.neriplayer.core.download.manager.admission.completeStartupProgressRestoreReady
@@ -76,7 +76,7 @@ import moe.ouom.neriplayer.core.download.execution.worker.PostCoreDownloadRecove
 import moe.ouom.neriplayer.core.download.execution.persistence.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.policy.recoveryOperationIdsForKeys
 import moe.ouom.neriplayer.core.download.policy.shouldRecoverDownloadCandidateWithBatch
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchState
 import moe.ouom.neriplayer.data.model.SongItem

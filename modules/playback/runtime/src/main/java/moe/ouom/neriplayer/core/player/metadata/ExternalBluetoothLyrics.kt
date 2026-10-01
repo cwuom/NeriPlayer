@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
-import moe.ouom.neriplayer.core.lyrics.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 
 internal data class ExternalBluetoothMetadataText(
     val title: String,

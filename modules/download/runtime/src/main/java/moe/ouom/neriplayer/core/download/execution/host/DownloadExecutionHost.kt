@@ -51,7 +51,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.core.player.download.network.currentDownloadParallelism
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.util.units.DAY_MS
+import moe.ouom.neriplayer.common.units.DAY_MS
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -466,7 +466,7 @@ class DefaultDownloadExecutionHost(
         val persistedRequest = try {
             operationStore.read(context.applicationContext, normalizedId)
         } catch (error: Throwable) {
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+            moe.ouom.neriplayer.common.logging.NPLogger.w(
                 "DownloadExecutionHost",
                 "读取 transfer attempt 失败，拒绝启动回调: " +
                     "operationId=$normalizedId, error=${error.message}",
@@ -556,7 +556,7 @@ class DefaultDownloadExecutionHost(
         val heldPermitOwners = runCatching {
             transferPermitOwnersProvider()
         }.onFailure { error ->
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+            moe.ouom.neriplayer.common.logging.NPLogger.w(
                 "DownloadExecutionHost",
                 "读取真实下载 permit 快照失败，跳过宿主槽位修复: ${error.message}",
                 error
@@ -584,7 +584,7 @@ class DefaultDownloadExecutionHost(
             }
         }
         if (releasedOperationIds.isNotEmpty()) {
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+            moe.ouom.neriplayer.common.logging.NPLogger.w(
                 "DownloadExecutionHost",
                 "真实 permit 已释放，回收失联传输槽位: " +
                     "operations=${releasedOperationIds.size}"
@@ -627,7 +627,7 @@ class DefaultDownloadExecutionHost(
                 sameScheduleGeneration(admissionOwner, ticket)
             } == true
         if (!shouldReleaseAdmission) {
-            moe.ouom.neriplayer.core.logging.NPLogger.d(
+            moe.ouom.neriplayer.common.logging.NPLogger.d(
                 "DownloadExecutionHost",
                 "Core Commit 仅释放旧 transfer lane，保留新代次宿主准入: " +
                     "operationId=$normalizedId, callbackAttempt=$normalizedAttemptId, " +
@@ -646,7 +646,7 @@ class DefaultDownloadExecutionHost(
                     transferReleaseInFlightTokens.remove(owner.token)
                     transferReleasePendingTokens.add(owner.token)
                 }
-                moe.ouom.neriplayer.core.logging.NPLogger.w(
+                moe.ouom.neriplayer.common.logging.NPLogger.w(
                     "DownloadExecutionHost",
                     "Core Commit 后释放宿主准入失败，保留传输 owner 等待 finally/retry: " +
                         "operationId=$normalizedId, error=${error.message}",
@@ -734,7 +734,7 @@ class DefaultDownloadExecutionHost(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+            moe.ouom.neriplayer.common.logging.NPLogger.w(
                 "DownloadExecutionHost",
                 "读取用户停止进程的 durable operation 失败，保留退出标记待下次重试: " +
                     error.message,
@@ -752,7 +752,7 @@ class DefaultDownloadExecutionHost(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+            moe.ouom.neriplayer.common.logging.NPLogger.w(
                 "DownloadExecutionHost",
                 "写入用户停止标记失败，保留退出时间戳待下次重试: ${error.message}",
                 error
@@ -766,7 +766,7 @@ class DefaultDownloadExecutionHost(
             .toSet()
             .size
         if (recoveredKeys.size < expectedUserInitiatedCount) {
-            moe.ouom.neriplayer.core.logging.NPLogger.w(
+            moe.ouom.neriplayer.common.logging.NPLogger.w(
                 "DownloadExecutionHost",
                 "部分下载 operation 未完成进程退出恢复，保留退出时间戳待下次重试"
             )
@@ -799,7 +799,7 @@ class DefaultDownloadExecutionHost(
                     state = "INVALID",
                     errorCode = "INVALID_OPERATION_PAYLOAD"
                 )
-                moe.ouom.neriplayer.core.logging.NPLogger.w(
+                moe.ouom.neriplayer.common.logging.NPLogger.w(
                     "NERI-DownloadHost",
                     "下载 operation 读取失败: operationId=$normalizedId, reason=missing_or_unreadable"
                 )
