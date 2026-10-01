@@ -46,6 +46,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
+import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
+import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLookup
@@ -56,6 +58,7 @@ import moe.ouom.neriplayer.core.download.metadata.resolveCreatedAtConfidence
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationEntryCollector
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadStoredReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexEntryFactory
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
@@ -77,10 +80,14 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongImpl(context: Con
     if (hasManagedDownloadIdentityHint(song)) {
         return true
     }
+    val defaultRoot = ManagedDownloadRootResolver.defaultRootDirectory(context)
+    if (song.independentExternalImportReference(defaultRoot) != null) {
+        return false
+    }
     if (peekDownloadedAudio(song) != null) {
         return true
     }
-    val configuredRoot = ManagedDownloadRootResolver.defaultRootDirectory(context).absolutePath
+    val configuredRoot = defaultRoot.absolutePath
     val directPaths = listOfNotNull(song.localFilePath, song.mediaUri)
         .mapNotNull { reference ->
             when {
@@ -153,7 +160,16 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
     if (!LocalSongSupport.isLocalSong(song, null)) {
         return false
     }
-    if (hasManagedDownloadIdentityHint(song) || peekDownloadedAudio(song) != null) {
+    if (hasManagedDownloadIdentityHint(song)) {
+        return true
+    }
+    val defaultRoot = runCatching {
+        ManagedDownloadRootResolver.defaultRootDirectory(context)
+    }.getOrNull()
+    if (defaultRoot != null && song.independentExternalImportReference(defaultRoot) != null) {
+        return false
+    }
+    if (peekDownloadedAudio(song) != null) {
         return true
     }
 
@@ -166,9 +182,6 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
         return areEquivalentDirectoryUris(songTree.toString(), configuredRoot.toString())
     }
 
-    val defaultRoot = runCatching {
-        ManagedDownloadRootResolver.defaultRootDirectory(context).absolutePath
-    }.getOrNull()
     val directPaths = listOfNotNull(song.localFilePath, song.mediaUri)
         .mapNotNull { reference ->
             when {
@@ -180,9 +193,48 @@ internal fun ManagedDownloadStorage.isLikelyManagedDownloadSongFastImpl(
             }
         }
     return directPaths.any { path ->
-        (defaultRoot != null && isPathInside(path, defaultRoot)) ||
+        (defaultRoot != null && isPathInside(path, defaultRoot.absolutePath)) ||
             isPathInside(path, LEGACY_DOWNLOAD_ROOT_PATH)
     }
+}
+
+internal fun ManagedDownloadStorage.resolveIndependentExternalImportReferenceImpl(
+    context: Context,
+    song: SongItem
+): String? {
+    if (hasManagedDownloadIdentityHint(song)) return null
+    return runCatching {
+        song.independentExternalImportReference(ManagedDownloadRootResolver.defaultRootDirectory(context))
+    }.getOrNull()
+}
+
+private fun SongItem.independentExternalImportReference(defaultRoot: File): String? {
+    val references = listOfNotNull(localFilePath, mediaUri)
+    // content 别名不能证明归属, 播放时只交付 Imports 副本本身
+    return runCatching {
+        val importsDirectory = File(defaultRoot.canonicalFile, "Imports")
+        references.mapNotNull { reference ->
+            if (reference.startsWith("content://", ignoreCase = true)) return@mapNotNull null
+            val path = when {
+                reference.startsWith("/") -> reference
+                reference.startsWith("file:", ignoreCase = true) -> reference.toUri().path
+                else -> null
+            } ?: return@runCatching null
+            val originalFile = File(path)
+            val file = originalFile.canonicalFile
+            if (file.parentFile != importsDirectory) return@runCatching null
+            // 临时文件的别名不能借用已完成文件的名称绕过门禁
+            if (listOf(originalFile.name, file.name).any { name ->
+                    ManagedDownloadPendingAudioWriteNames.isArtifactName(name) ||
+                        name.endsWith(".partial", ignoreCase = true) ||
+                        name.endsWith(".stale", ignoreCase = true) ||
+                        (name.startsWith(DOWNLOAD_STAGING_FILE_PREFIX) &&
+                            name.endsWith(DOWNLOAD_STAGING_FILE_SUFFIX))
+                }
+            ) return@runCatching null
+            file.absolutePath
+        }.firstOrNull()
+    }.getOrNull()
 }
 
 internal fun ManagedDownloadStorage.hasManagedDownloadIdentityHintImpl(song: SongItem): Boolean {

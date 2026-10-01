@@ -17,6 +17,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.AuxEffectInfo
 import androidx.media3.common.C
 import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.analytics.PlayerId
@@ -175,6 +176,7 @@ internal class UsbExclusiveAudioSink(
     }
 
     override fun supportsFormat(format: Format): Boolean {
+        if (format.requiresPcmDecoding()) return false
         if (
             PlayerManager.usbExclusivePlaybackEnabled &&
             isUsbNativePcmFormat(format) &&
@@ -187,6 +189,7 @@ internal class UsbExclusiveAudioSink(
     }
 
     override fun getFormatSupport(format: Format): Int {
+        if (format.requiresPcmDecoding()) return AudioSink.SINK_FORMAT_UNSUPPORTED
         if (
             PlayerManager.usbExclusivePlaybackEnabled &&
             isUsbNativePcmFormat(format) &&
@@ -203,8 +206,13 @@ internal class UsbExclusiveAudioSink(
     }
 
     override fun getFormatOffloadSupport(format: Format): AudioOffloadSupport {
+        if (format.requiresPcmDecoding()) return AudioOffloadSupport.DEFAULT_UNSUPPORTED
         return fallbackSink.getFormatOffloadSupport(format)
     }
+
+    // 部分设备宣称支持 AAC 和 MP3 压缩输出, 实际写入会失效, 让解码器先输出 PCM
+    private fun Format.requiresPcmDecoding(): Boolean =
+        sampleMimeType == MimeTypes.AUDIO_AAC || sampleMimeType == MimeTypes.AUDIO_MPEG
 
     override fun configure(
         inputFormat: Format,
