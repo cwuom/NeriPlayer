@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.core.player.policy.service.shouldPreservePlayerRuntim
 import moe.ouom.neriplayer.core.player.policy.service.shouldSchedulePlaybackServiceIdleShutdown
 import moe.ouom.neriplayer.core.player.policy.service.shouldUseStickyStartModeWhilePlayerRuntimeInitializes
 import moe.ouom.neriplayer.core.player.service.lifecycle.suspendPlaybackForServiceRestart
+import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.core.player.service.notification.isFloatingLyricsEffectivelyEnabled
 import moe.ouom.neriplayer.core.player.service.notification.resolveStatusBarLyricNotificationState
 import moe.ouom.neriplayer.core.player.service.notification.statusBarLyricNotificationStateFlow
@@ -1081,6 +1082,7 @@ class AudioPlayerService : Service() {
             statusBarLyricNotificationStateFlow(
                 enabledFlow = PlayerDependencies.repositories.settingsRepo.statusBarLyricsEnabledFlow,
                 lineFlow = externalBluetoothLyricLineFlow,
+                deviceSupported = FlymeStatusBarLyricSupport.isSupported,
             ).collectSafely("statusBarLyricNotificationStateFlow") { state ->
                 if (statusBarLyricState != state) {
                     statusBarLyricState = state

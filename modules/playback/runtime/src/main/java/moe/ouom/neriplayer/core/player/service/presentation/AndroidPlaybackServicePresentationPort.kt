@@ -1,8 +1,12 @@
 package moe.ouom.neriplayer.core.player.service.presentation
 
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
+import moe.ouom.neriplayer.core.player.service.notification.FLYME_TICKER_ICON_KEY
+import moe.ouom.neriplayer.core.player.service.notification.FLYME_TICKER_ICON_SWITCH_KEY
+import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.core.player.service.notification.ServiceWidgetLabels
 import moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState
+import moe.ouom.neriplayer.core.player.service.notification.resolveFlymeStatusBarLyricTicker
 import moe.ouom.neriplayer.core.player.service.notification.favoriteActionIcon
 import moe.ouom.neriplayer.core.player.service.notification.favoriteActionTitle
 import moe.ouom.neriplayer.core.player.service.notification.floatingLyricsActionIcon
@@ -228,7 +232,11 @@ internal class AndroidPlaybackServicePresentationPort(
     ) {
         builder.setContentTitle(serviceNotificationTitle(inputs.song))
         builder.setContentText(inputs.text)
-        inputs.lyricState.line?.let(builder::setTicker)
+        resolveFlymeStatusBarLyricTicker(
+            inputs.lyricState,
+            FlymeStatusBarLyricSupport.flags,
+            inputs.playbackControlPlaying,
+        )?.let { builder.setTicker(it.text) }
     }
 
     private fun applyMediaNotificationArtwork(builder: Notification.Builder, artwork: Bitmap?) {
@@ -306,7 +314,7 @@ internal class AndroidPlaybackServicePresentationPort(
     ): Notification {
         val notification = builder.build()
         notification.attachXiaomiMusicIslandShareExtras(inputs)
-        applyMediaNotificationLyricFlags(notification, inputs.lyricState)
+        applyMediaNotificationLyricFlags(notification, inputs)
         return notification
     }
 
@@ -332,14 +340,16 @@ internal class AndroidPlaybackServicePresentationPort(
 
     private fun applyMediaNotificationLyricFlags(
         notification: Notification,
-        lyricState: StatusBarLyricNotificationState,
+        inputs: PlaybackServiceNotificationRenderInputs,
     ) {
-        if (!lyricState.hasTicker) return
-        val alwaysShowTicker = 0x01000000
-        val onlyUpdateTicker = 0x02000000
-        notification.flags = notification.flags.or(alwaysShowTicker).or(onlyUpdateTicker)
-        notification.extras.putInt("ticker_icon", CoreCommonR.drawable.ic_statusbar_lyric)
-        notification.extras.putBoolean("ticker_icon_switch", false)
+        val ticker = resolveFlymeStatusBarLyricTicker(
+            inputs.lyricState,
+            FlymeStatusBarLyricSupport.flags,
+            inputs.playbackControlPlaying,
+        ) ?: return
+        notification.flags = notification.flags.or(ticker.alwaysShowTicker).or(ticker.onlyUpdateTicker)
+        notification.extras.putInt(FLYME_TICKER_ICON_KEY, CoreCommonR.drawable.ic_statusbar_lyric)
+        notification.extras.putBoolean(FLYME_TICKER_ICON_SWITCH_KEY, false)
     }
 
     private fun mediaNotificationAction(

@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
+import moe.ouom.neriplayer.ui.settings.unavailableSettingKeys
 
 internal data class SettingsSearchEntry(
     val id: String,
@@ -41,7 +42,11 @@ internal fun buildSettingsSearchEntries(context: Context): List<SettingsSearchEn
     }
 
     val settingEntries = AutoSettingsMetadata.settings
-        .filter { it.ui != SettingUiType.None && it.titleRes != 0 }
+        .filter {
+            it.ui != SettingUiType.None &&
+                it.titleRes != 0 &&
+                it.keyName !in unavailableSettingKeys
+        }
         .mapNotNull { setting ->
             val page = setting.settingsPage() ?: return@mapNotNull null
             val title = context.safeString(setting.titleRes)

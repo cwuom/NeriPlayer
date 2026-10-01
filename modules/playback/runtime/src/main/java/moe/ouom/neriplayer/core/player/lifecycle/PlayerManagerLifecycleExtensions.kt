@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
@@ -1243,7 +1244,9 @@ private fun PlayerManager.observePlaybackSettings() {
     }
     ioScope.launch {
         settingsRepo.statusBarLyricsEnabledFlow.collect { enabled ->
-            statusBarLyricsEnable = enabled
+            // 设备不支持时状态栏歌词整体失效：用户可能从备份里恢复出 enabled=true，
+            // 若不在这里收口，歌词链路仍会加载并空转。
+            statusBarLyricsEnable = enabled && FlymeStatusBarLyricSupport.isSupported
             syncExternalBluetoothLyrics(_currentSongFlow.value)
         }
     }

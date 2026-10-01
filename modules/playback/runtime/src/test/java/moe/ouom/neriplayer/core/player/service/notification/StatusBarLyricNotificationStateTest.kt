@@ -20,7 +20,11 @@ class StatusBarLyricNotificationStateTest {
         val lineFlow = MutableStateFlow<String?>("line A")
         val states = mutableListOf<StatusBarLyricNotificationState>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            statusBarLyricNotificationStateFlow(enabledFlow, lineFlow).collect { state ->
+            statusBarLyricNotificationStateFlow(
+                enabledFlow = enabledFlow,
+                lineFlow = lineFlow,
+                deviceSupported = true,
+            ).collect { state ->
                 states += state
             }
         }
@@ -56,7 +60,11 @@ class StatusBarLyricNotificationStateTest {
         val lineFlow = MutableStateFlow<String?>(null)
         val states = mutableListOf<StatusBarLyricNotificationState>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            statusBarLyricNotificationStateFlow(enabledFlow, lineFlow).collect { state ->
+            statusBarLyricNotificationStateFlow(
+                enabledFlow = enabledFlow,
+                lineFlow = lineFlow,
+                deviceSupported = true,
+            ).collect { state ->
                 states += state
             }
         }
@@ -83,5 +91,31 @@ class StatusBarLyricNotificationStateTest {
             assertNull(state.line)
             assertFalse(state.hasTicker)
         }
+    }
+
+    @Test
+    fun `unsupported devices never emit a ticker state even when the switch is on`() = runTest {
+        val enabledFlow = MutableStateFlow(true)
+        val lineFlow = MutableStateFlow<String?>("line A")
+        val states = mutableListOf<StatusBarLyricNotificationState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            statusBarLyricNotificationStateFlow(
+                enabledFlow = enabledFlow,
+                lineFlow = lineFlow,
+                deviceSupported = false,
+            ).collect { state ->
+                states += state
+            }
+        }
+
+        lineFlow.value = "line B"
+        lineFlow.value = "line C"
+        enabledFlow.value = false
+
+        // 开关开着、歌词也在换行，但状态始终是关闭的：通知不会被无意义地重建
+        assertEquals(
+            listOf(resolveStatusBarLyricNotificationState(enabled = false, line = null)),
+            states,
+        )
     }
 }

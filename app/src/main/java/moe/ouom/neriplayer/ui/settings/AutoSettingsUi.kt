@@ -144,7 +144,10 @@ fun AutoSettingsSwitchItems(
     highlightPulse: Int = 0,
     onHighlightFinished: (() -> Unit)? = null
 ) {
-    val bindings = remember(section) { AutoSettingsSwitchBindings.inSection(section) }
+    val bindings = remember(section) {
+        AutoSettingsSwitchBindings.inSection(section)
+            .filterNot { it.setting.keyName in unavailableSettingKeys }
+    }
     bindings.forEach { binding ->
         key(binding.setting.keyName) {
             val flow = remember(repository, binding) { binding.read(repository) }
