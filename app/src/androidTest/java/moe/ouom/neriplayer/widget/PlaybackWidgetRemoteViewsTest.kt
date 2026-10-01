@@ -161,6 +161,38 @@ class PlaybackWidgetRemoteViewsTest {
     }
 
     @Test
+    fun responsivePaddingMatchesXmlDimensionsOnFractionalDensityScreens() {
+        val config = Configuration(context.resources.configuration).apply { densityDpi = 420 }
+        val fractionalContext = context.createConfigurationContext(config)
+        assertEquals(2.625f, fractionalContext.resources.displayMetrics.density, 0f)
+        instrumentation.runOnMainSync {
+            listOf(
+                R.layout.widget_playback_4x2_expanded to PlaybackWidgetSize(344, 180),
+                R.layout.widget_playback_4x2 to PlaybackWidgetSize(250, 110),
+                R.layout.widget_playback_4x1 to PlaybackWidgetSize(340, 64),
+            ).forEach { (layout, size) ->
+                val reference = RemoteViews(fractionalContext.packageName, layout)
+                    .apply(fractionalContext, FrameLayout(fractionalContext))
+                    .findViewById<View>(R.id.widget_main_content)
+                val root = applyRemoteViews(fractionalContext, layout, size, state(5_000))
+                val content = root.findViewById<View>(R.id.widget_main_content)
+                assertEquals(reference.paddingLeft, content.paddingLeft)
+                assertEquals(reference.paddingTop, content.paddingTop)
+                assertEquals(reference.paddingRight, content.paddingRight)
+                assertEquals(reference.paddingBottom, content.paddingBottom)
+                val controls = bounds(root, R.id.widget_controls)
+                if (layout == R.layout.widget_playback_4x1) {
+                    assertEquals((content.paddingTop + root.height - content.paddingBottom) / 2,
+                        controls.centerY())
+                } else {
+                    assertEquals(root.height - content.paddingBottom, controls.bottom)
+                }
+                assertGeometry(root)
+            }
+        }
+    }
+
+    @Test
     fun shortCardsKeepCoverTextAndControlsSeparateWithoutAProgressRow() {
         instrumentation.runOnMainSync {
             listOf(PlaybackWidgetSize(250, 100), PlaybackWidgetSize(250, 109)).forEach { size ->

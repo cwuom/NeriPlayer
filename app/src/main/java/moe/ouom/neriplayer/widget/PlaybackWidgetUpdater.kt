@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.roundToInt
 
 internal object PlaybackWidgetUpdater {
     private const val PREFS_NAME = "neriplayer_playback_widget"
@@ -570,8 +571,8 @@ internal object PlaybackWidgetUpdater {
         val bottomPadding = if (strip) 4 else spec.bottomPaddingDp
         views.setViewPadding(
             R.id.widget_main_content,
-            (padding * density).toInt(), (topPadding * density).toInt(),
-            (padding * density).toInt(), (bottomPadding * density).toInt(),
+            (padding * density).roundToInt(), (topPadding * density).roundToInt(),
+            (padding * density).roundToInt(), (bottomPadding * density).roundToInt(),
         )
         views.setTextViewTextSize(R.id.widget_status, TypedValue.COMPLEX_UNIT_SP, spec.statusTextSizeSp)
         views.setTextViewTextSize(
