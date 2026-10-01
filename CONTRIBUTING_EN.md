@@ -27,24 +27,28 @@ implementation**. Keep documentation aligned with the source code and runtime be
 
 When maintaining docs, split them by audience:
 
-- `README.md` / `README_EN.md`
+- [README.md](README.md) / [README_EN.md](README_EN.md)
   - For users and new contributors: project scope, feature boundaries,
     installation/builds, sync, and privacy.
-- `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
+- [CONTRIBUTING.md](CONTRIBUTING.md) / [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md)
   - For developers: module boundaries, extension paths, tests, and PR expectations.
-- [`docs/kotlin-helpers.md`](docs/kotlin-helpers.md)
+- [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md) /
+  [docs/kotlin-helpers.md](docs/kotlin-helpers.md)
   - Usage and boundaries for request generations, units, player reads, and coroutine results.
-- `app/src/main/cpp/README.md`
+- [tools_pub/quality/README_EN.md](tools_pub/quality/README_EN.md) /
+  [tools_pub/quality/README.md](tools_pub/quality/README.md)
+  - Scope, commands, and verification limits for CRAP, source ownership, and dependency checks.
+- [app/src/main/cpp/README.md](app/src/main/cpp/README.md)
   - Defines the alternative-license scope for NeriPlayer-owned native source,
     third-party exclusions, and the explicit dual-license statement required
     for external contributions to enter that scope.
-- `app/src/main/cpp/tests/usb/config/host-gate-contract.md`
+- [app/src/main/cpp/tests/usb/config/host-gate-contract.md](app/src/main/cpp/tests/usb/config/host-gate-contract.md)
   - Defines the public native USB host gate, CI coverage, and real-device boundary.
-- `app/src/main/cpp/tests/usb/corpus/README.md` and
-  `app/src/main/cpp/tests/usb/fixtures/README.md`
+- [app/src/main/cpp/tests/usb/corpus/README.md](app/src/main/cpp/tests/usb/corpus/README.md) and
+  [app/src/main/cpp/tests/usb/fixtures/README.md](app/src/main/cpp/tests/usb/fixtures/README.md)
   - Define the synthetic/auditable boundary for public USB test corpus and fixtures;
     device-derived evidence stays in the private evidence tree.
-- `np-submodule/NeriPlayer-LTW/README.md`
+- [np-submodule/NeriPlayer-LTW/README.md](https://github.com/TheSmallHanCat/NeriPlayer-LTW#readme)
   - For Listen Together server deployers: Worker API, event model, deployment,
     and local checks.
 
@@ -62,8 +66,8 @@ If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
 - **Gradle**: 9.6.1
 - **compileSdk / targetSdk / minSdk**: 37 / 36 / 28
 - **NDK**: `27.0.12077973`
-- **CMake**: `3.28.0+`
-- **Node.js**: 20, for Listen Together Worker checks
+- **CMake**: `3.22.1`, pinned by the Android build script
+- **Node.js**: 22, for Listen Together Worker checks
 - **Version name format**: `<git_short_hash>.<MMddHHmm>`
 - **Release APK filename**: `NeriPlayer-<versionName>[-abi].apk`
 
@@ -97,7 +101,7 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Sync**: GitHub / WebDAV three-way merge, deletion records, playback stats,
   missing-field snapshot cleanup, JSON/ProtoBuf/Base64 compatibility, and WebDAV
   concurrency protection.
-- **Local data**: atomic playlist JSON writes, local metadata hydration,
+- **Local data**: playlist Room transactions, legacy JSON upgrades and atomic fallback, local metadata hydration,
   config import/export, encrypted auth storage, and DataStore settings.
 - **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `SyncedLyricsView`,
   `LyricShareSheet`, phonetic lyric display, Japanese lyric translation spacing,
@@ -115,7 +119,7 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Local persistence**: debounced playback/traffic-stat writes, lifecycle flushes,
   atomic file replacement, and local-playlist/SAF initialization readiness.
 
-Related JVM tests live in app and library `src/test/` directories; device tests are under `app/src/androidTest/`.
+Related JVM and device tests live in app and library `src/test/` and `src/androidTest/` directories.
 When changing these areas, search for neighboring tests first, then add coverage
 for the new behavior.
 
@@ -259,7 +263,7 @@ New libraries use `build-logic.android.feature-library` and register their actua
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
   - `LibraryScreen.kt`: top-level Library categories. Local content can switch
-    between playlists and artists, and Favorites can show playlists and followed artists.
+    between playlists and artists, and Favorites can show playlists, followed artists, and Hot playlists.
   - `LocalArtistLibraryGrid.kt`: local artist grid, empty state, and artist cards.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
@@ -301,9 +305,10 @@ New libraries use `build-logic.android.feature-library` and register their actua
   - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
   - `engine/`: Media3 renderers and data sources. PCM normalization, channel balance,
     and reactive audio signals belong to `:playback:logic` under `audio/processing` and `audio/reactive`.
-  - `modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/runtime/stats/PlaybackStatsTracker.kt`
-    tracks playback statistics in `:playback:logic`. Playback commands and queue
-    advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
+  - `runtime/stats`, `runtime/progress`, `runtime/transport`, and `runtime/quality`
+    in `:playback:logic` own statistics collection, playback progress, transport,
+    and quality controls. The host supplies side effects through the corresponding
+    ports. Playback commands and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
   - `queue/state` and `queue/policy` in `:playback:logic` hold state ownership
     and editing/navigation rules. Queue contracts belong to `:model` under `playback/queue`.
     `PlayerQueueSnapshot` holds the list and current index. `PlayerQueueSessionSnapshot`
@@ -371,7 +376,8 @@ New libraries use `build-logic.android.feature-library` and register their actua
   - `ManagedDownloadStorage.kt` is the facade for app-managed and SAF storage.
     Implementation details are split across `storage/commit/`, `delete/`, `lookup/`,
     `migration/`, `recovery/`, `snapshot/`, `tree/`, and `working/`.
-  - `task/DownloadTaskStore.kt`: persisted download tasks, status, progress, and attempt IDs.
+  - `task/DownloadTaskStore.kt`: in-memory task presentation, status, progress, and attempt IDs.
+  - `execution/persistence/DownloadExecutionRoomStore.kt`: Room persistence for download operations and recovery state.
   - `policy/DownloadLifecyclePolicies.kt`: recovery, cancellation cleanup, and fast-settle policies.
   - `naming/ManagedDownloadNaming.kt`: filename templates and legacy filename compatibility.
   - `metadata/DownloadedAudioTagWriter.kt`: audio tag writing; `catalog/` owns
@@ -388,7 +394,7 @@ New libraries use `build-logic.android.feature-library` and register their actua
   - `auth/`: shared Web login state and the YouTube credential rotation Worker; platform cookie/auth repositories live in `:platform` under `data/auth` and `platform/youtube/auth`.
   - Platform caches belong to `:platform`; local playlist orchestration and shared cache-table schemas belong to `:local` and `:database`, respectively.
   - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
-  - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
+  - `local/playlist/`: local playlist Room reads/writes, legacy JSON upgrades and atomic fallback, system playlist compatibility,
     background metadata hydration, and local artist aggregation.
   - `local/audioimport/`, `local/media/`: local audio import, fast scans,
     background metadata hydration, cover fallback resolution, and sharing.
@@ -452,8 +458,8 @@ New libraries use `build-logic.android.feature-library` and register their actua
   display artist. They are not an online artist directory.
 - NetEase artist detail pages depend on NetEase artist metadata and endpoints;
   follow state is saved into the local Favorites category.
-- `Bilibili` supports search, favorites, audio playback, and downloads, but is
-  not a full video discovery or comments client.
+- `Bilibili` supports search, favorites, audio playback, downloads, comment reading,
+  nested replies, and copying. Signing in also enables likes, posting, and replying.
   Link recognition supports selected parts, collection shares, and `season_id`
   context, but this is still not a full Bilibili client.
 - `YouTube Music` supports login, anonymous playback, home/playlist browsing,
@@ -493,7 +499,7 @@ New libraries use `build-logic.android.feature-library` and register their actua
   - direct downloads resume through working-file size plus `Range`
   - platform-specific explicit chunked downloads resume by byte offset
   - HLS downloads resume from a saved segment checkpoint in `.hls.json`
-- Working files live under `cache/download_staging/` and also keep `.resume.json`
+- Working files live under `files/download_staging/` and also keep `.resume.json`
   metadata so unfinished downloads can be reconstructed after app restart or
   network recovery.
 - Manual cancellation rolls back partial artifacts and removes working files.
@@ -587,7 +593,7 @@ New libraries use `build-logic.android.feature-library` and register their actua
 
 Use this when integrating a new platform into `Explore` search or discovery.
 
-1. Implement the client under `api/<platform>` in `modules/platform`, with caching and business orchestration in the corresponding responsibility packages of the same library. Maintain protocol-to-business package dependency rules.
+1. Implement the client under `platform/<platform>/api` in `:platform`, with caching and business orchestration in the corresponding responsibility packages of the same library. Maintain protocol-to-business package dependency rules.
 2. Add request, pagination, and state mapping in `ExploreViewModel`.
 3. Add platform tabs and result UI in `ExploreScreen` / host screens.
 4. If playback is needed, connect the platform to `PlayerManager` playback resolution.
@@ -604,7 +610,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 3. Add an online playback platform
 
-1. Use `bili/` or `youtube/` as a reference for client and playback repository design.
+1. Use `platform/bilibili/` or `platform/youtube/` in `:platform` as a reference for client and playback repository design.
 2. Extend `core/player/engine/datasource/ConditionalHttpDataSourceFactory.kt`
    if special headers are needed.
 3. Add the platform under `core/player/url/` and its matching `resolver/` path.
@@ -747,7 +753,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    unit tests first.
 2. Consider app-managed storage, SAF custom directories, migration, legacy names,
    metadata files, and `.nomedia`.
-3. Download tasks write to `cache/download_staging/` before being committed to
+3. Download tasks write to `files/download_staging/` before being committed to
    the final directory. `.resume.json` and `.hls.json` are part of resume
    recovery and should not be treated as disposable temp files.
 4. Default download concurrency is **6**, configurable from **1-8**.
@@ -929,10 +935,10 @@ Before submitting, consider at least these checks:
    ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
    ./gradlew :platform:testDebugUnitTest \
      -DrunYouTubePlaybackSmoke=true \
-     -DyoutubeSmokeVideoId=<id> \
-     [-DyoutubeSmokeForceRefresh=true] \
-     [-DyoutubeSmokeCookieFile=/absolute/path/to/cookies.json]
+     -DyoutubeSmokeVideoId=VIDEO_ID
    ```
+   Replace `VIDEO_ID` with a real video ID. Add `-DyoutubeSmokeForceRefresh=true`
+   or `-DyoutubeSmokeCookieFile=/absolute/path/to/cookies.json` when needed.
 4. If you changed resources, UI, navigation, settings, sync, or storage logic:
    ```bash
    ./gradlew :app:lintDebug
@@ -962,11 +968,11 @@ Before submitting, consider at least these checks:
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
-   `npm run check` runs `node --check`, protocol tests, and
+   `npm run check` runs the Node.js version check, `node --check`, protocol tests, and
    `wrangler deploy --dry-run`. Protocol or room-state changes still need real
    create/join/WebSocket flow verification.
 8. Add unit tests to the owning module's `src/test/`; keep host integration tests in `app/src/test/`.
-   Add device or Compose UI tests under `app/src/androidTest/`.
+   Add device or Compose UI tests to the owning module's `src/androidTest/`; keep app-host integration tests under `app/src/androidTest/`.
 9. If behavior changes affect README, settings copy, user flows, or sync formats,
    update documentation in the same PR.
 
@@ -994,8 +1000,8 @@ The policy, runtime, PCM, host interface, USB policy, and widget presentation pa
 App player adapters participate in the combined app gate. Run `:playback:runtime:connectedDebugAndroidTest` for
 the migrated lyrics rendering, Room queue, decoder, and playback range instrumentation tests.
 
-`OwnedMainSourceLineBudgetTest` keeps the owned main-source files split in this
-refactor and their extracted components strictly below 2000 physical lines.
+`OwnedMainSourceLineBudgetTest` keeps the checked owned main-source files and
+components strictly below 2000 physical lines.
 It also checks owned `.cpp` / `.h` files under USB `exclusive/`.
 Update its file list when adding components. Third-party libusb and test files
 are outside this line limit.

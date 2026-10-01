@@ -10,7 +10,7 @@ feature-off USB host models:
 - Release, ASan+UBSan, and TSan execute the same CTest inventory
 - the inventory contains 30 native host tests plus runner self-check and
   fail-closed fixtures for warning, source-fingerprint, port, and daemon failures;
-  every test has a 60-second timeout and uses seed `324508639`
+  every test has a 60-second timeout, and the 30 native host tests use seed `324508639`
 - the runner verifies the source fingerprint is stable for the whole attempt
 - `.github/workflows/android_native_ci.yml` executes all three host profiles on
   native changes: Release + `-Werror`, ASan+UBSan, and TSan

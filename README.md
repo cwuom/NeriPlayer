@@ -291,7 +291,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 🗂️ **媒体库分类浏览**：
   `Library` 提供本地、收藏、网易云、YouTube Music、Bilibili 等入口；
   可在“设置 > 通用”中完全禁用 YouTube，关闭后不会展示相关入口或执行后台预热；
-  本地页支持歌单/歌手切换、搜索、歌手排序，收藏页支持歌单/歌手切换，
+  本地页支持歌单/歌手切换、搜索、歌手排序，收藏页支持歌单/歌手/热点切换，
   网易云页支持歌单/专辑切换，Bilibili 页区分创建收藏夹、订阅收藏夹和合集。
 - 🔍 **分层搜索能力**：
   `Explore` 使用网易云 / Bilibili / YouTube Music 按平台独立搜索；
@@ -515,7 +515,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - Java 17 / Kotlin JVM 17
 - AGP `9.4.1` / Gradle `9.6.1`
 - NDK `27.0.12077973`
-- CMake `3.28.0+`
+- CMake `3.22.1`，由 Android 构建脚本固定指定
 - 版本名格式：`<git短哈希>.<MMddHHmm>`
 - Release APK 文件名：`NeriPlayer-<versionName>[-abi].apk`
 - 默认 Release 只构建 `arm64-v8a`；多 ABI 构建需加
@@ -550,7 +550,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 共享业务契约统一放入 `modules/model`，沿用 `data.model.<业务>` 等既有包名；页面私有状态随 UI 维护，Room 实体随数据库维护，私有算法中间状态随算法维护。物理模块目录与 Kotlin 包名表达不同层次，包名与源码内部目录一致。调整类名时核对真实保存与读取方式；Worker 持久任务、JNI 导出和 Android 组件入口须保持兼容，字段、存储键与历史 schema 不能随目录整理改变。
 
-各模块维护自己的测试、资源与 consumer R8 规则，宿主集成测试保留在 app。Room 业务映射与本地仓库编排位于 `:local`，平台缓存适配位于 `:platform`；历史 schema 位于 `modules/database/schemas`。设置 schema 在 `:local` 运行 KSP，Compose 设置渲染留在 `app/ui/settings`。`app` 不保留生产 `data` 目录，下载升级和依赖组装位于 `core/startup/legacy` 与 `core/integration`。
+各模块维护自己的测试、资源与 consumer R8 规则，宿主集成测试保留在 app。Room 业务映射与本地仓库编排位于 `:local`，平台缓存适配位于 `:platform`；历史 schema 位于 `modules/database/schemas`。设置 schema 在 `:local` 运行 KSP，Compose 设置渲染留在 [app 的设置页面](app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/)。`app` 不保留生产 `data` 目录，下载升级和依赖组装位于 `core/startup/legacy` 与 `core/integration`。
 
 运行 `./gradlew verifyModularization` 检查结构、JVM 测试、合并 CRAP 覆盖率、计算域依赖和 lint。针对性任务见各模块 README，例如：
 
@@ -584,7 +584,7 @@ python3 -B tools_pub/quality/module_boundaries.py
   只落到主标签或播放服务入口，不会绕过正常导航状态恢复。
 - `Library` 使用分页导航组织本地、收藏、网易云、YouTube Music、Bilibili
   和 QQ 音乐占位；同时提供最近播放和播放统计入口。
-- 本地媒体库支持歌单/歌手二级分类；收藏页支持歌单/歌手二级分类；
+- 本地媒体库支持歌单/歌手二级分类；收藏页支持歌单/歌手/热点二级分类；
   网易云页支持歌单/专辑二级分类。
 - 本地歌手详情页由 `LocalArtistDetailScreen` 承载，支持播放全部、多选、
   导出歌单和批量下载在线歌曲；网易云艺术家详情页由
@@ -667,8 +667,8 @@ python3 -B tools_pub/quality/module_boundaries.py
 - 主题模式由 `ThemeMode` 管理，支持浅色、深色和跟随系统的 Auto 模式。
 - 平台 Cookie、YouTube 授权信息、GitHub Token 与 WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 本地加密保存。
-- 播放历史、播放统计、歌单、收藏快照和部分映射数据使用本地文件持久化。
-- 本地歌单使用 JSON 文件存储，并通过临时文件实现原子写入。
+- 本地歌单、最近播放、播放统计和收藏快照主要通过 `Room` 持久化，实体、DAO 与升级链由 `:database` 维护。
+- 旧 JSON 保留升级导入和故障回退路径；歌单 JSON 导入/导出与远端同步格式由各自流程维护，回退文件仍使用原子写入。
 - GitHub 与 WebDAV 共用的同步载荷模型位于 `:model` 的 `data/model/sync/`，
   传输、加密凭据状态、会话、兼容编解码、清洗、合并和调度策略由 `:sync` 维护，
   Android 仓库与 WorkManager 适配位于 `:local`。
@@ -683,10 +683,11 @@ python3 -B tools_pub/quality/module_boundaries.py
 
 - 下载使用共享 `OkHttpClient`，不是系统 `DownloadManager`。
 - 默认下载并发为 **6**，可在设置中调整，最高 **8**。
-- 下载文件先写入 `cache/download_staging` 下的工作文件，再提交到应用管理目录
+- 下载文件先写入 `files/download_staging/` 下的工作文件，再提交到应用管理目录
   或用户选择的 SAF 目录；正式落盘前会先准备音频元数据，提交后再写歌词、封面、
   `.npmeta.json` 和音频标签。
-- `DownloadTaskStore` 会持久化待下载队列和任务状态；
+- `DownloadExecutionRoomStore` 通过 Room 持久化下载操作和恢复状态；
+  `DownloadTaskStore` 管理内存中的任务展示与进度。
   `GlobalDownloadManager` 启动时会等待已有队列收敛，再恢复未完成任务，
   避免旧队列和新请求互相覆盖。
 - 已完成音频如果能通过下载索引或快照快速命中，会直接结算为完成，
