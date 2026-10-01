@@ -114,7 +114,7 @@ class WebDavDirectoryResponseTest {
     fun `regular WebDAV file cannot establish a directory`() {
         val xml = collectionXml().replace("<d:collection/>", "")
 
-        assertThrows(IOException::class.java) { parse(xml.toByteArray()) }
+        assertThrows(WebDavNotDirectoryException::class.java) { parse(xml.toByteArray()) }
     }
 
     @Test

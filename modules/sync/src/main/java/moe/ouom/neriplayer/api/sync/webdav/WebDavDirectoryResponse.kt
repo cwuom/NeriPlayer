@@ -53,7 +53,7 @@ internal object WebDavDirectoryResponse {
     private fun requireCollection(property: Element) {
         val type = resourceType(property)
             ?: throw IOException("Invalid WebDAV directory response: missing resource type")
-        if (type.childrenNamed("collection").isEmpty()) throw IOException("WebDAV sync path is not a directory")
+        if (type.childrenNamed("collection").isEmpty()) throw WebDavNotDirectoryException("WebDAV sync path is not a directory")
     }
 
     private fun resourceType(property: Element): Element? = property.childrenNamed("prop").firstOrNull()

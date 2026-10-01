@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavAccessDeniedException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavDirectoryNotFoundException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavNotDirectoryException
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
@@ -31,6 +32,7 @@ internal fun createWebDavWorkerHost(context: Context): SyncWorkerHost {
         classifier = SyncWorkerFailureClassifier(mapOf(
             WebDavAuthException::class.java to SyncWorkerFailureKind.AUTHENTICATION,
             WebDavDirectoryNotFoundException::class.java to SyncWorkerFailureKind.CONFIGURATION,
+            WebDavNotDirectoryException::class.java to SyncWorkerFailureKind.CONFIGURATION,
             WebDavAccessDeniedException::class.java to SyncWorkerFailureKind.CONFIGURATION,
             WebDavMissingConcurrencyTokenException::class.java to SyncWorkerFailureKind.MISSING_CONDITION,
             WebDavSyncInProgressException::class.java to SyncWorkerFailureKind.ALREADY_RUNNING

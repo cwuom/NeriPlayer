@@ -21,6 +21,8 @@ class WebDavFileNotFoundException(message: String) : IOException(message)
 
 class WebDavDirectoryNotFoundException(message: String) : IOException(message)
 
+class WebDavNotDirectoryException(message: String) : IOException(message)
+
 open class WebDavApiException(
     val statusCode: Int,
     message: String
