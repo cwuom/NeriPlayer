@@ -26,14 +26,20 @@ lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
 统一模型、网络基础能力和队列包还校验模块归属，防止源码被移回不匹配的库。
 库主源码及 `module_boundaries.py` 中 `APP_FAMILIES` 登记的应用区域，每个目录最多 16 个直接源码文件，模块职责见
 [根目录 README](../../README.md#模块结构)。移动路径时必须同步 CRAP source/method 选择器，不能减少原检查范围。
-已迁出的 `core/api`、`core/lyrics`、`core/player/queue` 和 `data/sync/merge` 生产代码不得重新放入 `app`；
-同步的 `change`、`codec`、`mapping/stats`、`remote`、`retry`、`runtime` 和 `sanitize` 包同样固定归属 `:data:sync`。
-`LIBRARY_OWNED_FAMILIES` 检查这些目录及其子目录，宿主集成测试仍可保留在 `app`。
+已迁出的 `core/api`、`core/lyrics`、`core/player/queue`、整个 `data/sync` 和 `api/sync` 生产目录不得重新放入 `app`。
+同步的共享规则固定归属 `:data:sync`，传输归属 `:api:sync`，凭据状态归属 `:data:sync-store`，Android 仓库适配归属 `:data:repository`。
+`LIBRARY_OWNED_FAMILIES` 检查这些目录及其子目录，同步宿主集成测试位于 `:data:repository`。
 单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
 但不会因超分退出失败。
-同步模块可独立运行 `./gradlew :data:sync:verifyCrap :data:sync:verifyDomainDependencies :data:sync:lintDebug`，
-从同一份范围配置选择模块源码并执行同样的阈值，报告位于 `modules/data/sync/build/reports/crap/`。
-Android CI 在全项目门禁前执行同步门禁，其他模块编译失败时仍可检查同步规则。
+同步模块可独立运行 `:api:sync:verifyCrap`、`:data:sync-store:verifyCrap` 和 `:data:sync:verifyCrap`，
+从同一份范围配置选择模块源码并执行同样的阈值，报告位于对应模块的 `build/reports/crap/`。
+`data/sync/**/*.kt` 与 `api/sync/**/*.kt` 整文件受检，包括 Android 适配、默认参数、协程和 lambda，新增文件自动进入门禁。
+`:api:sync:verifyDomainDependencies` 禁止传输代码依赖 Android、仓库与播放器；`:data:sync:verifyDomainDependencies`
+验证会话、合并、远端保护和 Worker 策略边界。结构门禁禁止整个同步生产目录回到 app，并验证凭据与传输模块归属。
+Android CI 在全项目门禁前执行同步门禁，超分立即失败。
+`:data:repository:verifySyncIntegrationCrap` 独立运行同步 Android 适配的 JVM 测试，并检查整个 `data/sync` 目录。
+该任务保留相同的阈值、执行数据校验和整文件范围；仓库的全量测试与 `verifyCrap` 仍由原门禁执行。
+独立报告位于 `modules/data/repository/build/reports/sync-crap/`，`check` 与 Android CI 均调用。
 
 报告位于 `app/build/reports/crap/`：
 

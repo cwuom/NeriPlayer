@@ -81,9 +81,9 @@ import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
-import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
-import moe.ouom.neriplayer.data.sync.PlayHistorySyncPreferences
-import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
+import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistorySyncPreferences
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState

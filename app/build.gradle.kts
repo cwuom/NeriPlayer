@@ -33,6 +33,7 @@ val ownedLibraryPaths = listOf(
     ":api:lyrics",
     ":api:netease",
     ":api:search",
+    ":api:sync",
     ":api:youtube",
     ":data:bilibili",
     ":data:comments",
@@ -44,6 +45,7 @@ val ownedLibraryPaths = listOf(
     ":data:repository",
     ":data:storage",
     ":data:sync",
+    ":data:sync-store",
     ":data:youtube"
 )
 val libraryCoverageClasses = configurations.create("libraryCoverageClasses") {

@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+
+import moe.ouom.neriplayer.api.sync.github.GitHubApiException
+import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
+
+import moe.ouom.neriplayer.data.sync.host.createGitHubSyncClient
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -79,7 +86,7 @@ class GitHubSyncViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isValidating = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(appContext, token)
+            val apiClient = createGitHubSyncClient(appContext, token)
             val result = apiClient.validateToken()
 
             if (result.isSuccess) {
@@ -118,7 +125,7 @@ class GitHubSyncViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isCreatingRepo = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(appContext, token)
+            val apiClient = createGitHubSyncClient(appContext, token)
             val result = apiClient.createRepository(repoName)
 
             if (result.isSuccess) {
@@ -166,7 +173,7 @@ class GitHubSyncViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isCheckingRepo = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(appContext, token)
+            val apiClient = createGitHubSyncClient(appContext, token)
             val result = apiClient.checkRepository(owner, repo)
 
             if (result.isSuccess) {

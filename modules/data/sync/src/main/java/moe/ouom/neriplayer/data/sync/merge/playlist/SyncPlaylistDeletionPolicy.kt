@@ -50,28 +50,7 @@ object SyncPlaylistDeletionPolicy {
             return merged
         }
 
-        val causal = merged.filter { it.removedMembershipTokens.orEmpty().isNotEmpty() }
-        val legacy = merged.filter { it.removedMembershipTokens.orEmpty().isEmpty() }
-        val preferredLegacyCapacity = when {
-            causal.isEmpty() -> maxCount
-            legacy.isEmpty() -> 0
-            else -> maxCount / 2
-        }
-        var legacyCapacity = minOf(legacy.size, preferredLegacyCapacity)
-        var causalCapacity = minOf(causal.size, maxCount - legacyCapacity)
-
-        var remainingCapacity = maxCount - legacyCapacity - causalCapacity
-        if (remainingCapacity > 0) {
-            val extraLegacy = minOf(legacy.size - legacyCapacity, remainingCapacity)
-            legacyCapacity += extraLegacy
-            remainingCapacity -= extraLegacy
-        }
-        if (remainingCapacity > 0) {
-            causalCapacity += minOf(causal.size - causalCapacity, remainingCapacity)
-        }
-
-        return (causal.take(causalCapacity) + legacy.take(legacyCapacity))
-            .sortedWith(deletionOrderComparator)
+        return SyncDeletionCapacityPolicy.select(merged, maxCount, deletionOrderComparator)
     }
 
     fun applyDeletions(
@@ -135,16 +114,17 @@ object SyncPlaylistDeletionPolicy {
         return limitDeletions(
             normalizedDeletions
             .filterNot { deletion ->
-                deletion.removedMembershipTokens.orEmpty().isEmpty() &&
-                    activeSongsByKey[deletion.stableKey()]?.let { activeSong ->
-                        // 仅当活跃歌曲带 membership token (在新版本被真正重新添加, 该 identity
-                        // 已由 causal token 接管) 时才裁 legacy 墓碑; 无 token 歌曲的 addedAt
-                        // 可能来自 legacy 迁移合成, 不可据此判定重新添加, 否则误裁墓碑使已删歌复活 (P1-1)
-                        activeSong.syncMembershipTokens.orEmpty().isNotEmpty() &&
-                            effectiveAddedAt(activeSong) > deletion.deletedAt
-                    } == true
+                isResolvedLegacyDeletion(deletion, activeSongsByKey[deletion.stableKey()])
             }
         )
+    }
+
+    private fun isResolvedLegacyDeletion(deletion: SyncPlaylistSongDeletion, activeSong: SyncSong?): Boolean {
+        if (deletion.removedMembershipTokens.orEmpty().isNotEmpty()) return false
+        if (activeSong == null) return false
+        // 迁移合成的 addedAt 不能证明重新添加，只有 membership token 能接管旧墓碑
+        if (activeSong.syncMembershipTokens.orEmpty().isEmpty()) return false
+        return effectiveAddedAt(activeSong) > deletion.deletedAt
     }
 
     fun clearLegacyDeletionsForReaddedSongs(
@@ -158,10 +138,12 @@ object SyncPlaylistDeletionPolicy {
             "$playlistId|${identity.stableKey()}"
         }
         return mergeDeletions(deletions, emptyList()).filterNot { deletion ->
-            deletion.stableKey() in readdedKeys &&
-                deletion.removedMembershipTokens.orEmpty().isEmpty()
+            legacyDeletionWasReadded(deletion, readdedKeys)
         }
     }
+
+    private fun legacyDeletionWasReadded(deletion: SyncPlaylistSongDeletion, readdedKeys: Set<String>): Boolean =
+        deletion.stableKey() in readdedKeys && deletion.removedMembershipTokens.orEmpty().isEmpty()
 
     fun shouldKeepPlaylistDeleted(left: SyncPlaylist, right: SyncPlaylist): Boolean {
         if (!left.isDeleted && !right.isDeleted) return false
@@ -176,54 +158,7 @@ object SyncPlaylistDeletionPolicy {
         left: SyncFavoritePlaylist,
         right: SyncFavoritePlaylist
     ): SyncFavoritePlaylist {
-        val newer = if (right.modifiedAt > left.modifiedAt) right else left
-        val older = if (newer === left) right else left
-
-        if (left.isDeleted != right.isDeleted) {
-            if (left.modifiedAt == right.modifiedAt) {
-                val deleted = if (left.isDeleted) left else right
-                return deleted.copy(
-                    songs = emptyList(),
-                    trackCount = 0,
-                    addedTime = maxOf(left.addedTime, right.addedTime),
-                    modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
-                    sortOrder = maxOf(left.sortOrder, right.sortOrder)
-                )
-            }
-            return if (newer.isDeleted) {
-                newer.copy(
-                    songs = emptyList(),
-                    trackCount = 0,
-                    sortOrder = maxOf(left.sortOrder, right.sortOrder)
-                )
-            } else {
-                newer.copy(
-                    songs = (left.songs + right.songs).distinctBy { it.identity() },
-                    trackCount = maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size),
-                    sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder
-                )
-            }
-        }
-
-        if (newer.isDeleted) {
-            return newer.copy(
-                songs = emptyList(),
-                trackCount = 0,
-                addedTime = maxOf(left.addedTime, right.addedTime),
-                sortOrder = maxOf(left.sortOrder, right.sortOrder)
-            )
-        }
-
-        val mergedSongs = (left.songs + right.songs).distinctBy { it.identity() }
-        return newer.copy(
-            coverUrl = newer.coverUrl ?: older.coverUrl,
-            songs = mergedSongs,
-            trackCount = maxOf(left.trackCount, right.trackCount, mergedSongs.size),
-            addedTime = maxOf(left.addedTime, right.addedTime),
-            modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
-            sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder,
-            isDeleted = false
-        )
+        return SyncFavoritePlaylistMergePolicy.merge(left, right)
     }
 
     private fun mergeDeletionSnapshots(
@@ -258,12 +193,7 @@ object SyncPlaylistDeletionPolicy {
     ): SyncSong? {
         val songTokens = song.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
         if (songTokens.isEmpty()) {
-            val latestIdentityDeletion = identityDeletions.maxWithOrNull(deletionMirrorComparator)
-            return if (latestIdentityDeletion == null) {
-                song
-            } else {
-                song.takeIf { effectiveAddedAt(it) > latestIdentityDeletion.deletedAt }
-            }
+            return applyLegacyIdentityDeletion(song, identityDeletions)
         }
 
         val remainingTokens = songTokens
@@ -276,6 +206,15 @@ object SyncPlaylistDeletionPolicy {
             song.copy(syncMembershipTokens = remainingTokens)
         }
         return survivingSong
+    }
+
+    private fun applyLegacyIdentityDeletion(song: SyncSong, identityDeletions: List<SyncPlaylistSongDeletion>): SyncSong? {
+        val latestIdentityDeletion = identityDeletions.maxWithOrNull(deletionMirrorComparator)
+        return if (latestIdentityDeletion == null) {
+            song
+        } else {
+            song.takeIf { effectiveAddedAt(it) > latestIdentityDeletion.deletedAt }
+        }
     }
 
     private fun effectiveAddedAt(song: SyncSong): Long {

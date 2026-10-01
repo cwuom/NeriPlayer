@@ -37,14 +37,16 @@ fun SyncPlaylistSongDeletion.copyWithNormalizedMembershipTokens(
 
 fun SyncSong.hasResolvableSyncIdentity(): Boolean {
     return id != 0L ||
-        audioId?.isNotBlank() == true ||
-        mediaUri?.isNotBlank() == true
+        hasSyncIdentityText(audioId) ||
+        hasSyncIdentityText(mediaUri)
 }
 
 fun SyncRecentPlayDeletion.hasResolvableSyncIdentity(): Boolean {
-    return songId != 0L || mediaUri?.isNotBlank() == true
+    return songId != 0L || hasSyncIdentityText(mediaUri)
 }
 
 fun SyncPlaylistSongDeletion.hasResolvableSyncIdentity(): Boolean {
-    return songId != 0L || mediaUri?.isNotBlank() == true
+    return songId != 0L || hasSyncIdentityText(mediaUri)
 }
+
+private fun hasSyncIdentityText(value: String?): Boolean = !value.isNullOrBlank()

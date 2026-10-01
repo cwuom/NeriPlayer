@@ -38,10 +38,7 @@ private fun List<SyncSong>.migrateLegacySongsToDisplayOrder(
     // 锚点必须与设备墙钟无关: 只用歌单自身 modifiedAt (快照产生时刻) 而非 now
     // 否则被抬高的 addedAt 恒大于任何历史 deletedAt, 使 identity 删除墓碑永久失效并被
     // pruneResolvedDeletions 裁剪, 导致已删歌曲复活 (P1-1)
-    val newestAddedAt = maxOf(
-        playlistModifiedAt,
-        maxOfOrNull { it.addedAt } ?: 0L
-    ).coerceAtLeast(1L)
+    val newestAddedAt = legacyOrderAnchor(this, playlistModifiedAt)
     return asReversed().mapIndexed { index, song ->
         song.copyWithNormalizedMembershipTokens(
             addedAt = (newestAddedAt - index).coerceAtLeast(1L),
@@ -49,6 +46,9 @@ private fun List<SyncSong>.migrateLegacySongsToDisplayOrder(
         )
     }
 }
+
+private fun legacyOrderAnchor(songs: List<SyncSong>, playlistModifiedAt: Long): Long =
+    maxOf(playlistModifiedAt, songs.maxOf { it.addedAt }).coerceAtLeast(1L)
 
 private fun List<SyncSong>.sortedByAddedAtForDisplay(): List<SyncSong> {
     if (size < 2) return this

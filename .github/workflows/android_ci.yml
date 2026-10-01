@@ -45,7 +45,7 @@ jobs:
 
       - name: Run unit tests, CRAP gate and lint
         run: >-
-          ./gradlew :core:player-policy:verifyCrap :core:player-runtime:verifyCrap :core:player-audio:verifyCrap :feature:player:verifyCrap :data:sync:verifyCrap :data:sync:verifyDomainDependencies :core:download:verifyCrap :feature:download:verifyCrap verifyModularization --warning-mode all --stacktrace
+          ./gradlew :core:player-policy:verifyCrap :core:player-runtime:verifyCrap :core:player-audio:verifyCrap :feature:player:verifyCrap :api:sync:verifyCrap :api:sync:verifyDomainDependencies :data:sync-store:verifyCrap :data:sync:verifyCrap :data:sync:verifyDomainDependencies :data:repository:verifySyncIntegrationCrap :core:download:verifyCrap :feature:download:verifyCrap verifyModularization --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()

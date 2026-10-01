@@ -238,13 +238,17 @@ and CRAP selectors together.
   - Workers and JobService keep their existing class names so persisted tasks remain resolvable after upgrades.
   - Run `./gradlew :feature:download:testDebugUnitTest` and `./gradlew :core:download:verifyCrap :feature:download:verifyCrap` for tests and complexity gates.
 - `:data:sync`
-  - Sync sessions, compatibility codecs, sanitization, change detection, merging, and concurrency protection; the host owns storage, transport, cover mapping, and presentation.
+  - Sync sessions, compatibility codecs, sanitization, change detection, merging, concurrency protection, and Worker execution policies; the host owns storage, transport, cover mapping, and presentation.
   - `runtime` executes sessions through local-data and backend interfaces, `remote` owns compatibility-file fallback and WebDAV fingerprint revalidation, and `retry` handles conflicts.
   - New business rules must enter CRAP and domain-dependency gates; the module must not directly depend on Android hosts, databases, or network clients.
 - `:data:ltw`
   - Listen Together client sessions, membership operations, credentials, reconnects, control acknowledgement and compatibility fallback, playback synchronization, invites, and input validation.
   - `session` separates state, connection, membership, control, heartbeat, links, and socket events; host ports supply playback, Android services, and resource messages.
   - Every production file enters the CRAP and domain-dependency gates automatically; the module cannot reference `PlayerManager`, `AppContainer`, or UI.
+- `:api:sync`
+  - GitHub Git Data and WebDAV protocols, conditional requests, and bounded responses with injected HTTP clients and messages; no Android repository, player, or UI dependencies.
+- `:data:sync-store`
+  - Encrypted credentials, preferences, device identity, causal counters, and deletion records; a local mutation and its version must commit atomically through one editor.
 - `:data:lyrics`
   - Cross-source lyric matching, ranking, and fallback using clients from `:api:lyrics` and `:api:search`.
 - `:ksp-annotations` / `:ksp-processor`
@@ -461,10 +465,9 @@ and at most 16 direct source files per directory in libraries and app areas regi
     network, and Android host dependencies.
   - `sync/runtime/`, `codec/`, `sanitize/`, `change/`, `mapping/stats/`, `remote/`, and `retry/` in `:data:sync` own shared sessions, codecs, sanitization, change detection, stat mapping, remote protection, and conflict retries.
   - `sync/host/`: Android repository snapshots, resource resolution, and persistence adapters consumed through interfaces.
-  - `sync/`: provider-neutral preferences and cover mapping.
-  - `sync/github/`: GitHub backend, transport, Data Saver,
-    and secure storage.
-  - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
+  - `sync/cover/`: cover mapping persistence and legacy JSON import; failed imports retain legacy data and block cleanup.
+  - `sync/github/` and `sync/webdav/`: provider backends and compatible Worker entry points; `sync/work/` owns WorkManager, validated-network, and notification adapters.
+  - Protocol clients live in `modules/api/sync`, credentials and deletion state in `modules/data/sync-store`; app has no production `data/sync` sources.
 
 - `modules/api/ltw/src/main/java/moe/ouom/neriplayer/api/ltw/`
   - HTTP, WebSocket, server URL validation, and reconnect policies using protocol models and an injected HTTP client.
@@ -784,6 +787,18 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    unconditional retry.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
+
+9. Preference file names, keys, Worker class names, work names, and input keys are upgrade contracts and must remain stable across module moves.
+   Device ID reads and first creation share one lock; causal counters and deletion state retain atomic commits.
+   Every new sync file enters the directory-wide CRAP gate, failing when any method exceeds 9.
+
+```bash
+./gradlew :api:sync:verifyCrap :api:sync:verifyDomainDependencies :api:sync:lintDebug
+./gradlew :data:sync-store:verifyCrap :data:sync-store:lintDebug
+./gradlew :data:sync:verifyCrap :data:sync:verifyDomainDependencies :data:sync:lintDebug
+./gradlew :data:repository:verifySyncIntegrationCrap
+./gradlew :data:repository:verifyCrap :data:repository:lintDebug
+```
 
 #### 8. Modify download storage
 

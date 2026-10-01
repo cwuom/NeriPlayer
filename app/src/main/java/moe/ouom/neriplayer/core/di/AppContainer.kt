@@ -505,6 +505,9 @@ object AppContainer {
             )
         )
         moe.ouom.neriplayer.data.network.DataHttpClients.bind { sharedOkHttpClient }
+        moe.ouom.neriplayer.data.sync.host.SyncPlaybackActivity.bind {
+            moe.ouom.neriplayer.core.player.PlayerManager.playbackControlPlayingFlow.value
+        }
         moe.ouom.neriplayer.data.auth.youtube.YouTubeRotationHosts.bind(
             object : moe.ouom.neriplayer.data.auth.youtube.YouTubeRotationHost {
                 override fun isInitialized() = AppContainer.isInitialized()

@@ -534,5 +534,83 @@
       "androidx.media3.exoplayer.audio.TeeAudioProcessor$AudioBufferSink"
     ],
     "bridges": {}
+  },
+  {
+    "name": "sync-worker-policy",
+    "package": "moe.ouom.neriplayer.data.sync.schedule.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "java.io.IOException",
+      "moe.ouom.neriplayer.data.model.sync.*"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-github-transport",
+    "package": "moe.ouom.neriplayer.api.sync.github.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "java.io.IOException",
+      "java.io.Closeable",
+      "moe.ouom.neriplayer.data.model.sync.transport.*",
+      "moe.ouom.neriplayer.api.sync.http.*",
+      "moe.ouom.neriplayer.core.logging.NPLogger",
+      "okhttp3.*",
+      "okio.*",
+      "com.google.gson.*",
+      "org.json.*",
+      "java.nio.charset.Charset",
+      "java.nio.charset.StandardCharsets",
+      "java.security.MessageDigest"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-webdav-transport",
+    "package": "moe.ouom.neriplayer.api.sync.webdav.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "java.io.IOException",
+      "java.io.Closeable",
+      "moe.ouom.neriplayer.data.model.sync.transport.*",
+      "moe.ouom.neriplayer.api.sync.http.*",
+      "moe.ouom.neriplayer.core.logging.NPLogger",
+      "okhttp3.*",
+      "okio.*",
+      "com.google.gson.*",
+      "org.json.*",
+      "java.nio.charset.Charset",
+      "java.nio.charset.StandardCharsets",
+      "java.security.MessageDigest"
+    ],
+    "bridges": {}
+  },
+  {
+    "name": "sync-http-safety",
+    "package": "moe.ouom.neriplayer.api.sync.http.",
+    "descriptor_only": [],
+    "allowed_classes": [
+      "java.lang.*",
+      "java.util.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "java.io.IOException",
+      "okhttp3.ResponseBody",
+      "okio.*",
+      "java.nio.charset.Charset"
+    ],
+    "bridges": {}
   }
 ]

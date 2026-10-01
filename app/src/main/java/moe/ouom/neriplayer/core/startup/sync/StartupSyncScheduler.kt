@@ -4,8 +4,8 @@ import android.content.Context
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
-import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.milliseconds

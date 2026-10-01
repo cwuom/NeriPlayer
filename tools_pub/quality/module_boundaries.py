@@ -35,7 +35,7 @@ DOWNLOAD_RULE_FAMILIES = (
 )
 SYNC_DOMAIN_FAMILIES = tuple(
     f"data/sync/{family}"
-    for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize")
+    for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize", "schedule")
 )
 APP_FAMILIES = (
     "core/player/download", "core/player/service", "data/settings",
@@ -44,6 +44,7 @@ APP_FAMILIES = (
     "data/sync",
 )
 LIBRARY_OWNED_FAMILIES = (
+    "data/sync", "api/sync",
     "data",
     "data/local/database/dao", "data/local/database/entity", "data/local/database/migration",
     "core/download", "core/player/download",
@@ -65,6 +66,8 @@ LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem"
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName")
 PACKAGE_OWNERS = {
+    "moe.ouom.neriplayer.api.sync": ":api:sync",
+    "moe.ouom.neriplayer.data.sync.store": ":data:sync-store",
     **{f"moe.ouom.neriplayer.data.{family}": ":data:repository"
        for family in ("settings", "history", "identity", "backup", "config", "traffic", "search",
                       "auth", "network", "playlist", "stats", "storage", "listentogether",

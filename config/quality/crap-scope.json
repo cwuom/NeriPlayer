@@ -45,28 +45,6 @@
     "moe/ouom/neriplayer/data/model/playback/queue/PlayerQueueSessionSnapshot.kt",
     "moe/ouom/neriplayer/core/player/persistence/PlaybackStatePersistenceSnapshot.kt",
     "moe/ouom/neriplayer/core/download/manager/batch/DownloadCancellationConvergenceRound.kt",
-    "moe/ouom/neriplayer/data/sync/merge/stats/SyncCounterShardPolicy.kt",
-    "moe/ouom/neriplayer/data/model/sync/SyncMergeModels.kt",
-    "moe/ouom/neriplayer/data/sync/merge/engine/SyncDataMerger.kt",
-    "moe/ouom/neriplayer/data/sync/merge/history/SyncRecentPlayMerger.kt",
-    "moe/ouom/neriplayer/data/sync/merge/playlist/SyncPlaylistCollectionMerger.kt",
-    "moe/ouom/neriplayer/data/sync/merge/playlist/SyncPlaylistMerger.kt",
-    "moe/ouom/neriplayer/data/sync/merge/playlist/SyncPlaylistNamePolicy.kt",
-    "moe/ouom/neriplayer/data/sync/merge/playlist/SyncPlaylistOrder.kt",
-    "moe/ouom/neriplayer/data/sync/host/AndroidSyncMergeHost.kt",
-    "moe/ouom/neriplayer/data/sync/codec/*.kt",
-    "moe/ouom/neriplayer/data/sync/change/*.kt",
-    "moe/ouom/neriplayer/data/sync/remote/*.kt",
-    "moe/ouom/neriplayer/data/sync/retry/*.kt",
-    "moe/ouom/neriplayer/data/sync/runtime/SyncSession*.kt",
-    "moe/ouom/neriplayer/data/sync/runtime/SyncLocalDataApplier.kt",
-    "moe/ouom/neriplayer/data/sync/runtime/SyncUploadPolicy.kt",
-    "moe/ouom/neriplayer/data/sync/sanitize/SyncDataSanitizer.kt",
-    "moe/ouom/neriplayer/data/sync/mapping/stats/*.kt",
-    "moe/ouom/neriplayer/data/sync/SyncCoordinator.kt",
-    "moe/ouom/neriplayer/data/model/sync/SyncSessionModels.kt",
-    "moe/ouom/neriplayer/data/model/sync/SyncLocatedRemoteFile.kt",
-    "moe/ouom/neriplayer/data/sync/github/SyncPlaybackStatMapper.kt",
     "moe/ouom/neriplayer/core/comment/repository/NeteaseCommentPagination.kt",
     "moe/ouom/neriplayer/core/comment/CommentMemoryCache.kt",
     "moe/ouom/neriplayer/api/ltw/*/*.kt",
@@ -328,7 +306,14 @@
     "moe/ouom/neriplayer/core/download/execution/host/isolation/**/*.kt",
     "moe/ouom/neriplayer/core/download/integration/legacy/**/*.kt",
     "moe/ouom/neriplayer/core/download/presentation/progress/**/*.kt",
-    "moe/ouom/neriplayer/core/download/storage/migration/access/**/*.kt"
+    "moe/ouom/neriplayer/core/download/storage/migration/access/**/*.kt",
+    "moe/ouom/neriplayer/data/sync/**/*.kt",
+    "moe/ouom/neriplayer/api/sync/**/*.kt",
+    "moe/ouom/neriplayer/data/model/sync/SyncWorkerModels.kt",
+    "moe/ouom/neriplayer/data/model/sync/transport/*.kt",
+    "moe/ouom/neriplayer/data/model/sync/SyncMergeModels.kt",
+    "moe/ouom/neriplayer/data/model/sync/SyncSessionModels.kt",
+    "moe/ouom/neriplayer/data/model/sync/SyncLocatedRemoteFile.kt"
   ],
   "method_scopes": [
     {
@@ -427,34 +412,6 @@
       "methods": [
         "loadCancellationConvergenceRequests",
         "isCancellationConvergenceCleanupState"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/data/sync/github/GitHubSyncManager.kt",
-      "class": "moe.ouom.neriplayer.data.sync.github.GitHubSyncManager",
-      "methods": [
-        "performSync"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/data/sync/github/GitHubSyncManager.kt",
-      "class": "moe.ouom.neriplayer.data.sync.github.GitHubSyncManager$performSync$2",
-      "methods": [
-        "invokeSuspend"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/data/sync/webdav/WebDavSyncManager.kt",
-      "class": "moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager",
-      "methods": [
-        "performSync"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/data/sync/webdav/WebDavSyncManager.kt",
-      "class": "moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager$performSync$2",
-      "methods": [
-        "invokeSuspend"
       ]
     },
     {

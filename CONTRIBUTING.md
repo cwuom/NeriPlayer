@@ -218,13 +218,17 @@
   - Worker 和 JobService 保留既有类全名，避免已保存任务在升级后找不到执行入口。
   - 模块测试使用 `./gradlew :feature:download:testDebugUnitTest`；复杂度门禁使用 `./gradlew :core:download:verifyCrap :feature:download:verifyCrap`。
 - `:data:sync`
-  - 同步会话、兼容编解码、清洗、差异检测、合并和并发保护；宿主负责数据库、远端传输、封面映射和文案。
+  - 同步会话、兼容编解码、清洗、差异检测、合并、并发保护和 Worker 执行策略；宿主负责数据库、远端传输、封面映射和文案。
   - `runtime` 通过本地数据与后端接口执行会话，`remote` 维护兼容文件回退和 WebDAV 指纹复核，`retry` 统一处理冲突重试。
   - 新增业务规则必须进入 CRAP 与计算域依赖门禁；模块不得直接依赖 Android 宿主、数据库或网络客户端。
 - `:data:ltw`
   - 一起听客户端会话、成员操作、凭据、重连、控制确认与兼容回退、播放同步、邀请和输入校验。
   - `session` 按状态、连接、成员、控制、心跳、音源和 socket 分类；播放器、资源文案和 Android 服务由宿主 Port 提供。
   - 模块全部生产文件自动进入 CRAP 与计算域依赖门禁，不能引用 `PlayerManager`、`AppContainer` 或 UI。
+- `:api:sync`
+  - GitHub Git Data 与 WebDAV 网络协议、条件请求和有界响应读取；注入 HTTP 客户端与文案，不依赖 Android 仓库、播放器或 UI。
+- `:data:sync-store`
+  - 加密凭据、同步配置、设备 ID、因果计数器和删除记录；同一次本地变更的记录与 mutation version 必须使用同一 editor 原子提交。
 - `:data:lyrics`
   - 跨来源歌词匹配、排序和回退编排；服务客户端来自 `:api:lyrics` 和 `:api:search`。
 - `:ksp-annotations` / `:ksp-processor`
@@ -414,9 +418,9 @@
     `verifyDomainDependencies` 检查整个合并计算包，避免数据库、网络和 Android 宿主依赖回流。
   - `:data:sync` 的 `sync/runtime/`、`codec/`、`sanitize/`、`change/`、`mapping/stats/`、`remote/` 和 `retry/` 分别维护共享会话、编解码、清洗、差异检测、统计映射、远端保护和冲突重试。
   - `sync/host/`：Android 仓库快照、资源解析与落库适配；会话通过接口调用这些实现。
-  - `sync/`：provider 无关的偏好和封面映射。
-  - `sync/github/`：GitHub 后端、传输、省流模式和安全存储。
-  - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
+  - `sync/cover/`：封面映射持久化与旧 JSON 导入；导入失败时保留旧数据，阻止后续清理。
+  - `sync/github/`、`sync/webdav/`：提供者后端与兼容 Worker 入口；`sync/work/` 维护 WorkManager、网络验证和通知适配。
+  - 网络协议位于 `modules/api/sync`，凭据、偏好与删除状态位于 `modules/data/sync-store`；app 不再保留 `data/sync` 生产源码。
 
 - `modules/api/ltw/src/main/java/moe/ouom/neriplayer/api/ltw/`
   - HTTP、WebSocket、服务器地址校验和重连策略，依赖协议模型与注入的 HTTP 客户端。
@@ -678,6 +682,18 @@
    重新验证远端 SHA-256 指纹。
 8. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
+
+9. 存储文件名、键名、Worker 类全名、任务名与输入键属于升级兼容边界，迁移模块时必须保持。
+   设备 ID 的读取和首次创建共享同一把锁，因果计数器与删除状态保留原子提交。
+   新的同步文件自动进入整目录 CRAP 门禁，任意方法分数大于 9 即失败。
+
+```bash
+./gradlew :api:sync:verifyCrap :api:sync:verifyDomainDependencies :api:sync:lintDebug
+./gradlew :data:sync-store:verifyCrap :data:sync-store:lintDebug
+./gradlew :data:sync:verifyCrap :data:sync:verifyDomainDependencies :data:sync:lintDebug
+./gradlew :data:repository:verifySyncIntegrationCrap
+./gradlew :data:repository:verifyCrap :data:repository:lintDebug
+```
 
 #### 8. 修改下载存储
 

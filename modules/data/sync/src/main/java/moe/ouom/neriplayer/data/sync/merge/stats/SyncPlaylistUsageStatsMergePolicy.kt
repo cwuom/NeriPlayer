@@ -27,45 +27,38 @@ object SyncPlaylistUsageStatsMergePolicy {
                     return@forEach
                 }
 
-                val counters = mergeCounters(
-                    left = CounterInput(
-                        totalCount = existing.openCount.toLong(),
-                        firstOccurredAt = existing.firstOpenedAt,
-                        lastOccurredAt = existing.lastOpenedAt,
-                        counterBaseCount = existing.counterBaseOpenCount,
-                        counterShards = existing.counterShards
-                    ),
-                    right = CounterInput(
-                        totalCount = stat.openCount.toLong(),
-                        firstOccurredAt = stat.firstOpenedAt,
-                        lastOccurredAt = stat.lastOpenedAt,
-                        counterBaseCount = stat.counterBaseOpenCount,
-                        counterShards = stat.counterShards
-                    ),
-                    deriveOccurredAtFromCounterShards = false
-                )
-                val newest = if (stat.lastOpenedAt >= existing.lastOpenedAt) stat else existing
-                val older = if (newest === stat) existing else stat
-                merged[stat.playlistKey] = newest.copy(
-                    source = newest.source.ifBlank { older.source },
-                    id = newest.id.takeIf { it != 0L } ?: older.id,
-                    subtype = newest.subtype ?: older.subtype,
-                    name = newest.name.ifBlank { older.name },
-                    coverUrl = newest.coverUrl ?: older.coverUrl,
-                    trackCount = maxOf(newest.trackCount, older.trackCount).coerceAtLeast(0),
-                    firstOpenedAt = counters.firstOccurredAt,
-                    lastOpenedAt = counters.lastOccurredAt,
-                    openCount = counters.totalCount.toBoundedInt(),
-                    counterBaseOpenCount = counters.counterBaseCount,
-                    counterShards = counters.counterShards,
-                    fid = newest.fid.takeIf { it != 0L } ?: older.fid,
-                    mid = newest.mid.takeIf { it != 0L } ?: older.mid,
-                    browseId = newest.browseId ?: older.browseId,
-                    playlistId = newest.playlistId ?: older.playlistId,
-                    subtitle = newest.subtitle ?: older.subtitle
-                )
+                merged[stat.playlistKey] = mergeUsageStat(existing, stat)
             }
         return merged.values.toList()
+    }
+
+    private fun mergeUsageStat(existing: SyncPlaylistUsageStat, stat: SyncPlaylistUsageStat): SyncPlaylistUsageStat {
+        val counters = mergeCounters(
+            left = CounterInput(
+                totalCount = existing.openCount.toLong(),
+                firstOccurredAt = existing.firstOpenedAt,
+                lastOccurredAt = existing.lastOpenedAt,
+                counterBaseCount = existing.counterBaseOpenCount,
+                counterShards = existing.counterShards
+            ),
+            right = CounterInput(
+                totalCount = stat.openCount.toLong(),
+                firstOccurredAt = stat.firstOpenedAt,
+                lastOccurredAt = stat.lastOpenedAt,
+                counterBaseCount = stat.counterBaseOpenCount,
+                counterShards = stat.counterShards
+            ),
+            deriveOccurredAtFromCounterShards = false
+        )
+        val newest = if (stat.lastOpenedAt >= existing.lastOpenedAt) stat else existing
+        val older = if (newest === stat) existing else stat
+        return mergePlaylistUsageMetadata(newest, older).copy(
+            firstOpenedAt = counters.firstOccurredAt,
+            lastOpenedAt = counters.lastOccurredAt,
+            openCount = counters.totalCount.toBoundedInt(),
+            counterBaseOpenCount = counters.counterBaseCount,
+            counterShards = counters.counterShards
+        )
     }
 
     fun mergeLocalPlaylistPlaybackStats(
@@ -340,7 +333,7 @@ object SyncPlaylistUsageStatsMergePolicy {
             lastOccurredAt = if (deriveOccurredAtFromCounterShards) {
                 maxOf(
                     explicitLastOccurredAt,
-                    shards.maxOfOrNull(SyncPlaybackCounterShard::lastPlayedAt) ?: 0L
+                    lastShardOccurredAt(shards)
                 )
             } else {
                 explicitLastOccurredAt
@@ -356,6 +349,9 @@ object SyncPlaylistUsageStatsMergePolicy {
         if (input.counterShards.isEmpty()) return maxOf(storedBase, totalCount)
         return maxOf(storedBase, totalCount.minus(mergedShardCount).coerceAtLeast(0L))
     }
+
+    private fun lastShardOccurredAt(shards: List<SyncPlaybackCounterShard>): Long =
+        shards.maxOf(SyncPlaybackCounterShard::lastPlayedAt)
 
     private fun trimLocalPlaylistPlaybackBuckets(
         buckets: List<SyncLocalPlaylistPlaybackBucket>

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.data.sync.host.createWebDavSyncClient
+
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,9 +12,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
-import moe.ouom.neriplayer.data.sync.webdav.WebDavApiClient
-import moe.ouom.neriplayer.data.sync.webdav.WebDavAuthException
-import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
+import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncInProgressException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
@@ -70,7 +71,7 @@ class WebDavSyncViewModel : ViewModel() {
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                WebDavApiClient(appContext, normalizedUsername, password)
+                createWebDavSyncClient(appContext, normalizedUsername, password)
                     .validateConnection(normalizedServerUrl, normalizedBasePath)
             }
 

@@ -1,6 +1,7 @@
 plugins {
     id("build-logic.android.feature-library")
     id("build-logic.android.module-quality")
+    id("build-logic.android.sync-integration-quality")
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
@@ -18,6 +19,8 @@ dependencies {
     api(project(":data:netease"))
     api(project(":data:youtube"))
     implementation(project(":data:sync"))
+    api(project(":data:sync-store"))
+    api(project(":api:sync"))
     implementation(project(":data:storage"))
     implementation(project(":core:ltw-protocol"))
     implementation(project(":api:ltw"))

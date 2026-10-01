@@ -1,10 +1,6 @@
 package moe.ouom.neriplayer.data.sync.merge.song
 
-import moe.ouom.neriplayer.data.sync.identity.identity
-
-import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.sync.CURRENT_SYNC_METADATA_VERSION
-import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.policy.copyWithNormalizedMembershipTokens
 import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
@@ -25,73 +21,28 @@ object SyncPlaylistSongMergePolicy {
         lastSyncTime: Long,
         isFavorites: Boolean
     ): Result {
-        val localIsEmpty = localSongs.isEmpty()
-        val remoteIsEmpty = remoteSongs.isEmpty()
-        val localHasMembershipTokens = hasMembershipTokens(localSongs)
-        val remoteHasMembershipTokens = hasMembershipTokens(remoteSongs)
-        val preferRemoteFavorites = isFavorites && localIsEmpty && !remoteIsEmpty && lastSyncTime <= 0L
-
-        when {
-            preferRemoteFavorites -> return Result(deduplicateSongs(remoteSongs), true)
-
-            localIsEmpty && !remoteIsEmpty -> {
-                if (remoteHasMembershipTokens) {
-                    return Result(deduplicateSongs(remoteSongs), true)
-                }
-                val localClearWins = localChangedAfterSync && localModifiedAt >= remoteModifiedAt
-                return if (localClearWins) {
-                    Result(emptyList(), false)
-                } else {
-                    Result(deduplicateSongs(remoteSongs), true)
-                }
-            }
-
-            remoteIsEmpty && !localIsEmpty -> {
-                if (localHasMembershipTokens) {
-                    return Result(deduplicateSongs(localSongs), false)
-                }
-                val remoteClearWins = remoteChangedAfterSync && remoteModifiedAt > localModifiedAt
-                return if (remoteClearWins) {
-                    Result(emptyList(), true)
-                } else {
-                    Result(deduplicateSongs(localSongs), false)
-                }
-            }
-
-            remoteChangedAfterSync && !localChangedAfterSync -> {
-                return Result(
-                    songs = mergeMembershipTokensIntoPrimary(remoteSongs, localSongs),
-                    isUpdated = true
-                )
-            }
-            localChangedAfterSync && !remoteChangedAfterSync -> {
-                return Result(
-                    songs = mergeMembershipTokensIntoPrimary(localSongs, remoteSongs),
-                    isUpdated = false
-                )
-            }
-            localChangedAfterSync && localModifiedAt > remoteModifiedAt -> {
-                return Result(
-                    songs = mergeConcurrentChanges(localSongs, remoteSongs),
-                    isUpdated = true
-                )
-            }
-            localChangedAfterSync && remoteModifiedAt > localModifiedAt -> {
-                return Result(
-                    songs = mergeConcurrentChanges(remoteSongs, localSongs),
-                    isUpdated = true
-                )
-            }
-        }
-
-        val uniqueLocalSongs = deduplicateSongs(localSongs)
-        val uniqueRemoteSongs = deduplicateSongs(remoteSongs)
-        val mergedSongs = mergeSongsWithDeterministicPayload(uniqueLocalSongs, uniqueRemoteSongs)
-        return Result(
-            songs = mergedSongs,
-            isUpdated = !sameSongList(mergedSongs, uniqueLocalSongs) ||
-                !sameSongList(mergedSongs, uniqueRemoteSongs)
+        val strategy = SyncSongMergeSelection.resolve(
+            localSongs, remoteSongs, localModifiedAt, remoteModifiedAt,
+            localChangedAfterSync, remoteChangedAfterSync, lastSyncTime, isFavorites
         )
+        return when (strategy) {
+            SyncSongMergeStrategy.REMOTE_ONLY -> Result(deduplicateSongs(remoteSongs), true)
+            SyncSongMergeStrategy.LOCAL_ONLY -> Result(deduplicateSongs(localSongs), false)
+            SyncSongMergeStrategy.LOCAL_CLEAR -> Result(emptyList(), false)
+            SyncSongMergeStrategy.REMOTE_CLEAR -> Result(emptyList(), true)
+            SyncSongMergeStrategy.REMOTE_PRIMARY -> Result(mergeMembershipTokensIntoPrimary(remoteSongs, localSongs), true)
+            SyncSongMergeStrategy.LOCAL_PRIMARY -> Result(mergeMembershipTokensIntoPrimary(localSongs, remoteSongs), false)
+            SyncSongMergeStrategy.LOCAL_CONCURRENT -> Result(mergeConcurrentChanges(localSongs, remoteSongs), true)
+            SyncSongMergeStrategy.REMOTE_CONCURRENT -> Result(mergeConcurrentChanges(remoteSongs, localSongs), true)
+            SyncSongMergeStrategy.DETERMINISTIC -> mergeDeterministically(localSongs, remoteSongs)
+        }
+    }
+
+    private fun mergeDeterministically(local: List<SyncSong>, remote: List<SyncSong>): Result {
+        val uniqueLocal = deduplicateSongs(local)
+        val uniqueRemote = deduplicateSongs(remote)
+        val merged = mergeSongsWithDeterministicPayload(uniqueLocal, uniqueRemote)
+        return Result(merged, !sameSongList(merged, uniqueLocal) || !sameSongList(merged, uniqueRemote))
     }
 
     fun deduplicateSongs(songs: List<SyncSong>): List<SyncSong> {
@@ -140,92 +91,11 @@ object SyncPlaylistSongMergePolicy {
             .toList()
     }
 
-    private fun hasMembershipTokens(songs: List<SyncSong>): Boolean {
-        return songs.any { it.syncMembershipTokens.orEmpty().isNotEmpty() }
-    }
-
     private fun sameSongList(left: List<SyncSong>, right: List<SyncSong>): Boolean {
         if (left.size != right.size) return false
         return left.zip(right).all { (leftSong, rightSong) ->
             leftSong.copyWithNormalizedMembershipTokens() ==
                 rightSong.copyWithNormalizedMembershipTokens()
-        }
-    }
-
-    private fun SyncSong.toMergeCandidate(): SongMergeCandidate {
-        return SongMergeCandidate(
-            id = id,
-            identity = identity(),
-            channelAudioKey = channelAudioKey(this),
-            sourceHint = sourceHint(this),
-            normalizedName = name.normalizedText(),
-            normalizedArtist = artist.normalizedText()
-        )
-    }
-
-    private data class SongMergeCandidate(
-        val id: Long,
-        val identity: SongIdentity,
-        val channelAudioKey: String?,
-        val sourceHint: String?,
-        val normalizedName: String,
-        val normalizedArtist: String
-    ) {
-        val fallbackKey: FallbackKey? =
-            if (id != 0L && normalizedName.isNotEmpty()) {
-                FallbackKey(id, normalizedName, normalizedArtist)
-            } else {
-                null
-            }
-    }
-
-    private data class FallbackKey(
-        val id: Long,
-        val normalizedName: String,
-        val normalizedArtist: String
-    )
-
-    private class SongMergeIndex {
-        private val membershipTokenIndices = mutableMapOf<SyncCausalToken, Int>()
-        private val identityIndices = mutableMapOf<SongIdentity, Int>()
-        private val channelAudioIndices = mutableMapOf<String, Int>()
-        private val fallbackSourcesByKey = mutableMapOf<FallbackKey, SourceBucket>()
-
-        fun findMatchingIndices(song: SyncSong): Set<Int> {
-            val candidate = song.toMergeCandidate()
-            return buildSet {
-                song.syncMembershipTokens.orEmpty().forEach { token ->
-                    membershipTokenIndices[token]?.let(::add)
-                }
-                identityIndices[candidate.identity]?.let(::add)
-
-                val channelAudioKey = candidate.channelAudioKey
-                if (channelAudioKey != null) {
-                    channelAudioIndices[channelAudioKey]?.let(::add)
-                }
-
-                candidate.fallbackKey?.let { fallbackKey ->
-                    fallbackSourcesByKey[fallbackKey]
-                        ?.findAll(candidate.sourceHint)
-                        ?.let(::addAll)
-                }
-            }
-        }
-
-        fun register(song: SyncSong, index: Int) {
-            val candidate = song.toMergeCandidate()
-            song.syncMembershipTokens.orEmpty().forEach { token ->
-                membershipTokenIndices.putIfAbsent(token, index)
-            }
-            identityIndices.putIfAbsent(candidate.identity, index)
-            candidate.channelAudioKey?.let { channelAudioKey ->
-                channelAudioIndices.putIfAbsent(channelAudioKey, index)
-            }
-
-            val fallbackKey = candidate.fallbackKey ?: return
-            fallbackSourcesByKey
-                .getOrPut(fallbackKey) { SourceBucket() }
-                .add(candidate.sourceHint, index)
         }
     }
 
@@ -342,55 +212,4 @@ object SyncPlaylistSongMergePolicy {
         )
     }
 
-    private class SourceBucket {
-        private var unknownSourceIndex: Int? = null
-        private val sourceIndices = mutableMapOf<String, Int>()
-
-        fun findAll(source: String?): Set<Int> {
-            return buildSet {
-                if (source == null) {
-                    unknownSourceIndex?.let(::add)
-                    addAll(sourceIndices.values)
-                } else {
-                    unknownSourceIndex?.let(::add)
-                    sourceIndices[source]?.let(::add)
-                }
-            }
-        }
-
-        fun add(source: String?, index: Int) {
-            if (source == null) {
-                if (unknownSourceIndex == null) {
-                    unknownSourceIndex = index
-                }
-            } else {
-                sourceIndices.putIfAbsent(source, index)
-            }
-        }
-    }
-
-    private fun channelAudioKey(song: SyncSong): String? {
-        val channel = song.channelId?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-        val audio = song.audioId?.trim()?.takeIf { it.isNotEmpty() }
-        if (channel == null || audio == null) return null
-        val subAudio = song.subAudioId?.trim().orEmpty()
-        return "$channel|$audio|$subAudio"
-    }
-
-    private fun sourceHint(song: SyncSong): String? {
-        val channel = song.channelId?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-        if (channel != null) return channel
-
-        val album = song.album.trim().lowercase()
-        return when {
-            album.startsWith("netease") -> "netease"
-            album.startsWith("bilibili") -> "bilibili"
-            song.mediaUri?.contains("youtube", ignoreCase = true) == true -> "youtube"
-            else -> null
-        }
-    }
-
-    private fun String.normalizedText(): String {
-        return trim().lowercase()
-    }
 }

@@ -334,7 +334,7 @@ class ModuleBoundariesTest(unittest.TestCase):
 
     def test_sync_domain_sources_cannot_return_to_app(self):
         self.module(":data:sync")
-        for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize"):
+        for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize", "schedule"):
             package = "moe/ouom/neriplayer/data/sync/" + family
             directory = self.root / "app/src/main/java" / package
             directory.mkdir(parents=True)
@@ -342,7 +342,7 @@ class ModuleBoundariesTest(unittest.TestCase):
                 "package " + package.replace("/", ".") + "\nclass Stranded\n"
             )
         errors = verify(self.root)
-        self.assertEqual(7, len(errors))
+        self.assertEqual(8, len(errors))
         self.assertTrue(all("belongs in a library module" in error for error in errors))
 
     def test_sync_domain_requires_sync_module(self):
@@ -354,6 +354,33 @@ class ModuleBoundariesTest(unittest.TestCase):
             "package moe.ouom.neriplayer.data.sync.runtime\nclass Misplaced\n"
         )
         self.assertTrue(any("package belongs to :data:sync" in error for error in verify(self.root)))
+
+    def test_entire_sync_implementation_must_stay_outside_app(self):
+        self.module(":data:sync")
+        for language in ("java", "kotlin"):
+            for family in ("data/sync", "data/sync/github", "data/sync/webdav", "data/sync/host",
+                           "data/sync/store/state", "data/sync/work", "api/sync/github", "api/sync/webdav"):
+                package = "moe/ouom/neriplayer/" + family
+                directory = self.root / "app/src/main" / language / package
+                directory.mkdir(parents=True)
+                (directory / "Stranded.kt").write_text(
+                    "package " + package.replace("/", ".") + "\nclass Stranded\n"
+                )
+        errors = verify(self.root)
+        self.assertEqual(16, len(errors))
+        self.assertTrue(all("belongs in a library module" in error for error in errors))
+
+    def test_sync_transport_and_credentials_require_their_own_modules(self):
+        self.module(":data:repository")
+        for family, owner in (("api/sync/github", ":api:sync"),
+                              ("data/sync/store/state", ":data:sync-store")):
+            package = "moe/ouom/neriplayer/" + family
+            directory = self.root / "modules/data/repository/src/main/java" / package
+            directory.mkdir(parents=True)
+            (directory / "Misplaced.kt").write_text(
+                "package " + package.replace("/", ".") + "\nclass Misplaced\n"
+            )
+            self.assertTrue(any(f"package belongs to {owner}" in error for error in verify(self.root)))
 
     def test_application_integration_can_remain_in_app(self):
         self.module(":data:sync")

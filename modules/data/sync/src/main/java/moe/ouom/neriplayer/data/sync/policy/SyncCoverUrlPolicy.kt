@@ -13,10 +13,11 @@ fun isLocalMediaUri(mediaUri: String?): Boolean {
     if (mediaUri.startsWith("content://", ignoreCase = true)) return true
     if (mediaUri.startsWith("android.resource://", ignoreCase = true)) return true
 
-    val scheme = runCatching { mediaUri.toUri().scheme.orEmpty().lowercase() }
-        .getOrDefault("")
-    return scheme in localUriSchemes
+    return localMediaUriScheme(mediaUri) in localUriSchemes
 }
+
+private fun localMediaUriScheme(mediaUri: String): String =
+    runCatching { mediaUri.toUri().scheme.orEmpty().lowercase() }.getOrDefault("")
 
 fun sanitizeCoverUrlForSync(coverUrl: String?): String? {
     val normalizedUrl = coverUrl?.trim()?.takeIf { it.isNotBlank() } ?: return null

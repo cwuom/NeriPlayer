@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.data.sync.identity
 
-import java.util.Locale
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.sync.SyncSong
@@ -9,15 +8,9 @@ import moe.ouom.neriplayer.api.youtube.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId
 
 private const val YOUTUBE_MUSIC_IDENTITY_ALBUM = "youtube_music"
-private const val BILIBILI_IDENTITY_HINT = "Bilibili"
 
 fun SyncSong.identity(): SongIdentity {
-    normalizedRemoteIdentity()?.let { return it }
-    return SongIdentity(
-        id = extractYouTubeMusicVideoId(mediaUri)?.let(::stableYouTubeMusicId) ?: id,
-        album = extractYouTubeMusicVideoId(mediaUri)?.let { YOUTUBE_MUSIC_IDENTITY_ALBUM } ?: album,
-        mediaUri = extractYouTubeMusicVideoId(mediaUri)?.let { buildYouTubeMusicMediaUri(it) } ?: mediaUri
-    )
+    return normalizedRemoteIdentity() ?: SongIdentity(id, album, mediaUri)
 }
 
 fun SyncSong.stableKey(): String = identity().stableKey()
@@ -42,7 +35,7 @@ private fun SyncSong.normalizedRemoteIdentity(): SongIdentity? {
         mediaUri = mediaUri,
         inferNeteaseForBlankRemote = true
     )
-    val audio = audioId?.trim()?.takeIf { it.isNotBlank() } ?: id.takeIf { it != 0L }?.toString()
+    val audio = trimmedSyncIdentityPart(audioId) ?: legacyAudioId(id)
     if (channel == null || audio == null) return null
     if (channel == YOUTUBE_MUSIC_IDENTITY_ALBUM) {
         return SongIdentity(
@@ -69,27 +62,13 @@ fun normalizedChannelId(
     mediaUri: String?,
     inferNeteaseForBlankRemote: Boolean
 ): String? {
-    val channel = rawChannelId
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?.lowercase(Locale.US)
-        ?.let(::normalizeChannelAlias)
+    val channel = explicitSyncChannelId(rawChannelId)
     if (channel != null) return channel
-
-    return when {
-        extractYouTubeMusicVideoId(mediaUri) != null -> YOUTUBE_MUSIC_IDENTITY_ALBUM
-        album.startsWith(BILIBILI_IDENTITY_HINT, ignoreCase = true) -> "bilibili"
-        album.startsWith("Netease", ignoreCase = true) -> "netease"
-        inferNeteaseForBlankRemote && mediaUri.isNullOrBlank() -> "netease"
-        else -> null
-    }
+    return inferredSyncChannelId(album, mediaUri, inferNeteaseForBlankRemote)
 }
 
 fun normalizeChannelAlias(channel: String): String {
-    return when (channel) {
-        "youtube", "ytmusic", "youtubemusic" -> YOUTUBE_MUSIC_IDENTITY_ALBUM
-        else -> channel
-    }
+    return youtubeChannelAliases[channel] ?: channel
 }
 
 fun normalizedSubAudioId(
@@ -97,14 +76,15 @@ fun normalizedSubAudioId(
     rawSubAudioId: String?,
     album: String
 ): String {
-    val explicitSubAudioId = rawSubAudioId?.trim()?.takeIf { it.isNotBlank() }
     if (channel != "bilibili") return ""
-    return explicitSubAudioId ?: album
-        .substringAfter('|', "")
-        .substringBefore('|')
-        .takeIf { it.isNotBlank() }
-        .orEmpty()
+    return trimmedSyncIdentityPart(rawSubAudioId) ?: legacyBiliSubAudioId(album)
 }
+
+private val youtubeChannelAliases = mapOf(
+    "youtube" to YOUTUBE_MUSIC_IDENTITY_ALBUM,
+    "ytmusic" to YOUTUBE_MUSIC_IDENTITY_ALBUM,
+    "youtubemusic" to YOUTUBE_MUSIC_IDENTITY_ALBUM
+)
 
 fun stableRemoteIdentityId(channel: String, audio: String, subAudio: String): Long {
     return when {

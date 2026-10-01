@@ -697,10 +697,12 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `:feature:download`: execution, Room queues, batch recovery, transfers, managed files and migrations, Workers, and JobService, with host-provided source services, credentials, traffic, startup, and playback interfaces.
 - `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
 - `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
+- [`:api:sync`](modules/api/sync/README.md): GitHub Git Data and WebDAV transport, conditional writes, and bounded responses with injected HTTP clients and error messages.
 - `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, platform response mapping into application models, playlist rules and remote playlist synchronization, and playback source repositories.
 - [`:data:ltw`](modules/data/ltw/README.md): Listen Together client sessions, membership operations, connection recovery, control events, playback synchronization, invites, and input validation through host-provided playback and Android interfaces.
 - `:data:lyrics` / `:data:comments`: lyric matching and fallback across sources, comment pagination, and caching.
-- `:data:sync`: sync sessions, codecs, snapshot sanitization, change detection, merging, and concurrency protection through host-provided local data, transport, and presentation interfaces.
+- [`:data:sync`](modules/data/sync/README.md): sync sessions, codecs, snapshot sanitization, change detection, merging, concurrency protection, and Worker policies through host-provided interfaces.
+- [`:data:sync-store`](modules/data/sync-store/README.md): encrypted credentials, sync preferences, device identity, causal counters, deletion records, and atomic commits.
 - `:data:storage`: storage accounting, file scanning, and cache cleanup with host-provided locations, database statistics, and download snapshots.
 - `:data:repository`: application data implementations grouped by settings, media, playlists, history/statistics, backup, traffic, and Android sync integration. These responsibilities share one Gradle module; narrow host interfaces supply downloads, playback state, and HTTP clients.
 - `:data:database`: Room database, entities, DAOs, historical schemas, and upgrades. Migration SQL is grouped by library, platform, and downloads; legacy preservation separates identity, paging, JSON, conflicts, caching, and writes.
@@ -873,8 +875,9 @@ See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension ru
 - Local playlists are stored as JSON with atomic temp-file writes.
 - Sync payloads shared by GitHub and WebDAV live in `:data:model` under `data/model/sync/`.
   Sessions, compatibility codecs, sanitization, merge rules, and conflict policies belong
-  to `:data:sync`. The host owns cover mapping, persistence, and transport;
-  GitHub/WebDAV managers connect to the shared session through backend interfaces.
+  to `:data:sync`, together with Worker policies. Transport belongs to `:api:sync`, credentials
+  and sync state to `:data:sync-store`, and Android repository and WorkManager adapters to `:data:repository`.
+  GitHub/WebDAV managers connect to the shared session through backend interfaces; app has no sync implementation tree.
   Deletion records and undo operations participate in the same merge policy so
   locally restored songs are not removed again by stale deletion records on the
   next sync.

@@ -542,10 +542,12 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `:feature:download`：下载执行、Room 队列、批次恢复、传输、受管文件与迁移、Worker 和 JobService；应用初始化时注入来源服务、凭据、流量、启动和播放接口。
 - `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
 - `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
+- [`:api:sync`](modules/api/sync/README.md)：GitHub Git Data 与 WebDAV 传输、条件写入和响应大小限制；HTTP 客户端和错误文案由调用方注入。
 - `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存、平台响应到应用模型的映射、歌单规则与远端歌单同步、播放源仓库。
 - [`:data:ltw`](modules/data/ltw/README.md)：一起听客户端会话、成员操作、连接恢复、控制事件、播放同步、邀请与输入校验；播放器与 Android 副作用通过宿主接口接入。
 - `:data:lyrics` / `:data:comments`：跨来源歌词匹配与回退、评论分页和缓存。
-- `:data:sync`：同步会话、编解码、快照清洗、差异检测、合并与并发保护；由宿主注入本地数据、远端传输与文案接口。
+- [`:data:sync`](modules/data/sync/README.md)：同步会话、编解码、快照清洗、差异检测、合并、并发保护和 Worker 执行策略；由宿主注入本地数据、远端传输与文案接口。
+- [`:data:sync-store`](modules/data/sync-store/README.md)：加密凭据、同步偏好、设备 ID、因果计数器、删除记录与原子提交。
 - `:data:storage`：存储统计、文件扫描和缓存清理；宿主提供目录、数据库统计及下载条目快照。
 - `:data:repository`：应用数据实现，按设置、媒体库、歌单、历史与统计、备份、流量和 Android 同步接入组织包；这些职责共享一个 Gradle 模块，宿主通过明确接口提供下载、播放状态和网络客户端。
 - `:data:database`：Room 数据库、实体、DAO、历史 schema 与版本升级；升级 SQL 按媒体库、平台和下载分类，旧数据保全按身份、分页、JSON、冲突、缓存和写入分类。
@@ -689,8 +691,9 @@ JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实
 - 播放历史、播放统计、歌单、收藏快照和部分映射数据使用本地文件持久化。
 - 本地歌单使用 JSON 文件存储，并通过临时文件实现原子写入。
 - GitHub 与 WebDAV 共用的同步载荷模型位于 `:data:model` 的 `data/model/sync/`，
-  会话、兼容编解码、清洗、合并和冲突策略位于 `:data:sync`；宿主负责封面映射、
-  持久化与传输，GitHub/WebDAV 管理器通过后端接口接入共享会话。
+  会话、兼容编解码、清洗、合并和调度策略位于 `:data:sync`；传输位于 `:api:sync`，
+  凭据和同步状态位于 `:data:sync-store`，Android 仓库与 WorkManager 适配位于 `:data:repository`。
+  GitHub/WebDAV 管理器通过后端接口接入共享会话，app 中不再维护同步实现目录。
   删除记录会和撤销操作一起进入合并策略，避免本地撤销后的歌曲在下一轮同步又被旧删除记录移除。
 - GitHub/WebDAV 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。
 - GitHub 同步通过 Git Data API 在用户仓库中创建原始二进制 blob，再以非强制更新提交到默认分支；
