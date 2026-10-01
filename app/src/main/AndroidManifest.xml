@@ -46,13 +46,6 @@
         android:name=".NeriPlayerApplication"
         tools:targetApi="33">
 
-        <meta-data android:name="lyricon_module" android:value="true" />
-        <meta-data android:name="lyricon_module_author" android:value="NeriPlayer" />
-        <meta-data android:name="lyricon_module_description" android:value="NeriPlayer Lyricon Provider" />
-        <meta-data
-            android:name="lyricon_module_tags"
-            android:resource="@array/lyricon_module_tags" />
-
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.config.ConfigFileManager
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 class ConfigTransferViewModel : ViewModel() {
@@ -23,7 +24,13 @@ class ConfigTransferViewModel : ViewModel() {
         val appContext = context.applicationContext
         strings = ConfigTransferStrings.from(appContext)
         if (configFileManager == null) {
-            configFileManager = ConfigFileManager(appContext)
+            configFileManager = ConfigFileManager(
+                context = appContext,
+                listenTogetherPreferences = AppContainer.listenTogetherPreferences,
+                neteaseCookieRepo = AppContainer.neteaseCookieRepo,
+                biliCookieRepo = AppContainer.biliCookieRepo,
+                youTubeAuthRepo = AppContainer.youtubeAuthRepo
+            )
         }
     }
 

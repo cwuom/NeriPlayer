@@ -53,18 +53,18 @@ internal object LocalManagementLineBudget {
     private const val ANDROID_TEST_PACKAGE_ROOT =
         "app/src/androidTest/java/moe/ouom/neriplayer"
     private const val DOWNLOAD_MAIN_PACKAGE_ROOT =
-        "modules/feature/download/src/main/java/moe/ouom/neriplayer"
+        "modules/download/runtime/src/main/java/moe/ouom/neriplayer"
     private const val REPOSITORY_MAIN_PACKAGE_ROOT =
-        "modules/data/repository/src/main/java/moe/ouom/neriplayer"
+        "modules/local/src/main/java/moe/ouom/neriplayer"
 
     private val migratedRecursiveDirectories = listOf(
-        "modules/core/download",
-        "modules/feature/download",
-        "modules/feature/player",
-        "modules/data/repository",
-        "modules/data/database",
-        "modules/data/bilibili",
-        "modules/data/model"
+        "modules/download/logic",
+        "modules/download/runtime",
+        "modules/playback/runtime",
+        "modules/local",
+        "modules/database",
+        "modules/platform",
+        "modules/model"
     ).flatMap { module ->
         listOf("main", "test", "androidTest").flatMap { sourceSet ->
             listOf("core/download", "core/player/download", "data/local").map { family ->

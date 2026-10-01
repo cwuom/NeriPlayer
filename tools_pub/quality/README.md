@@ -3,43 +3,37 @@
 需要 JDK 17、Android 构建环境和 Python 3。脚本仅使用 Python 标准库。
 
 ```bash
-./gradlew :data:netease:verifyCrap :data:netease:lintDebug
-./gradlew :data:repository:verifyCrap :data:repository:lintDebug
 ./gradlew :app:verifyCrap
 ./gradlew :app:verifyDomainDependencies
-./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug
+./gradlew :local:verifyCrap :local:lintDebug
+./gradlew :platform:verifyCrap :platform:verifyDomainDependencies :platform:lintDebug
+./gradlew :lyrics:verifyCrap :lyrics:lintDebug
+./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug
 ./gradlew verifyModularization
 ```
 
-`verifyCrap` 运行 app 和自有 core/api/data/feature 库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES
-获取每个模块自身的 Kotlin/Java 字节码，合并各测试任务的执行数据，生成 JaCoCo XML，
-再计算逐方法 CRAP。库的覆盖率产物由 convention 的 outgoing configurations 提供。
-源码从各模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，
-重复路径直接报错。生成报告前检查 app 和每个自有库的执行数据，缺失或空文件立即失败。
-`:app:check` 执行 CRAP 与计算域依赖门禁，Android CI 的 `verifyModularization` 还执行所有自有模块的
-lint 和不依赖 Android SDK 的 `verifyModuleBoundaries`。
+自有 Android 库由 `gradle/owned-modules.txt` 统一登记，共 14 个。构建、测试、覆盖率和 lint 从登记读取一级领域及二级职责目录，不依赖目录深度或旧分类前缀。远程平台、歌词来源与评论集中在 `:platform`，歌词解析与词幕输出属于 `:lyrics`。模块职责见 [根目录 README](../../README.md#模块结构)。
 
-自有库位于 `modules/core`、`modules/api` 和 `modules/data`，Gradle 标识分别为 `:core:*`、`:api:*` 和 `:data:*`。
-实现依赖遵循 `app -> feature -> data -> api -> core`；各层均可引用 `:data:model`，该模型契约库禁止依赖项目实现。
-其他反向依赖仍被禁止，API 实现不得放入数据模块，生产模型包不得留在 app 或其他库中。
-边界检查同时验证 `includeOwnedLibrary` 登记、孤立库、包名与目录一致性和目录容量；
-统一模型、网络基础能力和队列包还校验模块归属，防止源码被移回不匹配的库。
-库主源码及 `module_boundaries.py` 中 `APP_FAMILIES` 登记的应用区域，每个目录最多 16 个直接源码文件，模块职责见
-[根目录 README](../../README.md#模块结构)。移动路径时必须同步 CRAP source/method 选择器，不能减少原检查范围。
-已迁出的 `core/api`、`core/lyrics`、`core/player/queue`、整个 `data/sync` 和 `api/sync` 生产目录不得重新放入 `app`。
-同步的共享规则固定归属 `:data:sync`，传输归属 `:api:sync`，凭据状态归属 `:data:sync-store`，Android 仓库适配归属 `:data:repository`。
-`LIBRARY_OWNED_FAMILIES` 检查这些目录及其子目录，同步宿主集成测试位于 `:data:repository`。
-单独查看完整报告可以运行 `./gradlew :app:crapReport`，该任务仍要求测试和报告输入有效，
-但不会因超分退出失败。
-同步模块可独立运行 `:api:sync:verifyCrap`、`:data:sync-store:verifyCrap` 和 `:data:sync:verifyCrap`，
-从同一份范围配置选择模块源码并执行同样的阈值，报告位于对应模块的 `build/reports/crap/`。
-`data/sync/**/*.kt` 与 `api/sync/**/*.kt` 整文件受检，包括 Android 适配、默认参数、协程和 lambda，新增文件自动进入门禁。
-`:api:sync:verifyDomainDependencies` 禁止传输代码依赖 Android、仓库与播放器；`:data:sync:verifyDomainDependencies`
-验证会话、合并、远端保护和 Worker 策略边界。结构门禁禁止整个同步生产目录回到 app，并验证凭据与传输模块归属。
-Android CI 在全项目门禁前执行同步门禁，超分立即失败。
-`:data:repository:verifySyncIntegrationCrap` 独立运行同步 Android 适配的 JVM 测试，并检查整个 `data/sync` 目录。
-该任务保留相同的阈值、执行数据校验和整文件范围；仓库的全量测试与 `verifyCrap` 仍由原门禁执行。
-独立报告位于 `modules/data/repository/build/reports/sync-crap/`，`check` 与 Android CI 均调用。
+`verifyCrap` 运行 app 和已登记库的 Debug JVM 测试，通过 AGP ScopedArtifact.CLASSES 获取各模块自身的 Kotlin/Java 字节码，合并真实测试执行数据生成 JaCoCo XML，再计算逐方法 CRAP。库产物由 convention 的 outgoing configurations 提供。源码从实际模块的 `src/main/java` 和 `src/main/kotlin` 合并到 `app/build/reports/crap/sources`，重复路径直接报错。执行数据缺失或为空时立即失败。
+
+`:app:check` 执行 CRAP 与计算域依赖门禁；`verifyModularization` 同时检查构建逻辑测试、所有已登记库的 lint 和无需 Android SDK 的结构门禁。库职责调整不得减少原有源码或方法检查范围，Kotlin 包名与生产类全名继续保留。
+
+结构检查验证登记、未登记构建节点、领域依赖、循环、模型与生产包所有者、包目录一致性和容量。`:model` 不依赖项目实现，所有库不得依赖 app。平台客户端位于 `:platform` 的 `api` 协议包；同步与一起听传输分别归所属业务域。生产模型包不得留在 app 或其它库；原已迁出的生产包禁止回流。库和 `APP_FAMILIES` 区域每个目录最多 16 个直接源码文件，库主源码少于 2000 行。
+
+`:platform` 内的协议、账号、缓存、各平台业务、评论和歌词协调保留包级单向依赖。Bilibili、网易云、YouTube 协议不得反向调用账号仓库、Room 或播放器实现；业务消费自身协议，评论和跨来源歌词组件只使用明确允许的来源能力。结构检查与编译依赖门禁共同维护这些规则，单一 classpath 不等于允许任意跨包调用。平台通过 `api(:lyrics)` 公开解析能力，`:lyrics` 不依赖平台。`:platform:verifyDomainDependencies` 从共享配置选择 `platform-` 域并检查本库真实产物，模块 `check` 同时执行复杂度与依赖检查；独立报告位于 `modules/platform/build/reports/domain-dependencies/`。
+
+`:sync` 的传输、凭据状态与会话规则由同一库维护，Android 仓库与 WorkManager 适配归 `:local`。独立验证使用：
+
+```bash
+./gradlew :sync:verifyCrap :sync:verifyDomainDependencies :sync:lintDebug
+./gradlew :local:verifySyncIntegrationCrap
+```
+
+同步的 `data/sync/**/*.kt` 与 `api/sync/**/*.kt` 整文件受检，包括默认参数、协程、lambda 和新增子目录。`:sync:verifyCrap` 合并自身与 `:model` 中同步模型的覆盖率；域任务同时选择 `data.sync.*` 和 `api.sync.*`，保持会话、合并、远端保护、Worker 策略与传输各自的白名单。传输禁止引用 Android 仓库、播放器和合并实现；计算域只消费模型与宿主端口。
+
+`:local:verifySyncIntegrationCrap` 独立运行同步 Android 适配的 JVM 测试，并检查本地库整个 `data/sync` 目录。阈值、执行数据校验和整文件范围不变，报告位于 `modules/local/build/reports/sync-crap/`；本地库全量测试与 `verifyCrap` 继续由原门禁执行。同步独立报告位于 `modules/sync/build/reports/crap/`。
+
+单独查看完整报告可运行 `./gradlew :app:crapReport`，该任务要求测试和输入有效，但不会因超分退出失败。
 
 报告位于 `app/build/reports/crap/`：
 
@@ -70,32 +64,43 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 验证适配器实际使用的来源、模式与生命周期分支。审查时必须核对委托前后的完整 diff，
 报告应区分受检组件与未执行的宿主入口，不能宣称后者已具备覆盖率。
 
-`:data:ltw` 的 `data/ltw/**/*.kt` 与 `:core:ltw-protocol` 的 `listentogether/**/*.kt` 整文件受检，包括默认参数、协程和 lambda；新增目录和文件自动纳入。
-模块的 `verifyCrap` 执行客户端与协议库 JVM 测试、检查执行数据并生成合并的真实 JaCoCo 报告，`check` 和一起听 CI 均调用该门禁。
-报告位于 `modules/data/ltw/build/reports/crap/`；分数算法与根门禁相同，任意方法大于 9 即失败。
-`listen-together-runtime` 允许模型、一起听传输、协程、基础工具与明确列出的 Android 线程、时钟、URI、唤醒锁能力，禁止引用 `AppContainer`、`PlayerManager` 和数据仓库。
-`listen-together-protocol` 仅允许协议模型、序列化与标准库。结构门禁禁止任何一起听生产源码回到 `app/listentogether`，平台绑定归 `app/core/di/ltw`，播放器适配归播放器的 `core/player/ltw`。
-模块的 `verifyDomainDependencies` 按编译后的类验证该边界，`check` 和一起听 CI 均调用；报告位于 `modules/data/ltw/build/reports/domain-dependencies/`。
+`:playback:logic` 的 policy/runtime/audio/queue 按包目录整文件受检。policy 仅包括 `audio`、`command`、`offload`、`pending`、`progress`、`service`、`skip`、`storage`、`wake` 九个叶子包；它不引用 runtime、audio 或 queue 实现。runtime 可以消费 policy，audio 和 queue 保持窄依赖。USB policy 属于 `:playback:runtime`，不能通过宽泛的 `core.player.policy.*` 所有者规则移入计算库。
 
-`player-policy` 的播放规则、`player-runtime` 的全部运行时组件和 `player-audio` 的 PCM/可视化
-组件按包目录整文件受检，新文件无需逐一登记。结构门禁禁止这些包返回 app 或进入错误的库，
-运行时与音频计算域另有字节码依赖允许列表。Android 播放器实现、资源映射和系统唤醒锁位于 `:feature:player`。
-播放器的四个模块通过 `build-logic.android.module-quality` 提供独立 `verifyCrap`，从共享范围配置选择本模块的源码，保留原方法选择器并拒绝空范围。
-播放器宿主接口、展示状态、一起听映射、USB 策略和 app 的 `core/di/player` 桥接按目录受检。整个 `app/core/player` 禁止出现生产源码，纯播放器库仍禁止依赖功能实现层。
+播放基础与运行两个库通过 `build-logic.android.module-quality` 提供 `verifyCrap`，从共享配置选择各自源码和原方法选择器，拒绝空范围。policy、状态协调、PCM、队列、宿主接口、展示状态、一起听映射、USB 策略和 app 的 `core/di/player` 桥接继续受检；app 的生产 `core/player` 目录必须保持不存在。包级编译依赖白名单由应用的聚合域任务检查，计算库不得依赖播放器实现、数据库或应用容器。
 
-`:core:download` 的规则组件按职责包使用 `**/*.kt` 整文件模式，包括准入、状态迁移、重试、
+`:lyrics` 的 `lyrics/integration/**/*.kt` 整文件纳入 CRAP，包含新输出组件；原播放入口方法的检查继续保留。SDK 接入、位置推送、异步代次、偏移快照和共用时间偏移计算归歌词库；远程歌词仓库、匹配与回退归 `:platform` 的 `data/lyrics`。播放器通过窄加载端口提供歌词、快照与生命周期输入，歌词库不读取平台或播放器状态。`:lyrics:verifyCrap` 与全项目门禁使用同一范围和阈值。
+
+`:listentogether` 的 `data/ltw/**/*.kt`、`api/ltw/**/*.kt` 与 `listentogether/**/*.kt` 整文件受检，包括默认参数、协程、lambda、新目录与新文件。自身 JVM 测试涵盖客户端、传输与协议，`verifyCrap` 验证执行数据并检查实际 JaCoCo 结果；报告位于 `modules/listentogether/build/reports/crap/`，任意受检方法大于 9 即失败。
+
+`listen-together-runtime` 允许模型、传输、协程、基础工具和明确列出的 Android 线程、时钟、URI、唤醒锁能力，禁止引用 `AppContainer`、`PlayerManager` 和领域仓库。`listen-together-protocol` 只允许协议模型、序列化与标准库。平台绑定归 app 的 `core/di/ltw`，播放器适配归 `:playback:runtime` 的 `core/player/ltw`，生产一起听代码禁止返回 app。`verifyDomainDependencies` 检查同库所有实际 class 产物中的受管域，报告位于 `modules/listentogether/build/reports/domain-dependencies/`；模块 `check` 连接复杂度与域检查。
+
+`:download:logic` 的规则组件按职责包使用 `**/*.kt` 整文件模式，包括准入、状态迁移、重试、
 延后队列、清空/提交/大小/发布规则、传输槽位、看门狗、网络策略、所有权和元数据编解码。
 `data/model/download/execution` 的状态契约也整文件受检。
 新文件与子目录自动进入 CRAP 门禁，超分使现有 Android CI 的 `verifyModularization` 失败。
 结构门禁禁止这些规则包回到 app 或进入其他库；依赖门禁限制规则只使用标准库、协程和所需模型。
 传输注册表继续共用同一状态锁，FIFO、并发限制与活动心跳组件不独立修改槽位所有权。
 
-下载运行实现归 `:feature:download`，结构门禁禁止 `app/core/download` 和 `app/core/player/download` 回流。
+`:database` 的 `data/local/database/migration/**/*.kt` 整文件受检，新建子目录和升级组件自动进入门禁。
+其中包括历史升级 SQL、旧记录身份匹配、分页读取、JSON 映射、冲突保全、缓存和批量写入。
+本地仓库中的播放历史和歌单使用记录映射也整文件受检；DAO 和实体由结构门禁验证模块归属与目录容量。
+Android CI 同时运行数据库模块的独立升级测试，校验完整历史升级链、旧下载数据保全和恢复索引。
+
+结构门禁禁止任何生产 `data` 包回流到 app，包括设置、媒体、登录、流量和同步 Android 接入。
+`:local` 用职责子包管理这些实现，平台缓存归 `:platform`，不按小职责新增构建节点。
+设置归一化、歌词/下载/缓存偏好政策、流量与周期统计、备份映射和仓库接入端口也纳入 CRAP 范围。
+这些范围采用目录或完整文件选择器，超分仍由现有 `verifyModularization` 使 CI 失败。
+本地实现可独立运行 `:local:verifyCrap`，复用同一范围配置和阈值，报告位于
+`modules/local/build/reports/crap/`；模块的 `check` 也执行该门禁。
+网易的 `data/platform/netease/mapping` 和 `playlist` 目录整文件受检，包括 JSON 映射、歌曲身份、远端比对、批量同步和重试；
+新增文件自动纳入范围。`:platform:verifyCrap` 与该模块的 `check` 复用同一阈值，报告位于 `modules/platform/build/reports/crap/`。
+
+下载运行实现归 `:download:runtime`，结构门禁禁止 `app/core/download` 和 `app/core/player/download` 回流。
 应用只通过 `core/integration/download` 绑定环境、来源、歌词、凭据和播放接口，下载库不得引用应用容器或播放器实现。
 下载请求代次、通知刷新、重试截止时间、单项异常隔离和宿主接口也按职责目录整文件受检，新文件自动进入门禁。
-`./gradlew :core:download:verifyCrap :feature:download:verifyCrap` 独立运行下载规则和运行模块的 JVM 测试与复杂度检查；
+`./gradlew :download:logic:verifyCrap :download:runtime:verifyCrap` 独立运行下载规则和运行模块的 JVM 测试与复杂度检查；
 这些任务复用 `build-logic.android.module-quality`，`check` 与 Android CI 均执行，超分仍按大于 9 失败。
-共享源码契约测试工具位于 `:core:common` 的 test fixtures，测试随实现模块迁移，宿主集成测试留在应用。
+共享源码契约测试工具位于 `:common` 的 test fixtures，测试随实现模块迁移，宿主集成测试留在应用。
 
 下载条目构建将元数据、歌词和封面选择整体委托给 `catalog/assembly`，该目录整文件受检；
 宿主的元数据读取选择、文件信息、封面参数与本地标签映射适配器也纳入门禁。
@@ -124,13 +129,15 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 规则位于 `config/quality/domain-dependencies.json`；报告位于
 `app/build/reports/domain-dependencies/report.json`。
 
-- `core:playback-queue` 的 `core/player/queue` 包含状态存储和编辑/导航策略，队列模型位于 `:data:model`；歌曲身份由接口注入，库不得依赖宿主的 `SongIdentity` 实现
-- `:data:sync` 的 `data/sync/merge` 包含共享合并规则与宿主接口；Android 实现位于 app 的 `data/sync/host`
+同包宿主装配类可通过 `excluded_classes` 列出完整类名，仅排除该源类及其 `$` 生成内部类，不支持通配符。当前只排除归 `:local` 的 `BiliVideoSkipRepositoryProvider`，同包真实平台仓库仍受检查；受管类引用这个宿主仍须满足允许列表，排除不豁免目标引用。
+
+- `:playback:logic` 的 `core/player/queue` 包含状态存储和编辑/导航策略，队列模型位于 `:model`；歌曲身份由接口注入，库不得依赖宿主的 `SongIdentity` 实现
+- `:sync` 的 `data/sync/merge` 包含共享合并规则与宿主接口；Android 实现位于 `:local` 的 `data/sync/host`
 - 同步会话、差异检测、快照清洗和远端并发保护有独立计算域规则；本地数据与网络操作通过接口注入，不允许依赖 Android 宿主实现
 - `core/download/catalog/assembly` 负责下载条目的元数据优先级、歌词覆盖和封面选择，文件访问由宿主提供
 - `core/download/catalog/projection` 负责编辑后的来源身份、原始标签和本地引用合并，不读写文件或目录状态
-- `core:download` 的 `core/download/storage/metadata/codec` 只解析 JSON 与兼容旧版元数据，不调用存储入口或恢复任务
-- `core:download` 的下载规则按职责允许状态模型、协程、网络类型或 `okhttp3.Call`，JSON 编解码域只允许模型、标准库和 `org.json`；禁止引用 Room、SAF、Android 服务和宿主全局容器
+- `:download:logic` 的 `core/download/storage/metadata/codec` 只解析 JSON 与兼容旧版元数据，不调用存储入口或恢复任务
+- `:download:logic` 的下载规则按职责允许状态模型、协程、网络类型或 `okhttp3.Call`，JSON 编解码域只允许模型、标准库和 `org.json`；禁止引用 Room、SAF、Android 服务和宿主全局容器
 - 各计算域的全部编译类自动纳入检查，包括新类、嵌套类、lambda 和 Kotlin 生成类
 - 类依赖采用允许列表，禁止直接引用播放器全局状态、数据库、网络、UI 或宿主适配器实现
 - 混合文件中的身份与同步辅助函数仅允许列出的 JVM 方法签名；允许某个方法不等于允许整个文件
@@ -143,17 +150,3 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 
 门禁回归使用 JDK `javac --release 17` 编译隔离夹具，再运行真实 `jdeps` 和 `javap`，
 验证非法调用、同包间接引用、嵌套类、新文件和桥接成员越界均能被拒绝。
-
-`:data:database` 的 `data/local/database/migration/**/*.kt` 整文件受检，新建子目录和升级组件自动进入门禁。
-其中包括历史升级 SQL、旧记录身份匹配、分页读取、JSON 映射、冲突保全、缓存和批量写入。
-数据仓库中的播放历史和歌单使用记录映射也整文件受检；DAO 和实体由结构门禁验证模块归属与目录容量。
-Android CI 同时运行数据库模块的独立升级测试，校验完整历史升级链、旧下载数据保全和恢复索引。
-
-结构门禁禁止任何生产 `data` 包回流到 app，包括设置、媒体、登录、流量和同步 Android 接入。
-`:data:repository` 用职责子包管理这些实现，平台缓存仍归各平台数据模块，不按小职责新增构建节点。
-设置归一化、歌词/下载/缓存偏好政策、流量与周期统计、备份映射和仓库接入端口也纳入 CRAP 范围。
-这些范围采用目录或完整文件选择器，超分仍由现有 `verifyModularization` 使 CI 失败。
-数据实现可独立运行 `:data:repository:verifyCrap`，复用同一范围配置和阈值，报告位于
-`modules/data/repository/build/reports/crap/`；模块的 `check` 也执行该门禁。
-网易的 `data/platform/netease/mapping` 和 `playlist` 目录整文件受检，包括 JSON 映射、歌曲身份、远端比对、批量同步和重试；
-新增文件自动纳入范围。`:data:netease:verifyCrap` 与该模块的 `check` 复用同一阈值，报告位于 `modules/data/netease/build/reports/crap/`。

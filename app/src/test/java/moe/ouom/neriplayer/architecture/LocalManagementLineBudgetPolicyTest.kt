@@ -23,7 +23,7 @@ class LocalManagementLineBudgetPolicyTest {
         }
         File(
             root,
-            "modules/feature/download/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+            "modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).apply {
             parentFile.mkdirs()
             writeText("object GlobalDownloadManager")
@@ -36,7 +36,7 @@ class LocalManagementLineBudgetPolicyTest {
     fun `default scope checks new files inside the extracted data repository`() {
         val root = temporaryFolder.newFolder("modular-repository")
         val relativePath =
-            "modules/data/repository/src/main/java/moe/ouom/neriplayer/data/local/new/ExtractedOwner.kt"
+            "modules/local/src/main/java/moe/ouom/neriplayer/data/local/new/ExtractedOwner.kt"
         val oversized = File(root, relativePath)
         oversized.parentFile.mkdirs()
         writeLines(oversized, 2_000, "\n", false)

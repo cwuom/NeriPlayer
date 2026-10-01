@@ -42,7 +42,7 @@ AGENTS.md
 .agents/
 /ksp-annotations/build/
 /ksp-processor/build/
-/modules/*/*/build/
+/modules/**/build/
 /docs-private/
 .serena/
 /app/datastore/

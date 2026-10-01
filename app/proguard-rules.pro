@@ -57,13 +57,6 @@
     );
 }
 
-# Lyricon 走 service 绑定和模型反射，这块先保守一点
--keep class io.github.proify.lyricon.** { *; }
--dontwarn io.github.proify.lyricon.**
-
-# SuperLyricApi 在系统服务兼容分支上比较脆，先别动它
--keep class com.hchen.superlyricapi.** { *; }
-
 # 这些库有自己的 consumer rules，这里只压掉可选依赖告警
 -dontwarn okhttp3.**
 -dontwarn okio.**

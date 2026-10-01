@@ -100,7 +100,7 @@ import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.effects.AudioReactive
+import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState

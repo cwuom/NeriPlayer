@@ -45,7 +45,10 @@ jobs:
 
       - name: Run unit tests, CRAP gate and lint
         run: >-
-          ./gradlew :core:player-policy:verifyCrap :core:player-runtime:verifyCrap :core:player-audio:verifyCrap :feature:player:verifyCrap :api:sync:verifyCrap :api:sync:verifyDomainDependencies :data:sync-store:verifyCrap :data:sync:verifyCrap :data:sync:verifyDomainDependencies :data:repository:verifySyncIntegrationCrap :core:download:verifyCrap :feature:download:verifyCrap verifyModularization --warning-mode all --stacktrace
+          ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
+          :lyrics:verifyCrap :platform:verifyCrap :platform:verifyDomainDependencies :sync:verifyCrap :sync:verifyDomainDependencies
+          :local:verifySyncIntegrationCrap :download:logic:verifyCrap :download:runtime:verifyCrap
+          verifyModularization --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()
@@ -92,7 +95,7 @@ jobs:
         run: npm ci --prefix np-submodule/NeriPlayer-LTW
 
       - name: Run Android Listen Together tests
-        run: ./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug :api:ltw:testDebugUnitTest :core:ltw-protocol:lintDebug :app:testDebugUnitTest --tests "*ListenTogether*" --warning-mode all --stacktrace
+        run: ./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug :listentogether:testDebugUnitTest :app:testDebugUnitTest --tests "*ListenTogether*" --warning-mode all --stacktrace
 
       - name: Run Worker protocol tests
         run: npm run check --prefix np-submodule/NeriPlayer-LTW
@@ -105,10 +108,9 @@ jobs:
           path: |
             **/build/reports/tests/**
             **/build/test-results/**/*.xml
-            modules/data/ltw/build/reports/crap/**
-            modules/data/ltw/build/reports/domain-dependencies/**
-            modules/data/ltw/build/reports/lint-results-debug.html
-            modules/core/ltw-protocol/build/reports/lint-results-debug.html
+            modules/listentogether/build/reports/crap/**
+            modules/listentogether/build/reports/domain-dependencies/**
+            modules/listentogether/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
   android-instrumented-tests:
@@ -148,7 +150,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: >-
-            ./gradlew :data:database:connectedDebugAndroidTest :data:repository:connectedDebugAndroidTest :feature:player:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+            ./gradlew :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest :playback:runtime:connectedDebugAndroidTest :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             --warning-mode all --stacktrace
 

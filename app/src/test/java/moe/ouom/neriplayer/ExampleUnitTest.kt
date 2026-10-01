@@ -3,6 +3,7 @@ package moe.ouom.neriplayer
 import android.content.Context
 import android.content.res.Resources
 import android.os.LocaleList
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.util.format.formatDurationSec
 import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.util.format.formatPlayCount

@@ -22,9 +22,11 @@ def load_domains(path):
         raise ValueError("At least one domain is required")
     names = set()
     for domain in domains:
-        if not isinstance(domain, dict) or set(domain) != {
+        required_fields = {
             "name", "package", "allowed_classes", "bridges", "descriptor_only"
-        }:
+        }
+        if (not isinstance(domain, dict) or not required_fields.issubset(domain)
+                or set(domain) - required_fields - {"excluded_classes"}):
             raise ValueError("Invalid domain fields")
         name, package = domain["name"], domain["package"]
         if not isinstance(name, str) or not name or name in names:
@@ -32,6 +34,13 @@ def load_domains(path):
         names.add(name)
         if not isinstance(package, str) or not re.fullmatch(r"(?:[a-zA-Z_]\w*\.)+", package):
             raise ValueError(f"{name}: package must be a dotted prefix ending with a dot")
+        excluded = domain.get("excluded_classes", [])
+        if not isinstance(excluded, list) or not all(
+            isinstance(owner, str) and owner.startswith(package)
+            and re.fullmatch(r"(?:[a-zA-Z_$][\w$]*\.)+[a-zA-Z_$][\w$]*", owner)
+            for owner in excluded
+        ) or len(set(excluded)) != len(excluded):
+            raise ValueError(f"{name}: invalid excluded classes")
         allowed, bridges = domain["allowed_classes"], domain["bridges"]
         if not isinstance(allowed, list) or not all(isinstance(x, str) and x for x in allowed):
             raise ValueError(f"{name}: invalid allowed classes")
@@ -73,7 +82,12 @@ def compiled_classes(inputs):
 def select_domains(classes, domains):
     selected = {}
     for domain in domains:
-        matches = {name for name in classes if name.startswith(domain["package"])}
+        excluded = domain.get("excluded_classes", [])
+        matches = {
+            name for name in classes
+            if name.startswith(domain["package"])
+            and not any(name == owner or name.startswith(owner + "$") for owner in excluded)
+        }
         if not matches:
             raise ValueError(f"{domain['name']}: no compiled classes in protected package")
         for name in matches:

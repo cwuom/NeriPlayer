@@ -64,7 +64,14 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 @Composable
 internal fun rememberAutoSettingSpecRepository(): AutoSettingSpecRepository {
     val context = LocalContext.current
-    return remember(context) { AutoSettingSpecRepository(context) }
+    return remember(context) {
+        AutoSettingSpecRepository(
+            context,
+            onDownloadParallelismChanged = { value ->
+                moe.ouom.neriplayer.core.player.download.network.publishDownloadParallelism(value)
+            }
+        )
+    }
 }
 
 @Composable

@@ -74,9 +74,9 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.core.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.download.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
-import moe.ouom.neriplayer.core.download.renderManagedDownloadBaseName
+import moe.ouom.neriplayer.core.download.naming.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplate
+import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata

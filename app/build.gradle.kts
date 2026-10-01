@@ -15,39 +15,8 @@ plugins {
     id("kotlin-parcelize")
 }
 
-val ownedLibraryPaths = listOf(
-    ":core:common",
-    ":core:download",
-    ":feature:download",
-    ":core:logging",
-    ":core:ltw-protocol",
-    ":core:lyrics",
-    ":core:network",
-    ":core:playback-queue",
-    ":core:player-policy",
-    ":core:player-runtime",
-    ":core:player-audio",
-    ":feature:player",
-    ":api:bilibili",
-    ":api:ltw",
-    ":api:lyrics",
-    ":api:netease",
-    ":api:search",
-    ":api:sync",
-    ":api:youtube",
-    ":data:bilibili",
-    ":data:comments",
-    ":data:database",
-    ":data:lyrics",
-    ":data:ltw",
-    ":data:model",
-    ":data:netease",
-    ":data:repository",
-    ":data:storage",
-    ":data:sync",
-    ":data:sync-store",
-    ":data:youtube"
-)
+val ownedLibraryPaths = rootProject.file("gradle/owned-modules.txt")
+    .readLines().filter { it.isNotBlank() }
 val libraryCoverageClasses = configurations.create("libraryCoverageClasses") {
     isCanBeConsumed = false
     isTransitive = false
@@ -183,7 +152,7 @@ android {
 
     sourceSets {
         getByName("androidTest") {
-            assets.directories.add(project(":data:database").layout.projectDirectory.dir("schemas").asFile.path)
+            assets.directories.add(project(":database").layout.projectDirectory.dir("schemas").asFile.path)
         }
     }
 
@@ -267,7 +236,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
                 )
                 componentFilter { component ->
                     component is org.gradle.api.artifacts.component.ProjectComponentIdentifier &&
-                        component.projectPath == ":feature:download"
+                        component.projectPath == ":download:runtime"
                 }
             }.files
         }
@@ -444,7 +413,7 @@ androidComponents {
 }
 
 dependencies {
-    testImplementation(testFixtures(project(":core:common")))
+    testImplementation(testFixtures(project(":common")))
     ownedLibraryPaths.forEach { module ->
         implementation(project(module))
         add(libraryCoverageClasses.name, project(mapOf("path" to module, "configuration" to "coverageClassesElements")))
@@ -484,7 +453,7 @@ dependencies {
     androidTestImplementation(libs.kotlinx.coroutines.android)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.room.testing)
-    androidTestImplementation(testFixtures(project(":data:repository")))
+    androidTestImplementation(testFixtures(project(":local")))
     implementation(libs.androidx.animation)
     implementation(libs.accompanist.navigation.animation)
     implementation(libs.androidx.datastore.preferences)
@@ -492,7 +461,6 @@ dependencies {
     implementation(libs.androidx.room.ktx)
 
     implementation(libs.okhttp)
-    implementation(libs.lyricon.provider)
     implementation(libs.zxing.core)
 
     implementation(project(":accompanist-lyrics-core"))
@@ -533,5 +501,4 @@ dependencies {
     // 取主题色
     implementation(libs.androidx.palette.ktx)
 
-    implementation(libs.superlyricapi)
 }

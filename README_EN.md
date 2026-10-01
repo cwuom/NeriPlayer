@@ -681,68 +681,45 @@ For release build and signing details, see
 
 ### Module layout
 
-Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for example, `modules/api/youtube` maps to `:api:youtube`.
+The project owns 14 Android libraries, registered once in [gradle/owned-modules.txt](gradle/owned-modules.txt). Top-level directories name business domains; playback and downloads retain separate rule and runtime build boundaries. Remote music, lyric, and metadata sources belong to `:platform`, with `api` describing its internal protocol responsibility. Shared models and host interfaces define public capability contracts.
 
-- `:app`: Android application entry points, screens, and cross-feature dependency assembly.
-- `:data:model`: centralized data contracts grouped by authentication, platform, lyrics, downloads, playback, storage, and sync, without dependencies on project implementations.
-- `:core:common` / `:core:logging` / `:core:network`: shared utilities, logging, and networking.
-- `:core:lyrics`: lyric parsing/transforms; data types belong to `:data:model`.
-- [`:core:ltw-protocol`](modules/core/ltw-protocol/README.md): bounded HTTP response reading, WebSocket codecs and keepalive messages, and identity generation rules; protocol models live in `:data:model`.
-- `:core:player-policy`: playback commands, resume progress, stall detection, audio offload, and service lifecycle rules without app dependencies.
-- `:core:player-runtime`: refresh ownership, persistence scheduling, prefetch arbitration, progress/statistics, quality, and transport control with injected identity and side effects.
-- `:core:player-audio`: PCM channel balance, volume normalization, and audio visualization.
-- `:feature:player`: playback engine, source resolution, playback service, USB exclusive output, platform effects, and lyrics output; interfaces connect downloads, Listen Together, widgets, feedback, and startup policies.
-- `:core:playback-queue`: queue state, editing, navigation, and ordering policies with injected song identity rules.
-- `:core:download`: admission and clear progress, state transitions and retries, deferred scheduling, transfer permits and watchdogs, network policy, operation ownership, commit and publication rules, and metadata codecs; reusable storage tools support data modules, while download orchestration belongs to `:feature:download`.
-- `:feature:download`: execution, Room queues, batch recovery, transfers, managed files and migrations, Workers, and JobService, with host-provided source services, credentials, traffic, startup, and playback interfaces.
-- `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
-- `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
-- [`:api:sync`](modules/api/sync/README.md): GitHub Git Data and WebDAV transport, conditional writes, and bounded responses with injected HTTP clients and error messages.
-- `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, platform response mapping into application models, playlist rules and remote playlist synchronization, and playback source repositories.
-- [`:data:ltw`](modules/data/ltw/README.md): Listen Together client sessions, membership operations, connection recovery, control events, playback synchronization, invites, and input validation through host-provided playback and Android interfaces.
-- `:data:lyrics` / `:data:comments`: lyric matching and fallback across sources, comment pagination, and caching.
-- [`:data:sync`](modules/data/sync/README.md): sync sessions, codecs, snapshot sanitization, change detection, merging, concurrency protection, and Worker policies through host-provided interfaces.
-- [`:data:sync-store`](modules/data/sync-store/README.md): encrypted credentials, sync preferences, device identity, causal counters, deletion records, and atomic commits.
-- `:data:storage`: storage accounting, file scanning, and cache cleanup with host-provided locations, database statistics, and download snapshots.
-- `:data:repository`: application data implementations grouped by settings, media, playlists, history/statistics, backup, traffic, and Android sync integration. These responsibilities share one Gradle module; narrow host interfaces supply downloads, playback state, and HTTP clients.
-- `:data:database`: Room database, entities, DAOs, historical schemas, and upgrades. Migration SQL is grouped by library, platform, and downloads; legacy preservation separates identity, paging, JSON, conflicts, caching, and writes.
-- `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
-- `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
-- `build-logic`: shared Gradle convention plugins.
-- `buildSrc`: retained auxiliary Gradle build logic.
-- `np-submodule/NeriPlayer-LTW`: Listen Together Cloudflare Workers server.
-- `np-submodule/miuix`: vendored upstream Miuix source/docs tree, not part of the current app module graph.
+- [`:common`](modules/common/README.md): utilities, logging, shared text/icons, locale support, and test fixtures.
+- [`:network`](modules/network/README.md): HTTP, Range handling, network parsing, and Web login infrastructure.
+- [`:model`](modules/model/README.md): business models, enums, and cross-module state contracts without project implementation dependencies.
+- [`:database`](modules/database/README.md): Room database, entities, DAOs, historical schemas, and upgrades.
+- [`:storage`](modules/storage/README.md): storage accounting, scans, and cache cleanup through snapshots and cleanup ports.
+- [`:playback:logic`](modules/playback/logic/README.md): policy decisions, runtime coordinators, PCM/audio processing, and queue rules with package-level isolation.
+- [`:playback:runtime`](modules/playback/runtime/README.md): Media3 engine, service, source resolution, USB output, effects, floating/Bluetooth lyrics, and host integration.
+- [`:download:logic`](modules/download/logic/README.md): admission, state transitions, retries, scheduling, permits, ownership, commit rules, and metadata codecs.
+- [`:download:runtime`](modules/download/runtime/README.md): execution, Room queues, managed files, migration/recovery, Workers, and JobService.
+- [`:lyrics`](modules/lyrics/README.md): LRC/YRC/TTML parsing, transforms, timelines, translation alignment, time offsets, and Lyricon/SuperLyric output coordination.
+- [`:platform`](modules/platform/README.md): Bilibili, NetEase, and YouTube protocols, accounts, caches, and business services, plus comments, lyric sources, metadata search, matching, and fallback.
+- [`:local`](modules/local/README.md): settings, local media/playlists, history/statistics, backups, traffic, and Android sync host adapters.
+- [`:sync`](modules/sync/README.md): GitHub/WebDAV transport, encrypted credential state, sessions, compatible codecs, merges, concurrency protection, and Worker policies.
+- [`:listentogether`](modules/listentogether/README.md): protocol, HTTP/WebSocket transport, identity rules, sessions, reconnects, controls, and playback synchronization.
 
-Implementation dependencies flow from `app -> feature -> data -> api -> core`; higher layers may use lower layers directly.
-Every layer may depend on the foundational `:data:model` contracts, which have no dependencies on project implementations.
-Otherwise core cannot depend on API/data implementations, API cannot depend on repositories, and no library may depend on app.
-The graph must remain acyclic. Clients use injected account, credential-refresh, and storage interfaces, with providers for live settings.
+`:app` owns Android entry points, Compose screens, and cross-domain assembly. `:ksp-annotations` / `:ksp-processor` generate settings metadata; `:accompanist-lyrics-core` / `:accompanist-lyrics-ui` are upstream lyric modules. `build-logic` and `buildSrc` supply build tooling. `np-submodule/NeriPlayer-LTW` is the Cloudflare Workers server; the vendored `np-submodule/miuix` source/docs tree is outside the app graph. These are not part of the 14 owned Android libraries.
 
-Business data models, enums, and cross-module state contracts live in `modules/data/model`, using `data.model.<business>` packages
-with platform-specific types grouped under their platform, then authentication, cache, or response subpackages.
-Shared contracts are grouped by playback, downloads, sync, and other business responsibilities.
-API, repository, and host modules do not own separate model directories.
-JSON adapters, database mapping, requests, and presentation logic remain with their implementations.
-Screen-local state stays with its UI, Room entities with the database, and private intermediate records with their algorithms.
-Packages match their directories. Existing Parcelable class names remain stable for saved Android state.
-Modules own their tests, resources, and consumer R8 rules; host integration tests stay in `app`.
-Business mappings and repository orchestration live in `:data:repository`; platform data modules own their Room cache adapters. The database module does not depend on repository identity rules or global containers.
-`app` has no production `data` source directory; download upgrades and dependency assembly live in `core/startup/legacy` and `core/integration`.
-The data implementation module is the sole KSP owner of the settings schema, persistence access, and metadata; Compose settings rendering lives in `app/ui/settings`.
-Existing `:core:common` owns shared text, icons, and locale utilities; small responsibilities do not require separate Gradle modules.
-Historical schemas live in `modules/data/database/schemas`, where Room KSP runs; app instrumentation tests load schemas from this directory.
+Dependencies follow responsibilities rather than directory categories. `:model` has no project implementation dependencies, and `:common` has no business-domain dependencies. Database, storage calculations, lyric parsing, and playback/download rules must not depend on repository or Android runtime implementations. Repositories inside `:platform` consume their corresponding protocols; APIs cannot read account repositories, Room, or player state, and each platform retains its package dependency boundary. `:local` consumes the database and domain services. Clients receive account, credential-refresh, and storage capabilities through narrow injected interfaces. No library may depend on app, and the graph must remain acyclic.
 
-Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage,
-domain dependencies, and lint. Run an individual module's tests with `./gradlew :data:youtube:testDebugUnitTest`.
-Player modules also provide independent gates: `:core:player-policy:verifyCrap`, `:core:player-runtime:verifyCrap`,
-`:core:player-audio:verifyCrap`, and `:feature:player:verifyCrap`. They select each module's rules from the shared scope
-and use its own JVM coverage; a scoped method above 9 fails CI. The original app `core/player` production directory
-must stay absent. App adapters live in `core/di/player`, while the playback service and its manifest belong to the feature.
-Native C++ and the FFmpeg AAR remain packaged by app; JNI class names and existing playback persistence contracts stay stable.
-The standalone structural check, `python3 -B tools_pub/quality/module_boundaries.py`, needs no Android SDK.
-Run `./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug` for the standalone Listen Together gate. All client and protocol production methods and new files are included automatically; any CRAP score above 9 fails CI. Production sources cannot return to `app/listentogether`; app assembles platform interfaces in `core/di/ltw`, and player adapters live under `core/player/ltw`.
-Library source files must stay below 2000 lines, with at most 16 direct Kotlin/Java files per production directory.
-See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension rules.
+Playback policy covers nine leaf packages: `audio`, `command`, `offload`, `pending`, `progress`, `service`, `skip`, `storage`, and `wake`. Policy cannot reference runtime, audio, or queue implementations; USB policy remains in `:playback:runtime`. `:platform` depends on and exports the parsing capabilities of `:lyrics`. Source repositories, matching, and fallback stay in platform; `:lyrics` does not depend on platform. The lyrics library owns external SDKs, position feeds, and asynchronous request generations; playback provides lyrics through a narrow loading port, plus preference snapshots and lifecycle inputs.
+
+Shared contracts live in `modules/model`, retaining existing packages such as `data.model.<business>`. Screen-local state stays with UI, Room entities with the database, and private algorithm records with their implementation. Module directories and Kotlin packages express different scopes. Packages match their internal source directories; Parcelable, Room, serialization, JNI, service, and Worker class names remain stable.
+
+Modules own tests, resources, and consumer R8 rules; host integration tests stay in app. `:local` owns Room business mappings and local repository orchestration, while platform cache adapters belong to `:platform`. Historical schemas live in `modules/database/schemas`. Settings KSP runs in `:local`; Compose settings rendering stays in `app/ui/settings`. App has no production `data` directory; download upgrades and dependency assembly use `core/startup/legacy` and `core/integration`.
+
+Run `./gradlew verifyModularization` for structural boundaries, JVM tests, combined CRAP coverage, domain dependencies, and lint. Each module README lists focused tasks, for example:
+
+```bash
+./gradlew :platform:verifyCrap :platform:verifyDomainDependencies :platform:lintDebug
+./gradlew :lyrics:verifyCrap :lyrics:lintDebug
+./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
+./gradlew :sync:verifyCrap :sync:verifyDomainDependencies :sync:lintDebug
+./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug
+python3 -B tools_pub/quality/module_boundaries.py
+```
+
+Independent and aggregate gates retain the same scopes and threshold: a scoped CRAP score above 9 fails. Library files must stay below 2000 lines, with at most 16 direct Kotlin/Java files per production directory. App packages the FFmpeg AAR and USB native library; `:playback:runtime` owns the service and Kotlin implementation. App assembles capabilities in `core/di/player` and `core/di/ltw`. See the [contribution guide](CONTRIBUTING_EN.md#project-layout) and [quality guide](tools_pub/quality/README.md).
 
 ### Entry point and navigation
 
@@ -797,7 +774,7 @@ See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension ru
 - Playback state is persisted periodically for queue and state recovery.
 - Player code is split by responsibility across `playback/`, `url/`, `resolver/`,
   `service/`, `effects/`, `lifecycle/`, `watchdog/`, and `usb/`. Shared song
-  and playback state contracts are maintained in `:data:model`.
+  and playback state contracts are maintained in `:model`.
 - Sleep timer, fade-in/fade-out, crossfade-next, and playback mode recovery are
   handled in the player layer.
 - Preemptive audio focus, mixed playback, pause on Bluetooth disconnect, and
@@ -873,10 +850,10 @@ See the [contribution guide](CONTRIBUTING_EN.md#project-layout) for extension ru
 - Play history, playback stats, playlists, favorite snapshots, and mappings are
   persisted through local files.
 - Local playlists are stored as JSON with atomic temp-file writes.
-- Sync payloads shared by GitHub and WebDAV live in `:data:model` under `data/model/sync/`.
-  Sessions, compatibility codecs, sanitization, merge rules, and conflict policies belong
-  to `:data:sync`, together with Worker policies. Transport belongs to `:api:sync`, credentials
-  and sync state to `:data:sync-store`, and Android repository and WorkManager adapters to `:data:repository`.
+- Sync payloads shared by GitHub and WebDAV live in `:model` under `data/model/sync/`.
+  `:sync` owns transport, encrypted credential state, sessions, compatible codecs,
+  sanitization, merging, conflict handling, and Worker policies. Android repository
+  and WorkManager adapters belong to `:local`.
   GitHub/WebDAV managers connect to the shared session through backend interfaces; app has no sync implementation tree.
   Deletion records and undo operations participate in the same merge policy so
   locally restored songs are not removed again by stale deletion records on the

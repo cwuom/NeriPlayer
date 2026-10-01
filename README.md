@@ -526,65 +526,45 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 模块结构
 
-自有库按 `modules/<层>/<模块>` 组织，对应同名 Gradle 路径，例如 `modules/api/youtube` 对应 `:api:youtube`。
+自有 Android 库按业务域组织，由 [gradle/owned-modules.txt](gradle/owned-modules.txt) 统一登记，共 14 个。一级领域使用 `modules/<领域>`，播放和下载保留规则与运行实现两个独立构建边界。远程音乐、歌词和元数据来源集中在 `:platform`，`api` 表达同库内部的请求协议职责；公共能力契约由模型和宿主接口表达。
 
-- `:app`：Android 应用入口、页面与跨功能依赖组装。
-- `:data:model`：统一数据模型，按认证、平台、歌词、下载、播放、存储和同步细分；不依赖业务实现模块。
-- `:core:common` / `:core:logging` / `:core:network`：通用工具、日志和网络基础能力。
-- `:core:lyrics`：歌词解析与转换；数据类型统一位于 `:data:model`。
-- [`:core:ltw-protocol`](modules/core/ltw-protocol/README.md)：一起听 HTTP 响应限额、WebSocket 编解码与保活消息、身份生成规则；协议模型位于 `:data:model`。
-- `:core:player-policy`：播放命令、恢复进度、卡顿判断、音频 offload 和服务生命周期规则，不依赖 Android 宿主。
-- `:core:player-runtime`：刷新请求、状态保存调度、预取仲裁、播放进度与统计、音质及传输控制；歌曲身份与副作用由宿主注入。
-- `:core:player-audio`：PCM 声道平衡、响度归一化和音频可视化。
-- `:feature:player`：播放器引擎、音源解析、播放服务、USB 独占输出、系统音效与歌词输出；通过接口连接下载、一起听、小组件、反馈和启动策略。
-- `:core:playback-queue`：队列状态、编辑、导航和顺序策略；歌曲身份规则通过接口注入。
-- `:core:download`：下载准入与清空进度、状态迁移与重试、延后调度队列、传输槽位与看门狗、网络策略、operation 所有权、提交与发布规则、元数据编解码；基础存储工具可被数据模块复用，下载业务与服务编排归 `:feature:download`。
-- `:feature:download`：下载执行、Room 队列、批次恢复、传输、受管文件与迁移、Worker 和 JobService；应用初始化时注入来源服务、凭据、流量、启动和播放接口。
-- `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
-- `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
-- [`:api:sync`](modules/api/sync/README.md)：GitHub Git Data 与 WebDAV 传输、条件写入和响应大小限制；HTTP 客户端和错误文案由调用方注入。
-- `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存、平台响应到应用模型的映射、歌单规则与远端歌单同步、播放源仓库。
-- [`:data:ltw`](modules/data/ltw/README.md)：一起听客户端会话、成员操作、连接恢复、控制事件、播放同步、邀请与输入校验；播放器与 Android 副作用通过宿主接口接入。
-- `:data:lyrics` / `:data:comments`：跨来源歌词匹配与回退、评论分页和缓存。
-- [`:data:sync`](modules/data/sync/README.md)：同步会话、编解码、快照清洗、差异检测、合并、并发保护和 Worker 执行策略；由宿主注入本地数据、远端传输与文案接口。
-- [`:data:sync-store`](modules/data/sync-store/README.md)：加密凭据、同步偏好、设备 ID、因果计数器、删除记录与原子提交。
-- `:data:storage`：存储统计、文件扫描和缓存清理；宿主提供目录、数据库统计及下载条目快照。
-- `:data:repository`：应用数据实现，按设置、媒体库、歌单、历史与统计、备份、流量和 Android 同步接入组织包；这些职责共享一个 Gradle 模块，宿主通过明确接口提供下载、播放状态和网络客户端。
-- `:data:database`：Room 数据库、实体、DAO、历史 schema 与版本升级；升级 SQL 按媒体库、平台和下载分类，旧数据保全按身份、分页、JSON、冲突、缓存和写入分类。
-- `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。
-- `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`：歌词解析与 Compose 歌词 UI 子模块。
-- `build-logic`：统一 Gradle convention plugin。
-- `buildSrc`：保留的辅助 Gradle 构建逻辑模块。
-- `np-submodule/NeriPlayer-LTW`：一起听 Cloudflare Workers 服务端。
-- `np-submodule/miuix`：仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
+- [`:common`](modules/common/README.md)：共享工具、日志、文案、图标、语言能力和测试夹具。
+- [`:network`](modules/network/README.md)：通用 HTTP、Range、网络解析和 Web 登录基础能力。
+- [`:model`](modules/model/README.md)：按业务分类的数据模型、枚举和跨模块状态契约，不依赖项目实现。
+- [`:database`](modules/database/README.md)：Room 数据库、实体、DAO、历史 schema 与版本升级。
+- [`:storage`](modules/storage/README.md)：通过数据源快照和清理端口维护存储统计、文件扫描与缓存清理。
+- [`:playback:logic`](modules/playback/logic/README.md)：播放 policy、状态协调 runtime、PCM/audio 和队列 queue 规则，保持包级隔离。
+- [`:playback:runtime`](modules/playback/runtime/README.md)：Media3 引擎、播放服务、音源解析、USB 输出、系统音效、浮窗与蓝牙歌词及宿主接入。
+- [`:download:logic`](modules/download/logic/README.md)：下载准入、状态迁移、重试、调度、传输槽位、所有权、提交与元数据规则。
+- [`:download:runtime`](modules/download/runtime/README.md)：下载执行、Room 队列、受管文件、迁移与恢复，以及 Worker 和 JobService。
+- [`:lyrics`](modules/lyrics/README.md)：LRC/YRC/TTML 解析、转换、时间轴、翻译对齐、时间偏移，以及 Lyricon/SuperLyric 词幕输出协调。
+- [`:platform`](modules/platform/README.md)：Bilibili、网易云、YouTube 的协议、账号、缓存和业务能力，跨平台评论，以及歌词来源、元数据搜索、匹配与回退。
+- [`:local`](modules/local/README.md)：本地设置、媒体、歌单、历史与统计、备份、流量，以及 Android 同步宿主适配。
+- [`:sync`](modules/sync/README.md)：GitHub/WebDAV 传输、加密凭据状态、会话、兼容编解码、合并、并发保护与 Worker 策略。
+- [`:listentogether`](modules/listentogether/README.md)：一起听协议、HTTP/WebSocket 传输、身份规则、会话、连接恢复、控制与播放同步。
 
-实现模块的依赖方向为 `app -> feature -> data -> api -> core`，上层可以直接依赖下层。
-所有层都可以依赖基础数据契约 `:data:model`；该模块不依赖任何项目实现模块。
-除此之外，core 不依赖 api/data，api 不依赖数据仓储，所有库不得依赖 app 或形成循环。
-客户端读取账号、刷新凭据和使用宿主存储时依赖窄接口，由宿主组装实现；
-会变化的设置通过 provider 按需读取。
+`:app` 维护 Android 入口、Compose 页面和跨领域依赖组装。设置项生成由 `:ksp-annotations` / `:ksp-processor` 维护，上游歌词子模块为 `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`；`build-logic` 和 `buildSrc` 提供构建逻辑。`np-submodule/NeriPlayer-LTW` 是一起听 Cloudflare Workers 服务端，`np-submodule/miuix` 是未参与主应用构建的上游源码与文档树。这些不计入 14 个自有 Android 库。
 
-业务数据模型、枚举和跨模块状态契约统一放入 `modules/data/model`，包名使用 `data.model.<业务>`，
-平台专属类型归入各平台子包，继续区分认证、缓存、请求结果等职责；公共类型按播放、下载、同步等业务分类。
-API、仓储和宿主不再各自维护模型目录。
-JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实现模块。
-页面私有状态随 UI 维护，Room 实体随数据库维护，私有算法中间状态随算法维护。
-源码包名与目录一致；保留既有 Parcelable 类全名以兼容已保存的 Android 状态。
-各模块维护自己的测试、资源与 consumer R8 规则，需要宿主参与的集成测试保留在 `app`。
-数据库业务映射与仓库编排位于 `:data:repository`，平台缓存的 Room 适配归各平台数据模块；数据库模块不依赖仓库身份规则或全局容器。
-`app` 不保留 `data` 源码目录；下载升级和依赖组装位于宿主的 `core/startup/legacy` 与 `core/integration`。
-设置 schema 仅在数据实现模块运行 KSP，生成持久化访问和元数据；Compose 设置渲染留在 `app/ui/settings`。
-共享文案、图标和语言工具归现有 `:core:common`，不按小职责增加 Gradle 模块。
-历史 schema 位于 `modules/data/database/schemas`，由数据库模块执行 Room KSP，app 的设备测试从该目录加载。
+依赖按实际职责维护，不由目录分类推导层级。`:model` 不依赖项目实现，`:common` 不依赖业务领域；数据库、存储计算、歌词解析与播放/下载规则不得反向依赖仓库或 Android 运行实现。`:platform` 内的业务仓库消费对应协议，API 不反向读取账号仓库、Room 或播放器状态，各平台仍保持包级依赖边界。`:local` 消费数据库与领域服务，客户端的账号、凭据刷新和存储能力通过窄接口注入。所有库禁止依赖 app 或形成循环。
 
-运行 `./gradlew verifyModularization` 检查依赖边界、各模块 JVM 测试、合并 CRAP 覆盖率、
-计算域依赖和 lint；单模块测试可运行 `./gradlew :data:youtube:testDebugUnitTest`。
-结构检查也可独立运行 `python3 -B tools_pub/quality/module_boundaries.py`，无需 Android SDK。
-一起听模块可独立运行 `./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug`；客户端与协议库的全部生产方法和新增文件自动受检，任意 CRAP 分数大于 9 都会使 CI 失败。`app/listentogether` 禁止重新加入生产源码，app 只在 `core/di/ltw` 组装平台接口，播放器适配位于 `core/player/ltw`。
-播放器模块可分别运行 `:core:player-policy:verifyCrap`、`:core:player-runtime:verifyCrap`、`:core:player-audio:verifyCrap` 和 `:feature:player:verifyCrap`，使用同一份检查范围和大于 9 即失败的阈值。
-播放器的 Kotlin 类和服务声明由库维护，app 只在 `core/di/player` 中组装接口；`app/core/player` 禁止重新加入生产源码。FFmpeg AAR 和 USB native 库由应用统一打包，播放器库保持现有 JNI 类全名。
-库源码文件必须少于 2000 行，库内每个生产源码目录最多包含 16 个直接 Kotlin/Java 文件。
-具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout)。
+`:playback:logic` 的 policy 只包含 `audio`、`command`、`offload`、`pending`、`progress`、`service`、`skip`、`storage`、`wake` 九个叶子包，不引用 runtime、audio 或 queue 实现；USB policy 仍归 `:playback:runtime`。`:platform` 依赖并公开 `:lyrics` 的解析能力；歌词来源仓库、匹配和回退留在平台，`:lyrics` 不依赖平台。词幕 SDK、位置推送与异步请求代次由歌词库维护，播放器通过窄加载端口提供歌词、偏好快照和生命周期输入。
+
+共享业务契约统一放入 `modules/model`，沿用 `data.model.<业务>` 等既有包名；页面私有状态随 UI 维护，Room 实体随数据库维护，私有算法中间状态随算法维护。物理模块目录与 Kotlin 包名表达不同层次，包名与源码内部目录一致，Parcelable、Room、序列化、JNI、服务和 Worker 的既有类全名保持稳定。
+
+各模块维护自己的测试、资源与 consumer R8 规则，宿主集成测试保留在 app。Room 业务映射与本地仓库编排位于 `:local`，平台缓存适配位于 `:platform`；历史 schema 位于 `modules/database/schemas`。设置 schema 在 `:local` 运行 KSP，Compose 设置渲染留在 `app/ui/settings`。`app` 不保留生产 `data` 目录，下载升级和依赖组装位于 `core/startup/legacy` 与 `core/integration`。
+
+运行 `./gradlew verifyModularization` 检查结构、JVM 测试、合并 CRAP 覆盖率、计算域依赖和 lint。针对性任务见各模块 README，例如：
+
+```bash
+./gradlew :platform:verifyCrap :platform:verifyDomainDependencies :platform:lintDebug
+./gradlew :lyrics:verifyCrap :lyrics:lintDebug
+./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
+./gradlew :sync:verifyCrap :sync:verifyDomainDependencies :sync:lintDebug
+./gradlew :listentogether:verifyCrap :listentogether:verifyDomainDependencies :listentogether:lintDebug
+python3 -B tools_pub/quality/module_boundaries.py
+```
+
+独立与聚合门禁保留相同范围和阈值，受检方法 CRAP 大于 9 即失败。库源码文件必须少于 2000 行，每个生产目录最多 16 个直接 Kotlin/Java 文件。FFmpeg AAR 和 USB native 库由应用统一打包；播放服务和 Kotlin 实现由 `:playback:runtime` 维护，app 通过 `core/di/player`、`core/di/ltw` 等接口组装。具体扩展规则见 [贡献指南](CONTRIBUTING.md#项目结构与当前实现--project-layout) 与 [质量说明](tools_pub/quality/README.md)。
 
 ### 入口与导航
 
@@ -627,7 +607,7 @@ JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实
   仍不可播时可根据设置自动匹配 Bilibili 音源或本地音频。
 - 播放状态会定期持久化，用于进程重启后的队列和状态恢复。
 - 播放器实现已按 `playback/`、`url/`、`resolver/`、`service/`、`effects/`、
-  `lifecycle/`、`watchdog/` 与 `usb/` 等职责分包；共享歌曲与播放状态契约由 `:data:model` 维护。
+  `lifecycle/`、`watchdog/` 与 `usb/` 等职责分包；共享歌曲与播放状态契约由 `:model` 维护。
 - 睡眠定时器、淡入淡出、切歌交叉淡入淡出、播放模式恢复等均由播放器层管理。
 - 预抢占音频焦点、混音播放、蓝牙断连暂停和 USB 独占播放通过播放偏好快照
   在播放器启动早期生效。
@@ -690,9 +670,9 @@ JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实
   `Android Keystore + EncryptedSharedPreferences` 本地加密保存。
 - 播放历史、播放统计、歌单、收藏快照和部分映射数据使用本地文件持久化。
 - 本地歌单使用 JSON 文件存储，并通过临时文件实现原子写入。
-- GitHub 与 WebDAV 共用的同步载荷模型位于 `:data:model` 的 `data/model/sync/`，
-  会话、兼容编解码、清洗、合并和调度策略位于 `:data:sync`；传输位于 `:api:sync`，
-  凭据和同步状态位于 `:data:sync-store`，Android 仓库与 WorkManager 适配位于 `:data:repository`。
+- GitHub 与 WebDAV 共用的同步载荷模型位于 `:model` 的 `data/model/sync/`，
+  传输、加密凭据状态、会话、兼容编解码、清洗、合并和调度策略由 `:sync` 维护，
+  Android 仓库与 WorkManager 适配位于 `:local`。
   GitHub/WebDAV 管理器通过后端接口接入共享会话，app 中不再维护同步实现目录。
   删除记录会和撤销操作一起进入合并策略，避免本地撤销后的歌曲在下一轮同步又被旧删除记录移除。
 - GitHub/WebDAV 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。

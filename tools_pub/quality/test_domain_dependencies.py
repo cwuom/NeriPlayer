@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import zipfile
 
-from domain_dependencies import check_bridge_members, check_class_dependencies, load_domains, verify
+from domain_dependencies import check_bridge_members, check_class_dependencies, load_domains, select_domains, verify
 
 
 class DomainDependenciesTest(unittest.TestCase):
@@ -122,6 +122,71 @@ class DomainDependenciesTest(unittest.TestCase):
         errors = verify([self.classes], [first, second])["errors"]
         self.assertTrue(any("calculation: sample.domain.Calculation -> forbidden class sample.bridge.Identity" in x
                             for x in errors))
+
+    def test_exact_host_exclusion_covers_its_generated_classes(self):
+        self.domain["excluded_classes"] = ["sample.domain.Host"]
+        self.config.write_text(json.dumps([self.domain]))
+        self.compile("", {"sample/domain/Host.java": (
+            "package sample.domain; class Host {"
+            "String load() { return sample.runtime.PlayerManager.read(); }"
+            "static class Nested { String load() { return sample.runtime.PlayerManager.read(); }}"
+            "}"
+        )})
+        report = self.check()
+        self.assertEqual([], report["errors"])
+        self.assertEqual(1, report["domains"]["calculation"])
+
+    def test_host_exclusion_keeps_same_package_and_similarly_named_repositories_checked(self):
+        self.domain["excluded_classes"] = ["sample.domain.Host"]
+        self.config.write_text(json.dumps([self.domain]))
+        self.compile("", {
+            "sample/domain/Host.java": "package sample.domain; class Host {}",
+            "sample/domain/HostRepository.java": (
+                "package sample.domain; class HostRepository {"
+                "String load() { return sample.runtime.PlayerManager.read(); }}"
+            ),
+            "sample/domain/FutureRepository.java": (
+                "package sample.domain; class FutureRepository {"
+                "String load() { return sample.runtime.PlayerManager.read(); }}"
+            ),
+        })
+        report = self.check()
+        self.assertEqual(3, report["domains"]["calculation"])
+        self.assertTrue(any("sample.domain.HostRepository -> forbidden class" in error for error in report["errors"]))
+        self.assertTrue(any("sample.domain.FutureRepository -> forbidden class" in error for error in report["errors"]))
+
+    def test_excluded_host_cannot_be_called_by_a_protected_repository(self):
+        self.domain["excluded_classes"] = ["sample.domain.Host"]
+        self.config.write_text(json.dumps([self.domain]))
+        self.compile("public String load() { return Host.load(); }", {"sample/domain/Host.java": (
+            "package sample.domain; class Host {"
+            "static String load() { return sample.runtime.PlayerManager.read(); }}"
+        )})
+        report = self.check()
+        self.assertTrue(any("sample.domain.Calculation -> forbidden class sample.domain.Host" in error
+                            for error in report["errors"]))
+
+    def test_host_exclusions_reject_patterns_and_classes_outside_the_domain(self):
+        for exclusions in ("sample.domain.Host", ["sample.domain.*"], ["sample.domain.Host*"],
+                           ["sample.runtime.Host"], [""], [1], ["sample.domain.Host", "sample.domain.Host"]):
+            with self.subTest(exclusions=exclusions):
+                self.domain["excluded_classes"] = exclusions
+                self.config.write_text(json.dumps([self.domain]))
+                with self.assertRaisesRegex(ValueError, "invalid excluded classes"):
+                    load_domains(self.config)
+
+    def test_bili_local_host_exclusion_does_not_hide_platform_skip_repositories(self):
+        config = Path(__file__).resolve().parents[2] / "config/quality/domain-dependencies.json"
+        domain = next(domain for domain in load_domains(config) if domain["name"] == "platform-bilibili-repository")
+        host = "moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepositoryProvider"
+        repository = "moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepository"
+        neighbor = host + "Neighbor"
+        selected = select_domains({host, host + "$create$1", repository, neighbor}, [domain])
+        self.assertEqual({repository, neighbor}, set(selected))
+        _, errors = check_class_dependencies(
+            "\n".join(f"   {owner} -> {host} module" for owner in sorted(selected)), selected
+        )
+        self.assertEqual(2, len(errors), errors)
 
     def test_reads_jars_and_rejects_duplicate_classes(self):
         self.compile("public String key() { return sample.bridge.Identity.key(); }")

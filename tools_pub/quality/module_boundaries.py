@@ -1,17 +1,34 @@
 """Check owned Gradle libraries without requiring the Android SDK."""
 
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 import re
 import sys
 
 
 PROJECT_REFERENCE = re.compile(r'project\("(:[\w:-]+)"\)')
+CONFIGURED_PROJECT_REFERENCE = re.compile(
+    r'\b(ksp|testImplementation)\s*\(\s*project\("(:[\w:-]+)"\)\s*\)'
+)
 MODULE_INCLUDE = re.compile(r'(?:include|includeOwnedLibrary)\("(:[\w:-]+)"\)')
 OWNED_INCLUDE = re.compile(r'includeOwnedLibrary\("(:[\w:-]+)"\)')
 PACKAGE = re.compile(r'^[ \t]*package\s+([\w.]+)', re.MULTILINE)
+IMPORT = re.compile(r'^[ \t]*import\s+([\w.]+)', re.MULTILINE)
+TYPE_DECLARATION = re.compile(
+    r'^[ \t]*(?:(?:public|internal|private|protected|open|abstract|sealed|data|enum)\s+)*class\s+(\w+)',
+    re.MULTILINE,
+)
+SOURCE_SYMBOL = re.compile(
+    r'\b(?:class|interface|object|fun|val|var|typealias)\s+'
+    r'(?:<[^>]+>\s*)?(?:[\w?<>.]+\.)?(\w+)'
+)
+OWNED_MODULE_PATH = re.compile(r':[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?')
 MAX_DIRECTORY_SOURCES = 16
+SYNC_DOMAIN_FAMILIES = tuple(
+    f"data/sync/{family}"
+    for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize", "schedule")
+)
 PLAYER_POLICY_FAMILIES = tuple(
     f"core/player/policy/{family}"
     for family in ("audio", "command", "offload", "pending", "progress", "service", "skip", "storage", "wake")
@@ -33,10 +50,6 @@ DOWNLOAD_RULE_FAMILIES = (
     "core/download/storage/metadata/codec",
     "core/download/storage/metadata/serialization",
 )
-SYNC_DOMAIN_FAMILIES = tuple(
-    f"data/sync/{family}"
-    for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize", "schedule")
-)
 APP_FAMILIES = (
     "core/player/download", "core/player/service", "data/settings",
     "ui/screen/tab/settings/component",
@@ -45,18 +58,46 @@ APP_FAMILIES = (
 )
 LIBRARY_OWNED_FAMILIES = (
     "data/sync", "api/sync",
-    "data",
-    "data/local/database/dao", "data/local/database/entity", "data/local/database/migration",
-    "core/download", "core/player/download",
     "core/player",
+    "core/download", "core/player/download",
+    "data",
     "core/player/runtime", *PLAYER_POLICY_FAMILIES, *PLAYER_AUDIO_FAMILIES,
-    "data/ltw", "listentogether",
-    *DOWNLOAD_RULE_FAMILIES,
-    "core/api", "core/lyrics", "core/player/queue", "data/sync/merge",
+    "data/ltw",
+    "listentogether",
+    "core/api", "core/lyrics", "core/lyricon", "lyrics/integration", "core/player/queue", "data/sync/merge",
     *SYNC_DOMAIN_FAMILIES,
+    "data/local/database/dao", "data/local/database/entity", "data/local/database/migration",
+    *DOWNLOAD_RULE_FAMILIES,
 )
-MODULE_LAYERS = {"core": 0, "api": 1, "data": 2, "feature": 3}
-MODEL_MODULE = ":data:model"
+MODEL_MODULE = ":model"
+ALLOWED_DEPENDENCIES = {
+    ":common": set(),
+    ":network": {":common"},
+    MODEL_MODULE: set(),
+    ":database": {MODEL_MODULE},
+    ":storage": {MODEL_MODULE},
+    ":playback:logic": {":common", MODEL_MODULE},
+    ":download:logic": {":common", MODEL_MODULE},
+    ":lyrics": {":common", MODEL_MODULE, ":accompanist-lyrics-core"},
+    ":platform": {":common", ":database", ":lyrics", MODEL_MODULE, ":network"},
+    ":sync": {":platform", ":common", MODEL_MODULE},
+    ":listentogether": {":platform", ":common", MODEL_MODULE},
+    ":local": {
+        ":platform", ":common", ":database", ":download:logic", ":ksp-annotations",
+        ":listentogether", ":lyrics", MODEL_MODULE, ":network", ":storage", ":sync",
+    },
+    ":download:runtime": {
+        ":platform", ":common", ":database", ":download:logic", ":local", ":lyrics", MODEL_MODULE, ":network",
+    },
+    ":playback:runtime": {
+        ":platform", ":common", ":database", ":listentogether", ":local", ":lyrics", MODEL_MODULE,
+        ":network", ":playback:logic", ":storage", ":sync",
+    },
+}
+CONFIGURED_DEPENDENCIES = {
+    (":local", "ksp"): {":ksp-processor"},
+    (":download:runtime", "testImplementation"): {":sync"},
+}
 # 已写入 Android 保存状态的 Parcelable 全名需要保持稳定
 LEGACY_MODEL_TYPES = {
     f"moe.ouom.neriplayer.ui.viewmodel.tab.{name}"
@@ -66,52 +107,133 @@ LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem"
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName")
 PACKAGE_OWNERS = {
-    "moe.ouom.neriplayer.api.sync": ":api:sync",
-    "moe.ouom.neriplayer.data.sync.store": ":data:sync-store",
-    **{f"moe.ouom.neriplayer.data.{family}": ":data:repository"
+    **{f"moe.ouom.neriplayer.api.{platform}": ":platform"
+       for platform in ("bilibili", "netease", "youtube")},
+    "moe.ouom.neriplayer.api.lyrics": ":platform",
+    "moe.ouom.neriplayer.api.search": ":platform",
+    "moe.ouom.neriplayer.api.sync": ":sync",
+    "moe.ouom.neriplayer.api.ltw": ":listentogether",
+    "moe.ouom.neriplayer.core.logging": ":common",
+    "moe.ouom.neriplayer.core.common": ":common",
+    "moe.ouom.neriplayer.core.comment": ":platform",
+    "moe.ouom.neriplayer.core.lyrics": ":lyrics",
+    "moe.ouom.neriplayer.core.lyricon": ":lyrics",
+    "moe.ouom.neriplayer.lyrics.integration": ":lyrics",
+    "moe.ouom.neriplayer.data.lyrics": ":platform",
+    "moe.ouom.neriplayer.data.sync": ":sync",
+    **{f"moe.ouom.neriplayer.data.sync.{family}": ":local"
+       for family in ("cover", "github", "host", "mapping", "webdav", "work")},
+    "moe.ouom.neriplayer.core.player": ":playback:runtime",
+    "moe.ouom.neriplayer.core.download": ":download:runtime",
+    "moe.ouom.neriplayer.core.player.download": ":download:runtime",
+    "moe.ouom.neriplayer.core.download.policy.settings": ":download:logic",
+    "moe.ouom.neriplayer.core.download.storage": (":common", ":download:logic", ":download:runtime"),
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":sync"
+       for family in SYNC_DOMAIN_FAMILIES},
+    "moe.ouom.neriplayer.core.player.runtime": ":playback:logic",
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":playback:logic"
+       for family in PLAYER_POLICY_FAMILIES},
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":playback:logic"
+       for family in PLAYER_AUDIO_FAMILIES},
+    "moe.ouom.neriplayer.data.ltw": ":listentogether",
+    "moe.ouom.neriplayer.listentogether": ":listentogether",
+    "moe.ouom.neriplayer.data.model": MODEL_MODULE,
+    **{f"moe.ouom.neriplayer.data.{family}": ":local"
        for family in ("settings", "history", "identity", "backup", "config", "traffic", "search",
                       "auth", "network", "playlist", "stats", "storage", "listentogether",
                       "local.media", "local.audioimport", "local.playlist", "local.storage")},
-    "moe.ouom.neriplayer.data.auth.netease": ":data:netease",
-    "moe.ouom.neriplayer.data.auth.bili": ":data:bilibili",
-    "moe.ouom.neriplayer.data.youtube": ":data:youtube",
-    **{f"moe.ouom.neriplayer.data.storage.{family}": ":data:storage"
+    "moe.ouom.neriplayer.data.auth.netease": ":platform",
+    "moe.ouom.neriplayer.data.auth.bili": ":platform",
+    "moe.ouom.neriplayer.data.youtube": ":platform",
+    **{f"moe.ouom.neriplayer.data.storage.{family}": ":storage"
        for family in ("accounting", "source", "scan", "cleanup", "policy")},
-    "moe.ouom.neriplayer.data.platform.netease": ":data:netease",
-    "moe.ouom.neriplayer.data.platform.youtube": ":data:youtube",
-    "moe.ouom.neriplayer.data.platform.bili.cache": ":data:bilibili",
-    "moe.ouom.neriplayer.data.local.database.dao": ":data:database",
-    "moe.ouom.neriplayer.data.local.database.entity": ":data:database",
-    "moe.ouom.neriplayer.data.local.database.migration": ":data:database",
-    "moe.ouom.neriplayer.core.download": ":feature:download",
-    "moe.ouom.neriplayer.core.player.download": ":feature:download",
-    "moe.ouom.neriplayer.core.download.policy.settings": ":core:download",
-    "moe.ouom.neriplayer.core.download.storage": (":core:common", ":core:download", ":feature:download"),
-    "moe.ouom.neriplayer.core.player": ":feature:player",
-    "moe.ouom.neriplayer.core.player.runtime": ":core:player-runtime",
-    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:player-policy"
-       for family in PLAYER_POLICY_FAMILIES},
-    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:player-audio"
-       for family in PLAYER_AUDIO_FAMILIES},
-    "moe.ouom.neriplayer.data.ltw": ":data:ltw",
-    "moe.ouom.neriplayer.listentogether": ":core:ltw-protocol",
-    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":core:download"
+    "moe.ouom.neriplayer.data.platform.netease": ":platform",
+    "moe.ouom.neriplayer.data.platform.youtube": ":platform",
+    "moe.ouom.neriplayer.data.platform.bili": ":platform",
+    "moe.ouom.neriplayer.core.network": ":network",
+    "moe.ouom.neriplayer.util.network": ":network",
+    "moe.ouom.neriplayer.core.player.queue": ":playback:logic",
+    "moe.ouom.neriplayer.data.local.database": ":database",
+    "moe.ouom.neriplayer.data.local.database.store": ":local",
+    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":download:logic"
        for family in DOWNLOAD_RULE_FAMILIES},
-    **{f"moe.ouom.neriplayer.{family.replace('/', '.')}": ":data:sync"
-       for family in SYNC_DOMAIN_FAMILIES},
-    "moe.ouom.neriplayer.data.model": MODEL_MODULE,
-    "moe.ouom.neriplayer.core.network": ":core:network",
-    "moe.ouom.neriplayer.core.player.queue": ":core:playback-queue",
 }
+SOURCE_OWNERS = {
+    "moe.ouom.neriplayer.core.api.NonReplayableRequestBody": ":network",
+    "moe.ouom.neriplayer.core.player.lyrics.LyriconUpdateCoordinator": ":lyrics",
+    "moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore": ":platform",
+    "moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore": ":database",
+    "moe.ouom.neriplayer.data.platform.bili.skip.BiliVideoSkipRepositoryProvider": ":local",
+    "moe.ouom.neriplayer.data.settings.lyrics.LyricDefaultOffset": ":lyrics",
+    "moe.ouom.neriplayer.data.sync.CoverUrlMapper": ":local",
+    "moe.ouom.neriplayer.util.media.EmbeddedLyricsCompatibility": ":lyrics",
+}
+TYPE_OWNERS = {
+    f"moe.ouom.neriplayer.core.player.lyrics.{name}": ":lyrics"
+    for name in ("LyriconUpdateCoordinator", "LyriconUpdateRequest")
+}
+TYPE_OWNERS["moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore"] = ":platform"
 FORBIDDEN_IMPORT = re.compile(
     r'^import moe\.ouom\.neriplayer\.(?:'
     r'core\.di\.|core\.player\.PlayerManager\b|ui\.|activity\.|'
     r'(?:R|BuildConfig|NeriPlayerApplication)\b)', re.MULTILINE
 )
+PROJECT_SOURCE_REFERENCE = re.compile(
+    r'\b(?:moe\.ouom\.neriplayer|io\.github\.proify\.lyricon|com\.hchen\.superlyricapi)'
+    r'(?:\.[A-Za-z_]\w*)+(?:\.\*)?'
+)
+SOURCE_COMMENTS_AND_LITERALS = re.compile(
+    r'"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*[\s\S]*?\*/'
+)
+PROJECT_PACKAGE = "moe.ouom.neriplayer."
+METADATA_PARSER_REFERENCES = {
+    PROJECT_PACKAGE + "core.lyrics.normalizeLegacyLrcTimestamps",
+    PROJECT_PACKAGE + "core.lyrics.hasEditableLyricWordTiming",
+}
+PROVIDER_PARSER_REFERENCES = METADATA_PARSER_REFERENCES | {
+    PROJECT_PACKAGE + "core.lyrics.hasWordTimedEntries",
+    PROJECT_PACKAGE + "core.lyrics.parseNeteaseLyricsAuto",
+    PROJECT_PACKAGE + "core.lyrics.convertPlainLyricsToEntries",
+    PROJECT_PACKAGE + "core.lyrics.toEditableLyricsText",
+}
+PACKAGE_DEPENDENCY_RULES = (
+    (("api.bilibili",), {":common", MODEL_MODULE, ":network"}, (), set()),
+    (("api.netease",), {":common", MODEL_MODULE, ":network"}, (), set()),
+    (("api.youtube",), {":common", MODEL_MODULE, ":network"}, (), set()),
+    (("api.lyrics", "api.search"), {":common", MODEL_MODULE, ":network"},
+     ("api.netease.client.NeteaseClient",), METADATA_PARSER_REFERENCES),
+    (("data.platform.bili", "data.auth.bili", "data.local.database.store.BiliVideoSkipRoomStore"),
+     {":common", MODEL_MODULE, ":network", ":database"}, ("api.bilibili",), set()),
+    (("data.platform.netease", "data.auth.netease"), {":common", MODEL_MODULE, ":database"},
+     ("api.netease",), set()),
+    (("data.platform.youtube", "data.youtube"), {":common", MODEL_MODULE, ":network", ":database"},
+     ("api.youtube",), set()),
+    (("core.comment",), {":common", MODEL_MODULE},
+     ("api.bilibili", "api.netease"), {
+         PROJECT_PACKAGE + "data.platform.bili.playback.resolver." + function
+         for function in ("biliBvidOrNull", "biliCidOrNull", "buildBiliSongAlbum", "resolveBiliSong")
+     }),
+    (("data.lyrics",), {":common", MODEL_MODULE}, ("api.lyrics", "api.search", "api.youtube"),
+     PROVIDER_PARSER_REFERENCES),
+)
 
 
-def owned_module(name):
-    return name.startswith(tuple(f":{layer}:" for layer in MODULE_LAYERS))
+def owned_modules(root, errors):
+    registry = root / "gradle/owned-modules.txt"
+    if not registry.is_file():
+        errors.append("missing owned module registry: gradle/owned-modules.txt")
+        return set()
+    modules = set()
+    for line in registry.read_text().splitlines():
+        if not line.strip():
+            continue
+        if not OWNED_MODULE_PATH.fullmatch(line):
+            errors.append(f"invalid owned module path: {line}")
+        elif line in modules:
+            errors.append(f"duplicate owned module: {line}")
+        else:
+            modules.add(line)
+    return modules
 
 
 def source_files(directory):
@@ -134,25 +256,174 @@ def verify_directory_capacity(root, directory, errors):
             errors.append(f"{parent.relative_to(root)}: {count} source files, maximum {MAX_DIRECTORY_SOURCES}")
 
 
+def gradle_statement(script, start):
+    while start < len(script) and script[start].isspace():
+        start += 1
+    depth = 0
+    quote = None
+    escaped = False
+    for index in range(start, len(script)):
+        character = script[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+        elif character in "\"'":
+            quote = character
+        elif character in "([{":
+            depth += 1
+        elif character in ")]}":
+            depth -= 1
+        elif character == "\n" and depth == 0:
+            following = re.sub(r'\A(?:\s+|//[^\n]*(?:\n|$)|/\*.*?\*/)*', "", script[index + 1:], flags=re.DOTALL)
+            if not following.startswith((".", "?", "+", "-", "*", "/", "%", "&", "|", "^", "<", ">", "=", "!", "[", "as ", "is ")):
+                return script[start:index].strip()
+    return script[start:].strip()
+
+
+def owned_registry_expression(script):
+    declarations = list(re.finditer(r'^[ \t]*val\s+ownedLibraryPaths\s*=', script, re.MULTILINE))
+    if not declarations:
+        return None
+    return gradle_statement(script, declarations[0].end()) if len(declarations) == 1 else ""
+
+
+def canonical_registry_reader(expression, receiver):
+    return re.fullmatch(
+        re.escape(receiver) + r'\s*\(\s*"gradle/owned-modules.txt"\s*\)'
+        r'\s*\.\s*readLines\s*\(\s*\)\s*\.\s*filter\s*\{\s*it\.isNotBlank\s*\(\s*\)\s*\}',
+        expression,
+    ) is not None
+
+
+def reference_matches(reference, prefix):
+    return reference == prefix or reference.startswith(prefix + ".")
+
+
+def production_package_owners(root, modules):
+    packages = defaultdict(set)
+    for module in modules:
+        directory = root / "modules" / module[1:].replace(":", "/") / "src/main"
+        for language in ("java", "kotlin"):
+            for source in source_files(directory / language):
+                text = source.read_text()
+                package = PACKAGE.search(text)
+                if package:
+                    packages[package[1]].add(module)
+                    for symbol in SOURCE_SYMBOL.findall(text):
+                        packages[f"{package[1]}.{symbol}"].add(module)
+    return {package: next(iter(owners)) for package, owners in packages.items() if len(owners) == 1}
+
+
+def reference_owner(reference, packages):
+    owners = [
+        (prefix, owner)
+        for collection in (packages, PACKAGE_OWNERS, SOURCE_OWNERS, TYPE_OWNERS)
+        for prefix, owner in collection.items()
+        if reference_matches(reference, prefix)
+    ]
+    return max(owners, key=lambda item: len(item[0]))[1] if owners else None
+
+
+def verify_package_dependencies(name, package, text, label, packages, errors):
+    relative = package.removeprefix(PROJECT_PACKAGE)
+    if name == ":lyrics":
+        parser = (relative == "core.lyrics" or relative.startswith("core.lyrics.")
+                  or label.name == "LyricDefaultOffset.kt"
+                  or label.name == "EmbeddedLyricsCompatibility.kt")
+        allowed_modules = {MODEL_MODULE} if parser else {":common", MODEL_MODULE, ":lyrics"}
+        roots, allowed_roots, allowed_references = (), (), set()
+        if parser:
+            roots = ("core.lyrics",)
+    else:
+        if name != ":platform":
+            return
+        source_types = {relative + "." + label.stem} | {
+            relative + "." + declaration for declaration in TYPE_DECLARATION.findall(text)
+        }
+        rule = next((rule for rule in PACKAGE_DEPENDENCY_RULES
+                     if any(reference_matches(value, root)
+                            for root in rule[0] for value in (relative, *source_types))), None)
+        if rule is None:
+            return
+        roots, allowed_modules, allowed_roots, allowed_references = rule
+    code = SOURCE_COMMENTS_AND_LITERALS.sub(
+        lambda match: "" if match[0].startswith(("//", "/*")) else match[0], text
+    )
+    for reference in sorted(set(PROJECT_SOURCE_REFERENCE.findall(code))):
+        if reference == package:
+            continue
+        project_reference = reference.removeprefix(PROJECT_PACKAGE)
+        if any(reference_matches(project_reference, root) for root in (*roots, *allowed_roots)):
+            continue
+        if reference in allowed_references or reference in LEGACY_MODEL_TYPES and MODEL_MODULE in allowed_modules:
+            continue
+        if name == ":lyrics" and reference_matches(relative, "core.lyricon") and reference.startswith((
+            "io.github.proify.lyricon.", "com.hchen.superlyricapi."
+        )):
+            continue
+        if reference_owner(reference, packages) in allowed_modules:
+            continue
+        errors.append(f"{label}: forbidden package dependency {reference}")
+
+
 def verify(root):
+    errors = []
+    modules = owned_modules(root, errors)
+    if not modules:
+        return errors or ["No owned library modules declared"]
     settings = (root / "settings.gradle.kts").read_text()
     declared = set(MODULE_INCLUDE.findall(settings))
-    modules = {name for name in declared if owned_module(name)}
-    if not modules:
-        return ["No owned library modules declared"]
-    errors = []
     registered_locations = set(OWNED_INCLUDE.findall(settings))
+    settings_expression = owned_registry_expression(settings)
+    if settings_expression is not None:
+        reader_valid = canonical_registry_reader(settings_expression, "file")
+        if not reader_valid:
+            errors.append("settings.gradle.kts: unsupported owned module registry expression")
+        chains = [gradle_statement(settings, match.start())
+                  for match in re.finditer(r'^[ \t]*ownedLibraryPaths\b', settings, re.MULTILINE)]
+        registration_chains = [chain for chain in chains if "includeOwnedLibrary" in chain]
+        chain_valid = bool(registration_chains) and all(re.fullmatch(
+            r'ownedLibraryPaths\s*\.\s*forEach\s*\(\s*::includeOwnedLibrary\s*\)', chain
+        ) for chain in registration_chains)
+        if not chain_valid:
+            errors.append("settings.gradle.kts: unsupported owned module registration chain")
+        if reader_valid and chain_valid:
+            registered_locations.update(modules)
+            declared.update(modules)
     for module in sorted(modules - registered_locations):
         errors.append(f"{module}: must register with includeOwnedLibrary")
-    for build_file in (root / "modules").glob("*/*/build.gradle.kts"):
-        module = ":" + ":".join(build_file.parent.relative_to(root / "modules").parts)
-        if module not in modules:
+    for module in sorted(registered_locations - modules):
+        errors.append(f"{module}: unregistered library in settings")
+    project_directories = set()
+    for module in modules:
+        parts = tuple(module.lstrip(":").split(":"))
+        project_directories.update(parts[:length] for length in range(1, len(parts) + 1))
+    for build_file in (root / "modules").rglob("build.gradle.kts"):
+        relative_parts = build_file.parent.relative_to(root / "modules").parts
+        module = ":" + ":".join(relative_parts)
+        project = max((parts for parts in project_directories if relative_parts[:len(parts)] == parts),
+                      key=len, default=())
+        remaining = relative_parts[len(project):]
+        generated = bool(project) and len(remaining) > 1 and remaining[0] in {"build", ".gradle"}
+        if module not in modules and not generated:
             errors.append(f"{module}: unregistered library in modules directory")
     app_script = (root / "app/build.gradle.kts").read_text()
-    coverage_registry = re.search(r'val ownedLibraryPaths = listOf\((.*?)\)', app_script, re.DOTALL)
-    registered = set(re.findall(r'"(:[\w:-]+)"', coverage_registry[1])) if coverage_registry else set()
+    app_expression = owned_registry_expression(app_script)
+    registered = set()
+    if app_expression is not None:
+        if canonical_registry_reader(app_expression, "rootProject.file"):
+            registered = modules
+        elif re.fullmatch(r'listOf\s*\(\s*(?:"(:[\w:-]+)"\s*(?:,\s*"(:[\w:-]+)"\s*)*,?)?\s*\)', app_expression):
+            registered = set(re.findall(r'"(:[\w:-]+)"', app_expression))
+        else:
+            errors.append("app/build.gradle.kts: unsupported owned module registry expression")
     if registered != modules:
         errors.append(f"App coverage registry differs from owned modules: {sorted(registered ^ modules)}")
+    package_owners = production_package_owners(root, modules)
     graph = {}
     for name in sorted(modules):
         directory = root / "modules" / name.lstrip(":").replace(":", "/")
@@ -164,21 +435,31 @@ def verify(root):
         if 'id("build-logic.android.feature-library")' not in script:
             errors.append(f"{name}: must use the library verification convention")
         dependencies = set(PROJECT_REFERENCE.findall(script))
+        configured = list(CONFIGURED_PROJECT_REFERENCE.finditer(script))
+        unapproved = {
+            reference[1] for reference in PROJECT_REFERENCE.finditer(script)
+            if reference[1] not in ALLOWED_DEPENDENCIES.get(name, set()) and not any(
+                match.start() <= reference.start() and reference.end() <= match.end()
+                and reference[1] in CONFIGURED_DEPENDENCIES.get((name, match[1]), set())
+                for match in configured
+            )
+        }
         graph[name] = dependencies & modules
+        if name not in ALLOWED_DEPENDENCIES:
+            errors.append(f"{name}: no explicit domain dependency policy")
         for dependency in sorted(dependencies):
-            if name == ":feature:player" and dependency == ":feature:download":
+            if name == ":playback:runtime" and dependency == ":download:runtime":
                 errors.append(f"{name}: use PlayerDownloadAccess instead of depending on {dependency}")
+                continue
             if name == MODEL_MODULE:
                 errors.append(f"{name}: model contracts cannot depend on project implementations: {dependency}")
             if dependency not in declared:
                 errors.append(f"{name}: undeclared dependency {dependency}")
-            owner_layer = MODULE_LAYERS[name.split(":")[1]]
-            dependency_layer = MODULE_LAYERS.get(dependency.split(":")[1], -1)
-            if dependency == ":app" or (dependency != MODEL_MODULE and dependency_layer > owner_layer):
-                errors.append(f"{name}: forbidden upward dependency {dependency}")
+            if name != MODEL_MODULE and dependency in unapproved:
+                errors.append(f"{name}: forbidden domain dependency {dependency}")
         sources = [file for language in ("java", "kotlin")
                    for file in source_files(directory / "src/main" / language)]
-        for source_set in ("main", "test", "androidTest"):
+        for source_set in ("main", "test", "androidTest", "testFixtures"):
             for language in ("java", "kotlin"):
                 source_root = directory / "src" / source_set / language
                 verify_packages(root, source_root, errors)
@@ -195,21 +476,35 @@ def verify(root):
                     errors.append(f"{label}: model package belongs to {MODEL_MODULE}")
                 owners = [(prefix, owner) for prefix, owner in PACKAGE_OWNERS.items()
                           if package[1] == prefix or package[1].startswith(prefix + ".")]
-                if owners:
+                source_type = f"{package[1]}.{source.stem}"
+                owner = SOURCE_OWNERS.get(source_type)
+                for declaration in TYPE_DECLARATION.findall(text):
+                    type_owner = TYPE_OWNERS.get(f"{package[1]}.{declaration}")
+                    if type_owner is not None:
+                        owner = type_owner
+                if owner is None and owners:
                     _, owner = max(owners, key=lambda item: len(item[0]))
-                    legacy_contract = name == MODEL_MODULE and f"{package[1]}.{source.stem}" in LEGACY_MODEL_TYPES
+                if owner is not None:
+                    legacy_contract = name == MODEL_MODULE and source_type in LEGACY_MODEL_TYPES
                     if name not in (owner if isinstance(owner, tuple) else (owner,)) and owner != MODEL_MODULE and not legacy_contract:
                         errors.append(f"{label}: package belongs to {owner}")
+                elif package[1].startswith((
+                    "moe.ouom.neriplayer.api.", "moe.ouom.neriplayer.core.api."
+                )):
+                    errors.append(f"{label}: API implementation belongs in its registered platform or transport module")
+                verify_package_dependencies(name, package[1], text, label, package_owners, errors)
             if name == MODEL_MODULE:
-                for imported in re.findall(r'^import (moe\.ouom\.neriplayer\.[\w.]+)', text, re.MULTILINE):
+                for imported in IMPORT.findall(text):
+                    if not imported.startswith("moe.ouom.neriplayer."):
+                        continue
                     if not imported.startswith("moe.ouom.neriplayer.data.model.") and imported not in LEGACY_MODEL_TYPES:
                         errors.append(f"{label}: model contract imports implementation {imported}")
-            if name.startswith(":data:") and package and package[1].startswith((
-                "moe.ouom.neriplayer.api.", "moe.ouom.neriplayer.core.api."
-            )):
-                errors.append(f"{label}: API implementation belongs in an api module")
-            for imported in re.findall(r'^import ([\w.]+)', text, re.MULTILINE):
-                if name == ":feature:player" and (imported == "moe.ouom.neriplayer.core.player.PlayerManager"
+            for imported in IMPORT.findall(text):
+                if name == ":lyrics" and imported.startswith((
+                    "moe.ouom.neriplayer.core.player.host.", "moe.ouom.neriplayer.core.player.service."
+                )):
+                    errors.append(f"{label}: player implementation import {imported}")
+                if name == ":playback:runtime" and (imported == "moe.ouom.neriplayer.core.player.PlayerManager"
                                                    or imported.startswith("moe.ouom.neriplayer.core.player.PlayerManager.")):
                     continue
                 if FORBIDDEN_IMPORT.match(f"import {imported}") and imported not in LEGACY_MODEL_TYPES:
