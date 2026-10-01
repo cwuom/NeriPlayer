@@ -29,7 +29,8 @@ object SyncWorkerFailurePolicy {
     }
 
     private fun webDav(kind: SyncWorkerFailureKind, manual: Boolean, unexpected: Boolean): SyncWorkerFailureDecision {
-        val permanent = kind == SyncWorkerFailureKind.AUTHENTICATION || kind == SyncWorkerFailureKind.MISSING_CONDITION
+        val permanent = kind == SyncWorkerFailureKind.AUTHENTICATION ||
+            kind == SyncWorkerFailureKind.MISSING_CONDITION || kind == SyncWorkerFailureKind.CONFIGURATION
         return SyncWorkerFailureDecision(
             outcome = if (permanent && !unexpected) SyncWorkerOutcome.FAILURE else SyncWorkerOutcome.RETRY,
             notify = manual || (permanent && !unexpected)

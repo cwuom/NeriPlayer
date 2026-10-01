@@ -87,6 +87,8 @@
     <string name="webdav_validate_failed">WebDAV 配置失败: %s</string>
     <string name="webdav_required_fields">请完整填写服务器 URL、用户名和密码</string>
     <string name="webdav_auth_failed">WebDAV 用户名或密码错误</string>
+    <string name="webdav_directory_missing">WebDAV 同步目录不存在，请先创建目录或检查同步路径</string>
+    <string name="webdav_access_denied">无法访问 WebDAV 同步目录，请确认目录存在且具有访问权限</string>
     <string name="webdav_sync_failed">WebDAV 同步失败: %s</string>
     <string name="webdav_sync_failed_message">WebDAV 同步失败</string>
     <string name="webdav_not_configured">WebDAV 未配置</string>

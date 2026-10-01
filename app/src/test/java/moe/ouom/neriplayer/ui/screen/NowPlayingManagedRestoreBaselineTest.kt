@@ -39,7 +39,7 @@ class NowPlayingManagedRestoreBaselineTest {
             baseline = ManagedDownloadRestorableMetadata.Baseline(
                 title = "Original title",
                 artist = "Original artist",
-                coverReference = "content://root/Covers/base.jpg",
+                coverReference = "content://root/Covers/persisted.jpg",
                 originalLyric = "original lyric",
                 translatedLyric = "original translation",
                 romanizedLyric = "original romanization"
@@ -59,6 +59,31 @@ class NowPlayingManagedRestoreBaselineTest {
         assertEquals("original lyric", restored.lyric)
         assertEquals("original translation", restored.translatedLyric)
         assertEquals("original romanization", restored.romanizedLyric)
+    }
+
+    @Test
+    fun `unresolved managed cover falls back to the persisted original cover`() {
+        val current = EditSongBaseline(
+            title = "Edited title",
+            artist = "Edited artist",
+            coverUrl = "content://root/Covers/edited.jpg",
+            lyric = null,
+            translatedLyric = null,
+            romanizedLyric = null
+        )
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "stable",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                title = "Original title",
+                artist = "Original artist",
+                coverReference = "content://root/Covers/persisted.jpg"
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides()
+        )
+
+        val restored = resolveManagedEditSongBaseline(current, metadata, coverReference = null)
+
+        assertEquals("content://root/Covers/persisted.jpg", restored.coverUrl)
     }
 
     @Test
@@ -126,6 +151,7 @@ class NowPlayingManagedRestoreBaselineTest {
         assertEquals(current.lyric, restored.lyric)
         assertEquals(current.translatedLyric, restored.translatedLyric)
         assertEquals(current.romanizedLyric, restored.romanizedLyric)
+        assertEquals(current.coverUrl, restored.coverUrl)
     }
 
     @Test
@@ -155,6 +181,7 @@ class NowPlayingManagedRestoreBaselineTest {
         assertEquals("sidecar lyric", restored.lyric)
         assertEquals("sidecar translation", restored.translatedLyric)
         assertEquals("sidecar romanization", restored.romanizedLyric)
+        assertEquals(current.coverUrl, restored.coverUrl)
     }
 
     @Test

@@ -28,7 +28,7 @@ class SyncWorkerFailurePolicyTest {
 
     @Test
     fun `webdav permanent failures notify and fail only for returned sync errors`() {
-        for (kind in listOf(SyncWorkerFailureKind.AUTHENTICATION, SyncWorkerFailureKind.MISSING_CONDITION, SyncWorkerFailureKind.OTHER)) {
+        for (kind in listOf(SyncWorkerFailureKind.AUTHENTICATION, SyncWorkerFailureKind.MISSING_CONDITION, SyncWorkerFailureKind.CONFIGURATION, SyncWorkerFailureKind.OTHER)) {
             for (manual in listOf(false, true)) for (unexpected in listOf(false, true)) {
                 val decision = SyncWorkerFailurePolicy.decide(SyncProvider.WEBDAV, kind, manual, unexpected, false)
                 val permanent = kind != SyncWorkerFailureKind.OTHER && !unexpected

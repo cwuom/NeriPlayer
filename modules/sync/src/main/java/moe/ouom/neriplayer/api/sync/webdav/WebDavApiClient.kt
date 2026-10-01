@@ -19,10 +19,16 @@ class WebDavAuthException(message: String) : IOException(message)
 
 class WebDavFileNotFoundException(message: String) : IOException(message)
 
+class WebDavDirectoryNotFoundException(message: String) : IOException(message)
+
+class WebDavNotDirectoryException(message: String) : IOException(message)
+
 open class WebDavApiException(
     val statusCode: Int,
     message: String
 ) : IOException(message)
+
+class WebDavAccessDeniedException(message: String) : WebDavApiException(403, message)
 
 class WebDavContentConflictException(
     statusCode: Int,
@@ -35,9 +41,14 @@ class WebDavApiClient(
     username: String,
     password: String,
     private val client: OkHttpClient,
-    private val authFailureMessage: String
+    private val authFailureMessage: String,
+    private val directoryMissingMessage: String = "WebDAV sync directory does not exist; create it or check the sync path",
+    private val accessDeniedMessage: String = "Cannot access the WebDAV sync directory; check that it exists and that you have access permission"
 ) {
     private val authorizationHeader = Credentials.basic(username, password)
+    private val directoryProbe = WebDavDirectoryProbe(
+        client, authorizationHeader, authFailureMessage, directoryMissingMessage, accessDeniedMessage
+    )
 
     companion object {
         private const val TAG = "WebDavApiClient"
@@ -74,12 +85,17 @@ class WebDavApiClient(
 
             client.newCall(request).execute().use { response ->
                 when {
-                    response.isSuccessful || response.code == 404 -> Unit
-                    response.code == 401 || response.code == 403 -> {
+                    response.isSuccessful -> Unit
+                    response.code == 404 -> {
+                        response.close()
+                        directoryProbe.requireExists(remoteUrl)
+                    }
+                    response.code == 401 -> {
                         throw WebDavAuthException(
                             authFailureMessage
                         )
                     }
+                    response.code == 403 -> throw WebDavAccessDeniedException(accessDeniedMessage)
 
                     else -> {
                         val errorBody = SyncResponseBodyReader.readText(response.body)
@@ -114,13 +130,16 @@ class WebDavApiClient(
                         )
                     }
 
-                    response.code == 401 || response.code == 403 -> {
+                    response.code == 401 -> {
                         throw WebDavAuthException(
                             authFailureMessage
                         )
                     }
+                    response.code == 403 -> throw WebDavAccessDeniedException(accessDeniedMessage)
 
                     response.code == 404 -> {
+                        response.close()
+                        directoryProbe.requireExists(remoteUrl)
                         throw WebDavFileNotFoundException("Remote backup file not found: $remoteUrl")
                     }
 
@@ -161,9 +180,13 @@ class WebDavApiClient(
                 .put(content.toRequestBody(mediaType.toMediaType()))
                 .build()
 
-            client.newCall(request).execute().use { response ->
-                WebDavWriteResponse.parse(response, content, authFailureMessage)
+            val (statusCode, writeResult) = client.newCall(request).execute().use { response ->
+                response.code to syncTransportResult {
+                    WebDavWriteResponse.parse(response, content, authFailureMessage, accessDeniedMessage)
+                }
             }
+            if (statusCode == 404 || statusCode == 409) directoryProbe.requireExists(remoteUrl)
+            writeResult.getOrThrow()
         }.onFailure {
             NPLogger.e(TAG, "Update WebDAV file content failed", it)
         }
