@@ -264,9 +264,9 @@ private fun managedEditSongCover(
     resolved: String?,
     baseline: ManagedDownloadRestorableMetadata.Baseline?,
     current: String
-): String = resolved?.takeUnless(::isMediaStoreCoverReference)
-    ?: baseline?.coverReference?.takeUnless(::isMediaStoreCoverReference)
-    ?: current.takeUnless(::isMediaStoreCoverReference).orEmpty()
+): String = listOfNotNull(resolved, baseline?.coverReference, current)
+    .firstOrNull { !isMediaStoreCoverReference(it) }
+    .orEmpty()
 
 private fun managedOriginalLyric(
     baseline: ManagedDownloadRestorableMetadata.Baseline?,

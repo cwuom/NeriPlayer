@@ -254,6 +254,70 @@ class NowPlayingSongEditPolicyTest {
     }
 
     @Test
+    fun `managed baseline cover keeps resolved then stored then current priority`() {
+        val current = EditSongBaseline("Title", "Artist", "content://cover/current", null, null, null)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "stable",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = "content://cover/stored"),
+            overrides = ManagedDownloadRestorableMetadata.Overrides()
+        )
+        assertEquals(
+            "content://cover/resolved",
+            resolveManagedEditSongBaseline(current, metadata, "content://cover/resolved").coverUrl
+        )
+        assertEquals("content://cover/stored", resolveManagedEditSongBaseline(current, metadata, null).coverUrl)
+        assertEquals("content://cover/current", resolveManagedEditSongBaseline(current, null, null).coverUrl)
+    }
+
+    @Test
+    fun `managed baseline skips shared artwork at each fallback level`() {
+        val shared = "content://media/external/audio/albumart/42"
+        val current = EditSongBaseline("Title", "Artist", "content://cover/current", null, null, null)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "stable",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = "content://cover/stored"),
+            overrides = ManagedDownloadRestorableMetadata.Overrides()
+        )
+        assertEquals(
+            "content://cover/stored", resolveManagedEditSongBaseline(current, metadata, shared).coverUrl
+        )
+        assertEquals(
+            "content://cover/current",
+            resolveManagedEditSongBaseline(
+                current, metadata.copy(baseline = metadata.baseline.copy(coverReference = shared)), shared
+            ).coverUrl
+        )
+        assertEquals("", resolveManagedEditSongBaseline(current.copy(coverUrl = shared), null, null).coverUrl)
+    }
+
+    @Test
+    fun `managed baseline explicit empty cover stops fallback`() {
+        val current = EditSongBaseline("Title", "Artist", "content://cover/current", null, null, null)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "stable",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = "content://cover/stored"),
+            overrides = ManagedDownloadRestorableMetadata.Overrides()
+        )
+        assertEquals("", resolveManagedEditSongBaseline(current, metadata, "").coverUrl)
+        assertEquals(
+            "",
+            resolveManagedEditSongBaseline(
+                current, metadata.copy(baseline = metadata.baseline.copy(coverReference = "")), null
+            ).coverUrl
+        )
+    }
+
+    @Test
+    fun `managed baseline preserves local file and remote cover references without metadata`() {
+        val current = EditSongBaseline("Title", "Artist", "file:/covers/current.jpg", null, null, null)
+        assertEquals("file:/covers/current.jpg", resolveManagedEditSongBaseline(current, null, null).coverUrl)
+        assertEquals(
+            "https://cover/original.jpg",
+            resolveManagedEditSongBaseline(current, null, "https://cover/original.jpg").coverUrl
+        )
+    }
+
+    @Test
     fun `cover restoration rejects shared artwork without losing a valid baseline`() {
         val shared = "content://media/external/audio/albumart/42"
         assertEquals("", resolveEditSongRestoredCoverUrl(shared, shared))
