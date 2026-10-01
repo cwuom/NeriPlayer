@@ -341,9 +341,13 @@ internal fun shouldUseDocumentSidecarMutation(uri: Uri): Boolean {
         (isExternalStorageDocumentUri(uri) || isMediaStoreUri(uri))
 }
 
-internal fun isMediaStoreCoverReference(reference: String): Boolean {
+fun isMediaStoreCoverReference(reference: String): Boolean {
     val normalized = reference.trim().lowercase(Locale.ROOT)
-    return normalized.startsWith("content://media/external/audio/albumart/")
+    val prefix = "content://media/"
+    if (!normalized.startsWith(prefix)) return false
+    val segments = normalized.removePrefix(prefix).split('/', limit = 4)
+    return segments.size == 4 && segments[0].isNotBlank() &&
+        segments[1] == "audio" && segments[2] == "albumart"
 }
 
 internal enum class CoverReferenceValidation {
@@ -363,6 +367,8 @@ internal fun validateCoverReference(
     context: Context,
     reference: String
 ): CoverReferenceValidation {
+    // 专辑图片可能来自另一首歌，可读取也不能证明它属于当前音频
+    if (isMediaStoreCoverReference(reference)) return CoverReferenceValidation.INVALID
     val uri = runCatching { reference.trim().toUri() }.getOrNull()
         ?: return CoverReferenceValidation.INVALID
     return validateCoverReference(context, uri)
@@ -374,6 +380,7 @@ internal fun validateCoverReference(
 ): CoverReferenceValidation {
     val normalized = uri.toString().trim()
     if (normalized.isEmpty()) return CoverReferenceValidation.INVALID
+    if (isMediaStoreCoverReference(normalized)) return CoverReferenceValidation.INVALID
     if (
         normalized.startsWith("http://", ignoreCase = true) ||
         normalized.startsWith("https://", ignoreCase = true)

@@ -101,6 +101,7 @@ object CustomSongCoverStorage {
         val normalizedReference = reference
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+            ?.takeUnless(::isMediaStoreCoverReference)
             ?: return@withContext null
         if (isRemoteReference(normalizedReference)) {
             return@withContext normalizedReference

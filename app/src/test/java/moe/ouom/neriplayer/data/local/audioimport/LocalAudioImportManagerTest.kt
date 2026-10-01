@@ -205,9 +205,9 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
-    fun `non stale quick cover remains authoritative during merge`() {
+    fun `shared album thumbnail cannot hide detailed song cover during merge`() {
         assertEquals(
-            "content://media/external/audio/albumart/42",
+            "file:///data/local_audio_covers/demo.jpg",
             selectMergedImportedCoverReference(
                 quickCover = "content://media/external/audio/albumart/42",
                 detailedCover = "file:///data/local_audio_covers/demo.jpg"
@@ -1556,7 +1556,7 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
-    fun `buildQuickImportedSong uses indexed MediaStore cover when no nearby cover exists`() {
+    fun `buildQuickImportedSong leaves cover empty when only a shared album thumbnail exists`() {
         val song = LocalAudioImportManager.buildQuickImportedSong(
             seed = QuickImportedSongSeed(
                 sourceRef = "content://media/external/audio/media/7",
@@ -1571,11 +1571,8 @@ class LocalAudioImportManagerTest {
             unknownArtistLabel = "Unknown Artist"
         )
 
-        assertEquals(
-            "content://media/external/audio/albumart/17",
-            song.coverUrl
-        )
-        assertEquals(song.coverUrl, song.originalCoverUrl)
+        assertNull(song.coverUrl)
+        assertNull(song.originalCoverUrl)
     }
 
     @Test

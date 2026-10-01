@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
@@ -147,6 +148,7 @@ private fun isAllowedCoverCandidate(
     allowRemoteCoverFallback: Boolean = true
 ): Boolean {
     val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return false
+    if (isMediaStoreCoverReference(normalized)) return false
     return allowRemoteCoverFallback || !CustomSongCoverStorage.isRemoteReference(normalized)
 }
 

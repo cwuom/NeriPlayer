@@ -103,6 +103,7 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         metadata.originalCoverUrl
     )
         .mapNotNull(::normalizeQuickImportedMetadata)
+        .mapNotNull { it.normalizeImportedCoverReference() }
         .firstOrNull { candidate -> !sameImportedCoverReference(candidate, sidecarCover) }
     val resolvedCover = selectHydratedLocalCoverReference(
         sidecarCover = sidecarCover,
@@ -125,6 +126,7 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         metadata.originalCoverUrl
     )
         .mapNotNull(::normalizeQuickImportedMetadata)
+        .mapNotNull { it.normalizeImportedCoverReference() }
         .firstOrNull { candidate -> !sameImportedCoverReference(candidate, sidecarCover) }
     val hasIdentity = resolvedName != null || resolvedArtist != null || resolvedAlbum != null ||
         firstMeaningfulMetadataValue(
@@ -146,10 +148,11 @@ internal fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
             )
         ),
         durationMs = metadata.durationMs.takeIf { it > 0L } ?: song.durationMs,
-        coverUrl = resolvedCover ?: metadataCoverForIdentity ?: song.coverUrl,
+        coverUrl = resolvedCover ?: metadataCoverForIdentity
+            ?: song.coverUrl.normalizeImportedCoverReference(),
         originalCoverUrl = resolvedOriginalCover
             ?: metadataCoverForIdentity
-            ?: song.originalCoverUrl
+            ?: song.originalCoverUrl.normalizeImportedCoverReference()
             ?: resolvedCover,
         customName = firstMeaningfulMetadataValue(metadata.customName)
             ?: song.customName?.takeUnless(::isQuickMetadataPlaceholder),

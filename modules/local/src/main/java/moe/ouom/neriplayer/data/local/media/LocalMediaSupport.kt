@@ -177,15 +177,6 @@ object LocalMediaSupport {
             return size > DIRECTORY_FILE_INDEX_CACHE_LIMIT
         }
     }
-    internal val mediaStoreAlbumArtCache = object : LinkedHashMap<String, String?>(
-        NEARBY_COVER_LOOKUP_CACHE_LIMIT,
-        0.75f,
-        true
-    ) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean {
-            return size > NEARBY_COVER_LOOKUP_CACHE_LIMIT
-        }
-    }
 
     internal data class AudioTrackTechInfo(
         val audioMimeType: String?,
@@ -1012,8 +1003,7 @@ object LocalMediaSupport {
 
 
     /**
-     * MediaStore 可以直接提供已经索引的专辑图片，不必打开音频容器
-     * 这里只作为快速提示，侧载和内嵌封面仍然是最终依据
+     * MediaStore 条目仅复用自身已经提取的内嵌图片，不使用共享专辑封面
      */
     fun peekMediaStoreAlbumArtUri(context: Context, song: SongItem): String? {
         val source = song.localMediaUri() ?: return null

@@ -2,9 +2,11 @@ package moe.ouom.neriplayer.ui.screen
 
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongMetadataSnapshot
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongBaseline
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.canChooseEmbeddedLyricsSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongCoverForSave
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongLyricsLoadErrorMessage
@@ -14,6 +16,8 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.edit.isEditSongLyricsPermissionF
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.keepFilledLyricsWriteBackPrompt
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.refreshedEditSongBaselineCover
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongBaselineFromSong
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongRestoredCoverUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveManagedEditSongBaseline
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolvePendingLocalCoverReplacementTarget
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.restoredEditSongLyricsOrDraft
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.seedWithEmbeddedEditLyrics
@@ -206,6 +210,73 @@ class NowPlayingSongEditPolicyTest {
             selectEditSongInitialCover("", "", null, "content://cover/resolved")
         )
         assertEquals("", selectEditSongInitialCover(null, null, null, null))
+    }
+
+    @Test
+    fun `initial editor cover rejects shared artwork from every candidate`() {
+        val shared = "content://media/external/audio/albumart/42"
+        assertEquals("", selectEditSongInitialCover(shared, shared, shared, shared))
+        assertEquals(
+            "content://cover/song-b",
+            selectEditSongInitialCover(shared, shared, shared, "content://cover/song-b")
+        )
+    }
+
+    @Test
+    fun `persisted shared original artwork does not enter the editor baseline`() {
+        val song = SongItem(
+            8L, "Title", "Artist", "Album", 2L, 60_000L,
+            "content://media/external/audio/albumart/42",
+            originalCoverUrl = "content://media/external_primary/audio/albumart/42",
+            mediaUri = "content://media/external/audio/media/8"
+        )
+        assertEquals("", resolveEditSongBaselineFromSong(song, null, null, null, null).coverUrl)
+        assertEquals(
+            "content://cover/song-b",
+            resolveEditSongBaselineFromSong(song, "content://cover/song-b", null, null, null).coverUrl
+        )
+    }
+
+    @Test
+    fun `managed baseline rejects shared artwork from stored and resolved references`() {
+        val shared = "content://media/external/audio/albumart/42"
+        val current = EditSongBaseline("Title", "Artist", shared, null, null, null)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "stable",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(coverReference = shared),
+            overrides = ManagedDownloadRestorableMetadata.Overrides()
+        )
+        assertEquals("", resolveManagedEditSongBaseline(current, metadata, shared).coverUrl)
+        assertEquals(
+            "content://cover/song-b",
+            resolveManagedEditSongBaseline(current, metadata, "content://cover/song-b").coverUrl
+        )
+    }
+
+    @Test
+    fun `cover restoration rejects shared artwork without losing a valid baseline`() {
+        val shared = "content://media/external/audio/albumart/42"
+        assertEquals("", resolveEditSongRestoredCoverUrl(shared, shared))
+        assertEquals(
+            "content://cover/song-b", resolveEditSongRestoredCoverUrl(shared, "content://cover/song-b")
+        )
+    }
+
+    @Test
+    fun `baseline refresh replaces shared artwork with a song specific cover`() {
+        val shared = "content://media/external/audio/albumart/42"
+        assertEquals(
+            "content://cover/song-b", refreshedEditSongBaselineCover(shared, "content://cover/song-b")
+        )
+        assertNull(refreshedEditSongBaselineCover("", shared))
+    }
+
+    @Test
+    fun `resolved editor cover replaces shared artwork only before manual edits`() {
+        val shared = "content://media/external/audio/albumart/42"
+        assertTrue(shouldApplyResolvedEditSongCover(false, shared, "content://cover/song-b"))
+        assertFalse(shouldApplyResolvedEditSongCover(true, shared, "content://cover/song-b"))
+        assertFalse(shouldApplyResolvedEditSongCover(false, "", shared))
     }
 
     @Test

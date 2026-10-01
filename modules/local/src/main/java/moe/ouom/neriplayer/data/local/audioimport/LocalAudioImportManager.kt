@@ -773,14 +773,16 @@ object LocalAudioImportManager {
             album = resolvedAlbum,
             albumId = 0L,
             durationMs = seed.durationMs?.takeIf { it > 0L } ?: 0L,
-            coverUrl = seed.nearbyCoverUri ?: seed.mediaStoreCoverUri,
+            coverUrl = seed.nearbyCoverUri.normalizeImportedCoverReference()
+                ?: seed.mediaStoreCoverUri.normalizeImportedCoverReference(),
             mediaUri = preferredLocalMediaReference(
                 localFilePath = seed.localFile?.absolutePath,
                 mediaUri = seed.sourceRef
             ) ?: resolvedSource,
             originalName = resolvedTitle,
             originalArtist = resolvedArtist,
-            originalCoverUrl = seed.nearbyCoverUri ?: seed.mediaStoreCoverUri,
+            originalCoverUrl = seed.nearbyCoverUri.normalizeImportedCoverReference()
+                ?: seed.mediaStoreCoverUri.normalizeImportedCoverReference(),
             matchedLyric = seed.matchedLyric,
             matchedTranslatedLyric = seed.matchedTranslatedLyric,
             matchedRomanizedLyric = seed.matchedRomanizedLyric,
@@ -1011,10 +1013,12 @@ object LocalAudioImportManager {
         }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
         } ?: return song
-        val knownCover = knownSidecarReferences?.cover?.takeIf(String::isNotBlank)
+        val existingCover = song.coverUrl.normalizeImportedCoverReference()
+        val originalCover = song.originalCoverUrl.normalizeImportedCoverReference()
+        val knownCover = knownSidecarReferences?.cover.normalizeImportedCoverReference()
         val nearbyCover = if (knownCover != null) {
             knownCover
-        } else if (resolveCoverFallback && song.coverUrl.isNullOrBlank()) {
+        } else if (resolveCoverFallback && existingCover == null) {
             runCatching {
                 LocalMediaSupport.resolveNearbyCoverUri(context, song)
                     ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
@@ -1039,8 +1043,8 @@ object LocalAudioImportManager {
             }.getOrDefault(0L)
         }
         return song.copy(
-            coverUrl = knownCover ?: song.coverUrl ?: nearbyCover,
-            originalCoverUrl = knownCover ?: song.originalCoverUrl ?: nearbyCover,
+            coverUrl = knownCover ?: existingCover ?: nearbyCover,
+            originalCoverUrl = knownCover ?: originalCover ?: nearbyCover,
             durationMs = durationMs,
             matchedLyric = lyricMetadata.lyric ?: song.matchedLyric,
             matchedTranslatedLyric = lyricMetadata.translatedLyric

@@ -7,7 +7,6 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
@@ -337,35 +336,8 @@ internal fun LocalMediaSupport.peekMediaStoreAlbumArtUriImpl(context: Context, s
     if (!isMediaStoreAuthority(source.authority)) {
         return null
     }
-    val cacheKey = source.toString()
-    val cachedCoverUri = synchronized(mediaStoreAlbumArtCache) {
-        mediaStoreAlbumArtCache[cacheKey]
-    }
-    if (cachedCoverUri != null) return cachedCoverUri
-    val coverUri = runCatching {
-        context.contentResolver.query(
-            source,
-            arrayOf(MediaStore.Audio.Media.ALBUM_ID),
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            if (!cursor.moveToFirst()) return@use null
-            val index = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
-            if (index < 0 || cursor.isNull(index)) return@use null
-            cursor.getLong(index).takeIf { it > 0L }
-        }?.let { albumId ->
-            mediaStoreAlbumArtUri(albumId)
-        }
-    }.onFailure {
-        NPLogger.d(TAG, "MediaStore album art hint unavailable for $source: ${it.message}")
-    }.getOrNull()?.takeIf { isUsableCoverReference(context, it) }
-    if (coverUri != null) {
-        synchronized(mediaStoreAlbumArtCache) {
-            mediaStoreAlbumArtCache[cacheKey] = coverUri
-        }
-    }
-    return coverUri
+    // 保留调用入口，只返回这首音频已经提取的图片，避免共享专辑封面串到其它歌
+    return peekCachedEmbeddedCoverUri(context, source)
 }
 
 internal fun LocalMediaSupport.peekCachedEmbeddedCoverUriImpl(context: Context, source: Uri): String? {
@@ -429,7 +401,6 @@ internal fun LocalMediaSupport.resolveCoverUriImpl(context: Context, uri: Uri): 
                 file = resolved.file,
                 displayName = resolved.displayName
             )?.let { yield(it) }
-            peekMediaStoreAlbumArtUri(context, uri)?.let { yield(it) }
             findCachedEmbeddedCover(context, resolved.resolvedPath ?: uri.toString())
                 ?.let { yield(it) }
             findCachedEmbeddedCover(context, "${resolved.resolvedPath ?: uri}#taglib")

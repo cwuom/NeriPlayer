@@ -49,8 +49,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.TrackStat
+import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -289,7 +291,7 @@ internal fun StatTrackRow(
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(32.dp)
                     )
-                    val coverUrl = stat.customCoverUrl ?: stat.coverUrl
+                    val coverUrl = stat.toPlaybackStatsSongItem().displayCoverUrl()
                     if (coverUrl != null) {
                         AsyncImage(
                             model = offlineCachedImageRequest(

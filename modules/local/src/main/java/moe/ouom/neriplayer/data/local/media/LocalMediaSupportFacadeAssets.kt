@@ -215,6 +215,7 @@ internal fun LocalMediaSupport.resolveEditableCoverMutationImpl(
 }
 
 internal fun LocalMediaSupport.readEditableCoverBytesImpl(context: Context, reference: String): ByteArray? {
+    if (isMediaStoreCoverReference(reference)) return null
     val uri = runCatching { reference.toUri() }.getOrNull()
     if (reference.isRemoteCoverReference()) {
         return readRemoteEditableCoverBytes(reference)

@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -71,20 +72,19 @@ internal fun selectEditSongInitialCover(
         downloaded,
         direct,
         usableEditCover(originalCover),
-        resolvedDisplayCoverUrl?.takeIf(String::isNotBlank)
+        usableEditCover(resolvedDisplayCoverUrl)
     ).firstOrNull().orEmpty()
 }
 
 private fun usableLocalEditCover(reference: String?): String? =
     usableEditCover(reference)?.takeUnless(CustomSongCoverStorage::isRemoteReference)
 
-private fun usableDownloadedEditCover(reference: String?): String? = reference
-    ?.takeIf(String::isNotBlank)
+private fun usableDownloadedEditCover(reference: String?): String? = usableEditCover(reference)
     ?.takeUnless(CustomSongCoverStorage::isRemoteReference)
 
 internal fun refreshedEditSongBaselineCover(current: String, initial: String): String? {
-    if (current.isNotBlank() && !CustomSongCoverStorage.isRemoteReference(current)) return null
-    return initial.takeIf(String::isNotBlank)
+    if (usableLocalEditCover(current) != null) return null
+    return usableEditCover(initial)
 }
 
 internal fun shouldOfferFilledLyricsWriteBack(
@@ -170,14 +170,14 @@ internal fun editSongLyricsLoadErrorMessage(error: Throwable): String = when (er
 private fun usableEditCover(reference: String?): String? = reference
     ?.takeIf(String::isNotBlank)
     ?.takeUnless(CustomSongCoverStorage::isDirectoryReference)
+    ?.takeUnless(::isMediaStoreCoverReference)
 
 internal fun resolveEditSongRestoredCoverUrl(
     sourceCoverUrl: String?,
     baselineCoverUrl: String
 ): String {
     val source = usableEditCover(sourceCoverUrl?.trim())
-    val baseline = baselineCoverUrl.trim()
-        .takeUnless(CustomSongCoverStorage::isDirectoryReference)
+    val baseline = usableEditCover(baselineCoverUrl.trim())
     return source ?: baseline.orEmpty()
 }
 
@@ -186,8 +186,8 @@ internal fun shouldApplyResolvedEditSongCover(
     currentCoverUrl: String,
     resolvedDisplayCoverUrl: String?
 ): Boolean {
-    if (userHasEdited || currentCoverUrl.isNotBlank()) return false
-    return !resolvedDisplayCoverUrl.isNullOrBlank()
+    if (userHasEdited || usableEditCover(currentCoverUrl) != null) return false
+    return usableEditCover(resolvedDisplayCoverUrl) != null
 }
 
 internal data class EditSongBaseline(
@@ -230,7 +230,7 @@ internal fun resolveEditSongBaselineFromSong(
 private fun resolveEditSongBaselineCover(
     originalCover: String?, songCover: String?, resolvedCover: String?
 ): String = listOfNotNull(
-    usableEditCover(originalCover), usableEditCover(songCover), resolvedCover
+    usableEditCover(originalCover), usableEditCover(songCover), usableEditCover(resolvedCover)
 ).firstOrNull().orEmpty()
 
 internal fun resolveManagedEditSongBaseline(
@@ -264,7 +264,9 @@ private fun managedEditSongCover(
     resolved: String?,
     baseline: ManagedDownloadRestorableMetadata.Baseline?,
     current: String
-): String = resolved ?: baseline?.coverReference ?: current
+): String = resolved?.takeUnless(::isMediaStoreCoverReference)
+    ?: baseline?.coverReference?.takeUnless(::isMediaStoreCoverReference)
+    ?: current.takeUnless(::isMediaStoreCoverReference).orEmpty()
 
 private fun managedOriginalLyric(
     baseline: ManagedDownloadRestorableMetadata.Baseline?,

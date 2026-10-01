@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.metadata
 
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongDetails
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
@@ -70,7 +71,7 @@ internal fun resolveLocalCoverWriteReference(
     } else {
         requestedCoverReference
     }
-    return reference?.trim()?.takeIf(String::isNotBlank)
+    return reference?.trim()?.takeIf(String::isNotBlank)?.takeUnless(::isMediaStoreCoverReference)
 }
 
 internal fun shouldMaterializeRemoteLocalCover(
@@ -95,16 +96,21 @@ internal fun resolveRestoredBaseCoverUrl(
     val requestedRestoreCover = requestedRestoreCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() }
+        ?.takeUnless(::isMediaStoreCoverReference)
     val preferredLocalCover = preferredLocalCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() && !it.isRemoteCoverReference() }
+        ?.takeUnless(::isMediaStoreCoverReference)
     val customCover = currentCustomCoverUrl?.trim()?.takeIf { it.isNotBlank() }
+        ?.takeUnless(::isMediaStoreCoverReference)
     val originalCover = originalCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() && it != customCover }
+        ?.takeUnless(::isMediaStoreCoverReference)
     val baseCover = baseCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() && it != customCover }
+        ?.takeUnless(::isMediaStoreCoverReference)
     if (localOnly) {
         return requestedRestoreCover
             ?.takeUnless(String::isRemoteCoverReference)
