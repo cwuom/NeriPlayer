@@ -41,7 +41,7 @@ import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -77,8 +77,8 @@ fun CrashLogListScreen(
     if (showClearConfirmDialog.value) {
         AlertDialog(
             onDismissRequest = { showClearConfirmDialog.value = false },
-            title = { Text(stringResource(R.string.dialog_confirm_clear)) },
-            text = { Text(stringResource(R.string.crash_log_clear_confirm)) },
+            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_clear)) },
+            text = { Text(stringResource(CoreCommonR.string.crash_log_clear_confirm)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -99,7 +99,7 @@ fun CrashLogListScreen(
                             crashLogFilesState.value = emptyList()
                             snackbarHostState.showNeriSnackbar(
                                 context.resources.getQuantityString(
-                                    R.plurals.crash_log_cleared,
+                                    CoreCommonR.plurals.crash_log_cleared,
                                     clearedCount,
                                     clearedCount
                                 )
@@ -107,12 +107,12 @@ fun CrashLogListScreen(
                         }
                     }
                 ) {
-                    Text(stringResource(R.string.common_clear_all), color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(CoreCommonR.string.common_clear_all), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirmDialog.value = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -128,16 +128,16 @@ fun CrashLogListScreen(
         },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.crash_log_title)) },
+                title = { Text(stringResource(CoreCommonR.string.crash_log_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
                     }
                 },
                 actions = {
                     if (crashLogFilesState.value.isNotEmpty()) {
                         IconButton(onClick = { showClearConfirmDialog.value = true }) {
-                            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(R.string.log_clear))
+                            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(CoreCommonR.string.log_clear))
                         }
                     }
                 }
@@ -153,8 +153,8 @@ fun CrashLogListScreen(
             if (crashLogFilesState.value.isEmpty()) {
                 item {
                     ListItem(
-                        headlineContent = { Text(stringResource(R.string.crash_log_no_file)) },
-                        supportingContent = { Text(stringResource(R.string.crash_log_hint)) }
+                        headlineContent = { Text(stringResource(CoreCommonR.string.crash_log_no_file)) },
+                        supportingContent = { Text(stringResource(CoreCommonR.string.crash_log_hint)) }
                     )
                 }
             } else {

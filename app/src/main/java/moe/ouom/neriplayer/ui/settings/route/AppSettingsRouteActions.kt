@@ -7,7 +7,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.State
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -258,7 +258,7 @@ internal class AppPlaybackSettingsActions(
             PlayerManager.setPlaybackHighResolutionOutputEnabled(enabled)
             AppFeedback.show(
                 context = context,
-                message = composeResources.getString(R.string.settings_restart_hint)
+                message = composeResources.getString(CoreCommonR.string.settings_restart_hint)
             )
         }
 

@@ -19,7 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 
@@ -36,22 +36,22 @@ internal fun DownloadedSongDeleteProgressCard(
 
     val phaseText = stringResource(
         when (phase) {
-            DownloadedSongDeletePhase.PREPARING -> R.string.download_delete_phase_preparing
+            DownloadedSongDeletePhase.PREPARING -> CoreCommonR.string.download_delete_phase_preparing
             DownloadedSongDeletePhase.WAITING_FOR_DIRECTORY ->
-                R.string.download_delete_phase_waiting_directory
+                CoreCommonR.string.download_delete_phase_waiting_directory
             DownloadedSongDeletePhase.STOPPING_DOWNLOADS ->
-                R.string.download_delete_phase_stopping_downloads
+                CoreCommonR.string.download_delete_phase_stopping_downloads
             DownloadedSongDeletePhase.WAITING_FOR_DOWNLOADS ->
-                R.string.download_delete_phase_waiting_downloads
+                CoreCommonR.string.download_delete_phase_waiting_downloads
             DownloadedSongDeletePhase.READING_DELETE_PLAN ->
-                R.string.download_delete_phase_reading_plan
+                CoreCommonR.string.download_delete_phase_reading_plan
             DownloadedSongDeletePhase.DELETING_REFERENCES ->
-                R.string.download_delete_phase_deleting_files
+                CoreCommonR.string.download_delete_phase_deleting_files
             DownloadedSongDeletePhase.VERIFYING_REFERENCES ->
-                R.string.download_delete_phase_verifying
-            DownloadedSongDeletePhase.FINALIZING -> R.string.download_delete_phase_finalizing
-            DownloadedSongDeletePhase.COMPLETED -> R.string.download_delete_phase_completed
-            DownloadedSongDeletePhase.FAILED -> R.string.download_delete_phase_failed
+                CoreCommonR.string.download_delete_phase_verifying
+            DownloadedSongDeletePhase.FINALIZING -> CoreCommonR.string.download_delete_phase_finalizing
+            DownloadedSongDeletePhase.COMPLETED -> CoreCommonR.string.download_delete_phase_completed
+            DownloadedSongDeletePhase.FAILED -> CoreCommonR.string.download_delete_phase_failed
         }
     )
     val running = isDownloadedSongDeletionRunning(progress) ||
@@ -71,7 +71,7 @@ internal fun DownloadedSongDeleteProgressCard(
                     IconButton(onClick = { progress?.let { onDismissFailure(it.deleteId) } }) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = stringResource(R.string.action_close)
+                            contentDescription = stringResource(CoreCommonR.string.action_close)
                         )
                     }
                 }
@@ -91,7 +91,7 @@ internal fun DownloadedSongDeleteProgressCard(
             if (progress != null && totalReferences != null && totalReferences > 0) {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.download_clear_item_progress,
+                        CoreCommonR.plurals.download_clear_item_progress,
                         totalReferences,
                         progress.completedReferenceCount.coerceIn(0, totalReferences.coerceAtLeast(0)),
                         totalReferences.coerceAtLeast(0)
@@ -102,7 +102,7 @@ internal fun DownloadedSongDeleteProgressCard(
                 val songCount = progress?.requestedSongCount ?: requestedSongCount
                 Text(
                     text = pluralStringResource(
-                        R.plurals.download_delete_in_progress_message,
+                        CoreCommonR.plurals.download_delete_in_progress_message,
                         songCount,
                         songCount
                     ),
@@ -112,7 +112,7 @@ internal fun DownloadedSongDeleteProgressCard(
             val failedCount = progress?.failedReferenceCount ?: 0
             if (failedCount > 0) {
                 Text(
-                    text = stringResource(R.string.download_delete_failed_files, failedCount),
+                    text = stringResource(CoreCommonR.string.download_delete_failed_files, failedCount),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )

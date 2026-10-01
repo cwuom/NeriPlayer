@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -225,15 +225,15 @@ object ExceptionHandler {
             try {
                 // Apply language settings to get localized strings
                 val localizedContext = LanguageManager.applyLanguage(app)
-                val title = localizedContext.getString(R.string.exception_title)
+                val title = localizedContext.getString(CoreCommonR.string.exception_title)
                 val message = buildString {
-                    appendLine(localizedContext.getString(R.string.exception_occurred))
-                    appendLine(localizedContext.getString(R.string.exception_source, source))
-                    appendLine(localizedContext.getString(R.string.exception_type, throwable.javaClass.simpleName))
-                    appendLine(localizedContext.getString(R.string.exception_message, throwable.message ?: localizedContext.getString(R.string.exception_no_detail)))
+                    appendLine(localizedContext.getString(CoreCommonR.string.exception_occurred))
+                    appendLine(localizedContext.getString(CoreCommonR.string.exception_source, source))
+                    appendLine(localizedContext.getString(CoreCommonR.string.exception_type, throwable.javaClass.simpleName))
+                    appendLine(localizedContext.getString(CoreCommonR.string.exception_message, throwable.message ?: localizedContext.getString(CoreCommonR.string.exception_no_detail)))
                     appendLine()
-                    appendLine(localizedContext.getString(R.string.exception_logged))
-                    appendLine(localizedContext.getString(R.string.exception_contact))
+                    appendLine(localizedContext.getString(CoreCommonR.string.exception_logged))
+                    appendLine(localizedContext.getString(CoreCommonR.string.exception_contact))
                 }
 
                 NPLogger.d("ExceptionHandler", "Emitting error dialog event")
@@ -242,15 +242,15 @@ object ExceptionHandler {
                 // Fallback: use original context if language manager fails
                 NPLogger.e("ExceptionHandler", "Failed to apply language settings, using fallback", e)
                 try {
-                    val title = app.getString(R.string.exception_title)
+                    val title = app.getString(CoreCommonR.string.exception_title)
                     val message = buildString {
-                        appendLine(app.getString(R.string.exception_occurred))
-                        appendLine(app.getString(R.string.exception_source, source))
-                        appendLine(app.getString(R.string.exception_type, throwable.javaClass.simpleName))
-                        appendLine(app.getString(R.string.exception_message, throwable.message ?: app.getString(R.string.exception_no_detail)))
+                        appendLine(app.getString(CoreCommonR.string.exception_occurred))
+                        appendLine(app.getString(CoreCommonR.string.exception_source, source))
+                        appendLine(app.getString(CoreCommonR.string.exception_type, throwable.javaClass.simpleName))
+                        appendLine(app.getString(CoreCommonR.string.exception_message, throwable.message ?: app.getString(CoreCommonR.string.exception_no_detail)))
                         appendLine()
-                        appendLine(app.getString(R.string.exception_logged))
-                        appendLine(app.getString(R.string.exception_contact))
+                        appendLine(app.getString(CoreCommonR.string.exception_logged))
+                        appendLine(app.getString(CoreCommonR.string.exception_contact))
                     }
 
                     NPLogger.d("ExceptionHandler", "Emitting error dialog event (fallback)")

@@ -66,7 +66,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.download.network.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.network.normalizeDownloadParallelism
@@ -97,9 +97,9 @@ internal fun SettingsDownloadSection(
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Outlined.Download,
-            title = stringResource(R.string.settings_download_management),
-            subtitleCollapsed = stringResource(R.string.settings_download_expand),
-            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            title = stringResource(CoreCommonR.string.settings_download_management),
+            subtitleCollapsed = stringResource(CoreCommonR.string.settings_download_expand),
+            subtitleExpanded = stringResource(CoreCommonR.string.settings_login_platforms_collapse),
             expanded = expanded,
             onToggle = { onExpandedChange(!expanded) },
             arrowRotation = arrowRotation
@@ -178,7 +178,7 @@ private fun SettingsDownloadExpandedContent(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Download,
-                        contentDescription = stringResource(R.string.settings_download_progress),
+                        contentDescription = stringResource(CoreCommonR.string.settings_download_progress),
                         tint = if (taskSummary.hasPendingTasks) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -190,9 +190,9 @@ private fun SettingsDownloadExpandedContent(
                     Text(
                         stringResource(
                             if (taskSummary.hasPendingTasks) {
-                                R.string.download_progress
+                                CoreCommonR.string.download_progress
                             } else {
-                                R.string.download_failed
+                                CoreCommonR.string.download_failed
                             }
                         )
                     )
@@ -202,7 +202,7 @@ private fun SettingsDownloadExpandedContent(
                         visibleProgress != null -> {
                             Text(
                                 stringResource(
-                                    R.string.settings_download_songs_count,
+                                    CoreCommonR.string.settings_download_songs_count,
                                     visibleProgress.completedSongs,
                                     visibleProgress.totalSongs
                                 )
@@ -212,7 +212,7 @@ private fun SettingsDownloadExpandedContent(
                         taskSummary.hasPendingTasks -> {
                             Text(
                                 pluralStringResource(
-                                    R.plurals.download_tasks_count,
+                                    CoreCommonR.plurals.download_tasks_count,
                                     taskSummary.pendingTaskCount,
                                     taskSummary.pendingTaskCount
                                 )
@@ -222,7 +222,7 @@ private fun SettingsDownloadExpandedContent(
                         else -> {
                             Text(
                                 pluralStringResource(
-                                    R.plurals.download_failed_songs_count,
+                                    CoreCommonR.plurals.download_failed_songs_count,
                                     taskSummary.failedTaskCount,
                                     taskSummary.failedTaskCount
                                 )
@@ -237,7 +237,7 @@ private fun SettingsDownloadExpandedContent(
                             enabled = taskSummary.hasPendingTasks
                         ) {
                             Text(
-                                stringResource(R.string.action_cancel),
+                                stringResource(CoreCommonR.string.action_cancel),
                                 color = if (taskSummary.hasPendingTasks) {
                                     MaterialTheme.colorScheme.error
                                 } else {
@@ -265,12 +265,12 @@ private fun SettingsDownloadExpandedContent(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Download,
-                        contentDescription = stringResource(R.string.settings_download_manager),
+                        contentDescription = stringResource(CoreCommonR.string.settings_download_manager),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.download_title)) },
-                supportingContent = { Text(stringResource(R.string.download_desc)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.download_title)) },
+                supportingContent = { Text(stringResource(CoreCommonR.string.download_desc)) },
                 modifier = Modifier.settingsItemClickable(onClick = onNavigateToDownloadManager),
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
@@ -372,7 +372,7 @@ private fun DownloadAudioQualitySettings(
     if (!followsPlaybackQuality) {
         Column(modifier = Modifier.testTag(DOWNLOAD_QUALITY_PLATFORM_OPTIONS_TEST_TAG)) {
             Text(
-                text = stringResource(R.string.settings_download_quality_group),
+                text = stringResource(CoreCommonR.string.settings_download_quality_group),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
@@ -383,14 +383,14 @@ private fun DownloadAudioQualitySettings(
                 value = normalizeDownloadNeteaseAudioQuality(neteaseQuality),
                 valueLabel = stringResource(
                     when (normalizeDownloadNeteaseAudioQuality(neteaseQuality)) {
-                        "standard" -> R.string.quality_standard
-                        "higher" -> R.string.quality_high
-                        "exhigh" -> R.string.quality_very_high
-                        "lossless" -> R.string.quality_lossless
-                        "hires" -> R.string.quality_hires
-                        "jyeffect" -> R.string.quality_hd_surround
-                        "sky" -> R.string.quality_surround
-                        else -> R.string.settings_audio_quality_jymaster
+                        "standard" -> CoreCommonR.string.quality_standard
+                        "higher" -> CoreCommonR.string.quality_high
+                        "exhigh" -> CoreCommonR.string.quality_very_high
+                        "lossless" -> CoreCommonR.string.quality_lossless
+                        "hires" -> CoreCommonR.string.quality_hires
+                        "jyeffect" -> CoreCommonR.string.quality_hd_surround
+                        "sky" -> CoreCommonR.string.quality_surround
+                        else -> CoreCommonR.string.settings_audio_quality_jymaster
                     }
                 ),
                 onClick = { dialogPlatform = DownloadAudioQualityPlatform.NETEASE },
@@ -404,10 +404,10 @@ private fun DownloadAudioQualitySettings(
                 value = normalizeDownloadYouTubeAudioQuality(youtubeQuality),
                 valueLabel = stringResource(
                     when (normalizeDownloadYouTubeAudioQuality(youtubeQuality)) {
-                        "low" -> R.string.settings_audio_quality_low
-                        "medium" -> R.string.settings_audio_quality_medium
-                        "high" -> R.string.settings_audio_quality_high
-                        else -> R.string.quality_very_high
+                        "low" -> CoreCommonR.string.settings_audio_quality_low
+                        "medium" -> CoreCommonR.string.settings_audio_quality_medium
+                        "high" -> CoreCommonR.string.settings_audio_quality_high
+                        else -> CoreCommonR.string.quality_very_high
                     }
                 ),
                 onClick = { dialogPlatform = DownloadAudioQualityPlatform.YOUTUBE },
@@ -421,12 +421,12 @@ private fun DownloadAudioQualitySettings(
                 value = normalizeDownloadBiliAudioQuality(biliQuality),
                 valueLabel = stringResource(
                     when (normalizeDownloadBiliAudioQuality(biliQuality)) {
-                        "dolby" -> R.string.settings_dolby
-                        "hires" -> R.string.quality_hires
-                        "lossless" -> R.string.quality_lossless
-                        "high" -> R.string.settings_audio_quality_high
-                        "medium" -> R.string.settings_audio_quality_medium
-                        else -> R.string.settings_audio_quality_low
+                        "dolby" -> CoreCommonR.string.settings_dolby
+                        "hires" -> CoreCommonR.string.quality_hires
+                        "lossless" -> CoreCommonR.string.quality_lossless
+                        "high" -> CoreCommonR.string.settings_audio_quality_high
+                        "medium" -> CoreCommonR.string.settings_audio_quality_medium
+                        else -> CoreCommonR.string.settings_audio_quality_low
                     }
                 ),
                 onClick = { dialogPlatform = DownloadAudioQualityPlatform.BILI },
@@ -441,17 +441,17 @@ private fun DownloadAudioQualitySettings(
         when (platform) {
             DownloadAudioQualityPlatform.NETEASE -> {
                 QualityOptionsDialog(
-                    title = stringResource(R.string.settings_download_netease_audio_quality),
+                    title = stringResource(CoreCommonR.string.settings_download_netease_audio_quality),
                     selectedValue = normalizeDownloadNeteaseAudioQuality(neteaseQuality),
                     options = listOf(
-                        "standard" to stringResource(R.string.quality_standard),
-                        "higher" to stringResource(R.string.quality_high),
-                        "exhigh" to stringResource(R.string.quality_very_high),
-                        "lossless" to stringResource(R.string.quality_lossless),
-                        "hires" to stringResource(R.string.quality_hires),
-                        "jyeffect" to stringResource(R.string.quality_hd_surround),
-                        "sky" to stringResource(R.string.quality_surround),
-                        "jymaster" to stringResource(R.string.settings_audio_quality_jymaster)
+                        "standard" to stringResource(CoreCommonR.string.quality_standard),
+                        "higher" to stringResource(CoreCommonR.string.quality_high),
+                        "exhigh" to stringResource(CoreCommonR.string.quality_very_high),
+                        "lossless" to stringResource(CoreCommonR.string.quality_lossless),
+                        "hires" to stringResource(CoreCommonR.string.quality_hires),
+                        "jyeffect" to stringResource(CoreCommonR.string.quality_hd_surround),
+                        "sky" to stringResource(CoreCommonR.string.quality_surround),
+                        "jymaster" to stringResource(CoreCommonR.string.settings_audio_quality_jymaster)
                     ),
                     onDismiss = { dialogPlatform = null },
                     onSelect = { value ->
@@ -463,13 +463,13 @@ private fun DownloadAudioQualitySettings(
 
             DownloadAudioQualityPlatform.YOUTUBE -> {
                 QualityOptionsDialog(
-                    title = stringResource(R.string.settings_download_youtube_audio_quality),
+                    title = stringResource(CoreCommonR.string.settings_download_youtube_audio_quality),
                     selectedValue = normalizeDownloadYouTubeAudioQuality(youtubeQuality),
                     options = listOf(
-                        "low" to stringResource(R.string.settings_audio_quality_low),
-                        "medium" to stringResource(R.string.settings_audio_quality_medium),
-                        "high" to stringResource(R.string.settings_audio_quality_high),
-                        "very_high" to stringResource(R.string.quality_very_high)
+                        "low" to stringResource(CoreCommonR.string.settings_audio_quality_low),
+                        "medium" to stringResource(CoreCommonR.string.settings_audio_quality_medium),
+                        "high" to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                        "very_high" to stringResource(CoreCommonR.string.quality_very_high)
                     ),
                     onDismiss = { dialogPlatform = null },
                     onSelect = { value ->
@@ -481,15 +481,15 @@ private fun DownloadAudioQualitySettings(
 
             DownloadAudioQualityPlatform.BILI -> {
                 QualityOptionsDialog(
-                    title = stringResource(R.string.settings_download_bili_audio_quality),
+                    title = stringResource(CoreCommonR.string.settings_download_bili_audio_quality),
                     selectedValue = normalizeDownloadBiliAudioQuality(biliQuality),
                     options = listOf(
-                        "dolby" to stringResource(R.string.settings_dolby),
-                        "hires" to stringResource(R.string.quality_hires),
-                        "lossless" to stringResource(R.string.quality_lossless),
-                        "high" to stringResource(R.string.settings_audio_quality_high),
-                        "medium" to stringResource(R.string.settings_audio_quality_medium),
-                        "low" to stringResource(R.string.settings_audio_quality_low)
+                        "dolby" to stringResource(CoreCommonR.string.settings_dolby),
+                        "hires" to stringResource(CoreCommonR.string.quality_hires),
+                        "lossless" to stringResource(CoreCommonR.string.quality_lossless),
+                        "high" to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                        "medium" to stringResource(CoreCommonR.string.settings_audio_quality_medium),
+                        "low" to stringResource(CoreCommonR.string.settings_audio_quality_low)
                     ),
                     onDismiss = { dialogPlatform = null },
                     onSelect = { value ->
@@ -515,7 +515,7 @@ private fun DownloadAudioQualityListItem(
     AutoSettingSpecListItem(
         setting = setting,
         supportingContent = {
-            Text(stringResource(R.string.common_label_value_format, valueLabel, value))
+            Text(stringResource(CoreCommonR.string.common_label_value_format, valueLabel, value))
         },
         onClick = onClick,
         highlightTargetId = highlightTargetId,
@@ -554,7 +554,7 @@ private fun DownloadParallelismSettingItem(
             Column {
                 Text(
                     text = stringResource(
-                        R.string.settings_download_parallelism_current,
+                        CoreCommonR.string.settings_download_parallelism_current,
                         displayValue,
                         MAX_DOWNLOAD_PARALLELISM
                     ),

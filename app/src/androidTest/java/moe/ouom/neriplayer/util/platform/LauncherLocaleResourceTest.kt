@@ -5,7 +5,7 @@ import android.os.Build
 import android.os.LocaleList
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,18 +22,18 @@ class LauncherLocaleResourceTest {
         }
         val resources = baseContext.createConfigurationContext(configuration).resources
 
-        assertEquals("音理音理!", resources.getString(R.string.app_name))
+        assertEquals("音理音理!", resources.getString(CoreCommonR.string.app_name))
         assertEquals(
             "继续播放",
-            resources.getString(R.string.launcher_shortcut_continue_short)
+            resources.getString(CoreCommonR.string.launcher_shortcut_continue_short)
         )
         assertEquals(
             "打开探索",
-            resources.getString(R.string.launcher_shortcut_explore_long)
+            resources.getString(CoreCommonR.string.launcher_shortcut_explore_long)
         )
         assertEquals(
             "媒体库",
-            resources.getString(R.string.launcher_shortcut_library_short)
+            resources.getString(CoreCommonR.string.launcher_shortcut_library_short)
         )
     }
 

@@ -67,7 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.ui.component.settings.HsvPicker
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
@@ -91,7 +91,7 @@ internal fun ColorPickerDialog(
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_select_color)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_select_color)) },
         text = {
             Column(
                 modifier = Modifier
@@ -128,7 +128,7 @@ internal fun ColorPickerDialog(
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        stringResource(R.string.settings_custom_color),
+                        stringResource(CoreCommonR.string.settings_custom_color),
                         style = MaterialTheme.typography.titleSmall
                     )
                     HsvPicker(
@@ -151,7 +151,7 @@ internal fun ColorPickerDialog(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = stringResource(R.string.settings_add_to_palette),
+                                    text = stringResource(CoreCommonR.string.settings_add_to_palette),
                                     maxLines = 1,
                                     softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
@@ -163,7 +163,7 @@ internal fun ColorPickerDialog(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = stringResource(R.string.settings_apply_color),
+                                    text = stringResource(CoreCommonR.string.settings_apply_color),
                                     maxLines = 1,
                                     softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
@@ -183,7 +183,7 @@ internal fun ColorPickerDialog(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
-                                    text = stringResource(R.string.settings_add_to_palette),
+                                    text = stringResource(CoreCommonR.string.settings_add_to_palette),
                                     maxLines = 1,
                                     softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
@@ -195,7 +195,7 @@ internal fun ColorPickerDialog(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
-                                    text = stringResource(R.string.settings_apply_color),
+                                    text = stringResource(CoreCommonR.string.settings_apply_color),
                                     maxLines = 1,
                                     softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
@@ -211,7 +211,7 @@ internal fun ColorPickerDialog(
                 }
                 if (deletableCount > 0) {
                     Text(
-                        text = stringResource(R.string.settings_color_picker_hint),
+                        text = stringResource(CoreCommonR.string.settings_color_picker_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -221,7 +221,7 @@ internal fun ColorPickerDialog(
         confirmButton = {
             MiuixSettingsTextButton(
                 onClick = onDismiss,
-                text = { Text(stringResource(R.string.action_close)) }
+                text = { Text(stringResource(CoreCommonR.string.action_close)) }
             )
         }
     )
@@ -258,7 +258,7 @@ private fun ColorPickerItem(
             }
             Icon(
                 imageVector = Icons.Default.Check,
-                contentDescription = stringResource(R.string.common_selected),
+                contentDescription = stringResource(CoreCommonR.string.common_selected),
                 tint = contentColor
             )
         }
@@ -275,7 +275,7 @@ private fun ColorPickerItem(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = stringResource(R.string.settings_delete_color),
+                    contentDescription = stringResource(CoreCommonR.string.settings_delete_color),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(12.dp)
                 )
@@ -296,7 +296,7 @@ internal fun DpiSettingDialog(
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_ui_scale)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_ui_scale)) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
@@ -314,7 +314,7 @@ internal fun DpiSettingDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    stringResource(R.string.settings_restart_hint),
+                    stringResource(CoreCommonR.string.settings_restart_hint),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -322,18 +322,18 @@ internal fun DpiSettingDialog(
         confirmButton = {
             MiuixSettingsTextButton(
                 onClick = { onApply(sliderValue) },
-                text = { Text(stringResource(R.string.action_apply)) }
+                text = { Text(stringResource(CoreCommonR.string.action_apply)) }
             )
         },
         dismissButton = {
             Row {
                 MiuixSettingsTextButton(
                     onClick = { sliderValue = 1.0f },
-                    text = { Text(stringResource(R.string.action_reset)) }
+                    text = { Text(stringResource(CoreCommonR.string.action_reset)) }
                 )
                 MiuixSettingsTextButton(
                     onClick = onDismiss,
-                    text = { Text(stringResource(R.string.action_cancel)) }
+                    text = { Text(stringResource(CoreCommonR.string.action_cancel)) }
                 )
             }
         }

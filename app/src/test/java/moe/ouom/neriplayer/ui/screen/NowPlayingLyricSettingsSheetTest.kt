@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
 import androidx.compose.ui.graphics.Color
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.lyrics.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_DEFAULT_OFFSET_MS
@@ -58,32 +58,32 @@ class NowPlayingLyricSettingsSheetTest {
 
     @Test
     fun `secondary lyric controls only advertise available content`() {
-        assertEquals(R.string.lyrics_secondary_mode_phonetic,
+        assertEquals(CoreCommonR.string.lyrics_secondary_mode_phonetic,
             lyricSecondaryToggleTitle(false, true)
         )
-        assertEquals(R.string.lyrics_phonetic_only_desc,
+        assertEquals(CoreCommonR.string.lyrics_phonetic_only_desc,
             lyricSecondaryToggleDescription(false, true)
         )
         assertEquals(
             LyricTranslationToggleCopy(
-                R.string.lyrics_secondary_mode_phonetic,
-                R.string.lyrics_phonetic_only_desc
+                CoreCommonR.string.lyrics_secondary_mode_phonetic,
+                CoreCommonR.string.lyrics_phonetic_only_desc
             ),
             lyricTranslationToggleCopy(false, true)
         )
-        assertEquals(R.string.settings_show_lyric_translation,
+        assertEquals(CoreCommonR.string.settings_show_lyric_translation,
             lyricSecondaryToggleTitle(true, true)
         )
-        assertEquals(R.string.settings_show_lyric_translation_desc,
+        assertEquals(CoreCommonR.string.settings_show_lyric_translation_desc,
             lyricSecondaryToggleDescription(false, false)
         )
-        assertEquals(R.string.lyrics_translation_use_phonetic_requires_translation,
+        assertEquals(CoreCommonR.string.lyrics_translation_use_phonetic_requires_translation,
             lyricPhoneticHint(false, true)
         )
-        assertEquals(R.string.lyrics_translation_use_phonetic_unavailable,
+        assertEquals(CoreCommonR.string.lyrics_translation_use_phonetic_unavailable,
             lyricPhoneticHint(true, false)
         )
-        assertEquals(R.string.lyrics_translation_use_phonetic_desc, lyricPhoneticHint(true, true))
+        assertEquals(CoreCommonR.string.lyrics_translation_use_phonetic_desc, lyricPhoneticHint(true, true))
         assertFalse(isLyricPhoneticSwitchEnabled(false, true))
         assertFalse(isLyricPhoneticSwitchEnabled(true, false))
         assertTrue(isLyricPhoneticSwitchEnabled(true, true))

@@ -50,10 +50,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -127,9 +127,9 @@ internal fun SettingsAudioQualitySection(
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Filled.Audiotrack,
-            title = stringResource(R.string.settings_audio_quality),
-            subtitleCollapsed = stringResource(R.string.settings_audio_quality_expand),
-            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            title = stringResource(CoreCommonR.string.settings_audio_quality),
+            subtitleCollapsed = stringResource(CoreCommonR.string.settings_audio_quality_expand),
+            subtitleExpanded = stringResource(CoreCommonR.string.settings_login_platforms_collapse),
             expanded = expanded,
             onToggle = { onExpandedChange(!expanded) },
             arrowRotation = arrowRotation
@@ -155,7 +155,7 @@ internal fun SettingsAudioQualitySection(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.AUDIO_QUALITY),
                 valueLabel = qualityLabel,
                 preferredQuality = preferredQuality,
-                iconRes = R.drawable.ic_netease_cloud_music,
+                iconRes = CoreCommonR.drawable.ic_netease_cloud_music,
                 onClick = { onShowQualityDialogChange(true) },
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
@@ -166,7 +166,7 @@ internal fun SettingsAudioQualitySection(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.YOUTUBE_AUDIO_QUALITY),
                 valueLabel = youtubeQualityLabel,
                 preferredQuality = youtubePreferredQuality,
-                iconRes = R.drawable.ic_youtube,
+                iconRes = CoreCommonR.drawable.ic_youtube,
                 onClick = { onShowYouTubeQualityDialogChange(true) },
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
@@ -177,7 +177,7 @@ internal fun SettingsAudioQualitySection(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BILI_AUDIO_QUALITY),
                 valueLabel = biliQualityLabel,
                 preferredQuality = biliPreferredQuality,
-                iconRes = R.drawable.ic_bilibili,
+                iconRes = CoreCommonR.drawable.ic_bilibili,
                 onClick = { onShowBiliQualityDialogChange(true) },
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
@@ -192,7 +192,7 @@ internal fun SettingsAudioQualitySection(
                     Icon(
                         imageVector = Icons.Outlined.Analytics,
                         contentDescription = stringResource(
-                            R.string.settings_mobile_data_follow_default_audio_quality
+                            CoreCommonR.string.settings_mobile_data_follow_default_audio_quality
                         ),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurface
@@ -216,7 +216,7 @@ internal fun SettingsAudioQualitySection(
 
             if (!mobileDataFollowDefaultAudioQuality) {
                 Text(
-                    text = stringResource(R.string.settings_mobile_data_quality_group),
+                    text = stringResource(CoreCommonR.string.settings_mobile_data_quality_group),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
@@ -228,7 +228,7 @@ internal fun SettingsAudioQualitySection(
                     ),
                     valueLabel = mobileDataNeteaseQualityLabel,
                     preferredQuality = mobileDataNeteaseAudioQuality,
-                    iconRes = R.drawable.ic_netease_cloud_music,
+                    iconRes = CoreCommonR.drawable.ic_netease_cloud_music,
                     onClick = { onShowMobileDataNeteaseQualityDialogChange(true) },
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
@@ -241,7 +241,7 @@ internal fun SettingsAudioQualitySection(
                     ),
                     valueLabel = mobileDataYouTubeQualityLabel,
                     preferredQuality = mobileDataYouTubeAudioQuality,
-                    iconRes = R.drawable.ic_youtube,
+                    iconRes = CoreCommonR.drawable.ic_youtube,
                     onClick = { onShowMobileDataYouTubeQualityDialogChange(true) },
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
@@ -254,7 +254,7 @@ internal fun SettingsAudioQualitySection(
                     ),
                     valueLabel = mobileDataBiliQualityLabel,
                     preferredQuality = mobileDataBiliAudioQuality,
-                    iconRes = R.drawable.ic_bilibili,
+                    iconRes = CoreCommonR.drawable.ic_bilibili,
                     onClick = { onShowMobileDataBiliQualityDialogChange(true) },
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
@@ -266,17 +266,17 @@ internal fun SettingsAudioQualitySection(
 
     if (showQualityDialog) {
         QualityOptionsDialog(
-            title = stringResource(R.string.quality_default),
+            title = stringResource(CoreCommonR.string.quality_default),
             selectedValue = preferredQuality,
             options = listOf(
-                "standard" to stringResource(R.string.quality_standard),
-                "higher" to stringResource(R.string.quality_high),
-                "exhigh" to stringResource(R.string.quality_very_high),
-                NETEASE_LOSSLESS_QUALITY to stringResource(R.string.quality_lossless),
-                NETEASE_HIRES_QUALITY to stringResource(R.string.quality_hires),
-                NETEASE_HD_SURROUND_QUALITY to stringResource(R.string.quality_hd_surround),
-                NETEASE_SURROUND_QUALITY to stringResource(R.string.quality_surround),
-                NETEASE_MASTER_QUALITY to stringResource(R.string.settings_audio_quality_jymaster)
+                "standard" to stringResource(CoreCommonR.string.quality_standard),
+                "higher" to stringResource(CoreCommonR.string.quality_high),
+                "exhigh" to stringResource(CoreCommonR.string.quality_very_high),
+                NETEASE_LOSSLESS_QUALITY to stringResource(CoreCommonR.string.quality_lossless),
+                NETEASE_HIRES_QUALITY to stringResource(CoreCommonR.string.quality_hires),
+                NETEASE_HD_SURROUND_QUALITY to stringResource(CoreCommonR.string.quality_hd_surround),
+                NETEASE_SURROUND_QUALITY to stringResource(CoreCommonR.string.quality_surround),
+                NETEASE_MASTER_QUALITY to stringResource(CoreCommonR.string.settings_audio_quality_jymaster)
             ),
             onDismiss = { onShowQualityDialogChange(false) },
             onSelect = { level ->
@@ -291,13 +291,13 @@ internal fun SettingsAudioQualitySection(
 
     if (showYouTubeQualityDialog) {
         QualityOptionsDialog(
-            title = stringResource(R.string.quality_youtube_default),
+            title = stringResource(CoreCommonR.string.quality_youtube_default),
             selectedValue = youtubePreferredQuality,
             options = listOf(
-                "low" to stringResource(R.string.settings_audio_quality_standard),
-                "medium" to stringResource(R.string.settings_audio_quality_medium),
-                "high" to stringResource(R.string.settings_audio_quality_high),
-                "very_high" to stringResource(R.string.quality_very_high)
+                "low" to stringResource(CoreCommonR.string.settings_audio_quality_standard),
+                "medium" to stringResource(CoreCommonR.string.settings_audio_quality_medium),
+                "high" to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                "very_high" to stringResource(CoreCommonR.string.quality_very_high)
             ),
             onDismiss = { onShowYouTubeQualityDialogChange(false) },
             onSelect = { level ->
@@ -309,15 +309,15 @@ internal fun SettingsAudioQualitySection(
 
     if (showBiliQualityDialog) {
         QualityOptionsDialog(
-            title = stringResource(R.string.quality_bili_default),
+            title = stringResource(CoreCommonR.string.quality_bili_default),
             selectedValue = biliPreferredQuality,
             options = listOf(
-                BILI_DOLBY_QUALITY to stringResource(R.string.settings_dolby),
-                "hires" to stringResource(R.string.quality_hires),
-                "lossless" to stringResource(R.string.quality_lossless),
-                "high" to stringResource(R.string.settings_audio_quality_high),
-                "medium" to stringResource(R.string.settings_audio_quality_medium),
-                "low" to stringResource(R.string.settings_audio_quality_low)
+                BILI_DOLBY_QUALITY to stringResource(CoreCommonR.string.settings_dolby),
+                "hires" to stringResource(CoreCommonR.string.quality_hires),
+                "lossless" to stringResource(CoreCommonR.string.quality_lossless),
+                "high" to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                "medium" to stringResource(CoreCommonR.string.settings_audio_quality_medium),
+                "low" to stringResource(CoreCommonR.string.settings_audio_quality_low)
             ),
             onDismiss = { onShowBiliQualityDialogChange(false) },
             onSelect = { level ->
@@ -332,17 +332,17 @@ internal fun SettingsAudioQualitySection(
 
     if (showMobileDataNeteaseQualityDialog) {
         QualityOptionsDialog(
-            title = stringResource(R.string.settings_mobile_data_netease_audio_quality),
+            title = stringResource(CoreCommonR.string.settings_mobile_data_netease_audio_quality),
             selectedValue = mobileDataNeteaseAudioQuality,
             options = listOf(
-                "standard" to stringResource(R.string.quality_standard),
-                "higher" to stringResource(R.string.quality_high),
-                "exhigh" to stringResource(R.string.quality_very_high),
-                NETEASE_LOSSLESS_QUALITY to stringResource(R.string.quality_lossless),
-                NETEASE_HIRES_QUALITY to stringResource(R.string.quality_hires),
-                NETEASE_HD_SURROUND_QUALITY to stringResource(R.string.quality_hd_surround),
-                NETEASE_SURROUND_QUALITY to stringResource(R.string.quality_surround),
-                NETEASE_MASTER_QUALITY to stringResource(R.string.settings_audio_quality_jymaster)
+                "standard" to stringResource(CoreCommonR.string.quality_standard),
+                "higher" to stringResource(CoreCommonR.string.quality_high),
+                "exhigh" to stringResource(CoreCommonR.string.quality_very_high),
+                NETEASE_LOSSLESS_QUALITY to stringResource(CoreCommonR.string.quality_lossless),
+                NETEASE_HIRES_QUALITY to stringResource(CoreCommonR.string.quality_hires),
+                NETEASE_HD_SURROUND_QUALITY to stringResource(CoreCommonR.string.quality_hd_surround),
+                NETEASE_SURROUND_QUALITY to stringResource(CoreCommonR.string.quality_surround),
+                NETEASE_MASTER_QUALITY to stringResource(CoreCommonR.string.settings_audio_quality_jymaster)
             ),
             onDismiss = { onShowMobileDataNeteaseQualityDialogChange(false) },
             onSelect = { level ->
@@ -357,13 +357,13 @@ internal fun SettingsAudioQualitySection(
 
     if (showMobileDataYouTubeQualityDialog) {
         QualityOptionsDialog(
-            title = stringResource(R.string.settings_mobile_data_youtube_audio_quality),
+            title = stringResource(CoreCommonR.string.settings_mobile_data_youtube_audio_quality),
             selectedValue = mobileDataYouTubeAudioQuality,
             options = listOf(
-                "low" to stringResource(R.string.settings_audio_quality_standard),
-                "medium" to stringResource(R.string.settings_audio_quality_medium),
-                "high" to stringResource(R.string.settings_audio_quality_high),
-                "very_high" to stringResource(R.string.quality_very_high)
+                "low" to stringResource(CoreCommonR.string.settings_audio_quality_standard),
+                "medium" to stringResource(CoreCommonR.string.settings_audio_quality_medium),
+                "high" to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                "very_high" to stringResource(CoreCommonR.string.quality_very_high)
             ),
             onDismiss = { onShowMobileDataYouTubeQualityDialogChange(false) },
             onSelect = { level ->
@@ -375,15 +375,15 @@ internal fun SettingsAudioQualitySection(
 
     if (showMobileDataBiliQualityDialog) {
         QualityOptionsDialog(
-            title = stringResource(R.string.settings_mobile_data_bili_audio_quality),
+            title = stringResource(CoreCommonR.string.settings_mobile_data_bili_audio_quality),
             selectedValue = mobileDataBiliAudioQuality,
             options = listOf(
-                BILI_DOLBY_QUALITY to stringResource(R.string.settings_dolby),
-                "hires" to stringResource(R.string.quality_hires),
-                "lossless" to stringResource(R.string.quality_lossless),
-                "high" to stringResource(R.string.settings_audio_quality_high),
-                "medium" to stringResource(R.string.settings_audio_quality_medium),
-                "low" to stringResource(R.string.settings_audio_quality_low)
+                BILI_DOLBY_QUALITY to stringResource(CoreCommonR.string.settings_dolby),
+                "hires" to stringResource(CoreCommonR.string.quality_hires),
+                "lossless" to stringResource(CoreCommonR.string.quality_lossless),
+                "high" to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                "medium" to stringResource(CoreCommonR.string.settings_audio_quality_medium),
+                "low" to stringResource(CoreCommonR.string.settings_audio_quality_low)
             ),
             onDismiss = { onShowMobileDataBiliQualityDialogChange(false) },
             onSelect = { level ->
@@ -426,7 +426,7 @@ private fun AudioQualityListItem(
             )
         },
         supportingContent = {
-            Text(stringResource(R.string.common_label_value_format, valueLabel, preferredQuality))
+            Text(stringResource(CoreCommonR.string.common_label_value_format, valueLabel, preferredQuality))
         },
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
@@ -459,7 +459,7 @@ internal fun QualityOptionsDialog(
         },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
+                Text(stringResource(CoreCommonR.string.action_close))
             }
         }
     )
@@ -472,22 +472,22 @@ private fun AudioQualityNoticeDialog(
 ) {
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.dialog_hint)) },
+        title = { Text(stringResource(CoreCommonR.string.dialog_hint)) },
         text = {
             Text(
                 stringResource(
                     when (notice) {
                         AudioQualityNotice.NeteaseMemberQuality ->
-                            R.string.settings_audio_quality_netease_member_quality_notice
+                            CoreCommonR.string.settings_audio_quality_netease_member_quality_notice
                         AudioQualityNotice.BiliDolby ->
-                            R.string.settings_audio_quality_bili_dolby_notice
+                            CoreCommonR.string.settings_audio_quality_bili_dolby_notice
                     }
                 )
             )
         },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         }
     )

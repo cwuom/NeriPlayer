@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation
 
 import android.content.Context
 import android.content.res.Resources
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadDirectoryChangeDecision
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadMigrationPolicy
@@ -217,7 +217,7 @@ internal class DownloadDirectoryPreparationOwner(
                 "timeoutMs=${DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS} " +
                 "errorType=${error?.javaClass?.simpleName ?: "timeout"}"
         )
-        val message = resources.getString(R.string.managed_library_processing_retry)
+        val message = resources.getString(CoreCommonR.string.managed_library_processing_retry)
         onInlineMessageChange(message)
         onShowMessage(message)
     }

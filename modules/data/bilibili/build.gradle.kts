@@ -11,6 +11,7 @@ android {
 dependencies {
     api(project(":api:bilibili"))
     api(project(":data:model"))
+    api(project(":data:database"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.gson)
     implementation(project(":core:common"))
@@ -18,6 +19,7 @@ dependencies {
     implementation(project(":core:logging"))
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)

@@ -12,7 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 
 internal class SettingsAboutVersionTapOwner(
     private val tapCount: MutableIntState,
@@ -22,7 +22,7 @@ internal class SettingsAboutVersionTapOwner(
 ) {
     fun onVersionClick() {
         if (devModeEnabled) {
-            onMessage(R.string.debug_mode_enabled)
+            onMessage(CoreCommonR.string.debug_mode_enabled)
             return
         }
         val nextCount = tapCount.intValue + 1
@@ -32,7 +32,7 @@ internal class SettingsAboutVersionTapOwner(
         }
         tapCount.intValue = 0
         onEnableDevMode()
-        onMessage(R.string.debug_mode_opened)
+        onMessage(CoreCommonR.string.debug_mode_opened)
     }
 }
 
@@ -57,7 +57,7 @@ private class SettingsAboutPageActions(
     fun onCopyValue(value: String) {
         context.getSystemService(ClipboardManager::class.java)
             ?.setPrimaryClip(ClipData.newPlainText("settings_build_value", value))
-        val copiedMessage = resources.getString(R.string.toast_copied)
+        val copiedMessage = resources.getString(CoreCommonR.string.toast_copied)
         onInlineMessageChange(copiedMessage)
         onShowMessage(copiedMessage)
     }

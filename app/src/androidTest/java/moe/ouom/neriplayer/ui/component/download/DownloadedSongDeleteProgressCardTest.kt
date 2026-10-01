@@ -12,7 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeletePhase
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
@@ -47,7 +47,7 @@ class DownloadedSongDeleteProgressCardTest {
             }
         }
 
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_preparing))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_preparing))
             .assertIsDisplayed()
         composeRule.onNode(progressRange(ProgressBarRangeInfo.Indeterminate))
             .assertIsDisplayed()
@@ -59,10 +59,10 @@ class DownloadedSongDeleteProgressCardTest {
                 completedReferenceCount = 1000
             )
         }
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_deleting_files))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_deleting_files))
             .assertIsDisplayed()
         composeRule.onNodeWithText(
-            context.resources.getQuantityString(R.plurals.download_clear_item_progress, 4000, 1000, 4000)
+            context.resources.getQuantityString(CoreCommonR.plurals.download_clear_item_progress, 4000, 1000, 4000)
         )
             .assertIsDisplayed()
         composeRule.onNode(progressRange(ProgressBarRangeInfo(0.25f, 0f..1f)))
@@ -74,7 +74,7 @@ class DownloadedSongDeleteProgressCardTest {
                 completedReferenceCount = 4000
             )
         }
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_finalizing))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_finalizing))
             .assertIsDisplayed()
         composeRule.onNode(progressRange(ProgressBarRangeInfo.Indeterminate))
             .assertIsDisplayed()
@@ -86,10 +86,10 @@ class DownloadedSongDeleteProgressCardTest {
         }
         composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
             .assertDoesNotExist()
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_finalizing))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_finalizing))
             .assertDoesNotExist()
         composeRule.onNodeWithText(
-            context.resources.getQuantityString(R.plurals.download_clear_item_progress, 4000, 4000, 4000)
+            context.resources.getQuantityString(CoreCommonR.plurals.download_clear_item_progress, 4000, 4000, 4000)
         )
             .assertDoesNotExist()
     }
@@ -123,9 +123,9 @@ class DownloadedSongDeleteProgressCardTest {
                 failedReferenceCount = 2
             )
         }
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_failed))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_failed))
             .assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_failed_files, 2))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_failed_files, 2))
             .assertIsDisplayed()
         composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
             .assertDoesNotExist()
@@ -133,14 +133,14 @@ class DownloadedSongDeleteProgressCardTest {
             progress.value = progress.value.copy(totalReferenceCount = 0, completedReferenceCount = 0)
         }
         composeRule.onNodeWithText(
-            context.resources.getQuantityString(R.plurals.download_clear_item_progress, 0, 0, 0)
+            context.resources.getQuantityString(CoreCommonR.plurals.download_clear_item_progress, 0, 0, 0)
         )
             .assertDoesNotExist()
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_failed_files, 2))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_failed_files, 2))
             .assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.action_close))
+        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.action_close))
             .performClick()
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_failed))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_failed))
             .assertDoesNotExist()
         composeRule.runOnIdle {
             assertEquals(DownloadedSongDeletePhase.FAILED, progress.value.phase)
@@ -151,7 +151,7 @@ class DownloadedSongDeleteProgressCardTest {
             )
             failureDismissed.value = false
         }
-        composeRule.onNodeWithText(context.getString(R.string.download_delete_phase_verifying))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.download_delete_phase_verifying))
             .assertIsDisplayed()
         composeRule.onNode(progressRange(ProgressBarRangeInfo.Indeterminate))
             .assertIsDisplayed()

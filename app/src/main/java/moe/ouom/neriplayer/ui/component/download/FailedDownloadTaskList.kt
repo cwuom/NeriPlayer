@@ -28,7 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.presentation.visibleFailedDownloadTasks
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -58,7 +58,7 @@ internal fun FailedDownloadTaskList(
         ) {
             Text(
                 text = pluralStringResource(
-                    R.plurals.download_failed_songs_count,
+                    CoreCommonR.plurals.download_failed_songs_count,
                     failedTasks.size,
                     failedTasks.size
                 ),
@@ -67,11 +67,11 @@ internal fun FailedDownloadTaskList(
                 color = MaterialTheme.colorScheme.error
             )
             HapticTextButton(onClick = onClearFailed) {
-                Text(stringResource(R.string.download_clear_failed_tasks))
+                Text(stringResource(CoreCommonR.string.download_clear_failed_tasks))
             }
         }
         Text(
-            text = stringResource(R.string.download_failed_tasks_summary),
+            text = stringResource(CoreCommonR.string.download_failed_tasks_summary),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -115,7 +115,7 @@ internal fun FailedDownloadTaskList(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = stringResource(R.string.download_resume),
+                                contentDescription = stringResource(CoreCommonR.string.download_resume),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }

@@ -148,7 +148,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: >-
-            ./gradlew :feature:player:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+            ./gradlew :data:database:connectedDebugAndroidTest :data:repository:connectedDebugAndroidTest :feature:player:connectedDebugAndroidTest :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             --warning-mode all --stacktrace
 

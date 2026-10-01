@@ -16,7 +16,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeWithVelocity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
@@ -71,7 +71,7 @@ class PlaylistExportSheetTest {
 
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText(
-                context.getString(R.string.playlist_batch_export_confirm_title)
+                context.getString(CoreCommonR.string.playlist_batch_export_confirm_title)
             ).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.waitUntil(timeoutMillis = 3_000) {
@@ -82,12 +82,12 @@ class PlaylistExportSheetTest {
             assertNull(exportedPlaylistId)
         }
 
-        composeRule.onNodeWithText(context.getString(R.string.action_cancel)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_cancel)).performClick()
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText(targetPlaylist.name)
                 .fetchSemanticsNodes().isNotEmpty() &&
                 composeRule.onAllNodesWithText(
-                    context.getString(R.string.playlist_batch_export_confirm_title)
+                    context.getString(CoreCommonR.string.playlist_batch_export_confirm_title)
                 ).fetchSemanticsNodes().isEmpty()
         }
         composeRule.onNodeWithText(targetPlaylist.name).performTouchInput {
@@ -97,11 +97,11 @@ class PlaylistExportSheetTest {
 
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText(
-                context.getString(R.string.playlist_batch_export_confirm_title)
+                context.getString(CoreCommonR.string.playlist_batch_export_confirm_title)
             ).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText(
-            context.getString(R.string.playlist_batch_export_confirm_button)
+            context.getString(CoreCommonR.string.playlist_batch_export_confirm_button)
         ).performClick()
 
         composeRule.runOnIdle {
@@ -157,7 +157,7 @@ class PlaylistExportSheetTest {
 
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText(
-                context.getString(R.string.playlist_batch_export_confirm_title)
+                context.getString(CoreCommonR.string.playlist_batch_export_confirm_title)
             ).fetchSemanticsNodes().isNotEmpty()
         }
     }

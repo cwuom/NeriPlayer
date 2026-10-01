@@ -49,7 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
@@ -62,7 +62,7 @@ import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
@@ -107,9 +107,9 @@ internal fun SettingsLyricsSection(
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Outlined.Subtitles,
-            title = stringResource(R.string.settings_lyrics_offset),
-            subtitleCollapsed = stringResource(R.string.settings_lyrics_offset_expand),
-            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            title = stringResource(CoreCommonR.string.settings_lyrics_offset),
+            subtitleCollapsed = stringResource(CoreCommonR.string.settings_lyrics_offset_expand),
+            subtitleExpanded = stringResource(CoreCommonR.string.settings_login_platforms_collapse),
             expanded = expanded,
             onToggle = { onExpandedChange(!expanded) },
             arrowRotation = arrowRotation
@@ -131,8 +131,8 @@ internal fun SettingsLyricsSection(
                 highlightPulse = highlightPulse,
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_lyrics_floating_section),
-                    description = stringResource(R.string.settings_lyrics_floating_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_lyrics_floating_section),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_floating_section_desc)
                 )
                 SettingsFloatingLyricsSection(
                     preferences = floatingLyricsPreferences,
@@ -148,8 +148,8 @@ internal fun SettingsLyricsSection(
                 highlightPulse = highlightPulse,
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_lyric_source),
-                    description = stringResource(R.string.settings_lyric_source_desc)
+                    title = stringResource(CoreCommonR.string.settings_lyric_source),
+                    description = stringResource(CoreCommonR.string.settings_lyric_source_desc)
                 )
                 SettingsLyricSourceSection(
                     repository = settingsRepository,
@@ -164,8 +164,8 @@ internal fun SettingsLyricsSection(
                 highlightPulse = highlightPulse,
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_lyrics_source_section),
-                    description = stringResource(R.string.settings_lyrics_source_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_lyrics_source_section),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_source_section_desc)
                 )
                 AutoSettingsSwitchItems(
                     repository = autoSettingsRepository,
@@ -188,16 +188,16 @@ internal fun SettingsLyricsSection(
                 highlightPulse = highlightPulse,
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_lyrics_offset_section),
-                    description = stringResource(R.string.settings_lyrics_offset_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_section),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_section_desc)
                 )
                 TextButton(onClick = onResetAllLyricDefaultOffsets) {
-                    Text(stringResource(R.string.settings_lyrics_offset_reset_all))
+                    Text(stringResource(CoreCommonR.string.settings_lyrics_offset_reset_all))
                 }
                 LyricsOffsetSliderListItem(
                     targetId = "setting:cloud_music_lyric_default_offset_ms",
-                    title = stringResource(R.string.settings_lyrics_offset_cloud_music),
-                    description = stringResource(R.string.settings_lyrics_offset_cloud_music_desc),
+                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_cloud_music),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_cloud_music_desc),
                     offsetMs = cloudMusicLyricDefaultOffsetMs,
                     defaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
                     onOffsetChange = onCloudMusicLyricDefaultOffsetMsChange,
@@ -208,8 +208,8 @@ internal fun SettingsLyricsSection(
                 Spacer(Modifier.height(4.dp))
                 LyricsOffsetSliderListItem(
                     targetId = "setting:qq_music_lyric_default_offset_ms",
-                    title = stringResource(R.string.settings_lyrics_offset_qq_music),
-                    description = stringResource(R.string.settings_lyrics_offset_qq_music_desc),
+                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_qq_music),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_qq_music_desc),
                     offsetMs = qqMusicLyricDefaultOffsetMs,
                     defaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
                     onOffsetChange = onQqMusicLyricDefaultOffsetMsChange,
@@ -220,8 +220,8 @@ internal fun SettingsLyricsSection(
                 Spacer(Modifier.height(4.dp))
                 LyricsOffsetSliderListItem(
                     targetId = "setting:kugou_lyric_default_offset_ms",
-                    title = stringResource(R.string.settings_lyrics_offset_kugou),
-                    description = stringResource(R.string.settings_lyrics_offset_kugou_desc),
+                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_kugou),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_kugou_desc),
                     offsetMs = kugouLyricDefaultOffsetMs,
                     defaultOffsetMs = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
                     onOffsetChange = onKugouLyricDefaultOffsetMsChange,
@@ -232,8 +232,8 @@ internal fun SettingsLyricsSection(
                 Spacer(Modifier.height(4.dp))
                 LyricsOffsetSliderListItem(
                     targetId = "setting:lrclib_lyric_default_offset_ms",
-                    title = stringResource(R.string.settings_lyrics_offset_lrclib),
-                    description = stringResource(R.string.settings_lyrics_offset_lrclib_desc),
+                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_lrclib),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_lrclib_desc),
                     offsetMs = lrclibLyricDefaultOffsetMs,
                     defaultOffsetMs = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
                     onOffsetChange = onLrclibLyricDefaultOffsetMsChange,
@@ -244,8 +244,8 @@ internal fun SettingsLyricsSection(
                 Spacer(Modifier.height(4.dp))
                 LyricsOffsetSliderListItem(
                     targetId = "setting:amll_ttml_lyric_default_offset_ms",
-                    title = stringResource(R.string.settings_lyrics_offset_amll_ttml),
-                    description = stringResource(R.string.settings_lyrics_offset_amll_ttml_desc),
+                    title = stringResource(CoreCommonR.string.settings_lyrics_offset_amll_ttml),
+                    description = stringResource(CoreCommonR.string.settings_lyrics_offset_amll_ttml_desc),
                     offsetMs = amllTtmlLyricDefaultOffsetMs,
                     defaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
                     onOffsetChange = onAmllTtmlLyricDefaultOffsetMsChange,
@@ -328,7 +328,7 @@ private fun LyricsOffsetSliderListItem(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = stringResource(
-                        R.string.settings_lyrics_offset_value,
+                        CoreCommonR.string.settings_lyrics_offset_value,
                         formatLyricOffsetValue(pendingOffset)
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -341,7 +341,7 @@ private fun LyricsOffsetSliderListItem(
                         onOffsetChange(defaultOffsetMs)
                     }
                 ) {
-                    Text(stringResource(R.string.settings_lyrics_offset_reset))
+                    Text(stringResource(CoreCommonR.string.settings_lyrics_offset_reset))
                 }
                 Spacer(Modifier.height(4.dp))
                 MiuixSettingsSlider(

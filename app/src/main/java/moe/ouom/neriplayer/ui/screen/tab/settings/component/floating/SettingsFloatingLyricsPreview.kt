@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.lyrics.resolveFloatingLyricsEffectAlpha
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_RIGHT
@@ -79,7 +79,7 @@ internal fun FloatingLyricsPreview(
             .padding(16.dp)
     ) {
         Text(
-            text = stringResource(R.string.settings_floating_lyrics_preview_title),
+            text = stringResource(CoreCommonR.string.settings_floating_lyrics_preview_title),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -152,7 +152,7 @@ internal fun FloatingLyricsPreview(
                     }
                 ) {
                     FloatingPreviewText(
-                        text = stringResource(R.string.settings_floating_lyrics_preview_line),
+                        text = stringResource(CoreCommonR.string.settings_floating_lyrics_preview_line),
                         textColor = textColor.copy(alpha = preferences.lyricAlpha),
                         effectColor = effectColor.copy(
                             alpha = resolveFloatingLyricsEffectAlpha(preferences.lyricAlpha)
@@ -165,7 +165,7 @@ internal fun FloatingLyricsPreview(
                     )
                     if (preferences.showTranslation) {
                         FloatingPreviewText(
-                            text = stringResource(R.string.settings_floating_lyrics_preview_translation),
+                            text = stringResource(CoreCommonR.string.settings_floating_lyrics_preview_translation),
                             textColor = textColor.copy(alpha = preferences.translationAlpha),
                             effectColor = effectColor.copy(
                                 alpha = resolveFloatingLyricsEffectAlpha(

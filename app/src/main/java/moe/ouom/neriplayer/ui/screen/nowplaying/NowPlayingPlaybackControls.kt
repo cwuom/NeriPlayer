@@ -42,7 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
@@ -293,7 +293,7 @@ fun NowPlayingQualityOptionsDialog(
                         trailingContent = {
                             if (option.key == selectedKey) {
                                 Text(
-                                    text = stringResource(R.string.common_selected),
+                                    text = stringResource(CoreCommonR.string.common_selected),
                                     color = MaterialTheme.colorScheme.primary,
                                     style = MaterialTheme.typography.labelMedium
                                 )
@@ -311,7 +311,7 @@ fun NowPlayingQualityOptionsDialog(
         },
         confirmButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
+                Text(stringResource(CoreCommonR.string.action_close))
             }
         }
     )

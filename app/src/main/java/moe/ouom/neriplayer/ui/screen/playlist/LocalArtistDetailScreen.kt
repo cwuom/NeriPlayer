@@ -73,7 +73,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -147,7 +147,7 @@ private fun LocalArtistDetailLoadingScreen(
                         HapticIconButton(onClick = onBack) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.action_back)
+                                contentDescription = stringResource(CoreCommonR.string.action_back)
                             )
                         }
                     },
@@ -184,7 +184,7 @@ fun LocalArtistDetailScreen(
     val playlists by repo.playlists.collectAsState()
     val localPlaylistsReady by repo.initializationReadyFlow.collectAsState()
     val artistKey = remember(artistName) { localArtistStableKey(artistName) }
-    val unknownArtist = stringResource(R.string.music_unknown_artist)
+    val unknownArtist = stringResource(CoreCommonR.string.music_unknown_artist)
     val artistSnapshot by produceState<LocalArtistDetailSnapshot?>(
         initialValue = null,
         key1 = playlists,
@@ -332,7 +332,7 @@ fun LocalArtistDetailScreen(
                             HapticIconButton(onClick = onBack) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(R.string.action_back)
+                                    contentDescription = stringResource(CoreCommonR.string.action_back)
                                 )
                             }
                         },
@@ -349,14 +349,14 @@ fun LocalArtistDetailScreen(
                             ) {
                                 Icon(
                                     Icons.Filled.Search,
-                                    contentDescription = stringResource(R.string.cd_search_songs)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_search_songs)
                                 )
                             }
                             if (hasDownloadManagerEntry) {
                                 HapticIconButton(onClick = { showDownloadManager = true }) {
                                     Icon(
                                         Icons.Outlined.Download,
-                                        contentDescription = stringResource(R.string.cd_download_manager),
+                                        contentDescription = stringResource(CoreCommonR.string.cd_download_manager),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
@@ -371,7 +371,7 @@ fun LocalArtistDetailScreen(
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                    contentDescription = stringResource(R.string.cd_play_all)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_play_all)
                                 )
                             }
                         },
@@ -391,7 +391,7 @@ fun LocalArtistDetailScreen(
                         title = {
                             Text(
                                 pluralStringResource(
-                                    R.plurals.common_selected_count,
+                                    CoreCommonR.plurals.common_selected_count,
                                     selectedKeys.size,
                                     selectedKeys.size
                                 )
@@ -401,7 +401,7 @@ fun LocalArtistDetailScreen(
                             HapticIconButton(onClick = { exitSelectionMode() }) {
                                 Icon(
                                     Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.cd_exit_select)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_exit_select)
                                 )
                             }
                         },
@@ -421,9 +421,9 @@ fun LocalArtistDetailScreen(
                                         Icons.Filled.CheckBoxOutlineBlank
                                     },
                                     contentDescription = if (allSelected) {
-                                        stringResource(R.string.action_deselect_all)
+                                        stringResource(CoreCommonR.string.action_deselect_all)
                                     } else {
-                                        stringResource(R.string.action_select_all)
+                                        stringResource(CoreCommonR.string.action_select_all)
                                     }
                                 )
                             }
@@ -437,7 +437,7 @@ fun LocalArtistDetailScreen(
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                    contentDescription = stringResource(R.string.cd_export_playlist)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
                                 )
                             }
                             HapticIconButton(
@@ -456,7 +456,7 @@ fun LocalArtistDetailScreen(
                             ) {
                                 Icon(
                                     Icons.Outlined.Download,
-                                    contentDescription = stringResource(R.string.cd_download_selected)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
                                 )
                             }
                         },
@@ -477,7 +477,7 @@ fun LocalArtistDetailScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.local_artist_detail_empty),
+                        text = stringResource(CoreCommonR.string.local_artist_detail_empty),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -497,7 +497,7 @@ fun LocalArtistDetailScreen(
                         PlaylistModernDockedSearchField(
                             query = searchQuery,
                             onQueryChange = { searchQuery = it },
-                            placeholder = stringResource(R.string.search_artist_songs),
+                            placeholder = stringResource(CoreCommonR.string.search_artist_songs),
                             focusRequester = searchFocusRequester
                         )
                     }
@@ -532,7 +532,7 @@ fun LocalArtistDetailScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = stringResource(R.string.search_no_match),
+                                    text = stringResource(CoreCommonR.string.search_no_match),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -576,7 +576,7 @@ fun LocalArtistDetailScreen(
 
         if (showExportSheet) {
             PlaylistExportSheet(
-                title = stringResource(R.string.local_playlist_export_to),
+                title = stringResource(CoreCommonR.string.local_playlist_export_to),
                 playlists = playlists.filterNot {
                     LocalFilesPlaylist.isSystemPlaylist(it, context)
                 },
@@ -698,7 +698,7 @@ private fun LocalArtistDetailHeader(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = stringResource(
-                        R.string.local_artist_total_duration,
+                        CoreCommonR.string.local_artist_total_duration,
                         formatTotalDuration(context, durationMs),
                         songCount
                     ),

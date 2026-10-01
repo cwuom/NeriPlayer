@@ -38,7 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -181,7 +181,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val mid = biliCookieRepo.getCookiesOnce()["DedeUserID"]?.toLongOrNull() ?: 0L
                 if (mid == 0L) {
-                    _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(R.string.error_get_user_id))
+                    _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(CoreCommonR.string.error_get_user_id))
                     return@launch
                 }
                 val mapped = withContext(Dispatchers.IO) {
@@ -260,7 +260,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 .onFailure { error ->
                     NPLogger.e(
                         "LibraryViewModel-Bili",
-                        getApplication<Application>().getString(R.string.music_get_detail_failed),
+                        getApplication<Application>().getString(CoreCommonR.string.music_get_detail_failed),
                         error
                     )
                 }

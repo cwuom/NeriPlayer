@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.SettingsHomeCardCopy
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.effectiveSettingsStartDestination
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.isSettingsHomeStartAvailable
@@ -36,23 +36,23 @@ class SettingsHomeStartPresentationTest {
 
         assertEquals(
             SettingsHomeCardCopy(
-                R.string.settings_home_card_netease_trending,
-                R.string.settings_home_card_netease_radar,
-                R.string.settings_home_card_netease_recommended,
-                R.string.settings_home_card_netease_trending_desc,
-                R.string.settings_home_card_netease_radar_desc,
-                R.string.settings_home_card_netease_recommended_desc
+                CoreCommonR.string.settings_home_card_netease_trending,
+                CoreCommonR.string.settings_home_card_netease_radar,
+                CoreCommonR.string.settings_home_card_netease_recommended,
+                CoreCommonR.string.settings_home_card_netease_trending_desc,
+                CoreCommonR.string.settings_home_card_netease_radar_desc,
+                CoreCommonR.string.settings_home_card_netease_recommended_desc
             ),
             domestic
         )
         assertEquals(
             SettingsHomeCardCopy(
-                R.string.home_ytmusic_guess_you_like,
-                R.string.home_ytmusic_daily_discover,
-                R.string.home_ytmusic_more_recommendations,
-                R.string.settings_home_card_ytmusic_guess_you_like_desc,
-                R.string.settings_home_card_ytmusic_daily_discover_desc,
-                R.string.settings_home_card_ytmusic_more_recommendations_desc
+                CoreCommonR.string.home_ytmusic_guess_you_like,
+                CoreCommonR.string.home_ytmusic_daily_discover,
+                CoreCommonR.string.home_ytmusic_more_recommendations,
+                CoreCommonR.string.settings_home_card_ytmusic_guess_you_like_desc,
+                CoreCommonR.string.settings_home_card_ytmusic_daily_discover_desc,
+                CoreCommonR.string.settings_home_card_ytmusic_more_recommendations_desc
             ),
             international
         )
@@ -60,10 +60,10 @@ class SettingsHomeStartPresentationTest {
 
     @Test
     fun `start destination labels keep the original fallback`() {
-        assertEquals(R.string.nav_explore, settingsStartDestinationLabelRes("explore"))
-        assertEquals(R.string.nav_library, settingsStartDestinationLabelRes("library"))
-        assertEquals(R.string.nav_settings, settingsStartDestinationLabelRes("settings"))
-        assertEquals(R.string.nav_home, settingsStartDestinationLabelRes("home"))
-        assertEquals(R.string.nav_home, settingsStartDestinationLabelRes("unknown"))
+        assertEquals(CoreCommonR.string.nav_explore, settingsStartDestinationLabelRes("explore"))
+        assertEquals(CoreCommonR.string.nav_library, settingsStartDestinationLabelRes("library"))
+        assertEquals(CoreCommonR.string.nav_settings, settingsStartDestinationLabelRes("settings"))
+        assertEquals(CoreCommonR.string.nav_home, settingsStartDestinationLabelRes("home"))
+        assertEquals(CoreCommonR.string.nav_home, settingsStartDestinationLabelRes("unknown"))
     }
 }

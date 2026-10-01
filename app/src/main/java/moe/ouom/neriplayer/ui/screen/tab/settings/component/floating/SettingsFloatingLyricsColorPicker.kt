@@ -26,7 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 
 private data class FloatingLyricsColorOption(
     val hex: String,
@@ -35,16 +35,16 @@ private data class FloatingLyricsColorOption(
 )
 
 private val FloatingLyricsColorOptions = listOf(
-    FloatingLyricsColorOption("FFFFFF", R.string.settings_floating_lyrics_color_white, Color(0xFFFFFFFF)),
-    FloatingLyricsColorOption("000000", R.string.settings_floating_lyrics_color_black, Color(0xFF000000)),
-    FloatingLyricsColorOption("FF5A64", R.string.settings_floating_lyrics_color_red, Color(0xFFFF5A64)),
-    FloatingLyricsColorOption("FF9F1C", R.string.settings_floating_lyrics_color_orange, Color(0xFFFF9F1C)),
-    FloatingLyricsColorOption("FFE566", R.string.settings_floating_lyrics_color_yellow, Color(0xFFFFE566)),
-    FloatingLyricsColorOption("57C46A", R.string.settings_floating_lyrics_color_green, Color(0xFF57C46A)),
-    FloatingLyricsColorOption("24C6DC", R.string.settings_floating_lyrics_color_cyan, Color(0xFF24C6DC)),
-    FloatingLyricsColorOption("4C9BFF", R.string.settings_floating_lyrics_color_blue, Color(0xFF4C9BFF)),
-    FloatingLyricsColorOption("A66CFF", R.string.settings_floating_lyrics_color_purple, Color(0xFFA66CFF)),
-    FloatingLyricsColorOption("FF6CA8", R.string.settings_floating_lyrics_color_pink, Color(0xFFFF6CA8))
+    FloatingLyricsColorOption("FFFFFF", CoreCommonR.string.settings_floating_lyrics_color_white, Color(0xFFFFFFFF)),
+    FloatingLyricsColorOption("000000", CoreCommonR.string.settings_floating_lyrics_color_black, Color(0xFF000000)),
+    FloatingLyricsColorOption("FF5A64", CoreCommonR.string.settings_floating_lyrics_color_red, Color(0xFFFF5A64)),
+    FloatingLyricsColorOption("FF9F1C", CoreCommonR.string.settings_floating_lyrics_color_orange, Color(0xFFFF9F1C)),
+    FloatingLyricsColorOption("FFE566", CoreCommonR.string.settings_floating_lyrics_color_yellow, Color(0xFFFFE566)),
+    FloatingLyricsColorOption("57C46A", CoreCommonR.string.settings_floating_lyrics_color_green, Color(0xFF57C46A)),
+    FloatingLyricsColorOption("24C6DC", CoreCommonR.string.settings_floating_lyrics_color_cyan, Color(0xFF24C6DC)),
+    FloatingLyricsColorOption("4C9BFF", CoreCommonR.string.settings_floating_lyrics_color_blue, Color(0xFF4C9BFF)),
+    FloatingLyricsColorOption("A66CFF", CoreCommonR.string.settings_floating_lyrics_color_purple, Color(0xFFA66CFF)),
+    FloatingLyricsColorOption("FF6CA8", CoreCommonR.string.settings_floating_lyrics_color_pink, Color(0xFFFF6CA8))
 )
 
 @Composable

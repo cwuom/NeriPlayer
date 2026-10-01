@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentSort
@@ -90,12 +90,12 @@ class CommentSheetTest {
             }
         }
         composeRule.onNodeWithText("#1").assertExists()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.comment_sort)).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.comment_sort_newest)).performClick()
+        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_sort)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_sort_newest)).performClick()
         composeRule.runOnIdle { assertEquals(CommentSort.NEWEST, state.value.sort) }
-        composeRule.onNodeWithContentDescription(context.getString(R.string.comment_like)).assertIsEnabled().performClick()
+        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_like)).assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals("1", likedId) }
-        composeRule.onNodeWithContentDescription(context.getString(R.string.comment_like)).assertIsNotEnabled()
+        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_like)).assertIsNotEnabled()
     }
 
     @Test fun lightLayoutAndScrolledList() = renderPreview(dark = false, fontScale = 1f)
@@ -153,9 +153,9 @@ class CommentSheetTest {
         waitForKeyboardVisibility(false)
         composeRule.onNodeWithText(state.value.comments.single().content).performClick()
         composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
-        composeRule.onNodeWithText(context.getString(R.string.comment_copy)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_copy)).performClick()
         composeRule.onNodeWithText(state.value.comments.single().content).performTouchInput { longClick() }
-        composeRule.onNodeWithText(context.getString(R.string.comment_reply)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply)).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             composeRule.onNodeWithTag("comment-draft").fetchSemanticsNode()
                 .config[SemanticsProperties.Focused]
@@ -190,18 +190,18 @@ class CommentSheetTest {
         }
         composeRule.onNodeWithText("被回复的内容", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
-        composeRule.onNodeWithText(context.getString(R.string.comment_copy)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_copy)).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.primaryClip?.getItemAt(0)?.text?.toString() == child.content
         }
         composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
-        composeRule.onNodeWithText(context.getString(R.string.comment_reply)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply)).performClick()
         composeRule.runOnIdle {
             assertEquals("2", state.value.replyTarget?.commentId)
             assertEquals("1", state.value.replyTarget?.rootId)
         }
-        composeRule.onNodeWithText(context.getString(R.string.comment_reply_to, child.username)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply_to, child.username)).assertIsDisplayed()
     }
 
     @Test
@@ -221,9 +221,9 @@ class CommentSheetTest {
                 )
             }
         }
-        composeRule.onNodeWithText(context.getString(R.string.comment_reply_count_format, "6")).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply_count_format, "6")).performClick()
         composeRule.onNodeWithText("完整回复", useUnmergedTree = true).assertExists()
-        composeRule.onNodeWithText(context.getString(R.string.comment_collapse_replies)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_collapse_replies)).performClick()
         composeRule.onNodeWithText("完整回复").assertDoesNotExist()
         composeRule.onNodeWithText("#1").assertIsDisplayed()
         composeRule.runOnIdle {
@@ -232,8 +232,8 @@ class CommentSheetTest {
                 replyThreads = mapOf("1" to CommentReplyState(expanded = false, hasMore = false))
             )
         }
-        composeRule.onNodeWithText(context.getString(R.string.comment_reply_count_format, "0")).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.comment_empty_replies)).assertExists()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply_count_format, "0")).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_empty_replies)).assertExists()
     }
 
     @Test
@@ -312,11 +312,11 @@ class CommentSheetTest {
             }
         }
         val bounds = composeRule.onNodeWithTag("comment-sheet-content").fetchSemanticsNode().boundsInRoot
-        composeRule.onNodeWithContentDescription(context.getString(R.string.comment_sort)).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.comment_sort_newest)).performClick()
+        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_sort)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_sort_newest)).performClick()
         composeRule.onNodeWithText("#1").assertIsDisplayed()
         composeRule.onNodeWithText(sampleState().comments.single().content).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.comment_sort_loading)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.comment_sort_loading)).assertIsDisplayed()
         assertEquals(bounds, composeRule.onNodeWithTag("comment-sheet-content").fetchSemanticsNode().boundsInRoot)
         composeRule.runOnIdle { state.value = state.value.copy(pendingSort = null, error = CommentError.NETWORK) }
         composeRule.onNodeWithText("#1").assertIsDisplayed()
@@ -324,7 +324,7 @@ class CommentSheetTest {
         composeRule.runOnIdle {
             state.value = state.value.copy(status = CommentListStatus.EMPTY, comments = emptyList(), error = null)
         }
-        composeRule.onNodeWithText(context.getString(R.string.comment_empty)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_empty)).assertIsDisplayed()
         assertEquals(bounds, composeRule.onNodeWithTag("comment-sheet-content").fetchSemanticsNode().boundsInRoot)
     }
 

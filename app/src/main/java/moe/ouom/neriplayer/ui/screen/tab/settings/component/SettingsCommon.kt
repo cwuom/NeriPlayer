@@ -79,7 +79,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -119,9 +119,9 @@ internal fun ExpandableHeader(
             Icon(
                 imageVector = Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) {
-                    stringResource(R.string.action_collapse)
+                    stringResource(CoreCommonR.string.action_collapse)
                 } else {
-                    stringResource(R.string.action_expand)
+                    stringResource(CoreCommonR.string.action_expand)
                 },
                 modifier = Modifier.rotate(arrowRotation.takeIf { it != 0f } ?: if (expanded) 180f else 0f),
                 tint = MaterialTheme.colorScheme.onSurface
@@ -183,12 +183,12 @@ internal fun ThemeSeedListItem(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ColorLens,
-                contentDescription = stringResource(R.string.settings_theme_color),
+                contentDescription = stringResource(CoreCommonR.string.settings_theme_color),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_theme_color)) },
-        supportingContent = { Text(stringResource(R.string.settings_theme_color_desc)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_theme_color)) },
+        supportingContent = { Text(stringResource(CoreCommonR.string.settings_theme_color_desc)) },
         trailingContent = {
             Box(
                 modifier = Modifier
@@ -209,14 +209,14 @@ internal fun UiScaleListItem(currentScale: Float, onClick: () -> Unit) {
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ZoomInMap,
-                contentDescription = stringResource(R.string.settings_ui_scale),
+                contentDescription = stringResource(CoreCommonR.string.settings_ui_scale),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_ui_scale_dpi)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_ui_scale_dpi)) },
         supportingContent = {
-            Text(stringResource(R.string.settings_ui_scale_current, "%.2f".format(currentScale)))
+            Text(stringResource(CoreCommonR.string.settings_ui_scale_current, "%.2f".format(currentScale)))
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
@@ -231,9 +231,9 @@ internal fun ThemeModeActionButton(
     var revealStartRadiusPx by remember { mutableFloatStateOf(18f) }
     val latestOnToggleRequest = rememberUpdatedState(onToggleRequest)
     val contentDescription = if (isDarkTheme) {
-        stringResource(R.string.settings_theme_toggle_light)
+        stringResource(CoreCommonR.string.settings_theme_toggle_light)
     } else {
-        stringResource(R.string.settings_theme_toggle_dark)
+        stringResource(CoreCommonR.string.settings_theme_toggle_dark)
     }
     val iconProgress by animateFloatAsState(
         targetValue = if (isDarkTheme) 1f else 0f,
@@ -341,7 +341,7 @@ internal fun InlineMessage(text: String, onClose: () -> Unit) {
             HapticIconButton(onClick = onClose) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = stringResource(R.string.action_close)
+                    contentDescription = stringResource(CoreCommonR.string.action_close)
                 )
             }
         }

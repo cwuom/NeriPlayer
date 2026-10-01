@@ -47,7 +47,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
@@ -109,8 +109,8 @@ private fun EditSongSearchHeader(onDismiss: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(stringResource(R.string.music_select_result), style = MaterialTheme.typography.titleMedium)
-        HapticTextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        Text(stringResource(CoreCommonR.string.music_select_result), style = MaterialTheme.typography.titleMedium)
+        HapticTextButton(onClick = onDismiss) { Text(stringResource(CoreCommonR.string.action_cancel)) }
     }
 }
 
@@ -124,13 +124,13 @@ private fun EditSongSearchInput(
     OutlinedTextField(
         value = state.keyword,
         onValueChange = onKeywordChange,
-        label = { Text(stringResource(R.string.music_auto_fill_custom_title)) },
-        placeholder = { Text(stringResource(R.string.music_auto_fill_custom_title_hint)) },
+        label = { Text(stringResource(CoreCommonR.string.music_auto_fill_custom_title)) },
+        placeholder = { Text(stringResource(CoreCommonR.string.music_auto_fill_custom_title_hint)) },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
         trailingIcon = {
             HapticIconButton(onClick = onSearch, enabled = searchEnabled) {
-                Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search))
+                Icon(Icons.Filled.Search, contentDescription = stringResource(CoreCommonR.string.cd_search))
             }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -143,15 +143,15 @@ private fun EditSongSearchInput(
 private fun EditSongSearchAvailabilityMessage(searchEnabled: Boolean) {
     if (searchEnabled) return
     Text(
-        text = stringResource(R.string.netease_login_required_metadata),
+        text = stringResource(CoreCommonR.string.netease_login_required_metadata),
         color = MaterialTheme.colorScheme.error,
         style = MaterialTheme.typography.bodySmall
     )
 }
 
 internal fun musicPlatformLabelResource(platform: MusicPlatform): Int = when (platform) {
-    MusicPlatform.CLOUD_MUSIC -> R.string.platform_netease_short
-    MusicPlatform.QQ_MUSIC -> R.string.settings_qq_music
+    MusicPlatform.CLOUD_MUSIC -> CoreCommonR.string.platform_netease_short
+    MusicPlatform.QQ_MUSIC -> CoreCommonR.string.settings_qq_music
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -198,7 +198,7 @@ private fun EditSongSearchResults(
                 }
             }
             else -> Text(
-                text = state.error ?: stringResource(R.string.nowplaying_no_search_result),
+                text = state.error ?: stringResource(CoreCommonR.string.nowplaying_no_search_result),
                 color = if (state.error != null) MaterialTheme.colorScheme.error else LocalContentColor.current
             )
         }

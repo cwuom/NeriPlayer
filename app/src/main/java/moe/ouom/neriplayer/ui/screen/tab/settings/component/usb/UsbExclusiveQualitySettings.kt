@@ -31,7 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
 import moe.ouom.neriplayer.data.model.settings.usb.MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
@@ -80,105 +80,105 @@ internal fun UsbExclusiveQualityContent(
     val unsupportedPolicy = preferences.unsupportedFormatPolicy
 
     UsbQualityChoiceItem(
-        title = stringResource(R.string.settings_usb_exclusive_sample_rate_policy),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_sample_rate_policy),
         value = sampleRateLabel(sampleRateMode),
         detail = sampleRateDescription(sampleRateMode),
         onClick = { activeDialog = UsbQualityDialog.SampleRate }
     )
     SettingsDivider()
     UsbQualityChoiceItem(
-        title = stringResource(R.string.settings_usb_exclusive_bit_depth_policy),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_bit_depth_policy),
         value = bitDepthLabel(bitDepthMode),
         detail = bitDepthDescription(bitDepthMode),
         onClick = { activeDialog = UsbQualityDialog.BitDepth }
     )
     SettingsDivider()
     UsbCompatibilitySwitchItem(
-        title = stringResource(R.string.settings_usb_exclusive_bit_perfect),
-        detail = stringResource(R.string.settings_usb_exclusive_bit_perfect_desc),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_bit_perfect),
+        detail = stringResource(CoreCommonR.string.settings_usb_exclusive_bit_perfect_desc),
         checked = preferences.bitPerfect,
         onCheckedChange = onBitPerfectChange
     )
     SettingsDivider()
     UsbQualityChoiceItem(
-        title = stringResource(R.string.settings_usb_exclusive_buffer_profile),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_buffer_profile),
         value = bufferProfileLabel(bufferProfile),
         detail = bufferProfileDescription(bufferProfile),
         onClick = { activeDialog = UsbQualityDialog.BufferProfile }
     )
     SettingsDivider()
     UsbQualityChoiceItem(
-        title = stringResource(R.string.settings_usb_exclusive_unsupported_policy),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_unsupported_policy),
         value = unsupportedPolicyLabel(unsupportedPolicy),
         detail = unsupportedPolicyDescription(unsupportedPolicy),
         onClick = { activeDialog = UsbQualityDialog.UnsupportedPolicy }
     )
     SettingsDivider()
     UsbCompatibilitySwitchItem(
-        title = stringResource(R.string.settings_usb_exclusive_bit_depth_compatibility),
-        detail = stringResource(R.string.settings_usb_exclusive_bit_depth_compatibility_desc),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_bit_depth_compatibility),
+        detail = stringResource(CoreCommonR.string.settings_usb_exclusive_bit_depth_compatibility_desc),
         checked = preferences.bitDepthCompatibilityEnabled,
         onCheckedChange = onBitDepthCompatibilityChange
     )
     SettingsDivider()
     UsbCompatibilitySwitchItem(
-        title = stringResource(R.string.settings_usb_exclusive_sample_rate_compatibility),
-        detail = stringResource(R.string.settings_usb_exclusive_sample_rate_compatibility_desc),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_sample_rate_compatibility),
+        detail = stringResource(CoreCommonR.string.settings_usb_exclusive_sample_rate_compatibility_desc),
         checked = preferences.sampleRateCompatibilityEnabled,
         onCheckedChange = onSampleRateCompatibilityChange
     )
     SettingsDivider()
     UsbCompatibilitySwitchItem(
-        title = stringResource(R.string.settings_usb_exclusive_channel_compatibility),
-        detail = stringResource(R.string.settings_usb_exclusive_channel_compatibility_desc),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_channel_compatibility),
+        detail = stringResource(CoreCommonR.string.settings_usb_exclusive_channel_compatibility_desc),
         checked = preferences.channelCompatibilityEnabled,
         onCheckedChange = onChannelCompatibilityChange
     )
     SettingsDivider()
     UsbNumericSliderItem(
-        title = stringResource(R.string.settings_usb_exclusive_foreground_buffer),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_foreground_buffer),
         value = preferences.foregroundBufferMs,
         minValue = MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
         maxValue = MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
         step = USB_EXCLUSIVE_BUFFER_STEP_MS,
         normalizeValue = ::normalizeUsbExclusiveForegroundBufferMs,
         valueLabel = { value ->
-            stringResource(R.string.settings_usb_exclusive_buffer_ms, value)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_buffer_ms, value)
         },
         onValueChange = onForegroundBufferMsChange
     )
     SettingsDivider()
     UsbNumericSliderItem(
-        title = stringResource(R.string.settings_usb_exclusive_background_buffer),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_background_buffer),
         value = preferences.backgroundBufferMs,
         minValue = MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
         maxValue = MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
         step = USB_EXCLUSIVE_BUFFER_STEP_MS,
         normalizeValue = ::normalizeUsbExclusiveBackgroundBufferMs,
         valueLabel = { value ->
-            stringResource(R.string.settings_usb_exclusive_buffer_ms, value)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_buffer_ms, value)
         },
         onValueChange = onBackgroundBufferMsChange
     )
     SettingsDivider()
     UsbNumericSliderItem(
-        title = stringResource(R.string.settings_usb_exclusive_volume_risk_threshold),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_volume_risk_threshold),
         value = preferences.volumeRiskThresholdDbfs,
         minValue = MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
         maxValue = MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
         step = USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_STEP_DB,
         normalizeValue = ::normalizeUsbExclusiveVolumeRiskThresholdDbfs,
         valueLabel = { value ->
-            stringResource(R.string.settings_usb_exclusive_volume_risk_threshold_dbfs, value)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_volume_risk_threshold_dbfs, value)
         },
-        detail = stringResource(R.string.settings_usb_exclusive_volume_risk_threshold_desc),
+        detail = stringResource(CoreCommonR.string.settings_usb_exclusive_volume_risk_threshold_desc),
         onValueChange = onVolumeRiskThresholdDbfsChange
     )
     UsbDeviceCapabilities(snapshot)
 
     when (activeDialog) {
         UsbQualityDialog.SampleRate -> UsbPreferenceChoiceDialog(
-            title = stringResource(R.string.settings_usb_exclusive_choose_sample_rate),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_choose_sample_rate),
             options = UsbExclusiveSampleRateMode.entries,
             selected = sampleRateMode,
             optionLabel = { sampleRateLabel(it) },
@@ -191,7 +191,7 @@ internal fun UsbExclusiveQualityContent(
             onDismiss = { activeDialog = null }
         )
         UsbQualityDialog.BitDepth -> UsbPreferenceChoiceDialog(
-            title = stringResource(R.string.settings_usb_exclusive_choose_bit_depth),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_choose_bit_depth),
             options = UsbExclusiveBitDepthMode.entries,
             selected = bitDepthMode,
             optionLabel = { bitDepthLabel(it) },
@@ -204,7 +204,7 @@ internal fun UsbExclusiveQualityContent(
             onDismiss = { activeDialog = null }
         )
         UsbQualityDialog.BufferProfile -> UsbPreferenceChoiceDialog(
-            title = stringResource(R.string.settings_usb_exclusive_choose_buffer_profile),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_choose_buffer_profile),
             options = UsbExclusiveBufferProfile.entries,
             selected = bufferProfile,
             optionLabel = { bufferProfileLabel(it) },
@@ -216,7 +216,7 @@ internal fun UsbExclusiveQualityContent(
             onDismiss = { activeDialog = null }
         )
         UsbQualityDialog.UnsupportedPolicy -> UsbPreferenceChoiceDialog(
-            title = stringResource(R.string.settings_usb_exclusive_choose_unsupported_policy),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_choose_unsupported_policy),
             options = UsbExclusiveUnsupportedFormatPolicy.entries,
             selected = unsupportedPolicy,
             optionLabel = { unsupportedPolicyLabel(it) },
@@ -326,7 +326,7 @@ private fun showUnsupportedSampleRateWarning(
     AppFeedback.show(
         context = context,
         message = context.getString(
-            R.string.settings_usb_exclusive_sample_rate_not_supported,
+            CoreCommonR.string.settings_usb_exclusive_sample_rate_not_supported,
             requestedRate.formatSampleRate()
         ),
         duration = SnackbarDuration.Long
@@ -347,7 +347,7 @@ private fun showUnsupportedBitDepthWarning(
     AppFeedback.show(
         context = context,
         message = context.getString(
-            R.string.settings_usb_exclusive_bit_depth_not_supported,
+            CoreCommonR.string.settings_usb_exclusive_bit_depth_not_supported,
             requestedBitDepth
         ),
         duration = SnackbarDuration.Long
@@ -366,30 +366,30 @@ private fun bitDepthForAudioEncoding(encoding: Int): Int? {
 @Composable
 private fun UsbDeviceCapabilities(snapshot: UsbExclusiveDiagnosticsSnapshot) {
     val output = snapshot.selectedUsbOutput
-    val channelSuffix = stringResource(R.string.settings_usb_exclusive_channel_suffix)
+    val channelSuffix = stringResource(CoreCommonR.string.settings_usb_exclusive_channel_suffix)
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_device_sample_rates),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_device_sample_rates),
         value = output?.sampleRates
             ?.takeIf(List<Int>::isNotEmpty)
             ?.joinToString(separator = ", ") { it.formatSampleRate() }
-            ?: stringResource(R.string.settings_usb_exclusive_not_reported)
+            ?: stringResource(CoreCommonR.string.settings_usb_exclusive_not_reported)
     )
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_channel_capabilities),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_channel_capabilities),
         value = output?.channelCounts
             ?.takeIf(List<Int>::isNotEmpty)
             ?.joinToString(separator = ", ") { "$it $channelSuffix" }
-            ?: stringResource(R.string.settings_usb_exclusive_not_reported)
+            ?: stringResource(CoreCommonR.string.settings_usb_exclusive_not_reported)
     )
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_encoding_capabilities),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_encoding_capabilities),
         value = output?.encodings
             ?.takeIf(List<Int>::isNotEmpty)
             ?.joinToString(separator = ", ") { it.audioEncodingLabel() }
-            ?: stringResource(R.string.settings_usb_exclusive_not_reported)
+            ?: stringResource(CoreCommonR.string.settings_usb_exclusive_not_reported)
     )
 }
 
@@ -461,7 +461,7 @@ private fun <T> UsbPreferenceChoiceDialog(
         },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
+                Text(stringResource(CoreCommonR.string.action_close))
             }
         }
     )
@@ -470,17 +470,17 @@ private fun <T> UsbPreferenceChoiceDialog(
 @Composable
 private fun sampleRateLabel(mode: UsbExclusiveSampleRateMode): String {
     return mode.sampleRateHz?.formatSampleRate()
-        ?: stringResource(R.string.settings_usb_exclusive_sample_rate_follow_source)
+        ?: stringResource(CoreCommonR.string.settings_usb_exclusive_sample_rate_follow_source)
 }
 
 @Composable
 private fun sampleRateDescription(mode: UsbExclusiveSampleRateMode): String {
     val sampleRate = mode.sampleRateHz
     return if (sampleRate == null) {
-        stringResource(R.string.settings_usb_exclusive_sample_rate_follow_source_desc)
+        stringResource(CoreCommonR.string.settings_usb_exclusive_sample_rate_follow_source_desc)
     } else {
         stringResource(
-            R.string.settings_usb_exclusive_sample_rate_fixed_desc,
+            CoreCommonR.string.settings_usb_exclusive_sample_rate_fixed_desc,
             sampleRate.formatSampleRate()
         )
     }
@@ -489,15 +489,15 @@ private fun sampleRateDescription(mode: UsbExclusiveSampleRateMode): String {
 @Composable
 private fun bitDepthLabel(mode: UsbExclusiveBitDepthMode): String {
     return mode.bitDepth?.let {
-        stringResource(R.string.settings_usb_exclusive_bit_depth_fixed, it)
-    } ?: stringResource(R.string.settings_usb_exclusive_bit_depth_auto)
+        stringResource(CoreCommonR.string.settings_usb_exclusive_bit_depth_fixed, it)
+    } ?: stringResource(CoreCommonR.string.settings_usb_exclusive_bit_depth_auto)
 }
 
 @Composable
 private fun bitDepthDescription(mode: UsbExclusiveBitDepthMode): String {
     return mode.bitDepth?.let {
-        stringResource(R.string.settings_usb_exclusive_bit_depth_fixed_desc, it)
-    } ?: stringResource(R.string.settings_usb_exclusive_bit_depth_auto_desc)
+        stringResource(CoreCommonR.string.settings_usb_exclusive_bit_depth_fixed_desc, it)
+    } ?: stringResource(CoreCommonR.string.settings_usb_exclusive_bit_depth_auto_desc)
 }
 
 @Composable
@@ -505,11 +505,11 @@ private fun bufferProfileLabel(profile: UsbExclusiveBufferProfile): String {
     return stringResource(
         when (profile) {
             UsbExclusiveBufferProfile.LOW_LATENCY ->
-                R.string.settings_usb_exclusive_buffer_low_latency
+                CoreCommonR.string.settings_usb_exclusive_buffer_low_latency
             UsbExclusiveBufferProfile.BALANCED ->
-                R.string.settings_usb_exclusive_buffer_balanced
+                CoreCommonR.string.settings_usb_exclusive_buffer_balanced
             UsbExclusiveBufferProfile.STABLE ->
-                R.string.settings_usb_exclusive_buffer_stable
+                CoreCommonR.string.settings_usb_exclusive_buffer_stable
         }
     )
 }
@@ -519,11 +519,11 @@ private fun bufferProfileDescription(profile: UsbExclusiveBufferProfile): String
     return stringResource(
         when (profile) {
             UsbExclusiveBufferProfile.LOW_LATENCY ->
-                R.string.settings_usb_exclusive_buffer_low_latency_desc
+                CoreCommonR.string.settings_usb_exclusive_buffer_low_latency_desc
             UsbExclusiveBufferProfile.BALANCED ->
-                R.string.settings_usb_exclusive_buffer_balanced_desc
+                CoreCommonR.string.settings_usb_exclusive_buffer_balanced_desc
             UsbExclusiveBufferProfile.STABLE ->
-                R.string.settings_usb_exclusive_buffer_stable_desc
+                CoreCommonR.string.settings_usb_exclusive_buffer_stable_desc
         }
     )
 }
@@ -533,9 +533,9 @@ private fun unsupportedPolicyLabel(policy: UsbExclusiveUnsupportedFormatPolicy):
     return stringResource(
         when (policy) {
             UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK ->
-                R.string.settings_usb_exclusive_unsupported_system_fallback
+                CoreCommonR.string.settings_usb_exclusive_unsupported_system_fallback
             UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED ->
-                R.string.settings_usb_exclusive_unsupported_closest
+                CoreCommonR.string.settings_usb_exclusive_unsupported_closest
         }
     )
 }
@@ -545,9 +545,9 @@ private fun unsupportedPolicyDescription(policy: UsbExclusiveUnsupportedFormatPo
     return stringResource(
         when (policy) {
             UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK ->
-                R.string.settings_usb_exclusive_unsupported_system_fallback_desc
+                CoreCommonR.string.settings_usb_exclusive_unsupported_system_fallback_desc
             UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED ->
-                R.string.settings_usb_exclusive_unsupported_closest_desc
+                CoreCommonR.string.settings_usb_exclusive_unsupported_closest_desc
         }
     )
 }

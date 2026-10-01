@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.about
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
@@ -83,17 +84,17 @@ private fun SettingsAboutIntroItem() {
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Info,
-                contentDescription = stringResource(R.string.settings_about),
+                contentDescription = stringResource(CoreCommonR.string.settings_about),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
         headlineContent = {
             Text(
-                text = stringResource(R.string.settings_about),
+                text = stringResource(CoreCommonR.string.settings_about),
                 style = MaterialTheme.typography.titleMedium
             )
         },
-        supportingContent = { Text(stringResource(R.string.about_app_footer)) },
+        supportingContent = { Text(stringResource(CoreCommonR.string.about_app_footer)) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
@@ -106,13 +107,13 @@ private fun SettingsBuildUuidItem(onCopyValue: (String) -> Unit) {
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Verified,
-                contentDescription = stringResource(R.string.settings_build_uuid),
+                contentDescription = stringResource(CoreCommonR.string.settings_build_uuid),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
         headlineContent = {
             Text(
-                text = stringResource(R.string.settings_build_uuid),
+                text = stringResource(CoreCommonR.string.settings_build_uuid),
                 style = MaterialTheme.typography.titleMedium
             )
         },
@@ -131,7 +132,7 @@ private fun SettingsVersionItem(
     onCopyValue: (String) -> Unit
 ) {
     val suffix = if (devModeEnabled) {
-        " (${stringResource(R.string.settings_version_debug_suffix)})"
+        " (${stringResource(CoreCommonR.string.settings_version_debug_suffix)})"
     } else {
         ""
     }
@@ -141,13 +142,13 @@ private fun SettingsVersionItem(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Update,
-                contentDescription = stringResource(R.string.settings_version),
+                contentDescription = stringResource(CoreCommonR.string.settings_version),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
         headlineContent = {
             Text(
-                text = stringResource(R.string.common_version),
+                text = stringResource(CoreCommonR.string.common_version),
                 style = MaterialTheme.typography.titleMedium
             )
         },
@@ -168,13 +169,13 @@ private fun SettingsBuildTimeItem(onCopyValue: (String) -> Unit) {
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Timer,
-                contentDescription = stringResource(R.string.settings_build_time),
+                contentDescription = stringResource(CoreCommonR.string.settings_build_time),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
         headlineContent = {
             Text(
-                text = stringResource(R.string.common_build_time),
+                text = stringResource(CoreCommonR.string.common_build_time),
                 style = MaterialTheme.typography.titleMedium
             )
         },
@@ -192,12 +193,12 @@ private fun SettingsGitHubItem(onOpenGitHubRepo: () -> Unit) {
         leadingContent = {
             Icon(
                 painter = painterResource(id = R.drawable.ic_github),
-                contentDescription = stringResource(R.string.common_github),
+                contentDescription = stringResource(CoreCommonR.string.common_github),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.common_github)) },
-        supportingContent = { Text(stringResource(R.string.settings_github_repo_url)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.common_github)) },
+        supportingContent = { Text(stringResource(CoreCommonR.string.settings_github_repo_url)) },
         modifier = androidx.compose.ui.Modifier.settingsItemClickable(onClick = onOpenGitHubRepo),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )

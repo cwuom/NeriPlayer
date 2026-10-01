@@ -60,7 +60,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
@@ -599,8 +599,8 @@ fun DownloadProgressScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text(stringResource(R.string.download_clear_confirm_title)) },
-            text = { Text(stringResource(R.string.download_clear_confirm_message)) },
+            title = { Text(stringResource(CoreCommonR.string.download_clear_confirm_title)) },
+            text = { Text(stringResource(CoreCommonR.string.download_clear_confirm_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -615,12 +615,12 @@ fun DownloadProgressScreen(
                         showClearDialog = false
                     }
                 ) {
-                    Text(stringResource(R.string.download_confirm))
+                    Text(stringResource(CoreCommonR.string.download_confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text(stringResource(R.string.download_cancel_action))
+                    Text(stringResource(CoreCommonR.string.download_cancel_action))
                 }
             }
         )
@@ -636,51 +636,51 @@ fun DownloadProgressScreen(
             title = {
                 Column {
                     Text(
-                        stringResource(R.string.download_progress),
+                        stringResource(CoreCommonR.string.download_progress),
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
                         text = when {
                             pagePresentation == DownloadProgressPagePresentation.LOADING ->
-                                stringResource(R.string.download_loading_tasks)
+                                stringResource(CoreCommonR.string.download_loading_tasks)
 
                             pagePresentation == DownloadProgressPagePresentation.UNAVAILABLE ->
-                                stringResource(R.string.download_loading_tasks_recovering)
+                                stringResource(CoreCommonR.string.download_loading_tasks_recovering)
 
                             prioritizeBackgroundCleanup ->
-                                stringResource(R.string.download_clear_background_cleanup)
+                                stringResource(CoreCommonR.string.download_clear_background_cleanup)
 
                             effectiveIsClearing -> effectiveClearProgress?.let { progress ->
                                 val itemCount = presentedClearProgress?.affectedItemCount
                                     ?: progress.affectedItemCount
                                 pluralStringResource(
-                                    R.plurals.download_clearing_tasks_with_progress,
+                                    CoreCommonR.plurals.download_clearing_tasks_with_progress,
                                     itemCount,
                                     progress.displayPercentage,
                                     itemCount
                                 )
-                            } ?: stringResource(R.string.download_clearing_tasks)
+                            } ?: stringResource(CoreCommonR.string.download_clearing_tasks)
 
                             visibleBatchProgress != null -> stringResource(
-                                R.string.download_progress_with_percentage,
+                                CoreCommonR.string.download_progress_with_percentage,
                                 visibleBatchProgress.completedSongs,
                                 visibleBatchProgress.totalSongs,
                                 visibleBatchProgress.percentage
                             )
 
                             displayedPendingTaskCount > 0 -> pluralStringResource(
-                                R.plurals.download_tasks_count,
+                                CoreCommonR.plurals.download_tasks_count,
                                 displayedPendingTaskCount,
                                 displayedPendingTaskCount
                             )
 
                             failedTaskCount > 0 -> pluralStringResource(
-                                R.plurals.download_failed_songs_count,
+                                CoreCommonR.plurals.download_failed_songs_count,
                                 failedTaskCount,
                                 failedTaskCount
                             )
 
-                            else -> stringResource(R.string.download_no_tasks)
+                            else -> stringResource(CoreCommonR.string.download_no_tasks)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -691,7 +691,7 @@ fun DownloadProgressScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -706,7 +706,7 @@ fun DownloadProgressScreen(
                         showClearDialog = true
                     }
                 ) {
-                    Icon(Icons.Default.ClearAll, contentDescription = stringResource(R.string.download_clear_completed))
+                    Icon(Icons.Default.ClearAll, contentDescription = stringResource(CoreCommonR.string.download_clear_completed))
                 }
             }
         )
@@ -891,7 +891,7 @@ private fun DownloadProgressBootstrapUnavailableContent() {
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = stringResource(R.string.download_loading_tasks_recovering),
+                text = stringResource(CoreCommonR.string.download_loading_tasks_recovering),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -931,9 +931,9 @@ private fun DownloadProgressEmptyContent(
                 Text(
                     text = stringResource(
                         if (isClearing) {
-                            R.string.download_clearing_tasks
+                            CoreCommonR.string.download_clearing_tasks
                         } else {
-                            R.string.download_no_tasks
+                            CoreCommonR.string.download_no_tasks
                         }
                     ),
                     style = MaterialTheme.typography.bodyLarge,
@@ -979,16 +979,16 @@ private fun DownloadClearProgressSummary(
     )
     val phaseResource = when (progress.phase) {
         DownloadClearVisibility.ClearPhase.PREPARING ->
-            R.string.download_clear_phase_preparing
+            CoreCommonR.string.download_clear_phase_preparing
 
         DownloadClearVisibility.ClearPhase.CANCELLING ->
-            R.string.download_clear_phase_cancelling
+            CoreCommonR.string.download_clear_phase_cancelling
 
         DownloadClearVisibility.ClearPhase.CLEANING ->
-            R.string.download_clear_phase_cleaning
+            CoreCommonR.string.download_clear_phase_cleaning
 
         DownloadClearVisibility.ClearPhase.PURGING ->
-            R.string.download_clear_phase_purging
+            CoreCommonR.string.download_clear_phase_purging
     }
     Column(
         modifier = modifier,
@@ -997,16 +997,16 @@ private fun DownloadClearProgressSummary(
     ) {
         Text(
             text = if (backgroundCleanup) {
-                stringResource(R.string.download_clear_background_cleanup)
+                stringResource(CoreCommonR.string.download_clear_background_cleanup)
             } else {
-                stringResource(R.string.download_clearing_tasks)
+                stringResource(CoreCommonR.string.download_clearing_tasks)
             },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = pluralStringResource(
-                R.plurals.download_clearing_tasks_with_progress,
+                CoreCommonR.plurals.download_clearing_tasks_with_progress,
                 progress.affectedItemCount,
                 progress.displayPercentage,
                 progress.affectedItemCount
@@ -1016,7 +1016,7 @@ private fun DownloadClearProgressSummary(
         )
         Text(
             text = stringResource(
-                R.string.download_clear_stage_progress,
+                CoreCommonR.string.download_clear_stage_progress,
                 progress.completedSteps.coerceIn(0, progress.totalSteps.coerceAtLeast(0)),
                 progress.totalSteps.coerceAtLeast(0)
             ),
@@ -1033,7 +1033,7 @@ private fun DownloadClearProgressSummary(
         Text(
             text = if (progress.totalItemCount > 0) {
                 pluralStringResource(
-                    R.plurals.download_clear_item_progress,
+                    CoreCommonR.plurals.download_clear_item_progress,
                     progress.totalItemCount,
                     progress.completedItemCount,
                     progress.totalItemCount
@@ -1041,11 +1041,11 @@ private fun DownloadClearProgressSummary(
             } else if (progress.phase == DownloadClearVisibility.ClearPhase.PURGING &&
                 progress.completedSteps >= progress.totalSteps
             ) {
-                stringResource(R.string.download_clear_item_progress_empty)
+                stringResource(CoreCommonR.string.download_clear_item_progress_empty)
             } else if (progress.phase == DownloadClearVisibility.ClearPhase.CLEANING) {
-                stringResource(R.string.download_clear_item_progress_scanning)
+                stringResource(CoreCommonR.string.download_clear_item_progress_scanning)
             } else {
-                stringResource(R.string.download_clear_item_progress_pending)
+                stringResource(CoreCommonR.string.download_clear_item_progress_pending)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1138,7 +1138,7 @@ private fun BatchDownloadOverallProgressCard(progress: BatchDownloadOverallProgr
         ) {
             Text(
                 text = stringResource(
-                    R.string.download_progress_with_percentage,
+                    CoreCommonR.string.download_progress_with_percentage,
                     progress.completedSongs,
                     progress.totalSongs,
                     progress.percentage
@@ -1177,7 +1177,7 @@ private fun PendingDownloadSummaryCard(count: Int) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = pluralStringResource(R.plurals.download_tasks_count, count, count),
+                text = pluralStringResource(CoreCommonR.plurals.download_tasks_count, count, count),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium
             )
@@ -1215,7 +1215,7 @@ private fun FailedDownloadSummaryCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.download_failed_songs_count,
+                        CoreCommonR.plurals.download_failed_songs_count,
                         count,
                         count
                     ),
@@ -1225,11 +1225,11 @@ private fun FailedDownloadSummaryCard(
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
                 TextButton(onClick = onClearFailed, enabled = enabled) {
-                    Text(stringResource(R.string.download_clear_failed_tasks))
+                    Text(stringResource(CoreCommonR.string.download_clear_failed_tasks))
                 }
             }
             Text(
-                text = stringResource(R.string.download_failed_tasks_summary),
+                text = stringResource(CoreCommonR.string.download_failed_tasks_summary),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
@@ -1256,7 +1256,7 @@ private fun ExplicitResumeSummaryCard(count: Int) {
         ) {
             Text(
                 text = pluralStringResource(
-                    R.plurals.download_explicit_resume_count,
+                    CoreCommonR.plurals.download_explicit_resume_count,
                     count,
                     count
                 ),
@@ -1264,7 +1264,7 @@ private fun ExplicitResumeSummaryCard(count: Int) {
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = stringResource(R.string.download_explicit_resume_summary),
+                text = stringResource(CoreCommonR.string.download_explicit_resume_summary),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1308,7 +1308,7 @@ private fun ExplicitResumeTaskItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = stringResource(R.string.download_explicit_resume_status),
+                    text = stringResource(CoreCommonR.string.download_explicit_resume_status),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -1326,7 +1326,7 @@ private fun ExplicitResumeTaskItem(
             IconButton(onClick = onResume) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
-                    contentDescription = stringResource(R.string.download_resume),
+                    contentDescription = stringResource(CoreCommonR.string.download_resume),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -1375,7 +1375,7 @@ private fun DownloadTaskActionButton(
                 IconButton(onClick = onResume, enabled = actionsEnabled) {
                     Icon(
                         Icons.Default.Refresh,
-                        contentDescription = stringResource(R.string.download_resume),
+                        contentDescription = stringResource(CoreCommonR.string.download_resume),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -1386,7 +1386,7 @@ private fun DownloadTaskActionButton(
                 Icon(
                     Icons.Default.Close,
                     contentDescription = stringResource(
-                        if (actionEnabled) R.string.download_cancel_download else R.string.download_finalizing
+                        if (actionEnabled) CoreCommonR.string.download_cancel_download else CoreCommonR.string.download_finalizing
                     ),
                     tint = if (actionEnabled) {
                         MaterialTheme.colorScheme.error
@@ -1402,7 +1402,7 @@ private fun DownloadTaskActionButton(
             IconButton(onClick = onResume, enabled = actionsEnabled) {
                 Icon(
                     Icons.Default.Refresh,
-                    contentDescription = stringResource(R.string.download_to_local),
+                    contentDescription = stringResource(CoreCommonR.string.download_to_local),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -1418,7 +1418,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
         DownloadStatus.QUEUED -> {
             val stageLabel = task.progress?.stage?.let(::downloadStageLabelResource)
             Text(
-                text = stringResource(stageLabel ?: R.string.download_queued_status),
+                text = stringResource(stageLabel ?: CoreCommonR.string.download_queued_status),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1430,7 +1430,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                     task.progress?.stage
                         ?.takeIf { it == DownloadStage.WAITING_DELETE_CLEANUP }
                         ?.let(::downloadStageLabelResource)
-                        ?: R.string.download_waiting_network_recovery
+                        ?: CoreCommonR.string.download_waiting_network_recovery
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1444,7 +1444,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
             val progress = task.progress
             if (progress == null) {
                 Text(
-                    text = stringResource(R.string.download_waiting_host),
+                    text = stringResource(CoreCommonR.string.download_waiting_host),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1454,7 +1454,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
             }
             if (progress.stage == DownloadStage.WAITING_RETRY) {
                 Text(
-                    text = stringResource(R.string.download_waiting_retry),
+                    text = stringResource(CoreCommonR.string.download_waiting_retry),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1463,7 +1463,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
             }
             if (progress.stage == DownloadStage.FINALIZING) {
                 Text(
-                    text = stringResource(R.string.download_finalizing),
+                    text = stringResource(CoreCommonR.string.download_finalizing),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1506,7 +1506,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
 
         DownloadStatus.COMPLETED -> {
             Text(
-                text = stringResource(R.string.download_completed),
+                text = stringResource(CoreCommonR.string.download_completed),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF4CAF50)
             )
@@ -1514,7 +1514,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
 
         DownloadStatus.FAILED -> {
             Text(
-                text = stringResource(R.string.download_failed),
+                text = stringResource(CoreCommonR.string.download_failed),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
@@ -1522,7 +1522,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
 
         DownloadStatus.CANCELLED -> {
             Text(
-                text = stringResource(R.string.download_cancelled_status),
+                text = stringResource(CoreCommonR.string.download_cancelled_status),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

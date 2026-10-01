@@ -20,6 +20,7 @@ package moe.ouom.neriplayer.activity.auth
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.api.youtube.auth.normalized
 import moe.ouom.neriplayer.api.youtube.auth.toJson
 import android.annotation.SuppressLint
@@ -55,7 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteYouTubeWebLogin
 import moe.ouom.neriplayer.data.youtube.auth.web.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.youtube.auth.web.clearYouTubeWebCookies
@@ -204,7 +205,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         }
 
         val toolbar = MaterialToolbar(this).apply {
-            title = getString(R.string.youtube_web_login)
+            title = getString(CoreCommonR.string.youtube_web_login)
             setNavigationIcon(R.drawable.ic_arrow_back_24)
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.menu_netease_web_login)
@@ -340,7 +341,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             showNeriViewSnackbar(
                 webView,
                 getString(
-                    R.string.snackbar_read_failed,
+                    CoreCommonR.string.snackbar_read_failed,
                     error.message ?: error.javaClass.simpleName
                 ),
                 Snackbar.LENGTH_LONG
@@ -570,7 +571,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         dismissVerifyingSnack()
         showNeriViewSnackbar(
             webView,
-            getString(R.string.settings_youtube_auth_missing),
+            getString(CoreCommonR.string.settings_youtube_auth_missing),
             Snackbar.LENGTH_LONG
         )
     }
@@ -582,7 +583,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         }
         verifyingSnack = showNeriViewSnackbar(
             webView,
-            getString(R.string.settings_youtube_auth_verifying),
+            getString(CoreCommonR.string.settings_youtube_auth_verifying),
             Snackbar.LENGTH_INDEFINITE
         )
     }

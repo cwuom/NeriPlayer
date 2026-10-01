@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
+import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.util.collections.mergeDistinctBy
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,24 +22,24 @@ enum class NeteaseHomeSongSource(
     val titleRes: Int,
     val requiresLogin: Boolean
 ) {
-    TOP_SOARING(R.string.recommend_trending, requiresLogin = false),
-    PERSONAL_RADAR(R.string.recommend_radar, requiresLogin = false),
-    DAILY_RECOMMEND(R.string.home_netease_daily_songs, requiresLogin = true),
-    PRIVATE_FM(R.string.home_netease_private_fm, requiresLogin = true),
-    PERSONALIZED_NEW_SONGS(R.string.home_netease_new_songs, requiresLogin = false),
-    TOP_HOT(R.string.home_netease_hot_rank, requiresLogin = false),
-    TOP_NEW(R.string.home_netease_new_rank, requiresLogin = false)
+    TOP_SOARING(CoreCommonR.string.recommend_trending, requiresLogin = false),
+    PERSONAL_RADAR(CoreCommonR.string.recommend_radar, requiresLogin = false),
+    DAILY_RECOMMEND(CoreCommonR.string.home_netease_daily_songs, requiresLogin = true),
+    PRIVATE_FM(CoreCommonR.string.home_netease_private_fm, requiresLogin = true),
+    PERSONALIZED_NEW_SONGS(CoreCommonR.string.home_netease_new_songs, requiresLogin = false),
+    TOP_HOT(CoreCommonR.string.home_netease_hot_rank, requiresLogin = false),
+    TOP_NEW(CoreCommonR.string.home_netease_new_rank, requiresLogin = false)
 }
 
 enum class NeteaseHomePlaylistSource(
     val titleRes: Int,
     val requiresLogin: Boolean
 ) {
-    PERSONALIZED(R.string.recommend_for_you, requiresLogin = false),
-    DAILY_RESOURCE(R.string.home_netease_daily_playlists, requiresLogin = true),
-    HIGH_QUALITY(R.string.home_netease_high_quality_playlists, requiresLogin = false),
-    HOT_PLAYLISTS(R.string.home_netease_hot_playlists, requiresLogin = false),
-    ACG_PLAYLISTS(R.string.home_netease_acg_playlists, requiresLogin = false)
+    PERSONALIZED(CoreCommonR.string.recommend_for_you, requiresLogin = false),
+    DAILY_RESOURCE(CoreCommonR.string.home_netease_daily_playlists, requiresLogin = true),
+    HIGH_QUALITY(CoreCommonR.string.home_netease_high_quality_playlists, requiresLogin = false),
+    HOT_PLAYLISTS(CoreCommonR.string.home_netease_hot_playlists, requiresLogin = false),
+    ACG_PLAYLISTS(CoreCommonR.string.home_netease_acg_playlists, requiresLogin = false)
 }
 
 internal data class NeteaseRadarPlaylistDefinition(

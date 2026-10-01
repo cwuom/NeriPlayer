@@ -54,7 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.activity.auth.BiliQrLoginActivity
 import moe.ouom.neriplayer.activity.auth.YouTubeWebLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -87,8 +87,8 @@ internal fun SettingsBiliAuthDialogs(
 
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
-            title = stringResource(R.string.settings_bili_saved_cookie_title),
-            message = stringResource(R.string.settings_bili_saved_cookie_message),
+            title = stringResource(CoreCommonR.string.settings_bili_saved_cookie_title),
+            message = stringResource(CoreCommonR.string.settings_bili_saved_cookie_message),
             onDismiss = onDismissSavedCookieDialog,
             onContinueLogin = {
                 onDismissSavedCookieDialog()
@@ -115,7 +115,7 @@ internal fun SettingsBiliAuthDialogs(
                     val json = result.data?.getStringExtra(BiliQrLoginActivity.RESULT_COOKIE) ?: "{}"
                     vm.importCookiesFromMap(vm.parseJsonToMap(json))
                 } else {
-                    onInlineMsgChange(composeResources.getString(R.string.settings_cookie_cancelled))
+                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_cancelled))
                 }
             }
             val defaultBrowserLogin: () -> Unit = {
@@ -127,25 +127,25 @@ internal fun SettingsBiliAuthDialogs(
         }
 
         SettingsCookieLoginSheet(
-            title = stringResource(R.string.platform_bilibili),
+            title = stringResource(CoreCommonR.string.platform_bilibili),
             initialTab = initialTab,
             inlineMsg = inlineMsg,
             onInlineMsgChange = onInlineMsgChange,
             onDismiss = onDismissSheet,
-            browserTabLabel = stringResource(R.string.login_qr),
-            browserButtonLabel = stringResource(R.string.login_start_bili_qr),
+            browserTabLabel = stringResource(CoreCommonR.string.login_qr),
+            browserButtonLabel = stringResource(CoreCommonR.string.login_start_bili_qr),
             browserHintContent = {
                 Text(
-                    stringResource(R.string.settings_bili_login_browser_hint),
+                    stringResource(CoreCommonR.string.settings_bili_login_browser_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
-            cookieLabel = stringResource(R.string.login_paste_bili_cookie_hint),
+            cookieLabel = stringResource(CoreCommonR.string.login_paste_bili_cookie_hint),
             onBrowserLogin = launchBrowserLogin,
             onSaveCookie = { rawCookie ->
                 if (rawCookie.isBlank()) {
-                    onInlineMsgChange(composeResources.getString(R.string.auth_cookie_empty))
+                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.auth_cookie_empty))
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }
@@ -174,8 +174,8 @@ internal fun SettingsYouTubeAuthDialogs(
 
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
-            title = stringResource(R.string.settings_youtube_saved_cookie_title),
-            message = stringResource(R.string.settings_youtube_saved_cookie_message),
+            title = stringResource(CoreCommonR.string.settings_youtube_saved_cookie_title),
+            message = stringResource(CoreCommonR.string.settings_youtube_saved_cookie_message),
             onDismiss = onDismissSavedCookieDialog,
             onContinueLogin = {
                 onDismissSavedCookieDialog()
@@ -202,7 +202,7 @@ internal fun SettingsYouTubeAuthDialogs(
                     val json = result.data?.getStringExtra(YouTubeWebLoginActivity.RESULT_AUTH_JSON) ?: "{}"
                     vm.importAuthFromJson(json)
                 } else {
-                    onInlineMsgChange(composeResources.getString(R.string.settings_cookie_cancelled))
+                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.settings_cookie_cancelled))
                 }
             }
             val defaultBrowserLogin: () -> Unit = {
@@ -214,30 +214,30 @@ internal fun SettingsYouTubeAuthDialogs(
         }
 
         SettingsCookieLoginSheet(
-            title = stringResource(R.string.common_youtube),
+            title = stringResource(CoreCommonR.string.common_youtube),
             initialTab = initialTab,
             inlineMsg = inlineMsg,
             onInlineMsgChange = onInlineMsgChange,
             onDismiss = onDismissSheet,
-            browserTabLabel = stringResource(R.string.login_browser),
-            browserButtonLabel = stringResource(R.string.login_start_browser),
+            browserTabLabel = stringResource(CoreCommonR.string.login_browser),
+            browserButtonLabel = stringResource(CoreCommonR.string.login_start_browser),
             browserHintContent = {
                 Text(
-                    stringResource(R.string.settings_youtube_login_browser_hint),
+                    stringResource(CoreCommonR.string.settings_youtube_login_browser_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    stringResource(R.string.settings_youtube_login_browser_warning),
+                    stringResource(CoreCommonR.string.settings_youtube_login_browser_warning),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
-            cookieLabel = stringResource(R.string.login_paste_youtube_cookie_hint),
+            cookieLabel = stringResource(CoreCommonR.string.login_paste_youtube_cookie_hint),
             onBrowserLogin = launchBrowserLogin,
             onSaveCookie = { rawCookie ->
                 if (rawCookie.isBlank()) {
-                    onInlineMsgChange(composeResources.getString(R.string.auth_cookie_empty))
+                    onInlineMsgChange(composeResources.getString(CoreCommonR.string.auth_cookie_empty))
                 } else {
                     vm.importCookiesFromRaw(rawCookie)
                 }
@@ -287,7 +287,7 @@ internal fun SettingsCookieLoginSheet(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        stringResource(R.string.login_title),
+                        stringResource(CoreCommonR.string.login_title),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -303,7 +303,7 @@ internal fun SettingsCookieLoginSheet(
                 MiuixSettingsSegmentedTabs(
                     labels = listOf(
                         browserTabLabel,
-                        stringResource(R.string.login_paste_cookie)
+                        stringResource(CoreCommonR.string.login_paste_cookie)
                     ),
                     selectedIndex = selectedTab,
                     onSelectedIndexChange = { selectedTab = it }
@@ -344,7 +344,7 @@ internal fun SettingsCookieLoginSheet(
                                     onClick = { onSaveCookie(rawCookie) },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(stringResource(R.string.login_save_cookie))
+                                    Text(stringResource(CoreCommonR.string.login_save_cookie))
                                 }
                             }
                         }
@@ -369,12 +369,12 @@ internal fun SavedCookieActionDialog(
         text = { Text(message) },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onContinueLogin) {
-                Text(stringResource(R.string.settings_saved_cookie_continue))
+                Text(stringResource(CoreCommonR.string.settings_saved_cookie_continue))
             }
         },
         dismissButton = {
             MiuixSettingsTextButton(onClick = onLogout) {
-                Text(stringResource(R.string.settings_saved_cookie_logout))
+                Text(stringResource(CoreCommonR.string.settings_saved_cookie_logout))
             }
         }
     )
@@ -390,7 +390,7 @@ internal fun LoginSuccessDialog(
         title = { Text(title) },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_ok))
+                Text(stringResource(CoreCommonR.string.action_ok))
             }
         }
     )

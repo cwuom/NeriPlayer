@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.startup
 
 import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorageAccess
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupPlan
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupTarget
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupPlan
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupTarget
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

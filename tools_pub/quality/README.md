@@ -3,6 +3,8 @@
 需要 JDK 17、Android 构建环境和 Python 3。脚本仅使用 Python 标准库。
 
 ```bash
+./gradlew :data:netease:verifyCrap :data:netease:lintDebug
+./gradlew :data:repository:verifyCrap :data:repository:lintDebug
 ./gradlew :app:verifyCrap
 ./gradlew :app:verifyDomainDependencies
 ./gradlew :data:ltw:verifyCrap :data:ltw:verifyDomainDependencies :data:ltw:lintDebug
@@ -135,3 +137,17 @@ python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 
 门禁回归使用 JDK `javac --release 17` 编译隔离夹具，再运行真实 `jdeps` 和 `javap`，
 验证非法调用、同包间接引用、嵌套类、新文件和桥接成员越界均能被拒绝。
+
+`:data:database` 的 `data/local/database/migration/**/*.kt` 整文件受检，新建子目录和升级组件自动进入门禁。
+其中包括历史升级 SQL、旧记录身份匹配、分页读取、JSON 映射、冲突保全、缓存和批量写入。
+数据仓库中的播放历史和歌单使用记录映射也整文件受检；DAO 和实体由结构门禁验证模块归属与目录容量。
+Android CI 同时运行数据库模块的独立升级测试，校验完整历史升级链、旧下载数据保全和恢复索引。
+
+结构门禁禁止任何生产 `data` 包回流到 app，包括设置、媒体、登录、流量和同步 Android 接入。
+`:data:repository` 用职责子包管理这些实现，平台缓存仍归各平台数据模块，不按小职责新增构建节点。
+设置归一化、歌词/下载/缓存偏好政策、流量与周期统计、备份映射和仓库接入端口也纳入 CRAP 范围。
+这些范围采用目录或完整文件选择器，超分仍由现有 `verifyModularization` 使 CI 失败。
+数据实现可独立运行 `:data:repository:verifyCrap`，复用同一范围配置和阈值，报告位于
+`modules/data/repository/build/reports/crap/`；模块的 `check` 也执行该门禁。
+网易的 `data/platform/netease/mapping` 和 `playlist` 目录整文件受检，包括 JSON 映射、歌曲身份、远端比对、批量同步和重试；
+新增文件自动纳入范围。`:data:netease:verifyCrap` 与该模块的 `check` 复用同一阈值，报告位于 `modules/data/netease/build/reports/crap/`。

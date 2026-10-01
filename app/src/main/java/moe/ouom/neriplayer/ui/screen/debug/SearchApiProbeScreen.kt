@@ -40,7 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
@@ -72,18 +72,18 @@ fun SearchApiProbeScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = stringResource(R.string.debug_search_probe),
+            text = stringResource(CoreCommonR.string.debug_search_probe),
             style = MaterialTheme.typography.titleLarge
         )
         Text(
-            text = stringResource(R.string.debug_search_desc),
+            text = stringResource(CoreCommonR.string.debug_search_desc),
             style = MaterialTheme.typography.bodyMedium
         )
 
         OutlinedTextField(
             value = ui.keyword,
             onValueChange = vm::onKeywordChange,
-            label = { Text(stringResource(R.string.debug_search_keyword_label)) },
+            label = { Text(stringResource(CoreCommonR.string.debug_search_keyword_label)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -103,13 +103,13 @@ fun SearchApiProbeScreen() {
                     onClick = { vm.callSearchAndCopy(MusicPlatform.CLOUD_MUSIC) },
                     enabled = buttonEnabled,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_search_netease)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_search_netease)) }
 
                 Button(
                     onClick = { vm.callSearchAndCopy(MusicPlatform.QQ_MUSIC) },
                     enabled = buttonEnabled,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.debug_search_qq)) }
+                ) { Text(stringResource(CoreCommonR.string.debug_search_qq)) }
 
 
                 if (ui.running) {
@@ -129,9 +129,9 @@ fun SearchApiProbeScreen() {
                 Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(stringResource(R.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(CoreCommonR.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = ui.lastJsonPreview.ifBlank { stringResource(R.string.debug_search_preview_hint) },
+                    text = ui.lastJsonPreview.ifBlank { stringResource(CoreCommonR.string.debug_search_preview_hint) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )

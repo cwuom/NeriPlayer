@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -196,7 +196,7 @@ class YouTubeMusicCreatorItemsViewModel(application: Application) : AndroidViewM
 
     private fun creatorItemsError(sectionTitle: String, error: Exception): String {
         return getApplication<Application>().getString(
-            R.string.youtube_creator_items_load_failed,
+            CoreCommonR.string.youtube_creator_items_load_failed,
             sectionTitle,
             error.message ?: error.javaClass.simpleName
         )

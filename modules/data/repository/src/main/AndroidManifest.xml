@@ -1,0 +1,29 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <application>
+        <receiver
+            android:name="moe.ouom.neriplayer.data.auth.web.NeteaseWebViewLoginStateClearReceiver"
+            android:exported="false"
+            android:process=":netease_login">
+            <intent-filter>
+                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name="moe.ouom.neriplayer.data.auth.web.BiliWebViewLoginStateClearReceiver"
+            android:exported="false"
+            android:process=":bili_web_login">
+            <intent-filter>
+                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name="moe.ouom.neriplayer.data.auth.web.YouTubeWebViewLoginStateClearReceiver"
+            android:exported="false"
+            android:process=":youtube_web_login">
+            <intent-filter>
+                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

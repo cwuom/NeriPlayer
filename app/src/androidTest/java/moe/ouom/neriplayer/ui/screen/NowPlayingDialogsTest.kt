@@ -14,7 +14,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
@@ -71,7 +71,7 @@ class NowPlayingDialogsTest {
 
         waitForText("夜航星")
         waitForText("不才")
-        composeRule.onNodeWithText(context.getString(R.string.action_confirm)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_confirm)).performClick()
 
         composeRule.runOnIdle {
             assertEquals(listOf(true, true, true, true), confirmArgs)
@@ -97,10 +97,10 @@ class NowPlayingDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.music_auto_fill_cover))
-        composeRule.onNodeWithText(context.getString(R.string.music_auto_fill_cover)).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.music_auto_fill_lyrics)).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.action_confirm)).performClick()
+        waitForText(context.getString(CoreCommonR.string.music_auto_fill_cover))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.music_auto_fill_cover)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.music_auto_fill_lyrics)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_confirm)).performClick()
 
         composeRule.runOnIdle {
             assertEquals(listOf(false, true, true, false), confirmArgs)
@@ -127,10 +127,10 @@ class NowPlayingDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.local_song_metadata_write_confirm_write))
-        waitForText(context.getString(R.string.local_song_metadata_write_confirm_app_only))
-        waitForText(context.getString(R.string.action_cancel))
-        composeRule.onNodeWithText(context.getString(R.string.action_cancel)).performClick()
+        waitForText(context.getString(CoreCommonR.string.local_song_metadata_write_confirm_write))
+        waitForText(context.getString(CoreCommonR.string.local_song_metadata_write_confirm_app_only))
+        waitForText(context.getString(CoreCommonR.string.action_cancel))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_cancel)).performClick()
 
         composeRule.runOnIdle {
             assertTrue(cancelled)
@@ -158,15 +158,15 @@ class NowPlayingDialogsTest {
         }
 
         waitForText("原文A")
-        composeRule.onNodeWithText(context.getString(R.string.action_clear)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_clear)).performClick()
 
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText("原文A").fetchSemanticsNodes().isEmpty()
         }
 
-        composeRule.onNodeWithText(context.getString(R.string.lyrics_translation)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.lyrics_translation)).performClick()
         waitForText("译文B")
-        composeRule.onNodeWithText(context.getString(R.string.action_clear)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_clear)).performClick()
 
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText("译文B").fetchSemanticsNodes().isEmpty()
@@ -245,7 +245,7 @@ class NowPlayingDialogsTest {
         }
 
         waitForText("原文A")
-        composeRule.onNodeWithText(context.getString(R.string.music_save_changes)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.music_save_changes)).performClick()
         composeRule.waitUntil(timeoutMillis = 3_000) { dismissed }
 
         composeRule.runOnIdle {
@@ -283,7 +283,7 @@ class NowPlayingDialogsTest {
         }
 
         waitForText("原文A")
-        composeRule.onNodeWithText(context.getString(R.string.music_save_changes)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.music_save_changes)).performClick()
         composeRule.waitUntil(timeoutMillis = 3_000) { saveFailureCount == 1 }
         waitForText("原文A")
 
@@ -314,8 +314,8 @@ class NowPlayingDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.nowplaying_lyrics_sample))
-        composeRule.onNodeWithText(context.getString(R.string.action_done)).performClick()
+        waitForText(context.getString(CoreCommonR.string.nowplaying_lyrics_sample))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_done)).performClick()
 
         composeRule.runOnIdle {
             assertEquals(listOf(1.25f), committedLyricScales)
@@ -340,8 +340,8 @@ class NowPlayingDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.lyrics_adjust_offset))
-        composeRule.onNodeWithText(context.getString(R.string.action_done)).performClick()
+        waitForText(context.getString(CoreCommonR.string.lyrics_adjust_offset))
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_done)).performClick()
 
         composeRule.runOnIdle {
             assertTrue(dismissed)
@@ -363,7 +363,7 @@ class NowPlayingDialogsTest {
             MaterialTheme {
                 Box {
                     NowPlayingQualityOptionsDialog(
-                        title = context.getString(R.string.nowplaying_quality_switch_title),
+                        title = context.getString(CoreCommonR.string.nowplaying_quality_switch_title),
                         selectedKey = "lossless",
                         options = options,
                         onDismiss = { dismissed = true },
@@ -374,9 +374,9 @@ class NowPlayingDialogsTest {
         }
 
         waitForText("无损")
-        waitForText(context.getString(R.string.common_selected))
+        waitForText(context.getString(CoreCommonR.string.common_selected))
         composeRule.onNodeWithText("Hi-Res").performClick()
-        composeRule.onNodeWithText(context.getString(R.string.action_close)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_close)).performClick()
 
         composeRule.runOnIdle {
             assertEquals("master", selectedKey)
@@ -403,21 +403,21 @@ class NowPlayingDialogsTest {
         }
 
         waitForText("夜航星")
-        waitForText(context.getString(R.string.cover_preview_zoom_percent, 100))
+        waitForText(context.getString(CoreCommonR.string.cover_preview_zoom_percent, 100))
         composeRule.onNodeWithContentDescription(
-            context.getString(R.string.cover_preview_reset_zoom)
+            context.getString(CoreCommonR.string.cover_preview_reset_zoom)
         ).fetchSemanticsNode()
         composeRule.onNodeWithContentDescription(
             context.getString(
-                R.string.cover_preview_image_content_description_named,
+                CoreCommonR.string.cover_preview_image_content_description_named,
                 "夜航星"
             )
         ).fetchSemanticsNode()
         composeRule.onNodeWithText(
-            context.getString(R.string.action_download_cover)
+            context.getString(CoreCommonR.string.action_download_cover)
         ).performClick()
         composeRule.onNodeWithContentDescription(
-            context.getString(R.string.action_close)
+            context.getString(CoreCommonR.string.action_close)
         ).performClick()
 
         composeRule.runOnIdle {

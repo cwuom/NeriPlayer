@@ -10,7 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -66,9 +66,9 @@ internal fun DynamicIslandLyricsSetting(
 
     MiuixSettingsDialog(
         onDismissRequest = { showDependencyDialog.value = false },
-        title = { Text(stringResource(R.string.settings_dynamic_island_lyrics_dependency_title)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_dynamic_island_lyrics_dependency_title)) },
         text = {
-            Text(stringResource(R.string.settings_dynamic_island_lyrics_dependency_message))
+            Text(stringResource(CoreCommonR.string.settings_dynamic_island_lyrics_dependency_message))
         },
         confirmButton = {
             MiuixSettingsTextButton(
@@ -79,14 +79,14 @@ internal fun DynamicIslandLyricsSetting(
                     showDependencyDialog.value = false
                 }
             ) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         },
         dismissButton = {
             MiuixSettingsTextButton(
                 onClick = { showDependencyDialog.value = false }
             ) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )

@@ -184,6 +184,10 @@
   - Android 宿主和依赖组装，保留页面、播放服务、下载、本地媒体与 Worker 适配层。
 - `:data:model`
   - 统一模型与状态契约，按业务细分；不依赖项目中的实现模块。
+- `:data:database`
+  - Room 数据库、实体、DAO、历史 schema 和版本升级；统计表按 `dao/stats`、`entity/stats` 分类。
+  - `migration/library`、`migration/platform`、`migration/download` 维护升级 SQL；`migration/legacy` 维护旧数据保全。
+  - 所有升级组件整文件纳入 CRAP 门禁，新增升级必须保留从已发布版本到当前版本的路径和历史 schema。
 - `:core:common` / `:core:logging` / `:core:network`
   - 通用工具、日志和 HTTP 基础能力。
 - `:core:lyrics`
@@ -390,11 +394,11 @@
     `permission/`、`player/`、`safemode/`、`sync/` 和 `theme/` 拆分；
     `MainActivity` 只负责协调这些组件与 UI 生命周期。
 
-- `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `identity/`：宿主歌曲身份转换；`SongIdentity` 与 `SongItem` 属于 `modules/data/model`。
+- `modules/data/repository/src/main/java/moe/ouom/neriplayer/data/`
+  - `identity/`：歌曲身份转换；`SongIdentity` 与 `SongItem` 属于 `modules/data/model`。
   - `settings/`：`DataStore` 设置、KSP schema 和偏好映射；快照契约位于 `:data:model` 的 `settings` 包。
-  - `auth/`：宿主登录适配与 YouTube 轮换 Worker；各平台 Cookie / Auth 仓库位于对应 `modules/data/*` 模块。
-  - `platform/netease/`：网易云平台侧缓存，当前包含歌单详情本地缓存。
+  - `auth/`：通用 Web 登录状态与 YouTube 凭据轮换 Worker；各平台 Cookie / Auth 仓库位于对应 `modules/data/*` 模块。
+  - 平台缓存归现有 `:data:netease`、`:data:bilibili`、`:data:youtube`，不放入应用仓库模块。
   - `storage/`：存储占用分析、缓存分组和额外缓存清理。
   - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容、
     后台元信息补全和本地艺术家聚合。
@@ -836,6 +840,7 @@ adb logcat | grep NeriPlayer
 2. 单元测试：
    ```bash
    ./gradlew :app:verifyCrap
+   ./gradlew :data:repository:verifyCrap :data:repository:lintDebug
    ```
 3. 如修改登录态、播放解析链路或回归风险较高的集成行为，可按需执行 smoke test：
    ```bash

@@ -18,11 +18,11 @@ import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusy
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeCoordinator
-import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeResult
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupCoordinator
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupResult
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupStatus
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeCoordinator
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeResult
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupCoordinator
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupResult
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupStatus
 import kotlin.time.Duration.Companion.milliseconds
 
 internal object LegacyJsonCleanupScheduler {

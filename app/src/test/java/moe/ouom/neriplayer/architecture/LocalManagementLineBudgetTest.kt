@@ -52,6 +52,26 @@ internal object LocalManagementLineBudget {
     private const val TEST_PACKAGE_ROOT = "app/src/test/java/moe/ouom/neriplayer"
     private const val ANDROID_TEST_PACKAGE_ROOT =
         "app/src/androidTest/java/moe/ouom/neriplayer"
+    private const val DOWNLOAD_MAIN_PACKAGE_ROOT =
+        "modules/feature/download/src/main/java/moe/ouom/neriplayer"
+    private const val REPOSITORY_MAIN_PACKAGE_ROOT =
+        "modules/data/repository/src/main/java/moe/ouom/neriplayer"
+
+    private val migratedRecursiveDirectories = listOf(
+        "modules/core/download",
+        "modules/feature/download",
+        "modules/feature/player",
+        "modules/data/repository",
+        "modules/data/database",
+        "modules/data/bilibili",
+        "modules/data/model"
+    ).flatMap { module ->
+        listOf("main", "test", "androidTest").flatMap { sourceSet ->
+            listOf("core/download", "core/player/download", "data/local").map { family ->
+                "$module/src/$sourceSet/java/moe/ouom/neriplayer/$family"
+            }
+        }
+    }
 
     private val defaultScope = LocalManagementFileScope(
         recursiveDirectories = listOf(
@@ -66,16 +86,16 @@ internal object LocalManagementLineBudget {
             "$ANDROID_TEST_PACKAGE_ROOT/core/download",
             "$ANDROID_TEST_PACKAGE_ROOT/core/player/download",
             "$ANDROID_TEST_PACKAGE_ROOT/data/local"
-        ),
+        ) + migratedRecursiveDirectories,
         requiredFiles = listOf(
-            "$MAIN_PACKAGE_ROOT/core/download/GlobalDownloadManager.kt",
-            "$MAIN_PACKAGE_ROOT/core/download/ManagedDownloadStorage.kt",
-            "$MAIN_PACKAGE_ROOT/core/download/execution/persistence/DownloadExecutionRoomStore.kt",
-            "$MAIN_PACKAGE_ROOT/core/download/execution/host/DownloadExecutionHost.kt",
-            "$MAIN_PACKAGE_ROOT/core/player/download/AudioDownloadManager.kt",
-            "$MAIN_PACKAGE_ROOT/data/local/media/LocalMediaSupport.kt",
-            "$MAIN_PACKAGE_ROOT/data/local/audioimport/LocalAudioImportManager.kt",
-            "$MAIN_PACKAGE_ROOT/data/local/playlist/LocalPlaylistRepository.kt",
+            "$DOWNLOAD_MAIN_PACKAGE_ROOT/core/download/GlobalDownloadManager.kt",
+            "$DOWNLOAD_MAIN_PACKAGE_ROOT/core/download/ManagedDownloadStorage.kt",
+            "$DOWNLOAD_MAIN_PACKAGE_ROOT/core/download/execution/persistence/DownloadExecutionRoomStore.kt",
+            "$DOWNLOAD_MAIN_PACKAGE_ROOT/core/download/execution/host/DownloadExecutionHost.kt",
+            "$DOWNLOAD_MAIN_PACKAGE_ROOT/core/player/download/AudioDownloadManager.kt",
+            "$REPOSITORY_MAIN_PACKAGE_ROOT/data/local/media/LocalMediaSupport.kt",
+            "$REPOSITORY_MAIN_PACKAGE_ROOT/data/local/audioimport/LocalAudioImportManager.kt",
+            "$REPOSITORY_MAIN_PACKAGE_ROOT/data/local/playlist/LocalPlaylistRepository.kt",
             "$MAIN_PACKAGE_ROOT/ui/screen/tab/library/LibraryScreen.kt",
             "$MAIN_PACKAGE_ROOT/ui/screen/playlist/LocalPlaylistDetailScreen.kt",
             "$TEST_PACKAGE_ROOT/ui/screen/playlist/LocalPlaylistDetailMutableValueTest.kt"
@@ -100,7 +120,7 @@ internal object LocalManagementLineBudget {
         }
         error(
             "无法定位项目根目录：${startDirectory.absolutePath}，需要 settings.gradle.kts、" +
-                "app/build.gradle.kts 和 ${defaultScope.requiredFiles.first()}"
+                "app/build.gradle.kts"
         )
     }
 
@@ -204,8 +224,7 @@ internal object LocalManagementLineBudget {
 
     private fun isProjectRoot(candidate: File): Boolean =
         File(candidate, "settings.gradle.kts").isFile &&
-            File(candidate, "app/build.gradle.kts").isFile &&
-            File(candidate, defaultScope.requiredFiles.first()).isFile
+            File(candidate, "app/build.gradle.kts").isFile
 
     private fun addCandidate(
         root: File,

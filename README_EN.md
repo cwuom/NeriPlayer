@@ -697,11 +697,13 @@ Owned libraries use `modules/<layer>/<module>` and matching Gradle paths; for ex
 - `:feature:download`: execution, Room queues, batch recovery, transfers, managed files and migrations, Workers, and JobService, with host-provided source services, credentials, traffic, startup, and playback interfaces.
 - `:api:netease` / `:api:bilibili` / `:api:youtube`: platform clients, request construction, authentication protocols, and response parsing.
 - `:api:lyrics` / `:api:search` / `:api:ltw`: lyric services, metadata search contracts, and Listen Together HTTP/WebSocket transport.
-- `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, and playback source repositories.
+- `:data:netease` / `:data:bilibili` / `:data:youtube`: account persistence, caches, platform response mapping into application models, playlist rules and remote playlist synchronization, and playback source repositories.
 - [`:data:ltw`](modules/data/ltw/README.md): Listen Together client sessions, membership operations, connection recovery, control events, playback synchronization, invites, and input validation through host-provided playback and Android interfaces.
 - `:data:lyrics` / `:data:comments`: lyric matching and fallback across sources, comment pagination, and caching.
 - `:data:sync`: sync sessions, codecs, snapshot sanitization, change detection, merging, and concurrency protection through host-provided local data, transport, and presentation interfaces.
 - `:data:storage`: storage accounting, file scanning, and cache cleanup with host-provided locations, database statistics, and download snapshots.
+- `:data:repository`: application data implementations grouped by settings, media, playlists, history/statistics, backup, traffic, and Android sync integration. These responsibilities share one Gradle module; narrow host interfaces supply downloads, playback state, and HTTP clients.
+- `:data:database`: Room database, entities, DAOs, historical schemas, and upgrades. Migration SQL is grouped by library, platform, and downloads; legacy preservation separates identity, paging, JSON, conflicts, caching, and writes.
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
 - `build-logic`: shared Gradle convention plugins.
@@ -722,6 +724,11 @@ JSON adapters, database mapping, requests, and presentation logic remain with th
 Screen-local state stays with its UI, Room entities with the database, and private intermediate records with their algorithms.
 Packages match their directories. Existing Parcelable class names remain stable for saved Android state.
 Modules own their tests, resources, and consumer R8 rules; host integration tests stay in `app`.
+Business mappings and repository orchestration live in `:data:repository`; platform data modules own their Room cache adapters. The database module does not depend on repository identity rules or global containers.
+`app` has no production `data` source directory; download upgrades and dependency assembly live in `core/startup/legacy` and `core/integration`.
+The data implementation module is the sole KSP owner of the settings schema, persistence access, and metadata; Compose settings rendering lives in `app/ui/settings`.
+Existing `:core:common` owns shared text, icons, and locale utilities; small responsibilities do not require separate Gradle modules.
+Historical schemas live in `modules/data/database/schemas`, where Room KSP runs; app instrumentation tests load schemas from this directory.
 
 Run `./gradlew verifyModularization` for dependency boundaries, module JVM tests, combined CRAP coverage,
 domain dependencies, and lint. Run an individual module's tests with `./gradlew :data:youtube:testDebugUnitTest`.

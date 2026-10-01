@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.util.format
 
 import android.annotation.SuppressLint
 import android.content.Context
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.TimeUnit
@@ -45,21 +45,21 @@ fun convertTimestampToDate(timestamp: Long): String {
  * Example: 90min -> "1小时30分钟"; 45min -> "45分钟".
  */
 fun formatTotalDuration(context: Context, ms: Long): String {
-    if (ms <= 0) return context.getString(R.string.time_zero_minutes)
+    if (ms <= 0) return context.getString(CoreCommonR.string.time_zero_minutes)
     val totalSec = ms / 1000
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60
     val resources = context.resources
     val minuteCount = m.toInt()
     val minutePart = resources.getQuantityString(
-        R.plurals.time_minutes_only,
+        CoreCommonR.plurals.time_minutes_only,
         minuteCount,
         minuteCount
     )
     return if (h > 0) {
         val hourCount = h.toInt()
         resources.getQuantityString(
-            R.plurals.time_hours_minutes,
+            CoreCommonR.plurals.time_hours_minutes,
             hourCount,
             hourCount,
             minutePart

@@ -106,7 +106,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.comment.resolveCommentSource
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -640,7 +640,7 @@ fun NowPlayingScreen(
         if (song == null || actualCoverUrl.isNullOrBlank()) {
             screenScope.launch {
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.cover_download_unavailable)
+                    composeResources.getString(CoreCommonR.string.cover_download_unavailable)
                 )
             }
         } else {
@@ -651,13 +651,13 @@ fun NowPlayingScreen(
                     suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
                 ).onSuccess { fileName ->
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.cover_download_success, fileName)
+                        composeResources.getString(CoreCommonR.string.cover_download_success, fileName)
                     )
                 }.onFailure { error ->
                     val errorMessage =
-                        error.message ?: composeResources.getString(R.string.download_failed)
+                        error.message ?: composeResources.getString(CoreCommonR.string.download_failed)
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.cover_download_failed, errorMessage)
+                        composeResources.getString(CoreCommonR.string.cover_download_failed, errorMessage)
                     )
                 }
             }
@@ -672,7 +672,7 @@ fun NowPlayingScreen(
         } else {
             screenScope.launch {
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.cover_download_permission_required)
+                    composeResources.getString(CoreCommonR.string.cover_download_permission_required)
                 )
             }
         }
@@ -752,7 +752,7 @@ fun NowPlayingScreen(
         val distinctArtists = artists.distinctBy { it.id }
         when (distinctArtists.size) {
             0 -> screenScope.launch {
-                snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.artist_not_available))
+                snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.artist_not_available))
             }
 
             1 -> openResolvedArtist(distinctArtists.first())
@@ -767,7 +767,7 @@ fun NowPlayingScreen(
         when (distinctCreators.size) {
             0 -> screenScope.launch {
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.youtube_creator_not_available)
+                    composeResources.getString(CoreCommonR.string.youtube_creator_not_available)
                 )
             }
 
@@ -789,7 +789,7 @@ fun NowPlayingScreen(
                 onError = {
                     resolvingArtistNavigation = false
                     screenScope.launch {
-                        snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.artist_not_available))
+                        snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.artist_not_available))
                     }
                 }
             )
@@ -812,7 +812,7 @@ fun NowPlayingScreen(
                     resolvingBiliUploader = false
                     screenScope.launch {
                         snackbarHostState.showNeriSnackbar(
-                            composeResources.getString(R.string.bili_uploader_owner_unavailable)
+                            composeResources.getString(CoreCommonR.string.bili_uploader_owner_unavailable)
                         )
                     }
                 },
@@ -821,7 +821,7 @@ fun NowPlayingScreen(
                     screenScope.launch {
                         snackbarHostState.showNeriSnackbar(
                             composeResources.getString(
-                                R.string.bili_uploader_open_failed,
+                                CoreCommonR.string.bili_uploader_open_failed,
                                 error.message ?: error.javaClass.simpleName
                             )
                         )
@@ -848,7 +848,7 @@ fun NowPlayingScreen(
                     screenScope.launch {
                         snackbarHostState.showNeriSnackbar(
                             composeResources.getString(
-                                R.string.youtube_creator_open_failed,
+                                CoreCommonR.string.youtube_creator_open_failed,
                                 error.message ?: error.javaClass.simpleName
                             )
                         )
@@ -1170,7 +1170,7 @@ fun NowPlayingScreen(
                                     ) {
                                         Icon(
                                             Icons.Outlined.Shuffle,
-                                            contentDescription = stringResource(R.string.player_shuffle),
+                                            contentDescription = stringResource(CoreCommonR.string.player_shuffle),
                                             modifier = Modifier.size(secondaryIconSize),
                                             tint = if (shuffleEnabled) {
                                                 nowPlayingActiveIconColor
@@ -1193,7 +1193,7 @@ fun NowPlayingScreen(
                                     ) {
                                         Icon(
                                             Icons.Outlined.SkipPrevious,
-                                            contentDescription = stringResource(R.string.player_previous),
+                                            contentDescription = stringResource(CoreCommonR.string.player_previous),
                                             modifier = Modifier.size(secondaryIconSize)
                                         )
                                     }
@@ -1214,10 +1214,10 @@ fun NowPlayingScreen(
                                             isPlaying = isPlaybackControlPlaying,
                                             isPlaybackWaiting = isPlaybackWaiting,
                                             isAudioRouteMuted = isAudioRouteMuted,
-                                            playContentDescription = stringResource(R.string.player_play),
-                                            pauseContentDescription = stringResource(R.string.player_pause),
-                                            restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
-                                            waitingContentDescription = stringResource(R.string.player_waiting),
+                                            playContentDescription = stringResource(CoreCommonR.string.player_play),
+                                            pauseContentDescription = stringResource(CoreCommonR.string.player_pause),
+                                            restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
+                                            waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                                             modifier = Modifier.size(primaryIconSize),
                                             progressIndicatorSize = primaryIconSize
                                         )
@@ -1236,7 +1236,7 @@ fun NowPlayingScreen(
                                     ) {
                                         Icon(
                                             Icons.Outlined.SkipNext,
-                                            contentDescription = stringResource(R.string.player_next),
+                                            contentDescription = stringResource(CoreCommonR.string.player_next),
                                             modifier = Modifier.size(secondaryIconSize)
                                         )
                                     }
@@ -1251,7 +1251,7 @@ fun NowPlayingScreen(
                                             } else {
                                                 Icons.Outlined.Repeat
                                             },
-                                            contentDescription = stringResource(R.string.player_repeat),
+                                            contentDescription = stringResource(CoreCommonR.string.player_repeat),
                                             modifier = Modifier.size(secondaryIconSize),
                                             tint = if (repeatMode != Player.REPEAT_MODE_OFF) {
                                                 nowPlayingActiveIconColor
@@ -1299,7 +1299,7 @@ fun NowPlayingScreen(
                                 val willFav = nextFavoriteStateAfterTap(isFavorite)
                                 launchWithLocalSyncWarning(
                                     song = song,
-                                    actionLabel = composeResources.getString(R.string.favorite_add),
+                                    actionLabel = composeResources.getString(CoreCommonR.string.favorite_add),
                                     warnForLocalSync = willFav
                                 ) {
                                     favOverride = willFav
@@ -1310,7 +1310,7 @@ fun NowPlayingScreen(
                         val onCoverPreviewUnavailable: () -> Unit = {
                             screenScope.launch {
                                 snackbarHostState.showNeriSnackbar(
-                                    composeResources.getString(R.string.cover_preview_unavailable)
+                                    composeResources.getString(CoreCommonR.string.cover_preview_unavailable)
                                 )
                             }
                         }
@@ -1596,7 +1596,7 @@ fun NowPlayingScreen(
                                                 )
                                                 Spacer(Modifier.height(12.dp))
                                                 Text(
-                                                    text = stringResource(R.string.lyrics_no_lyrics),
+                                                    text = stringResource(CoreCommonR.string.lyrics_no_lyrics),
                                                     style = MaterialTheme.typography.titleMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     textAlign = TextAlign.Center
@@ -1702,7 +1702,7 @@ fun NowPlayingScreen(
 
                     if (showQualitySwitchDialog && currentPlaybackAudioInfo != null) {
                         NowPlayingQualityOptionsDialog(
-                            title = stringResource(R.string.nowplaying_quality_switch_title),
+                            title = stringResource(CoreCommonR.string.nowplaying_quality_switch_title),
                             selectedKey = currentPlaybackAudioInfo
                                 ?.source
                                 ?.let(preferredQualityKeys::forSource)
@@ -1737,7 +1737,7 @@ fun NowPlayingScreen(
                                             .clickable {
                                                 launchWithLocalSyncWarning(
                                                     song = currentSong,
-                                                    actionLabel = composeResources.getString(R.string.playlist_add_to)
+                                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
                                                 ) {
                                                     PlayerManager.addCurrentToPlaylist(pl.id)
                                                     showAddSheet = false
@@ -1750,7 +1750,7 @@ fun NowPlayingScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text(
                                             pluralStringResource(
-                                                R.plurals.nowplaying_song_count_format,
+                                                CoreCommonR.plurals.nowplaying_song_count_format,
                                                 pl.songs.size,
                                                 pl.songs.size
                                             ),

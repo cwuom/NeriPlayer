@@ -48,7 +48,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -78,7 +78,7 @@ internal fun NeteasePlaylistSearchRow(
     LinkedCollectionRow(
         title = playlist.name,
         subtitle = stringResource(
-            R.string.playlist_play_count_format,
+            CoreCommonR.string.playlist_play_count_format,
             formatPlayCount(context, playlist.playCount),
             playlist.trackCount
         ),
@@ -106,7 +106,7 @@ internal fun BiliPlaylistSearchRow(
         title = playlist.title,
         subtitle = biliCollectionSubtitle(
             playlist.subtitle,
-            pluralStringResource(R.plurals.bili_content_count, playlist.count, playlist.count)
+            pluralStringResource(CoreCommonR.plurals.bili_content_count, playlist.count, playlist.count)
         ),
         coverUrl = playlist.coverUrl,
         offlineMode = offlineMode,
@@ -134,7 +134,7 @@ internal fun YouTubePlaylistSearchRow(
             playlist.subtitle,
             playlist.trackCount,
             pluralStringResource(
-                R.plurals.count_songs_format,
+                CoreCommonR.plurals.count_songs_format,
                 playlist.trackCount,
                 playlist.trackCount
             )
@@ -175,12 +175,12 @@ internal fun NeteaseArtistSearchRow(
         title = result.artist.name,
         subtitle = listOf(
             pluralStringResource(
-                R.plurals.artist_song_count,
+                CoreCommonR.plurals.artist_song_count,
                 result.musicSize,
                 result.musicSize
             ),
             pluralStringResource(
-                R.plurals.artist_album_count,
+                CoreCommonR.plurals.artist_album_count,
                 result.albumSize,
                 result.albumSize
             )
@@ -208,7 +208,7 @@ internal fun YouTubeCreatorSearchRow(
     LinkedCollectionRow(
         title = creator.title,
         subtitle = creator.subtitle.ifBlank {
-            stringResource(R.string.explore_search_type_creator)
+            stringResource(CoreCommonR.string.explore_search_type_creator)
         },
         coverUrl = creator.coverUrl,
         offlineMode = offlineMode,
@@ -352,7 +352,7 @@ internal fun SearchLoadMoreErrorRow(
             textAlign = TextAlign.Center
         )
         HapticTextButton(onClick = onRetry) {
-            Text(stringResource(R.string.action_retry))
+            Text(stringResource(CoreCommonR.string.action_retry))
         }
     }
 }
@@ -407,7 +407,7 @@ private fun SongRowMoreButton(state: ExploreSongRowState, actions: ExploreSongRo
         HapticIconButton(onClick = { showMoreMenu = true }) {
             Icon(
                 imageVector = Icons.Filled.MoreVert,
-                contentDescription = stringResource(R.string.cd_more_actions),
+                contentDescription = stringResource(CoreCommonR.string.cd_more_actions),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -511,19 +511,19 @@ private fun ExploreSongActionMenu(
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         SongMenuAction(
-            textRes = R.string.search_result_play_keep_queue,
+            textRes = CoreCommonR.string.search_result_play_keep_queue,
             icon = Icons.Filled.PlayCircle,
             enabled = true,
             onClick = { onPlayNow(); onDismiss() }
         )
         SongMenuAction(
-            textRes = R.string.local_playlist_play_next,
+            textRes = CoreCommonR.string.local_playlist_play_next,
             icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
             enabled = true,
             onClick = { onPlayNext(); onDismiss() }
         )
         SongMenuAction(
-            textRes = R.string.search_result_add_to_current_queue,
+            textRes = CoreCommonR.string.search_result_add_to_current_queue,
             icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
             enabled = true,
             onClick = { onAddToQueueEnd(); onDismiss() }
@@ -535,7 +535,7 @@ private fun ExploreSongActionMenu(
             onClick = { onToggleFavorite(); onDismiss() }
         )
         SongMenuAction(
-            textRes = R.string.download_to_local,
+            textRes = CoreCommonR.string.download_to_local,
             icon = Icons.Outlined.Download,
             enabled = true,
             onClick = { onDownload(); onDismiss() }
@@ -546,7 +546,7 @@ private fun ExploreSongActionMenu(
 
 @StringRes
 private fun favoriteActionLabel(isFavorite: Boolean): Int =
-    if (isFavorite) R.string.favorite_remove else R.string.favorite_add
+    if (isFavorite) CoreCommonR.string.favorite_remove else CoreCommonR.string.favorite_add
 
 private fun favoriteActionIcon(isFavorite: Boolean): ImageVector =
     if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder
@@ -573,7 +573,7 @@ private fun SongMenuAction(
 @Composable
 private fun SongInfoCopyMenuItem(onClick: () -> Unit) {
     DropdownMenuItem(
-        text = { Text(stringResource(R.string.action_copy_song_info)) },
+        text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
         leadingIcon = {
             Icon(imageVector = Icons.Outlined.ContentCopy, contentDescription = null)
         },
@@ -585,8 +585,8 @@ private fun SongInfoCopyMenuItem(onClick: () -> Unit) {
 internal fun exploreClipboardMessageRes(result: ClipboardCopyResult): Int =
     when (result) {
         is ClipboardCopyResult.Copied ->
-            if (result.wasTruncated) R.string.toast_copy_truncated else R.string.toast_copied
-        ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
+            if (result.wasTruncated) CoreCommonR.string.toast_copy_truncated else CoreCommonR.string.toast_copied
+        ClipboardCopyResult.TransactionTooLarge -> CoreCommonR.string.toast_copy_failed
     }
 
 internal fun buildExploreSongInfo(song: SongItem): String {

@@ -36,7 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
@@ -111,7 +111,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
                     it.copy(
                         loading = false,
                         error = getApplication<Application>().getString(
-                            R.string.bili_uploader_load_failed,
+                            CoreCommonR.string.bili_uploader_load_failed,
                             error.message ?: error.javaClass.simpleName
                         )
                     )
@@ -156,7 +156,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
                     it.copy(
                         videosLoadingMore = false,
                         error = getApplication<Application>().getString(
-                            R.string.bili_uploader_load_failed,
+                            CoreCommonR.string.bili_uploader_load_failed,
                             error.message ?: error.javaClass.simpleName
                         )
                     )
@@ -192,7 +192,7 @@ class BiliUploaderDetailViewModel(application: Application) : AndroidViewModel(a
                     it.copy(
                         contentsLoadingMore = false,
                         error = getApplication<Application>().getString(
-                            R.string.bili_uploader_load_failed,
+                            CoreCommonR.string.bili_uploader_load_failed,
                             error.message ?: error.javaClass.simpleName
                         )
                     )

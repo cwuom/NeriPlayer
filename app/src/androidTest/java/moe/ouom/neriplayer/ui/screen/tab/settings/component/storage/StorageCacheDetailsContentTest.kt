@@ -7,7 +7,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.storage.StorageUsageItem
 import moe.ouom.neriplayer.data.model.storage.StorageUsageItemKind
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSection
@@ -44,7 +44,7 @@ class StorageCacheDetailsContentTest {
         }
 
         composeRule.onNodeWithText(
-            context.getString(R.string.storage_scan_title)
+            context.getString(CoreCommonR.string.storage_scan_title)
         ).assertExists()
     }
 

@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 
@@ -69,14 +69,14 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     fun callSearchAndCopy(platform: MusicPlatform) {
         val keyword = _ui.value.keyword
         if (keyword.isBlank()) {
-            _ui.value = _ui.value.copy(lastMessage = getApplication<Application>().getString(R.string.debug_error_keyword_empty))
+            _ui.value = _ui.value.copy(lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_error_keyword_empty))
             return
         }
 
         viewModelScope.launch {
             _ui.value = _ui.value.copy(
                 running = true,
-                lastMessage = getApplication<Application>().getString(R.string.debug_searching, platform.name, keyword),
+                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_searching, platform.name, keyword),
                 lastJsonPreview = ""
             )
             try {
@@ -95,13 +95,13 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 copyToClipboard("search_api_${platform.name}", resultJson)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_search_ok, platform.name),
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_search_ok, platform.name),
                     lastJsonPreview = resultJson
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
                 )
             }
         }

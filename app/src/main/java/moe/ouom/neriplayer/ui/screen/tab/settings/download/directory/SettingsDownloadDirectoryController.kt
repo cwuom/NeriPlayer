@@ -14,7 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
@@ -173,7 +173,7 @@ internal fun rememberDownloadDirectorySettingsController(
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val defaultDirectorySummary = resources.getString(
-        R.string.settings_download_directory_default_label
+        CoreCommonR.string.settings_download_directory_default_label
     )
     val localState = rememberDownloadDirectoryLocalState()
     val libraryProcessingState = ManagedLibraryProcessingCoordinator.state.collectAsState()

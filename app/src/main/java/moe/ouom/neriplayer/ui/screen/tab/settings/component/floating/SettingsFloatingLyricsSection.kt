@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_CENTER
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_LEFT
@@ -233,11 +233,11 @@ internal fun SettingsFloatingLyricsSection(
             isLandscape = editingLandscape
         )
         FloatingLyricsSwitchListItem(
-            title = stringResource(R.string.settings_floating_lyrics_enable),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_enable),
             description = if (overlayPermissionGranted) {
-                stringResource(R.string.settings_floating_lyrics_enable_desc)
+                stringResource(CoreCommonR.string.settings_floating_lyrics_enable_desc)
             } else {
-                stringResource(R.string.settings_floating_lyrics_permission_required)
+                stringResource(CoreCommonR.string.settings_floating_lyrics_permission_required)
             },
             icon = Icons.Outlined.PictureInPictureAlt,
             checked = normalizedPreferences.enabled,
@@ -253,8 +253,8 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSwitchListItem(
-            title = stringResource(R.string.settings_floating_lyrics_hide_in_app),
-            description = stringResource(R.string.settings_floating_lyrics_hide_in_app_desc),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_hide_in_app),
+            description = stringResource(CoreCommonR.string.settings_floating_lyrics_hide_in_app_desc),
             icon = Icons.Outlined.VisibilityOff,
             checked = normalizedPreferences.hideInApp,
             onCheckedChange = { hideInApp ->
@@ -262,8 +262,8 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSwitchListItem(
-            title = stringResource(R.string.settings_floating_lyrics_long_press_drag),
-            description = stringResource(R.string.settings_floating_lyrics_long_press_drag_desc),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_long_press_drag),
+            description = stringResource(CoreCommonR.string.settings_floating_lyrics_long_press_drag_desc),
             icon = Icons.Outlined.OpenWith,
             checked = normalizedPreferences.longPressDragEnabled,
             onCheckedChange = { enabled ->
@@ -271,7 +271,7 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsColorPicker(
-            titleRes = R.string.settings_floating_lyrics_text_color,
+            titleRes = CoreCommonR.string.settings_floating_lyrics_text_color,
             icon = Icons.Outlined.FormatColorText,
             selectedColorHex = normalizedPreferences.textColorHex,
             onColorSelected = { colorHex ->
@@ -287,9 +287,9 @@ internal fun SettingsFloatingLyricsSection(
         val usesShadow = normalizedPreferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_SHADOW
         FloatingLyricsColorPicker(
             titleRes = if (usesShadow) {
-                R.string.settings_floating_lyrics_shadow_color
+                CoreCommonR.string.settings_floating_lyrics_shadow_color
             } else {
-                R.string.settings_floating_lyrics_outline_color
+                CoreCommonR.string.settings_floating_lyrics_outline_color
             },
             icon = if (usesShadow) Icons.Outlined.FormatColorFill else Icons.Outlined.BorderColor,
             selectedColorHex = normalizedPreferences.outlineColorHex,
@@ -298,9 +298,9 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSliderListItem(
-            title = stringResource(R.string.settings_floating_lyrics_font_size),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_font_size),
             valueText = stringResource(
-                R.string.settings_floating_lyrics_font_size_value,
+                CoreCommonR.string.settings_floating_lyrics_font_size_value,
                 pendingFontSizeSp.roundToInt()
             ),
             icon = Icons.Outlined.TextFields,
@@ -319,16 +319,16 @@ internal fun SettingsFloatingLyricsSection(
         FloatingLyricsSliderListItem(
             title = stringResource(
                 if (usesShadow) {
-                    R.string.settings_floating_lyrics_lyric_shadow_blur
+                    CoreCommonR.string.settings_floating_lyrics_lyric_shadow_blur
                 } else {
-                    R.string.settings_floating_lyrics_lyric_outline_width
+                    CoreCommonR.string.settings_floating_lyrics_lyric_outline_width
                 }
             ),
             valueText = stringResource(
                 if (usesShadow) {
-                    R.string.settings_floating_lyrics_shadow_blur_value
+                    CoreCommonR.string.settings_floating_lyrics_shadow_blur_value
                 } else {
-                    R.string.settings_floating_lyrics_outline_width_value
+                    CoreCommonR.string.settings_floating_lyrics_outline_width_value
                 },
                 pendingOutlineWidthDp
             ),
@@ -348,16 +348,16 @@ internal fun SettingsFloatingLyricsSection(
         FloatingLyricsSliderListItem(
             title = stringResource(
                 if (usesShadow) {
-                    R.string.settings_floating_lyrics_translation_shadow_blur
+                    CoreCommonR.string.settings_floating_lyrics_translation_shadow_blur
                 } else {
-                    R.string.settings_floating_lyrics_translation_outline_width
+                    CoreCommonR.string.settings_floating_lyrics_translation_outline_width
                 }
             ),
             valueText = stringResource(
                 if (usesShadow) {
-                    R.string.settings_floating_lyrics_shadow_blur_value
+                    CoreCommonR.string.settings_floating_lyrics_shadow_blur_value
                 } else {
-                    R.string.settings_floating_lyrics_outline_width_value
+                    CoreCommonR.string.settings_floating_lyrics_outline_width_value
                 },
                 pendingTranslationOutlineWidthDp
             ),
@@ -377,9 +377,9 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSliderListItem(
-            title = stringResource(R.string.settings_floating_lyrics_lyric_alpha),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_lyric_alpha),
             valueText = stringResource(
-                R.string.settings_floating_lyrics_alpha_value,
+                CoreCommonR.string.settings_floating_lyrics_alpha_value,
                 (pendingLyricAlpha * 100f).roundToInt()
             ),
             icon = Icons.Outlined.Opacity,
@@ -396,9 +396,9 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSliderListItem(
-            title = stringResource(R.string.settings_floating_lyrics_translation_alpha),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_translation_alpha),
             valueText = stringResource(
-                R.string.settings_floating_lyrics_alpha_value,
+                CoreCommonR.string.settings_floating_lyrics_alpha_value,
                 (pendingTranslationAlpha * 100f).roundToInt()
             ),
             icon = Icons.Outlined.FormatColorFill,
@@ -415,9 +415,9 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSliderListItem(
-            title = stringResource(R.string.settings_floating_lyrics_max_width),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_max_width),
             valueText = stringResource(
-                R.string.settings_floating_lyrics_max_width_value,
+                CoreCommonR.string.settings_floating_lyrics_max_width_value,
                 pendingMaxWidthDp
             ),
             icon = Icons.Outlined.WidthFull,
@@ -438,9 +438,9 @@ internal fun SettingsFloatingLyricsSection(
             onOrientationChange = { positionOrientation = it }
         )
         FloatingLyricsSliderListItem(
-            title = stringResource(R.string.settings_floating_lyrics_position_x),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_position_x),
             valueText = stringResource(
-                R.string.settings_floating_lyrics_position_value,
+                CoreCommonR.string.settings_floating_lyrics_position_value,
                 displayedPositionX * 100f
             ),
             icon = Icons.Outlined.SwapHoriz,
@@ -472,9 +472,9 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSliderListItem(
-            title = stringResource(R.string.settings_floating_lyrics_position_y),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_position_y),
             valueText = stringResource(
-                R.string.settings_floating_lyrics_position_value,
+                CoreCommonR.string.settings_floating_lyrics_position_value,
                 displayedPositionY * 100f
             ),
             icon = Icons.Outlined.SwapVert,
@@ -512,8 +512,8 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSwitchListItem(
-            title = stringResource(R.string.settings_floating_lyrics_show_translation),
-            description = stringResource(R.string.settings_floating_lyrics_show_translation_desc),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_show_translation),
+            description = stringResource(CoreCommonR.string.settings_floating_lyrics_show_translation_desc),
             icon = Icons.Outlined.Translate,
             checked = normalizedPreferences.showTranslation,
             onCheckedChange = { showTranslation ->
@@ -521,9 +521,9 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSwitchListItem(
-            title = stringResource(R.string.settings_floating_lyrics_disable_reveal_animation),
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_disable_reveal_animation),
             description = stringResource(
-                R.string.settings_floating_lyrics_disable_reveal_animation_desc
+                CoreCommonR.string.settings_floating_lyrics_disable_reveal_animation_desc
             ),
             icon = Icons.Outlined.AutoAwesome,
             checked = !normalizedPreferences.revealAnimationEnabled,
@@ -633,18 +633,18 @@ private fun FloatingLyricsRenderStyleSelector(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.AutoAwesome,
-                contentDescription = stringResource(R.string.settings_floating_lyrics_render_style),
+                contentDescription = stringResource(CoreCommonR.string.settings_floating_lyrics_render_style),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
         headlineContent = {
-            Text(stringResource(R.string.settings_floating_lyrics_render_style))
+            Text(stringResource(CoreCommonR.string.settings_floating_lyrics_render_style))
         },
         supportingContent = {
             MiuixSettingsSegmentedTabs(
                 labels = listOf(
-                    stringResource(R.string.settings_floating_lyrics_render_shadow),
-                    stringResource(R.string.settings_floating_lyrics_render_outline)
+                    stringResource(CoreCommonR.string.settings_floating_lyrics_render_shadow),
+                    stringResource(CoreCommonR.string.settings_floating_lyrics_render_outline)
                 ),
                 selectedIndex = selectedIndex,
                 onSelectedIndexChange = { index -> onRenderStyleChange(renderStyles[index]) },
@@ -673,18 +673,18 @@ private fun FloatingLyricsOrientationSelector(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ScreenRotation,
-                contentDescription = stringResource(R.string.settings_floating_lyrics_orientation),
+                contentDescription = stringResource(CoreCommonR.string.settings_floating_lyrics_orientation),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
         headlineContent = {
-            Text(stringResource(R.string.settings_floating_lyrics_orientation))
+            Text(stringResource(CoreCommonR.string.settings_floating_lyrics_orientation))
         },
         supportingContent = {
             MiuixSettingsSegmentedTabs(
                 labels = listOf(
-                    stringResource(R.string.settings_floating_lyrics_orientation_portrait),
-                    stringResource(R.string.settings_floating_lyrics_orientation_landscape)
+                    stringResource(CoreCommonR.string.settings_floating_lyrics_orientation_portrait),
+                    stringResource(CoreCommonR.string.settings_floating_lyrics_orientation_landscape)
                 ),
                 selectedIndex = selectedIndex,
                 onSelectedIndexChange = { index -> onOrientationChange(orientations[index]) },
@@ -714,17 +714,17 @@ private fun FloatingLyricsAlignmentSelector(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.FormatAlignCenter,
-                contentDescription = stringResource(R.string.settings_floating_lyrics_alignment),
+                contentDescription = stringResource(CoreCommonR.string.settings_floating_lyrics_alignment),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_floating_lyrics_alignment)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_floating_lyrics_alignment)) },
         supportingContent = {
             MiuixSettingsSegmentedTabs(
                 labels = listOf(
-                    stringResource(R.string.settings_floating_lyrics_align_left),
-                    stringResource(R.string.settings_floating_lyrics_align_center),
-                    stringResource(R.string.settings_floating_lyrics_align_right)
+                    stringResource(CoreCommonR.string.settings_floating_lyrics_align_left),
+                    stringResource(CoreCommonR.string.settings_floating_lyrics_align_center),
+                    stringResource(CoreCommonR.string.settings_floating_lyrics_align_right)
                 ),
                 selectedIndex = selectedIndex,
                 onSelectedIndexChange = { index -> onAlignmentChange(alignments[index]) },

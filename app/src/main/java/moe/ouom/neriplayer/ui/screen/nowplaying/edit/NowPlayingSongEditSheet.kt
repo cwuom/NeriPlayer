@@ -88,7 +88,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -280,7 +280,7 @@ fun EditSongInfoSheet(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.music_edit_info),
+                text = stringResource(CoreCommonR.string.music_edit_info),
                 style = MaterialTheme.typography.titleMedium
             )
 
@@ -291,7 +291,7 @@ fun EditSongInfoSheet(
                 },
                 enabled = !isSaving
             ) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
 
@@ -322,8 +322,8 @@ fun EditSongInfoSheet(
             EditSongEditableTextField(
                 value = songName,
                 onValueChange = owner::updateTitle,
-                label = stringResource(R.string.music_edit_title),
-                restoreDescription = stringResource(R.string.music_restore_title),
+                label = stringResource(CoreCommonR.string.music_edit_title),
+                restoreDescription = stringResource(CoreCommonR.string.music_restore_title),
                 enabled = owner.canEditFields(),
                 onRestore = {
                     applyOriginalInfo(
@@ -337,8 +337,8 @@ fun EditSongInfoSheet(
             EditSongEditableTextField(
                 value = artistName,
                 onValueChange = owner::updateArtist,
-                label = stringResource(R.string.music_edit_artist),
-                restoreDescription = stringResource(R.string.music_restore_artist),
+                label = stringResource(CoreCommonR.string.music_edit_artist),
+                restoreDescription = stringResource(CoreCommonR.string.music_restore_artist),
                 enabled = owner.canEditFields(),
                 onRestore = {
                     applyOriginalInfo(
@@ -398,7 +398,7 @@ fun EditSongInfoSheet(
 
     if (showLocalCoverSyncConfirm) {
         LocalSongSyncConfirmDialog(
-            actionLabel = composeResources.getString(R.string.music_edit_cover),
+            actionLabel = composeResources.getString(CoreCommonR.string.music_edit_cover),
             onConfirm = {
                 showLocalCoverSyncConfirm = false
                 if (shouldAllowLocalCoverReplacement(actualSong, context)) {
@@ -475,7 +475,7 @@ fun EditSongInfoSheet(
             onSaveFailed = {
                 coroutineScope.launch {
                     snackbarHostState.showNeriSnackbar(
-                        message = composeResources.getString(R.string.local_song_lyrics_write_failed),
+                        message = composeResources.getString(CoreCommonR.string.local_song_lyrics_write_failed),
                         withDismissAction = true,
                         duration = SnackbarDuration.Long
                     )
@@ -563,7 +563,7 @@ private fun EditSongSearchAction(
         Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(4.dp))
         Text(
-            text = stringResource(R.string.music_auto_fill), maxLines = 1, softWrap = false,
+            text = stringResource(CoreCommonR.string.music_auto_fill), maxLines = 1, softWrap = false,
             overflow = TextOverflow.Ellipsis, fontSize = fontSize
         )
     }
@@ -577,7 +577,7 @@ private fun EditSongRestoreAction(
         Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(4.dp))
         Text(
-            text = stringResource(R.string.music_restore_original), maxLines = 1,
+            text = stringResource(CoreCommonR.string.music_restore_original), maxLines = 1,
             softWrap = false, overflow = TextOverflow.Ellipsis, fontSize = fontSize
         )
     }
@@ -599,7 +599,7 @@ private fun EditSongSaveAction(
         }
         Spacer(Modifier.width(4.dp))
         Text(
-            text = stringResource(R.string.music_save_changes), maxLines = 1,
+            text = stringResource(CoreCommonR.string.music_save_changes), maxLines = 1,
             softWrap = false, overflow = TextOverflow.Ellipsis, fontSize = fontSize
         )
     }
@@ -661,11 +661,11 @@ private fun EditSongCoverUrlInput(
     EditSongEditableTextField(
         value = owner.coverUrlState.value,
         onValueChange = owner.onCoverUrlChange,
-        label = resources.getString(R.string.music_cover_url),
-        restoreDescription = resources.getString(R.string.music_restore_cover),
+        label = resources.getString(CoreCommonR.string.music_cover_url),
+        restoreDescription = resources.getString(CoreCommonR.string.music_restore_cover),
         enabled = owner.canEditFields(),
         onRestore = onRestore,
-        placeholder = { Text(resources.getString(R.string.music_cover_url_hint)) }
+        placeholder = { Text(resources.getString(CoreCommonR.string.music_cover_url_hint)) }
     )
 }
 
@@ -738,7 +738,7 @@ private fun EditSongCoverPlaceholder(canReplaceFromFile: Boolean) {
 
 @Composable
 private fun editSongCoverDescription(canReplaceFromFile: Boolean): String? =
-    stringResource(R.string.music_edit_cover).takeIf { canReplaceFromFile }
+    stringResource(CoreCommonR.string.music_edit_cover).takeIf { canReplaceFromFile }
 
 @Composable
 private fun EditSongLyricsButton(busy: Boolean, enabled: Boolean, onClick: () -> Unit) {
@@ -753,6 +753,6 @@ private fun EditSongLyricsButton(busy: Boolean, enabled: Boolean, onClick: () ->
             Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(8.dp))
-        Text(stringResource(R.string.music_edit_lyrics))
+        Text(stringResource(CoreCommonR.string.music_edit_lyrics))
     }
 }

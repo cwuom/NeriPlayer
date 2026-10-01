@@ -113,7 +113,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -313,8 +313,8 @@ internal fun LocalPlaylistDetailModernContent(
                         TopAppBar(
                             title = {
                                 val displayName = when {
-                                    isFavorites -> stringResource(R.string.favorite_my_music)
-                                    isLocalFilesPlaylist -> stringResource(R.string.local_files)
+                                    isFavorites -> stringResource(CoreCommonR.string.favorite_my_music)
+                                    isLocalFilesPlaylist -> stringResource(CoreCommonR.string.local_files)
                                     else -> playlist.name
                                 }
                                 Text(
@@ -327,7 +327,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 HapticIconButton(onClick = onBack) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = stringResource(R.string.action_back)
+                                        contentDescription = stringResource(CoreCommonR.string.action_back)
                                     )
                                 }
                             },
@@ -343,7 +343,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 }) {
                                     Icon(
                                         Icons.Filled.Search,
-                                        contentDescription = stringResource(R.string.cd_search_songs)
+                                        contentDescription = stringResource(CoreCommonR.string.cd_search_songs)
                                     )
                                 }
 
@@ -353,7 +353,7 @@ internal fun LocalPlaylistDetailModernContent(
                                     ) {
                                         Icon(
                                             Icons.Outlined.Download,
-                                            contentDescription = stringResource(R.string.cd_download_manager),
+                                            contentDescription = stringResource(CoreCommonR.string.cd_download_manager),
                                             tint = playlistTopBarContentColor
                                         )
                                     }
@@ -368,7 +368,7 @@ internal fun LocalPlaylistDetailModernContent(
                                     }, enabled = !scanPreviewState.isScanning) {
                                         Icon(
                                             Icons.Outlined.LibraryMusic,
-                                            contentDescription = stringResource(R.string.download_scan_local)
+                                            contentDescription = stringResource(CoreCommonR.string.download_scan_local)
                                         )
                                     }
                                 }
@@ -385,7 +385,7 @@ internal fun LocalPlaylistDetailModernContent(
                                         } else {
                                             Icon(
                                                 imageVector = Icons.Outlined.Sync,
-                                                contentDescription = stringResource(R.string.local_playlist_sync_netease_liked)
+                                                contentDescription = stringResource(CoreCommonR.string.local_playlist_sync_netease_liked)
                                             )
                                         }
                                     }
@@ -400,7 +400,7 @@ internal fun LocalPlaylistDetailModernContent(
                                     }) {
                                         Icon(
                                             Icons.Filled.Edit,
-                                            contentDescription = stringResource(R.string.local_playlist_rename)
+                                            contentDescription = stringResource(CoreCommonR.string.local_playlist_rename)
                                         )
                                     }
                                     HapticIconButton(onClick = {
@@ -408,7 +408,7 @@ internal fun LocalPlaylistDetailModernContent(
                                     }) {
                                         Icon(
                                             Icons.Filled.Delete,
-                                            contentDescription = stringResource(R.string.local_playlist_delete)
+                                            contentDescription = stringResource(CoreCommonR.string.local_playlist_delete)
                                         )
                                     }
                                 }
@@ -432,7 +432,7 @@ internal fun LocalPlaylistDetailModernContent(
                             title = {
                                 Text(
                                     pluralStringResource(
-                                        R.plurals.common_selected_count,
+                                        CoreCommonR.plurals.common_selected_count,
                                         selectedKeysState.value.size,
                                         selectedKeysState.value.size
                                     ),
@@ -446,7 +446,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 HapticIconButton(onClick = { exitSelectionMode() }) {
                                     Icon(
                                         Icons.Filled.Close,
-                                        contentDescription = stringResource(R.string.cd_exit_select)
+                                        contentDescription = stringResource(CoreCommonR.string.cd_exit_select)
                                     )
                                 }
                             },
@@ -461,8 +461,8 @@ internal fun LocalPlaylistDetailModernContent(
                                 ) {
                                     Icon(
                                         imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                        contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(
-                                            R.string.action_select_all
+                                        contentDescription = if (allSelected) stringResource(CoreCommonR.string.action_deselect_all) else stringResource(
+                                            CoreCommonR.string.action_select_all
                                         )
                                     )
                                 }
@@ -473,7 +473,7 @@ internal fun LocalPlaylistDetailModernContent(
                                     Icon(
                                         imageVector = Icons.Outlined.Sync,
                                         contentDescription = stringResource(
-                                            R.string.local_playlist_sync_netease_playlist
+                                            CoreCommonR.string.local_playlist_sync_netease_playlist
                                         )
                                     )
                                 }
@@ -487,7 +487,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                        contentDescription = stringResource(R.string.cd_export_playlist)
+                                        contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
                                     )
                                 }
                                 HapticIconButton(
@@ -506,7 +506,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 ) {
                                     Icon(
                                         Icons.Outlined.Download,
-                                        contentDescription = stringResource(R.string.cd_download_selected)
+                                        contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
                                     )
                                 }
                                 HapticIconButton(
@@ -522,7 +522,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 ) {
                                     Icon(
                                         Icons.Filled.Delete,
-                                        contentDescription = stringResource(R.string.common_delete_selected)
+                                        contentDescription = stringResource(CoreCommonR.string.common_delete_selected)
                                     )
                                 }
                             },
@@ -579,7 +579,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 PlaylistModernStableSearchField(
                                     query = searchQuery,
                                     onQueryChange = { searchQuery = it },
-                                    placeholder = stringResource(R.string.search_playlist),
+                                    placeholder = stringResource(CoreCommonR.string.search_playlist),
                                     inputState = searchInputState,
                                     onFocusChanged = { dockedSearchFocused = it },
                                     focusRequester = if (searchFieldFocusInHeader) {
@@ -633,7 +633,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                         PlaylistModernHeroSearchField(
                                                             query = searchQuery,
                                                             onQueryChange = { searchQuery = it },
-                                                            placeholder = stringResource(R.string.search_playlist),
+                                                            placeholder = stringResource(CoreCommonR.string.search_playlist),
                                                             inputState = searchInputState,
                                                             onFocusChanged = {
                                                                 headerSearchFocused = it
@@ -680,7 +680,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                             },
                                                             text = {
                                                                 Text(
-                                                                    stringResource(R.string.local_files_manual_added)
+                                                                    stringResource(CoreCommonR.string.local_files_manual_added)
                                                                 )
                                                             }
                                                         )
@@ -693,7 +693,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                             },
                                                             text = {
                                                                 Text(
-                                                                    stringResource(R.string.local_files_downloaded)
+                                                                    stringResource(CoreCommonR.string.local_files_downloaded)
                                                                 )
                                                             }
                                                         )
@@ -920,7 +920,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                         Icon(
                                                                             Icons.Filled.MoreVert,
                                                                             contentDescription = stringResource(
-                                                                                R.string.cd_more_actions
+                                                                                CoreCommonR.string.cd_more_actions
                                                                             ),
                                                                             tint = playlistModernListSecondaryContentColor()
                                                                         )
@@ -937,7 +937,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                                 text = {
                                                                                     Text(
                                                                                         stringResource(
-                                                                                            R.string.local_song_open_details
+                                                                                            CoreCommonR.string.local_song_open_details
                                                                                         )
                                                                                     )
                                                                                 },
@@ -958,7 +958,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                                 text = {
                                                                                     Text(
                                                                                         stringResource(
-                                                                                            R.string.action_share
+                                                                                            CoreCommonR.string.action_share
                                                                                         )
                                                                                     )
                                                                                 },
@@ -982,7 +982,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                                         if (!shared) {
                                                                                             snackbarHostState.showNeriSnackbar(
                                                                                                 composeResources.getString(
-                                                                                                    R.string.local_song_share_failed
+                                                                                                    CoreCommonR.string.local_song_share_failed
                                                                                                 )
                                                                                             )
                                                                                         }
@@ -993,7 +993,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                         DropdownMenuItem(
                                                                             text = {
                                                                                 Text(
-                                                                                    stringResource(R.string.local_playlist_play_next)
+                                                                                    stringResource(CoreCommonR.string.local_playlist_play_next)
                                                                                 )
                                                                             },
                                                                             leadingIcon = {
@@ -1012,7 +1012,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                         DropdownMenuItem(
                                                                             text = {
                                                                                 Text(
-                                                                                    stringResource(R.string.playlist_add_to_end)
+                                                                                    stringResource(CoreCommonR.string.playlist_add_to_end)
                                                                                 )
                                                                             },
                                                                             leadingIcon = {
@@ -1033,9 +1033,9 @@ internal fun LocalPlaylistDetailModernContent(
                                                                                 Text(
                                                                                     stringResource(
                                                                                         if (isFavoriteSong) {
-                                                                                            R.string.favorite_remove
+                                                                                            CoreCommonR.string.favorite_remove
                                                                                         } else {
-                                                                                            R.string.favorite_add
+                                                                                            CoreCommonR.string.favorite_add
                                                                                         }
                                                                                     )
                                                                                 )
@@ -1061,7 +1061,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                         DropdownMenuItem(
                                                                             text = {
                                                                                 Text(
-                                                                                    stringResource(R.string.action_copy_song_info)
+                                                                                    stringResource(CoreCommonR.string.action_copy_song_info)
                                                                                 )
                                                                             },
                                                                             leadingIcon = {
@@ -1079,7 +1079,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                                     )
                                                                                     snackbarHostState.showNeriSnackbar(
                                                                                         composeResources.getString(
-                                                                                            R.string.toast_copied
+                                                                                            CoreCommonR.string.toast_copied
                                                                                         )
                                                                                     )
                                                                                 }
@@ -1100,7 +1100,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                             Icon(
                                                                 imageVector = Icons.Filled.DragHandle,
                                                                 contentDescription = stringResource(
-                                                                    R.string.common_drag_handle
+                                                                    CoreCommonR.string.common_drag_handle
                                                                 ),
                                                                 modifier = Modifier.size(24.dp)
                                                             )
@@ -1136,7 +1136,7 @@ internal fun LocalPlaylistDetailModernContent(
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                    contentDescription = stringResource(R.string.cd_locate_playing)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_locate_playing)
                                 )
                             }
                         }
@@ -1149,8 +1149,8 @@ internal fun LocalPlaylistDetailModernContent(
                 if (showDeletePlaylistConfirm) {
                     AlertDialog(
                         onDismissRequest = { showDeletePlaylistConfirm = false },
-                        title = { Text(stringResource(R.string.local_playlist_delete)) },
-                        text = { Text(stringResource(R.string.local_playlist_delete_confirm)) },
+                        title = { Text(stringResource(CoreCommonR.string.local_playlist_delete)) },
+                        text = { Text(stringResource(CoreCommonR.string.local_playlist_delete_confirm)) },
                         confirmButton = {
                             HapticTextButton(onClick = {
                                 showDeletePlaylistConfirm = false
@@ -1164,12 +1164,12 @@ internal fun LocalPlaylistDetailModernContent(
                                         navigateAfterPlaylistDeleted()
                                     }
                                 }
-                            }) { Text(stringResource(R.string.action_delete)) }
+                            }) { Text(stringResource(CoreCommonR.string.action_delete)) }
                         },
                         dismissButton = {
                             HapticTextButton(onClick = {
                                 showDeletePlaylistConfirm = false
-                            }) { Text(stringResource(R.string.action_cancel)) }
+                            }) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                         }
                     )
                 }
@@ -1185,9 +1185,9 @@ internal fun LocalPlaylistDetailModernContent(
                             Text(
                                 stringResource(
                                     if (deletesDownloadedSongs) {
-                                        R.string.local_files_delete_downloaded_title
+                                        CoreCommonR.string.local_files_delete_downloaded_title
                                     } else {
-                                        R.string.local_playlist_delete_songs
+                                        CoreCommonR.string.local_playlist_delete_songs
                                     }
                                 )
                             )
@@ -1196,13 +1196,13 @@ internal fun LocalPlaylistDetailModernContent(
                             Text(
                                 if (deletesDownloadedSongs) {
                                     pluralStringResource(
-                                        R.plurals.local_files_delete_downloaded_confirm,
+                                        CoreCommonR.plurals.local_files_delete_downloaded_confirm,
                                         count,
                                         count
                                     )
                                 } else {
                                     pluralStringResource(
-                                        R.plurals.local_playlist_delete_songs_confirm,
+                                        CoreCommonR.plurals.local_playlist_delete_songs_confirm,
                                         count,
                                         count
                                     )
@@ -1224,7 +1224,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                 val message = when {
                                                     result.physicalCleanupPending -> {
                                                         context.resources.getQuantityString(
-                                                            R.plurals.local_files_delete_downloaded_cleanup_pending,
+                                                            CoreCommonR.plurals.local_files_delete_downloaded_cleanup_pending,
                                                             result.deletedCount + result.notDeletedCount,
                                                             result.deletedCount + result.notDeletedCount
                                                         )
@@ -1232,7 +1232,7 @@ internal fun LocalPlaylistDetailModernContent(
 
                                                     result.deletedCount > 0 && result.notDeletedCount == 0 -> {
                                                         context.resources.getQuantityString(
-                                                            R.plurals.local_files_delete_downloaded_success,
+                                                            CoreCommonR.plurals.local_files_delete_downloaded_success,
                                                             result.deletedCount,
                                                             result.deletedCount
                                                         )
@@ -1240,7 +1240,7 @@ internal fun LocalPlaylistDetailModernContent(
 
                                                     result.deletedCount > 0 -> {
                                                         composeResources.getQuantityString(
-                                                            R.plurals.local_files_delete_downloaded_partial,
+                                                            CoreCommonR.plurals.local_files_delete_downloaded_partial,
                                                             result.deletedCount,
                                                             result.deletedCount,
                                                             result.notDeletedCount
@@ -1249,7 +1249,7 @@ internal fun LocalPlaylistDetailModernContent(
 
                                                     else -> {
                                                         composeResources.getString(
-                                                            R.string.local_files_delete_downloaded_failed
+                                                            CoreCommonR.string.local_files_delete_downloaded_failed
                                                         )
                                                     }
                                                 }
@@ -1294,7 +1294,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 }) {
                                 Text(
                                     stringResource(
-                                        R.string.local_playlist_delete_count,
+                                        CoreCommonR.string.local_playlist_delete_count,
                                         count
                                     )
                                 )
@@ -1303,7 +1303,7 @@ internal fun LocalPlaylistDetailModernContent(
                         dismissButton = {
                             HapticTextButton(onClick = {
                                 showDeleteMultiConfirm = false
-                            }) { Text(stringResource(R.string.action_cancel)) }
+                            }) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                         }
                     )
                 }
@@ -1311,7 +1311,7 @@ internal fun LocalPlaylistDetailModernContent(
                 // 多选导出
                 if (showExportSheet) {
                     PlaylistExportSheet(
-                        title = stringResource(R.string.local_playlist_export_to),
+                        title = stringResource(CoreCommonR.string.local_playlist_export_to),
                         playlists = allPlaylists.filter {
                             it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(
                                 it,
@@ -1327,7 +1327,7 @@ internal fun LocalPlaylistDetailModernContent(
                             )
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "createPlaylistFromLocalPlaylist",
@@ -1352,7 +1352,7 @@ internal fun LocalPlaylistDetailModernContent(
                             )
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "exportSongsFromLocalPlaylist",
@@ -1377,7 +1377,7 @@ internal fun LocalPlaylistDetailModernContent(
 
                 if (showExportAllSheet) {
                     PlaylistExportSheet(
-                        title = stringResource(R.string.playlist_export_to_local),
+                        title = stringResource(CoreCommonR.string.playlist_export_to_local),
                         playlists = allPlaylists.filter {
                             it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(
                                 it,
@@ -1390,7 +1390,7 @@ internal fun LocalPlaylistDetailModernContent(
                             val songs = tabSongs
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "createPlaylistFromLocalPlaylistAll",
@@ -1412,7 +1412,7 @@ internal fun LocalPlaylistDetailModernContent(
                             val songs = tabSongs
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = composeResources.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation(
                                     operation = "exportAllSongsFromLocalPlaylist",
@@ -1452,7 +1452,7 @@ internal fun LocalPlaylistDetailModernContent(
                         title = {
                             Text(
                                 stringResource(
-                                    R.string.local_playlist_sync_netease_partial_confirm_title
+                                    CoreCommonR.string.local_playlist_sync_netease_partial_confirm_title
                                 )
                             )
                         },
@@ -1460,13 +1460,13 @@ internal fun LocalPlaylistDetailModernContent(
                             Text(
                                 "${
                                     pluralStringResource(
-                                        R.plurals.local_playlist_sync_netease_partial_confirm_unsupported,
+                                        CoreCommonR.plurals.local_playlist_sync_netease_partial_confirm_unsupported,
                                         pending.unsupportedCount,
                                         pending.unsupportedCount
                                     )
                                 } ${
                                     pluralStringResource(
-                                        R.plurals.local_playlist_sync_netease_partial_confirm_target,
+                                        CoreCommonR.plurals.local_playlist_sync_netease_partial_confirm_target,
                                         supportedCount,
                                         supportedCount,
                                         pending.target.name
@@ -1484,14 +1484,14 @@ internal fun LocalPlaylistDetailModernContent(
                                     )
                                 }
                             ) {
-                                Text(stringResource(R.string.action_confirm))
+                                Text(stringResource(CoreCommonR.string.action_confirm))
                             }
                         },
                         dismissButton = {
                             HapticTextButton(
                                 onClick = { pendingNeteaseRemoteSyncConfirm = null }
                             ) {
-                                Text(stringResource(R.string.action_cancel))
+                                Text(stringResource(CoreCommonR.string.action_cancel))
                             }
                         }
                     )
@@ -1521,20 +1521,20 @@ internal fun LocalPlaylistDetailModernContent(
                 if (showNeteaseSyncConfirm) {
                     AlertDialog(
                         onDismissRequest = { showNeteaseSyncConfirm = false },
-                        title = { Text(stringResource(R.string.local_playlist_sync_netease_confirm_title)) },
-                        text = { Text(stringResource(R.string.local_playlist_sync_netease_confirm_message)) },
+                        title = { Text(stringResource(CoreCommonR.string.local_playlist_sync_netease_confirm_title)) },
+                        text = { Text(stringResource(CoreCommonR.string.local_playlist_sync_netease_confirm_message)) },
                         confirmButton = {
                             HapticTextButton(
                                 onClick = {
                                     showNeteaseSyncConfirm = false
                                     openNeteaseSyncPreview()
                                 }
-                            ) { Text(stringResource(R.string.action_confirm)) }
+                            ) { Text(stringResource(CoreCommonR.string.action_confirm)) }
                         },
                         dismissButton = {
                             HapticTextButton(
                                 onClick = { showNeteaseSyncConfirm = false }
-                            ) { Text(stringResource(R.string.action_cancel)) }
+                            ) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                         }
                     )
                 }

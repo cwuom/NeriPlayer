@@ -11,7 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
 import moe.ouom.neriplayer.data.model.ltw.ListenTogetherServerTestResult
@@ -105,19 +105,19 @@ class SettingsListenTogetherControllerTest {
         val unavailable = ListenTogetherServerTestResult(ok = false, message = "timeout")
 
         assertEquals(
-            R.string.settings_listen_together_server_test_success_default,
+            CoreCommonR.string.settings_listen_together_server_test_success_default,
             listenTogetherServerTestMessageId(reachable, usingDefaultServer = true)
         )
         assertEquals(
-            R.string.settings_listen_together_server_test_success_custom,
+            CoreCommonR.string.settings_listen_together_server_test_success_custom,
             listenTogetherServerTestMessageId(reachable, usingDefaultServer = false)
         )
         assertEquals(
-            R.string.settings_listen_together_server_test_invalid,
+            CoreCommonR.string.settings_listen_together_server_test_invalid,
             listenTogetherServerTestMessageId(malformed, usingDefaultServer = false)
         )
         assertEquals(
-            R.string.settings_listen_together_server_test_failed,
+            CoreCommonR.string.settings_listen_together_server_test_failed,
             listenTogetherServerTestMessageId(unavailable, usingDefaultServer = true)
         )
     }
@@ -125,33 +125,33 @@ class SettingsListenTogetherControllerTest {
     @Test
     fun `room and server rows display the active restriction and endpoint`() {
         assertEquals(
-            R.string.settings_listen_together_join_room_disabled,
+            CoreCommonR.string.settings_listen_together_join_room_disabled,
             listenTogetherJoinDescriptionId(isInRoom = true)
         )
         assertEquals(
-            R.string.settings_listen_together_join_room_desc,
+            CoreCommonR.string.settings_listen_together_join_room_desc,
             listenTogetherJoinDescriptionId(isInRoom = false)
         )
         assertEquals(
-            R.string.listen_together_reset_uuid_disabled,
+            CoreCommonR.string.listen_together_reset_uuid_disabled,
             listenTogetherIdentityDescriptionId(isInRoom = true)
         )
         assertEquals(
-            R.string.settings_listen_together_reset_identity_desc,
+            CoreCommonR.string.settings_listen_together_reset_identity_desc,
             listenTogetherIdentityDescriptionId(isInRoom = false)
         )
         assertEquals(
-            R.string.settings_listen_together_server_default_desc,
+            CoreCommonR.string.settings_listen_together_server_default_desc,
             listenTogetherServerDescriptionId(usingDefault = true)
         )
         assertEquals(
-            R.string.settings_listen_together_server_custom_desc,
+            CoreCommonR.string.settings_listen_together_server_custom_desc,
             listenTogetherServerDescriptionId(usingDefault = false)
         )
-        assertEquals(R.string.listen_together_joining_room,
+        assertEquals(CoreCommonR.string.listen_together_joining_room,
             listenTogetherJoinButtonLabelId(joining = true)
         )
-        assertEquals(R.string.listen_together_join_room,
+        assertEquals(CoreCommonR.string.listen_together_join_room,
             listenTogetherJoinButtonLabelId(joining = false)
         )
     }
@@ -170,9 +170,9 @@ class SettingsListenTogetherControllerTest {
     @Test
     fun `join dialog rejects invalid invite and a room already in progress`() {
         val fixture = controllerFixture()
-        `when`(fixture.resources.getString(R.string.settings_listen_together_join_invite_invalid))
+        `when`(fixture.resources.getString(CoreCommonR.string.settings_listen_together_join_invite_invalid))
             .thenReturn("invalid invite")
-        `when`(fixture.resources.getString(R.string.settings_listen_together_join_room_disabled))
+        `when`(fixture.resources.getString(CoreCommonR.string.settings_listen_together_join_room_disabled))
             .thenReturn("already in room")
 
         fixture.controller.openJoinDialog()
@@ -227,7 +227,7 @@ class SettingsListenTogetherControllerTest {
             assertEquals("https://example.com", baseUrl)
             result
         })
-        `when`(fixture.resources.getString(R.string.settings_listen_together_server_test_success_custom))
+        `when`(fixture.resources.getString(CoreCommonR.string.settings_listen_together_server_test_success_custom))
             .thenReturn("custom server available")
 
         fixture.controller.updateServerInput("https://example.com/")
@@ -245,7 +245,7 @@ class SettingsListenTogetherControllerTest {
             assertEquals("https://neriplayer.hancat.work", baseUrl)
             ListenTogetherServerTestResult(ok = true, message = "reachable")
         })
-        `when`(fixture.resources.getString(R.string.settings_listen_together_server_test_success_default))
+        `when`(fixture.resources.getString(CoreCommonR.string.settings_listen_together_server_test_success_default))
             .thenReturn("default server available")
 
         fixture.controller.testServer()
@@ -262,7 +262,7 @@ class SettingsListenTogetherControllerTest {
             delay(10)
             ListenTogetherServerTestResult(ok = true, message = "reachable")
         })
-        `when`(fixture.resources.getString(R.string.settings_listen_together_server_test_success_custom))
+        `when`(fixture.resources.getString(CoreCommonR.string.settings_listen_together_server_test_success_custom))
             .thenReturn("custom server available")
 
         fixture.controller.updateServerInput("https://example.com")

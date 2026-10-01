@@ -13,7 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
@@ -44,16 +44,16 @@ private fun ListenTogetherDialogHost(visible: Boolean, content: @Composable () -
 private fun SettingsListenTogetherResetUuidDialog(controller: SettingsListenTogetherController) {
     MiuixSettingsDialog(
         onDismissRequest = controller.dismissResetUuidAction,
-        title = { Text(stringResource(R.string.listen_together_reset_uuid)) },
-        text = { Text(stringResource(R.string.listen_together_reset_uuid_confirm)) },
+        title = { Text(stringResource(CoreCommonR.string.listen_together_reset_uuid)) },
+        text = { Text(stringResource(CoreCommonR.string.listen_together_reset_uuid_confirm)) },
         confirmButton = {
             MiuixSettingsTextButton(onClick = controller::resetUuid) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         },
         dismissButton = {
             MiuixSettingsTextButton(onClick = controller::dismissResetUuidDialog) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -63,16 +63,16 @@ private fun SettingsListenTogetherResetUuidDialog(controller: SettingsListenToge
 private fun SettingsListenTogetherNicknameDialog(controller: SettingsListenTogetherController) {
     MiuixSettingsDialog(
         onDismissRequest = controller.dismissNicknameAction,
-        title = { Text(stringResource(R.string.settings_listen_together_default_nickname_title)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_listen_together_default_nickname_title)) },
         text = { SettingsListenTogetherNicknameInput(controller) },
         confirmButton = {
             MiuixSettingsTextButton(onClick = controller::applyNickname) {
-                Text(stringResource(R.string.action_apply))
+                Text(stringResource(CoreCommonR.string.action_apply))
             }
         },
         dismissButton = {
             MiuixSettingsTextButton(onClick = controller::dismissNicknameDialog) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -86,7 +86,7 @@ private fun SettingsListenTogetherNicknameInput(controller: SettingsListenTogeth
             onValueChange = controller.updateNicknameAction,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            label = { Text(stringResource(R.string.settings_listen_together_default_nickname_input_label)) }
+            label = { Text(stringResource(CoreCommonR.string.settings_listen_together_default_nickname_input_label)) }
         )
         SettingsListenTogetherErrorMessage(controller.nicknameError)
     }
@@ -96,7 +96,7 @@ private fun SettingsListenTogetherNicknameInput(controller: SettingsListenTogeth
 private fun SettingsListenTogetherJoinDialog(controller: SettingsListenTogetherController) {
     MiuixSettingsDialog(
         onDismissRequest = controller.dismissJoinAction,
-        title = { Text(stringResource(R.string.listen_together_join_room)) },
+        title = { Text(stringResource(CoreCommonR.string.listen_together_join_room)) },
         text = { SettingsListenTogetherJoinInput(controller) },
         confirmButton = {
             MiuixSettingsTextButton(
@@ -111,27 +111,27 @@ private fun SettingsListenTogetherJoinDialog(controller: SettingsListenTogetherC
                 onClick = controller::dismissJoinDialog,
                 enabled = !controller.joining
             ) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
 }
 
 internal fun listenTogetherJoinButtonLabelId(joining: Boolean): Int =
-    if (joining) R.string.listen_together_joining_room else R.string.listen_together_join_room
+    if (joining) CoreCommonR.string.listen_together_joining_room else CoreCommonR.string.listen_together_join_room
 
 @Composable
 private fun SettingsListenTogetherJoinInput(controller: SettingsListenTogetherController) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.settings_listen_together_join_room_desc))
+        Text(stringResource(CoreCommonR.string.settings_listen_together_join_room_desc))
         MiuixSettingsTextField(
             value = controller.inviteInput,
             onValueChange = controller.updateInviteAction,
             enabled = !controller.joining,
             minLines = 2,
             maxLines = 5,
-            label = { Text(stringResource(R.string.settings_listen_together_join_invite_input_label)) },
-            placeholder = { Text(stringResource(R.string.settings_listen_together_join_invite_input_placeholder)) }
+            label = { Text(stringResource(CoreCommonR.string.settings_listen_together_join_invite_input_label)) },
+            placeholder = { Text(stringResource(CoreCommonR.string.settings_listen_together_join_invite_input_placeholder)) }
         )
         SettingsListenTogetherErrorMessage(controller.inviteError)
         SettingsListenTogetherJoinProgress(controller.joining)
@@ -140,21 +140,21 @@ private fun SettingsListenTogetherJoinInput(controller: SettingsListenTogetherCo
 
 @Composable
 private fun SettingsListenTogetherJoinProgress(joining: Boolean) {
-    if (joining) SettingsListenTogetherProgress(R.string.listen_together_joining_room)
+    if (joining) SettingsListenTogetherProgress(CoreCommonR.string.listen_together_joining_room)
 }
 
 @Composable
 private fun SettingsListenTogetherServerDialog(controller: SettingsListenTogetherController) {
     MiuixSettingsDialog(
         onDismissRequest = controller.dismissServerAction,
-        title = { Text(stringResource(R.string.settings_listen_together_server_title)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_listen_together_server_title)) },
         text = { SettingsListenTogetherServerDialogContent(controller) },
         confirmButton = {
             MiuixSettingsTextButton(
                 onClick = controller::applyServer,
                 enabled = !controller.serverTesting
             ) {
-                Text(stringResource(R.string.action_apply))
+                Text(stringResource(CoreCommonR.string.action_apply))
             }
         },
         dismissButton = {
@@ -162,7 +162,7 @@ private fun SettingsListenTogetherServerDialog(controller: SettingsListenTogethe
                 onClick = controller::dismissServerDialog,
                 enabled = !controller.serverTesting
             ) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -179,8 +179,8 @@ private fun SettingsListenTogetherServerDialogContent(controller: SettingsListen
 }
 
 internal fun listenTogetherServerDescriptionId(usingDefault: Boolean): Int =
-    if (usingDefault) R.string.settings_listen_together_server_default_desc
-    else R.string.settings_listen_together_server_custom_desc
+    if (usingDefault) CoreCommonR.string.settings_listen_together_server_default_desc
+    else CoreCommonR.string.settings_listen_together_server_custom_desc
 
 @Composable
 private fun SettingsListenTogetherServerInput(controller: SettingsListenTogetherController) {
@@ -189,15 +189,15 @@ private fun SettingsListenTogetherServerInput(controller: SettingsListenTogether
         onValueChange = controller.updateServerAction,
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        label = { Text(stringResource(R.string.settings_listen_together_server_input_label)) },
-        placeholder = { Text(stringResource(R.string.settings_listen_together_server_input_placeholder)) }
+        label = { Text(stringResource(CoreCommonR.string.settings_listen_together_server_input_label)) },
+        placeholder = { Text(stringResource(CoreCommonR.string.settings_listen_together_server_input_placeholder)) }
     )
 }
 
 @Composable
 private fun SettingsListenTogetherServerFeedback(controller: SettingsListenTogetherController) {
     if (controller.serverTesting) {
-        SettingsListenTogetherProgress(R.string.settings_listen_together_server_testing)
+        SettingsListenTogetherProgress(CoreCommonR.string.settings_listen_together_server_testing)
     } else {
         SettingsListenTogetherServerResult(controller.serverTestMessage)
     }
@@ -228,7 +228,7 @@ private fun SettingsListenTogetherTestServerButton(controller: SettingsListenTog
         onClick = controller.testServerAction,
         enabled = !controller.serverTesting
     ) {
-        Text(stringResource(R.string.settings_listen_together_server_test))
+        Text(stringResource(CoreCommonR.string.settings_listen_together_server_test))
     }
 }
 
@@ -238,7 +238,7 @@ private fun SettingsListenTogetherResetServerButton(controller: SettingsListenTo
         onClick = controller.resetServerInputAction,
         enabled = !controller.serverTesting
     ) {
-        Text(stringResource(R.string.action_reset))
+        Text(stringResource(CoreCommonR.string.action_reset))
     }
 }
 

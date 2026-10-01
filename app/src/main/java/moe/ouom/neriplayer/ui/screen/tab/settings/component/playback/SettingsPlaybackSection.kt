@@ -78,13 +78,13 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
@@ -148,9 +148,9 @@ internal fun SettingsPlaybackSection(
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
-            title = stringResource(R.string.settings_playback),
-            subtitleCollapsed = stringResource(R.string.settings_playback_expand),
-            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            title = stringResource(CoreCommonR.string.settings_playback),
+            subtitleCollapsed = stringResource(CoreCommonR.string.settings_playback_expand),
+            subtitleExpanded = stringResource(CoreCommonR.string.settings_login_platforms_collapse),
             expanded = expanded,
             onToggle = { onExpandedChange(!expanded) },
             arrowRotation = arrowRotation
@@ -179,8 +179,8 @@ internal fun SettingsPlaybackSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_playback_section_behavior),
-                    description = stringResource(R.string.settings_playback_section_behavior_desc)
+                    title = stringResource(CoreCommonR.string.settings_playback_section_behavior),
+                    description = stringResource(CoreCommonR.string.settings_playback_section_behavior_desc)
                 )
 
                 PlaybackSwitchItem(
@@ -192,7 +192,7 @@ internal fun SettingsPlaybackSection(
                         Icon(
                             imageVector = Icons.Outlined.Timer,
                             contentDescription = stringResource(
-                                R.string.settings_playback_sleep_timer_finish_current_on_expiry
+                                CoreCommonR.string.settings_playback_sleep_timer_finish_current_on_expiry
                             ),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
@@ -217,7 +217,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.History,
-                            contentDescription = stringResource(R.string.settings_keep_last_playback_progress),
+                            contentDescription = stringResource(CoreCommonR.string.settings_keep_last_playback_progress),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -238,7 +238,7 @@ internal fun SettingsPlaybackSection(
                         Icon(
                             imageVector = Icons.Outlined.Bookmark,
                             contentDescription = stringResource(
-                                R.string.settings_remember_long_form_playback_progress
+                                CoreCommonR.string.settings_remember_long_form_playback_progress
                             ),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
@@ -263,7 +263,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.FastForward,
-                            contentDescription = stringResource(R.string.settings_bili_sponsor_block),
+                            contentDescription = stringResource(CoreCommonR.string.settings_bili_sponsor_block),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -287,7 +287,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.Tune,
-                            contentDescription = stringResource(R.string.settings_keep_playback_mode_state),
+                            contentDescription = stringResource(CoreCommonR.string.settings_keep_playback_mode_state),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -305,7 +305,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.BluetoothAudio,
-                            contentDescription = stringResource(R.string.settings_stop_on_bluetooth_disconnect),
+                            contentDescription = stringResource(CoreCommonR.string.settings_stop_on_bluetooth_disconnect),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -326,8 +326,8 @@ internal fun SettingsPlaybackSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_playback_section_audio_output),
-                    description = stringResource(R.string.settings_playback_section_audio_output_desc)
+                    title = stringResource(CoreCommonR.string.settings_playback_section_audio_output),
+                    description = stringResource(CoreCommonR.string.settings_playback_section_audio_output_desc)
                 )
 
                 PlaybackSwitchItem(
@@ -339,7 +339,7 @@ internal fun SettingsPlaybackSection(
                         Icon(
                             imageVector = Icons.Outlined.HighQuality,
                             contentDescription = stringResource(
-                                R.string.settings_playback_high_resolution_output
+                                CoreCommonR.string.settings_playback_high_resolution_output
                             ),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
@@ -365,7 +365,7 @@ internal fun SettingsPlaybackSection(
                         Icon(
                             imageVector = Icons.Outlined.BarChart,
                             contentDescription = stringResource(
-                                R.string.settings_playback_volume_normalization
+                                CoreCommonR.string.settings_playback_volume_normalization
                             ),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
@@ -405,7 +405,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
-                            contentDescription = stringResource(R.string.settings_allow_mixed_playback),
+                            contentDescription = stringResource(CoreCommonR.string.settings_allow_mixed_playback),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -423,7 +423,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.Headphones,
-                            contentDescription = stringResource(R.string.settings_preempt_audio_focus),
+                            contentDescription = stringResource(CoreCommonR.string.settings_preempt_audio_focus),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -444,8 +444,8 @@ internal fun SettingsPlaybackSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_playback_fade_in),
-                    description = stringResource(R.string.settings_playback_fade_in_desc)
+                    title = stringResource(CoreCommonR.string.settings_playback_fade_in),
+                    description = stringResource(CoreCommonR.string.settings_playback_fade_in_desc)
                 )
 
                 PlaybackSwitchItem(
@@ -454,7 +454,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.GraphicEq,
-                            contentDescription = stringResource(R.string.settings_playback_fade_in),
+                            contentDescription = stringResource(CoreCommonR.string.settings_playback_fade_in),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -473,12 +473,12 @@ internal fun SettingsPlaybackSection(
                             .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
                     ) {
                         DurationSliderListItem(
-                            title = stringResource(R.string.settings_playback_fade_in_duration),
+                            title = stringResource(CoreCommonR.string.settings_playback_fade_in_duration),
                             durationMs = playbackFadeInDurationMs,
                             onDurationChange = onPlaybackFadeInDurationMsChange
                         )
                         DurationSliderListItem(
-                            title = stringResource(R.string.settings_playback_fade_out_duration),
+                            title = stringResource(CoreCommonR.string.settings_playback_fade_out_duration),
                             durationMs = playbackFadeOutDurationMs,
                             onDurationChange = onPlaybackFadeOutDurationMsChange
                         )
@@ -494,8 +494,8 @@ internal fun SettingsPlaybackSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_playback_crossfade_next),
-                    description = stringResource(R.string.settings_playback_crossfade_next_desc)
+                    title = stringResource(CoreCommonR.string.settings_playback_crossfade_next),
+                    description = stringResource(CoreCommonR.string.settings_playback_crossfade_next_desc)
                 )
 
                 PlaybackSwitchItem(
@@ -504,7 +504,7 @@ internal fun SettingsPlaybackSection(
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.Sync,
-                            contentDescription = stringResource(R.string.settings_playback_crossfade_next),
+                            contentDescription = stringResource(CoreCommonR.string.settings_playback_crossfade_next),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -523,12 +523,12 @@ internal fun SettingsPlaybackSection(
                             .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
                     ) {
                         DurationSliderListItem(
-                            title = stringResource(R.string.settings_playback_crossfade_in_duration),
+                            title = stringResource(CoreCommonR.string.settings_playback_crossfade_in_duration),
                             durationMs = playbackCrossfadeInDurationMs,
                             onDurationChange = onPlaybackCrossfadeInDurationMsChange
                         )
                         DurationSliderListItem(
-                            title = stringResource(R.string.settings_playback_crossfade_out_duration),
+                            title = stringResource(CoreCommonR.string.settings_playback_crossfade_out_duration),
                             durationMs = playbackCrossfadeOutDurationMs,
                             onDurationChange = onPlaybackCrossfadeOutDurationMsChange
                         )
@@ -590,7 +590,7 @@ private fun UsbExclusiveSettingsEntry(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Usb,
-                contentDescription = stringResource(R.string.settings_usb_exclusive_playback),
+                contentDescription = stringResource(CoreCommonR.string.settings_usb_exclusive_playback),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
@@ -603,9 +603,9 @@ private fun UsbExclusiveSettingsEntry(
                 Text(
                     text = stringResource(
                         if (enabled) {
-                            R.string.settings_usb_exclusive_state_enabled
+                            CoreCommonR.string.settings_usb_exclusive_state_enabled
                         } else {
-                            R.string.settings_usb_exclusive_state_disabled
+                            CoreCommonR.string.settings_usb_exclusive_state_disabled
                         }
                     ),
                     style = MaterialTheme.typography.labelMedium,
@@ -650,7 +650,7 @@ private fun VolumeBalanceSliderListItem(
             highlightPulse = highlightPulse,
             onHighlightFinished = onHighlightFinished
         ),
-        headlineContent = { Text(stringResource(R.string.settings_playback_volume_balance)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_playback_volume_balance)) },
         supportingContent = {
             Column(Modifier.fillMaxWidth()) {
                 Text(
@@ -672,7 +672,7 @@ private fun VolumeBalanceSliderListItem(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.SurroundSound,
-                contentDescription = stringResource(R.string.settings_playback_volume_balance),
+                contentDescription = stringResource(CoreCommonR.string.settings_playback_volume_balance),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
@@ -686,12 +686,12 @@ private fun volumeBalanceLabel(balance: Float): String {
     val normalizedBalance = normalizePlaybackVolumeBalance(balance)
     val percent = (normalizedBalance.absoluteValue * 100f).roundToInt()
     return when {
-        percent == 0 -> stringResource(R.string.settings_playback_volume_balance_center)
+        percent == 0 -> stringResource(CoreCommonR.string.settings_playback_volume_balance_center)
         normalizedBalance < 0f -> stringResource(
-            R.string.settings_playback_volume_balance_left,
+            CoreCommonR.string.settings_playback_volume_balance_left,
             percent
         )
-        else -> stringResource(R.string.settings_playback_volume_balance_right, percent)
+        else -> stringResource(CoreCommonR.string.settings_playback_volume_balance_right, percent)
     }
 }
 
@@ -743,7 +743,7 @@ private fun DurationSliderListItem(
             Column(Modifier.fillMaxWidth()) {
                 Text(
                     text = stringResource(
-                        R.string.settings_playback_fade_duration_value,
+                        CoreCommonR.string.settings_playback_fade_duration_value,
                         pendingDurationSeconds
                     ),
                     style = MaterialTheme.typography.bodySmall,

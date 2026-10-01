@@ -38,7 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
@@ -50,8 +50,8 @@ internal fun LocalArtistLibraryGrid(
     onClick: (LocalArtistSummary) -> Unit,
     offlineMode: Boolean,
     modifier: Modifier = Modifier,
-    emptyTitleResId: Int = R.string.library_local_artist_empty,
-    emptyHintResId: Int = R.string.library_local_artist_hint,
+    emptyTitleResId: Int = CoreCommonR.string.library_local_artist_empty,
+    emptyHintResId: Int = CoreCommonR.string.library_local_artist_hint,
     headerContent: (@Composable () -> Unit)? = null
 ) {
     val gridState = rememberLazyGridState()
@@ -189,7 +189,7 @@ internal fun LocalArtistGridCard(
             )
             Text(
                 text = pluralStringResource(
-                    R.plurals.artist_song_count,
+                    CoreCommonR.plurals.artist_song_count,
                     artist.songs.size,
                     artist.songs.size
                 ),

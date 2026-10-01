@@ -14,6 +14,40 @@ class LocalManagementLineBudgetPolicyTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `project root discovery survives a moved download entrypoint`() {
+        val root = temporaryFolder.newFolder("modular-project")
+        File(root, "settings.gradle.kts").writeText("")
+        File(root, "app/build.gradle.kts").apply {
+            parentFile.mkdirs()
+            writeText("")
+        }
+        File(
+            root,
+            "modules/feature/download/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).apply {
+            parentFile.mkdirs()
+            writeText("object GlobalDownloadManager")
+        }
+
+        assertEquals(root.canonicalFile, LocalManagementLineBudget.findProjectRoot(File(root, "app")))
+    }
+
+    @Test
+    fun `default scope checks new files inside the extracted data repository`() {
+        val root = temporaryFolder.newFolder("modular-repository")
+        val relativePath =
+            "modules/data/repository/src/main/java/moe/ouom/neriplayer/data/local/new/ExtractedOwner.kt"
+        val oversized = File(root, relativePath)
+        oversized.parentFile.mkdirs()
+        writeLines(oversized, 2_000, "\n", false)
+
+        val report = LocalManagementLineBudget.verify(root)
+
+        assertTrue(report.inspectedFiles.contains(relativePath))
+        assertTrue(report.violations.any { it.contains("$relativePath: 2000 个物理行") })
+    }
+
+    @Test
     fun `counts 1999 and 2000 lines with or without a final newline`() {
         val cases = listOf(
             LineFixture("lf-final-1999.kt", 1_999, "\n", true, true),

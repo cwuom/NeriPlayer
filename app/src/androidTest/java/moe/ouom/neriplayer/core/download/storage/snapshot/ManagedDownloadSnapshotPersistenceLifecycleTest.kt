@@ -20,7 +20,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_FILE_NAME
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
-import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupCoordinator
+import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupCoordinator
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -13,7 +13,7 @@ import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -75,11 +75,11 @@ class DownloadExecutionNotificationInstrumentationTest {
             extras.getBoolean(NotificationCompat.EXTRA_PROGRESS_INDETERMINATE)
         )
         assertEquals(
-            context.getString(R.string.download_execution_notification_title),
+            context.getString(CoreCommonR.string.download_execution_notification_title),
             extras.getString(Notification.EXTRA_TITLE)
         )
         val expectedContent = context.getString(
-            R.string.download_execution_notification_progress_with_percentage,
+            CoreCommonR.string.download_execution_notification_progress_with_percentage,
             2,
             5,
             3,

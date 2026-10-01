@@ -30,13 +30,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.traffic.TrafficStatsSummary
 import moe.ouom.neriplayer.data.traffic.aggregateTrafficStatsForPeriod
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.ui.screen.history.stats.StatsPeriodSelector
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -78,7 +78,7 @@ internal fun SettingsTrafficManagementSection() {
             leadingContent = {
                 Icon(
                     imageVector = Icons.Outlined.ErrorOutline,
-                    contentDescription = stringResource(R.string.settings_mobile_data_high_risk_prompt),
+                    contentDescription = stringResource(CoreCommonR.string.settings_mobile_data_high_risk_prompt),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -107,15 +107,15 @@ internal fun SettingsTrafficManagementSection() {
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
         ) {
-            Text(stringResource(R.string.traffic_stats_clear))
+            Text(stringResource(CoreCommonR.string.traffic_stats_clear))
         }
     }
 
     if (showClearDialog) {
         MiuixSettingsDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text(stringResource(R.string.traffic_stats_clear_title)) },
-            text = { Text(stringResource(R.string.traffic_stats_clear_message)) },
+            title = { Text(stringResource(CoreCommonR.string.traffic_stats_clear_title)) },
+            text = { Text(stringResource(CoreCommonR.string.traffic_stats_clear_message)) },
             confirmButton = {
                 MiuixSettingsTextButton(
                     onClick = {
@@ -123,12 +123,12 @@ internal fun SettingsTrafficManagementSection() {
                         showClearDialog = false
                     }
                 ) {
-                    Text(stringResource(R.string.action_confirm))
+                    Text(stringResource(CoreCommonR.string.action_confirm))
                 }
             },
             dismissButton = {
                 MiuixSettingsTextButton(onClick = { showClearDialog = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -164,42 +164,42 @@ private fun TrafficStatsCard(summary: TrafficStatsSummary) {
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = stringResource(R.string.traffic_stats_overview),
+                    text = stringResource(CoreCommonR.string.traffic_stats_overview),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_total_network),
+                label = stringResource(CoreCommonR.string.traffic_total_network),
                 value = formatTrafficBytes(context, summary.networkBytes)
             )
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_wifi),
+                label = stringResource(CoreCommonR.string.traffic_wifi),
                 value = formatTrafficBytes(context, summary.wifiBytes)
             )
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_mobile),
+                label = stringResource(CoreCommonR.string.traffic_mobile),
                 value = formatTrafficBytes(context, summary.mobileBytes)
             )
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_roaming),
+                label = stringResource(CoreCommonR.string.traffic_roaming),
                 value = formatTrafficBytes(context, summary.roamingBytes)
             )
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_playback_network),
+                label = stringResource(CoreCommonR.string.traffic_playback_network),
                 value = formatTrafficBytes(context, summary.playbackNetworkBytes)
             )
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_download_network),
+                label = stringResource(CoreCommonR.string.traffic_download_network),
                 value = formatTrafficBytes(context, summary.downloadNetworkBytes)
             )
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_cache_hit_bytes),
+                label = stringResource(CoreCommonR.string.traffic_cache_hit_bytes),
                 value = formatTrafficBytes(context, summary.cacheHitBytes)
             )
             TrafficMetricRow(
-                label = stringResource(R.string.traffic_cache_hit_rate),
+                label = stringResource(CoreCommonR.string.traffic_cache_hit_rate),
                 value = formatPercent(summary.cacheHitRate)
             )
         }
@@ -218,7 +218,7 @@ private fun TrafficEmptyCard() {
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Text(
-            text = stringResource(R.string.traffic_period_empty),
+            text = stringResource(CoreCommonR.string.traffic_period_empty),
             modifier = Modifier.padding(16.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant

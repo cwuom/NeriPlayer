@@ -15,7 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata
@@ -530,7 +530,7 @@ internal class NowPlayingSongEditOwner(
     ) {
         NPLogger.e("NowPlayingSongEdit", "保存歌曲信息失败", error)
         snackbarHostState.showNeriSnackbar(
-            message = resources.getString(R.string.toast_save_failed, error.message.orEmpty()),
+            message = resources.getString(CoreCommonR.string.toast_save_failed, error.message.orEmpty()),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )
@@ -689,7 +689,7 @@ internal class NowPlayingSongEditOwner(
         resources: Resources
     ) {
         if (!saved) showSaveFailure(
-            snackbarHostState, resources, R.string.local_song_metadata_write_failed
+            snackbarHostState, resources, CoreCommonR.string.local_song_metadata_write_failed
         )
     }
 
@@ -700,7 +700,7 @@ internal class NowPlayingSongEditOwner(
     ) {
         NPLogger.e("NowPlayingSongEdit", "回写填充歌词失败", error)
         snackbarHostState.showNeriSnackbar(
-            message = resources.getString(R.string.toast_save_failed, error.message.orEmpty()),
+            message = resources.getString(CoreCommonR.string.toast_save_failed, error.message.orEmpty()),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )
@@ -753,7 +753,7 @@ internal class NowPlayingSongEditOwner(
             onSuccess = { imported -> publishImportedCoverUri(imported, snackbarHostState, resources) },
             onFailure = { error ->
                 NPLogger.e("NowPlayingSongEdit", "导入本地封面失败", error)
-                showSaveFailure(snackbarHostState, resources, R.string.music_cover_import_failed)
+                showSaveFailure(snackbarHostState, resources, CoreCommonR.string.music_cover_import_failed)
             }
         )
     }
@@ -764,7 +764,7 @@ internal class NowPlayingSongEditOwner(
         resources: Resources
     ) {
         if (imported == null) {
-            showSaveFailure(snackbarHostState, resources, R.string.music_cover_import_failed)
+            showSaveFailure(snackbarHostState, resources, CoreCommonR.string.music_cover_import_failed)
             return
         }
         applyImportedCoverUri(imported)
@@ -1095,7 +1095,7 @@ internal class NowPlayingSongEditOwner(
         composeResources: Resources
     ) {
         snackbarHostState.showNeriSnackbar(
-            message = composeResources.getString(R.string.settings_download_directory_permission_lost),
+            message = composeResources.getString(CoreCommonR.string.settings_download_directory_permission_lost),
             withDismissAction = true,
             duration = SnackbarDuration.Long
         )

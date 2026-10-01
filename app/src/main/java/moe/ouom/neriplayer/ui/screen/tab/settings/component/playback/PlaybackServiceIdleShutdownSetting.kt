@@ -13,7 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.playback.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
 import moe.ouom.neriplayer.data.settings.playback.PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTE_OPTIONS
@@ -48,7 +48,7 @@ internal fun PlaybackServiceIdleShutdownSetting(
 
     MiuixSettingsDialog(
         onDismissRequest = { showDialog = false },
-        title = { Text(stringResource(R.string.settings_playback_idle_shutdown_dialog_title)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_playback_idle_shutdown_dialog_title)) },
         text = {
             Column {
                 PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTE_OPTIONS.forEach { minutes ->
@@ -68,7 +68,7 @@ internal fun PlaybackServiceIdleShutdownSetting(
         confirmButton = {
             MiuixSettingsTextButton(
                 onClick = { showDialog = false },
-                text = { Text(stringResource(R.string.action_close)) }
+                text = { Text(stringResource(CoreCommonR.string.action_close)) }
             )
         }
     )
@@ -77,8 +77,8 @@ internal fun PlaybackServiceIdleShutdownSetting(
 @Composable
 private fun playbackServiceIdleShutdownLabel(minutes: Int): String {
     return if (minutes == 0) {
-        stringResource(R.string.settings_playback_idle_shutdown_off)
+        stringResource(CoreCommonR.string.settings_playback_idle_shutdown_off)
     } else {
-        pluralStringResource(R.plurals.settings_playback_idle_shutdown_minutes, minutes, minutes)
+        pluralStringResource(CoreCommonR.plurals.settings_playback_idle_shutdown_minutes, minutes, minutes)
     }
 }

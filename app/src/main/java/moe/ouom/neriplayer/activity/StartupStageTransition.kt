@@ -38,7 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.startup.StartupStage
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -148,7 +148,7 @@ private fun StartupStageTransitionPlaceholder(stage: StartupStage) {
                         color = colors.secondaryContainer
                     ) {
                         Text(
-                            text = stringResource(R.string.onboarding_badge),
+                            text = stringResource(CoreCommonR.string.onboarding_badge),
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelLarge,
                             color = colors.onSecondaryContainer
@@ -156,14 +156,14 @@ private fun StartupStageTransitionPlaceholder(stage: StartupStage) {
                     }
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        text = stringResource(R.string.onboarding_title),
+                        text = stringResource(CoreCommonR.string.onboarding_title),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.onboarding_subtitle),
+                        text = stringResource(CoreCommonR.string.onboarding_subtitle),
                         style = MaterialTheme.typography.bodyLarge,
                         color = colors.onSurfaceVariant
                     )

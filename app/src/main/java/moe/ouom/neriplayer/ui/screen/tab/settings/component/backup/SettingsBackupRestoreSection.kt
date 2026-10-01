@@ -77,10 +77,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.PlayHistorySyncPreferences
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
@@ -136,9 +136,9 @@ internal fun SettingsBackupRestoreSection(
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Outlined.Backup,
-            title = stringResource(R.string.settings_backup_restore),
-            subtitleCollapsed = stringResource(R.string.settings_backup_expand),
-            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            title = stringResource(CoreCommonR.string.settings_backup_restore),
+            subtitleCollapsed = stringResource(CoreCommonR.string.settings_backup_expand),
+            subtitleExpanded = stringResource(CoreCommonR.string.settings_login_platforms_collapse),
             expanded = expanded,
             onToggle = { onExpandedChange(!expanded) },
             arrowRotation = arrowRotation
@@ -251,22 +251,22 @@ internal fun SettingsBackupRestoreSection(
                 onHighlightFinished = onHighlightFinished
             ) {
             MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_backup_local_section),
-                description = stringResource(R.string.settings_backup_local_section_desc)
+                title = stringResource(CoreCommonR.string.settings_backup_local_section),
+                description = stringResource(CoreCommonR.string.settings_backup_local_section_desc)
             )
             ListItem(
                 leadingContent = {
                     Icon(
                         Icons.AutoMirrored.Outlined.PlaylistPlay,
-                        contentDescription = stringResource(R.string.settings_current_playlist),
+                        contentDescription = stringResource(CoreCommonR.string.settings_current_playlist),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.playlist_count)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.playlist_count)) },
                 supportingContent = {
                     Text(
                         pluralStringResource(
-                            R.plurals.playlist_count_format,
+                            CoreCommonR.plurals.playlist_count_format,
                             currentPlaylistCount,
                             currentPlaylistCount
                         )
@@ -279,12 +279,12 @@ internal fun SettingsBackupRestoreSection(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Upload,
-                        contentDescription = stringResource(R.string.settings_export_playlist),
+                        contentDescription = stringResource(CoreCommonR.string.settings_export_playlist),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.playlist_export)) },
-                supportingContent = { Text(stringResource(R.string.playlist_export_desc)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.playlist_export)) },
+                supportingContent = { Text(stringResource(CoreCommonR.string.playlist_export_desc)) },
                 modifier = Modifier
                     .settingsHighlightTarget(
                         targetId = "manual:playlist_export",
@@ -300,12 +300,12 @@ internal fun SettingsBackupRestoreSection(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Download,
-                        contentDescription = stringResource(R.string.settings_import_playlist),
+                        contentDescription = stringResource(CoreCommonR.string.settings_import_playlist),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.playlist_import)) },
-                supportingContent = { Text(stringResource(R.string.playlist_import_desc)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.playlist_import)) },
+                supportingContent = { Text(stringResource(CoreCommonR.string.playlist_import_desc)) },
                 modifier = Modifier
                     .settingsHighlightTarget(
                         targetId = "manual:playlist_import",
@@ -321,12 +321,12 @@ internal fun SettingsBackupRestoreSection(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Upload,
-                        contentDescription = stringResource(R.string.settings_export_config),
+                        contentDescription = stringResource(CoreCommonR.string.settings_export_config),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.settings_export_config)) },
-                supportingContent = { Text(stringResource(R.string.settings_export_config_desc)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.settings_export_config)) },
+                supportingContent = { Text(stringResource(CoreCommonR.string.settings_export_config_desc)) },
                 modifier = Modifier
                     .settingsHighlightTarget(
                         targetId = "manual:config_export",
@@ -346,12 +346,12 @@ internal fun SettingsBackupRestoreSection(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Download,
-                        contentDescription = stringResource(R.string.settings_import_config),
+                        contentDescription = stringResource(CoreCommonR.string.settings_import_config),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.settings_import_config)) },
-                supportingContent = { Text(stringResource(R.string.settings_import_config_desc)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.settings_import_config)) },
+                supportingContent = { Text(stringResource(CoreCommonR.string.settings_import_config_desc)) },
                 modifier = Modifier
                     .settingsHighlightTarget(
                         targetId = "manual:config_import",
@@ -365,31 +365,31 @@ internal fun SettingsBackupRestoreSection(
 
             backupRestoreUiState.exportProgress?.let { progress ->
                 ProgressStatusItem(
-                    title = stringResource(R.string.playlist_export_progress),
+                    title = stringResource(CoreCommonR.string.playlist_export_progress),
                     message = progress
                 )
             }
             backupRestoreUiState.importProgress?.let { progress ->
                 ProgressStatusItem(
-                    title = stringResource(R.string.playlist_import_progress),
+                    title = stringResource(CoreCommonR.string.playlist_import_progress),
                     message = progress
                 )
             }
             configTransferUiState.exportProgress?.let { progress ->
                 ProgressStatusItem(
-                    title = stringResource(R.string.settings_config_export_progress),
+                    title = stringResource(CoreCommonR.string.settings_config_export_progress),
                     message = progress
                 )
             }
             configTransferUiState.importProgress?.let { progress ->
                 ProgressStatusItem(
-                    title = stringResource(R.string.settings_config_import_progress),
+                    title = stringResource(CoreCommonR.string.settings_config_import_progress),
                     message = progress
                 )
             }
             backupRestoreUiState.analysisProgress?.let { progress ->
                 ProgressStatusItem(
-                    title = stringResource(R.string.sync_analysis_progress),
+                    title = stringResource(CoreCommonR.string.sync_analysis_progress),
                     message = progress
                 )
             }
@@ -408,9 +408,9 @@ internal fun SettingsBackupRestoreSection(
                 backupRestoreUiState.lastExportMessage?.let { message ->
                     ResultStatusCard(
                         title = if (backupRestoreUiState.lastExportSuccess == true) {
-                            stringResource(R.string.settings_export_success)
+                            stringResource(CoreCommonR.string.settings_export_success)
                         } else {
-                            stringResource(R.string.settings_export_failed)
+                            stringResource(CoreCommonR.string.settings_export_failed)
                         },
                         message = message,
                         isSuccess = backupRestoreUiState.lastExportSuccess == true,
@@ -433,9 +433,9 @@ internal fun SettingsBackupRestoreSection(
                 backupRestoreUiState.lastImportMessage?.let { message ->
                     ResultStatusCard(
                         title = if (backupRestoreUiState.lastImportSuccess == true) {
-                            stringResource(R.string.settings_import_success)
+                            stringResource(CoreCommonR.string.settings_import_success)
                         } else {
-                            stringResource(R.string.settings_import_failed)
+                            stringResource(CoreCommonR.string.settings_import_failed)
                         },
                         message = message,
                         isSuccess = backupRestoreUiState.lastImportSuccess == true,
@@ -458,9 +458,9 @@ internal fun SettingsBackupRestoreSection(
                 configTransferUiState.lastExportMessage?.let { message ->
                     ResultStatusCard(
                         title = if (configTransferUiState.lastExportSuccess == true) {
-                            stringResource(R.string.settings_config_export_success)
+                            stringResource(CoreCommonR.string.settings_config_export_success)
                         } else {
-                            stringResource(R.string.settings_config_export_failed)
+                            stringResource(CoreCommonR.string.settings_config_export_failed)
                         },
                         message = message,
                         isSuccess = configTransferUiState.lastExportSuccess == true,
@@ -483,9 +483,9 @@ internal fun SettingsBackupRestoreSection(
                 configTransferUiState.lastImportMessage?.let { message ->
                     ResultStatusCard(
                         title = if (configTransferUiState.lastImportSuccess == true) {
-                            stringResource(R.string.settings_config_import_success)
+                            stringResource(CoreCommonR.string.settings_config_import_success)
                         } else {
-                            stringResource(R.string.settings_config_import_failed)
+                            stringResource(CoreCommonR.string.settings_config_import_failed)
                         },
                         message = message,
                         isSuccess = configTransferUiState.lastImportSuccess == true,
@@ -504,19 +504,19 @@ internal fun SettingsBackupRestoreSection(
                 onHighlightFinished = onHighlightFinished
             ) {
             MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_backup_history_section),
-                description = stringResource(R.string.settings_backup_history_section_desc)
+                title = stringResource(CoreCommonR.string.settings_backup_history_section),
+                description = stringResource(CoreCommonR.string.settings_backup_history_section_desc)
             )
 
             ListItem(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Timer,
-                        contentDescription = stringResource(R.string.settings_play_history_update_freq),
+                        contentDescription = stringResource(CoreCommonR.string.settings_play_history_update_freq),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.sync_history_frequency)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.sync_history_frequency)) },
                 supportingContent = {
                     Text(playHistoryUpdateModeSummary(currentMode))
                 },
@@ -543,25 +543,25 @@ internal fun SettingsBackupRestoreSection(
                 onHighlightFinished = onHighlightFinished
             ) {
             MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_backup_github_section),
-                description = stringResource(R.string.settings_backup_github_section_desc)
+                title = stringResource(CoreCommonR.string.settings_backup_github_section),
+                description = stringResource(CoreCommonR.string.settings_backup_github_section_desc)
             )
 
             ListItem(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.CloudSync,
-                        contentDescription = stringResource(R.string.github_auto_sync),
+                        contentDescription = stringResource(CoreCommonR.string.github_auto_sync),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.github_auto_sync)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.github_auto_sync)) },
                 supportingContent = {
                     Text(
                         if (githubState.isConfigured) {
-                            stringResource(R.string.settings_configured)
+                            stringResource(CoreCommonR.string.settings_configured)
                         } else {
-                            stringResource(R.string.settings_not_configured)
+                            stringResource(CoreCommonR.string.settings_not_configured)
                         }
                     )
                 },
@@ -579,12 +579,12 @@ internal fun SettingsBackupRestoreSection(
                     leadingContent = {
                         Icon(
                             Icons.Outlined.Settings,
-                            contentDescription = stringResource(R.string.settings_configure),
+                            contentDescription = stringResource(CoreCommonR.string.settings_configure),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.sync_config)) },
-                    supportingContent = { Text(stringResource(R.string.sync_config_desc)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.sync_config)) },
+                    supportingContent = { Text(stringResource(CoreCommonR.string.sync_config_desc)) },
                     modifier = Modifier
                         .settingsHighlightTarget(
                             targetId = "manual:github_auto_sync",
@@ -600,12 +600,12 @@ internal fun SettingsBackupRestoreSection(
                     leadingContent = {
                         Icon(
                             Icons.Outlined.Sync,
-                            contentDescription = stringResource(R.string.settings_auto_sync),
+                            contentDescription = stringResource(CoreCommonR.string.settings_auto_sync),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.sync_auto)) },
-                    supportingContent = { Text(stringResource(R.string.sync_auto_desc)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.sync_auto)) },
+                    supportingContent = { Text(stringResource(CoreCommonR.string.sync_auto_desc)) },
                     trailingContent = {
                         MiuixSettingsSwitch(
                             checked = githubState.autoSyncEnabled,
@@ -625,21 +625,21 @@ internal fun SettingsBackupRestoreSection(
                     leadingContent = {
                         Icon(
                             Icons.Outlined.CloudUpload,
-                            contentDescription = stringResource(R.string.settings_sync_now),
+                            contentDescription = stringResource(CoreCommonR.string.settings_sync_now),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.sync_now)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.sync_now)) },
                     supportingContent = {
                         if (githubState.lastSyncTime > 0) {
                             Text(
                                 stringResource(
-                                    R.string.sync_last_time,
+                                    CoreCommonR.string.sync_last_time,
                                     formatSyncTime(githubState.lastSyncTime)
                                 )
                             )
                         } else {
-                            Text(stringResource(R.string.sync_not_synced))
+                            Text(stringResource(CoreCommonR.string.sync_not_synced))
                         }
                     },
                     trailingContent = {
@@ -650,7 +650,7 @@ internal fun SettingsBackupRestoreSection(
                             )
                         } else {
                             MiuixSettingsTextButton(onClick = { githubVm?.performSync(context) }) {
-                                Text(stringResource(R.string.sync_title))
+                                Text(stringResource(CoreCommonR.string.sync_title))
                             }
                         }
                     },
@@ -661,12 +661,12 @@ internal fun SettingsBackupRestoreSection(
                     leadingContent = {
                         Icon(
                             Icons.Outlined.Download,
-                            contentDescription = stringResource(R.string.settings_data_saver),
+                            contentDescription = stringResource(CoreCommonR.string.settings_data_saver),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.sync_data_saver)) },
-                    supportingContent = { Text(stringResource(R.string.sync_data_saver_desc)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.sync_data_saver)) },
+                    supportingContent = { Text(stringResource(CoreCommonR.string.sync_data_saver_desc)) },
                     trailingContent = {
                         MiuixSettingsSwitch(
                             checked = dataSaverMode,
@@ -685,7 +685,7 @@ internal fun SettingsBackupRestoreSection(
                     modifier = Modifier.padding(start = 16.dp)
                 ) {
                     Text(
-                        stringResource(R.string.settings_clear_config),
+                        stringResource(CoreCommonR.string.settings_clear_config),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -710,25 +710,25 @@ internal fun SettingsBackupRestoreSection(
                 onHighlightFinished = onHighlightFinished
             ) {
             MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_backup_webdav_section),
-                description = stringResource(R.string.settings_backup_webdav_section_desc)
+                title = stringResource(CoreCommonR.string.settings_backup_webdav_section),
+                description = stringResource(CoreCommonR.string.settings_backup_webdav_section_desc)
             )
 
             ListItem(
                 leadingContent = {
                     Icon(
                         Icons.Outlined.Cloud,
-                        contentDescription = stringResource(R.string.webdav_sync_title),
+                        contentDescription = stringResource(CoreCommonR.string.webdav_sync_title),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                headlineContent = { Text(stringResource(R.string.webdav_sync_title)) },
+                headlineContent = { Text(stringResource(CoreCommonR.string.webdav_sync_title)) },
                 supportingContent = {
                     Text(
                         if (webDavState.isConfigured) {
-                            stringResource(R.string.settings_configured)
+                            stringResource(CoreCommonR.string.settings_configured)
                         } else {
-                            stringResource(R.string.settings_not_configured)
+                            stringResource(CoreCommonR.string.settings_not_configured)
                         }
                     )
                 },
@@ -746,12 +746,12 @@ internal fun SettingsBackupRestoreSection(
                     leadingContent = {
                         Icon(
                             Icons.Outlined.Settings,
-                            contentDescription = stringResource(R.string.settings_configure),
+                            contentDescription = stringResource(CoreCommonR.string.settings_configure),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.sync_config)) },
-                    supportingContent = { Text(stringResource(R.string.webdav_sync_desc)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.sync_config)) },
+                    supportingContent = { Text(stringResource(CoreCommonR.string.webdav_sync_desc)) },
                     modifier = Modifier
                         .settingsHighlightTarget(
                             targetId = "manual:webdav_auto_sync",
@@ -767,12 +767,12 @@ internal fun SettingsBackupRestoreSection(
                     leadingContent = {
                         Icon(
                             Icons.Outlined.Sync,
-                            contentDescription = stringResource(R.string.settings_auto_sync),
+                            contentDescription = stringResource(CoreCommonR.string.settings_auto_sync),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.sync_auto)) },
-                    supportingContent = { Text(stringResource(R.string.webdav_auto_sync_desc)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.sync_auto)) },
+                    supportingContent = { Text(stringResource(CoreCommonR.string.webdav_auto_sync_desc)) },
                     trailingContent = {
                         MiuixSettingsSwitch(
                             checked = webDavState.autoSyncEnabled,
@@ -792,21 +792,21 @@ internal fun SettingsBackupRestoreSection(
                     leadingContent = {
                         Icon(
                             Icons.Outlined.CloudUpload,
-                            contentDescription = stringResource(R.string.settings_sync_now),
+                            contentDescription = stringResource(CoreCommonR.string.settings_sync_now),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.sync_now)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.sync_now)) },
                     supportingContent = {
                         if (webDavState.lastSyncTime > 0) {
                             Text(
                                 stringResource(
-                                    R.string.sync_last_time,
+                                    CoreCommonR.string.sync_last_time,
                                     formatSyncTime(webDavState.lastSyncTime)
                                 )
                             )
                         } else {
-                            Text(stringResource(R.string.sync_not_synced))
+                            Text(stringResource(CoreCommonR.string.sync_not_synced))
                         }
                     },
                     trailingContent = {
@@ -817,7 +817,7 @@ internal fun SettingsBackupRestoreSection(
                             )
                         } else {
                             MiuixSettingsTextButton(onClick = { webDavVm?.performSync(context) }) {
-                                Text(stringResource(R.string.sync_title))
+                                Text(stringResource(CoreCommonR.string.sync_title))
                             }
                         }
                     },
@@ -829,7 +829,7 @@ internal fun SettingsBackupRestoreSection(
                     modifier = Modifier.padding(start = 16.dp)
                 ) {
                     Text(
-                        stringResource(R.string.settings_clear_config),
+                        stringResource(CoreCommonR.string.settings_clear_config),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -846,8 +846,8 @@ internal fun SettingsBackupRestoreSection(
                     onHighlightFinished = onHighlightFinished
                 ) {
                     MiuixSettingsSectionIntro(
-                        title = stringResource(R.string.settings_backup_message_section),
-                        description = stringResource(R.string.settings_backup_message_section_desc)
+                        title = stringResource(CoreCommonR.string.settings_backup_message_section),
+                        description = stringResource(CoreCommonR.string.settings_backup_message_section_desc)
                     )
                     githubState.errorMessage?.let { error ->
                         SyncMessageCard(
@@ -911,8 +911,8 @@ internal fun SettingsBackupRestoreSection(
                         tint = MaterialTheme.colorScheme.error
                     )
                 },
-                title = { Text(stringResource(R.string.settings_config_export_warning_title)) },
-                text = { Text(stringResource(R.string.settings_config_export_warning_message)) },
+                title = { Text(stringResource(CoreCommonR.string.settings_config_export_warning_title)) },
+                text = { Text(stringResource(CoreCommonR.string.settings_config_export_warning_message)) },
                 confirmButton = {
                     MiuixSettingsTextButton(
                         onClick = {
@@ -920,14 +920,14 @@ internal fun SettingsBackupRestoreSection(
                             onExportConfigClick()
                         }
                     ) {
-                        Text(stringResource(R.string.settings_config_export_warning_confirm))
+                        Text(stringResource(CoreCommonR.string.settings_config_export_warning_confirm))
                     }
                 },
                 dismissButton = {
                     MiuixSettingsTextButton(
                         onClick = { showConfigExportWarningDialog = false }
                     ) {
-                        Text(stringResource(R.string.action_cancel))
+                        Text(stringResource(CoreCommonR.string.action_cancel))
                     }
                 }
             )
@@ -936,8 +936,8 @@ internal fun SettingsBackupRestoreSection(
         if (pendingDataSaverMode != null) {
             MiuixSettingsDialog(
                 onDismissRequest = { pendingDataSaverMode = null },
-                title = { Text(stringResource(R.string.sync_data_saver_warning_title)) },
-                text = { Text(stringResource(R.string.sync_data_saver_warning_message)) },
+                title = { Text(stringResource(CoreCommonR.string.sync_data_saver_warning_title)) },
+                text = { Text(stringResource(CoreCommonR.string.sync_data_saver_warning_message)) },
                 confirmButton = {
                     MiuixSettingsTextButton(
                         onClick = {
@@ -952,12 +952,12 @@ internal fun SettingsBackupRestoreSection(
                             }
                         }
                     ) {
-                        Text(stringResource(R.string.sync_data_saver_warning_confirm))
+                        Text(stringResource(CoreCommonR.string.sync_data_saver_warning_confirm))
                     }
                 },
                 dismissButton = {
                     MiuixSettingsTextButton(onClick = { pendingDataSaverMode = null }) {
-                        Text(stringResource(R.string.action_cancel))
+                        Text(stringResource(CoreCommonR.string.action_cancel))
                     }
                 }
             )
@@ -1100,11 +1100,11 @@ private fun PlayHistoryModeDialog(
 ) {
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.sync_history_frequency)) },
+        title = { Text(stringResource(CoreCommonR.string.sync_history_frequency)) },
         text = {
             Column {
                 Text(
-                    text = stringResource(R.string.sync_frequency_desc),
+                    text = stringResource(CoreCommonR.string.sync_frequency_desc),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1123,7 +1123,7 @@ private fun PlayHistoryModeDialog(
         },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
+                Text(stringResource(CoreCommonR.string.action_close))
             }
         }
     )
@@ -1135,13 +1135,13 @@ private fun playHistoryUpdateModeSummary(
 ): String {
     return when (mode) {
         PlayHistoryUpdateMode.IMMEDIATE -> {
-            stringResource(R.string.settings_update_immediate)
+            stringResource(CoreCommonR.string.settings_update_immediate)
         }
         else -> {
             val intervalMinutes = mode.intervalMinutes
-                ?: return stringResource(R.string.settings_update_immediate)
+                ?: return stringResource(CoreCommonR.string.settings_update_immediate)
             pluralStringResource(
-                R.plurals.settings_update_every_minutes,
+                CoreCommonR.plurals.settings_update_every_minutes,
                 intervalMinutes,
                 intervalMinutes
             )
@@ -1155,13 +1155,13 @@ private fun playHistoryUpdateModeTitle(
 ): String {
     return when (mode) {
         PlayHistoryUpdateMode.IMMEDIATE -> {
-            stringResource(R.string.sync_after_play)
+            stringResource(CoreCommonR.string.sync_after_play)
         }
         else -> {
             val intervalMinutes = mode.intervalMinutes
-                ?: return stringResource(R.string.sync_after_play)
+                ?: return stringResource(CoreCommonR.string.sync_after_play)
             pluralStringResource(
-                R.plurals.sync_every_minutes,
+                CoreCommonR.plurals.sync_every_minutes,
                 intervalMinutes,
                 intervalMinutes
             )
@@ -1175,13 +1175,13 @@ private fun playHistoryUpdateModeDescription(
 ): String {
     return when (mode) {
         PlayHistoryUpdateMode.IMMEDIATE -> {
-            stringResource(R.string.sync_after_play_desc)
+            stringResource(CoreCommonR.string.sync_after_play_desc)
         }
         else -> {
             val intervalMinutes = mode.intervalMinutes
-                ?: return stringResource(R.string.sync_after_play_desc)
+                ?: return stringResource(CoreCommonR.string.sync_after_play_desc)
             pluralStringResource(
-                R.plurals.sync_every_minutes_desc,
+                CoreCommonR.plurals.sync_every_minutes_desc,
                 intervalMinutes,
                 intervalMinutes
             )

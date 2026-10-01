@@ -44,7 +44,7 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.api.netease.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -850,18 +850,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val localizedContext = localizedAppContext()
         return when (error) {
             is IOException -> localizedContext.getString(
-                R.string.home_error_network,
+                CoreCommonR.string.home_error_network,
                 error.message ?: error.javaClass.simpleName
             )
             is ApiCodeException -> {
                 if (error.code == 50000005) {
-                    localizedContext.getString(R.string.home_login_required)
+                    localizedContext.getString(CoreCommonR.string.home_login_required)
                 } else {
-                    localizedContext.getString(R.string.error_api_code, error.code)
+                    localizedContext.getString(CoreCommonR.string.error_api_code, error.code)
                 }
             }
             else -> localizedContext.getString(
-                R.string.home_error_unknown,
+                CoreCommonR.string.home_error_unknown,
                 error.message ?: error.javaClass.simpleName
             )
         }

@@ -74,7 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.storage.StorageUsageItemKind
 import moe.ouom.neriplayer.data.model.storage.StorageUsageItem
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSection
@@ -122,7 +122,7 @@ internal fun StorageCacheDetailsContent(
                         if (storageDetails.sections.isEmpty()) {
                             MiuixSettingsSectionCard {
                                 Text(
-                                    text = stringResource(R.string.storage_details_empty),
+                                    text = stringResource(CoreCommonR.string.storage_details_empty),
                                     modifier = Modifier.padding(16.dp),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -184,9 +184,9 @@ private fun StorageUsageSectionColumn(
 @Composable
 private fun StorageScanCard() {
     val scanStageLabels = listOf(
-        stringResource(R.string.storage_scan_stage_cache),
-        stringResource(R.string.storage_scan_stage_database),
-        stringResource(R.string.storage_scan_stage_finalize)
+        stringResource(CoreCommonR.string.storage_scan_stage_cache),
+        stringResource(CoreCommonR.string.storage_scan_stage_database),
+        stringResource(CoreCommonR.string.storage_scan_stage_finalize)
     )
     var activeStage by remember { mutableIntStateOf(0) }
 
@@ -207,12 +207,12 @@ private fun StorageScanCard() {
         ) {
             StorageScanGlyph()
             Text(
-                text = stringResource(R.string.storage_scan_title),
+                text = stringResource(CoreCommonR.string.storage_scan_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = stringResource(R.string.storage_scan_subtitle),
+                text = stringResource(CoreCommonR.string.storage_scan_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -348,7 +348,7 @@ private fun StorageUsageSummaryCard(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.storage_details_total),
+                        text = stringResource(CoreCommonR.string.storage_details_total),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -359,7 +359,7 @@ private fun StorageUsageSummaryCard(
                     )
                     Text(
                         text = pluralStringResource(
-                            R.plurals.storage_details_file_count,
+                            CoreCommonR.plurals.storage_details_file_count,
                             storageDetails.totalFileCount,
                             storageDetails.totalFileCount
                         ),
@@ -376,7 +376,7 @@ private fun StorageUsageSummaryCard(
             ) {
                 Column {
                     Text(
-                        text = stringResource(R.string.storage_cleanable_total),
+                        text = stringResource(CoreCommonR.string.storage_cleanable_total),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -391,21 +391,21 @@ private fun StorageUsageSummaryCard(
                     MiuixSettingsOutlinedButton(onClick = onRefresh) {
                         Icon(
                             imageVector = Icons.Outlined.Refresh,
-                            contentDescription = stringResource(R.string.storage_scan_refresh),
+                            contentDescription = stringResource(CoreCommonR.string.storage_scan_refresh),
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     MiuixSettingsOutlinedButton(onClick = onClearCache) {
                         Icon(
                             imageVector = Icons.Outlined.DeleteForever,
-                            contentDescription = stringResource(R.string.action_clear),
+                            contentDescription = stringResource(CoreCommonR.string.action_clear),
                             modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
             MiuixSettingsTextButton(onClick = onOpenSystemSettings) {
-                Text(stringResource(R.string.storage_open_system_settings))
+                Text(stringResource(CoreCommonR.string.storage_open_system_settings))
             }
         }
     }
@@ -536,9 +536,9 @@ private fun StorageUsageItemRow(item: StorageUsageItem) {
             )
             Text(
                 text = item.countDescription ?: item.databaseRecordCount?.let { recordCount ->
-                    pluralStringResource(R.plurals.storage_details_cache_record_count, recordCount, recordCount)
+                    pluralStringResource(CoreCommonR.plurals.storage_details_cache_record_count, recordCount, recordCount)
                 } ?: pluralStringResource(
-                    R.plurals.storage_details_file_count,
+                    CoreCommonR.plurals.storage_details_file_count,
                     item.fileCount,
                     item.fileCount
                 ),

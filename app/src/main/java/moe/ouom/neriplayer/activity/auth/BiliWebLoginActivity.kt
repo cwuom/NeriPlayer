@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.activity.auth
  * Created: 2025/8/13
  */
 
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
@@ -57,7 +58,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
@@ -135,7 +136,7 @@ class BiliWebLoginActivity : ComponentActivity() {
             )
         }
         toolbar = MaterialToolbar(this).apply {
-            title = getString(R.string.bili_web_login)
+            title = getString(CoreCommonR.string.bili_web_login)
             setNavigationIcon(R.drawable.ic_arrow_back_24)
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.menu_netease_web_login)
@@ -262,7 +263,7 @@ class BiliWebLoginActivity : ComponentActivity() {
             if (!shouldAutoCompleteBiliWebLogin(map)) {
                 showNeriViewSnackbar(
                     webView,
-                    getString(R.string.snackbar_cookie_empty),
+                    getString(CoreCommonR.string.snackbar_cookie_empty),
                     Snackbar.LENGTH_SHORT
                 )
                 return
@@ -276,7 +277,7 @@ class BiliWebLoginActivity : ComponentActivity() {
         } catch (error: Throwable) {
             showNeriViewSnackbar(
                 webView,
-                getString(R.string.snackbar_read_failed, error.message ?: error.javaClass.simpleName),
+                getString(CoreCommonR.string.snackbar_read_failed, error.message ?: error.javaClass.simpleName),
                 Snackbar.LENGTH_LONG
             )
         }

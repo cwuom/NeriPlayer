@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsHotPlaylist
@@ -98,7 +98,7 @@ fun HotPlaylistDetailScreen(
                     HapticIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
+                            contentDescription = stringResource(CoreCommonR.string.action_back)
                         )
                     }
                 },
@@ -109,7 +109,7 @@ fun HotPlaylistDetailScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Outlined.PlaylistPlay,
-                            contentDescription = stringResource(R.string.cd_play_all)
+                            contentDescription = stringResource(CoreCommonR.string.cd_play_all)
                         )
                     }
                 },
@@ -161,7 +161,7 @@ fun HotPlaylistDetailScreen(
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = stringResource(
-                                R.string.library_hot_playlist_summary,
+                                CoreCommonR.string.library_hot_playlist_summary,
                                 tracks.size,
                                 formatPlayCount(context, playlist.totalPlayCount)
                             ),
@@ -180,7 +180,7 @@ fun HotPlaylistDetailScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = stringResource(R.string.library_hot_empty),
+                                text = stringResource(CoreCommonR.string.library_hot_empty),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -201,6 +201,6 @@ fun HotPlaylistDetailScreen(
 }
 
 private fun PlaybackStatsPeriod.hotPlaylistTitleResId(): Int = when (this) {
-    PlaybackStatsPeriod.MONTH -> R.string.library_hot_playlist_month
-    else -> R.string.library_hot_playlist_week
+    PlaybackStatsPeriod.MONTH -> CoreCommonR.string.library_hot_playlist_month
+    else -> CoreCommonR.string.library_hot_playlist_week
 }

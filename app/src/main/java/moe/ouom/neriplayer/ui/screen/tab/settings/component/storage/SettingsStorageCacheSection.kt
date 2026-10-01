@@ -73,12 +73,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.storage.CacheSizePolicy
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
@@ -221,9 +221,9 @@ internal fun SettingsStorageCacheSection(
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Outlined.SdStorage,
-            title = stringResource(R.string.settings_storage_cache),
-            subtitleCollapsed = stringResource(R.string.settings_storage_expand),
-            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            title = stringResource(CoreCommonR.string.settings_storage_cache),
+            subtitleCollapsed = stringResource(CoreCommonR.string.settings_storage_expand),
+            subtitleExpanded = stringResource(CoreCommonR.string.settings_login_platforms_collapse),
             expanded = expanded,
             onToggle = { onExpandedChange(!expanded) },
             arrowRotation = arrowRotation
@@ -248,8 +248,8 @@ internal fun SettingsStorageCacheSection(
                 showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_storage_download_section),
-                    description = stringResource(R.string.settings_storage_download_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_storage_download_section),
+                    description = stringResource(CoreCommonR.string.settings_storage_download_section_desc)
                 )
                 AutoSettingsListItem(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_DIRECTORY_URI),
@@ -263,24 +263,24 @@ internal fun SettingsStorageCacheSection(
                     },
                     supportingContent = {
                         Column {
-                            Text(stringResource(R.string.settings_download_directory_desc))
+                            Text(stringResource(CoreCommonR.string.settings_download_directory_desc))
                             Text(
                                 text = stringResource(
-                                    R.string.settings_download_directory_current,
+                                    CoreCommonR.string.settings_download_directory_current,
                                     currentDownloadDirectorySummary
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = stringResource(R.string.settings_download_directory_hint),
+                                text = stringResource(CoreCommonR.string.settings_download_directory_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
                             if (downloadDirectoryPermissionLost) {
                                 Text(
                                     text = stringResource(
-                                        R.string.settings_download_directory_permission_lost
+                                        CoreCommonR.string.settings_download_directory_permission_lost
                                     ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error
@@ -289,7 +289,7 @@ internal fun SettingsStorageCacheSection(
                             if (!downloadDirectoryChangeEnabled) {
                                 Text(
                                     text = stringResource(
-                                        R.string.settings_download_directory_change_blocked_active_download
+                                        CoreCommonR.string.settings_download_directory_change_blocked_active_download
                                     ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error
@@ -302,7 +302,7 @@ internal fun SettingsStorageCacheSection(
                             onClick = onPickDownloadDirectory,
                             enabled = downloadDirectoryChangeEnabled
                         ) {
-                            Text(stringResource(R.string.settings_download_directory_choose))
+                            Text(stringResource(CoreCommonR.string.settings_download_directory_choose))
                         }
                     },
                     modifier = Modifier
@@ -322,13 +322,13 @@ internal fun SettingsStorageCacheSection(
                         leadingContent = {
                             Icon(
                                 Icons.Outlined.Restore,
-                                contentDescription = stringResource(R.string.settings_download_directory_reset),
+                                contentDescription = stringResource(CoreCommonR.string.settings_download_directory_reset),
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         },
-                        headlineContent = { Text(stringResource(R.string.settings_download_directory_reset)) },
+                        headlineContent = { Text(stringResource(CoreCommonR.string.settings_download_directory_reset)) },
                         supportingContent = {
-                            Text(stringResource(R.string.settings_download_directory_reset_desc))
+                            Text(stringResource(CoreCommonR.string.settings_download_directory_reset_desc))
                         },
                         modifier = Modifier
                             .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f)
@@ -346,8 +346,8 @@ internal fun SettingsStorageCacheSection(
                 showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_storage_filename_section),
-                    description = stringResource(R.string.settings_storage_filename_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_storage_filename_section),
+                    description = stringResource(CoreCommonR.string.settings_storage_filename_section_desc)
                 )
                 AutoSettingsListItem(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE),
@@ -361,7 +361,7 @@ internal fun SettingsStorageCacheSection(
                     },
                     supportingContent = {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(stringResource(R.string.settings_download_file_name_format_desc))
+                            Text(stringResource(CoreCommonR.string.settings_download_file_name_format_desc))
                             Text(
                                 text = effectiveTemplate,
                                 style = MaterialTheme.typography.bodySmall,
@@ -369,7 +369,7 @@ internal fun SettingsStorageCacheSection(
                             )
                             Text(
                                 text = stringResource(
-                                    R.string.settings_download_file_name_format_preview,
+                                    CoreCommonR.string.settings_download_file_name_format_preview,
                                     samplePreview
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
@@ -379,7 +379,7 @@ internal fun SettingsStorageCacheSection(
                     },
                     trailingContent = {
                         Text(
-                            text = stringResource(R.string.action_details),
+                            text = stringResource(CoreCommonR.string.action_details),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -396,8 +396,8 @@ internal fun SettingsStorageCacheSection(
                 showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_storage_cache_limit_section),
-                    description = stringResource(R.string.settings_storage_cache_limit_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_storage_cache_limit_section),
+                    description = stringResource(CoreCommonR.string.settings_storage_cache_limit_section_desc)
                 )
                 AutoSettingsListItem(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.MAX_CACHE_SIZE_BYTES),
@@ -408,15 +408,15 @@ internal fun SettingsStorageCacheSection(
                         }
                         val displaySize = when {
                             sliderValue >= CacheSizePolicy.CACHE_SIZE_SLIDER_UNLIMITED_VALUE ->
-                                stringResource(R.string.settings_cache_unlimited)
+                                stringResource(CoreCommonR.string.settings_cache_unlimited)
                             sliderValue >= 1024f ->
                                 composeResources.getString(
-                                    R.string.settings_cache_size_gb,
+                                    CoreCommonR.string.settings_cache_size_gb,
                                     sliderValue / 1024
                                 )
                             else ->
                                 composeResources.getString(
-                                    R.string.settings_cache_size_mb,
+                                    CoreCommonR.string.settings_cache_size_mb,
                                     sliderValue.toInt()
                                 )
                         }
@@ -426,7 +426,7 @@ internal fun SettingsStorageCacheSection(
                                 text = if (
                                     sliderValue < CacheSizePolicy.CACHE_SIZE_SLIDER_NO_CACHE_THRESHOLD_MB
                                 ) {
-                                    stringResource(R.string.settings_no_cache)
+                                    stringResource(CoreCommonR.string.settings_no_cache)
                                 } else {
                                     displaySize
                                 },
@@ -445,7 +445,7 @@ internal fun SettingsStorageCacheSection(
                                 steps = 0
                             )
                             Text(
-                                stringResource(R.string.settings_cache_notice),
+                                stringResource(CoreCommonR.string.settings_cache_notice),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
@@ -462,12 +462,12 @@ internal fun SettingsStorageCacheSection(
                 showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_storage_cache_clear_section),
-                    description = stringResource(R.string.settings_storage_cache_clear_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_storage_cache_clear_section),
+                    description = stringResource(CoreCommonR.string.settings_storage_cache_clear_section_desc)
                 )
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.settings_clear_cache)) },
-                    supportingContent = { Text(stringResource(R.string.settings_clear_cache_desc)) },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.settings_clear_cache)) },
+                    supportingContent = { Text(stringResource(CoreCommonR.string.settings_clear_cache_desc)) },
                     trailingContent = {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             MiuixSettingsOutlinedButton(
@@ -479,7 +479,7 @@ internal fun SettingsStorageCacheSection(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.action_details))
+                                Text(stringResource(CoreCommonR.string.action_details))
                             }
 
                             MiuixSettingsOutlinedButton(onClick = { onShowClearCacheDialogChange(true) }) {
@@ -489,7 +489,7 @@ internal fun SettingsStorageCacheSection(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.action_clear))
+                                Text(stringResource(CoreCommonR.string.action_clear))
                             }
                         }
                     },
@@ -510,129 +510,129 @@ internal fun SettingsStorageCacheSection(
     if (shouldRenderCacheDialogs && showClearCacheDialog) {
         MiuixSettingsDialog(
             onDismissRequest = { onShowClearCacheDialogChange(false) },
-            title = { Text(stringResource(R.string.settings_confirm_clear_cache)) },
+            title = { Text(stringResource(CoreCommonR.string.settings_confirm_clear_cache)) },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(stringResource(R.string.settings_clear_cache_warning))
+                    Text(stringResource(CoreCommonR.string.settings_clear_cache_warning))
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        stringResource(R.string.settings_select_cache_types),
+                        stringResource(CoreCommonR.string.settings_select_cache_types),
                         style = MaterialTheme.typography.titleSmall
                     )
                     Spacer(Modifier.height(8.dp))
 
                     CacheTypeRow(
                         checked = clearAudioCache,
-                        title = stringResource(R.string.settings_audio_cache),
+                        title = stringResource(CoreCommonR.string.settings_audio_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.Audio,
-                            fallback = stringResource(R.string.settings_audio_cache_desc)
+                            fallback = stringResource(CoreCommonR.string.settings_audio_cache_desc)
                         ),
                         onCheckedChange = onClearAudioCacheChange
                     )
                     CacheTypeRow(
                         checked = clearImageCache,
-                        title = stringResource(R.string.settings_image_cache),
+                        title = stringResource(CoreCommonR.string.settings_image_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.Image,
-                            fallback = stringResource(R.string.settings_image_cache_desc)
+                            fallback = stringResource(CoreCommonR.string.settings_image_cache_desc)
                         ),
                         onCheckedChange = onClearImageCacheChange
                     )
                     CacheTypeRow(
                         checked = clearDownloadStagingCache,
-                        title = stringResource(R.string.storage_type_download_staging),
+                        title = stringResource(CoreCommonR.string.storage_type_download_staging),
                         description = if (downloadStagingClearEnabled) {
                             cacheTypeDescription(
                                 storageDetails = storageDetails,
                                 kind = StorageCacheKind.DownloadStaging,
-                                fallback = stringResource(R.string.storage_desc_download_staging)
+                                fallback = stringResource(CoreCommonR.string.storage_desc_download_staging)
                             )
                         } else {
-                            stringResource(R.string.storage_download_staging_active_desc)
+                            stringResource(CoreCommonR.string.storage_download_staging_active_desc)
                         },
                         enabled = downloadStagingClearEnabled,
                         onCheckedChange = onClearDownloadStagingCacheChange
                     )
                     CacheTypeRow(
                         checked = clearSharedMediaCache,
-                        title = stringResource(R.string.storage_type_shared_media),
+                        title = stringResource(CoreCommonR.string.storage_type_shared_media),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.SharedMedia,
-                            fallback = stringResource(R.string.storage_desc_shared_media)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_shared_media)
                         ),
                         onCheckedChange = onClearSharedMediaCacheChange
                     )
                     CacheTypeRow(
                         checked = clearLyricsCache,
-                        title = stringResource(R.string.storage_type_lyrics_cache),
+                        title = stringResource(CoreCommonR.string.storage_type_lyrics_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.Lyrics,
-                            fallback = stringResource(R.string.storage_desc_lyrics_cache)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_lyrics_cache)
                         ),
                         onCheckedChange = onClearLyricsCacheChange
                     )
                     CacheTypeRow(
                         checked = clearNeteasePlaylistCache,
-                        title = stringResource(R.string.storage_type_netease_playlist_cache),
+                        title = stringResource(CoreCommonR.string.storage_type_netease_playlist_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.NeteasePlaylist,
-                            fallback = stringResource(R.string.storage_desc_netease_playlist_cache)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_netease_playlist_cache)
                         ),
                         onCheckedChange = onClearNeteasePlaylistCacheChange
                     )
                     CacheTypeRow(
                         checked = clearBiliFavoriteCache,
-                        title = stringResource(R.string.storage_type_bili_favorite_cache),
+                        title = stringResource(CoreCommonR.string.storage_type_bili_favorite_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.BiliFavorite,
-                            fallback = stringResource(R.string.storage_desc_bili_favorite_cache)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_bili_favorite_cache)
                         ),
                         onCheckedChange = onClearBiliFavoriteCacheChange
                     )
                     CacheTypeRow(
                         checked = clearBiliArchiveCache,
-                        title = stringResource(R.string.storage_type_bili_archive_cache),
+                        title = stringResource(CoreCommonR.string.storage_type_bili_archive_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.BiliArchive,
-                            fallback = stringResource(R.string.storage_desc_bili_archive_cache)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_bili_archive_cache)
                         ),
                         onCheckedChange = onClearBiliArchiveCacheChange
                     )
                     CacheTypeRow(
                         checked = clearYoutubePlaylistCache,
-                        title = stringResource(R.string.storage_type_youtube_playlist_cache),
+                        title = stringResource(CoreCommonR.string.storage_type_youtube_playlist_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.YouTubePlaylist,
-                            fallback = stringResource(R.string.storage_desc_youtube_playlist_cache)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_youtube_playlist_cache)
                         ),
                         onCheckedChange = onClearYoutubePlaylistCacheChange
                     )
                     CacheTypeRow(
                         checked = clearLogFiles,
-                        title = stringResource(R.string.storage_type_log_files),
+                        title = stringResource(CoreCommonR.string.storage_type_log_files),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.LogFiles,
-                            fallback = stringResource(R.string.storage_desc_log_files)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_log_files)
                         ),
                         onCheckedChange = onClearLogFilesChange
                     )
                     CacheTypeRow(
                         checked = clearCrashLogs,
-                        title = stringResource(R.string.storage_type_crash_logs),
+                        title = stringResource(CoreCommonR.string.storage_type_crash_logs),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
                             kind = StorageCacheKind.CrashLogs,
-                            fallback = stringResource(R.string.storage_desc_crash_logs)
+                            fallback = stringResource(CoreCommonR.string.storage_desc_crash_logs)
                         ),
                         onCheckedChange = onClearCrashLogsChange
                     )
@@ -660,7 +660,7 @@ internal fun SettingsStorageCacheSection(
                     enabled = clearOptions.hasSelection
                 ) {
                     Text(
-                        stringResource(R.string.action_confirm_clear),
+                        stringResource(CoreCommonR.string.action_confirm_clear),
                         color = if (clearOptions.hasSelection) {
                             MaterialTheme.colorScheme.error
                         } else {
@@ -671,7 +671,7 @@ internal fun SettingsStorageCacheSection(
             },
             dismissButton = {
                 MiuixSettingsTextButton(onClick = { onShowClearCacheDialogChange(false) }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -680,10 +680,10 @@ internal fun SettingsStorageCacheSection(
     if (showDownloadFileNameDialog.value) {
         MiuixSettingsDialog(
             onDismissRequest = ::dismissDownloadFileNameDialog,
-            title = { Text(stringResource(R.string.settings_download_file_name_format)) },
+            title = { Text(stringResource(CoreCommonR.string.settings_download_file_name_format)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.settings_download_file_name_format_desc))
+                    Text(stringResource(CoreCommonR.string.settings_download_file_name_format_desc))
                     MiuixSettingsTextField(
                         value = pendingDownloadFileNameTemplate,
                         onValueChange = { pendingDownloadFileNameTemplate = it },
@@ -694,7 +694,7 @@ internal fun SettingsStorageCacheSection(
                         }
                     )
                     Text(
-                        text = stringResource(R.string.settings_download_file_name_format_supported),
+                        text = stringResource(CoreCommonR.string.settings_download_file_name_format_supported),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -721,7 +721,7 @@ internal fun SettingsStorageCacheSection(
                     }
                     Text(
                         text = stringResource(
-                            R.string.settings_download_file_name_format_preview,
+                            CoreCommonR.string.settings_download_file_name_format_preview,
                             samplePreview
                         ),
                         style = MaterialTheme.typography.labelSmall,
@@ -739,7 +739,7 @@ internal fun SettingsStorageCacheSection(
                     },
                     enabled = canApplyDownloadFileNameTemplate
                 ) {
-                    Text(stringResource(R.string.action_apply))
+                    Text(stringResource(CoreCommonR.string.action_apply))
                 }
             },
             dismissButton = {
@@ -754,10 +754,10 @@ internal fun SettingsStorageCacheSection(
                         },
                         enabled = currentSavedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
                     ) {
-                        Text(stringResource(R.string.action_reset))
+                        Text(stringResource(CoreCommonR.string.action_reset))
                     }
                     MiuixSettingsTextButton(onClick = ::dismissDownloadFileNameDialog) {
-                        Text(stringResource(R.string.action_cancel))
+                        Text(stringResource(CoreCommonR.string.action_cancel))
                     }
                 }
             }
@@ -828,7 +828,7 @@ private fun cacheTypeDescription(
 ): String {
     val size = storageDetails.sizeOf(kind)
     return if (size > 0L) {
-        stringResource(R.string.storage_clear_type_size, fallback, formatFileSize(size))
+        stringResource(CoreCommonR.string.storage_clear_type_size, fallback, formatFileSize(size))
     } else {
         fallback
     }

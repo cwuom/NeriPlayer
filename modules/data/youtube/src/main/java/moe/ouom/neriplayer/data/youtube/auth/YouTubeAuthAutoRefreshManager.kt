@@ -33,7 +33,7 @@ import moe.ouom.neriplayer.api.youtube.transport.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.api.youtube.web.installYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.api.youtube.web.removeYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.youtube.auth.web.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.youtube.auth.web.collectYouTubeWebCookies
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate

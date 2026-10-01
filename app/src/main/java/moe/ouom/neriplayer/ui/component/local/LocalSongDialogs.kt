@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
@@ -101,7 +101,7 @@ fun LocalSongDetailsDialog(
             .onSuccess {
                 val loadState = resolveLocalSongDetailsLoadState(
                     details = it,
-                    unavailableMessage = composeResources.getString(R.string.local_song_details_unavailable)
+                    unavailableMessage = composeResources.getString(CoreCommonR.string.local_song_details_unavailable)
                 )
                 details = loadState.details
                 error = loadState.error
@@ -111,13 +111,13 @@ fun LocalSongDetailsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.local_song_details_title)) },
+        title = { Text(stringResource(CoreCommonR.string.local_song_details_title)) },
         text = {
             fun copyPath(path: String) {
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", path)))
                 }
-                onShowMessage(composeResources.getString(R.string.toast_copied))
+                onShowMessage(composeResources.getString(CoreCommonR.string.toast_copied))
             }
 
             Column(
@@ -131,80 +131,80 @@ fun LocalSongDetailsDialog(
                     details == null && error == null -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             CircularProgressIndicator()
-                            Text(stringResource(R.string.local_song_details_loading))
+                            Text(stringResource(CoreCommonR.string.local_song_details_loading))
                         }
                     }
 
                     error != null -> {
                         Text(
-                            text = stringResource(R.string.local_song_details_failed, error.orEmpty()),
+                            text = stringResource(CoreCommonR.string.local_song_details_failed, error.orEmpty()),
                             color = MaterialTheme.colorScheme.error
                         )
                     }
 
                     details != null -> {
-                        DetailsRow(stringResource(R.string.local_song_detail_display_name), details!!.displayName)
-                        DetailsRow(stringResource(R.string.local_song_detail_title), details!!.title)
-                        DetailsRow(stringResource(R.string.local_song_detail_artist), details!!.artist)
-                        DetailsRow(stringResource(R.string.local_song_detail_album), details!!.album)
-                        DetailsRow(stringResource(R.string.local_song_detail_album_artist), details!!.albumArtist)
-                        DetailsRow(stringResource(R.string.local_song_detail_composer), details!!.composer)
-                        DetailsRow(stringResource(R.string.local_song_detail_genre), details!!.genre)
-                        DetailsRow(stringResource(R.string.local_song_detail_year), details!!.year?.toString())
-                        DetailsRow(stringResource(R.string.local_song_detail_track), details!!.trackNumber?.toString())
-                        DetailsRow(stringResource(R.string.local_song_detail_disc), details!!.discNumber?.toString())
-                        DetailsRow(stringResource(R.string.local_song_detail_duration), formatDuration(details!!.durationMs))
-                        DetailsRow(stringResource(R.string.local_song_detail_extension), details!!.fileExtension)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_display_name), details!!.displayName)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_title), details!!.title)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_artist), details!!.artist)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_album), details!!.album)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_album_artist), details!!.albumArtist)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_composer), details!!.composer)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_genre), details!!.genre)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_year), details!!.year?.toString())
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_track), details!!.trackNumber?.toString())
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_disc), details!!.discNumber?.toString())
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_duration), formatDuration(details!!.durationMs))
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_extension), details!!.fileExtension)
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_bitrate),
+                            stringResource(CoreCommonR.string.local_song_detail_bitrate),
                             details!!.bitrateKbps?.let { "$it kbps" }
                         )
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_sample_rate),
+                            stringResource(CoreCommonR.string.local_song_detail_sample_rate),
                             details!!.sampleRateHz?.let { "$it Hz" }
                         )
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_channels),
+                            stringResource(CoreCommonR.string.local_song_detail_channels),
                             details!!.channelCount?.toString()
                         )
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_bit_depth),
+                            stringResource(CoreCommonR.string.local_song_detail_bit_depth),
                             details!!.bitsPerSample?.let { "$it-bit" }
                         )
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_size),
+                            stringResource(CoreCommonR.string.local_song_detail_size),
                             details!!.sizeBytes?.let(::formatFileSize)
                         )
-                        DetailsRow(stringResource(R.string.local_song_detail_mime), details!!.mimeType)
-                        DetailsRow(stringResource(R.string.local_song_detail_audio_mime), details!!.audioMimeType)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_mime), details!!.mimeType)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_audio_mime), details!!.audioMimeType)
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_modified),
+                            stringResource(CoreCommonR.string.local_song_detail_modified),
                             details!!.lastModifiedMs?.let(::convertTimestampToDate)
                         )
-                        DetailsRow(stringResource(R.string.local_song_detail_cover), details!!.coverSource)
-                        DetailsRow(stringResource(R.string.local_song_detail_lyric), details!!.lyricSource)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_cover), details!!.coverSource)
+                        DetailsRow(stringResource(CoreCommonR.string.local_song_detail_lyric), details!!.lyricSource)
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_has_lyrics),
+                            stringResource(CoreCommonR.string.local_song_detail_has_lyrics),
                             if (details!!.lyricContent.isNullOrBlank()) {
-                                stringResource(R.string.local_song_detail_no_lyrics_value)
+                                stringResource(CoreCommonR.string.local_song_detail_no_lyrics_value)
                             } else {
-                                stringResource(R.string.local_song_detail_has_lyrics_value)
+                                stringResource(CoreCommonR.string.local_song_detail_has_lyrics_value)
                             }
                         )
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_path),
+                            stringResource(CoreCommonR.string.local_song_detail_path),
                             details!!.filePath,
                             mono = true,
                             onClick = details!!.filePath?.let { path -> { copyPath(path) } }
                         )
                         DetailsRow(
-                            stringResource(R.string.local_song_detail_lyric_path),
+                            stringResource(CoreCommonR.string.local_song_detail_lyric_path),
                             details!!.lyricPath,
                             mono = true,
                             onClick = details!!.lyricPath?.let { path -> { copyPath(path) } }
                         )
                         if (details!!.filePath.isNullOrBlank()) {
-                            DetailsRow(stringResource(R.string.local_song_detail_uri), details!!.sourceUri.toString(), mono = true)
+                            DetailsRow(stringResource(CoreCommonR.string.local_song_detail_uri), details!!.sourceUri.toString(), mono = true)
                         }
                     }
                 }
@@ -212,7 +212,7 @@ fun LocalSongDetailsDialog(
         },
         confirmButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         }
     )
@@ -226,16 +226,16 @@ fun LocalSongSyncConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.local_song_sync_confirm_title)) },
-        text = { Text(stringResource(R.string.local_song_sync_confirm_message, actionLabel)) },
+        title = { Text(stringResource(CoreCommonR.string.local_song_sync_confirm_title)) },
+        text = { Text(stringResource(CoreCommonR.string.local_song_sync_confirm_message, actionLabel)) },
         confirmButton = {
             HapticTextButton(onClick = onConfirm) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )

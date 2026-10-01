@@ -56,7 +56,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.appearance.ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
 import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreference
@@ -65,11 +65,11 @@ import moe.ouom.neriplayer.data.settings.appearance.MIN_ENHANCED_ADVANCED_BLUR_R
 import moe.ouom.neriplayer.data.settings.appearance.canBeSelectedWhen
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.ui.settings.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
-import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MIN_SDK
 import moe.ouom.neriplayer.ui.effect.glass.shouldShowAdvancedBlurSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -120,9 +120,9 @@ internal fun SettingsMotionSection(
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Outlined.Bolt,
-            title = stringResource(R.string.settings_motion),
-            subtitleCollapsed = stringResource(R.string.settings_motion_expand),
-            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            title = stringResource(CoreCommonR.string.settings_motion),
+            subtitleCollapsed = stringResource(CoreCommonR.string.settings_motion_expand),
+            subtitleExpanded = stringResource(CoreCommonR.string.settings_login_platforms_collapse),
             expanded = expanded,
             onToggle = { onExpandedChange(!expanded) },
             arrowRotation = arrowRotation
@@ -177,17 +177,17 @@ internal fun SettingsMotionSection(
                 dynamicBackgroundApiAvailable &&
                     nowPlayingDynamicBackgroundEnabled &&
                     dynamicBackgroundAvailable
-            val coverBlurConflictSuffix = stringResource(R.string.settings_nowplaying_disable_cover_blur_required)
+            val coverBlurConflictSuffix = stringResource(CoreCommonR.string.settings_nowplaying_disable_cover_blur_required)
             val dynamicBackgroundDisabledSuffix = when {
-                !dynamicBackgroundApiAvailable -> stringResource(R.string.settings_android13_required)
+                !dynamicBackgroundApiAvailable -> stringResource(CoreCommonR.string.settings_android13_required)
                 nowPlayingCoverBlurBackgroundEnabled -> coverBlurConflictSuffix
                 else -> null
             }
             val audioReactiveDisabledSuffix = when {
-                !dynamicBackgroundApiAvailable -> stringResource(R.string.settings_android13_required)
+                !dynamicBackgroundApiAvailable -> stringResource(CoreCommonR.string.settings_android13_required)
                 nowPlayingCoverBlurBackgroundEnabled -> coverBlurConflictSuffix
                 !nowPlayingDynamicBackgroundEnabled -> stringResource(
-                    R.string.settings_nowplaying_dynamic_background_required
+                    CoreCommonR.string.settings_nowplaying_dynamic_background_required
                 )
                 else -> null
             }
@@ -220,8 +220,8 @@ internal fun SettingsMotionSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_motion_general_section),
-                    description = stringResource(R.string.settings_motion_general_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_motion_general_section),
+                    description = stringResource(CoreCommonR.string.settings_motion_general_section_desc)
                 )
                 AutoSettingsSwitchItems(
                     repository = autoSettingsRepository,
@@ -241,12 +241,12 @@ internal fun SettingsMotionSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_motion_glass_section),
-                    description = stringResource(R.string.settings_motion_glass_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_motion_glass_section),
+                    description = stringResource(CoreCommonR.string.settings_motion_glass_section_desc)
                 )
                 MotionSwitchItem(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ADVANCED_BLUR_ENABLED),
-                    disabledSuffix = stringResource(R.string.settings_android13_required),
+                    disabledSuffix = stringResource(CoreCommonR.string.settings_android13_required),
                     checked = advancedBlurAvailable && advancedBlurEnabled,
                     enabled = advancedBlurAvailable,
                     alpha = if (advancedBlurAvailable) 1f else 0.5f,
@@ -306,14 +306,14 @@ internal fun SettingsMotionSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_motion_nowplaying_section),
-                    description = stringResource(R.string.settings_motion_nowplaying_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_motion_nowplaying_section),
+                    description = stringResource(CoreCommonR.string.settings_motion_nowplaying_section_desc)
                 )
                 MotionSwitchItem(
                     setting = AutoSettingsMetadata.requireSetting(
                         AutoSettingsKeys.NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED
                     ),
-                    disabledSuffix = stringResource(R.string.settings_android12_required),
+                    disabledSuffix = stringResource(CoreCommonR.string.settings_android12_required),
                     checked = coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled,
                     enabled = coverBlurAvailable,
                     alpha = if (coverBlurAvailable) 1f else 0.5f,
@@ -334,7 +334,7 @@ internal fun SettingsMotionSection(
                             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT),
                             value = nowPlayingCoverBlurAmount.coerceIn(0f, 500f),
                             valueText = { current ->
-                                stringResource(R.string.settings_nowplaying_cover_blur_value, current)
+                                stringResource(CoreCommonR.string.settings_nowplaying_cover_blur_value, current)
                             },
                             valueRange = 0f..500f,
                             steps = (500f / 5f).toInt().coerceAtLeast(1) - 1,
@@ -348,7 +348,7 @@ internal fun SettingsMotionSection(
                             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN),
                             value = nowPlayingCoverBlurDarken.coerceIn(0f, 0.8f),
                             valueText = { current ->
-                                stringResource(R.string.settings_nowplaying_cover_blur_darken_value, current)
+                                stringResource(CoreCommonR.string.settings_nowplaying_cover_blur_darken_value, current)
                             },
                             valueRange = 0f..0.8f,
                             steps = 15,
@@ -408,17 +408,17 @@ internal fun SettingsMotionSection(
                 onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
-                    title = stringResource(R.string.settings_motion_lyrics_section),
-                    description = stringResource(R.string.settings_motion_lyrics_section_desc)
+                    title = stringResource(CoreCommonR.string.settings_motion_lyrics_section),
+                    description = stringResource(CoreCommonR.string.settings_motion_lyrics_section_desc)
                 )
                 MotionSwitchItem(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_BLUR_ENABLED),
                     descriptionOverride = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         null
                     } else {
-                        stringResource(R.string.lyrics_blur_desc) +
+                        stringResource(CoreCommonR.string.lyrics_blur_desc) +
                             " · " +
-                            stringResource(R.string.lyrics_blur_low_cost_hint)
+                            stringResource(CoreCommonR.string.lyrics_blur_low_cost_hint)
                     },
                     disabledSuffix = null,
                     checked = lyricBlurEnabled,
@@ -436,7 +436,7 @@ internal fun SettingsMotionSection(
                         setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_BLUR_AMOUNT),
                         value = lyricBlurAmount,
                         valueText = { current ->
-                            stringResource(R.string.lyrics_blur_current, current)
+                            stringResource(CoreCommonR.string.lyrics_blur_current, current)
                         },
                         valueRange = 0f..8f,
                         steps = 79,
@@ -522,17 +522,17 @@ internal fun EnhancedAdvancedBlurSettingItem(
     if (showBackgroundImageHint) {
         MiuixSettingsDialog(
             onDismissRequest = { showBackgroundImageHint = false },
-            title = { Text(stringResource(R.string.settings_enhanced_advanced_blur)) },
+            title = { Text(stringResource(CoreCommonR.string.settings_enhanced_advanced_blur)) },
             text = {
                 Text(
                     stringResource(
-                        R.string.settings_enhanced_advanced_blur_background_hint
+                        CoreCommonR.string.settings_enhanced_advanced_blur_background_hint
                     )
                 )
             },
             confirmButton = {
                 MiuixSettingsTextButton(onClick = { showBackgroundImageHint = false }) {
-                    Text(stringResource(R.string.action_ok))
+                    Text(stringResource(CoreCommonR.string.action_ok))
                 }
             }
         )
@@ -551,7 +551,7 @@ private fun BlurAmountSettingItem(
         value = EnhancedAdvancedBlurPreference.normalize(amountDp),
         valueText = { current ->
             stringResource(
-                R.string.settings_enhanced_advanced_blur_radius_value,
+                CoreCommonR.string.settings_enhanced_advanced_blur_radius_value,
                 current.roundToInt()
             )
         },
@@ -601,7 +601,7 @@ internal fun AdvancedBlurQualitySettingItem(
     if (showDialog) {
         MiuixSettingsDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text(stringResource(R.string.settings_advanced_blur_quality)) },
+            title = { Text(stringResource(CoreCommonR.string.settings_advanced_blur_quality)) },
             text = {
                 Column {
                     AdvancedBlurQuality.entries.forEach { option ->
@@ -621,7 +621,7 @@ internal fun AdvancedBlurQualitySettingItem(
             },
             confirmButton = {
                 MiuixSettingsTextButton(onClick = { showDialog = false }) {
-                    Text(stringResource(R.string.action_close))
+                    Text(stringResource(CoreCommonR.string.action_close))
                 }
             }
         )
@@ -631,20 +631,20 @@ internal fun AdvancedBlurQualitySettingItem(
 @Composable
 private fun advancedBlurQualityLabel(quality: AdvancedBlurQuality): String = stringResource(
     when (quality) {
-        AdvancedBlurQuality.UltraLow -> R.string.settings_advanced_blur_quality_ultra_low
-        AdvancedBlurQuality.Low -> R.string.settings_advanced_blur_quality_low
-        AdvancedBlurQuality.Default -> R.string.settings_advanced_blur_quality_default
-        AdvancedBlurQuality.High -> R.string.settings_advanced_blur_quality_high
+        AdvancedBlurQuality.UltraLow -> CoreCommonR.string.settings_advanced_blur_quality_ultra_low
+        AdvancedBlurQuality.Low -> CoreCommonR.string.settings_advanced_blur_quality_low
+        AdvancedBlurQuality.Default -> CoreCommonR.string.settings_advanced_blur_quality_default
+        AdvancedBlurQuality.High -> CoreCommonR.string.settings_advanced_blur_quality_high
     }
 )
 
 @Composable
 private fun advancedBlurQualityDescription(quality: AdvancedBlurQuality): String = stringResource(
     when (quality) {
-        AdvancedBlurQuality.UltraLow -> R.string.settings_advanced_blur_quality_ultra_low_desc
-        AdvancedBlurQuality.Low -> R.string.settings_advanced_blur_quality_low_desc
-        AdvancedBlurQuality.Default -> R.string.settings_advanced_blur_quality_default_desc
-        AdvancedBlurQuality.High -> R.string.settings_advanced_blur_quality_high_desc
+        AdvancedBlurQuality.UltraLow -> CoreCommonR.string.settings_advanced_blur_quality_ultra_low_desc
+        AdvancedBlurQuality.Low -> CoreCommonR.string.settings_advanced_blur_quality_low_desc
+        AdvancedBlurQuality.Default -> CoreCommonR.string.settings_advanced_blur_quality_default_desc
+        AdvancedBlurQuality.High -> CoreCommonR.string.settings_advanced_blur_quality_high_desc
     }
 )
 

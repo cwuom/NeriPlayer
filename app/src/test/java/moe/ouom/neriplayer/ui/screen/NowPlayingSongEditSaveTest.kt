@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongSaveResult
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongSaveSteps
@@ -98,7 +98,7 @@ class NowPlayingSongEditSaveTest {
         val result = executeEditSongSave(song, recordingSteps(events, lyricsSaved = false))
 
         assertEquals(EditSongSaveResult.LYRICS_FAILED, result)
-        assertEquals(R.string.local_song_lyrics_write_failed, result.failureMessage())
+        assertEquals(CoreCommonR.string.local_song_lyrics_write_failed, result.failureMessage())
         assertEquals(listOf("lyrics"), events)
     }
 
@@ -108,7 +108,7 @@ class NowPlayingSongEditSaveTest {
         val result = executeEditSongSave(song, recordingSteps(events, metadataSaved = false))
 
         assertEquals(EditSongSaveResult.METADATA_FAILED, result)
-        assertEquals(R.string.local_song_metadata_write_failed, result.failureMessage())
+        assertEquals(CoreCommonR.string.local_song_metadata_write_failed, result.failureMessage())
         assertEquals(listOf("lyrics", "metadata"), events)
     }
 

@@ -1,0 +1,169 @@
+package moe.ouom.neriplayer.data.local.database.store
+
+import androidx.room.withTransaction
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
+import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
+import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
+import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipDraft
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipInterval
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipRule
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
+import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipSnapshot
+import moe.ouom.neriplayer.data.platform.bili.skip.storage.BiliVideoSkipStore
+
+class BiliVideoSkipRoomStore(
+    private val database: NeriUserDataDatabase
+) : BiliVideoSkipStore {
+    override suspend fun isPrimary(): Boolean {
+        return database.syncMetadataDao()
+            .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+            ?.value == ROOM_PRIMARY_STATE
+    }
+
+    override suspend fun readIfPrimary(): BiliVideoSkipSnapshot? {
+        if (!isPrimary()) {
+            return null
+        }
+        return readSnapshot()
+    }
+
+    override suspend fun replaceAll(
+        rules: List<BiliVideoSkipRule>,
+        drafts: List<BiliVideoSkipDraft>,
+        now: Long
+    ) {
+        database.withTransaction {
+            val dao = database.biliVideoSkipDao()
+            dao.deleteIntervals()
+            dao.deleteRules()
+            dao.deleteDrafts()
+            dao.insertRules(rules.map(BiliVideoSkipRule::toEntity))
+            dao.insertIntervals(
+                rules.flatMap { rule ->
+                    rule.intervals.mapIndexed { position, interval ->
+                        interval.toEntity(rule.target, position)
+                    }
+                }
+            )
+            dao.insertDrafts(drafts.map(BiliVideoSkipDraft::toEntity))
+            markRoomPrimary(now)
+        }
+    }
+
+    override suspend fun replaceRules(
+        rules: List<BiliVideoSkipRule>,
+        now: Long
+    ) {
+        database.withTransaction {
+            val dao = database.biliVideoSkipDao()
+            dao.deleteIntervals()
+            dao.deleteRules()
+            dao.insertRules(rules.map(BiliVideoSkipRule::toEntity))
+            dao.insertIntervals(
+                rules.flatMap { rule ->
+                    rule.intervals.mapIndexed { position, interval ->
+                        interval.toEntity(rule.target, position)
+                    }
+                }
+            )
+            markRoomPrimary(now)
+        }
+    }
+
+    override suspend fun replaceDrafts(
+        drafts: List<BiliVideoSkipDraft>,
+        now: Long
+    ) {
+        database.withTransaction {
+            val dao = database.biliVideoSkipDao()
+            dao.deleteDrafts()
+            dao.insertDrafts(drafts.map(BiliVideoSkipDraft::toEntity))
+            markRoomPrimary(now)
+        }
+    }
+
+    private suspend fun readSnapshot(): BiliVideoSkipSnapshot {
+        return database.withTransaction {
+            val dao = database.biliVideoSkipDao()
+            val intervalsByTarget = dao.getIntervals()
+                .groupBy { it.bvid to it.cid }
+                .mapValues { (_, intervals) ->
+                    intervals.sortedBy(BiliVideoSkipIntervalEntity::position)
+                        .map { interval ->
+                            BiliVideoSkipInterval(
+                                startMs = interval.startMs,
+                                endMs = interval.endMs
+                            )
+                        }
+                }
+            BiliVideoSkipSnapshot(
+                rules = dao.getRules().map { rule ->
+                    BiliVideoSkipRule(
+                        target = BiliVideoSkipTarget(rule.bvid, rule.cid),
+                        intervals = intervalsByTarget[rule.bvid to rule.cid].orEmpty(),
+                        modifiedAt = rule.modifiedAt,
+                        isDeleted = rule.isDeleted
+                    )
+                },
+                drafts = dao.getDrafts().map { draft ->
+                    BiliVideoSkipDraft(
+                        target = BiliVideoSkipTarget(draft.bvid, draft.cid),
+                        startText = draft.startText,
+                        endText = draft.endText,
+                        modifiedAt = draft.modifiedAt
+                    )
+                }
+            )
+        }
+    }
+
+    private suspend fun markRoomPrimary(now: Long) {
+        database.syncMetadataDao().upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = CUTOVER_STATE_METADATA_KEY,
+                value = ROOM_PRIMARY_STATE,
+                updatedAt = now
+            )
+        )
+    }
+
+    companion object {
+        const val CUTOVER_STATE_METADATA_KEY = "bili_video_skip_cutover_state"
+        const val ROOM_PRIMARY_STATE = "room_primary"
+    }
+}
+
+private fun BiliVideoSkipRule.toEntity(): BiliVideoSkipRuleEntity {
+    return BiliVideoSkipRuleEntity(
+        bvid = target.bvid,
+        cid = target.cid,
+        modifiedAt = modifiedAt,
+        isDeleted = isDeleted
+    )
+}
+
+private fun BiliVideoSkipInterval.toEntity(
+    target: BiliVideoSkipTarget,
+    position: Int
+): BiliVideoSkipIntervalEntity {
+    return BiliVideoSkipIntervalEntity(
+        bvid = target.bvid,
+        cid = target.cid,
+        position = position,
+        startMs = startMs,
+        endMs = endMs
+    )
+}
+
+private fun BiliVideoSkipDraft.toEntity(): BiliVideoSkipDraftEntity {
+    return BiliVideoSkipDraftEntity(
+        targetKey = target.stableKey(),
+        bvid = target.bvid,
+        cid = target.cid,
+        startText = startText,
+        endText = endText,
+        modifiedAt = modifiedAt
+    )
+}

@@ -87,7 +87,7 @@ import moe.ouom.neriplayer.api.youtube.transport.rateLimitBackoffMs
 import moe.ouom.neriplayer.api.youtube.transport.readErrorPreviewWithLimit
 import moe.ouom.neriplayer.api.youtube.transport.readTextWithLimit
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.youtube.cache.YouTubePlayableAudioCache
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureDisabledException

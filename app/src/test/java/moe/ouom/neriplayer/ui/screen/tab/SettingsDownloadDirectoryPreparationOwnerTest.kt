@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import android.content.res.Resources
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.storage.migration.plan.ManagedDownloadDirectoryChangeDecision
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.PendingDownloadDirectoryChange
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationActionPort
@@ -123,9 +123,9 @@ class SettingsDownloadDirectoryPreparationOwnerTest {
         val gateway = FakeGateway(events)
         val actions = FakeActions(events)
         private val resources = mock(Resources::class.java).apply {
-            `when`(getString(R.string.settings_download_directory_selected)).thenReturn("selected")
-            `when`(getString(R.string.settings_download_directory_reset_done)).thenReturn("reset")
-            `when`(getString(R.string.managed_library_processing_retry)).thenReturn("retry")
+            `when`(getString(CoreCommonR.string.settings_download_directory_selected)).thenReturn("selected")
+            `when`(getString(CoreCommonR.string.settings_download_directory_reset_done)).thenReturn("reset")
+            `when`(getString(CoreCommonR.string.managed_library_processing_retry)).thenReturn("retry")
         }
         val owner = DownloadDirectoryPreparationOwner(
             gateway, actions, resources,

@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui
 
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
@@ -34,15 +34,15 @@ class AppGlobalDialogsPolicyTest {
     @Test
     fun trafficRiskNetworkLabelsCoverEveryTransport() {
         assertEquals(
-            R.string.traffic_risk_network_roaming,
+            CoreCommonR.string.traffic_risk_network_roaming,
             trafficRiskNetworkLabelResource(TrafficNetworkType.ROAMING)
         )
         assertEquals(
-            R.string.traffic_risk_network_mobile,
+            CoreCommonR.string.traffic_risk_network_mobile,
             trafficRiskNetworkLabelResource(TrafficNetworkType.MOBILE)
         )
         assertEquals(
-            R.string.traffic_risk_network_wifi,
+            CoreCommonR.string.traffic_risk_network_wifi,
             trafficRiskNetworkLabelResource(TrafficNetworkType.WIFI)
         )
     }

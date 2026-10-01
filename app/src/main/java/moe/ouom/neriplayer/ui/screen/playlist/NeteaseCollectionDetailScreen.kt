@@ -131,7 +131,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -371,8 +371,8 @@ fun DetailScreen(
     var showExportAllSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val favoriteAddedText = stringResource(R.string.favorite_added)
-    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
+    val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
     fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
         val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
         scope.launchLocalPlaylistMutation(
@@ -550,7 +550,7 @@ fun DetailScreen(
                                 HapticIconButton(onClick = onBack) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = stringResource(R.string.cd_back)
+                                        contentDescription = stringResource(CoreCommonR.string.cd_back)
                                     )
                                 }
                             },
@@ -562,7 +562,7 @@ fun DetailScreen(
                                         focusManager.clearFocus()
                                         keyboardController?.hide()
                                     }
-                                }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search_songs)) }
+                                }) { Icon(Icons.Filled.Search, contentDescription = stringResource(CoreCommonR.string.cd_search_songs)) }
 
                                 // 收藏按钮
                                 HapticIconButton(onClick = {
@@ -585,7 +585,7 @@ fun DetailScreen(
                                 }) {
                                     Icon(
                                         imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                        contentDescription = if (isFavorite) stringResource(R.string.action_unfavorite) else stringResource(R.string.action_favorite_playlist),
+                                        contentDescription = if (isFavorite) stringResource(CoreCommonR.string.action_unfavorite) else stringResource(CoreCommonR.string.action_favorite_playlist),
                                         tint = playlistTopBarContentColor
                                     )
                                 }
@@ -594,7 +594,7 @@ fun DetailScreen(
                                     HapticIconButton(onClick = { showDownloadManager = true }) {
                                         Icon(
                                             Icons.Outlined.Download,
-                                            contentDescription = stringResource(R.string.cd_download_manager),
+                                            contentDescription = stringResource(CoreCommonR.string.cd_download_manager),
                                             tint = playlistTopBarContentColor
                                         )
                                     }
@@ -616,7 +616,7 @@ fun DetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                R.plurals.common_selected_count,
+                                CoreCommonR.plurals.common_selected_count,
                                 selectedIds.size,
                                 selectedIds.size
                             )
@@ -624,7 +624,7 @@ fun DetailScreen(
                     },
                             navigationIcon = {
                                 HapticIconButton(onClick = { exitSelection() }) {
-                                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
+                                    Icon(Icons.Filled.Close, contentDescription = stringResource(CoreCommonR.string.cd_exit_select))
                                 }
                             },
                             actions = {
@@ -632,9 +632,9 @@ fun DetailScreen(
                                     Icon(
                                         imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                                         contentDescription = if (allSelected) {
-                                            stringResource(R.string.action_deselect_all)
+                                            stringResource(CoreCommonR.string.action_deselect_all)
                                         } else {
-                                            stringResource(R.string.action_select_all)
+                                            stringResource(CoreCommonR.string.action_select_all)
                                         }
                                     )
                                 }
@@ -646,7 +646,7 @@ fun DetailScreen(
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                        contentDescription = stringResource(R.string.cd_export_playlist)
+                                        contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
                                     )
                                 }
                                 HapticIconButton(
@@ -666,7 +666,7 @@ fun DetailScreen(
                                 ) {
                                     Icon(
                                         Icons.Outlined.Download,
-                                        contentDescription = stringResource(R.string.cd_download_selected)
+                                        contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
                                     )
                                 }
                             },
@@ -687,7 +687,7 @@ fun DetailScreen(
                         offlineMode = offlineMode,
                         query = searchQuery,
                         onQueryChange = { searchQuery = it },
-                        placeholder = stringResource(R.string.playlist_search_hint),
+                        placeholder = stringResource(CoreCommonR.string.playlist_search_hint),
                         inputState = searchInputState,
                         onFocusChanged = { dockedSearchFocused = it },
                         focusRequester = if (searchFieldFocusInHeader) {
@@ -703,15 +703,15 @@ fun DetailScreen(
                         tokens = { song -> song.playlistSearchValues(context) }
                     )
                     val trackCount = ui.header?.trackCount ?: ui.tracks.size
-                    val heroTitle = ui.header?.name ?: stringResource(R.string.playlist_title)
+                    val heroTitle = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title)
                     val heroSubtitle = if (ui.header?.isAlbum == true) {
                         stringResource(
-                            R.string.collection_track_count_format,
+                            CoreCommonR.string.collection_track_count_format,
                             trackCount
                         )
                     } else {
                         stringResource(
-                            R.string.playlist_play_count_format,
+                            CoreCommonR.string.playlist_play_count_format,
                             formatPlayCount(context, ui.header?.playCount ?: 0),
                             trackCount
                         )
@@ -762,7 +762,7 @@ fun DetailScreen(
                                                     PlaylistModernHeroSearchField(
                                                         query = searchQuery,
                                                         onQueryChange = { searchQuery = it },
-                                                        placeholder = stringResource(R.string.playlist_search_hint),
+                                                        placeholder = stringResource(CoreCommonR.string.playlist_search_hint),
                                                         inputState = searchInputState,
                                                         onFocusChanged = { headerSearchFocused = it },
                                                         focusRequester = if (searchFieldFocusInHeader) {
@@ -825,7 +825,7 @@ fun DetailScreen(
                                             ) {
                                                 CircularProgressIndicator()
                                                 Spacer(modifier = Modifier.width(12.dp))
-                                                Text(stringResource(R.string.playlist_loading_content))
+                                                Text(stringResource(CoreCommonR.string.playlist_loading_content))
                                             }
                                         }
                                     }
@@ -844,7 +844,7 @@ fun DetailScreen(
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 Text(
-                                                    text = stringResource(R.string.playlist_load_failed_format, loadError),
+                                                    text = stringResource(CoreCommonR.string.playlist_load_failed_format, loadError),
                                                     color = MaterialTheme.colorScheme.error
                                                 )
                                                 Spacer(Modifier.height(8.dp))
@@ -920,7 +920,7 @@ fun DetailScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                    contentDescription = stringResource(R.string.cd_locate_playing)
+                                    contentDescription = stringResource(CoreCommonR.string.cd_locate_playing)
                                 )
                             }
                         }
@@ -930,7 +930,7 @@ fun DetailScreen(
                 // 导出面板 //
                 if (showExportSheet) {
                     PlaylistExportSheet(
-                        title = stringResource(R.string.playlist_export_to_local),
+                        title = stringResource(CoreCommonR.string.playlist_export_to_local),
                         playlists = allPlaylists.filterNot {
                             LocalFilesPlaylist.isSystemPlaylist(it, context)
                         },
@@ -976,7 +976,7 @@ fun DetailScreen(
                 }
                 if (showExportAllSheet) {
                     PlaylistExportSheet(
-                        title = stringResource(R.string.playlist_export_to_local),
+                        title = stringResource(CoreCommonR.string.playlist_export_to_local),
                         playlists = allPlaylists.filterNot {
                             LocalFilesPlaylist.isSystemPlaylist(it, context)
                         },
@@ -1050,7 +1050,7 @@ private fun RetryChip(onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Text(
-            stringResource(R.string.action_retry),
+            stringResource(CoreCommonR.string.action_retry),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )
@@ -1185,7 +1185,7 @@ private fun SongRow(
                 ) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = stringResource(R.string.cd_more_actions),
+                        contentDescription = stringResource(CoreCommonR.string.cd_more_actions),
                         tint = playlistModernListSecondaryContentColor()
                     )
                 }
@@ -1195,7 +1195,7 @@ private fun SongRow(
                     onDismissRequest = { showMoreMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                        text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
@@ -1208,7 +1208,7 @@ private fun SongRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                        text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
@@ -1225,9 +1225,9 @@ private fun SongRow(
                             Text(
                                 stringResource(
                                     if (isFavorite) {
-                                        R.string.favorite_remove
+                                        CoreCommonR.string.favorite_remove
                                     } else {
-                                        R.string.favorite_add
+                                        CoreCommonR.string.favorite_add
                                     }
                                 )
                             )
@@ -1248,7 +1248,7 @@ private fun SongRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_copy_song_info)) },
+                        text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.ContentCopy,
@@ -1259,7 +1259,7 @@ private fun SongRow(
                             val songInfo = "${song.displayName()}-${song.displayArtist()}"
                             scope.launch {
                                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
-                                snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.toast_copied))
+                                snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.toast_copied))
                             }
                             showMoreMenu = false
                         }

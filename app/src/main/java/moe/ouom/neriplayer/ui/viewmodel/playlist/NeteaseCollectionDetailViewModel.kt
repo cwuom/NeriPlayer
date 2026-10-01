@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.api.netease.client.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteaseArtist
@@ -51,7 +51,7 @@ import moe.ouom.neriplayer.data.model.netease.cache.CachedNeteasePlaylistTrack
 import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
+import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseRadarPlaylistDefinitions
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -812,9 +812,9 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     private fun parseDetailFromPlaylist(raw: String): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
-        val pl = root.optJSONObject("playlist") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "playlist"))
+        val pl = root.optJSONObject("playlist") ?: error(getApplication<Application>().getString(CoreCommonR.string.error_missing_node, "playlist"))
 
         val header = NeteaseCollectionHeader(
             id = pl.optLong("id"),
@@ -850,9 +850,9 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     ): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
-        val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "album"))
+        val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(CoreCommonR.string.error_missing_node, "album"))
         val cover = resolveNeteaseCollectionCoverUrl(
             primary = al.optString("picUrl", ""),
             fallback = coverFallback
@@ -950,7 +950,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     private fun parseSongDetail(raw: String): List<SongItem> {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
         val songs = root.optJSONArray("songs") ?: return emptyList()
         val out = mutableListOf<SongItem>()
         for (i in 0 until songs.length()) {

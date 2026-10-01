@@ -38,7 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -87,7 +87,7 @@ internal fun SettingsLyricSourceSection(
         supportingContent = {
             Text(
                 stringResource(
-                    R.string.settings_lyric_source_current,
+                    CoreCommonR.string.settings_lyric_source_current,
                     stringResource(lyricSourcePreferenceLabel(defaultLyricSource))
                 )
             )
@@ -109,7 +109,7 @@ internal fun SettingsLyricSourceSection(
 
     MiuixSettingsDialog(
         onDismissRequest = { showSourceDialog = false },
-        title = { Text(stringResource(R.string.settings_default_lyric_source)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_default_lyric_source)) },
         text = {
             Column {
                 LyricSourcePreference.entries.forEach { option ->
@@ -128,26 +128,26 @@ internal fun SettingsLyricSourceSection(
         confirmButton = {
             MiuixSettingsTextButton(
                 onClick = { showSourceDialog = false },
-                text = { Text(stringResource(R.string.action_close)) }
+                text = { Text(stringResource(CoreCommonR.string.action_close)) }
             )
         }
     )
 }
 
 internal fun lyricSourcePreferenceLabel(source: LyricSourcePreference): Int = when (source) {
-    LyricSourcePreference.Automatic -> R.string.settings_lyric_source_automatic
-    LyricSourcePreference.CloudMusic -> R.string.settings_lyric_source_cloud_music
-    LyricSourcePreference.Kugou -> R.string.settings_lyric_source_kugou
-    LyricSourcePreference.QqMusic -> R.string.settings_lyric_source_qq_music
-    LyricSourcePreference.LrcLib -> R.string.settings_lyric_source_lrclib
-    LyricSourcePreference.AmllTtml -> R.string.settings_lyric_source_amll_ttml
+    LyricSourcePreference.Automatic -> CoreCommonR.string.settings_lyric_source_automatic
+    LyricSourcePreference.CloudMusic -> CoreCommonR.string.settings_lyric_source_cloud_music
+    LyricSourcePreference.Kugou -> CoreCommonR.string.settings_lyric_source_kugou
+    LyricSourcePreference.QqMusic -> CoreCommonR.string.settings_lyric_source_qq_music
+    LyricSourcePreference.LrcLib -> CoreCommonR.string.settings_lyric_source_lrclib
+    LyricSourcePreference.AmllTtml -> CoreCommonR.string.settings_lyric_source_amll_ttml
 }
 
 private fun lyricSourcePreferenceDescription(source: LyricSourcePreference): Int = when (source) {
-    LyricSourcePreference.Automatic -> R.string.settings_lyric_source_automatic_desc
-    LyricSourcePreference.CloudMusic -> R.string.settings_lyric_source_cloud_music_desc
-    LyricSourcePreference.Kugou -> R.string.settings_lyric_source_kugou_desc
-    LyricSourcePreference.QqMusic -> R.string.settings_lyric_source_qq_music_desc
-    LyricSourcePreference.LrcLib -> R.string.settings_lyric_source_lrclib_desc
-    LyricSourcePreference.AmllTtml -> R.string.settings_lyric_source_amll_ttml_desc
+    LyricSourcePreference.Automatic -> CoreCommonR.string.settings_lyric_source_automatic_desc
+    LyricSourcePreference.CloudMusic -> CoreCommonR.string.settings_lyric_source_cloud_music_desc
+    LyricSourcePreference.Kugou -> CoreCommonR.string.settings_lyric_source_kugou_desc
+    LyricSourcePreference.QqMusic -> CoreCommonR.string.settings_lyric_source_qq_music_desc
+    LyricSourcePreference.LrcLib -> CoreCommonR.string.settings_lyric_source_lrclib_desc
+    LyricSourcePreference.AmllTtml -> CoreCommonR.string.settings_lyric_source_amll_ttml_desc
 }

@@ -7,7 +7,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.config.ConfigFileManager
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -127,16 +127,16 @@ class ConfigTransferViewModel : ViewModel() {
     private data class ConfigTransferStrings(
         private val context: Context
     ) {
-        val exporting: String = context.getString(R.string.settings_config_exporting)
-        val importing: String = context.getString(R.string.settings_config_importing)
+        val exporting: String = context.getString(CoreCommonR.string.settings_config_exporting)
+        val importing: String = context.getString(CoreCommonR.string.settings_config_importing)
         private val exportSuccessPrefix: String =
-            context.getString(R.string.settings_config_export_success)
+            context.getString(CoreCommonR.string.settings_config_export_success)
         private val exportFailedPrefix: String =
-            context.getString(R.string.settings_config_export_failed)
+            context.getString(CoreCommonR.string.settings_config_export_failed)
         private val importSuccessPrefix: String =
-            context.getString(R.string.settings_config_import_success)
+            context.getString(CoreCommonR.string.settings_config_import_success)
         private val importFailedPrefix: String =
-            context.getString(R.string.settings_config_import_failed)
+            context.getString(CoreCommonR.string.settings_config_import_failed)
 
         fun exportSuccess(fileName: String): String = "$exportSuccessPrefix: $fileName"
 
@@ -154,28 +154,28 @@ class ConfigTransferViewModel : ViewModel() {
                 append('\n')
                 append(
                     quantityText(
-                        R.plurals.settings_config_import_restored_settings,
+                        CoreCommonR.plurals.settings_config_import_restored_settings,
                         result.restoredSettingsCount
                     )
                 )
                 append('\n')
                 append(
                     quantityText(
-                        R.plurals.settings_config_import_restored_listen_together,
+                        CoreCommonR.plurals.settings_config_import_restored_listen_together,
                         result.restoredListenTogetherCount
                     )
                 )
                 append('\n')
                 append(
                     quantityText(
-                        R.plurals.settings_config_import_restored_auth,
+                        CoreCommonR.plurals.settings_config_import_restored_auth,
                         result.restoredAuthCount
                     )
                 )
                 append('\n')
                 append(
                     quantityText(
-                        R.plurals.settings_config_import_restored_sync,
+                        CoreCommonR.plurals.settings_config_import_restored_sync,
                         result.restoredSyncCount
                     )
                 )
@@ -183,7 +183,7 @@ class ConfigTransferViewModel : ViewModel() {
                 if (result.warnings.isNotEmpty()) {
                     append('\n')
                     append('\n')
-                    append(context.getString(R.string.settings_config_import_warning_title))
+                    append(context.getString(CoreCommonR.string.settings_config_import_warning_title))
                     result.warnings.forEach { warning ->
                         append('\n')
                         append("- ")
@@ -194,7 +194,7 @@ class ConfigTransferViewModel : ViewModel() {
                 if (result.requiresActivityRecreate) {
                     append('\n')
                     append('\n')
-                    append(context.getString(R.string.settings_config_import_restart_hint))
+                    append(context.getString(CoreCommonR.string.settings_config_import_restart_hint))
                 }
             }
         }

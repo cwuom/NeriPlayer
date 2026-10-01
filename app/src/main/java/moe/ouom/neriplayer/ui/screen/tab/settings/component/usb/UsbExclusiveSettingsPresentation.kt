@@ -16,7 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
@@ -33,52 +33,52 @@ internal fun resolveUsbStatus(
         ?: snapshot.nativeExclusiveRuntime
     return when {
         !enabled -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_disabled),
-            description = stringResource(R.string.settings_usb_exclusive_status_disabled_desc),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_disabled),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_disabled_desc),
             icon = Icons.Outlined.Info,
             color = colorScheme.onSurfaceVariant
         )
         !snapshot.hasUsbHostAudioDevice -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_no_device),
-            description = stringResource(R.string.settings_usb_exclusive_status_no_device_desc),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_no_device),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_no_device_desc),
             icon = Icons.Outlined.Usb,
             color = colorScheme.onSurfaceVariant
         )
         !snapshot.hasUsbPermission -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_permission),
-            description = stringResource(R.string.settings_usb_exclusive_status_permission_desc),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_permission),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_permission_desc),
             icon = Icons.Outlined.ErrorOutline,
             color = colorScheme.error
         )
         enabled && snapshot.fallbackReason.containsUsbExclusivePendingIdle() ->
             UsbStatusPresentation(
-                title = stringResource(R.string.settings_usb_exclusive_status_system_fallback),
-                description = stringResource(R.string.settings_usb_exclusive_issue_pending_idle),
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_system_fallback),
+                description = stringResource(CoreCommonR.string.settings_usb_exclusive_issue_pending_idle),
                 icon = Icons.Outlined.HourglassTop,
                 color = colorScheme.tertiary
             )
         enabled && isUsbExclusiveWaitingReason(waitingReason) -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_waiting),
-            description = stringResource(R.string.settings_usb_exclusive_issue_cooldown),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_waiting),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_issue_cooldown),
             icon = Icons.Outlined.HourglassTop,
             color = colorScheme.tertiary
         )
         nativeState.transitioning -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_transitioning),
-            description = stringResource(R.string.settings_usb_exclusive_status_transitioning_desc),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_transitioning),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_transitioning_desc),
             icon = Icons.Outlined.HourglassTop,
             color = colorScheme.tertiary
         )
         snapshot.nativeExclusiveStreaming && snapshot.nativeExclusiveSource == "player_pcm" ->
             UsbStatusPresentation(
-                title = stringResource(R.string.settings_usb_exclusive_status_streaming),
-                description = stringResource(R.string.settings_usb_exclusive_status_streaming_desc),
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_streaming),
+                description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_streaming_desc),
                 icon = Icons.Outlined.CheckCircle,
                 color = colorScheme.primary
             )
         snapshot.nativeExclusiveStreaming -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_test_tone),
-            description = stringResource(R.string.settings_usb_exclusive_status_test_tone_desc),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_test_tone),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_test_tone_desc),
             icon = Icons.Outlined.GraphicEq,
             color = colorScheme.tertiary
         )
@@ -89,30 +89,30 @@ internal fun resolveUsbStatus(
                     (!snapshot.fallbackReason.isNullOrBlank() && snapshot.fallbackReason != "none")
                 ) ->
             UsbStatusPresentation(
-                title = stringResource(R.string.settings_usb_exclusive_status_system_fallback),
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_system_fallback),
                 description = snapshot.fallbackReason
                     ?.takeUnless { it.isBlank() || it == "none" }
                     ?.let { usbExclusiveIssueLabel(it) }
-                    ?: stringResource(R.string.settings_usb_exclusive_status_system_fallback_desc),
+                    ?: stringResource(CoreCommonR.string.settings_usb_exclusive_status_system_fallback_desc),
                 icon = Icons.Outlined.HourglassTop,
                 color = colorScheme.tertiary
             )
         !snapshot.nativeExclusiveError.isNullOrBlank() && snapshot.nativeExclusiveError != "none" ->
             UsbStatusPresentation(
-                title = stringResource(R.string.settings_usb_exclusive_status_error),
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_error),
                 description = usbExclusiveIssueLabel(snapshot.nativeExclusiveError),
                 icon = Icons.Outlined.ErrorOutline,
                 color = colorScheme.error
             )
         nativeState.available -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_ready),
-            description = stringResource(R.string.settings_usb_exclusive_status_ready_desc),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_ready),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_ready_desc),
             icon = Icons.Outlined.Memory,
             color = colorScheme.secondary
         )
         else -> UsbStatusPresentation(
-            title = stringResource(R.string.settings_usb_exclusive_status_unavailable),
-            description = stringResource(R.string.settings_usb_exclusive_status_unavailable_desc),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_status_unavailable),
+            description = stringResource(CoreCommonR.string.settings_usb_exclusive_status_unavailable_desc),
             icon = Icons.Outlined.ErrorOutline,
             color = colorScheme.error
         )
@@ -122,9 +122,9 @@ internal fun resolveUsbStatus(
 @Composable
 internal fun nativeSourceLabel(source: String): String {
     return when (source) {
-        "player_pcm" -> stringResource(R.string.settings_usb_exclusive_source_player)
-        "tone" -> stringResource(R.string.settings_usb_exclusive_source_tone)
-        else -> stringResource(R.string.settings_usb_exclusive_source_idle)
+        "player_pcm" -> stringResource(CoreCommonR.string.settings_usb_exclusive_source_player)
+        "tone" -> stringResource(CoreCommonR.string.settings_usb_exclusive_source_tone)
+        else -> stringResource(CoreCommonR.string.settings_usb_exclusive_source_idle)
     }
 }
 
@@ -132,30 +132,30 @@ internal fun nativeSourceLabel(source: String): String {
 internal fun usbExclusiveIssueLabel(reason: String?): String {
     val normalized = reason?.trim()
         ?.takeUnless { it.isBlank() || it == "none" }
-        ?: return stringResource(R.string.settings_usb_exclusive_error_none)
+        ?: return stringResource(CoreCommonR.string.settings_usb_exclusive_error_none)
     return when {
         normalized.startsWith("sample_rate_unsupported") ->
-            stringResource(R.string.settings_usb_exclusive_issue_sample_rate)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_sample_rate)
         normalized.startsWith("bit_depth_unsupported") ->
-            stringResource(R.string.settings_usb_exclusive_issue_bit_depth)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_bit_depth)
         normalized.containsUsbExclusivePendingIdle() ->
-            stringResource(R.string.settings_usb_exclusive_issue_pending_idle)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_pending_idle)
         normalized.startsWith("native_reconfiguration_cooldown") ->
-            stringResource(R.string.settings_usb_exclusive_issue_cooldown)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_cooldown)
         normalized.startsWith("native_open_deferred") ||
             normalized.startsWith("native_reopen_cooling_down") ->
-            stringResource(R.string.settings_usb_exclusive_issue_cooldown)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_cooldown)
         normalized.contains("permission", ignoreCase = true) ->
-            stringResource(R.string.settings_usb_exclusive_issue_permission)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_permission)
         normalized.contains("transport", ignoreCase = true) ->
-            stringResource(R.string.settings_usb_exclusive_issue_transport)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_transport)
         normalized.contains("usb_exclusive_disabled", ignoreCase = true) ->
-            stringResource(R.string.settings_usb_exclusive_error_none)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_error_none)
         normalized.contains("no permitted", ignoreCase = true) ||
             normalized.startsWith("no_selected", ignoreCase = true) ||
             normalized.contains("no_compatible", ignoreCase = true) ->
-            stringResource(R.string.settings_usb_exclusive_issue_device)
-        else -> stringResource(R.string.settings_usb_exclusive_issue_generic)
+            stringResource(CoreCommonR.string.settings_usb_exclusive_issue_device)
+        else -> stringResource(CoreCommonR.string.settings_usb_exclusive_issue_generic)
     }
 }
 

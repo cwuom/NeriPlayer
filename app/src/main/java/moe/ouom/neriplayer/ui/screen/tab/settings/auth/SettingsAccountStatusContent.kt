@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.content.res.Resources
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -46,7 +47,7 @@ internal fun accountStatusText(
 
 @Composable
 private fun accountSavedAtText(savedAt: Long): String =
-    if (savedAt > 0L) formatSyncTime(savedAt) else stringResource(R.string.time_just_now)
+    if (savedAt > 0L) formatSyncTime(savedAt) else stringResource(CoreCommonR.string.time_just_now)
 
 private data class AccountStatusCopy(
     val bili: String,
@@ -74,27 +75,27 @@ private fun accountStatusCopy(
         hasValidSavedCookieHealth(bili.health.state),
         bili.hasSavedCookies,
         biliRelativeTime,
-        R.string.settings_bili_status_valid,
-        R.string.settings_bili_status_saved_invalid,
-        R.string.settings_bili_status_missing
+        CoreCommonR.string.settings_bili_status_valid,
+        CoreCommonR.string.settings_bili_status_saved_invalid,
+        CoreCommonR.string.settings_bili_status_missing
     ),
     youtube = accountStatusText(
         resources,
         hasValidYouTubeAuthHealth(youtube.health.state),
         youtube.hasSavedAuth,
         youtubeRelativeTime,
-        R.string.settings_youtube_status_valid,
-        R.string.settings_youtube_status_saved_invalid,
-        R.string.settings_youtube_status_missing
+        CoreCommonR.string.settings_youtube_status_valid,
+        CoreCommonR.string.settings_youtube_status_saved_invalid,
+        CoreCommonR.string.settings_youtube_status_missing
     ),
     netease = accountStatusText(
         resources,
         hasValidSavedCookieHealth(netease.health.state),
         netease.hasSavedCookies,
         neteaseRelativeTime,
-        R.string.settings_netease_status_valid,
-        R.string.settings_netease_status_saved_invalid,
-        R.string.settings_netease_status_missing
+        CoreCommonR.string.settings_netease_status_valid,
+        CoreCommonR.string.settings_netease_status_saved_invalid,
+        CoreCommonR.string.settings_netease_status_missing
     )
 )
 
@@ -126,27 +127,27 @@ internal fun SettingsLoginExpandedContent(controller: SettingsAccountAuthControl
             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
     ) {
         SettingsAccountPlatformRow(
-            iconRes = R.drawable.ic_bilibili,
-            contentDescriptionRes = R.string.settings_bilibili,
-            titleRes = R.string.platform_bilibili,
+            iconRes = CoreCommonR.drawable.ic_bilibili,
+            contentDescriptionRes = CoreCommonR.string.settings_bilibili,
+            titleRes = CoreCommonR.string.platform_bilibili,
             status = copy.bili,
             hasSaved = bili.hasSavedCookies,
             onOpenSaved = controller.actions.openBiliSavedCookieDialog,
             onOpenSheet = controller.actions.openBiliSheet
         )
         SettingsAccountPlatformRow(
-            iconRes = R.drawable.ic_youtube,
-            contentDescriptionRes = R.string.common_youtube,
-            titleRes = R.string.common_youtube,
+            iconRes = CoreCommonR.drawable.ic_youtube,
+            contentDescriptionRes = CoreCommonR.string.common_youtube,
+            titleRes = CoreCommonR.string.common_youtube,
             status = copy.youtube,
             hasSaved = youtube.hasSavedAuth,
             onOpenSaved = controller.actions.openYouTubeSavedCookieDialog,
             onOpenSheet = controller.actions.openYouTubeSheet
         )
         SettingsAccountPlatformRow(
-            iconRes = R.drawable.ic_netease_cloud_music,
-            contentDescriptionRes = R.string.settings_netease,
-            titleRes = R.string.platform_netease,
+            iconRes = CoreCommonR.drawable.ic_netease_cloud_music,
+            contentDescriptionRes = CoreCommonR.string.settings_netease,
+            titleRes = CoreCommonR.string.platform_netease,
             status = copy.netease,
             hasSaved = netease.hasSavedCookies,
             onOpenSaved = controller.actions.openNeteaseSavedCookieDialog,
@@ -206,13 +207,13 @@ private fun SettingsQqAccountRow() {
         leadingContent = {
             Icon(
                 painter = painterResource(id = R.drawable.ic_qq_music),
-                contentDescription = stringResource(R.string.settings_qq_music),
+                contentDescription = stringResource(CoreCommonR.string.settings_qq_music),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_qq_music)) },
-        supportingContent = { Text(stringResource(R.string.common_coming_soon)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_qq_music)) },
+        supportingContent = { Text(stringResource(CoreCommonR.string.common_coming_soon)) },
         modifier = Modifier.settingsItemClickable { },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )

@@ -77,7 +77,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -422,9 +422,9 @@ internal fun localPlaylistRepeatModeLabelRes(repeatMode: Int): Int {
 
 internal fun playlistRepeatModeLabelRes(repeatMode: Int): Int {
     return when (repeatMode) {
-        Player.REPEAT_MODE_ALL -> R.string.playlist_mode_repeat_all
-        Player.REPEAT_MODE_ONE -> R.string.playlist_mode_repeat_one
-        else -> R.string.playlist_mode_repeat_off
+        Player.REPEAT_MODE_ALL -> CoreCommonR.string.playlist_mode_repeat_all
+        Player.REPEAT_MODE_ONE -> CoreCommonR.string.playlist_mode_repeat_one
+        else -> CoreCommonR.string.playlist_mode_repeat_off
     }
 }
 
@@ -1076,7 +1076,7 @@ internal fun LocalPlaylistHeroHeader(
         displayName = displayName,
         coverUrl = headerCover,
         subtitle = stringResource(
-            R.string.local_playlist_total_duration,
+            CoreCommonR.string.local_playlist_total_duration,
             totalDurationText,
             songCount,
             formatPlayCount(LocalContext.current, playCount)
@@ -1418,9 +1418,9 @@ internal fun PlaylistModernPlaybackActions(
     val controlContentColor = visualColors?.controlContent
         ?: MaterialTheme.colorScheme.onSurface
     val playLabel = if (shuffleEnabled) {
-        stringResource(R.string.player_shuffle_play)
+        stringResource(CoreCommonR.string.player_shuffle_play)
     } else {
-        stringResource(R.string.player_play_all)
+        stringResource(CoreCommonR.string.player_play_all)
     }
 
     Row(
@@ -1469,9 +1469,9 @@ internal fun PlaylistModernPlaybackActions(
             PlaylistCompactIconButton(
                 imageVector = Icons.Outlined.Shuffle,
                 contentDescription = if (shuffleEnabled) {
-                    stringResource(R.string.playlist_mode_shuffle)
+                    stringResource(CoreCommonR.string.playlist_mode_shuffle)
                 } else {
-                    stringResource(R.string.playlist_mode_order)
+                    stringResource(CoreCommonR.string.playlist_mode_order)
                 },
                 enabled = canUseSongs,
                 active = shuffleEnabled,
@@ -1489,7 +1489,7 @@ internal fun PlaylistModernPlaybackActions(
             )
             PlaylistCompactIconButton(
                 imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                contentDescription = stringResource(R.string.playlist_export_to_local),
+                contentDescription = stringResource(CoreCommonR.string.playlist_export_to_local),
                 enabled = canUseSongs && exportEnabled,
                 onClick = onExportToLocalPlaylist,
             )

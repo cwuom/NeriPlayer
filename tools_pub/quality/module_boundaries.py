@@ -44,6 +44,8 @@ APP_FAMILIES = (
     "data/sync",
 )
 LIBRARY_OWNED_FAMILIES = (
+    "data",
+    "data/local/database/dao", "data/local/database/entity", "data/local/database/migration",
     "core/download", "core/player/download",
     "core/player",
     "core/player/runtime", *PLAYER_POLICY_FAMILIES, *PLAYER_AUDIO_FAMILIES,
@@ -63,6 +65,21 @@ LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem"
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.data.sync.model.SyncCausalToken")
 LEGACY_MODEL_TYPES.add("moe.ouom.neriplayer.core.download.naming.ParsedManagedDownloadFileName")
 PACKAGE_OWNERS = {
+    **{f"moe.ouom.neriplayer.data.{family}": ":data:repository"
+       for family in ("settings", "history", "identity", "backup", "config", "traffic", "search",
+                      "auth", "network", "playlist", "stats", "storage", "listentogether",
+                      "local.media", "local.audioimport", "local.playlist", "local.storage")},
+    "moe.ouom.neriplayer.data.auth.netease": ":data:netease",
+    "moe.ouom.neriplayer.data.auth.bili": ":data:bilibili",
+    "moe.ouom.neriplayer.data.youtube": ":data:youtube",
+    **{f"moe.ouom.neriplayer.data.storage.{family}": ":data:storage"
+       for family in ("accounting", "source", "scan", "cleanup", "policy")},
+    "moe.ouom.neriplayer.data.platform.netease": ":data:netease",
+    "moe.ouom.neriplayer.data.platform.youtube": ":data:youtube",
+    "moe.ouom.neriplayer.data.platform.bili.cache": ":data:bilibili",
+    "moe.ouom.neriplayer.data.local.database.dao": ":data:database",
+    "moe.ouom.neriplayer.data.local.database.entity": ":data:database",
+    "moe.ouom.neriplayer.data.local.database.migration": ":data:database",
     "moe.ouom.neriplayer.core.download": ":feature:download",
     "moe.ouom.neriplayer.core.player.download": ":feature:download",
     "moe.ouom.neriplayer.core.download.policy.settings": ":core:download",

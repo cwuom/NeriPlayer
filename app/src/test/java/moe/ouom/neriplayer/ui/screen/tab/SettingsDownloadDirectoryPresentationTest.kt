@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
@@ -30,30 +30,30 @@ class SettingsDownloadDirectoryPresentationTest {
     @Test
     fun `processing title and stage follow the work reason and phase`() {
         assertEquals(
-            R.string.managed_library_processing_upgrade_title,
+            CoreCommonR.string.managed_library_processing_upgrade_title,
             managedLibraryProcessingTitleId(ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE)
         )
         assertEquals(
-            R.string.managed_library_processing_directory_title,
+            CoreCommonR.string.managed_library_processing_directory_title,
             managedLibraryProcessingTitleId(ManagedLibraryProcessingReason.DIRECTORY_CHANGE)
         )
-        assertEquals(R.string.settings_download_directory_migrating,
+        assertEquals(CoreCommonR.string.settings_download_directory_migrating,
             managedLibraryProcessingTitleId(null)
         )
         assertEquals(
-            R.string.managed_library_processing_upgrade_title,
+            CoreCommonR.string.managed_library_processing_upgrade_title,
             managedLibraryProcessingStageId(null, ManagedLibraryProcessingPhase.UPGRADING_DATABASE)
         )
         assertEquals(
-            R.string.settings_download_directory_preparing,
+            CoreCommonR.string.settings_download_directory_preparing,
             managedLibraryProcessingStageId(null, ManagedLibraryProcessingPhase.REBUILDING_INDEX)
         )
         assertEquals(
-            R.string.managed_library_processing_retry,
+            CoreCommonR.string.managed_library_processing_retry,
             managedLibraryProcessingStageId(null, ManagedLibraryProcessingPhase.WAITING_FOR_RETRY)
         )
         assertEquals(
-            R.string.settings_download_directory_migrating_desc,
+            CoreCommonR.string.settings_download_directory_migrating_desc,
             managedLibraryProcessingStageId(null, null)
         )
     }
@@ -61,12 +61,12 @@ class SettingsDownloadDirectoryPresentationTest {
     @Test
     fun `migration stages retain their distinct labels`() {
         val labels = mapOf(
-            ManagedDownloadStorage.MigrationStage.PREPARING to R.string.settings_download_directory_migrating_stage_preparing,
-            ManagedDownloadStorage.MigrationStage.COPYING to R.string.settings_download_directory_migrating_stage_copying,
-            ManagedDownloadStorage.MigrationStage.REWRITING_METADATA to R.string.settings_download_directory_migrating_stage_rewriting,
-            ManagedDownloadStorage.MigrationStage.VERIFYING to R.string.settings_download_directory_migrating_stage_verifying,
-            ManagedDownloadStorage.MigrationStage.CLEANING_UP to R.string.settings_download_directory_migrating_stage_cleanup,
-            ManagedDownloadStorage.MigrationStage.FINALIZING to R.string.settings_download_directory_migrating
+            ManagedDownloadStorage.MigrationStage.PREPARING to CoreCommonR.string.settings_download_directory_migrating_stage_preparing,
+            ManagedDownloadStorage.MigrationStage.COPYING to CoreCommonR.string.settings_download_directory_migrating_stage_copying,
+            ManagedDownloadStorage.MigrationStage.REWRITING_METADATA to CoreCommonR.string.settings_download_directory_migrating_stage_rewriting,
+            ManagedDownloadStorage.MigrationStage.VERIFYING to CoreCommonR.string.settings_download_directory_migrating_stage_verifying,
+            ManagedDownloadStorage.MigrationStage.CLEANING_UP to CoreCommonR.string.settings_download_directory_migrating_stage_cleanup,
+            ManagedDownloadStorage.MigrationStage.FINALIZING to CoreCommonR.string.settings_download_directory_migrating
         )
         labels.forEach { (stage, label) ->
             assertEquals(label, migrationStageLabelId(stage))
@@ -74,7 +74,7 @@ class SettingsDownloadDirectoryPresentationTest {
             assertEquals(label, downloadDirectoryMigrationStageId(stage))
         }
         assertEquals(
-            R.string.settings_download_directory_migrating_desc,
+            CoreCommonR.string.settings_download_directory_migrating_desc,
             downloadDirectoryMigrationStageId(null)
         )
     }
@@ -129,18 +129,18 @@ class SettingsDownloadDirectoryPresentationTest {
             null
         )
 
-        assertEquals(R.string.managed_library_processing_directory_title, active.titleId)
-        assertEquals(R.string.settings_download_directory_migrating_stage_copying, active.stageId)
+        assertEquals(CoreCommonR.string.managed_library_processing_directory_title, active.titleId)
+        assertEquals(CoreCommonR.string.settings_download_directory_migrating_stage_copying, active.stageId)
         assertEquals(4 to 10, active.count)
         assertEquals("song.flac", active.currentFileName)
-        assertEquals(R.string.managed_library_processing_retry, retry.descriptionId)
+        assertEquals(CoreCommonR.string.managed_library_processing_retry, retry.descriptionId)
         assertNull(retry.currentFileName)
     }
 
     @Test
     fun `byte labels use verification counters only during verification`() {
         val copying = downloadDirectoryMigrationBytes(progress(copiedBytes = 40, totalBytes = 100))
-        assertEquals(R.string.settings_download_directory_migrating_progress_bytes, copying?.messageId)
+        assertEquals(CoreCommonR.string.settings_download_directory_migrating_progress_bytes, copying?.messageId)
         assertEquals(40L, copying?.processedBytes)
         assertEquals(100L, copying?.totalBytes)
 
@@ -150,7 +150,7 @@ class SettingsDownloadDirectoryPresentationTest {
                 verificationBytesTotal = 20, totalBytes = 100
             )
         )
-        assertEquals(R.string.settings_download_directory_migrating_verification_progress_bytes, verifying?.messageId)
+        assertEquals(CoreCommonR.string.settings_download_directory_migrating_verification_progress_bytes, verifying?.messageId)
         assertEquals(12L, verifying?.processedBytes)
         assertEquals(20L, verifying?.totalBytes)
         assertNull(downloadDirectoryMigrationBytes(progress()))

@@ -17,7 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.settings.download.setDownloadFollowPlaybackAudioQuality
@@ -43,11 +43,11 @@ class SettingsDownloadSectionTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val setting = AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality
         val followPlaybackTitle = context.getString(
-            R.string.settings_download_follow_playback_audio_quality
+            CoreCommonR.string.settings_download_follow_playback_audio_quality
         )
-        val neteaseTitle = context.getString(R.string.settings_download_netease_audio_quality)
-        val youtubeTitle = context.getString(R.string.settings_download_youtube_audio_quality)
-        val biliTitle = context.getString(R.string.settings_download_bili_audio_quality)
+        val neteaseTitle = context.getString(CoreCommonR.string.settings_download_netease_audio_quality)
+        val youtubeTitle = context.getString(CoreCommonR.string.settings_download_youtube_audio_quality)
+        val biliTitle = context.getString(CoreCommonR.string.settings_download_bili_audio_quality)
         val originalValue = runBlocking { context.autoSettingFlow(setting).first() }
 
         try {

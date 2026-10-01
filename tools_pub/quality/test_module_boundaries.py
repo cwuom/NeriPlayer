@@ -264,6 +264,74 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.assertTrue(all("belongs in a library module" in error for error in errors))
 
 
+    def test_rejects_database_infrastructure_left_in_app(self):
+        self.module(":data:database")
+        for language in ("java", "kotlin"):
+            for family in ("dao", "entity", "migration"):
+                package = "moe/ouom/neriplayer/data/local/database/" + family
+                directory = self.root / "app/src/main" / language / package
+                directory.mkdir(parents=True)
+                (directory / "Stranded.kt").write_text(
+                    "package " + package.replace("/", ".") + "\nclass Stranded\n"
+                )
+        errors = verify(self.root)
+        self.assertEqual(6, len(errors))
+        self.assertTrue(all("belongs in a library module" in error for error in errors))
+
+    def test_rejects_database_infrastructure_in_another_library(self):
+        self.module(":data:database")
+        self.module(":data:music")
+        directory = self.root / "modules/data/music/src/main/java/moe/ouom/neriplayer/data/local/database/dao"
+        directory.mkdir(parents=True)
+        (directory / "MisplacedDao.kt").write_text(
+            "package moe.ouom.neriplayer.data.local.database.dao\ninterface MisplacedDao\n"
+        )
+        self.assertTrue(any("package belongs to :data:database" in error for error in verify(self.root)))
+
+    def test_rejects_database_stores_left_in_app(self):
+        self.module(":data:database")
+        directory = self.root / "app/src/main/java/moe/ouom/neriplayer/data/local/database/store"
+        directory.mkdir(parents=True)
+        (directory / "HostStore.kt").write_text(
+            "package moe.ouom.neriplayer.data.local.database.store\nclass HostStore\n"
+        )
+        self.assertTrue(any("belongs in a library module" in error for error in verify(self.root)))
+
+    def test_all_data_implementations_must_stay_outside_app(self):
+        self.module(":data:repository")
+        for language in ("java", "kotlin"):
+            for family in ("settings", "traffic", "auth/web", "local/media", "config"):
+                package = "moe/ouom/neriplayer/data/" + family
+                directory = self.root / "app/src/main" / language / package
+                directory.mkdir(parents=True)
+                (directory / "Stranded.kt").write_text(
+                    "package " + package.replace("/", ".") + "\nclass Stranded\n"
+                )
+        errors = verify(self.root)
+        self.assertEqual(10, len(errors))
+        self.assertTrue(all("belongs in a library module" in error for error in errors))
+
+    def test_platform_authentication_stays_with_platform_data(self):
+        self.module(":data:repository")
+        owners = {
+            "auth/netease": ":data:netease",
+            "auth/bili": ":data:bilibili",
+            "youtube/auth": ":data:youtube",
+        }
+        for family, owner in owners.items():
+            self.module(owner)
+            package = "moe/ouom/neriplayer/data/" + family
+            directory = self.root / "modules/data/repository/src/main/java" / package
+            directory.mkdir(parents=True)
+            (directory / "MisplacedAuth.kt").write_text(
+                "package " + package.replace("/", ".") + "\nclass MisplacedAuth\n"
+            )
+        errors = verify(self.root)
+        self.assertEqual(3, len(errors))
+        for owner in owners.values():
+            self.assertTrue(any(f"package belongs to {owner}" in error for error in errors))
+
+
     def test_sync_domain_sources_cannot_return_to_app(self):
         self.module(":data:sync")
         for family in ("change", "codec", "mapping/stats", "remote", "retry", "runtime", "sanitize"):
@@ -287,11 +355,11 @@ class ModuleBoundariesTest(unittest.TestCase):
         )
         self.assertTrue(any("package belongs to :data:sync" in error for error in verify(self.root)))
 
-    def test_sync_android_host_adapters_can_remain_in_app(self):
+    def test_application_integration_can_remain_in_app(self):
         self.module(":data:sync")
-        directory = self.root / "app/src/main/java/moe/ouom/neriplayer/data/sync/host"
+        directory = self.root / "app/src/main/java/moe/ouom/neriplayer/core/integration/sync"
         directory.mkdir(parents=True)
-        (directory / "Host.kt").write_text("package moe.ouom.neriplayer.data.sync.host\nclass Host\n")
+        (directory / "Host.kt").write_text("package moe.ouom.neriplayer.core.integration.sync\nclass Host\n")
         self.assertEqual([], verify(self.root))
 
 

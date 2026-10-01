@@ -13,7 +13,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -48,7 +48,7 @@ class DownloadProgressWaitingTaskTest {
                 composeRule.onAllNodesWithText(track.name).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithText(track.name).assertIsDisplayed()
-            composeRule.onNodeWithContentDescription(context.getString(R.string.download_cancel_download))
+            composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.download_cancel_download))
                 .assertIsDisplayed()
             for (stage in listOf(
                 DownloadStage.WAITING_HOST,
@@ -66,7 +66,7 @@ class DownloadProgressWaitingTaskTest {
             }
             composeRule.runOnIdle { store.applyWaitingNetworkStatus(store.currentTasks()) }
             composeRule.onNodeWithText(track.name).assertIsDisplayed()
-            composeRule.onNodeWithContentDescription(context.getString(R.string.download_resume))
+            composeRule.onNodeWithContentDescription(context.getString(CoreCommonR.string.download_resume))
                 .assertIsDisplayed()
             composeRule.runOnIdle {
                 store.updateTaskStatus(track.stableKey(), DownloadStatus.QUEUED, attempt)

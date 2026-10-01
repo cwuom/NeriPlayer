@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.home
 
 import android.content.res.Resources
 import androidx.compose.runtime.Composable
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 
 internal data class SettingsHomeCardCopy(
     val trendingLabelRes: Int,
@@ -16,21 +16,21 @@ internal data class SettingsHomeCardCopy(
 internal fun settingsHomeCardCopy(internationalEnabled: Boolean): SettingsHomeCardCopy =
     if (internationalEnabled) {
         SettingsHomeCardCopy(
-            trendingLabelRes = R.string.home_ytmusic_guess_you_like,
-            radarLabelRes = R.string.home_ytmusic_daily_discover,
-            recommendedLabelRes = R.string.home_ytmusic_more_recommendations,
-            trendingSupportingRes = R.string.settings_home_card_ytmusic_guess_you_like_desc,
-            radarSupportingRes = R.string.settings_home_card_ytmusic_daily_discover_desc,
-            recommendedSupportingRes = R.string.settings_home_card_ytmusic_more_recommendations_desc
+            trendingLabelRes = CoreCommonR.string.home_ytmusic_guess_you_like,
+            radarLabelRes = CoreCommonR.string.home_ytmusic_daily_discover,
+            recommendedLabelRes = CoreCommonR.string.home_ytmusic_more_recommendations,
+            trendingSupportingRes = CoreCommonR.string.settings_home_card_ytmusic_guess_you_like_desc,
+            radarSupportingRes = CoreCommonR.string.settings_home_card_ytmusic_daily_discover_desc,
+            recommendedSupportingRes = CoreCommonR.string.settings_home_card_ytmusic_more_recommendations_desc
         )
     } else {
         SettingsHomeCardCopy(
-            trendingLabelRes = R.string.settings_home_card_netease_trending,
-            radarLabelRes = R.string.settings_home_card_netease_radar,
-            recommendedLabelRes = R.string.settings_home_card_netease_recommended,
-            trendingSupportingRes = R.string.settings_home_card_netease_trending_desc,
-            radarSupportingRes = R.string.settings_home_card_netease_radar_desc,
-            recommendedSupportingRes = R.string.settings_home_card_netease_recommended_desc
+            trendingLabelRes = CoreCommonR.string.settings_home_card_netease_trending,
+            radarLabelRes = CoreCommonR.string.settings_home_card_netease_radar,
+            recommendedLabelRes = CoreCommonR.string.settings_home_card_netease_recommended,
+            trendingSupportingRes = CoreCommonR.string.settings_home_card_netease_trending_desc,
+            radarSupportingRes = CoreCommonR.string.settings_home_card_netease_radar_desc,
+            recommendedSupportingRes = CoreCommonR.string.settings_home_card_netease_recommended_desc
         )
     }
 
@@ -48,13 +48,13 @@ internal fun effectiveSettingsStartDestination(
 ): String = if (!homeAvailable && configured == "home") "explore" else configured
 
 private val settingsStartDestinationLabels = mapOf(
-    "explore" to R.string.nav_explore,
-    "library" to R.string.nav_library,
-    "settings" to R.string.nav_settings
+    "explore" to CoreCommonR.string.nav_explore,
+    "library" to CoreCommonR.string.nav_library,
+    "settings" to CoreCommonR.string.nav_settings
 )
 
 internal fun settingsStartDestinationLabelRes(destination: String): Int =
-    settingsStartDestinationLabels[destination] ?: R.string.nav_home
+    settingsStartDestinationLabels[destination] ?: CoreCommonR.string.nav_home
 
 internal data class SettingsHomeStartPresentation(
     val available: Boolean,

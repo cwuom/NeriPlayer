@@ -952,7 +952,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     private fun hasMeaningfulScanMetadata(song: SongItem): Boolean {
-        val unknownArtist = app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist)
+        val unknownArtist = app.getString(moe.ouom.neriplayer.core.common.R.string.music_unknown_artist)
         val fileTitle = song.localFileName
             ?.substringBeforeLast('.')
             ?.trim()
@@ -968,7 +968,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     private fun shouldHydrateScanPreviewMetadata(song: SongItem): Boolean {
         // 文件名或下载 metadata 已经给出有效身份时, 不再为首屏重复打开音频容器
-        val unknownArtist = app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist)
+        val unknownArtist = app.getString(moe.ouom.neriplayer.core.common.R.string.music_unknown_artist)
         val artistNeedsRepair = song.artist.trim().let { artist ->
             artist.isBlank() ||
                 artist.equals(unknownArtist, ignoreCase = true) ||

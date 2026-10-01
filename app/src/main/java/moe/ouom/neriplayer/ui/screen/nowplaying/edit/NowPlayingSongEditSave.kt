@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.edit
 
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal interface EditSongSaveSteps {
@@ -17,8 +17,8 @@ internal enum class EditSongSaveResult {
 }
 
 internal fun EditSongSaveResult.failureMessage(): Int = when (this) {
-    EditSongSaveResult.LYRICS_FAILED -> R.string.local_song_lyrics_write_failed
-    EditSongSaveResult.METADATA_FAILED -> R.string.local_song_metadata_write_failed
+    EditSongSaveResult.LYRICS_FAILED -> CoreCommonR.string.local_song_lyrics_write_failed
+    EditSongSaveResult.METADATA_FAILED -> CoreCommonR.string.local_song_metadata_write_failed
     EditSongSaveResult.SAVED -> error("Successful save has no failure message")
 }
 

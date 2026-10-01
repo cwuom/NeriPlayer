@@ -22,7 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
@@ -409,7 +409,7 @@ internal class DownloadDirectoryMigrationRecoveryController(
     private fun completeFinishedWork(workInfo: WorkInfo?) {
         if (workInfo == null) {
             clearPersistedMigrationUi()
-            onInlineMessageChange(resources.getQuantityString(R.plurals.settings_download_directory_migrate_failed, 1, 1))
+            onInlineMessageChange(resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrate_failed, 1, 1))
             return
         }
         persistedMigrationProgress = migrationProgressFromWorkData(workInfo.progress)
@@ -429,13 +429,13 @@ internal class DownloadDirectoryMigrationRecoveryController(
         )
         return if (cleanupFailedFiles > 0) {
             resources.getQuantityString(
-                R.plurals.settings_download_directory_migrated_partial,
+                CoreCommonR.plurals.settings_download_directory_migrated_partial,
                 movedFiles,
                 movedFiles,
                 cleanupFailedFiles
             )
         } else {
-            resources.getQuantityString(R.plurals.settings_download_directory_migrated, movedFiles, movedFiles)
+            resources.getQuantityString(CoreCommonR.plurals.settings_download_directory_migrated, movedFiles, movedFiles)
         }
     }
 
@@ -443,7 +443,7 @@ internal class DownloadDirectoryMigrationRecoveryController(
         val skippedFiles = workInfo.outputData.getInt(ManagedDownloadMigrationWorker.KEY_SKIPPED_FILES, 0)
             .coerceAtLeast(1)
         return resources.getQuantityString(
-            R.plurals.settings_download_directory_migrate_failed,
+            CoreCommonR.plurals.settings_download_directory_migrate_failed,
             skippedFiles,
             skippedFiles
         )

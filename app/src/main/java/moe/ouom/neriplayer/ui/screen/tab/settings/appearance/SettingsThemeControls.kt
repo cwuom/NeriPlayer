@@ -29,7 +29,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
@@ -141,15 +141,15 @@ internal fun ThemeModeSelectorListItem(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Brightness4,
-                contentDescription = stringResource(R.string.settings_theme_mode),
+                contentDescription = stringResource(CoreCommonR.string.settings_theme_mode),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_theme_mode)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_theme_mode)) },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.settings_theme_mode_desc))
+                Text(stringResource(CoreCommonR.string.settings_theme_mode_desc))
                 MiuixSettingsSegmentedTabs(
                     modifier = Modifier.onGloballyPositioned { coordinates ->
                         tabsTopLeftInWindow = coordinates.positionInWindow()
@@ -157,8 +157,8 @@ internal fun ThemeModeSelectorListItem(
                         tabsHeightPx = coordinates.size.height.toFloat()
                     },
                     labels = listOf(
-                        stringResource(R.string.settings_theme_mode_light),
-                        stringResource(R.string.settings_theme_mode_dark)
+                        stringResource(CoreCommonR.string.settings_theme_mode_light),
+                        stringResource(CoreCommonR.string.settings_theme_mode_dark)
                     ),
                     selectedIndex = selectedIndex,
                     onSelectedIndexChange = { index ->
@@ -205,14 +205,14 @@ private fun ThemeAutoModeRow(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.BrightnessAuto,
-                contentDescription = stringResource(R.string.settings_theme_mode_auto),
+                contentDescription = stringResource(CoreCommonR.string.settings_theme_mode_auto),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text(stringResource(R.string.settings_theme_mode_auto)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_theme_mode_auto)) },
         supportingContent = {
-            Text(stringResource(R.string.settings_theme_mode_auto_desc))
+            Text(stringResource(CoreCommonR.string.settings_theme_mode_auto_desc))
         },
         trailingContent = {
             Box(
@@ -240,23 +240,23 @@ internal fun ThemePaletteStyleSelector(
 ) {
     val normalizedStyle = ThemeDefaults.normalizePaletteStyle(selectedStyle)
     val options = listOf(
-        ThemeOption("TonalSpot", R.string.settings_theme_style_tonal_spot, R.string.settings_theme_style_tonal_spot_desc),
-        ThemeOption("Neutral", R.string.settings_theme_style_neutral, R.string.settings_theme_style_neutral_desc),
-        ThemeOption("Vibrant", R.string.settings_theme_style_vibrant, R.string.settings_theme_style_vibrant_desc),
-        ThemeOption("Expressive", R.string.settings_theme_style_expressive, R.string.settings_theme_style_expressive_desc),
-        ThemeOption("Monochrome", R.string.settings_theme_style_monochrome, R.string.settings_theme_style_monochrome_desc),
-        ThemeOption("Fidelity", R.string.settings_theme_style_fidelity, R.string.settings_theme_style_fidelity_desc)
+        ThemeOption("TonalSpot", CoreCommonR.string.settings_theme_style_tonal_spot, CoreCommonR.string.settings_theme_style_tonal_spot_desc),
+        ThemeOption("Neutral", CoreCommonR.string.settings_theme_style_neutral, CoreCommonR.string.settings_theme_style_neutral_desc),
+        ThemeOption("Vibrant", CoreCommonR.string.settings_theme_style_vibrant, CoreCommonR.string.settings_theme_style_vibrant_desc),
+        ThemeOption("Expressive", CoreCommonR.string.settings_theme_style_expressive, CoreCommonR.string.settings_theme_style_expressive_desc),
+        ThemeOption("Monochrome", CoreCommonR.string.settings_theme_style_monochrome, CoreCommonR.string.settings_theme_style_monochrome_desc),
+        ThemeOption("Fidelity", CoreCommonR.string.settings_theme_style_fidelity, CoreCommonR.string.settings_theme_style_fidelity_desc)
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = stringResource(R.string.settings_theme_palette_style),
+            text = stringResource(CoreCommonR.string.settings_theme_palette_style),
             modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = stringResource(R.string.settings_theme_palette_style_desc),
+            text = stringResource(CoreCommonR.string.settings_theme_palette_style_desc),
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -280,16 +280,16 @@ internal fun ThemeColorSpecSelector(
 ) {
     val normalizedSpec = ThemeDefaults.normalizeColorSpec(selectedSpec)
     val options = listOf(
-        ThemeDefaults.COLOR_SPECS[0] to stringResource(R.string.settings_theme_color_spec_2021),
-        ThemeDefaults.COLOR_SPECS[1] to stringResource(R.string.settings_theme_color_spec_2025)
+        ThemeDefaults.COLOR_SPECS[0] to stringResource(CoreCommonR.string.settings_theme_color_spec_2021),
+        ThemeDefaults.COLOR_SPECS[1] to stringResource(CoreCommonR.string.settings_theme_color_spec_2025)
     )
 
     ListItem(
         modifier = modifier,
-        headlineContent = { Text(stringResource(R.string.settings_theme_color_spec)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.settings_theme_color_spec)) },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.settings_theme_color_spec_desc))
+                Text(stringResource(CoreCommonR.string.settings_theme_color_spec_desc))
                 MiuixSettingsSegmentedTabs(
                     labels = options.map { it.second },
                     selectedIndex = options.indexOfFirst { it.first == normalizedSpec }.coerceAtLeast(0),

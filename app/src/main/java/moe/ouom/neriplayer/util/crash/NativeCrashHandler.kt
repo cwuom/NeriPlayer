@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.util.crash
 import android.content.Context
 import android.os.Build
 import moe.ouom.neriplayer.BuildConfig
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.core.logging.NPLogger
 
@@ -82,7 +82,7 @@ object NativeCrashHandler {
         if (!ensureLibraryLoaded() || !installed) {
             ExceptionHandler.handleException(
                 source = TAG,
-                throwable = IllegalStateException(context.getString(R.string.debug_native_crash_unavailable))
+                throwable = IllegalStateException(context.getString(CoreCommonR.string.debug_native_crash_unavailable))
             )
             return
         }

@@ -11,7 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MIN_SDK
@@ -35,9 +35,9 @@ class EnhancedAdvancedBlurSettingItemTest {
     @Test
     fun enhancedItemDoesNotOwnBlurAmountOrQualitySettings() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val title = context.getString(R.string.settings_enhanced_advanced_blur)
-        val radiusTitle = context.getString(R.string.settings_enhanced_advanced_blur_radius)
-        val qualityTitle = context.getString(R.string.settings_advanced_blur_quality)
+        val title = context.getString(CoreCommonR.string.settings_enhanced_advanced_blur)
+        val radiusTitle = context.getString(CoreCommonR.string.settings_enhanced_advanced_blur_radius)
+        val qualityTitle = context.getString(CoreCommonR.string.settings_advanced_blur_quality)
         val parentEnabled = mutableStateOf(false)
         val childEnabled = mutableStateOf(true)
 
@@ -70,9 +70,9 @@ class EnhancedAdvancedBlurSettingItemTest {
     @Test
     fun highBlurQualityRequiresEnhancedBlurButOtherQualitiesRemainAvailable() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val title = context.getString(R.string.settings_advanced_blur_quality)
-        val high = context.getString(R.string.settings_advanced_blur_quality_high)
-        val default = context.getString(R.string.settings_advanced_blur_quality_default)
+        val title = context.getString(CoreCommonR.string.settings_advanced_blur_quality)
+        val high = context.getString(CoreCommonR.string.settings_advanced_blur_quality_high)
+        val default = context.getString(CoreCommonR.string.settings_advanced_blur_quality_default)
         val selectedQuality = mutableStateOf(AdvancedBlurQuality.UltraLow)
         val enhancedEnabled = mutableStateOf(false)
 
@@ -107,7 +107,7 @@ class EnhancedAdvancedBlurSettingItemTest {
     @Test
     fun itemStaysHiddenBelowAndroid13() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val title = context.getString(R.string.settings_enhanced_advanced_blur)
+        val title = context.getString(CoreCommonR.string.settings_enhanced_advanced_blur)
 
         composeRule.setContent {
             MaterialTheme {
@@ -126,9 +126,9 @@ class EnhancedAdvancedBlurSettingItemTest {
     @Test
     fun enablingItemShowsPersonalizationBackgroundHint() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val title = context.getString(R.string.settings_enhanced_advanced_blur)
-        val hint = context.getString(R.string.settings_enhanced_advanced_blur_background_hint)
-        val confirm = context.getString(R.string.action_ok)
+        val title = context.getString(CoreCommonR.string.settings_enhanced_advanced_blur)
+        val hint = context.getString(CoreCommonR.string.settings_enhanced_advanced_blur_background_hint)
+        val confirm = context.getString(CoreCommonR.string.action_ok)
         val childEnabled = mutableStateOf(false)
 
         composeRule.setContent {

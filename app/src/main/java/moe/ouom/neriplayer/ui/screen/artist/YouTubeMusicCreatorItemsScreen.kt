@@ -53,7 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.SongItem
@@ -134,7 +134,7 @@ fun YouTubeMusicCreatorItemsScreen(
                     HapticIconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
+                            contentDescription = stringResource(CoreCommonR.string.cd_back)
                         )
                     }
                 },
@@ -218,7 +218,7 @@ private fun YouTubeMusicCreatorItemsContent(
                             color = MaterialTheme.colorScheme.error
                         )
                         HapticTextButton(onClick = onRetry) {
-                            Text(stringResource(R.string.action_retry))
+                            Text(stringResource(CoreCommonR.string.action_retry))
                         }
                     }
                 }
@@ -236,7 +236,7 @@ private fun YouTubeMusicCreatorItemsContent(
             if (songs.isEmpty()) {
                 item(key = "creator-items-empty") {
                     Text(
-                        text = stringResource(R.string.youtube_creator_items_empty),
+                        text = stringResource(CoreCommonR.string.youtube_creator_items_empty),
                         modifier = Modifier.padding(vertical = 28.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
@@ -270,7 +270,7 @@ private fun YouTubeMusicCreatorItemsContent(
                             color = MaterialTheme.colorScheme.error
                         )
                         HapticTextButton(onClick = onLoadMore) {
-                            Text(stringResource(R.string.action_retry))
+                            Text(stringResource(CoreCommonR.string.action_retry))
                         }
                     }
                 }
@@ -294,7 +294,7 @@ private fun YouTubeMusicCreatorItemsContent(
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text(stringResource(R.string.youtube_creator_load_more))
+                            Text(stringResource(CoreCommonR.string.youtube_creator_load_more))
                         }
                     }
                 }
@@ -410,7 +410,7 @@ private fun CreatorItemsErrorBlock(
             color = MaterialTheme.colorScheme.error
         )
         HapticTextButton(onClick = onRetry) {
-            Text(stringResource(R.string.action_retry))
+            Text(stringResource(CoreCommonR.string.action_retry))
         }
     }
 }

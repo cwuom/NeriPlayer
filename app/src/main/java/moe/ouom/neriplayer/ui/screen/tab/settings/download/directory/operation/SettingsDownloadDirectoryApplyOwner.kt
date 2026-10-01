@@ -6,7 +6,7 @@ import androidx.compose.runtime.MutableState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
@@ -58,8 +58,8 @@ internal class AndroidDownloadDirectoryApplyGateway(private val context: Context
 }
 
 internal fun appliedDownloadDirectoryMessageId(targetUri: String?): Int =
-    if (targetUri.isNullOrBlank()) R.string.settings_download_directory_reset_done
-    else R.string.settings_download_directory_selected
+    if (targetUri.isNullOrBlank()) CoreCommonR.string.settings_download_directory_reset_done
+    else CoreCommonR.string.settings_download_directory_selected
 
 internal class DownloadDirectoryApplyOwner(
     private val gateway: DownloadDirectoryApplyGateway,
@@ -112,7 +112,7 @@ internal class DownloadDirectoryApplyOwner(
             onInlineMessageChange(resources.getString(appliedDownloadDirectoryMessageId(targetUri)))
         } else {
             gateway.waitingForRetry(operationId)
-            onInlineMessageChange(resources.getString(R.string.managed_library_processing_retry))
+            onInlineMessageChange(resources.getString(CoreCommonR.string.managed_library_processing_retry))
         }
     }
 }

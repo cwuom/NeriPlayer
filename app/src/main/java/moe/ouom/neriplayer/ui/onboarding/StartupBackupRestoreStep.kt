@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,8 +52,8 @@ internal fun BackupRestoreContent(
 ) {
     StepHeader(
         icon = Icons.Outlined.CloudSync,
-        title = stringResource(R.string.onboarding_backup_restore_title),
-        description = stringResource(R.string.onboarding_backup_restore_desc)
+        title = stringResource(CoreCommonR.string.onboarding_backup_restore_title),
+        description = stringResource(CoreCommonR.string.onboarding_backup_restore_desc)
     )
     Spacer(Modifier.height(18.dp))
     BackupSyncMessage(gitHubState.errorMessage, onDismissGitHubMessage)
@@ -75,7 +76,7 @@ internal fun BackupRestoreContent(
         onSyncNow = onWebDavSyncNow
     )
     Spacer(Modifier.height(18.dp))
-    HintCard(body = stringResource(R.string.onboarding_backup_restore_hint))
+    HintCard(body = stringResource(CoreCommonR.string.onboarding_backup_restore_hint))
 }
 
 @Composable
@@ -95,13 +96,13 @@ private fun GitHubSyncCard(
 ) {
     SyncServiceCard(state.isConfigured) {
         SyncCardHeader(
-            title = stringResource(R.string.onboarding_backup_restore_github_title),
+            title = stringResource(CoreCommonR.string.onboarding_backup_restore_github_title),
             configured = state.isConfigured,
             onOpenConfig = onOpenConfig,
             icon = {
                 Icon(
                     painter = painterResource(R.drawable.ic_github),
-                    contentDescription = stringResource(R.string.common_github),
+                    contentDescription = stringResource(CoreCommonR.string.common_github),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(28.dp)
                 )
@@ -113,7 +114,7 @@ private fun GitHubSyncCard(
             configured = state.isConfigured,
             autoSyncEnabled = state.autoSyncEnabled,
             isSyncing = state.isSyncing,
-            autoSyncDescription = stringResource(R.string.sync_auto_desc),
+            autoSyncDescription = stringResource(CoreCommonR.string.sync_auto_desc),
             onToggleAutoSync = onToggleAutoSync,
             onSyncNow = onSyncNow,
             onOpenClearConfig = onOpenClearConfig
@@ -133,9 +134,9 @@ private fun GitHubRepoText(repoFullName: String?) {
     Spacer(Modifier.height(8.dp))
     Text(
         text = if (repoFullName == null) {
-            stringResource(R.string.settings_configured)
+            stringResource(CoreCommonR.string.settings_configured)
         } else {
-            stringResource(R.string.onboarding_github_repo_configured, repoFullName)
+            stringResource(CoreCommonR.string.onboarding_github_repo_configured, repoFullName)
         },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -157,13 +158,13 @@ private fun WebDavSyncCard(
 ) {
     SyncServiceCard(state.isConfigured) {
         SyncCardHeader(
-            title = stringResource(R.string.onboarding_backup_restore_webdav_title),
+            title = stringResource(CoreCommonR.string.onboarding_backup_restore_webdav_title),
             configured = state.isConfigured,
             onOpenConfig = onOpenConfig,
             icon = {
                 Icon(
                     imageVector = Icons.Outlined.CloudSync,
-                    contentDescription = stringResource(R.string.onboarding_backup_restore_webdav_title),
+                    contentDescription = stringResource(CoreCommonR.string.onboarding_backup_restore_webdav_title),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(28.dp)
                 )
@@ -176,7 +177,7 @@ private fun WebDavSyncCard(
             configured = state.isConfigured,
             autoSyncEnabled = state.autoSyncEnabled,
             isSyncing = state.isSyncing,
-            autoSyncDescription = stringResource(R.string.webdav_auto_sync_desc),
+            autoSyncDescription = stringResource(CoreCommonR.string.webdav_auto_sync_desc),
             onToggleAutoSync = onToggleAutoSync,
             onSyncNow = onSyncNow,
             onOpenClearConfig = onOpenClearConfig
@@ -195,7 +196,7 @@ private fun WebDavEndpointText(endpoint: String?) {
     if (endpoint == null) return
     Spacer(Modifier.height(8.dp))
     Text(
-        text = stringResource(R.string.onboarding_backup_restore_webdav_endpoint, endpoint),
+        text = stringResource(CoreCommonR.string.onboarding_backup_restore_webdav_endpoint, endpoint),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 2,
@@ -214,9 +215,9 @@ private fun SyncLastTime(lastSyncTime: Long) {
     Spacer(Modifier.height(4.dp))
     Text(
         text = if (lastSyncTime > 0) {
-            stringResource(R.string.sync_last_time, formatSyncTime(lastSyncTime))
+            stringResource(CoreCommonR.string.sync_last_time, formatSyncTime(lastSyncTime))
         } else {
-            stringResource(R.string.sync_not_synced)
+            stringResource(CoreCommonR.string.sync_not_synced)
         },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -283,9 +284,9 @@ private fun SyncCardHeader(
 private fun SyncStatusPill(configured: Boolean) {
     StatusPill(
         label = if (configured) {
-            stringResource(R.string.settings_configured)
+            stringResource(CoreCommonR.string.settings_configured)
         } else {
-            stringResource(R.string.settings_not_configured)
+            stringResource(CoreCommonR.string.settings_not_configured)
         },
         connected = configured
     )
@@ -295,9 +296,9 @@ private fun SyncStatusPill(configured: Boolean) {
 private fun SyncConfigButton(configured: Boolean, onOpenConfig: () -> Unit) {
     OnboardingActionButton(
         text = if (configured) {
-            stringResource(R.string.onboarding_platform_action_manage)
+            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
         } else {
-            stringResource(R.string.settings_configure)
+            stringResource(CoreCommonR.string.settings_configure)
         },
         onClick = onOpenConfig
     )
@@ -335,7 +336,7 @@ private fun SyncAutoToggle(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.sync_auto),
+                    text = stringResource(CoreCommonR.string.sync_auto),
                     style = MaterialTheme.typography.titleSmall,
                     color = colors.onSurface
                 )
@@ -366,12 +367,12 @@ private fun SyncActionRow(
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
         } else {
             HapticOutlinedButton(onClick = onSyncNow, shape = OnboardingControlShape) {
-                Text(stringResource(R.string.settings_sync_now))
+                Text(stringResource(CoreCommonR.string.settings_sync_now))
             }
         }
         HapticTextButton(onClick = onOpenClearConfig) {
             Text(
-                text = stringResource(R.string.settings_clear_config),
+                text = stringResource(CoreCommonR.string.settings_clear_config),
                 color = MaterialTheme.colorScheme.error
             )
         }

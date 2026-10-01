@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
@@ -123,7 +123,7 @@ internal fun UsbExclusiveSettingsSection(
         MiuixSettingsSectionCard {
             SettingsSectionTitle(
                 icon = Icons.Outlined.Usb,
-                title = stringResource(R.string.settings_usb_exclusive_device_section)
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_device_section)
             )
             UsbExclusiveDeviceContent(
                 snapshot = snapshot,
@@ -135,7 +135,7 @@ internal fun UsbExclusiveSettingsSection(
         MiuixSettingsSectionCard {
             SettingsSectionTitle(
                 icon = Icons.Outlined.GraphicEq,
-                title = stringResource(R.string.settings_usb_exclusive_quality_section)
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_quality_section)
             )
             UsbExclusiveQualityContent(
                 snapshot = snapshot,
@@ -157,16 +157,16 @@ internal fun UsbExclusiveSettingsSection(
         MiuixSettingsSectionCard {
             SettingsSectionTitle(
                 icon = Icons.Outlined.Info,
-                title = stringResource(R.string.settings_usb_exclusive_compatibility_section)
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_compatibility_section)
             )
             SettingsInfoItem(
-                title = stringResource(R.string.settings_usb_exclusive_app_processing),
-                value = stringResource(R.string.settings_usb_exclusive_app_processing_desc)
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_app_processing),
+                value = stringResource(CoreCommonR.string.settings_usb_exclusive_app_processing_desc)
             )
             SettingsDivider()
             SettingsInfoItem(
-                title = stringResource(R.string.settings_usb_exclusive_system_effects),
-                value = stringResource(R.string.settings_usb_exclusive_system_effects_desc)
+                title = stringResource(CoreCommonR.string.settings_usb_exclusive_system_effects),
+                value = stringResource(CoreCommonR.string.settings_usb_exclusive_system_effects_desc)
             )
         }
     }
@@ -184,15 +184,15 @@ private fun UsbExclusiveMasterSwitch(
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.Usb,
-                contentDescription = stringResource(R.string.settings_usb_exclusive_playback),
+                contentDescription = stringResource(CoreCommonR.string.settings_usb_exclusive_playback),
                 modifier = Modifier.size(24.dp)
             )
         },
         headlineContent = {
-            Text(stringResource(R.string.settings_usb_exclusive_playback))
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_playback))
         },
         supportingContent = {
-            Text(stringResource(R.string.settings_usb_exclusive_playback_desc))
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_playback_desc))
         },
         trailingContent = {
             MiuixSettingsSwitch(
@@ -213,22 +213,22 @@ private fun UsbExclusiveStatusContent(
     val status = resolveUsbStatus(enabled, snapshot, nativeState)
     StatusBanner(status)
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_native_mode),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_native_mode),
         value = snapshot.nativeExclusiveSummary
     )
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_native_source),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_native_source),
         value = nativeSourceLabel(snapshot.nativeExclusiveSource)
     )
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_player_state),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_player_state),
         value = stringResource(
             if (snapshot.playerPlaying) {
-                R.string.settings_usb_exclusive_player_playing
+                CoreCommonR.string.settings_usb_exclusive_player_playing
             } else {
-                R.string.settings_usb_exclusive_player_idle
+                CoreCommonR.string.settings_usb_exclusive_player_idle
             }
         )
     )
@@ -254,27 +254,27 @@ private fun UsbExclusiveRuntimeSummary(
     if (inputSummary != null) {
         SettingsDivider()
         SettingsInfoItem(
-            title = stringResource(R.string.settings_usb_exclusive_input_format),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_input_format),
             value = inputSummary
         )
     }
     if (outputSummary != null) {
         SettingsDivider()
         SettingsInfoItem(
-            title = stringResource(R.string.settings_usb_exclusive_output_format),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_output_format),
             value = outputSummary
         )
     }
     if (bufferSummary != null) {
         SettingsDivider()
         SettingsInfoItem(
-            title = stringResource(R.string.settings_usb_exclusive_buffer_state),
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_buffer_state),
             value = bufferSummary
         )
     }
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_error),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_error),
         value = errorSummary,
         compact = true
     )
@@ -287,9 +287,9 @@ private fun UsbExclusiveBackgroundBehaviorItem() {
     val fullyAllowed = allowance.fullyAllowed
     val status = stringResource(
         if (fullyAllowed) {
-            R.string.settings_usb_exclusive_background_behavior_allowed
+            CoreCommonR.string.settings_usb_exclusive_background_behavior_allowed
         } else {
-            R.string.settings_usb_exclusive_background_behavior_restricted
+            CoreCommonR.string.settings_usb_exclusive_background_behavior_restricted
         }
     )
 
@@ -305,14 +305,14 @@ private fun UsbExclusiveBackgroundBehaviorItem() {
             Icon(
                 imageVector = Icons.Outlined.Info,
                 contentDescription = stringResource(
-                    R.string.settings_usb_exclusive_background_behavior
+                    CoreCommonR.string.settings_usb_exclusive_background_behavior
                 ),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
         headlineContent = {
-            Text(stringResource(R.string.settings_usb_exclusive_background_behavior))
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_background_behavior))
         },
         supportingContent = {
             Text(status)
@@ -345,9 +345,9 @@ private fun UsbExclusiveDeviceContent(
     val deviceName = device?.productName
         ?.takeIf(String::isNotBlank)
         ?: output?.productName?.takeIf(String::isNotBlank)
-        ?: stringResource(R.string.settings_usb_exclusive_no_device)
+        ?: stringResource(CoreCommonR.string.settings_usb_exclusive_no_device)
     val selectedDeviceLabel = if (preferences.selectedDeviceKey == DEFAULT_USB_EXCLUSIVE_DEVICE_KEY) {
-        stringResource(R.string.settings_usb_exclusive_device_selection_auto, deviceName)
+        stringResource(CoreCommonR.string.settings_usb_exclusive_device_selection_auto, deviceName)
     } else {
         device?.productName?.takeIf(String::isNotBlank)
             ?: deviceName
@@ -358,7 +358,7 @@ private fun UsbExclusiveDeviceContent(
             showDeviceDialog = true
         },
         headlineContent = {
-            Text(stringResource(R.string.settings_usb_exclusive_device_selection))
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_device_selection))
         },
         supportingContent = {
             Text(selectedDeviceLabel)
@@ -375,18 +375,18 @@ private fun UsbExclusiveDeviceContent(
     )
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_device_id),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_device_id),
         value = device?.vendorProductId
-            ?: stringResource(R.string.settings_usb_exclusive_not_available)
+            ?: stringResource(CoreCommonR.string.settings_usb_exclusive_not_available)
     )
     SettingsDivider()
     UsbPermissionItem(snapshot)
     SettingsDivider()
     SettingsInfoItem(
-        title = stringResource(R.string.settings_usb_exclusive_system_output),
+        title = stringResource(CoreCommonR.string.settings_usb_exclusive_system_output),
         value = output?.let {
-            "${it.typeName} · ${it.address.ifBlank { stringResource(R.string.settings_usb_exclusive_not_available) }}"
-        } ?: stringResource(R.string.settings_usb_exclusive_not_available)
+            "${it.typeName} · ${it.address.ifBlank { stringResource(CoreCommonR.string.settings_usb_exclusive_not_available) }}"
+        } ?: stringResource(CoreCommonR.string.settings_usb_exclusive_not_available)
     )
 
     if (showDeviceDialog) {
@@ -411,9 +411,9 @@ private fun UsbDeviceSelectionDialog(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val autoTitle = stringResource(R.string.settings_usb_exclusive_device_auto)
+    val autoTitle = stringResource(CoreCommonR.string.settings_usb_exclusive_device_auto)
     val autoSubtitle = stringResource(
-        R.string.settings_usb_exclusive_device_selection_auto,
+        CoreCommonR.string.settings_usb_exclusive_device_selection_auto,
         currentAutoDeviceName
     )
     val options = listOf(
@@ -435,7 +435,7 @@ private fun UsbDeviceSelectionDialog(
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_usb_exclusive_choose_device)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_usb_exclusive_choose_device)) },
         text = {
             LazyColumn(
                 modifier = Modifier
@@ -455,7 +455,7 @@ private fun UsbDeviceSelectionDialog(
         },
         confirmButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
+                Text(stringResource(CoreCommonR.string.action_close))
             }
         }
     )
@@ -533,9 +533,9 @@ private fun String.valueAfter(key: String): String? {
 private fun UsbPermissionItem(snapshot: UsbExclusiveDiagnosticsSnapshot) {
     val canRequestPermission = snapshot.canRequestPermission
     val permissionLabel = when {
-        snapshot.hasUsbPermission -> stringResource(R.string.settings_usb_exclusive_permission_granted)
-        canRequestPermission -> stringResource(R.string.settings_usb_exclusive_permission_required)
-        else -> stringResource(R.string.settings_usb_exclusive_permission_no_device)
+        snapshot.hasUsbPermission -> stringResource(CoreCommonR.string.settings_usb_exclusive_permission_granted)
+        canRequestPermission -> stringResource(CoreCommonR.string.settings_usb_exclusive_permission_required)
+        else -> stringResource(CoreCommonR.string.settings_usb_exclusive_permission_no_device)
     }
     val context = LocalContext.current.applicationContext
 
@@ -547,7 +547,7 @@ private fun UsbPermissionItem(snapshot: UsbExclusiveDiagnosticsSnapshot) {
             )
         },
         headlineContent = {
-            Text(stringResource(R.string.settings_usb_exclusive_permission))
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_permission))
         },
         supportingContent = {
             Text(permissionLabel)

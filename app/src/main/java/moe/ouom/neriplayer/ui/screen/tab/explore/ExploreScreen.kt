@@ -139,7 +139,7 @@ import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -260,19 +260,19 @@ internal fun shouldShowBiliPartsPicker(song: SongItem): Boolean {
 @Composable
 private fun searchSourceLabel(source: SearchSource): String {
     return when (source) {
-        SearchSource.YOUTUBE_MUSIC -> stringResource(R.string.explore_tab_youtube)
-        SearchSource.NETEASE -> stringResource(R.string.platform_netease_short)
-        SearchSource.BILIBILI -> stringResource(R.string.platform_bilibili)
-        SearchSource.LINK_RECOGNITION -> stringResource(R.string.explore_tab_links)
+        SearchSource.YOUTUBE_MUSIC -> stringResource(CoreCommonR.string.explore_tab_youtube)
+        SearchSource.NETEASE -> stringResource(CoreCommonR.string.platform_netease_short)
+        SearchSource.BILIBILI -> stringResource(CoreCommonR.string.platform_bilibili)
+        SearchSource.LINK_RECOGNITION -> stringResource(CoreCommonR.string.explore_tab_links)
     }
 }
 
 @Composable
 private fun neteaseSearchTypeLabel(type: NeteaseExploreSearchType): String {
     return when (type) {
-        NeteaseExploreSearchType.SONG -> stringResource(R.string.explore_search_type_song)
-        NeteaseExploreSearchType.PLAYLIST -> stringResource(R.string.explore_search_type_playlist)
-        NeteaseExploreSearchType.ARTIST -> stringResource(R.string.explore_search_type_artist)
+        NeteaseExploreSearchType.SONG -> stringResource(CoreCommonR.string.explore_search_type_song)
+        NeteaseExploreSearchType.PLAYLIST -> stringResource(CoreCommonR.string.explore_search_type_playlist)
+        NeteaseExploreSearchType.ARTIST -> stringResource(CoreCommonR.string.explore_search_type_artist)
     }
 }
 
@@ -287,9 +287,9 @@ private fun neteaseSearchTypeIcon(type: NeteaseExploreSearchType): ImageVector {
 @Composable
 private fun youtubeSearchTypeLabel(type: YouTubeExploreSearchType): String {
     return when (type) {
-        YouTubeExploreSearchType.SONG -> stringResource(R.string.explore_search_type_song)
-        YouTubeExploreSearchType.VIDEO -> stringResource(R.string.explore_search_type_video)
-        YouTubeExploreSearchType.CREATOR -> stringResource(R.string.explore_search_type_creator)
+        YouTubeExploreSearchType.SONG -> stringResource(CoreCommonR.string.explore_search_type_song)
+        YouTubeExploreSearchType.VIDEO -> stringResource(CoreCommonR.string.explore_search_type_video)
+        YouTubeExploreSearchType.CREATOR -> stringResource(CoreCommonR.string.explore_search_type_creator)
     }
 }
 
@@ -520,8 +520,8 @@ fun ExploreScreen(
 
     // Translated tag labels for display
     val tagLabels = listOf(
-        stringResource(R.string.tag_all), stringResource(R.string.tag_pop), stringResource(R.string.tag_soundtrack), stringResource(R.string.tag_chinese), stringResource(R.string.tag_nostalgia), stringResource(R.string.tag_rock), stringResource(R.string.tag_acg), stringResource(R.string.tag_western), stringResource(R.string.tag_fresh), stringResource(R.string.tag_night), stringResource(R.string.tag_children), stringResource(R.string.tag_folk), stringResource(R.string.tag_japanese), stringResource(R.string.tag_romantic),
-        stringResource(R.string.tag_study), stringResource(R.string.tag_korean), stringResource(R.string.tag_work), stringResource(R.string.tag_electronic), stringResource(R.string.tag_cantonese), stringResource(R.string.tag_dance), stringResource(R.string.tag_sad), stringResource(R.string.tag_game), stringResource(R.string.tag_afternoon_tea), stringResource(R.string.tag_healing), stringResource(R.string.tag_rap), stringResource(R.string.tag_light_music)
+        stringResource(CoreCommonR.string.tag_all), stringResource(CoreCommonR.string.tag_pop), stringResource(CoreCommonR.string.tag_soundtrack), stringResource(CoreCommonR.string.tag_chinese), stringResource(CoreCommonR.string.tag_nostalgia), stringResource(CoreCommonR.string.tag_rock), stringResource(CoreCommonR.string.tag_acg), stringResource(CoreCommonR.string.tag_western), stringResource(CoreCommonR.string.tag_fresh), stringResource(CoreCommonR.string.tag_night), stringResource(CoreCommonR.string.tag_children), stringResource(CoreCommonR.string.tag_folk), stringResource(CoreCommonR.string.tag_japanese), stringResource(CoreCommonR.string.tag_romantic),
+        stringResource(CoreCommonR.string.tag_study), stringResource(CoreCommonR.string.tag_korean), stringResource(CoreCommonR.string.tag_work), stringResource(CoreCommonR.string.tag_electronic), stringResource(CoreCommonR.string.tag_cantonese), stringResource(CoreCommonR.string.tag_dance), stringResource(CoreCommonR.string.tag_sad), stringResource(CoreCommonR.string.tag_game), stringResource(CoreCommonR.string.tag_afternoon_tea), stringResource(CoreCommonR.string.tag_healing), stringResource(CoreCommonR.string.tag_rap), stringResource(CoreCommonR.string.tag_light_music)
     )
 
     // Initialize with default tag
@@ -689,7 +689,7 @@ fun ExploreScreen(
         },
         topBar = {
             LargeTopAppBar(
-                title = { Text(stringResource(R.string.nav_explore)) },
+                title = { Text(stringResource(CoreCommonR.string.nav_explore)) },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -719,9 +719,9 @@ fun ExploreScreen(
                             Text(
                                 stringResource(
                                     if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
-                                        R.string.explore_link_input_label
+                                        CoreCommonR.string.explore_link_input_label
                                     } else {
-                                        R.string.search_keyword
+                                        CoreCommonR.string.search_keyword
                                     }
                                 )
                             )
@@ -729,10 +729,10 @@ fun ExploreScreen(
                         placeholder = {
                             when {
                                 ui.selectedSearchSource == SearchSource.LINK_RECOGNITION -> {
-                                    Text(stringResource(R.string.explore_link_input_placeholder))
+                                    Text(stringResource(CoreCommonR.string.explore_link_input_placeholder))
                                 }
                                 ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn -> {
-                                    Text(stringResource(R.string.netease_login_required_search_placeholder))
+                                    Text(stringResource(CoreCommonR.string.netease_login_required_search_placeholder))
                                 }
                             }
                         },
@@ -769,7 +769,7 @@ fun ExploreScreen(
                     if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = stringResource(R.string.netease_login_required_search),
+                            text = stringResource(CoreCommonR.string.netease_login_required_search),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -777,7 +777,7 @@ fun ExploreScreen(
                     if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = stringResource(R.string.explore_link_input_hint),
+                            text = stringResource(CoreCommonR.string.explore_link_input_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -862,7 +862,7 @@ fun ExploreScreen(
                                         .fillMaxSize()
                                         .padding(bottom = miniPlayerHeight),
                                     Alignment.Center
-                                ) { Text(stringResource(R.string.search_no_result)) }
+                                ) { Text(stringResource(CoreCommonR.string.search_no_result)) }
                             }
                             else -> {
                                 LazyColumn(
@@ -915,7 +915,7 @@ fun ExploreScreen(
                                                                 } catch (e: Exception) {
                                                                     NPLogger.e(
                                                                         "ExploreScreen",
-                                                                        composeResources.getString(R.string.search_error),
+                                                                        composeResources.getString(CoreCommonR.string.search_error),
                                                                         e
                                                                     )
                                                                 }
@@ -938,7 +938,7 @@ fun ExploreScreen(
                                                         scope.launch {
                                                             snackbarHostState.showNeriSnackbar(
                                                                 composeResources.getString(
-                                                                    R.string.download_starting,
+                                                                    CoreCommonR.string.download_starting,
                                                                     song.displayName()
                                                                 )
                                                             )
@@ -1074,7 +1074,7 @@ fun ExploreScreen(
                         }
                         SearchSource.BILIBILI -> {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
-                                Text(stringResource(R.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(CoreCommonR.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                         SearchSource.YOUTUBE_MUSIC -> {
@@ -1094,7 +1094,7 @@ fun ExploreScreen(
                         SearchSource.LINK_RECOGNITION -> {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
                                 Text(
-                                    text = stringResource(R.string.explore_link_recognition_placeholder),
+                                    text = stringResource(CoreCommonR.string.explore_link_recognition_placeholder),
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                             }
@@ -1127,7 +1127,7 @@ fun ExploreScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                R.plurals.common_selected_count,
+                                CoreCommonR.plurals.common_selected_count,
                                 selectedParts.size,
                                 selectedParts.size
                             )
@@ -1135,7 +1135,7 @@ fun ExploreScreen(
                     },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitPartsSelection() }) {
-                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.explore_exit_selection))
+                                Icon(Icons.Filled.Close, contentDescription = stringResource(CoreCommonR.string.explore_exit_selection))
                             }
                         },
                         actions = {
@@ -1148,7 +1148,7 @@ fun ExploreScreen(
                             }) {
                                 Icon(
                                     imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                    contentDescription = if (allSelected) stringResource(R.string.explore_deselect_all) else stringResource(R.string.explore_select_all)
+                                    contentDescription = if (allSelected) stringResource(CoreCommonR.string.explore_deselect_all) else stringResource(CoreCommonR.string.explore_select_all)
                                 )
                             }
                             HapticIconButton(
@@ -1164,7 +1164,7 @@ fun ExploreScreen(
                                 },
                                 enabled = selectedParts.isNotEmpty()
                             ) {
-                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(R.string.explore_export_to_playlist))
+                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(CoreCommonR.string.explore_export_to_playlist))
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -1245,7 +1245,7 @@ fun ExploreScreen(
 
     if (showExportSheet) {
         PlaylistExportSheet(
-            title = stringResource(R.string.playlist_export_to_local),
+            title = stringResource(CoreCommonR.string.playlist_export_to_local),
             playlists = allLocalPlaylists.filterNot {
                 LocalFilesPlaylist.isSystemPlaylist(it, context)
             },
@@ -1317,7 +1317,7 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
         containerColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
-                title = { Text(stringResource(R.string.nav_explore)) },
+                title = { Text(stringResource(CoreCommonR.string.nav_explore)) },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -1338,12 +1338,12 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.offline_mode_title),
+                    text = stringResource(CoreCommonR.string.offline_mode_title),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = stringResource(R.string.explore_offline_disabled),
+                    text = stringResource(CoreCommonR.string.explore_offline_disabled),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -1385,14 +1385,14 @@ private fun ExploreSearchHistoryRow(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = stringResource(R.string.search_history),
+                        text = stringResource(CoreCommonR.string.search_history),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 if (query.isBlank()) {
                     HapticTextButton(onClick = onClearHistory) {
-                        Text(stringResource(R.string.action_clear))
+                        Text(stringResource(CoreCommonR.string.action_clear))
                     }
                 }
             }

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation
 
 import android.content.Context
 import android.content.res.Resources
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
@@ -38,9 +38,9 @@ internal fun shouldReleaseBlockedDirectoryGrant(
     !ManagedDownloadStorage.areEquivalentDirectoryUris(currentUri, targetUri)
 
 internal fun directoryChangeBlockMessageId(reason: DirectoryChangeBlockReason): Int? = when (reason) {
-    DirectoryChangeBlockReason.LIBRARY_PROCESSING -> R.string.managed_library_processing_subtitle
+    DirectoryChangeBlockReason.LIBRARY_PROCESSING -> CoreCommonR.string.managed_library_processing_subtitle
     DirectoryChangeBlockReason.ACTIVE_DOWNLOADS ->
-        R.string.settings_download_directory_change_blocked_active_download
+        CoreCommonR.string.settings_download_directory_change_blocked_active_download
     else -> null
 }
 
@@ -97,10 +97,10 @@ internal class DownloadDirectoryChangeGuardOwner(
 
 internal fun downloadDirectoryPreparationErrorMessage(resources: Resources, error: Exception): String {
     if (error is ManagedLibraryProcessingBusyException) {
-        return resources.getString(R.string.managed_library_processing_subtitle)
+        return resources.getString(CoreCommonR.string.managed_library_processing_subtitle)
     }
     val detail = error.message?.takeIf(String::isNotBlank) ?: error::class.java.simpleName
-    return resources.getString(R.string.settings_download_directory_pick_failed, detail)
+    return resources.getString(CoreCommonR.string.settings_download_directory_pick_failed, detail)
 }
 
 internal class DownloadDirectoryPreparationErrorPresenter(

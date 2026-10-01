@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -556,7 +556,7 @@ private fun NeriSnackbar(snackbarData: SnackbarData) {
                 IconButton(onClick = snackbarData::dismiss) {
                     Icon(
                         imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.cd_close)
+                        contentDescription = stringResource(CoreCommonR.string.cd_close)
                     )
                 }
             }

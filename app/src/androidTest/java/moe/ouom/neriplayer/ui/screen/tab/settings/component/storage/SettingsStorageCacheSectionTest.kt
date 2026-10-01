@@ -11,7 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.model.storage.StorageUsageSummary
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
@@ -93,13 +93,13 @@ class SettingsStorageCacheSectionTest {
         composeRule.onNodeWithText(savedTemplate).assertExists()
         composeRule.onNodeWithText(
             context.getString(
-                R.string.settings_download_file_name_format_preview,
+                CoreCommonR.string.settings_download_file_name_format_preview,
                 "123456 - 456789 - 789012"
             )
         ).assertExists()
-        composeRule.onNodeWithText(context.getString(R.string.action_details)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_details)).performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput(" temporary")
-        composeRule.onNodeWithText(context.getString(R.string.action_cancel)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_cancel)).performClick()
 
         composeRule.onNodeWithText(savedTemplate).assertExists()
         composeRule.runOnIdle {

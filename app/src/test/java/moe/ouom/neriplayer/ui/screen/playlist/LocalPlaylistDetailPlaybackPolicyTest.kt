@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
 import androidx.media3.common.Player
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -103,15 +103,15 @@ class LocalPlaylistDetailPlaybackPolicyTest {
     @Test
     fun `repeat mode labels map to playlist resources`() {
         assertEquals(
-            R.string.playlist_mode_repeat_off,
+            CoreCommonR.string.playlist_mode_repeat_off,
             localPlaylistRepeatModeLabelRes(Player.REPEAT_MODE_OFF)
         )
         assertEquals(
-            R.string.playlist_mode_repeat_all,
+            CoreCommonR.string.playlist_mode_repeat_all,
             localPlaylistRepeatModeLabelRes(Player.REPEAT_MODE_ALL)
         )
         assertEquals(
-            R.string.playlist_mode_repeat_one,
+            CoreCommonR.string.playlist_mode_repeat_one,
             localPlaylistRepeatModeLabelRes(Player.REPEAT_MODE_ONE)
         )
     }

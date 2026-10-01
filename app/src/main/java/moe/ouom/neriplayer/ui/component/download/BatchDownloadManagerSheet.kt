@@ -35,7 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.presentation.batchDownloadProgressForDisplay
@@ -76,24 +76,24 @@ fun BatchDownloadManagerSheet(
     )
     val stableProgressSummaryText = when {
         visibleBatchDownloadProgress != null -> stringResource(
-            R.string.download_progress_with_percentage,
+            CoreCommonR.string.download_progress_with_percentage,
             visibleBatchDownloadProgress.completedSongs,
             visibleBatchDownloadProgress.totalSongs,
             visibleBatchDownloadProgress.percentage
         )
 
         pendingTaskCount > 0 -> pluralStringResource(
-            R.plurals.download_tasks_count,
+            CoreCommonR.plurals.download_tasks_count,
             pendingTaskCount,
             pendingTaskCount
         )
 
         activeDownloadOperations -> stringResource(
-            R.string.download_execution_notification_content
+            CoreCommonR.string.download_execution_notification_content
         )
 
         else -> pluralStringResource(
-            R.plurals.download_failed_songs_count,
+            CoreCommonR.plurals.download_failed_songs_count,
             failedTaskCount,
             failedTaskCount
         )
@@ -118,13 +118,13 @@ fun BatchDownloadManagerSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    stringResource(R.string.download_manager),
+                    stringResource(CoreCommonR.string.download_manager),
                     style = MaterialTheme.typography.titleLarge
                 )
                 HapticIconButton(onClick = onDismiss) {
                     Icon(
                         Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.cd_close)
+                        contentDescription = stringResource(CoreCommonR.string.cd_close)
                     )
                 }
             }
@@ -162,7 +162,7 @@ fun BatchDownloadManagerSheet(
                                     onClick = { GlobalDownloadManager.cancelAllDownloadTasks() }
                                 ) {
                                     Text(
-                                        text = stringResource(R.string.action_cancel),
+                                        text = stringResource(CoreCommonR.string.action_cancel),
                                         color = MaterialTheme.colorScheme.error
                                     )
                                 }
@@ -172,7 +172,7 @@ fun BatchDownloadManagerSheet(
                         if (visibleBatchDownloadProgress != null) {
                             Text(
                                 text = stringResource(
-                                    R.string.download_overall_progress,
+                                    CoreCommonR.string.download_overall_progress,
                                     visibleBatchDownloadProgress.percentage
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
@@ -217,13 +217,13 @@ fun BatchDownloadManagerSheet(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        stringResource(R.string.download_no_tasks),
+                        stringResource(CoreCommonR.string.download_no_tasks),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        stringResource(R.string.download_select_hint),
+                        stringResource(CoreCommonR.string.download_select_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center

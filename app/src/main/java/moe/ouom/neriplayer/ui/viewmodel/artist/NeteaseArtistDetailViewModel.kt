@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistsFromSongJson
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
@@ -105,7 +106,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
                     it.copy(
                         loading = false,
                         error = getApplication<Application>().getString(
-                            R.string.artist_load_failed,
+                            CoreCommonR.string.artist_load_failed,
                             e.message ?: e.javaClass.simpleName
                         )
                     )
@@ -217,7 +218,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
                     it.copy(
                         followUpdating = false,
                         error = getApplication<Application>().getString(
-                            R.string.artist_follow_failed,
+                            CoreCommonR.string.artist_follow_failed,
                             error.message ?: error.javaClass.simpleName
                         )
                     )
@@ -254,7 +255,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
     private fun parseArtistDetail(raw: String, fallback: NeteaseArtistSummary): NeteaseArtistHeader {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
         val data = root.optJSONObject("data")
         val artist = data?.optJSONObject("artist") ?: root.optJSONObject("artist")
@@ -275,7 +276,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
     private fun parseArtistSongs(raw: String): Page<SongItem> {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
         val songs = root.optJSONArray("songs") ?: JSONArray()
         val items = ArrayList<SongItem>(songs.length())
@@ -289,7 +290,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
     private fun parseArtistAlbums(raw: String): Page<AlbumSummary> {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
         val albums = root.optJSONArray("hotAlbums") ?: JSONArray()
         val items = ArrayList<AlbumSummary>(albums.length())

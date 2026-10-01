@@ -19,7 +19,7 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.ui.graphics.vector.ImageVector
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingsSectionEntry
 
@@ -37,8 +37,8 @@ internal enum class SettingsPage(
         Icons.Outlined.Palette
     ),
     Accounts(
-        titleRes = R.string.settings_login_platforms,
-        descriptionRes = R.string.settings_accounts_desc,
+        titleRes = CoreCommonR.string.settings_login_platforms,
+        descriptionRes = CoreCommonR.string.settings_accounts_desc,
         icon = Icons.Filled.AccountCircle
     ),
     Personalization(
@@ -62,13 +62,13 @@ internal enum class SettingsPage(
         Icons.AutoMirrored.Outlined.PlaylistPlay
     ),
     UsbExclusive(
-        titleRes = R.string.settings_usb_exclusive_playback,
-        descriptionRes = R.string.settings_usb_exclusive_page_desc,
+        titleRes = CoreCommonR.string.settings_usb_exclusive_playback,
+        descriptionRes = CoreCommonR.string.settings_usb_exclusive_page_desc,
         icon = Icons.Outlined.Usb
     ),
     PlaybackSource(
-        titleRes = R.string.settings_playback_source,
-        descriptionRes = R.string.settings_playback_source_desc,
+        titleRes = CoreCommonR.string.settings_playback_source,
+        descriptionRes = CoreCommonR.string.settings_playback_source_desc,
         icon = Icons.Outlined.LibraryMusic
     ),
     AudioQuality(
@@ -80,8 +80,8 @@ internal enum class SettingsPage(
         Icons.Outlined.Storage
     ),
     StorageCacheDetails(
-        titleRes = R.string.settings_storage_cache_details,
-        descriptionRes = R.string.settings_storage_cache_details_desc,
+        titleRes = CoreCommonR.string.settings_storage_cache_details,
+        descriptionRes = CoreCommonR.string.settings_storage_cache_details_desc,
         icon = Icons.Outlined.Storage
     ),
     TrafficManagement(
@@ -97,13 +97,13 @@ internal enum class SettingsPage(
         Icons.Outlined.Sync
     ),
     ListenTogether(
-        titleRes = R.string.listen_together_title,
-        descriptionRes = R.string.settings_listen_together_expand,
+        titleRes = CoreCommonR.string.listen_together_title,
+        descriptionRes = CoreCommonR.string.settings_listen_together_expand,
         icon = Icons.Outlined.Cloud
     ),
     About(
-        titleRes = R.string.settings_about,
-        descriptionRes = R.string.settings_about_desc,
+        titleRes = CoreCommonR.string.settings_about,
+        descriptionRes = CoreCommonR.string.settings_about_desc,
         icon = Icons.Outlined.Info
     );
 

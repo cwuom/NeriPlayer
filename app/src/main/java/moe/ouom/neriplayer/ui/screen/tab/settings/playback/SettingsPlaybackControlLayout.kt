@@ -19,7 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
@@ -110,8 +110,8 @@ internal fun PlaybackControlLayoutSettings(
     PlaybackControlLayoutListItem(
         targetId = "setting:nowplaying_control_placement",
         icon = Icons.Outlined.DashboardCustomize,
-        title = stringResource(R.string.settings_nowplaying_control_placement),
-        description = stringResource(R.string.settings_nowplaying_control_placement_desc),
+        title = stringResource(CoreCommonR.string.settings_nowplaying_control_placement),
+        description = stringResource(CoreCommonR.string.settings_nowplaying_control_placement_desc),
         value = nowPlayingControlPlacementLabel(preferences.nowPlayingPlacement),
         onClick = owner::openPlacement,
         highlightTargetId = highlightTargetId,
@@ -121,8 +121,8 @@ internal fun PlaybackControlLayoutSettings(
     PlaybackControlLayoutListItem(
         targetId = "setting:nowplaying_control_size",
         icon = Icons.Outlined.AspectRatio,
-        title = stringResource(R.string.settings_nowplaying_control_size),
-        description = stringResource(R.string.settings_nowplaying_control_size_desc),
+        title = stringResource(CoreCommonR.string.settings_nowplaying_control_size),
+        description = stringResource(CoreCommonR.string.settings_nowplaying_control_size_desc),
         value = playbackControlSizeLabel(preferences.nowPlayingSize),
         onClick = owner::openNowPlayingSize,
         highlightTargetId = highlightTargetId,
@@ -132,8 +132,8 @@ internal fun PlaybackControlLayoutSettings(
     PlaybackControlLayoutListItem(
         targetId = "setting:lyrics_control_size",
         icon = Icons.Outlined.TextFields,
-        title = stringResource(R.string.settings_lyrics_control_size),
-        description = stringResource(R.string.settings_lyrics_control_size_desc),
+        title = stringResource(CoreCommonR.string.settings_lyrics_control_size),
+        description = stringResource(CoreCommonR.string.settings_lyrics_control_size_desc),
         value = playbackControlSizeLabel(preferences.lyricsSize),
         onClick = owner::openLyricsSize,
         highlightTargetId = highlightTargetId,
@@ -156,11 +156,11 @@ private fun PlacementDialogHost(owner: PlaybackControlLayoutOwner) {
 private fun PlacementDialog(owner: PlaybackControlLayoutOwner) {
     MiuixSettingsDialog(
         onDismissRequest = owner::dismiss,
-        title = { Text(stringResource(R.string.settings_nowplaying_control_placement)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_nowplaying_control_placement)) },
         text = {
             Column {
                 val dockSubtitle = stringResource(
-                    R.string.settings_nowplaying_toolbar_dock_disabled_by_control_position
+                    CoreCommonR.string.settings_nowplaying_toolbar_dock_disabled_by_control_position
                 )
                 PlacementChoiceRow(owner, NowPlayingControlPlacement.LOWER, null)
                 PlacementChoiceRow(owner, NowPlayingControlPlacement.BOTTOM, dockSubtitle)
@@ -196,7 +196,7 @@ private fun NowPlayingSizeDialogHost(owner: PlaybackControlLayoutOwner) {
 private fun NowPlayingSizeDialog(owner: PlaybackControlLayoutOwner) {
     MiuixSettingsDialog(
         onDismissRequest = owner::dismiss,
-        title = { Text(stringResource(R.string.settings_nowplaying_control_size)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_nowplaying_control_size)) },
         text = {
             Column {
                 PlaybackControlSize.entries.forEach { size ->
@@ -223,7 +223,7 @@ private fun LyricsSizeDialogHost(owner: PlaybackControlLayoutOwner) {
 private fun LyricsSizeDialog(owner: PlaybackControlLayoutOwner) {
     MiuixSettingsDialog(
         onDismissRequest = owner::dismiss,
-        title = { Text(stringResource(R.string.settings_lyrics_control_size)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_lyrics_control_size)) },
         text = {
             Column {
                 PlaybackControlSize.entries.forEach { size ->
@@ -256,7 +256,7 @@ private fun ControlSizeChoiceRow(
 private fun ControlLayoutDialogCloseButton(onDismiss: () -> Unit) {
     MiuixSettingsTextButton(
         onClick = onDismiss,
-        text = { Text(stringResource(R.string.action_close)) }
+        text = { Text(stringResource(CoreCommonR.string.action_close)) }
     )
 }
 
@@ -319,14 +319,14 @@ private fun playbackControlSizeLabel(size: PlaybackControlSize): String =
 
 internal fun nowPlayingControlPlacementLabelRes(placement: NowPlayingControlPlacement): Int =
     when (placement) {
-        NowPlayingControlPlacement.LOWER -> R.string.settings_nowplaying_control_placement_lower
-        NowPlayingControlPlacement.BOTTOM -> R.string.settings_nowplaying_control_placement_bottom
+        NowPlayingControlPlacement.LOWER -> CoreCommonR.string.settings_nowplaying_control_placement_lower
+        NowPlayingControlPlacement.BOTTOM -> CoreCommonR.string.settings_nowplaying_control_placement_bottom
         NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS ->
-            R.string.settings_nowplaying_control_placement_bottom_with_progress
+            CoreCommonR.string.settings_nowplaying_control_placement_bottom_with_progress
     }
 
 internal fun playbackControlSizeLabelRes(size: PlaybackControlSize): Int = when (size) {
-    PlaybackControlSize.SMALL -> R.string.settings_playback_control_size_small
-    PlaybackControlSize.MEDIUM -> R.string.settings_playback_control_size_medium
-    PlaybackControlSize.LARGE -> R.string.settings_playback_control_size_large
+    PlaybackControlSize.SMALL -> CoreCommonR.string.settings_playback_control_size_small
+    PlaybackControlSize.MEDIUM -> CoreCommonR.string.settings_playback_control_size_medium
+    PlaybackControlSize.LARGE -> CoreCommonR.string.settings_playback_control_size_large
 }

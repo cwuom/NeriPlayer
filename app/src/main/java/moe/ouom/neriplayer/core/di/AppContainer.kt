@@ -64,7 +64,7 @@ import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.youtube.auth.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
@@ -497,6 +497,27 @@ object AppContainer {
         initialized = true
         moe.ouom.neriplayer.core.integration.download.installDownloadDependencies()
         moe.ouom.neriplayer.core.di.player.installPlayerDependencies(app)
+        moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess.bind(
+            downloads = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaDownloads,
+            covers = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaCovers,
+            crashLogs = moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup(
+                moe.ouom.neriplayer.core.crash.ExceptionHandler::clearCrashLogs
+            )
+        )
+        moe.ouom.neriplayer.data.network.DataHttpClients.bind { sharedOkHttpClient }
+        moe.ouom.neriplayer.data.auth.youtube.YouTubeRotationHosts.bind(
+            object : moe.ouom.neriplayer.data.auth.youtube.YouTubeRotationHost {
+                override fun isInitialized() = AppContainer.isInitialized()
+                override suspend fun isYouTubeEnabled() = settingsRepo.youtubeEnabledFlow.first()
+                override fun readAuth() = youtubeAuthRepo.getAuthOnce()
+                override fun persistRotatedCookies(cookies: Map<String, String>) {
+                    youtubeAuthRepo.mergeRotatedCookies(cookies)
+                }
+            }
+        )
+        moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests.bind(
+            moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler::schedule
+        )
         AudioDownloadManager.initialize(app)
         warmLocalPlaylistRepository()
         warmBiliVideoSkipRepository()

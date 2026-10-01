@@ -542,11 +542,13 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `:feature:download`：下载执行、Room 队列、批次恢复、传输、受管文件与迁移、Worker 和 JobService；应用初始化时注入来源服务、凭据、流量、启动和播放接口。
 - `:api:netease` / `:api:bilibili` / `:api:youtube`：平台客户端、请求构造、认证协议和网络解析。
 - `:api:lyrics` / `:api:search` / `:api:ltw`：歌词服务、元数据搜索接口和一起听 HTTP/WebSocket 传输。
-- `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存和播放源仓库。
+- `:data:netease` / `:data:bilibili` / `:data:youtube`：账号持久化、缓存、平台响应到应用模型的映射、歌单规则与远端歌单同步、播放源仓库。
 - [`:data:ltw`](modules/data/ltw/README.md)：一起听客户端会话、成员操作、连接恢复、控制事件、播放同步、邀请与输入校验；播放器与 Android 副作用通过宿主接口接入。
 - `:data:lyrics` / `:data:comments`：跨来源歌词匹配与回退、评论分页和缓存。
 - `:data:sync`：同步会话、编解码、快照清洗、差异检测、合并与并发保护；由宿主注入本地数据、远端传输与文案接口。
 - `:data:storage`：存储统计、文件扫描和缓存清理；宿主提供目录、数据库统计及下载条目快照。
+- `:data:repository`：应用数据实现，按设置、媒体库、歌单、历史与统计、备份、流量和 Android 同步接入组织包；这些职责共享一个 Gradle 模块，宿主通过明确接口提供下载、播放状态和网络客户端。
+- `:data:database`：Room 数据库、实体、DAO、历史 schema 与版本升级；升级 SQL 按媒体库、平台和下载分类，旧数据保全按身份、分页、JSON、冲突、缓存和写入分类。
 - `:ksp-annotations` / `:ksp-processor`：设置项自动登记与生成。
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`：歌词解析与 Compose 歌词 UI 子模块。
 - `build-logic`：统一 Gradle convention plugin。
@@ -567,6 +569,11 @@ JSON 解析、数据库映射、网络请求和界面展示逻辑留在对应实
 页面私有状态随 UI 维护，Room 实体随数据库维护，私有算法中间状态随算法维护。
 源码包名与目录一致；保留既有 Parcelable 类全名以兼容已保存的 Android 状态。
 各模块维护自己的测试、资源与 consumer R8 规则，需要宿主参与的集成测试保留在 `app`。
+数据库业务映射与仓库编排位于 `:data:repository`，平台缓存的 Room 适配归各平台数据模块；数据库模块不依赖仓库身份规则或全局容器。
+`app` 不保留 `data` 源码目录；下载升级和依赖组装位于宿主的 `core/startup/legacy` 与 `core/integration`。
+设置 schema 仅在数据实现模块运行 KSP，生成持久化访问和元数据；Compose 设置渲染留在 `app/ui/settings`。
+共享文案、图标和语言工具归现有 `:core:common`，不按小职责增加 Gradle 模块。
+历史 schema 位于 `modules/data/database/schemas`，由数据库模块执行 Room KSP，app 的设备测试从该目录加载。
 
 运行 `./gradlew verifyModularization` 检查依赖边界、各模块 JVM 测试、合并 CRAP 覆盖率、
 计算域依赖和 lint；单模块测试可运行 `./gradlew :data:youtube:testDebugUnitTest`。

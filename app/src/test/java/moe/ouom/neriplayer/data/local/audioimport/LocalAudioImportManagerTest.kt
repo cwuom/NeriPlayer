@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaCovers
+import moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaDownloads
+import moe.ouom.neriplayer.data.local.media.source.CrashLogCleanup
+import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
+import moe.ouom.neriplayer.core.crash.ExceptionHandler
+import org.junit.Before
+
 import moe.ouom.neriplayer.data.model.local.LocalAudioImportResult
 
 import android.content.ContentResolver
@@ -32,6 +39,15 @@ import org.mockito.Mockito.`when`
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 class LocalAudioImportManagerTest {
+    @Before
+    fun bindMediaHost() {
+        LocalMediaHostAccess.bind(
+            downloads = AndroidLocalMediaDownloads,
+            covers = AndroidLocalMediaCovers,
+            crashLogs = CrashLogCleanup(ExceptionHandler::clearCrashLogs)
+        )
+    }
+
 
     @get:Rule
     val tempFolder = TemporaryFolder()

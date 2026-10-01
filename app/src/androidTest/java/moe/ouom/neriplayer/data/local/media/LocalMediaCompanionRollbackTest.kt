@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
+import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
+
 import android.content.Context
 import android.content.ContextWrapper
 import android.provider.DocumentsContract

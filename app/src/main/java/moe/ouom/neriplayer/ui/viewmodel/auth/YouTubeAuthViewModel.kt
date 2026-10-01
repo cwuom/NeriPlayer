@@ -37,7 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
@@ -112,7 +112,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             )
             _events.send(
                 YouTubeAuthEvent.ShowSnack(
-                    getApplication<Application>().getString(R.string.auth_cookie_cleared)
+                    getApplication<Application>().getString(CoreCommonR.string.auth_cookie_cleared)
                 )
             )
         }
@@ -124,7 +124,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importCookiesFromRaw(raw: String) {
         if (raw.isBlank()) {
-            emitSnack(getApplication<Application>().getString(R.string.auth_cookie_empty))
+            emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_empty))
             return
         }
 
@@ -133,7 +133,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             savedAt = System.currentTimeMillis()
         )
         if (parsedBundle == null) {
-            emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
+            emitSnack(getApplication<Application>().getString(CoreCommonR.string.auth_cookie_invalid))
             return
         }
 
@@ -149,7 +149,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             if (health.state == YouTubeAuthState.Missing) {
                 _events.send(
                     YouTubeAuthEvent.ShowSnack(
-                        getApplication<Application>().getString(R.string.settings_youtube_auth_missing)
+                        getApplication<Application>().getString(CoreCommonR.string.settings_youtube_auth_missing)
                     )
                 )
                 return@launch

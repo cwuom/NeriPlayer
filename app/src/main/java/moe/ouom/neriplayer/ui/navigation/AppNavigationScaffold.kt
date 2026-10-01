@@ -46,7 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -95,7 +95,7 @@ internal data class AppMiniPlayerPresentation(
     val hasSong: Boolean get() = song != null
 
     fun title(resources: Resources): String =
-        if (song == null) resources.getString(R.string.nowplaying_no_playback) else song.displayName()
+        if (song == null) resources.getString(CoreCommonR.string.nowplaying_no_playback) else song.displayName()
 
     fun artist(): String = if (song == null) "" else song.displayArtist()
 }

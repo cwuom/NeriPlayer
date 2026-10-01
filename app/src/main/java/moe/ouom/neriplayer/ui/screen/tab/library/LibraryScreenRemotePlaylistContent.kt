@@ -76,7 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -135,7 +135,7 @@ internal fun LibraryMainTabs(
         ) {
             Icon(
                 Icons.Filled.Refresh,
-                contentDescription = stringResource(R.string.action_refresh)
+                contentDescription = stringResource(CoreCommonR.string.action_refresh)
             )
         }
     }
@@ -165,7 +165,7 @@ internal fun YouTubeMusicPlaylistList(
         clipboardManager.setPrimaryClip(ClipData.newPlainText(label, text))
         AppFeedback.show(
             context = context,
-            message = composeResources.getString(R.string.toast_copied)
+            message = composeResources.getString(CoreCommonR.string.toast_copied)
         )
     }
 
@@ -194,7 +194,7 @@ internal fun YouTubeMusicPlaylistList(
                     ListItem(
                         headlineContent = {
                             Text(
-                                text = error ?: stringResource(R.string.library_youtube_music_empty),
+                                text = error ?: stringResource(CoreCommonR.string.library_youtube_music_empty),
                                 color = if (error != null) {
                                     MaterialTheme.colorScheme.error
                                 } else {
@@ -205,12 +205,12 @@ internal fun YouTubeMusicPlaylistList(
                         supportingContent = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
-                                    text = stringResource(R.string.library_youtube_music_hint),
+                                    text = stringResource(CoreCommonR.string.library_youtube_music_hint),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 if (error != null) {
                                     HapticTextButton(onClick = onRetry) {
-                                        Text(text = stringResource(R.string.action_retry))
+                                        Text(text = stringResource(CoreCommonR.string.action_retry))
                                     }
                                 }
                             }
@@ -218,8 +218,8 @@ internal fun YouTubeMusicPlaylistList(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         leadingContent = {
                             Icon(
-                                painter = painterResource(id = R.drawable.ic_youtube),
-                                contentDescription = stringResource(R.string.common_youtube),
+                                painter = painterResource(id = CoreCommonR.drawable.ic_youtube),
+                                contentDescription = stringResource(CoreCommonR.string.common_youtube),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(56.dp)
                             )
@@ -260,13 +260,13 @@ internal fun YouTubeMusicPlaylistList(
                             .takeIf { it > 0 }
                             ?.let { count ->
                                 pluralStringResource(
-                                    R.plurals.library_song_count,
+                                    CoreCommonR.plurals.library_song_count,
                                     count,
                                     count
                                 )
                             }
                         val subtitleText = playlist.subtitle.ifBlank {
-                            stringResource(R.string.library_youtube_music_hint)
+                            stringResource(CoreCommonR.string.library_youtube_music_hint)
                         }
                         Text(
                             text = listOfNotNull(subtitleText, trackCountText)
@@ -310,7 +310,7 @@ internal fun YouTubeMusicPlaylistList(
                     onDismissRequest = { menuPlaylist = null }
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_youtube_music_open_playlist)) },
+                        text = { Text(stringResource(CoreCommonR.string.library_youtube_music_open_playlist)) },
                         onClick = {
                             menuPlaylist = null
                             onClick(playlist)
@@ -320,18 +320,18 @@ internal fun YouTubeMusicPlaylistList(
                         text = {
                             Text(
                                 if (isFavorite) {
-                                    stringResource(R.string.home_unfavorite_playlist)
+                                    stringResource(CoreCommonR.string.home_unfavorite_playlist)
                                 } else {
-                                    stringResource(R.string.home_favorite_playlist)
+                                    stringResource(CoreCommonR.string.home_favorite_playlist)
                                 }
                             )
                         },
                         onClick = {
                             menuPlaylist = null
                             val toastMessage = if (isFavorite) {
-                                composeResources.getString(R.string.home_unfavorited)
+                                composeResources.getString(CoreCommonR.string.home_unfavorited)
                             } else {
-                                composeResources.getString(R.string.favorite_success)
+                                composeResources.getString(CoreCommonR.string.favorite_success)
                             }
                             scope.launch {
                                 if (isFavorite) {
@@ -357,7 +357,7 @@ internal fun YouTubeMusicPlaylistList(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_youtube_music_copy_browse_id)) },
+                        text = { Text(stringResource(CoreCommonR.string.library_youtube_music_copy_browse_id)) },
                         onClick = {
                             copyToClipboard("ytmusic_browse_id", playlist.browseId)
                             menuPlaylist = null
@@ -365,7 +365,7 @@ internal fun YouTubeMusicPlaylistList(
                     )
                     if (playlist.playlistId.isNotBlank()) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.library_youtube_music_copy_playlist_id)) },
+                            text = { Text(stringResource(CoreCommonR.string.library_youtube_music_copy_playlist_id)) },
                             onClick = {
                                 copyToClipboard("ytmusic_playlist_id", playlist.playlistId)
                                 menuPlaylist = null
@@ -388,10 +388,10 @@ internal fun BiliPlaylistList(
 ) {
     val context = LocalContext.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val createdLabel = stringResource(R.string.library_bili_created_favorite)
-    val collectedLabel = stringResource(R.string.library_bili_collected_favorite)
-    val collectionLabel = stringResource(R.string.library_bili_collection)
-    val seriesLabel = stringResource(R.string.library_bili_series)
+    val createdLabel = stringResource(CoreCommonR.string.library_bili_created_favorite)
+    val collectedLabel = stringResource(CoreCommonR.string.library_bili_collected_favorite)
+    val collectionLabel = stringResource(CoreCommonR.string.library_bili_collection)
+    val seriesLabel = stringResource(CoreCommonR.string.library_bili_series)
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val filteredPlaylists = remember(
         playlists,
@@ -425,7 +425,7 @@ internal fun BiliPlaylistList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                placeholder = { Text(stringResource(R.string.library_bili_search_hint)) },
+                placeholder = { Text(stringResource(CoreCommonR.string.library_bili_search_hint)) },
                 singleLine = true,
                 shape = LibrarySearchFieldShape
             )
@@ -443,13 +443,13 @@ internal fun BiliPlaylistList(
                     ListItem(
                         headlineContent = {
                             Text(
-                                text = stringResource(R.string.library_bili_search_empty),
+                                text = stringResource(CoreCommonR.string.library_bili_search_empty),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
                         supportingContent = {
                             Text(
-                                text = stringResource(R.string.library_bili_search_empty_hint),
+                                text = stringResource(CoreCommonR.string.library_bili_search_empty_hint),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -478,7 +478,7 @@ internal fun BiliPlaylistList(
                     ListItem(
                         headlineContent = {
                             Text(
-                                text = error ?: stringResource(R.string.library_bili_empty),
+                                text = error ?: stringResource(CoreCommonR.string.library_bili_empty),
                                 color = if (error != null) {
                                     MaterialTheme.colorScheme.error
                                 } else {
@@ -488,7 +488,7 @@ internal fun BiliPlaylistList(
                         },
                         supportingContent = {
                             Text(
-                                text = stringResource(R.string.library_bili_hint),
+                                text = stringResource(CoreCommonR.string.library_bili_hint),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -510,10 +510,10 @@ internal fun BiliPlaylistList(
             key = { "${it.kind}:${it.mediaId}" }
         ) { pl ->
             val kindLabel = when (pl.kind) {
-                BiliPlaylistKind.CREATED_FAVORITE -> stringResource(R.string.library_bili_created_favorite)
-                BiliPlaylistKind.COLLECTED_FAVORITE -> stringResource(R.string.library_bili_collected_favorite)
-                BiliPlaylistKind.COLLECTION -> stringResource(R.string.library_bili_collection)
-                BiliPlaylistKind.SERIES -> stringResource(R.string.library_bili_series)
+                BiliPlaylistKind.CREATED_FAVORITE -> stringResource(CoreCommonR.string.library_bili_created_favorite)
+                BiliPlaylistKind.COLLECTED_FAVORITE -> stringResource(CoreCommonR.string.library_bili_collected_favorite)
+                BiliPlaylistKind.COLLECTION -> stringResource(CoreCommonR.string.library_bili_collection)
+                BiliPlaylistKind.SERIES -> stringResource(CoreCommonR.string.library_bili_series)
             }
             Card(
                 shape = cardShape,
@@ -530,7 +530,7 @@ internal fun BiliPlaylistList(
                 ListItem(
                     headlineContent = { Text(pl.title) },
                     supportingContent = {
-                        val countText = pluralStringResource(R.plurals.library_video_count, pl.count, pl.count)
+                        val countText = pluralStringResource(CoreCommonR.plurals.library_video_count, pl.count, pl.count)
                         Text(
                             listOf(kindLabel, pl.subtitle, countText)
                                 .filter { it.isNotBlank() }

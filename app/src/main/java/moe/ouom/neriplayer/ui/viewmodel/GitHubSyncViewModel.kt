@@ -30,7 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.github.*
 import moe.ouom.neriplayer.data.model.sync.SyncResult
@@ -89,15 +89,15 @@ class GitHubSyncViewModel : ViewModel() {
                     isValidating = false,
                     tokenValid = true,
                     username = username,
-                    successMessage = appContext.getString(R.string.github_token_verify_success, username)
+                    successMessage = appContext.getString(CoreCommonR.string.github_token_verify_success, username)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isValidating = false,
                     tokenValid = false,
                     errorMessage = appContext.getString(
-                        R.string.github_token_verify_failed,
-                        result.exceptionOrNull()?.message ?: appContext.getString(R.string.github_sync_failed_message)
+                        CoreCommonR.string.github_token_verify_failed,
+                        result.exceptionOrNull()?.message ?: appContext.getString(CoreCommonR.string.github_sync_failed_message)
                     )
                 )
             }
@@ -111,7 +111,7 @@ class GitHubSyncViewModel : ViewModel() {
         val appContext = context.applicationContext
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(R.string.github_token_required))
+            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(CoreCommonR.string.github_token_required))
             return
         }
 
@@ -129,14 +129,14 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = repo.fullName.split("/")[0],
                     repoName = repo.name,
                     isConfigured = true,
-                    successMessage = appContext.getString(R.string.github_repo_create_success, repo.fullName)
+                    successMessage = appContext.getString(CoreCommonR.string.github_repo_create_success, repo.fullName)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isCreatingRepo = false,
                     errorMessage = appContext.getString(
-                        R.string.github_repo_create_failed,
-                        result.exceptionOrNull()?.message ?: appContext.getString(R.string.github_sync_failed_message)
+                        CoreCommonR.string.github_repo_create_failed,
+                        result.exceptionOrNull()?.message ?: appContext.getString(CoreCommonR.string.github_sync_failed_message)
                     )
                 )
             }
@@ -150,13 +150,13 @@ class GitHubSyncViewModel : ViewModel() {
         val appContext = context.applicationContext
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(R.string.github_token_required))
+            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(CoreCommonR.string.github_token_required))
             return
         }
 
         val parts = fullRepoName.split("/")
         if (parts.size != 2) {
-            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(R.string.github_repo_format_error))
+            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(CoreCommonR.string.github_repo_format_error))
             return
         }
 
@@ -176,22 +176,22 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = owner,
                     repoName = repo,
                     isConfigured = true,
-                    successMessage = appContext.getString(R.string.github_repo_config_success, fullRepoName)
+                    successMessage = appContext.getString(CoreCommonR.string.github_repo_config_success, fullRepoName)
                 )
             } else {
                 val error = result.exceptionOrNull()
                 _uiState.value = _uiState.value.copy(
                     isCheckingRepo = false,
                     errorMessage = when (error) {
-                        is TokenExpiredException -> appContext.getString(R.string.github_token_expired)
+                        is TokenExpiredException -> appContext.getString(CoreCommonR.string.github_token_expired)
                         is GitHubApiException if error.statusCode == 404 -> appContext.getString(
-                            R.string.github_repo_not_found,
+                            CoreCommonR.string.github_repo_not_found,
                             fullRepoName
                         )
 
                         else -> appContext.getString(
-                            R.string.github_sync_failed,
-                            error?.message ?: appContext.getString(R.string.github_sync_failed_message)
+                            CoreCommonR.string.github_sync_failed,
+                            error?.message ?: appContext.getString(CoreCommonR.string.github_sync_failed_message)
                         )
                     }
                 )
@@ -245,14 +245,14 @@ class GitHubSyncViewModel : ViewModel() {
                     clearConfiguration(appContext)
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = appContext.getString(R.string.github_token_expired)
+                        errorMessage = appContext.getString(CoreCommonR.string.github_token_expired)
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
                         errorMessage = appContext.getString(
-                            R.string.github_sync_failed,
-                            error?.message ?: appContext.getString(R.string.github_sync_failed_message)
+                            CoreCommonR.string.github_sync_failed,
+                            error?.message ?: appContext.getString(CoreCommonR.string.github_sync_failed_message)
                         )
                     )
                 }

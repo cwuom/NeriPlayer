@@ -20,7 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
@@ -31,13 +31,13 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
  */
 @StringRes
 internal fun commentErrorTextRes(error: CommentError): Int = when (error) {
-    CommentError.NETWORK -> R.string.comment_error_network
-    CommentError.PERMISSION -> R.string.comment_error_permission
-    CommentError.NOT_FOUND -> R.string.comment_error_not_found
-    CommentError.CLOSED -> R.string.comment_error_closed
-    CommentError.SERVER -> R.string.comment_error_server
-    CommentError.API -> R.string.comment_error_unavailable
-    CommentError.UNKNOWN -> R.string.comment_error_unknown
+    CommentError.NETWORK -> CoreCommonR.string.comment_error_network
+    CommentError.PERMISSION -> CoreCommonR.string.comment_error_permission
+    CommentError.NOT_FOUND -> CoreCommonR.string.comment_error_not_found
+    CommentError.CLOSED -> CoreCommonR.string.comment_error_closed
+    CommentError.SERVER -> CoreCommonR.string.comment_error_server
+    CommentError.API -> CoreCommonR.string.comment_error_unavailable
+    CommentError.UNKNOWN -> CoreCommonR.string.comment_error_unknown
 }
 
 /**
@@ -54,7 +54,7 @@ internal fun CommentLoadingBlock() {
     ) {
         CircularProgressIndicator()
         Spacer(Modifier.width(12.dp))
-        Text(stringResource(R.string.comment_loading))
+        Text(stringResource(CoreCommonR.string.comment_loading))
     }
 }
 
@@ -72,7 +72,7 @@ internal fun CommentEmptyBlock() {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = stringResource(R.string.comment_empty),
+            text = stringResource(CoreCommonR.string.comment_empty),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -96,7 +96,7 @@ internal fun CommentErrorBlock(error: CommentError, onRetry: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         HapticTextButton(onClick = onRetry) {
-            Text(stringResource(R.string.comment_retry))
+            Text(stringResource(CoreCommonR.string.comment_retry))
         }
     }
 }
@@ -135,7 +135,7 @@ internal fun CommentLoadMoreErrorRow(error: CommentError, onRetry: () -> Unit) {
             textAlign = TextAlign.Center
         )
         HapticTextButton(onClick = onRetry) {
-            Text(stringResource(R.string.comment_retry))
+            Text(stringResource(CoreCommonR.string.comment_retry))
         }
     }
 }

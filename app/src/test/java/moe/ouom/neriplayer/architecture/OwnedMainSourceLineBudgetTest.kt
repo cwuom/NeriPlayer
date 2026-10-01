@@ -11,8 +11,8 @@ class OwnedMainSourceLineBudgetTest {
             File(System.getProperty("user.dir") ?: ".")
         )
         listOf(
-            "app/src/main/java/moe/ouom/neriplayer/data/settings/AutoSettingsSchema.kt",
-            "app/src/main/java/moe/ouom/neriplayer/data/settings/playback/PlaybackSettingsSection.kt",
+            "modules/data/repository/src/main/java/moe/ouom/neriplayer/data/settings/AutoSettingsSchema.kt",
+            "modules/data/repository/src/main/java/moe/ouom/neriplayer/data/settings/playback/PlaybackSettingsSection.kt",
             "modules/api/bilibili/src/main/java/moe/ouom/neriplayer/api/bilibili/client/BiliClient.kt",
             "modules/api/bilibili/src/main/java/moe/ouom/neriplayer/api/bilibili/comment/BiliCommentApi.kt",
             "modules/api/bilibili/src/main/java/moe/ouom/neriplayer/api/bilibili/auth/BiliCookieSession.kt",

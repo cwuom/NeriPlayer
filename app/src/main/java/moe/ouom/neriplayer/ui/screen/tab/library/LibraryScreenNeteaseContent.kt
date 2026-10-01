@@ -64,7 +64,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -132,7 +132,7 @@ internal fun NeteaseLibraryList(
                 onQueryChange = { value ->
                     updateSearchQuery(selectedCategory, value)
                 },
-                placeholderResId = R.string.library_netease_search_hint
+                placeholderResId = CoreCommonR.string.library_netease_search_hint
             )
         }
 
@@ -141,8 +141,8 @@ internal fun NeteaseLibraryList(
                 item(key = "netease_album_search_empty") {
                     NeteaseLibraryEmptyCard(
                         cardShape = cardShape,
-                        title = stringResource(R.string.library_netease_search_empty),
-                        hint = stringResource(R.string.library_netease_search_empty_hint),
+                        title = stringResource(CoreCommonR.string.library_netease_search_empty),
+                        hint = stringResource(CoreCommonR.string.library_netease_search_empty_hint),
                         iconIsAlbum = true
                     )
                 }
@@ -150,8 +150,8 @@ internal fun NeteaseLibraryList(
                 item(key = "netease_album_empty") {
                     NeteaseLibraryEmptyCard(
                         cardShape = cardShape,
-                        title = stringResource(R.string.library_netease_album_empty),
-                        hint = stringResource(R.string.library_netease_search_hint),
+                        title = stringResource(CoreCommonR.string.library_netease_album_empty),
+                        hint = stringResource(CoreCommonR.string.library_netease_search_hint),
                         iconIsAlbum = true
                     )
                 }
@@ -172,8 +172,8 @@ internal fun NeteaseLibraryList(
                 item(key = "netease_playlist_search_empty") {
                     NeteaseLibraryEmptyCard(
                         cardShape = cardShape,
-                        title = stringResource(R.string.library_netease_search_empty),
-                        hint = stringResource(R.string.library_netease_search_empty_hint),
+                        title = stringResource(CoreCommonR.string.library_netease_search_empty),
+                        hint = stringResource(CoreCommonR.string.library_netease_search_empty_hint),
                         iconIsAlbum = false
                     )
                 }
@@ -181,8 +181,8 @@ internal fun NeteaseLibraryList(
                 item(key = "netease_playlist_empty") {
                     NeteaseLibraryEmptyCard(
                         cardShape = cardShape,
-                        title = stringResource(R.string.library_netease_playlist_empty),
-                        hint = stringResource(R.string.library_netease_search_hint),
+                        title = stringResource(CoreCommonR.string.library_netease_playlist_empty),
+                        hint = stringResource(CoreCommonR.string.library_netease_search_hint),
                         iconIsAlbum = false
                     )
                 }
@@ -246,7 +246,7 @@ internal fun NeteaseCategoryTabs(
                 Tab(
                     selected = selectedCategory == NETEASE_CATEGORY_PLAYLIST,
                     onClick = { onCategoryChange(NETEASE_CATEGORY_PLAYLIST) },
-                    text = { Text(stringResource(R.string.library_netease_tab_playlists)) },
+                    text = { Text(stringResource(CoreCommonR.string.library_netease_tab_playlists)) },
                     icon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.QueueMusic,
@@ -257,7 +257,7 @@ internal fun NeteaseCategoryTabs(
                 Tab(
                     selected = selectedCategory == NETEASE_CATEGORY_ALBUM,
                     onClick = { onCategoryChange(NETEASE_CATEGORY_ALBUM) },
-                    text = { Text(stringResource(R.string.library_netease_tab_albums)) },
+                    text = { Text(stringResource(CoreCommonR.string.library_netease_tab_albums)) },
                     icon = {
                         Icon(
                             imageVector = Icons.Filled.Album,
@@ -332,7 +332,7 @@ internal fun NeteasePlaylistRow(
             supportingContent = {
                 Text(
                     text = stringResource(
-                        R.string.home_play_count_format,
+                        CoreCommonR.string.home_play_count_format,
                         formatPlayCount(context, playlist.playCount),
                         playlist.trackCount
                     ),
@@ -382,7 +382,7 @@ internal fun NeteaseAlbumRow(
             supportingContent = {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.library_song_count,
+                        CoreCommonR.plurals.library_song_count,
                         album.size,
                         album.size
                     ),
@@ -446,7 +446,7 @@ internal fun NeteaseAlbumList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                placeholder = { Text(stringResource(R.string.library_netease_search_hint)) },
+                placeholder = { Text(stringResource(CoreCommonR.string.library_netease_search_hint)) },
                 singleLine = true,
                 shape = LibrarySearchFieldShape
             )
@@ -463,11 +463,11 @@ internal fun NeteaseAlbumList(
                 ) {
                     ListItem(
                         headlineContent = {
-                            Text(stringResource(R.string.library_netease_search_empty))
+                            Text(stringResource(CoreCommonR.string.library_netease_search_empty))
                         },
                         supportingContent = {
                             Text(
-                                stringResource(R.string.library_netease_search_empty_hint),
+                                stringResource(CoreCommonR.string.library_netease_search_empty_hint),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -495,11 +495,11 @@ internal fun NeteaseAlbumList(
                 ) {
                     ListItem(
                         headlineContent = {
-                            Text(stringResource(R.string.library_netease_album_empty))
+                            Text(stringResource(CoreCommonR.string.library_netease_album_empty))
                         },
                         supportingContent = {
                             Text(
-                                stringResource(R.string.library_netease_search_hint),
+                                stringResource(CoreCommonR.string.library_netease_search_hint),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -536,7 +536,7 @@ internal fun NeteaseAlbumList(
                     headlineContent = { Text(pl.name) },
                     supportingContent = {
                         Text(
-                            pluralStringResource(R.plurals.library_song_count, pl.size, pl.size),
+                            pluralStringResource(CoreCommonR.plurals.library_song_count, pl.size, pl.size),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },

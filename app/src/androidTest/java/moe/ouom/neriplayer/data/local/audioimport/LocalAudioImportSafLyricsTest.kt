@@ -111,7 +111,7 @@ class LocalAudioImportSafLyricsTest {
             Issue339LyricsTestDocumentProvider.ROOT_ID
         )
 
-        val result = LocalAudioImportManager.scanFolderSongsWithMediaStoreResultForTest(
+        val result = LocalAudioImportTestSupport.scanWithMediaStoreResult(
             context = targetContext,
             folderUri = treeUri,
             mediaStoreResult = LocalAudioImportResult(
@@ -269,7 +269,7 @@ class LocalAudioImportSafLyricsTest {
         )
         var cancelled = false
         try {
-            LocalAudioImportManager.scanFolderSongsWithMediaStoreResultForTest(
+            LocalAudioImportTestSupport.scanWithMediaStoreResult(
                 context = targetContext,
                 folderUri = treeUri,
                 mediaStoreResult = LocalAudioImportResult(

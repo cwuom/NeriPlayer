@@ -29,7 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -44,14 +44,14 @@ internal fun EditSongLocalMetadataWriteBackConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
-        text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
+        title = { Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_title)) },
+        text = { Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_message)) },
         confirmButton = {
             HapticTextButton(
                 enabled = !isSaving,
                 onClick = onWriteToLocal
             ) {
-                Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+                Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_write))
             }
         },
         dismissButton = {
@@ -70,11 +70,11 @@ internal fun EditSongLyricsSourceChoiceDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.local_lyrics_source_choice_title)) },
-        text = { Text(stringResource(R.string.local_lyrics_source_choice_message)) },
+        title = { Text(stringResource(CoreCommonR.string.local_lyrics_source_choice_title)) },
+        text = { Text(stringResource(CoreCommonR.string.local_lyrics_source_choice_message)) },
         confirmButton = {
             HapticTextButton(enabled = enabled, onClick = onChooseSidecar) {
-                Text(stringResource(R.string.local_lyrics_source_sidecar))
+                Text(stringResource(CoreCommonR.string.local_lyrics_source_sidecar))
             }
         },
         dismissButton = {
@@ -101,7 +101,7 @@ private fun EditSongEmbeddedLyricsChoiceLabel(loading: Boolean) {
         )
         Spacer(Modifier.width(6.dp))
     }
-    Text(stringResource(R.string.local_lyrics_source_embedded))
+    Text(stringResource(CoreCommonR.string.local_lyrics_source_embedded))
 }
 
 @Composable
@@ -112,16 +112,16 @@ internal fun EditSongFillLyricsWriteBackDialog(
 ) {
     AlertDialog(
         onDismissRequest = onSaveInAppOnly,
-        title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
-        text = { Text(stringResource(R.string.local_lyrics_fill_write_confirm_message)) },
+        title = { Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_title)) },
+        text = { Text(stringResource(CoreCommonR.string.local_lyrics_fill_write_confirm_message)) },
         confirmButton = {
             HapticTextButton(enabled = enabled, onClick = onWriteToLocal) {
-                Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+                Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_write))
             }
         },
         dismissButton = {
             HapticTextButton(enabled = enabled, onClick = onSaveInAppOnly) {
-                Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_app_only))
             }
         }
     )
@@ -135,10 +135,10 @@ private fun EditSongWriteBackDismissActions(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         HapticTextButton(enabled = enabled, onClick = onSaveInAppOnly) {
-            Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+            Text(stringResource(CoreCommonR.string.local_song_metadata_write_confirm_app_only))
         }
         HapticTextButton(enabled = enabled, onClick = onCancel) {
-            Text(stringResource(R.string.action_cancel))
+            Text(stringResource(CoreCommonR.string.action_cancel))
         }
     }
 }
@@ -158,7 +158,7 @@ fun FillOptionsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.music_auto_fill_select)) },
+        title = { Text(stringResource(CoreCommonR.string.music_auto_fill_select)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 显示选中的歌曲信息
@@ -209,7 +209,7 @@ fun FillOptionsDialog(
                         enabled = enabled
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.music_auto_fill_cover))
+                    Text(stringResource(CoreCommonR.string.music_auto_fill_cover))
                 }
 
                 Row(
@@ -225,7 +225,7 @@ fun FillOptionsDialog(
                         enabled = enabled
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.music_auto_fill_title))
+                    Text(stringResource(CoreCommonR.string.music_auto_fill_title))
                 }
 
                 Row(
@@ -241,7 +241,7 @@ fun FillOptionsDialog(
                         enabled = enabled
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.music_auto_fill_artist))
+                    Text(stringResource(CoreCommonR.string.music_auto_fill_artist))
                 }
 
                 Row(
@@ -257,7 +257,7 @@ fun FillOptionsDialog(
                         enabled = enabled
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.music_auto_fill_lyrics))
+                    Text(stringResource(CoreCommonR.string.music_auto_fill_lyrics))
                 }
             }
         },
@@ -266,12 +266,12 @@ fun FillOptionsDialog(
                 onClick = { onConfirm(fillCover, fillTitle, fillArtist, fillLyrics) },
                 enabled = enabled
             ) {
-                Text(stringResource(R.string.action_confirm))
+                Text(stringResource(CoreCommonR.string.action_confirm))
             }
         },
         dismissButton = {
             HapticTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )

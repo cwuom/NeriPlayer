@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen.download
  */
 
 
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -123,22 +124,22 @@ fun DownloadManagerScreen(
         val failedCount = result.failedSongs.size
         when {
             result.physicalCleanupPending -> pluralStringResource(
-                R.plurals.local_files_delete_downloaded_cleanup_pending,
+                CoreCommonR.plurals.local_files_delete_downloaded_cleanup_pending,
                 deletedCount + failedCount,
                 deletedCount + failedCount
             )
             deletedCount > 0 && failedCount == 0 -> pluralStringResource(
-                R.plurals.local_files_delete_downloaded_success,
+                CoreCommonR.plurals.local_files_delete_downloaded_success,
                 deletedCount,
                 deletedCount
             )
             deletedCount > 0 -> pluralStringResource(
-                R.plurals.local_files_delete_downloaded_partial,
+                CoreCommonR.plurals.local_files_delete_downloaded_partial,
                 deletedCount,
                 deletedCount,
                 failedCount
             )
-            else -> stringResource(R.string.local_files_delete_downloaded_failed)
+            else -> stringResource(CoreCommonR.string.local_files_delete_downloaded_failed)
         }
     }
     LaunchedEffect(deleteResult, deleteResultMessage) {
@@ -163,11 +164,11 @@ fun DownloadManagerScreen(
             title = {
                 Column {
                     Text(
-                        stringResource(R.string.download_manager_title),
+                        stringResource(CoreCommonR.string.download_manager_title),
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        stringResource(R.string.download_manager_subtitle),
+                        stringResource(CoreCommonR.string.download_manager_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -175,7 +176,7 @@ fun DownloadManagerScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -187,7 +188,7 @@ fun DownloadManagerScreen(
                     // 多选模式下的操作按钮
                     Text(
                         text = pluralStringResource(
-                            R.plurals.download_selected_count,
+                            CoreCommonR.plurals.download_selected_count,
                             selectedSongKeys.size,
                             selectedSongKeys.size
                         ),
@@ -216,7 +217,7 @@ fun DownloadManagerScreen(
                     ) {
                         Icon(
                             if (allSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
-                            contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
+                            contentDescription = if (allSelected) stringResource(CoreCommonR.string.action_deselect_all) else stringResource(CoreCommonR.string.action_select_all)
                         )
                     }
                     IconButton(
@@ -235,7 +236,7 @@ fun DownloadManagerScreen(
                             }
                         }
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.download_delete_selected))
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(CoreCommonR.string.download_delete_selected))
                     }
                     IconButton(
                         onClick = {
@@ -246,7 +247,7 @@ fun DownloadManagerScreen(
                             selectionMode = false
                         }
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.download_exit_selection))
+                        Icon(Icons.Default.Close, contentDescription = stringResource(CoreCommonR.string.download_exit_selection))
                     }
                 } else {
                     // 正常模式下的操作按钮
@@ -256,7 +257,7 @@ fun DownloadManagerScreen(
                             onOpenDownloadProgress()
                         }
                     ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = stringResource(R.string.download_progress))
+                        Icon(Icons.Default.CloudDownload, contentDescription = stringResource(CoreCommonR.string.download_progress))
                     }
                     IconButton(
                         onClick = {
@@ -264,7 +265,7 @@ fun DownloadManagerScreen(
                             viewModel.refreshDownloadedSongs(forceRefresh = true)
                         }
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(CoreCommonR.string.action_refresh))
                     }
                     IconButton(
                         onClick = {
@@ -272,7 +273,7 @@ fun DownloadManagerScreen(
                             selectionMode = true
                         }
                     ) {
-                        Icon(Icons.Default.CheckBoxOutlineBlank, contentDescription = stringResource(R.string.action_multi_select))
+                        Icon(Icons.Default.CheckBoxOutlineBlank, contentDescription = stringResource(CoreCommonR.string.action_multi_select))
                     }
                 }
             }
@@ -328,7 +329,7 @@ fun DownloadManagerScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = stringResource(R.string.downloaded_songs),
+                            text = stringResource(CoreCommonR.string.downloaded_songs),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -348,7 +349,7 @@ fun DownloadManagerScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = stringResource(R.string.download_space_used),
+                            text = stringResource(CoreCommonR.string.download_space_used),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -366,8 +367,8 @@ fun DownloadManagerScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            placeholder = { Text(stringResource(R.string.download_search_hint)) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.action_search)) },
+            placeholder = { Text(stringResource(CoreCommonR.string.download_search_hint)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(CoreCommonR.string.action_search)) },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -423,8 +424,8 @@ fun DownloadManagerScreen(
                 showSingleDeleteDialog = false
                 songToDelete = null
             },
-            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
-            text = { Text(stringResource(R.string.download_delete_confirm, songToDelete?.name ?: "")) },
+            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+            text = { Text(stringResource(CoreCommonR.string.download_delete_confirm, songToDelete?.name ?: "")) },
             confirmButton = {
                 TextButton(
                     enabled = !deletionInProgress,
@@ -439,7 +440,7 @@ fun DownloadManagerScreen(
                         songToDelete = null
                     }
                 ) {
-                    Text(stringResource(R.string.action_delete))
+                    Text(stringResource(CoreCommonR.string.action_delete))
                 }
             },
             dismissButton = {
@@ -449,7 +450,7 @@ fun DownloadManagerScreen(
                         songToDelete = null
                     }
                 ) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -463,11 +464,11 @@ fun DownloadManagerScreen(
                 songsPendingDelete = emptyList()
                 deleteEntireLibraryPending = false
             },
-            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
             text = {
                 Text(
                         pluralStringResource(
-                            R.plurals.download_delete_selected_confirm,
+                            CoreCommonR.plurals.download_delete_selected_confirm,
                             songsPendingDelete.size,
                             songsPendingDelete.size
                         )
@@ -493,7 +494,7 @@ fun DownloadManagerScreen(
                         showMultiDeleteDialog = false
                     }
                 ) {
-                    Text(stringResource(R.string.action_delete))
+                    Text(stringResource(CoreCommonR.string.action_delete))
                 }
             },
             dismissButton = {
@@ -504,7 +505,7 @@ fun DownloadManagerScreen(
                         deleteEntireLibraryPending = false
                     }
                 ) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -561,13 +562,13 @@ private fun DownloadedSongsList(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    if (searchQuery.isBlank()) stringResource(R.string.download_no_songs) else stringResource(R.string.download_no_match),
+                    if (searchQuery.isBlank()) stringResource(CoreCommonR.string.download_no_songs) else stringResource(CoreCommonR.string.download_no_match),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    if (searchQuery.isBlank()) stringResource(R.string.download_songs_hint) else stringResource(R.string.download_try_other_keywords),
+                    if (searchQuery.isBlank()) stringResource(CoreCommonR.string.download_songs_hint) else stringResource(CoreCommonR.string.download_try_other_keywords),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -761,7 +762,7 @@ private fun DownloadedSongItem(
                     IconButton(onClick = onPlay) {
                         Icon(
                             Icons.Default.PlayArrow,
-                            contentDescription = stringResource(R.string.download_play),
+                            contentDescription = stringResource(CoreCommonR.string.download_play),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -769,7 +770,7 @@ private fun DownloadedSongItem(
                     IconButton(onClick = onDelete, enabled = !deletionInProgress) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.download_delete),
+                            contentDescription = stringResource(CoreCommonR.string.download_delete),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }

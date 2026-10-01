@@ -15,7 +15,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
@@ -56,7 +56,7 @@ internal fun YouTubePlaybackSourceSetting(
 
     MiuixSettingsDialog(
         onDismissRequest = { showDialog = false },
-        title = { Text(stringResource(R.string.settings_youtube_playback_source)) },
+        title = { Text(stringResource(CoreCommonR.string.settings_youtube_playback_source)) },
         text = {
             androidx.compose.foundation.layout.Column {
                 YouTubePlaybackSourcePreference.entries.forEach { option ->
@@ -75,7 +75,7 @@ internal fun YouTubePlaybackSourceSetting(
         confirmButton = {
             MiuixSettingsTextButton(
                 onClick = { showDialog = false },
-                text = { Text(stringResource(R.string.action_close)) }
+                text = { Text(stringResource(CoreCommonR.string.action_close)) }
             )
         }
     )
@@ -87,17 +87,17 @@ private fun youTubePlaybackSourceLabel(
 ): String = stringResource(
     when (source) {
         YouTubePlaybackSourcePreference.Automatic ->
-            R.string.settings_youtube_playback_source_automatic
+            CoreCommonR.string.settings_youtube_playback_source_automatic
         YouTubePlaybackSourcePreference.VisionOs ->
-            R.string.settings_youtube_playback_source_visionos
+            CoreCommonR.string.settings_youtube_playback_source_visionos
         YouTubePlaybackSourcePreference.AndroidVr ->
-            R.string.settings_youtube_playback_source_android_vr
+            CoreCommonR.string.settings_youtube_playback_source_android_vr
         YouTubePlaybackSourcePreference.WebRemix ->
-            R.string.settings_youtube_playback_source_web_remix
+            CoreCommonR.string.settings_youtube_playback_source_web_remix
         YouTubePlaybackSourcePreference.TvHtml5 ->
-            R.string.settings_youtube_playback_source_tv_html5
+            CoreCommonR.string.settings_youtube_playback_source_tv_html5
         YouTubePlaybackSourcePreference.WebCreator ->
-            R.string.settings_youtube_playback_source_web_creator
+            CoreCommonR.string.settings_youtube_playback_source_web_creator
     }
 )
 
@@ -107,16 +107,16 @@ private fun youTubePlaybackSourceDescription(
 ): String = stringResource(
     when (source) {
         YouTubePlaybackSourcePreference.Automatic ->
-            R.string.settings_youtube_playback_source_automatic_desc
+            CoreCommonR.string.settings_youtube_playback_source_automatic_desc
         YouTubePlaybackSourcePreference.VisionOs ->
-            R.string.settings_youtube_playback_source_visionos_desc
+            CoreCommonR.string.settings_youtube_playback_source_visionos_desc
         YouTubePlaybackSourcePreference.AndroidVr ->
-            R.string.settings_youtube_playback_source_android_vr_desc
+            CoreCommonR.string.settings_youtube_playback_source_android_vr_desc
         YouTubePlaybackSourcePreference.WebRemix ->
-            R.string.settings_youtube_playback_source_web_remix_desc
+            CoreCommonR.string.settings_youtube_playback_source_web_remix_desc
         YouTubePlaybackSourcePreference.TvHtml5 ->
-            R.string.settings_youtube_playback_source_tv_html5_desc
+            CoreCommonR.string.settings_youtube_playback_source_tv_html5_desc
         YouTubePlaybackSourcePreference.WebCreator ->
-            R.string.settings_youtube_playback_source_web_creator_desc
+            CoreCommonR.string.settings_youtube_playback_source_web_creator_desc
     }
 )

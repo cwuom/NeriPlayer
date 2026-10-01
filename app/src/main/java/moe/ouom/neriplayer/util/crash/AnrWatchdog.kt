@@ -9,7 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import androidx.core.content.edit
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -49,7 +49,7 @@ internal object AnrWatchdog {
         if (!BuildConfig.DEBUG) {
             ExceptionHandler.handleException(
                 source = TAG,
-                throwable = IllegalStateException(context.getString(R.string.debug_anr_test_unavailable))
+                throwable = IllegalStateException(context.getString(CoreCommonR.string.debug_anr_test_unavailable))
             )
             return
         }

@@ -36,7 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -126,7 +126,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val keyword = _ui.value.keyword.trim()
         if (keyword.isBlank()) {
             _ui.value = _ui.value.copy(
-                lastMessage = getApplication<Application>().getString(R.string.debug_netease_probe_keyword_required)
+                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_netease_probe_keyword_required)
             )
             return
         }
@@ -145,7 +145,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val songId = _ui.value.songId.toLongOrNull()
         if (songId == null || songId <= 0L) {
             _ui.value = _ui.value.copy(
-                lastMessage = getApplication<Application>().getString(R.string.debug_netease_probe_song_id_required)
+                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_netease_probe_song_id_required)
             )
             return
         }
@@ -158,7 +158,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val songId = _ui.value.songId.toLongOrNull()
         if (songId == null || songId <= 0L) {
             _ui.value = _ui.value.copy(
-                lastMessage = getApplication<Application>().getString(R.string.debug_netease_probe_song_id_required)
+                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_netease_probe_song_id_required)
             )
             return
         }
@@ -171,7 +171,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(
                 running = true,
-                lastMessage = getApplication<Application>().getString(R.string.debug_all_api_calling),
+                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_all_api_calling),
                 lastJsonPreview = "",
                 resultSummary = "",
                 authSummary = buildAuthSummary()
@@ -201,7 +201,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 copyToClipboard("netease_api_all", result)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_all_api_ok),
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_all_api_ok),
                     lastJsonPreview = formatJson(result),
                     resultSummary = buildSummary("all", result, elapsedMs),
                     authSummary = buildAuthSummary()
@@ -209,13 +209,13 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: IOException) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_network_error, e.message ?: e.javaClass.simpleName),
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_network_error, e.message ?: e.javaClass.simpleName),
                     authSummary = buildAuthSummary()
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_call_failed, e.message ?: e.javaClass.simpleName),
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_call_failed, e.message ?: e.javaClass.simpleName),
                     authSummary = buildAuthSummary()
                 )
             }
@@ -226,7 +226,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(
                 running = true,
-                lastMessage = getApplication<Application>().getString(R.string.debug_calling, label),
+                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_calling, label),
                 lastJsonPreview = "",
                 resultSummary = "",
                 authSummary = buildAuthSummary()
@@ -240,7 +240,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 copyToClipboard("netease_api_$label", raw)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_copied_label, label),
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_copied_label, label),
                     lastJsonPreview = formatJson(raw),
                     resultSummary = buildSummary(label, raw, elapsedMs),
                     authSummary = buildAuthSummary()
@@ -248,13 +248,13 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: IOException) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_network_error, e.message ?: e.javaClass.simpleName),
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_network_error, e.message ?: e.javaClass.simpleName),
                     authSummary = buildAuthSummary()
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = getApplication<Application>().getString(R.string.debug_call_failed, e.message ?: e.javaClass.simpleName),
+                    lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_call_failed, e.message ?: e.javaClass.simpleName),
                     authSummary = buildAuthSummary()
                 )
             }
@@ -265,10 +265,10 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val health = repo.getAuthHealthOnce()
         val cookies = repo.getCookiesOnce()
         if (health.state == SavedCookieAuthState.Missing) {
-            return getApplication<Application>().getString(R.string.debug_netease_probe_auth_missing)
+            return getApplication<Application>().getString(CoreCommonR.string.debug_netease_probe_auth_missing)
         }
         return getApplication<Application>().getString(
-            R.string.debug_netease_probe_auth_logged_in,
+            CoreCommonR.string.debug_netease_probe_auth_logged_in,
             resolveAuthStateLabel(health.state),
             cookies.size
         )
@@ -276,9 +276,9 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun resolveAuthStateLabel(state: SavedCookieAuthState): String {
         return when (state) {
-            SavedCookieAuthState.Missing -> getApplication<Application>().getString(R.string.debug_netease_probe_auth_state_missing)
-            SavedCookieAuthState.Valid -> getApplication<Application>().getString(R.string.debug_netease_probe_auth_state_valid)
-            else -> getApplication<Application>().getString(R.string.debug_netease_probe_auth_state_unknown)
+            SavedCookieAuthState.Missing -> getApplication<Application>().getString(CoreCommonR.string.debug_netease_probe_auth_state_missing)
+            SavedCookieAuthState.Valid -> getApplication<Application>().getString(CoreCommonR.string.debug_netease_probe_auth_state_valid)
+            else -> getApplication<Application>().getString(CoreCommonR.string.debug_netease_probe_auth_state_unknown)
         }
     }
 
@@ -299,7 +299,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             else -> "-"
         }
         return getApplication<Application>().getString(
-            R.string.debug_netease_probe_summary_template,
+            CoreCommonR.string.debug_netease_probe_summary_template,
             action,
             elapsedMs,
             code,

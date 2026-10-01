@@ -53,7 +53,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.displayArtist
@@ -75,7 +75,7 @@ internal fun NeteaseRemotePlaylistPickerDialog(
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = {
-            Text(stringResource(R.string.local_playlist_sync_netease_picker_title))
+            Text(stringResource(CoreCommonR.string.local_playlist_sync_netease_picker_title))
         },
         text = {
             Column(
@@ -91,7 +91,7 @@ internal fun NeteaseRemotePlaylistPickerDialog(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp
                         )
-                        Text(stringResource(R.string.local_playlist_sync_netease_loading_playlists))
+                        Text(stringResource(CoreCommonR.string.local_playlist_sync_netease_loading_playlists))
                     }
                 }
                 errorMessage?.let { message ->
@@ -131,7 +131,7 @@ internal fun NeteaseRemotePlaylistPickerDialog(
                                     )
                                     Text(
                                         text = pluralStringResource(
-                                            R.plurals.local_playlist_sync_netease_track_count,
+                                            CoreCommonR.plurals.local_playlist_sync_netease_track_count,
                                             playlist.trackCount,
                                             playlist.trackCount
                                         ),
@@ -150,7 +150,7 @@ internal fun NeteaseRemotePlaylistPickerDialog(
             HapticTextButton(
                 onClick = onDismissRequest
             ) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(CoreCommonR.string.action_cancel))
             }
         }
     )
@@ -181,19 +181,19 @@ internal fun LocalMetadataProcessingCard(state: LocalMetadataProcessingState) {
             )
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.local_playlist_metadata_processing_title),
+                    text = stringResource(CoreCommonR.string.local_playlist_metadata_processing_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
                     text = if (total > 0) {
                         stringResource(
-                            R.string.local_playlist_metadata_processing_message,
+                            CoreCommonR.string.local_playlist_metadata_processing_message,
                             processed,
                             total
                         )
                     } else {
-                        stringResource(R.string.local_playlist_metadata_processing_message_unknown)
+                        stringResource(CoreCommonR.string.local_playlist_metadata_processing_message_unknown)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)

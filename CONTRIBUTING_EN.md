@@ -206,6 +206,10 @@ and CRAP selectors together.
   - Android host and dependency assembly, including screens, playback services, downloads, local media, and Worker adapters.
 - `:data:model`
   - Centralized data and state contracts grouped by business, with no dependencies on project implementations.
+- `:data:database`
+  - Room database, entities, DAOs, historical schemas, and upgrades; statistics tables use `dao/stats` and `entity/stats`.
+  - `migration/library`, `migration/platform`, and `migration/download` own upgrade SQL; `migration/legacy` owns legacy data preservation.
+  - All migration components join the full-file CRAP gate; new upgrades must retain historical schemas and upgrade paths from shipped versions.
 - `:core:common` / `:core:logging` / `:core:network`
   - Shared utilities, logging, and HTTP infrastructure.
 - `:core:lyrics`
@@ -435,11 +439,11 @@ and at most 16 direct source files per directory in libraries and app areas regi
     `logging/`, `permission/`, `player/`, `safemode/`, `sync/`, and `theme/`.
     `MainActivity` coordinates these components with the UI lifecycle.
 
-- `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `identity/`: host song identity conversion; `SongIdentity` and `SongItem` belong to `modules/data/model`.
+- `modules/data/repository/src/main/java/moe/ouom/neriplayer/data/`
+  - `identity/`: song identity conversion; `SongIdentity` and `SongItem` belong to `modules/data/model`.
   - `settings/`: `DataStore` settings, KSP schema, and preference mapping; snapshot contracts belong to `:data:model` under `settings`.
-  - `auth/`: host login adapters and the YouTube rotation Worker; platform cookie/auth repositories live in the corresponding `modules/data/*` modules.
-  - `platform/netease/`: NetEase platform-side caches, currently including playlist detail cache.
+  - `auth/`: shared Web login state and the YouTube credential rotation Worker; platform cookie/auth repositories live in the corresponding `modules/data/*` modules.
+  - Platform caches belong to the existing `:data:netease`, `:data:bilibili`, and `:data:youtube` modules; they do not live in the application repository module.
   - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
   - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
     background metadata hydration, and local artist aggregation.
@@ -963,6 +967,7 @@ Before submitting, consider at least these checks:
 2. Unit tests:
    ```bash
    ./gradlew :app:verifyCrap
+   ./gradlew :data:repository:verifyCrap :data:repository:lintDebug
    ```
 3. If you changed auth-dependent flows, playback resolution, or other integration-heavy
    behavior, optional smoke tests are available:

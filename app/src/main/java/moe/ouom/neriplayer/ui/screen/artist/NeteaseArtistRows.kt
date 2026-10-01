@@ -31,7 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
@@ -174,7 +174,7 @@ internal fun ArtistAlbumRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = pluralStringResource(R.plurals.count_songs_format, album.size, album.size),
+                    text = pluralStringResource(CoreCommonR.plurals.count_songs_format, album.size, album.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -198,7 +198,7 @@ internal fun LoadingBlock() {
     ) {
         CircularProgressIndicator()
         Spacer(Modifier.width(12.dp))
-        Text(stringResource(R.string.playlist_loading_content))
+        Text(stringResource(CoreCommonR.string.playlist_loading_content))
     }
 }
 
@@ -213,7 +213,7 @@ internal fun ErrorBlock(error: String, onRetry: () -> Unit) {
         Text(error, color = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onRetry) {
-            Text(stringResource(R.string.action_retry))
+            Text(stringResource(CoreCommonR.string.action_retry))
         }
     }
 }
@@ -243,7 +243,7 @@ internal fun LoadMoreButton(loading: Boolean, onClick: () -> Unit) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
             }
-            Text(stringResource(R.string.artist_load_more))
+            Text(stringResource(CoreCommonR.string.artist_load_more))
         }
     }
 }

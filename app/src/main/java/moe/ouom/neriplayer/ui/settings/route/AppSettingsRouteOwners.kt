@@ -12,7 +12,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
@@ -101,18 +101,18 @@ internal fun rememberAppSettingsCacheClearOwner(application: Application): AppSe
                 formatExtraCacheClearResult(
                     result = result,
                     partialMessage = {
-                        resources.getString(R.string.storage_extra_cache_clear_partial)
+                        resources.getString(CoreCommonR.string.storage_extra_cache_clear_partial)
                     },
                     roomCompleteMessage = { freed, reusable ->
                         resources.getString(
-                            R.string.storage_extra_cache_clear_room_complete,
+                            CoreCommonR.string.storage_extra_cache_clear_room_complete,
                             formatFileSize(freed),
                             formatFileSize(reusable)
                         )
                     },
                     completeMessage = { freed ->
                         resources.getString(
-                            R.string.storage_extra_cache_clear_complete,
+                            CoreCommonR.string.storage_extra_cache_clear_complete,
                             formatFileSize(freed)
                         )
                     }

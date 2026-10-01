@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.youtube.auth.web
 import android.webkit.CookieManager
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
 import moe.ouom.neriplayer.api.youtube.potoken.YouTubeWebSession
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 
 internal object YouTubeWebSessionAdapter : YouTubeWebSession {
     override val isForegroundLoginActive: Boolean

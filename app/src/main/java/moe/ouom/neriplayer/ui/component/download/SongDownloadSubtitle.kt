@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 
 @Composable
 internal fun SongDownloadSubtitle(
@@ -43,7 +43,7 @@ internal fun SongDownloadSubtitle(
             Spacer(Modifier.width(6.dp))
             Icon(
                 imageVector = Icons.Outlined.DownloadDone,
-                contentDescription = contentDescription ?: stringResource(R.string.downloaded),
+                contentDescription = contentDescription ?: stringResource(CoreCommonR.string.downloaded),
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.primary
             )

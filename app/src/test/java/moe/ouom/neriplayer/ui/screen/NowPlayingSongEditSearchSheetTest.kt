@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.canSearchEditSong
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.musicPlatformLabelResource
@@ -28,9 +28,9 @@ class NowPlayingSongEditSearchSheetTest {
 
     @Test
     fun `search platform tabs keep their existing labels`() {
-        assertEquals(R.string.platform_netease_short,
+        assertEquals(CoreCommonR.string.platform_netease_short,
             musicPlatformLabelResource(MusicPlatform.CLOUD_MUSIC)
         )
-        assertEquals(R.string.settings_qq_music, musicPlatformLabelResource(MusicPlatform.QQ_MUSIC))
+        assertEquals(CoreCommonR.string.settings_qq_music, musicPlatformLabelResource(MusicPlatform.QQ_MUSIC))
     }
 }

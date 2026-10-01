@@ -12,7 +12,6 @@ plugins {
     id("build-logic.android.application")
     id("build-logic.android.compose")
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.ksp)
     id("kotlin-parcelize")
 }
 
@@ -37,10 +36,12 @@ val ownedLibraryPaths = listOf(
     ":api:youtube",
     ":data:bilibili",
     ":data:comments",
+    ":data:database",
     ":data:lyrics",
     ":data:ltw",
     ":data:model",
     ":data:netease",
+    ":data:repository",
     ":data:storage",
     ":data:sync",
     ":data:youtube"
@@ -180,7 +181,7 @@ android {
 
     sourceSets {
         getByName("androidTest") {
-            assets.directories.add("schemas")
+            assets.directories.add(project(":data:database").layout.projectDirectory.dir("schemas").asFile.path)
         }
     }
 
@@ -421,10 +422,6 @@ tasks.named("check") {
     dependsOn(verifyCrap, verifyDomainDependencies)
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
-
 androidComponents {
     onVariants(selector().all()) { variant ->
         if (variant.buildType == "debug") return@onVariants
@@ -452,7 +449,6 @@ dependencies {
         add(libraryCoverageExecution.name, project(mapOf("path" to module, "configuration" to "coverageExecutionElements")))
     }
     implementation(project(":ksp-annotations"))
-    ksp(project(":ksp-processor"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
@@ -486,12 +482,12 @@ dependencies {
     androidTestImplementation(libs.kotlinx.coroutines.android)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(testFixtures(project(":data:repository")))
     implementation(libs.androidx.animation)
     implementation(libs.accompanist.navigation.animation)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
 
     implementation(libs.okhttp)
     implementation(libs.lyricon.provider)

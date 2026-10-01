@@ -22,7 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
@@ -36,17 +36,17 @@ internal fun downloadStageLabelResource(
     stage: DownloadStage
 ): Int? {
     return when (stage) {
-        DownloadStage.WAITING_HOST -> R.string.download_waiting_host
+        DownloadStage.WAITING_HOST -> CoreCommonR.string.download_waiting_host
         DownloadStage.WAITING_DELETE_CLEANUP ->
-            R.string.download_waiting_delete_cleanup
-        DownloadStage.RESOLVING_SOURCE -> R.string.download_resolving_source
+            CoreCommonR.string.download_waiting_delete_cleanup
+        DownloadStage.RESOLVING_SOURCE -> CoreCommonR.string.download_resolving_source
         DownloadStage.PREPARING_STORAGE ->
-            R.string.download_preparing_storage
-        DownloadStage.VERIFYING_AUDIO -> R.string.download_verifying_audio
-        DownloadStage.COMMITTING_CORE -> R.string.download_committing_core
+            CoreCommonR.string.download_preparing_storage
+        DownloadStage.VERIFYING_AUDIO -> CoreCommonR.string.download_verifying_audio
+        DownloadStage.COMMITTING_CORE -> CoreCommonR.string.download_committing_core
         DownloadStage.ASSETS_ENRICHING ->
-            R.string.download_assets_enriching
-        DownloadStage.WAITING_RETRY -> R.string.download_waiting_retry
+            CoreCommonR.string.download_assets_enriching
+        DownloadStage.WAITING_RETRY -> CoreCommonR.string.download_waiting_retry
         DownloadStage.TRANSFERRING,
         DownloadStage.FINALIZING -> null
     }
@@ -91,7 +91,7 @@ fun ActiveDownloadTaskList(
                             progress.stage != DownloadStage.FINALIZING &&
                             progress.stage != DownloadStage.WAITING_RETRY -> {
                             val stageLabel = downloadStageLabelResource(progress.stage)
-                                ?: R.string.download_progress
+                                ?: CoreCommonR.string.download_progress
                             Text(
                                 text = stringResource(stageLabel),
                                 style = MaterialTheme.typography.bodySmall,
@@ -112,7 +112,7 @@ fun ActiveDownloadTaskList(
 
                         progress?.stage == DownloadStage.FINALIZING -> {
                             Text(
-                                text = stringResource(R.string.download_finalizing),
+                                text = stringResource(CoreCommonR.string.download_finalizing),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -128,9 +128,9 @@ fun ActiveDownloadTaskList(
                             Text(
                                 text = stringResource(
                                     if (task.status == DownloadStatus.WAITING_NETWORK) {
-                                        R.string.download_waiting_network_recovery
+                                        CoreCommonR.string.download_waiting_network_recovery
                                     } else {
-                                        R.string.download_waiting_retry
+                                        CoreCommonR.string.download_waiting_retry
                                     }
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
@@ -193,11 +193,11 @@ fun ActiveDownloadTaskList(
                             Text(
                                 text = stringResource(
                                     when (task.status) {
-                                        DownloadStatus.QUEUED -> R.string.download_queued_status
+                                        DownloadStatus.QUEUED -> CoreCommonR.string.download_queued_status
                                         DownloadStatus.WAITING_NETWORK ->
-                                            R.string.download_waiting_network_recovery
-                                        DownloadStatus.DOWNLOADING -> R.string.download_waiting_host
-                                        else -> R.string.download_progress
+                                            CoreCommonR.string.download_waiting_network_recovery
+                                        DownloadStatus.DOWNLOADING -> CoreCommonR.string.download_waiting_host
+                                        else -> CoreCommonR.string.download_progress
                                     }
                                 ),
                                 style = MaterialTheme.typography.bodySmall,

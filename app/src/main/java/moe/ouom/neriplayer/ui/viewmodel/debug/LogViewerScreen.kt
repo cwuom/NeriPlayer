@@ -46,7 +46,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -83,11 +83,11 @@ fun LogViewerScreen(
                             File(decodedFilePath).inputStream().copyTo(outputStream)
                         }
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_exported))
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.log_exported))
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_export_failed, e.message))
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.log_export_failed, e.message))
                         }
                     }
                 }
@@ -104,7 +104,7 @@ fun LogViewerScreen(
                 }
             } catch (e: FileNotFoundException) {
                 withContext(Dispatchers.Main) {
-                    snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_cannot_read))
+                    snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.log_cannot_read))
                 }
             }
         }
@@ -123,7 +123,7 @@ fun LogViewerScreen(
                 title = { Text(File(decodedFilePath).name, style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
                     }
                 },
                 actions = {
@@ -134,21 +134,21 @@ fun LogViewerScreen(
                                 val result = clipboard.copyPlainTextSafely("text", fullText)
                             ) {
                                 is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
-                                    R.string.toast_copy_truncated
+                                    CoreCommonR.string.toast_copy_truncated
                                 } else {
-                                    R.string.log_copied
+                                    CoreCommonR.string.log_copied
                                 }
-                                ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
+                                ClipboardCopyResult.TransactionTooLarge -> CoreCommonR.string.toast_copy_failed
                             }
                             snackbarHostState.showNeriSnackbar(composeResources.getString(messageRes))
                         }
                     }) {
-                        Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.debug_copy_all))
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(CoreCommonR.string.debug_copy_all))
                     }
                     IconButton(onClick = {
                         exportLogLauncher.launch(File(decodedFilePath).name)
                     }) {
-                        Icon(Icons.Outlined.Share, contentDescription = stringResource(R.string.log_export))
+                        Icon(Icons.Outlined.Share, contentDescription = stringResource(CoreCommonR.string.log_export))
                     }
                 }
             )

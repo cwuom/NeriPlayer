@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.data.youtube.auth.web
 
 import android.webkit.CookieManager
 import moe.ouom.neriplayer.api.youtube.auth.YouTubeCookieSupport
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

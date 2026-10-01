@@ -36,7 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatBucketsForPeriod
@@ -97,19 +97,19 @@ fun PlaybackStatsScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text(stringResource(R.string.stats_clear_title)) },
-            text = { Text(stringResource(R.string.stats_clear_message)) },
+            title = { Text(stringResource(CoreCommonR.string.stats_clear_title)) },
+            text = { Text(stringResource(CoreCommonR.string.stats_clear_message)) },
             confirmButton = {
                 HapticTextButton(onClick = {
                     AppContainer.playbackStatsRepo.clearAll()
                     showClearDialog = false
                 }) {
-                    Text(stringResource(R.string.action_confirm))
+                    Text(stringResource(CoreCommonR.string.action_confirm))
                 }
             },
             dismissButton = {
                 HapticTextButton(onClick = { showClearDialog = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -121,7 +121,7 @@ fun PlaybackStatsScreen(
             contentWindowInsets = WindowInsets.statusBars,
             topBar = {
                 TopAppBar(
-                    title = { Text(stringResource(R.string.stats_title)) },
+                    title = { Text(stringResource(CoreCommonR.string.stats_title)) },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent
                     ),
@@ -140,19 +140,19 @@ fun PlaybackStatsScreen(
                                 onDismissRequest = { showSortMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.stats_sort_play_count)) },
+                                    text = { Text(stringResource(CoreCommonR.string.stats_sort_play_count)) },
                                     onClick = { sortMode = StatsSortMode.PLAY_COUNT; showSortMenu = false }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.stats_sort_listen_time)) },
+                                    text = { Text(stringResource(CoreCommonR.string.stats_sort_listen_time)) },
                                     onClick = { sortMode = StatsSortMode.LISTEN_TIME; showSortMenu = false }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.stats_sort_recent)) },
+                                    text = { Text(stringResource(CoreCommonR.string.stats_sort_recent)) },
                                     onClick = { sortMode = StatsSortMode.RECENT; showSortMenu = false }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.stats_sort_first_played)) },
+                                    text = { Text(stringResource(CoreCommonR.string.stats_sort_first_played)) },
                                     onClick = { sortMode = StatsSortMode.FIRST_PLAYED; showSortMenu = false }
                                 )
                             }
@@ -172,7 +172,7 @@ fun PlaybackStatsScreen(
                         .padding(innerPadding),
                     contentAlignment = Alignment.Center
                 ) {
-                    StatsEmptyContent(message = stringResource(R.string.stats_empty))
+                    StatsEmptyContent(message = stringResource(CoreCommonR.string.stats_empty))
                 }
             } else {
                 LazyColumn(
@@ -195,7 +195,7 @@ fun PlaybackStatsScreen(
                     if (usesCompatPeriodStats) {
                         item {
                             Text(
-                                text = stringResource(R.string.stats_period_compat_notice),
+                                text = stringResource(CoreCommonR.string.stats_period_compat_notice),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
@@ -217,9 +217,9 @@ fun PlaybackStatsScreen(
                                 StatsEmptyContent(
                                     message = stringResource(
                                         if (periodNeedsCompatBreakdown) {
-                                            R.string.stats_period_missing_breakdown
+                                            CoreCommonR.string.stats_period_missing_breakdown
                                         } else {
-                                            R.string.stats_period_empty
+                                            CoreCommonR.string.stats_period_empty
                                         }
                                     )
                                 )

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.activity.auth
  * Created: 2025/8/12
  */
 
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
@@ -54,7 +55,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
@@ -120,7 +121,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             )
         }
         toolbar = MaterialToolbar(this).apply {
-            title = getString(R.string.netease_web_login)
+            title = getString(CoreCommonR.string.netease_web_login)
             setNavigationIcon(R.drawable.ic_arrow_back_24)
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.menu_netease_web_login)
@@ -241,7 +242,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             if (map.isEmpty()) {
                 showNeriViewSnackbar(
                     webView,
-                    getString(R.string.snackbar_cookie_empty),
+                    getString(CoreCommonR.string.snackbar_cookie_empty),
                     Snackbar.LENGTH_SHORT
                 )
                 return
@@ -253,7 +254,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         } catch (e: Throwable) {
             showNeriViewSnackbar(
                 webView,
-                getString(R.string.snackbar_read_failed, e.message ?: e.javaClass.simpleName),
+                getString(CoreCommonR.string.snackbar_read_failed, e.message ?: e.javaClass.simpleName),
                 Snackbar.LENGTH_LONG
             )
         }

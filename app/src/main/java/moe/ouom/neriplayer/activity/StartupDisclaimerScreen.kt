@@ -46,7 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import kotlin.time.Duration.Companion.milliseconds
@@ -101,18 +101,18 @@ internal fun StartupDisclaimerContent(
                 ) {
                     DisclaimerFact(
                         icon = Icons.Outlined.Info,
-                        title = stringResource(R.string.disclaimer_summary_content_title),
-                        body = stringResource(R.string.disclaimer_summary_content_body)
+                        title = stringResource(CoreCommonR.string.disclaimer_summary_content_title),
+                        body = stringResource(CoreCommonR.string.disclaimer_summary_content_body)
                     )
                     DisclaimerFact(
                         icon = Icons.Outlined.Storage,
-                        title = stringResource(R.string.disclaimer_summary_data_title),
-                        body = stringResource(R.string.disclaimer_summary_data_body)
+                        title = stringResource(CoreCommonR.string.disclaimer_summary_data_title),
+                        body = stringResource(CoreCommonR.string.disclaimer_summary_data_body)
                     )
                     DisclaimerFact(
                         icon = Icons.Outlined.CloudSync,
-                        title = stringResource(R.string.disclaimer_summary_sync_title),
-                        body = stringResource(R.string.disclaimer_summary_sync_body)
+                        title = stringResource(CoreCommonR.string.disclaimer_summary_sync_title),
+                        body = stringResource(CoreCommonR.string.disclaimer_summary_sync_body)
                     )
                     HapticTextButton(
                         onClick = { detailsExpanded = !detailsExpanded },
@@ -120,9 +120,9 @@ internal fun StartupDisclaimerContent(
                     ) {
                         Text(
                             if (detailsExpanded) {
-                                stringResource(R.string.disclaimer_hide_details)
+                                stringResource(CoreCommonR.string.disclaimer_hide_details)
                             } else {
-                                stringResource(R.string.disclaimer_show_details)
+                                stringResource(CoreCommonR.string.disclaimer_show_details)
                             }
                         )
                     }
@@ -143,9 +143,9 @@ internal fun StartupDisclaimerContent(
                 ) {
                     Text(
                         text = if (countdown == 0) {
-                            stringResource(R.string.disclaimer_agree_countdown)
+                            stringResource(CoreCommonR.string.disclaimer_agree_countdown)
                         } else {
-                            stringResource(R.string.disclaimer_read_countdown, countdown)
+                            stringResource(CoreCommonR.string.disclaimer_read_countdown, countdown)
                         },
                         style = MaterialTheme.typography.titleMedium
                     )
@@ -178,19 +178,19 @@ private fun DisclaimerHeader() {
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = stringResource(R.string.disclaimer_title),
+                text = stringResource(CoreCommonR.string.disclaimer_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.disclaimer_intro),
+                text = stringResource(CoreCommonR.string.disclaimer_intro),
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = stringResource(R.string.disclaimer_last_updated),
+                text = stringResource(CoreCommonR.string.disclaimer_last_updated),
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.onSurfaceVariant
             )
@@ -242,67 +242,67 @@ private fun DisclaimerFact(
 private fun DisclaimerDetails() {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section1_title),
-            lines = listOf(stringResource(R.string.disclaimer_section1_body))
+            title = stringResource(CoreCommonR.string.disclaimer_section1_title),
+            lines = listOf(stringResource(CoreCommonR.string.disclaimer_section1_body))
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section2_title),
+            title = stringResource(CoreCommonR.string.disclaimer_section2_title),
             lines = listOf(
-                stringResource(R.string.disclaimer_section2_bullet1),
-                stringResource(R.string.disclaimer_section2_bullet2),
-                stringResource(R.string.disclaimer_section2_bullet3),
-                stringResource(R.string.disclaimer_section2_bullet4)
+                stringResource(CoreCommonR.string.disclaimer_section2_bullet1),
+                stringResource(CoreCommonR.string.disclaimer_section2_bullet2),
+                stringResource(CoreCommonR.string.disclaimer_section2_bullet3),
+                stringResource(CoreCommonR.string.disclaimer_section2_bullet4)
             )
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section3_title),
+            title = stringResource(CoreCommonR.string.disclaimer_section3_title),
             lines = listOf(
-                stringResource(R.string.disclaimer_section3_bullet1),
-                stringResource(R.string.disclaimer_section3_bullet2),
-                stringResource(R.string.disclaimer_section3_bullet3)
+                stringResource(CoreCommonR.string.disclaimer_section3_bullet1),
+                stringResource(CoreCommonR.string.disclaimer_section3_bullet2),
+                stringResource(CoreCommonR.string.disclaimer_section3_bullet3)
             )
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section4_title),
+            title = stringResource(CoreCommonR.string.disclaimer_section4_title),
             lines = listOf(
-                stringResource(R.string.disclaimer_section4_bullet1),
-                stringResource(R.string.disclaimer_section4_bullet2),
-                stringResource(R.string.disclaimer_section4_bullet3)
+                stringResource(CoreCommonR.string.disclaimer_section4_bullet1),
+                stringResource(CoreCommonR.string.disclaimer_section4_bullet2),
+                stringResource(CoreCommonR.string.disclaimer_section4_bullet3)
             )
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section5_title),
+            title = stringResource(CoreCommonR.string.disclaimer_section5_title),
             lines = listOf(
-                stringResource(R.string.disclaimer_section5_bullet1),
-                stringResource(R.string.disclaimer_section5_bullet2),
-                stringResource(R.string.disclaimer_section5_bullet3),
-                stringResource(R.string.disclaimer_section5_bullet4),
-                stringResource(R.string.disclaimer_section5_bullet5),
-                stringResource(R.string.disclaimer_section5_bullet6),
-                stringResource(R.string.disclaimer_section5_bullet7),
-                stringResource(R.string.disclaimer_section5_bullet8),
-                stringResource(R.string.disclaimer_section5_bullet9)
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet1),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet2),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet3),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet4),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet5),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet6),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet7),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet8),
+                stringResource(CoreCommonR.string.disclaimer_section5_bullet9)
             )
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section6_title),
+            title = stringResource(CoreCommonR.string.disclaimer_section6_title),
             lines = listOf(
-                stringResource(R.string.disclaimer_section6_bullet1),
-                stringResource(R.string.disclaimer_section6_bullet2),
-                stringResource(R.string.disclaimer_section6_bullet3)
+                stringResource(CoreCommonR.string.disclaimer_section6_bullet1),
+                stringResource(CoreCommonR.string.disclaimer_section6_bullet2),
+                stringResource(CoreCommonR.string.disclaimer_section6_bullet3)
             )
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section7_title),
-            lines = listOf(stringResource(R.string.disclaimer_section7_body))
+            title = stringResource(CoreCommonR.string.disclaimer_section7_title),
+            lines = listOf(stringResource(CoreCommonR.string.disclaimer_section7_body))
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section8_title),
-            lines = listOf(stringResource(R.string.disclaimer_section8_body))
+            title = stringResource(CoreCommonR.string.disclaimer_section8_title),
+            lines = listOf(stringResource(CoreCommonR.string.disclaimer_section8_body))
         )
         DisclaimerDetailSection(
-            title = stringResource(R.string.disclaimer_section9_title),
-            lines = listOf(stringResource(R.string.disclaimer_section9_body))
+            title = stringResource(CoreCommonR.string.disclaimer_section9_title),
+            lines = listOf(stringResource(CoreCommonR.string.disclaimer_section9_body))
         )
     }
 }

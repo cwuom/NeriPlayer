@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.explore.biliCollectionSubtitle
 import moe.ouom.neriplayer.ui.screen.tab.explore.exploreClipboardMessageRes
 import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSongSubtitle
@@ -37,15 +37,15 @@ class ExploreSearchResultRowsTest {
     @Test
     fun clipboardFeedbackKeepsSuccessAndFailureDistinct() {
         assertEquals(
-            R.string.toast_copied,
+            CoreCommonR.string.toast_copied,
             exploreClipboardMessageRes(ClipboardCopyResult.Copied(wasTruncated = false))
         )
         assertEquals(
-            R.string.toast_copy_truncated,
+            CoreCommonR.string.toast_copy_truncated,
             exploreClipboardMessageRes(ClipboardCopyResult.Copied(wasTruncated = true))
         )
         assertEquals(
-            R.string.toast_copy_failed,
+            CoreCommonR.string.toast_copy_failed,
             exploreClipboardMessageRes(ClipboardCopyResult.TransactionTooLarge)
         )
     }

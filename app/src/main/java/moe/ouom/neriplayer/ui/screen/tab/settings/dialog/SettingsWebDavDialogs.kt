@@ -19,7 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -68,7 +68,7 @@ internal fun SettingsWebDavDialogs(
 
         MiuixSettingsDialog(
             onDismissRequest = dismissConfigDialog,
-            title = { Text(stringResource(R.string.webdav_sync_title)) },
+            title = { Text(stringResource(CoreCommonR.string.webdav_sync_title)) },
             text = {
                 Column(
                     modifier = Modifier
@@ -91,29 +91,29 @@ internal fun SettingsWebDavDialogs(
                         )
                     }
                     Text(
-                        text = stringResource(R.string.webdav_sync_desc),
+                        text = stringResource(CoreCommonR.string.webdav_sync_desc),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     MiuixSettingsTextField(
                         value = serverUrl,
                         onValueChange = { serverUrl = it },
-                        label = { Text(stringResource(R.string.webdav_server_url_label)) },
-                        placeholder = { Text(stringResource(R.string.webdav_server_url_placeholder)) },
+                        label = { Text(stringResource(CoreCommonR.string.webdav_server_url_label)) },
+                        placeholder = { Text(stringResource(CoreCommonR.string.webdav_server_url_placeholder)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     MiuixSettingsTextField(
                         value = username,
                         onValueChange = { username = it },
-                        label = { Text(stringResource(R.string.webdav_username_label)) },
-                        placeholder = { Text(stringResource(R.string.webdav_username_placeholder)) },
+                        label = { Text(stringResource(CoreCommonR.string.webdav_username_label)) },
+                        placeholder = { Text(stringResource(CoreCommonR.string.webdav_username_placeholder)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     MiuixSettingsTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text(stringResource(R.string.webdav_password_label)) },
+                        label = { Text(stringResource(CoreCommonR.string.webdav_password_label)) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
@@ -121,13 +121,13 @@ internal fun SettingsWebDavDialogs(
                     MiuixSettingsTextField(
                         value = basePath,
                         onValueChange = { basePath = it },
-                        label = { Text(stringResource(R.string.webdav_base_path_label)) },
-                        placeholder = { Text(stringResource(R.string.webdav_base_path_placeholder)) },
+                        label = { Text(stringResource(CoreCommonR.string.webdav_base_path_label)) },
+                        placeholder = { Text(stringResource(CoreCommonR.string.webdav_base_path_placeholder)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = stringResource(R.string.webdav_remote_file_hint),
+                        text = stringResource(CoreCommonR.string.webdav_remote_file_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -137,7 +137,7 @@ internal fun SettingsWebDavDialogs(
                 when {
                     webDavState.isConfigured -> {
                         MiuixSettingsButton(onClick = dismissConfigDialog) {
-                            Text(stringResource(R.string.action_close))
+                            Text(stringResource(CoreCommonR.string.action_close))
                         }
                     }
                     else -> {
@@ -159,14 +159,14 @@ internal fun SettingsWebDavDialogs(
                                     strokeWidth = 2.dp
                                 )
                             }
-                            Text(stringResource(R.string.webdav_validate_and_save))
+                            Text(stringResource(CoreCommonR.string.webdav_validate_and_save))
                         }
                     }
                 }
             },
             dismissButton = {
                 MiuixSettingsTextButton(onClick = dismissConfigDialog) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )
@@ -175,8 +175,8 @@ internal fun SettingsWebDavDialogs(
     if (showClearWebDavConfigDialog) {
         MiuixSettingsDialog(
             onDismissRequest = { onShowClearWebDavConfigDialogChange(false) },
-            title = { Text(stringResource(R.string.sync_clear_config)) },
-            text = { Text(stringResource(R.string.webdav_clear_config_desc)) },
+            title = { Text(stringResource(CoreCommonR.string.sync_clear_config)) },
+            text = { Text(stringResource(CoreCommonR.string.webdav_clear_config_desc)) },
             confirmButton = {
                 MiuixSettingsTextButton(
                     onClick = {
@@ -185,14 +185,14 @@ internal fun SettingsWebDavDialogs(
                     }
                 ) {
                     Text(
-                        stringResource(R.string.action_confirm_clear),
+                        stringResource(CoreCommonR.string.action_confirm_clear),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
             },
             dismissButton = {
                 MiuixSettingsTextButton(onClick = { onShowClearWebDavConfigDialogChange(false) }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(CoreCommonR.string.action_cancel))
                 }
             }
         )

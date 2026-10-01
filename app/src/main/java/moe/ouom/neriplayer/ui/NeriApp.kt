@@ -95,7 +95,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -1272,7 +1272,7 @@ private fun NeriAppContent(
                         } else {
                             navigateToMainTab(Destinations.Library.route)
                             showLauncherShortcutToast(
-                                R.string.launcher_shortcut_no_resumable_queue
+                                CoreCommonR.string.launcher_shortcut_no_resumable_queue
                             )
                         }
                     }
@@ -1293,7 +1293,7 @@ private fun NeriAppContent(
                         if (favoritesSongs.isEmpty()) {
                             navigateToMainTab(Destinations.Library.route)
                             showLauncherShortcutToast(
-                                R.string.launcher_shortcut_favorites_empty
+                                CoreCommonR.string.launcher_shortcut_favorites_empty
                             )
                         } else {
                             PlayerManager.setShuffle(true)
@@ -1603,7 +1603,7 @@ private fun NeriAppContent(
                         val debugHomeScrollState = rememberScrollState()
                         val crashActionOwner = remember(context, composeResources) {
                             appDebugCrashActionOwner(context) {
-                                composeResources.getString(R.string.test_exception_message)
+                                composeResources.getString(CoreCommonR.string.test_exception_message)
                             }
                         }
                         navigationSceneRenderer.RenderMainTabNavigationScene(

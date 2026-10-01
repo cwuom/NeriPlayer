@@ -65,7 +65,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -121,7 +121,7 @@ fun NeteaseArtistDetailScreen(
                     HapticIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
+                            contentDescription = stringResource(CoreCommonR.string.cd_back)
                         )
                     }
                 },
@@ -241,13 +241,13 @@ private fun ArtistContent(
                         Tab(
                             selected = selectedTab == 0,
                             onClick = { onTabSelected(0) },
-                            text = { Text(stringResource(R.string.artist_tab_songs)) },
+                            text = { Text(stringResource(CoreCommonR.string.artist_tab_songs)) },
                             icon = { Icon(Icons.Outlined.MusicNote, contentDescription = null) }
                         )
                         Tab(
                             selected = selectedTab == 1,
                             onClick = { onTabSelected(1) },
-                            text = { Text(stringResource(R.string.artist_tab_albums)) },
+                            text = { Text(stringResource(CoreCommonR.string.artist_tab_albums)) },
                             icon = { Icon(Icons.Outlined.LibraryMusic, contentDescription = null) }
                         )
                     }
@@ -257,7 +257,7 @@ private fun ArtistContent(
 
         if (selectedTab == 0) {
             if (ui.songs.isEmpty()) {
-                item { EmptyBlock(text = stringResource(R.string.artist_songs_empty)) }
+                item { EmptyBlock(text = stringResource(CoreCommonR.string.artist_songs_empty)) }
             } else {
                 itemsIndexed(ui.songs, key = { _, item -> item.id }) { index, song ->
                     ArtistSongRow(
@@ -278,7 +278,7 @@ private fun ArtistContent(
             }
         } else {
             if (ui.albums.isEmpty()) {
-                item { EmptyBlock(text = stringResource(R.string.artist_albums_empty)) }
+                item { EmptyBlock(text = stringResource(CoreCommonR.string.artist_albums_empty)) }
             } else {
                 itemsIndexed(ui.albums, key = { _, item -> item.id }) { _, album ->
                     ArtistAlbumRow(
@@ -393,7 +393,7 @@ private fun ArtistHeaderCard(
                     label = {
                         Text(
                             pluralStringResource(
-                                R.plurals.artist_song_count,
+                                CoreCommonR.plurals.artist_song_count,
                                 header?.musicSize ?: 0,
                                 header?.musicSize ?: 0
                             )
@@ -405,7 +405,7 @@ private fun ArtistHeaderCard(
                     label = {
                         Text(
                             pluralStringResource(
-                                R.plurals.artist_album_count,
+                                CoreCommonR.plurals.artist_album_count,
                                 header?.albumSize ?: 0,
                                 header?.albumSize ?: 0
                             )
@@ -446,9 +446,9 @@ private fun ArtistHeaderCard(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (header?.followed == true) {
-                        stringResource(R.string.artist_followed)
+                        stringResource(CoreCommonR.string.artist_followed)
                     } else {
-                        stringResource(R.string.artist_follow)
+                        stringResource(CoreCommonR.string.artist_follow)
                     }
                 )
             }

@@ -54,7 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTargetOptions
 import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTargetOption
 import moe.ouom.neriplayer.api.bilibili.client.BiliClient
@@ -143,9 +143,9 @@ private fun bluetoothAudioOutput(device: AudioDeviceInfo, context: Context): Pai
     Pair(readBluetoothDeviceName(device, context), Icons.Default.Headset)
 
 private fun readBluetoothDeviceName(device: AudioDeviceInfo, context: Context): String = try {
-    device.productName.toString().ifBlank { context.getString(R.string.nowplaying_bluetooth_device) }
+    device.productName.toString().ifBlank { context.getString(CoreCommonR.string.nowplaying_bluetooth_device) }
 } catch (_: SecurityException) {
-    context.getString(R.string.nowplaying_bluetooth_device)
+    context.getString(CoreCommonR.string.nowplaying_bluetooth_device)
 }
 
 private fun wiredOrSpeakerAudioOutput(
@@ -156,9 +156,9 @@ private fun wiredOrSpeakerAudioOutput(
         it.type in setOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
     }
     return if (hasWiredHeadset) {
-        Pair(context.getString(R.string.nowplaying_wired_headset), Icons.Default.Headset)
+        Pair(context.getString(CoreCommonR.string.nowplaying_wired_headset), Icons.Default.Headset)
     } else {
-        Pair(context.getString(R.string.nowplaying_phone_speaker), Icons.Default.SpeakerGroup)
+        Pair(context.getString(CoreCommonR.string.nowplaying_phone_speaker), Icons.Default.SpeakerGroup)
     }
 }
 
@@ -237,7 +237,7 @@ internal fun NeteaseArtistPickerSheet(
                 .padding(bottom = 16.dp)
         ) {
             Text(
-                text = stringResource(R.string.artist_choose_title),
+                text = stringResource(CoreCommonR.string.artist_choose_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
             )
@@ -268,7 +268,7 @@ internal fun YouTubeMusicCreatorPickerSheet(
                 .padding(bottom = 16.dp)
         ) {
             Text(
-                text = stringResource(R.string.youtube_creator_choose_title),
+                text = stringResource(CoreCommonR.string.youtube_creator_choose_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
             )
@@ -820,7 +820,7 @@ private fun MoreOptionsBiliVideoSkipContent(
     actions: MoreOptionsBiliSkipActions
 ) {
     BiliVideoSkipIntervalsContent(
-        title = stringResource(R.string.bili_video_skip_title),
+        title = stringResource(CoreCommonR.string.bili_video_skip_title),
         targetResolverKey = actualSong.stableKey(),
         loadTargetOptions = actions.loadTargetOptions,
         initialTarget = currentBiliTarget,

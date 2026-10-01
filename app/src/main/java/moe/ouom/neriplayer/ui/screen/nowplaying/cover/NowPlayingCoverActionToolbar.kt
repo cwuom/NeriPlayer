@@ -41,7 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackActionToolbarLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.rememberAudioDeviceInfo
@@ -218,12 +218,12 @@ private fun NowPlayingCoverToolbarRow(
     ) {
         val buttonModifier = Modifier.toolbarActionModifier(layout.useEqualWidthSlots, this)
         NowPlayingCoverToolbarButton(
-            "btn_queue", Icons.AutoMirrored.Outlined.QueueMusic, stringResource(R.string.playlist_queue),
+            "btn_queue", Icons.AutoMirrored.Outlined.QueueMusic, stringResource(CoreCommonR.string.playlist_queue),
             layout.iconSize, buttonModifier, sharedTransitionScope, animatedVisibilityScope,
             actions.onQueue, LocalContentColor.current
         )
         NowPlayingCoverToolbarButton(
-            "btn_timer", Icons.Outlined.Timer, stringResource(R.string.sleep_timer_short),
+            "btn_timer", Icons.Outlined.Timer, stringResource(CoreCommonR.string.sleep_timer_short),
             layout.iconSize, buttonModifier, sharedTransitionScope, animatedVisibilityScope,
             actions.onSleepTimer,
             toolbarActiveTint(
@@ -241,7 +241,7 @@ private fun NowPlayingCoverToolbarRow(
             animatedVisibilityScope, actions.onLyrics
         )
         NowPlayingCoverToolbarButton(
-            "btn_add", Icons.AutoMirrored.Outlined.PlaylistAdd, stringResource(R.string.playlist_add_to),
+            "btn_add", Icons.AutoMirrored.Outlined.PlaylistAdd, stringResource(CoreCommonR.string.playlist_add_to),
             layout.iconSize, buttonModifier, sharedTransitionScope, animatedVisibilityScope,
             actions.onAddToPlaylist, LocalContentColor.current
         )
@@ -305,7 +305,7 @@ private fun NowPlayingCoverLyricsButton(
             AnimatedContent(targetState = status.lyricsShowing, label = "lyrics_icon") { showing ->
                 Icon(
                     imageVector = Icons.Outlined.LibraryMusic,
-                    contentDescription = stringResource(R.string.lyrics_title),
+                    contentDescription = stringResource(CoreCommonR.string.lyrics_title),
                     tint = toolbarLyricsTint(
                         status.lyricsAvailable, showing, status.activeColor, LocalContentColor.current
                     ),

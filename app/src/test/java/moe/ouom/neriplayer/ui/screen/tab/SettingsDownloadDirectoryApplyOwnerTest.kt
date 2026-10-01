@@ -4,7 +4,7 @@ import android.content.res.Resources
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
@@ -109,9 +109,9 @@ class SettingsDownloadDirectoryApplyOwnerTest {
         val preparing = mutableStateOf(true)
         val permissionLost = mutableStateOf(true)
         private val resources = mock(Resources::class.java).apply {
-            `when`(getString(R.string.settings_download_directory_selected)).thenReturn("selected")
-            `when`(getString(R.string.settings_download_directory_reset_done)).thenReturn("reset")
-            `when`(getString(R.string.managed_library_processing_retry)).thenReturn("retry")
+            `when`(getString(CoreCommonR.string.settings_download_directory_selected)).thenReturn("selected")
+            `when`(getString(CoreCommonR.string.settings_download_directory_reset_done)).thenReturn("reset")
+            `when`(getString(CoreCommonR.string.managed_library_processing_retry)).thenReturn("retry")
         }
         val owner = DownloadDirectoryApplyOwner(
             gateway = gateway,

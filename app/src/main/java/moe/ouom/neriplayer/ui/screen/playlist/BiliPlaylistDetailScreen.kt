@@ -82,7 +82,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.api.bilibili.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.data.platform.bili.skip.resolver.resolveBiliVideoSkipTargetOptions
@@ -218,8 +218,8 @@ fun BiliPlaylistDetailScreen(
     var showExportSheet by remember { mutableStateOf(false) }
     var showExportAllSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val favoriteAddedText = stringResource(R.string.favorite_added)
-    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
+    val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
     fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
         val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
         scope.launchLocalPlaylistMutation(
@@ -454,7 +454,7 @@ fun BiliPlaylistDetailScreen(
                         },
                         navigationIcon = {
                             HapticIconButton(onClick = onBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
                             }
                         },
                         actions = {
@@ -465,12 +465,12 @@ fun BiliPlaylistDetailScreen(
                                     focusManager.clearFocus()
                                     keyboardController?.hide()
                                 }
-                            }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search_video)) }
+                            }) { Icon(Icons.Filled.Search, contentDescription = stringResource(CoreCommonR.string.search_video)) }
 
                             HapticIconButton(onClick = { vm.refresh() }) {
                                 Icon(
                                     Icons.Filled.Refresh,
-                                    contentDescription = stringResource(R.string.action_refresh)
+                                    contentDescription = stringResource(CoreCommonR.string.action_refresh)
                                 )
                             }
 
@@ -497,9 +497,9 @@ fun BiliPlaylistDetailScreen(
                                 Icon(
                                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                     contentDescription = if (isFavorite) {
-                                        stringResource(R.string.action_unfavorite)
+                                        stringResource(CoreCommonR.string.action_unfavorite)
                                     } else {
-                                        stringResource(R.string.action_favorite_playlist)
+                                        stringResource(CoreCommonR.string.action_favorite_playlist)
                                     },
                                     tint = playlistTopBarContentColor
                                 )
@@ -509,7 +509,7 @@ fun BiliPlaylistDetailScreen(
                                 HapticIconButton(onClick = { showDownloadManager = true }) {
                                     Icon(
                                         Icons.Outlined.Download,
-                                        contentDescription = stringResource(R.string.download_manager),
+                                        contentDescription = stringResource(CoreCommonR.string.download_manager),
                                         tint = playlistTopBarContentColor
                                     )
                                 }
@@ -530,7 +530,7 @@ fun BiliPlaylistDetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                R.plurals.common_selected_count,
+                                CoreCommonR.plurals.common_selected_count,
                                 selectedIds.size,
                                 selectedIds.size
                             )
@@ -538,21 +538,21 @@ fun BiliPlaylistDetailScreen(
                     },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitSelection() }) {
-                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_exit_multi_select))
+                                Icon(Icons.Filled.Close, contentDescription = stringResource(CoreCommonR.string.action_exit_multi_select))
                             }
                         },
                         actions = {
                             HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
                                 Icon(
                                     imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                    contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
+                                    contentDescription = if (allSelected) stringResource(CoreCommonR.string.action_deselect_all) else stringResource(CoreCommonR.string.action_select_all)
                                 )
                             }
                             HapticIconButton(
                                 onClick = { if (selectedIds.isNotEmpty()) showExportSheet = true },
                                 enabled = selectedIds.isNotEmpty()
                             ) {
-                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(R.string.explore_export_to_playlist))
+                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(CoreCommonR.string.explore_export_to_playlist))
                             }
                             HapticIconButton(
                                 onClick = {
@@ -568,7 +568,7 @@ fun BiliPlaylistDetailScreen(
                                 },
                                 enabled = selectedIds.isNotEmpty()
                             ) {
-                                Icon(Icons.Outlined.Download, contentDescription = stringResource(R.string.download_selected_videos))
+                                Icon(Icons.Outlined.Download, contentDescription = stringResource(CoreCommonR.string.download_selected_videos))
                             }
                         },
                         windowInsets = WindowInsets.statusBars,
@@ -588,7 +588,7 @@ fun BiliPlaylistDetailScreen(
                     offlineMode = offlineMode,
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
-                    placeholder = stringResource(R.string.search_playlist),
+                    placeholder = stringResource(CoreCommonR.string.search_playlist),
                     inputState = searchInputState,
                     onFocusChanged = { dockedSearchFocused = it },
                     focusRequester = if (searchFieldFocusInHeader) {
@@ -623,7 +623,7 @@ fun BiliPlaylistDetailScreen(
                                     displayName = displayHeader.title,
                                     coverUrl = displayHeaderCoverUrl,
                                     subtitle = pluralStringResource(
-                                        R.plurals.bili_content_count,
+                                        CoreCommonR.plurals.bili_content_count,
                                         displayHeader.count,
                                         displayHeader.count
                                     ),
@@ -640,7 +640,7 @@ fun BiliPlaylistDetailScreen(
                                                 PlaylistModernHeroSearchField(
                                                     query = searchQuery,
                                                     onQueryChange = { searchQuery = it },
-                                                    placeholder = stringResource(R.string.search_playlist),
+                                                    placeholder = stringResource(CoreCommonR.string.search_playlist),
                                                     inputState = searchInputState,
                                                     onFocusChanged = { headerSearchFocused = it },
                                                     focusRequester = if (searchFieldFocusInHeader) {
@@ -699,7 +699,7 @@ fun BiliPlaylistDetailScreen(
                                         ) {
                                             CircularProgressIndicator()
                                             Spacer(modifier = Modifier.width(12.dp))
-                                            Text(stringResource(R.string.bili_loading_favorites))
+                                            Text(stringResource(CoreCommonR.string.bili_loading_favorites))
                                         }
                                     }
                                 }
@@ -715,7 +715,7 @@ fun BiliPlaylistDetailScreen(
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
                                             Text(
-                                                text = stringResource(R.string.bili_load_failed, ui.error ?: ""),
+                                                text = stringResource(CoreCommonR.string.bili_load_failed, ui.error ?: ""),
                                                 color = MaterialTheme.colorScheme.error
                                             )
                                             Spacer(Modifier.height(8.dp))
@@ -725,7 +725,7 @@ fun BiliPlaylistDetailScreen(
                                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                                             ) {
                                                 Text(
-                                                    stringResource(R.string.action_retry),
+                                                    stringResource(CoreCommonR.string.action_retry),
                                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                                 )
@@ -781,7 +781,7 @@ fun BiliPlaylistDetailScreen(
                                                             showPartsSheet = true
                                                         }
                                                     } catch (e: Exception) {
-                                                        NPLogger.e("BiliPlaylistDetail", composeResources.getString(R.string.bili_get_parts_failed), e)
+                                                        NPLogger.e("BiliPlaylistDetail", composeResources.getString(CoreCommonR.string.bili_get_parts_failed), e)
                                                     }
                                                 }
                                             },
@@ -815,7 +815,7 @@ fun BiliPlaylistDetailScreen(
                                                     )
                                                     Spacer(Modifier.width(8.dp))
                                                 }
-                                                Text(stringResource(R.string.bili_uploader_load_more))
+                                                Text(stringResource(CoreCommonR.string.bili_uploader_load_more))
                                             }
                                         }
                                     }
@@ -840,7 +840,7 @@ fun BiliPlaylistDetailScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                contentDescription = stringResource(R.string.cd_locate_playing)
+                                contentDescription = stringResource(CoreCommonR.string.cd_locate_playing)
                             )
                         }
                     }
@@ -855,7 +855,7 @@ fun BiliPlaylistDetailScreen(
 
             if (showExportSheet) {
                 PlaylistExportSheet(
-                    title = stringResource(R.string.playlist_export_to_local),
+                    title = stringResource(CoreCommonR.string.playlist_export_to_local),
                     playlists = allLocalPlaylists.filterNot {
                         LocalFilesPlaylist.isSystemPlaylist(it, context)
                     },
@@ -926,7 +926,7 @@ fun BiliPlaylistDetailScreen(
 
             if (showExportAllSheet) {
                 PlaylistExportSheet(
-                    title = stringResource(R.string.playlist_export_to_local),
+                    title = stringResource(CoreCommonR.string.playlist_export_to_local),
                     playlists = allLocalPlaylists.filterNot {
                         LocalFilesPlaylist.isSystemPlaylist(it, context)
                     },
@@ -1002,7 +1002,7 @@ fun BiliPlaylistDetailScreen(
                     title = {
                         Text(
                             pluralStringResource(
-                                R.plurals.common_selected_count,
+                                CoreCommonR.plurals.common_selected_count,
                                 selectedParts.size,
                                 selectedParts.size
                             )
@@ -1010,7 +1010,7 @@ fun BiliPlaylistDetailScreen(
                     },
                                 navigationIcon = {
                                     HapticIconButton(onClick = { exitPartsSelection() }) {
-                                        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_exit_multi_select))
+                                        Icon(Icons.Filled.Close, contentDescription = stringResource(CoreCommonR.string.action_exit_multi_select))
                                     }
                                 },
                                 actions = {
@@ -1023,7 +1023,7 @@ fun BiliPlaylistDetailScreen(
                                     }) {
                                         Icon(
                                             imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                            contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
+                                            contentDescription = if (allSelected) stringResource(CoreCommonR.string.action_deselect_all) else stringResource(CoreCommonR.string.action_select_all)
                                         )
                                     }
                                     HapticIconButton(
@@ -1039,7 +1039,7 @@ fun BiliPlaylistDetailScreen(
                                         },
                                         enabled = selectedParts.isNotEmpty()
                                     ) {
-                                        Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(R.string.explore_export_to_playlist))
+                                        Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(CoreCommonR.string.explore_export_to_playlist))
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -1260,7 +1260,7 @@ private fun VideoRow(
                 ) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = stringResource(R.string.common_more_actions),
+                        contentDescription = stringResource(CoreCommonR.string.common_more_actions),
                         tint = playlistModernListSecondaryContentColor()
                     )
                 }
@@ -1270,7 +1270,7 @@ private fun VideoRow(
                     onDismissRequest = { showMoreMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                        text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
@@ -1283,7 +1283,7 @@ private fun VideoRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                        text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
@@ -1300,9 +1300,9 @@ private fun VideoRow(
                             Text(
                                 stringResource(
                                     if (isFavorite) {
-                                        R.string.favorite_remove
+                                        CoreCommonR.string.favorite_remove
                                     } else {
-                                        R.string.favorite_add
+                                        CoreCommonR.string.favorite_add
                                     }
                                 )
                             )
@@ -1323,7 +1323,7 @@ private fun VideoRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.bili_video_skip_manage)) },
+                        text = { Text(stringResource(CoreCommonR.string.bili_video_skip_manage)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.SkipNext,
@@ -1336,7 +1336,7 @@ private fun VideoRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_copy_song_info)) },
+                        text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.ContentCopy,
@@ -1350,11 +1350,11 @@ private fun VideoRow(
                                     val result = clipboard.copyPlainTextSafely("text", songInfo)
                                 ) {
                                     is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
-                                        R.string.toast_copy_truncated
+                                        CoreCommonR.string.toast_copy_truncated
                                     } else {
-                                        R.string.toast_copied
+                                        CoreCommonR.string.toast_copied
                                     }
-                                    ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
+                                    ClipboardCopyResult.TransactionTooLarge -> CoreCommonR.string.toast_copy_failed
                                 }
                                 snackbarHostState.showNeriSnackbar(composeResources.getString(messageRes))
                             }
@@ -1365,7 +1365,7 @@ private fun VideoRow(
             }
             if (showVideoSkipSheet) {
                 BiliVideoSkipIntervalsSheet(
-                    title = stringResource(R.string.bili_video_skip_title),
+                    title = stringResource(CoreCommonR.string.bili_video_skip_title),
                     targetResolverKey = video.bvid,
                     loadTargetOptions = {
                         resolveBiliVideoSkipTargetOptions(
