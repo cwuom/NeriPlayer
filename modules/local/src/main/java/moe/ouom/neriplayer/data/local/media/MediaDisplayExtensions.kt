@@ -37,7 +37,8 @@ import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 
 fun SongItem.displayCoverUrl(): String? = customCoverUrl
     ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
-    ?: coverUrl
+    ?.takeUnless(::isMediaStoreCoverReference)
+    ?: coverUrl?.takeUnless(::isMediaStoreCoverReference)
 
 fun SongItem.displayCoverUrl(
     context: Context,
@@ -45,8 +46,9 @@ fun SongItem.displayCoverUrl(
 ): String? {
     customCoverUrl
         ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+        ?.takeUnless(::isMediaStoreCoverReference)
         ?.let { return it }
-    val current = coverUrl?.takeIf { it.isNotBlank() }
+    val current = coverUrl?.takeIf { it.isNotBlank() }?.takeUnless(::isMediaStoreCoverReference)
     val onMainThread = Looper.myLooper() == Looper.getMainLooper()
     val localCover = if (resolveLocalMetadataFallback && shouldResolveLocalCoverFallback(current)) {
         if (isLocalSong()) {
@@ -150,10 +152,13 @@ fun resolveDisplayCoverUrl(
     localCoverUrl: String?,
     onMainThread: Boolean
 ): String? {
-    customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
-    localCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
+    customCoverUrl?.takeIf { it.isNotBlank() }?.takeUnless(::isMediaStoreCoverReference)
+        ?.let { return it }
+    localCoverUrl?.takeIf { it.isNotBlank() }?.takeUnless(::isMediaStoreCoverReference)
+        ?.let { return it }
 
-    val current = currentCoverUrl?.takeIf { it.isNotBlank() } ?: return null
+    val current = currentCoverUrl?.takeIf { it.isNotBlank() }
+        ?.takeUnless(::isMediaStoreCoverReference) ?: return null
     if (!current.isRemoteCoverSource()) {
         return current
     }

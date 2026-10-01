@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.local.media.isReadableLocalFile
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
@@ -1173,11 +1174,14 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val baseArtist = currentSong.artist
             val baseCoverUrl = currentSong.coverUrl
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+                ?.takeUnless(::isMediaStoreCoverReference)
             val existingOriginalCoverUrl = currentSong.originalCoverUrl
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+                ?.takeUnless(::isMediaStoreCoverReference)
             val requestedCoverInput = customCoverUrl
                 .normalizedManualMetadataValue()
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+                ?.takeUnless(::isMediaStoreCoverReference)
             val requestedCoverReference = requestedCoverInput?.let { reference ->
                 if (
                     shouldMaterializeRemoteLocalCover(
@@ -1215,7 +1219,8 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     LocalMediaSupport.resolveCoverUri(application, currentSong)
                 ).firstOrNull { reference ->
                     !reference.isNullOrBlank() &&
-                        !CustomSongCoverStorage.isRemoteReference(reference)
+                        !CustomSongCoverStorage.isRemoteReference(reference) &&
+                        !isMediaStoreCoverReference(reference)
                 }
             } else {
                 null

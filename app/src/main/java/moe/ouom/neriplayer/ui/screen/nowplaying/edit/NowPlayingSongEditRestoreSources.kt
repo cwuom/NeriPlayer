@@ -57,8 +57,9 @@ internal suspend fun readManagedEditSongBaselineSnapshot(
     reader: EditSongBaselineReader = DefaultEditSongBaselineReader,
     dispatcher: CoroutineDispatcher = Dispatchers.IO
 ): ManagedEditSongBaselineSnapshot? = withContext(dispatcher) {
-    val metadata = reader.metadata(context, song) ?: return@withContext null
-    val cover = reader.cover(context, metadata)
+    val metadata = readEditSongRestoreValue { reader.metadata(context, song) }
+        ?: return@withContext null
+    val cover = readEditSongRestoreValue { reader.cover(context, metadata) }
     val sidecar = if (song.isLocalSong()) {
         readEditSongRestoreValue { reader.sidecar(context, song) }
     } else null

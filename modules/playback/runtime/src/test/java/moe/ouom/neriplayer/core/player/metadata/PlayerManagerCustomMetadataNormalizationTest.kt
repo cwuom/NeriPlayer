@@ -272,6 +272,51 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
+    fun `restoring a local song with only shared album artwork clears the cover`() {
+        assertNull(
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = "content://media/external/audio/albumart/17",
+                baseCoverUrl = "content://media/external_primary/audio/albumart/17",
+                currentCustomCoverUrl = "content://media/0123-4567/audio/albumart/17",
+                localOnly = true
+            )
+        )
+    }
+
+    @Test
+    fun `restoring ignores a requested shared thumbnail and keeps the song's own cover`() {
+        assertEquals(
+            "file:///music/Covers/B.jpg",
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = "file:///music/Covers/B.jpg",
+                baseCoverUrl = "content://media/external/audio/albumart/17",
+                currentCustomCoverUrl = null,
+                preferredLocalCoverUrl = "content://media/external_primary/audio/albumart/17",
+                requestedRestoreCoverUrl = "content://media/0123-4567/audio/albumart/17",
+                localOnly = true
+            )
+        )
+    }
+
+    @Test
+    fun `local cover writes never embed a shared album thumbnail as a replacement or restore`() {
+        assertNull(
+            resolveLocalCoverWriteReference(
+                restoreBaseCover = false,
+                requestedCoverReference = "content://media/external/audio/albumart/17",
+                restoredBaseCoverReference = null
+            )
+        )
+        assertNull(
+            resolveLocalCoverWriteReference(
+                restoreBaseCover = true,
+                requestedCoverReference = null,
+                restoredBaseCoverReference = "content://media/external_primary/audio/albumart/17"
+            )
+        )
+    }
+
+    @Test
     fun `playing current song is released and resumed during embedded metadata writes`() {
         assertEquals(
             LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME,

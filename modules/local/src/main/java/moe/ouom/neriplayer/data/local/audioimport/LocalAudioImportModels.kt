@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.data.local.media.LocalKnownSidecarReferences
 import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
 import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.local.media.isMediaStoreUri
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -391,7 +392,7 @@ fun selectMergedImportedCoverReference(
 }
 
 internal fun String?.normalizeImportedCoverReference(): String? {
-    return this?.trim()?.takeIf(String::isNotBlank)
+    return this?.trim()?.takeIf(String::isNotBlank)?.takeUnless(::isMediaStoreCoverReference)
 }
 
 internal fun sameImportedCoverReference(first: String?, second: String?): Boolean {

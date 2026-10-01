@@ -61,6 +61,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -783,8 +784,10 @@ private fun DownloadedSongItem(
 internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? {
     return song.customCoverUrl
         ?.takeIf(String::isNotBlank)
+        ?.takeUnless(::isMediaStoreCoverReference)
         ?: song.coverPath
             ?.takeIf(String::isNotBlank)
+            ?.takeUnless(::isMediaStoreCoverReference)
             ?.let { coverPath ->
                 if (!coverPath.startsWith("/")) {
                     coverPath
@@ -792,7 +795,7 @@ internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? 
                     File(coverPath).takeIf(File::exists)?.toURI()?.toString()
                 }
             }
-        ?: song.coverUrl?.takeIf(String::isNotBlank)
+        ?: song.coverUrl?.takeIf(String::isNotBlank)?.takeUnless(::isMediaStoreCoverReference)
 }
 
 internal fun toggleSelectedDownloadSongKeys(

@@ -111,6 +111,29 @@ class CoverUrlStateTest {
     }
 
     @Test
+    fun `shared album artwork is rejected before the first local cover frame`() {
+        assertNull(
+            resolveImmediateCoverCandidate(
+                primaryCoverUrl = "content://media/external/audio/albumart/42",
+                fallbackCoverUrl = "content://media/external_primary/audio/albumart/42",
+                allowRemoteCoverFallback = false
+            )
+        )
+    }
+
+    @Test
+    fun `shared album artwork does not hide a song specific cover fallback`() {
+        assertEquals(
+            "content://local-covers/song-b.jpg",
+            resolveImmediateCoverCandidate(
+                primaryCoverUrl = "content://media/external/audio/albumart/42",
+                fallbackCoverUrl = "content://local-covers/song-b.jpg",
+                allowRemoteCoverFallback = false
+            )
+        )
+    }
+
+    @Test
     fun `explicit custom remote cover remains an immediate candidate`() {
         assertEquals(
             "https://example.com/custom.jpg",

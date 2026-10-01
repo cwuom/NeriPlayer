@@ -494,9 +494,6 @@ internal fun LocalMediaSupport.clearCoverLookupCacheImpl() {
     synchronized(directoryFileIndexCache) {
         directoryFileIndexCache.clear()
     }
-    synchronized(mediaStoreAlbumArtCache) {
-        mediaStoreAlbumArtCache.clear()
-    }
     invalidateSafReadCaches()
 }
 
