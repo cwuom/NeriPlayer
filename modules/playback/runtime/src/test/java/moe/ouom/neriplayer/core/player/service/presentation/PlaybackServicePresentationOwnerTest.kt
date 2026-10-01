@@ -13,6 +13,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
+import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
 import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -28,12 +29,25 @@ import org.mockito.Mockito.mockingDetails
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackServicePresentationOwnerTest {
     @Test
+    fun `transport intent without engine playback remains paused`() {
+        val requested = playback(song()).copy(
+            transportActive = true,
+            playbackControlPlaying = true,
+        )
+
+        assertEquals(PlaybackState.STATE_PAUSED, resolveServicePlaybackState(requested))
+        assertEquals(0.0f, servicePlaybackSpeed(resolveServicePlaybackState(requested), requested))
+        assertFalse(servicePlaybackControlPlaying(requested))
+    }
+
+    @Test
     fun `playback state projection prioritizes buffering and room fallback`() {
         val idle = playback(null)
         val fallback = playback(song()).copy(playerSongPresent = false, roomPlaying = true)
         assertEquals(PlaybackState.STATE_PAUSED, resolveServicePlaybackState(idle))
         assertEquals(PlaybackState.STATE_BUFFERING, resolveServicePlaybackState(fallback))
-        assertEquals(PlaybackState.STATE_PLAYING, resolveServicePlaybackState(fallback.copy(transportActive = true)))
+        assertEquals(PlaybackState.STATE_BUFFERING, resolveServicePlaybackState(fallback.copy(transportActive = true)))
+        assertEquals(PlaybackState.STATE_PLAYING, resolveServicePlaybackState(playback(song()).copy(enginePlaying = true)))
         assertEquals(PlaybackState.STATE_BUFFERING, resolveServicePlaybackState(fallback.copy(buffering = true)))
         assertEquals(8_000L, servicePlaybackPositionMs(fallback))
         assertEquals(2_000L, servicePlaybackPositionMs(fallback.copy(playerSongPresent = true)))
@@ -43,6 +57,21 @@ class PlaybackServicePresentationOwnerTest {
         assertEquals(0, serviceFavoriteControlFingerprint(false, true))
         assertEquals(1, serviceFavoriteControlFingerprint(true, false))
         assertEquals(2, serviceFavoriteControlFingerprint(true, true))
+    }
+
+    @Test
+    fun `buffering retains pause controls without reporting advancing playback`() {
+        val buffering = playback(song()).copy(
+            transportActive = true,
+            buffering = true,
+            playbackControlPlaying = true,
+        )
+
+        assertEquals(PlaybackState.STATE_BUFFERING, resolveServicePlaybackState(buffering))
+        assertEquals(0.0f, servicePlaybackSpeed(resolveServicePlaybackState(buffering), buffering))
+        assertTrue(servicePlaybackControlPlaying(buffering))
+        assertFalse(servicePlaybackControlPlaying(buffering.copy(playbackControlPlaying = false)))
+        assertTrue(servicePlaybackControlPlaying(playback(song()).copy(enginePlaying = true)))
     }
 
     @Test
@@ -116,6 +145,64 @@ class PlaybackServicePresentationOwnerTest {
     }
 
     @Test
+    fun `notification stops exposing pause for idle intent and keeps it while buffering`() = runTest {
+        val current = song()
+        val source = FakeSource(playback(current).copy(transportActive = true, playbackControlPlaying = true))
+        val port = mock(PlaybackServicePresentationPort::class.java)
+        val artwork = mock(PlaybackArtworkOwner::class.java)
+        `when`(artwork.snapshotFor(current)).thenReturn(artwork(null))
+        val owner = owner(source, backgroundScope, port, artwork)
+        val lyricState = StatusBarLyricNotificationState(false, null)
+
+        owner.updateNotification(false, true, lyricState, false)
+        val pausedInputs = mockingDetails(port).invocations
+            .last { it.method.name == "publishNotification" }.arguments[0] as PlaybackServiceNotificationRenderInputs
+        assertFalse(pausedInputs.playbackControlPlaying)
+
+        source.currentPlayback = source.currentPlayback.copy(buffering = true)
+        owner.updateNotification(false, true, lyricState, false)
+        val bufferingInputs = mockingDetails(port).invocations
+            .last { it.method.name == "publishNotification" }.arguments[0] as PlaybackServiceNotificationRenderInputs
+        assertTrue(bufferingInputs.playbackControlPlaying)
+    }
+
+    @Test
+    fun `unchanged notification still publishes widget playback and buffering transitions`() = runTest {
+        val current = song()
+        val source = FakeSource(playback(current).copy(
+            transportActive = true,
+            enginePlaying = true,
+            playbackControlPlaying = true,
+        ))
+        val port = mock(PlaybackServicePresentationPort::class.java)
+        val artwork = mock(PlaybackArtworkOwner::class.java)
+        `when`(port.hasInstalledWidgets()).thenReturn(true)
+        `when`(port.widgetLabels()).thenReturn(
+            ServiceWidgetLabels("NeriPlayer", "Idle", "Buffering", "Playing", "Paused", "Ready")
+        )
+        `when`(artwork.snapshotFor(current)).thenReturn(artwork(null))
+        val owner = owner(source, backgroundScope, port, artwork)
+        val lyricState = StatusBarLyricNotificationState(false, null)
+
+        owner.updateNotification(false, true, lyricState, false)
+        owner.updateNotification(false, true, lyricState, false)
+        source.currentPlayback = source.currentPlayback.copy(enginePlaying = false, buffering = true)
+        owner.updateNotification(false, true, lyricState, false)
+        owner.updateNotification(false, true, lyricState, false)
+        source.currentPlayback = source.currentPlayback.copy(enginePlaying = true, buffering = false)
+        owner.updateNotification(false, true, lyricState, false)
+
+        val states = mockingDetails(port).invocations
+            .filter { it.method.name == "publishWidget" }
+            .map { it.arguments[0] as PlaybackWidgetState }
+        assertEquals(listOf(true, false, true), states.map { it.isPlaying })
+        assertEquals(listOf("Playing", "Buffering", "Playing"), states.map { it.status })
+        assertTrue(states.all { it.showPauseAction })
+        assertEquals(1, callCount(port, "publishNotification"))
+        assertEquals(1, source.shareUrlRequests)
+    }
+
+    @Test
     fun `widget projection keeps its last state and respects force`() = runTest {
         val current = song()
         val source = FakeSource(playback(current))
@@ -150,7 +237,7 @@ class PlaybackServicePresentationOwnerTest {
 
         owner.updateWidgetProgress(false)
         owner.updateWidgetProgress(false)
-        source.currentPlayback = source.currentPlayback.copy(transportActive = true)
+        source.currentPlayback = source.currentPlayback.copy(transportActive = true, enginePlaying = true)
         owner.updateWidgetProgress(false)
         owner.updateWidgetProgress(false)
 
@@ -184,6 +271,7 @@ class PlaybackServicePresentationOwnerTest {
         roomPositionMs = 8_000L,
         buffering = false,
         transportActive = false,
+        enginePlaying = false,
         roomPlaying = false,
         playbackControlPlaying = false,
         audioRouteMuted = false,

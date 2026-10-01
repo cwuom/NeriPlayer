@@ -9,9 +9,8 @@ import kotlin.math.roundToInt
 internal const val PLAYBACK_WIDGET_DEFAULT_FULL_WIDTH_DP = 250
 internal const val PLAYBACK_WIDGET_DEFAULT_COMPACT_WIDTH_DP = 110
 internal const val PLAYBACK_WIDGET_DEFAULT_HEIGHT_DP = 110
-internal const val PLAYBACK_WIDGET_FULL_CARD_MIN_HEIGHT_DP = 170
-internal const val PLAYBACK_WIDGET_FULL_CARD_MAX_HEIGHT_DP = 180
-private const val PLAYBACK_WIDGET_FULL_CARD_ASPECT_RATIO = 2.05f
+internal const val PLAYBACK_WIDGET_DEFAULT_STRIP_HEIGHT_DP = 56
+internal const val PLAYBACK_WIDGET_FULL_CARD_MIN_HEIGHT_DP = 180
 
 internal data class PlaybackWidgetSize(
     val widthDp: Int,
@@ -44,8 +43,9 @@ internal data class PlaybackWidgetLayoutSpec(
 internal fun playbackWidgetSizeFromOptions(
     options: Bundle?,
     hasProgress: Boolean,
+    isStrip: Boolean = false,
 ): PlaybackWidgetSize {
-    val defaultWidth = if (hasProgress) {
+    val defaultWidth = if (hasProgress || isStrip) {
         PLAYBACK_WIDGET_DEFAULT_FULL_WIDTH_DP
     } else {
         PLAYBACK_WIDGET_DEFAULT_COMPACT_WIDTH_DP
@@ -56,9 +56,9 @@ internal fun playbackWidgetSizeFromOptions(
         defaultDp = defaultWidth,
     )
     val height = resolvePlaybackWidgetDimension(
-        minDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) ?: 0,
-        maxDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0) ?: 0,
-        defaultDp = PLAYBACK_WIDGET_DEFAULT_HEIGHT_DP,
+        minDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0) ?: 0,
+        maxDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) ?: 0,
+        defaultDp = if (isStrip) PLAYBACK_WIDGET_DEFAULT_STRIP_HEIGHT_DP else PLAYBACK_WIDGET_DEFAULT_HEIGHT_DP,
     )
     return PlaybackWidgetSize(
         widthDp = width.coerceIn(1, 1_000),
@@ -69,20 +69,34 @@ internal fun playbackWidgetSizeFromOptions(
 internal fun playbackWidgetSizeVariantsFromOptions(
     options: Bundle?,
     hasProgress: Boolean,
+    isStrip: Boolean = false,
 ): List<PlaybackWidgetSize> {
-    val fallback = playbackWidgetSizeFromOptions(options, hasProgress)
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-        return listOf(fallback)
-    }
+    val fallback = playbackWidgetSizeFromOptions(options, hasProgress, isStrip)
+    val landscape = PlaybackWidgetSize(
+        widthDp = resolvePlaybackWidgetDimension(
+            options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 0) ?: 0,
+            options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0) ?: 0,
+            fallback.widthDp,
+        ).coerceIn(1, 1_000),
+        heightDp = resolvePlaybackWidgetDimension(
+            options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) ?: 0,
+            options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0) ?: 0,
+            fallback.heightDp,
+        ).coerceIn(1, 1_000),
+    )
+    val boundsSizes = listOf(fallback, landscape).distinct()
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return boundsSizes
     @Suppress("DEPRECATION")
     val hostSizes = options?.getParcelableArrayList<SizeF>(
         AppWidgetManager.OPTION_APPWIDGET_SIZES,
     ).orEmpty()
     return hostSizes.mapNotNull { size ->
+        if (!size.width.isFinite() || !size.height.isFinite()) return@mapNotNull null
         val width = size.width.roundToInt()
         val height = size.height.roundToInt()
-        PlaybackWidgetSize(width, height).takeIf { width > 0 && height > 0 }
-    }.distinct().take(8).ifEmpty { listOf(fallback) }
+        PlaybackWidgetSize(width.coerceAtMost(1_000), height.coerceAtMost(1_000))
+            .takeIf { width > 0 && height > 0 }
+    }.distinct().take(8).ifEmpty { boundsSizes }
 }
 
 internal fun playbackWidgetLayoutSpec(
@@ -90,27 +104,38 @@ internal fun playbackWidgetLayoutSpec(
     hasProgress: Boolean,
 ): PlaybackWidgetLayoutSpec {
     if (hasProgress) {
+        val expanded = shouldUseExpandedFullPlaybackWidgetLayout(size)
+        val topPaddingDp = if (expanded) 12 else 8
+        val bottomPaddingDp = if (expanded) 8 else 4
+        val controlsHeightDp = 44
+        val progressRowHeightDp = if (expanded) 20 else 14
+        val headerGapDp = if (expanded) 12 else 4
+        val progressGapDp = if (expanded) 8 else 4
+        val availableArtworkHeightDp = size.heightDp - topPaddingDp - bottomPaddingDp -
+            controlsHeightDp - progressRowHeightDp - headerGapDp - progressGapDp
+        val preferredArtworkSizeDp = minOf(size.widthDp * 0.25f, size.heightDp * 0.40f)
+            .roundToInt().coerceAtMost(80)
         return PlaybackWidgetLayoutSpec(
             cardHeightDp = fullPlaybackWidgetCardHeightDp(size),
-            horizontalPaddingDp = 14,
-            topPaddingDp = 20,
-            bottomPaddingDp = 8,
-            albumSizeDp = 80,
+            horizontalPaddingDp = if (expanded) 16 else 14,
+            topPaddingDp = topPaddingDp,
+            bottomPaddingDp = bottomPaddingDp,
+            albumSizeDp = minOf(availableArtworkHeightDp, preferredArtworkSizeDp).coerceAtLeast(28),
             albumGapDp = 16,
-            controlsHeightDp = 48,
-            controlSizeDp = 30,
-            primaryControlSizeDp = 48,
+            controlsHeightDp = controlsHeightDp,
+            controlSizeDp = 24,
+            primaryControlSizeDp = 36,
             controlGapDp = 0,
             usesFullWidthControls = true,
-            progressRowHeightDp = 14,
+            progressRowHeightDp = progressRowHeightDp,
             progressLabelWidthDp = 36,
             progressMarginDp = 8,
             compactInfoTopPaddingDp = 0,
             compactInfoBottomPaddingDp = 0,
             compactControlBottomMarginDp = 0,
             statusTextSizeSp = 11f,
-            titleTextSizeSp = 18f,
-            subtitleTextSizeSp = 13f,
+            titleTextSizeSp = if (expanded) 18f else 16f,
+            subtitleTextSizeSp = 12f,
         )
     }
 
@@ -118,29 +143,20 @@ internal fun playbackWidgetLayoutSpec(
     val height = size.heightDp.coerceAtLeast(PLAYBACK_WIDGET_DEFAULT_HEIGHT_DP)
     val titleSize = scaledFloat(height * 0.02f + 13f, min = 16f, max = 20f)
     val secondarySize = scaledFloat(height * 0.012f + 9.5f, min = 11f, max = 13f)
-    val compactControlHeight = scaledInt(height * 0.32f, min = 36, max = 52)
     val compactHorizontalMargin = (
         scaledInt(minOf(width, height) * 0.09f, 10, 20) - 9
     ).coerceAtLeast(0)
     val compactControlGap = scaledInt(minOf(width, height) * 0.03f, 4, 8)
-    val compactControlWidth = width - compactHorizontalMargin * 2
-    val maximumCompactControlSize = (
-        compactControlWidth / 3f - compactControlGap
-    ).toInt()
-    val compactControlSize = minOf(
-        scaledInt(compactControlHeight * 0.80f, min = 28, max = 42),
-        maximumCompactControlSize,
-    ).coerceAtLeast(24)
     return PlaybackWidgetLayoutSpec(
         cardHeightDp = 0,
-        horizontalPaddingDp = compactHorizontalMargin + 9,
-        topPaddingDp = 0,
-        bottomPaddingDp = 0,
+        horizontalPaddingDp = if (width < 150) 6 else compactHorizontalMargin + 9,
+        topPaddingDp = 8,
+        bottomPaddingDp = 6,
         albumSizeDp = 0,
         albumGapDp = 0,
-        controlsHeightDp = compactControlHeight,
-        controlSizeDp = compactControlSize,
-        primaryControlSizeDp = (compactControlSize + 4).coerceAtMost(44),
+        controlsHeightDp = 44,
+        controlSizeDp = 28,
+        primaryControlSizeDp = 36,
         controlGapDp = compactControlGap,
         usesFullWidthControls = false,
         progressRowHeightDp = 0,
@@ -156,24 +172,13 @@ internal fun playbackWidgetLayoutSpec(
 }
 
 internal fun fullPlaybackWidgetCardHeightDp(size: PlaybackWidgetSize): Int {
-    return (size.widthDp / PLAYBACK_WIDGET_FULL_CARD_ASPECT_RATIO)
-        .roundToInt()
-        .coerceIn(
-            PLAYBACK_WIDGET_FULL_CARD_MIN_HEIGHT_DP,
-            PLAYBACK_WIDGET_FULL_CARD_MAX_HEIGHT_DP,
-        )
+    return size.heightDp.coerceAtLeast(1)
 }
 
 internal fun shouldUseExpandedFullPlaybackWidgetLayout(
     size: PlaybackWidgetSize,
-    sdkInt: Int,
 ): Boolean {
-    val minimumHeightDp = if (sdkInt >= Build.VERSION_CODES.S) {
-        PLAYBACK_WIDGET_FULL_CARD_MIN_HEIGHT_DP
-    } else {
-        PLAYBACK_WIDGET_FULL_CARD_MAX_HEIGHT_DP
-    }
-    return size.heightDp >= minimumHeightDp
+    return size.heightDp >= PLAYBACK_WIDGET_FULL_CARD_MIN_HEIGHT_DP && size.widthDp >= 240
 }
 
 internal fun resolvePlaybackWidgetDimension(
@@ -181,7 +186,7 @@ internal fun resolvePlaybackWidgetDimension(
     maxDp: Int,
     defaultDp: Int,
 ): Int {
-    return maxOf(minDp, maxDp).takeIf { it > 0 } ?: defaultDp
+    return minDp.takeIf { it > 0 } ?: maxDp.takeIf { it > 0 } ?: defaultDp
 }
 
 private fun scaledInt(value: Float, min: Int, max: Int): Int {

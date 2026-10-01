@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.widget.PlaybackWidgetUpdater
 
 class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
     @Volatile
@@ -117,6 +118,14 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         LanguageManager.applyLanguage(this)
+        if (AppProcessClassifier.isMainProcess(
+                currentProcessName = getProcessName(),
+                configuredMainProcessName = applicationInfo.processName,
+                packageName = packageName,
+            )
+        ) {
+            PlaybackWidgetUpdater.refreshForConfigurationChange(this)
+        }
     }
 
     private fun configureWebViewDataDirectoryIfNeeded(runningInMainProcess: Boolean) {

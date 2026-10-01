@@ -93,3 +93,7 @@ class NeriPlayerPlaybackWidgetProvider : NeriPlayerBaseWidgetProvider(
 class NeriPlayerCompactWidgetProvider : NeriPlayerBaseWidgetProvider(
     R.layout.widget_playback_2x2,
 )
+
+class NeriPlayerStripWidgetProvider : NeriPlayerBaseWidgetProvider(
+    R.layout.widget_playback_4x1,
+)

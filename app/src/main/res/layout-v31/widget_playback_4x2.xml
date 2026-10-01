@@ -1,120 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_playback_background">
 
-    <FrameLayout
-        android:id="@+id/widget_card"
+    <ImageView
+        android:id="@+id/widget_fallback_background"
         android:layout_width="match_parent"
-        android:layout_height="180dp"
-        android:layout_gravity="center_vertical"
-        android:background="@drawable/widget_playback_clip"
-        android:clipToOutline="true">
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_playback_background"
+        android:visibility="gone" />
 
-        <ImageView
-            android:id="@+id/widget_fallback_background"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@drawable/widget_playback_background"
-            android:contentDescription="@null"
-            android:visibility="gone" />
+    <ImageView
+        android:id="@+id/widget_theme_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_playback_clip"
+        android:visibility="gone" />
 
-        <ImageView
-            android:id="@+id/widget_theme_background"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:contentDescription="@null"
-            android:scaleType="fitXY"
-            android:visibility="gone" />
+    <LinearLayout
+        android:id="@+id/widget_main_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingStart="14dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="4dp"
+        android:orientation="vertical"
+        android:gravity="bottom">
 
         <RelativeLayout
-            android:id="@+id/widget_main_content"
+            android:id="@+id/widget_content"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:paddingStart="14dp"
-            android:paddingTop="20dp"
-            android:paddingEnd="14dp"
-            android:paddingBottom="8dp">
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="4dp">
 
-        <FrameLayout
-            android:id="@+id/widget_album_shell"
-            android:layout_width="80dp"
-            android:layout_height="80dp"
-            android:layout_alignParentStart="true"
-            android:layout_alignParentTop="true"
-            android:layout_marginEnd="16dp"
-            android:background="@drawable/widget_album_background"
-            android:padding="1dp">
+            <FrameLayout
+                android:id="@+id/widget_album_shell"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/widget_album_background">
 
-            <ImageView
-                android:id="@+id/widget_album_art"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:contentDescription="@string/widget_album_art"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_neriplayer_round" />
-        </FrameLayout>
+                <ImageView
+                    android:id="@+id/widget_album_art"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@string/widget_album_art"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_neriplayer_round" />
+            </FrameLayout>
 
-        <LinearLayout
-            android:id="@+id/widget_song_info"
-            android:layout_width="match_parent"
-            android:layout_height="80dp"
-            android:layout_alignParentEnd="true"
-            android:layout_alignParentTop="true"
-            android:layout_toEndOf="@id/widget_album_shell"
-            android:gravity="center_vertical"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/widget_status"
+            <LinearLayout
+                android:id="@+id/widget_song_info"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="@string/widget_playback_ready"
-                android:textColor="@color/widget_text_secondary"
-                android:textSize="11sp" />
+                android:layout_alignParentEnd="true"
+                android:layout_toEndOf="@id/widget_album_shell"
+                android:gravity="center_vertical"
+                android:orientation="vertical"
+                android:layout_centerVertical="true">
 
-            <TextView
-                android:id="@+id/widget_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="1dp"
-                android:ellipsize="end"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="@string/app_name"
-                android:textColor="@color/widget_text_primary"
-                android:textSize="18sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/widget_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_playback_ready"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
 
-            <TextView
-                android:id="@+id/widget_subtitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="1dp"
-                android:ellipsize="end"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="@string/widget_playback_idle_subtitle"
-                android:textColor="@color/widget_text_secondary"
-                android:textSize="13sp" />
-        </LinearLayout>
+                <TextView
+                    android:id="@+id/widget_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/app_name"
+                    android:textColor="@color/widget_text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/widget_subtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_playback_idle_subtitle"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </RelativeLayout>
 
         <RelativeLayout
             android:id="@+id/widget_progress_row"
             android:layout_width="match_parent"
             android:layout_height="14dp"
-            android:layout_above="@id/widget_controls"
-            android:layout_alignParentStart="true"
-            android:layout_alignParentEnd="true"
-            android:layout_marginBottom="6dp">
+            android:layout_marginBottom="4dp">
 
             <Chronometer
                 android:id="@+id/widget_elapsed"
-                android:layout_width="36dp"
+                android:layout_width="40dp"
                 android:layout_height="match_parent"
                 android:layout_alignParentStart="true"
                 android:gravity="center_vertical|start"
@@ -140,7 +142,7 @@
 
             <TextView
                 android:id="@+id/widget_duration"
-                android:layout_width="36dp"
+                android:layout_width="40dp"
                 android:layout_height="match_parent"
                 android:layout_alignParentEnd="true"
                 android:gravity="center_vertical|end"
@@ -153,8 +155,7 @@
         <LinearLayout
             android:id="@+id/widget_controls"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_alignParentBottom="true"
+            android:layout_height="44dp"
             android:baselineAligned="false"
             android:gravity="center"
             android:orientation="horizontal">
@@ -164,17 +165,18 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:clickable="true">
+                android:background="@drawable/widget_control_background"
+                android:clickable="true"
+                android:focusable="true">
 
                 <ImageView
                     android:id="@+id/widget_favorite"
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
-                    android:padding="4dp"
-                    android:scaleType="center"
-                    android:src="@drawable/ic_outline_favorite_24" />
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/widget_icon_favorite" />
             </FrameLayout>
 
             <FrameLayout
@@ -182,17 +184,18 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:clickable="true">
+                android:background="@drawable/widget_control_background"
+                android:clickable="true"
+                android:focusable="true">
 
                 <ImageView
                     android:id="@+id/widget_previous"
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
-                    android:padding="4dp"
-                    android:scaleType="center"
-                    android:src="@drawable/round_skip_previous_24" />
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/widget_icon_previous" />
             </FrameLayout>
 
             <FrameLayout
@@ -200,12 +203,14 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:clickable="true">
+                android:background="@drawable/widget_control_background"
+                android:clickable="true"
+                android:focusable="true">
 
                 <ImageView
                     android:id="@+id/widget_play_pause_background"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
                     android:scaleType="fitCenter"
@@ -213,13 +218,12 @@
 
                 <ImageView
                     android:id="@+id/widget_play_pause"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
-                    android:padding="10dp"
-                    android:scaleType="center"
-                    android:src="@drawable/round_play_arrow_24" />
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/widget_icon_play" />
             </FrameLayout>
 
             <FrameLayout
@@ -227,17 +231,18 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:clickable="true">
+                android:background="@drawable/widget_control_background"
+                android:clickable="true"
+                android:focusable="true">
 
                 <ImageView
                     android:id="@+id/widget_next"
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
-                    android:padding="4dp"
-                    android:scaleType="center"
-                    android:src="@drawable/round_skip_next_24" />
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/widget_icon_next" />
             </FrameLayout>
 
             <FrameLayout
@@ -245,19 +250,19 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:clickable="true">
+                android:background="@drawable/widget_control_background"
+                android:clickable="true"
+                android:focusable="true">
 
                 <ImageView
                     android:id="@+id/widget_floating_lyrics"
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
-                    android:padding="4dp"
-                    android:scaleType="center"
-                    android:src="@drawable/ic_lyrics_24" />
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/widget_icon_lyrics" />
             </FrameLayout>
         </LinearLayout>
-        </RelativeLayout>
-    </FrameLayout>
+    </LinearLayout>
 </FrameLayout>

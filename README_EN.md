@@ -188,11 +188,10 @@ Current positioning:
   tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
   width constraints and bottom control layouts. The `Mini Player` supports
   horizontal swipe for previous/next without expanding the full player. Home
-  widgets add a 4x2 playback card and a 2x2 mini player. Card backgrounds and
-  the primary play button derive their colors from the current artwork. The
-  4x2 card shows the song, artwork, progress, four playback controls, and a
-  floating-lyrics entry; the 2x2 layout makes artwork the main visual while
-  keeping the three core playback controls. Launcher shortcuts can continue
+  widgets include a 4x1 slim player, a 2x2 mini player, and a 4x2 playback card.
+  Artwork-colored Material You cards adapt to light/dark themes, orientation,
+  and host size. Wide cards add progress, favorites, and floating lyrics; all sizes retain previous,
+  play/pause, and next track. Launcher shortcuts can continue
   playback, open Explore, open Library, or shuffle My Favorite Music.
   Main bottom tabs use interruptible directional page transitions that retain both
   outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
@@ -592,11 +591,13 @@ For release build and signing details, see
   the bottom Mini Player supports horizontal swipe for previous/next while
   keeping tap-to-expand and play/pause controls.
 - 🧩 **Home screen widgets**:
-  includes a 4x2 playback card and a 2x2 mini player. Card backgrounds and the primary
-  play button derive their colors from the current artwork; the 4x2 card adds progress,
-  four direct controls, and floating-lyrics access, while 2x2 keeps artwork as the main
-  visual and retains the three core playback controls. Progress is updated locally once
-  per second during playback and immediately on pause or track changes.
+  includes a 4x1 slim player, a 2x2 mini player, and a 4x2 playback card.
+  The mini player uses full-card artwork; wide cards keep artwork and
+  text in separate areas, with artwork-derived colors, light/dark themes, larger text,
+  and orientation-aware sizing. Favorites and floating lyrics appear
+  when space permits; all sizes retain previous, play/pause, and next track. Elapsed time
+  updates locally every second and the progress bar refreshes periodically. Pause and
+  track changes refresh immediately; cached songs appear paused when no service is active.
 - 🚀 **Launcher shortcuts**:
   long-pressing the app icon can continue the previous queue, open Explore, open
   Library, or shuffle My Favorite Music. Empty queues or empty favorites report

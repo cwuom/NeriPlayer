@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:initialLayout="@layout/widget_playback_4x2"
-    android:minHeight="110dp"
+    android:initialLayout="@layout/widget_playback_4x1"
+    android:minHeight="56dp"
     android:minResizeHeight="56dp"
     android:minResizeWidth="250dp"
     android:minWidth="250dp"
-    android:previewImage="@drawable/widget_playback_4x2_preview"
-    android:resizeMode="horizontal|vertical"
+    android:previewImage="@drawable/widget_playback_4x1_preview"
+    android:resizeMode="horizontal"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen" />

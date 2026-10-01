@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.player.service.presentation.serviceMetadataSnaps
 import moe.ouom.neriplayer.core.player.service.presentation.serviceMetadataText
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
+import moe.ouom.neriplayer.core.player.presentation.widget.shouldPartiallyUpdatePlaybackWidgetProgress
 import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
 import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.model.SongItem
@@ -78,15 +79,59 @@ class PlaybackNotificationWidgetPresentationTest {
         val input = widgetInputs(song = song(), artwork = artwork(null, pending = true))
         val state = servicePlaybackWidgetState(input)
         assertEquals(8_000L, state.positionMs)
-        assertTrue(state.isPlaying)
+        assertFalse(state.isPlaying)
+        assertTrue(state.showPauseAction)
         assertTrue(state.artworkPending)
         assertFalse(state.artworkReady)
         assertEquals("Song", state.title)
         assertEquals("Artist", state.subtitle)
-        assertEquals("Playing", state.status)
+        assertEquals("Buffering", state.status)
         assertTrue(shouldUpdateServicePlaybackWidget(false, null, state))
         assertFalse(shouldUpdateServicePlaybackWidget(false, state, state))
         assertTrue(shouldUpdateServicePlaybackWidget(true, state, state))
+    }
+
+    @Test
+    fun `idle playback intent does not animate or expose a pause widget action`() {
+        val state = servicePlaybackWidgetState(widgetInputs(song(), artwork(null)).copyFor(
+            playerSongPresent = true,
+            roomPlaying = false,
+            playbackControlPlaying = true,
+        ))
+
+        assertFalse(state.isPlaying)
+        assertFalse(state.showPauseAction)
+        assertEquals("Paused", state.status)
+    }
+
+    @Test
+    fun `buffering widget retains pause controls without advancing progress`() {
+        val input = widgetInputs(song(), artwork(null)).copyFor(
+            playerSongPresent = true,
+            roomPlaying = false,
+            buffering = true,
+            playbackControlPlaying = true,
+        )
+        val state = servicePlaybackWidgetState(input)
+
+        assertFalse(state.isPlaying)
+        assertTrue(state.showPauseAction)
+        assertEquals("Buffering", state.status)
+        assertFalse(shouldPartiallyUpdatePlaybackWidgetProgress(state, state.copy(positionMs = 3_000L)))
+        assertFalse(servicePlaybackWidgetState(input.copyFor(playbackControlPlaying = false)).showPauseAction)
+    }
+
+    @Test
+    fun `playing widget follows engine output`() {
+        val state = servicePlaybackWidgetState(widgetInputs(song(), artwork(null)).copyFor(
+            playerSongPresent = true,
+            roomPlaying = false,
+            enginePlaying = true,
+        ))
+
+        assertTrue(state.isPlaying)
+        assertTrue(state.showPauseAction)
+        assertEquals("Playing", state.status)
     }
 
     @Test
@@ -160,7 +205,8 @@ class PlaybackNotificationWidgetPresentationTest {
         playerPositionMs = 2_000L,
         roomPositionMs = 8_000L,
         buffering = false,
-        transportActive = false,
+        enginePlaying = false,
+        playbackControlPlaying = false,
         roomPlaying = song != null,
         favorite = false,
         canToggleFavorite = false,
@@ -173,13 +219,16 @@ class PlaybackNotificationWidgetPresentationTest {
         playerSongPresent: Boolean = this.playerSongPresent,
         roomPlaying: Boolean = this.roomPlaying,
         buffering: Boolean = this.buffering,
+        enginePlaying: Boolean = this.enginePlaying,
+        playbackControlPlaying: Boolean = this.playbackControlPlaying,
     ) = ServiceWidgetInputs(
         song = song,
         playerSongPresent = playerSongPresent,
         playerPositionMs = playerPositionMs,
         roomPositionMs = roomPositionMs,
         buffering = buffering,
-        transportActive = transportActive,
+        enginePlaying = enginePlaying,
+        playbackControlPlaying = playbackControlPlaying,
         roomPlaying = roomPlaying,
         favorite = favorite,
         canToggleFavorite = canToggleFavorite,

@@ -167,6 +167,19 @@
                 android:resource="@xml/widget_playback_2x2_info" />
         </receiver>
         
+        <receiver
+            android:name=".widget.NeriPlayerStripWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_playback_4x1_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_playback_4x1_info" />
+        </receiver>
+
         <!-- FileProvider for sharing downloaded music files -->
         <provider
             android:name="androidx.core.content.FileProvider"

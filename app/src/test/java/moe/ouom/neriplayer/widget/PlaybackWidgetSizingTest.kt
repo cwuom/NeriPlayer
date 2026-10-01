@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.widget
 
-import android.os.Build
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -8,7 +7,12 @@ import org.junit.Test
 
 class PlaybackWidgetSizingTest {
     @Test
-    fun `full widget keeps the reference card ratio across reported host sizes`() {
+    fun `strip remains usable before the host reports its options`() {
+        assertEquals(PlaybackWidgetSize(250, 56), playbackWidgetSizeFromOptions(null, false, isStrip = true))
+    }
+
+    @Test
+    fun `full widget fills the actual host and scales information density`() {
         val minimum = playbackWidgetLayoutSpec(
             size = PlaybackWidgetSize(widthDp = 250, heightDp = 110),
             hasProgress = true,
@@ -18,17 +22,23 @@ class PlaybackWidgetSizingTest {
             hasProgress = true,
         )
 
-        assertEquals(170, minimum.cardHeightDp)
-        assertEquals(180, oversized.cardHeightDp)
-        assertEquals(80, minimum.albumSizeDp)
-        assertEquals(48, minimum.controlsHeightDp)
-        assertEquals(30, minimum.controlSizeDp)
-        assertEquals(48, minimum.primaryControlSizeDp)
+        assertEquals(110, minimum.cardHeightDp)
+        assertEquals(240, oversized.cardHeightDp)
+        assertEquals(32, minimum.albumSizeDp)
+        assertEquals(44, minimum.controlsHeightDp)
+        assertEquals(24, minimum.controlSizeDp)
+        assertEquals(36, minimum.primaryControlSizeDp)
         assertEquals(14, minimum.progressRowHeightDp)
-        assertEquals(18f, minimum.titleTextSizeSp)
+        assertEquals(16f, minimum.titleTextSizeSp)
         assertTrue(minimum.usesFullWidthControls)
-        assertEquals(minimum.albumSizeDp, oversized.albumSizeDp)
-        assertEquals(minimum.controlsHeightDp, oversized.controlsHeightDp)
+        assertTrue(oversized.albumSizeDp > minimum.albumSizeDp)
+        assertEquals(80, oversized.albumSizeDp)
+        val medium = playbackWidgetLayoutSpec(PlaybackWidgetSize(340, 160), hasProgress = true)
+        assertEquals(64, medium.albumSizeDp)
+        assertEquals(8, medium.topPaddingDp)
+        val narrow = playbackWidgetLayoutSpec(PlaybackWidgetSize(250, 240), hasProgress = true)
+        assertEquals(63, narrow.albumSizeDp)
+        assertTrue(oversized.controlsHeightDp >= minimum.controlsHeightDp)
     }
 
     @Test
@@ -38,13 +48,13 @@ class PlaybackWidgetSizingTest {
             hasProgress = true,
         )
 
-        assertEquals(170, spec.cardHeightDp)
+        assertEquals(1, spec.cardHeightDp)
         assertEquals(14, spec.horizontalPaddingDp)
-        assertEquals(20, spec.topPaddingDp)
-        assertEquals(8, spec.bottomPaddingDp)
-        assertEquals(80, spec.albumSizeDp)
-        assertEquals(30, spec.controlSizeDp)
-        assertEquals(48, spec.primaryControlSizeDp)
+        assertEquals(8, spec.topPaddingDp)
+        assertEquals(4, spec.bottomPaddingDp)
+        assertEquals(28, spec.albumSizeDp)
+        assertEquals(24, spec.controlSizeDp)
+        assertEquals(36, spec.primaryControlSizeDp)
         assertEquals(14, spec.progressRowHeightDp)
         assertTrue(spec.usesFullWidthControls)
     }
@@ -60,10 +70,10 @@ class PlaybackWidgetSizingTest {
             hasProgress = false,
         )
 
-        assertEquals(10, minimum.horizontalPaddingDp)
+        assertEquals(6, minimum.horizontalPaddingDp)
         assertTrue(large.horizontalPaddingDp > minimum.horizontalPaddingDp)
-        assertTrue(large.controlsHeightDp > minimum.controlsHeightDp)
-        assertTrue(large.controlSizeDp > minimum.controlSizeDp)
+        assertEquals(44, large.controlsHeightDp)
+        assertEquals(28, large.controlSizeDp)
         assertEquals(0, minimum.albumSizeDp)
         assertEquals(0, large.progressRowHeightDp)
         assertTrue(!large.usesFullWidthControls)
@@ -76,13 +86,13 @@ class PlaybackWidgetSizingTest {
     }
 
     @Test
-    fun `widget sizing uses the expanded option dimension when available`() {
+    fun `widget sizing uses the first valid orientation dimension`() {
         assertEquals(
-            344,
+            250,
             resolvePlaybackWidgetDimension(minDp = 250, maxDp = 344, defaultDp = 250),
         )
         assertEquals(
-            190,
+            110,
             resolvePlaybackWidgetDimension(minDp = 110, maxDp = 190, defaultDp = 110),
         )
         assertEquals(
@@ -92,9 +102,9 @@ class PlaybackWidgetSizingTest {
     }
 
     @Test
-    fun `full card height is derived from width instead of host height`() {
+    fun `full card never exceeds a short host`() {
         assertEquals(
-            180,
+            1,
             fullPlaybackWidgetCardHeightDp(
                 PlaybackWidgetSize(widthDp = 420, heightDp = 1),
             ),
@@ -106,25 +116,21 @@ class PlaybackWidgetSizingTest {
         assertFalse(
             shouldUseExpandedFullPlaybackWidgetLayout(
                 size = PlaybackWidgetSize(widthDp = 250, heightDp = 110),
-                sdkInt = Build.VERSION_CODES.S,
             ),
         )
         assertFalse(
             shouldUseExpandedFullPlaybackWidgetLayout(
                 size = PlaybackWidgetSize(widthDp = 250, heightDp = 179),
-                sdkInt = Build.VERSION_CODES.R,
             ),
         )
         assertTrue(
             shouldUseExpandedFullPlaybackWidgetLayout(
                 size = PlaybackWidgetSize(widthDp = 250, heightDp = 180),
-                sdkInt = Build.VERSION_CODES.R,
             ),
         )
         assertTrue(
             shouldUseExpandedFullPlaybackWidgetLayout(
                 size = PlaybackWidgetSize(widthDp = 250, heightDp = 180),
-                sdkInt = Build.VERSION_CODES.S,
             ),
         )
     }
