@@ -41,6 +41,7 @@
       <module name="NeriPlayer.lyrics.parser" target="25" />
       <module name="NeriPlayer.lyrics.runtime" target="25" />
       <module name="NeriPlayer.netease" target="25" />
+      <module name="NeriPlayer.storage" target="25" />
       <module name="NeriPlayer.youtube" target="25" />
     </bytecodeTargetLevel>
   </component>
