@@ -47,6 +47,14 @@ CRAP 是方法指标，不能单独判断类的耦合程度。这里使用公式
 `cov` 为 covered / C，即 JaCoCo 复杂度覆盖率，作为路径覆盖率的近似值。
 它不是原版 crap4j 的严格独立路径覆盖测量，也不是行覆盖率。
 
+本项目的 9 是严格的自定义风险门禁，原作者最初使用的阈值是 30；覆盖率达到 100% 时，
+CRAP 仍等于圈复杂度。低分不能证明架构易于理解，覆盖率也不能证明断言有效。
+重构应让入口、业务步骤、状态所有权和失败处理更容易追踪，减少重复概念和纯转发层，
+不能仅为降低分数拆函数或增加 Coordinator、Handler、Resolver 等间接层。
+审查同时依据模块依赖、行为与边界测试、lint 和必要的集成或设备验证；
+对关键判断可使用 mutation test 检查测试是否能发现错误，但当前门禁未自动提供该验证。
+阈值、受检范围和有效测试不得作为刷分手段调整。
+
 来源：[CRAP 原作者公式](https://www.artima.com/weblogs/viewpost.jsp?thread=215899)、
 [JaCoCo 计数器定义](https://www.jacoco.org/jacoco/trunk/doc/counters.html)。
 

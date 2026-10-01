@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
-import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistsFromSongJson
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +17,7 @@ import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseArtistsFromSongJson
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem

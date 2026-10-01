@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.activity.auth
  * Created: 2025/8/13
  */
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
@@ -57,6 +56,7 @@ import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin

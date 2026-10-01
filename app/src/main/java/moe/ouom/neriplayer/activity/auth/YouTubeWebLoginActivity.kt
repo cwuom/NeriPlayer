@@ -20,7 +20,6 @@ package moe.ouom.neriplayer.activity.auth
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.api.youtube.auth.normalized
 import moe.ouom.neriplayer.api.youtube.auth.toJson
 import android.annotation.SuppressLint
@@ -55,6 +54,7 @@ import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteYouTubeWebLogin

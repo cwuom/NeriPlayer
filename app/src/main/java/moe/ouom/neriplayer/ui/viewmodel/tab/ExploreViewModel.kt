@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * Created: 2025/8/11
  */
 
-import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseSongDetail
 import moe.ouom.neriplayer.core.player.persistence.toSongItem
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -53,6 +52,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.platform.netease.mapping.parseNeteaseSongDetail
 import moe.ouom.neriplayer.data.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.api.youtube.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.api.youtube.transport.stableYouTubeMusicId

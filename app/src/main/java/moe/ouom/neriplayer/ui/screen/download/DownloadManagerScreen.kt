@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.screen.download
  */
 
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -58,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult

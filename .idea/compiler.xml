@@ -2,6 +2,46 @@
 <project version="4">
   <component name="CompilerConfiguration">
     <bytecodeTargetLevel target="17">
+      <module name="NeriPlayer.api.bilibili" target="25" />
+      <module name="NeriPlayer.api.ltw" target="25" />
+      <module name="NeriPlayer.api.lyrics" target="25" />
+      <module name="NeriPlayer.api.metadata" target="25" />
+      <module name="NeriPlayer.api.netease" target="25" />
+      <module name="NeriPlayer.api.search" target="25" />
+      <module name="NeriPlayer.api.sync" target="25" />
+      <module name="NeriPlayer.api.youtube" target="25" />
+      <module name="NeriPlayer.bilibili" target="25" />
+      <module name="NeriPlayer.comments" target="25" />
+      <module name="NeriPlayer.core.common" target="25" />
+      <module name="NeriPlayer.core.download" target="25" />
+      <module name="NeriPlayer.core.logging" target="25" />
+      <module name="NeriPlayer.core.ltw-protocol" target="25" />
+      <module name="NeriPlayer.core.lyrics" target="25" />
+      <module name="NeriPlayer.core.network" target="25" />
+      <module name="NeriPlayer.core.playback-queue" target="25" />
+      <module name="NeriPlayer.core.player-audio" target="25" />
+      <module name="NeriPlayer.core.player-policy" target="25" />
+      <module name="NeriPlayer.core.player-runtime" target="25" />
+      <module name="NeriPlayer.data.auth" target="25" />
+      <module name="NeriPlayer.data.bilibili" target="25" />
+      <module name="NeriPlayer.data.comments" target="25" />
+      <module name="NeriPlayer.data.database" target="25" />
+      <module name="NeriPlayer.data.ltw" target="25" />
+      <module name="NeriPlayer.data.lyrics" target="25" />
+      <module name="NeriPlayer.data.model" target="25" />
+      <module name="NeriPlayer.data.netease" target="25" />
+      <module name="NeriPlayer.data.repository" target="25" />
+      <module name="NeriPlayer.data.storage" target="25" />
+      <module name="NeriPlayer.data.sync" target="25" />
+      <module name="NeriPlayer.data.sync-store" target="25" />
+      <module name="NeriPlayer.data.traffic" target="25" />
+      <module name="NeriPlayer.data.youtube" target="25" />
+      <module name="NeriPlayer.feature.download" target="25" />
+      <module name="NeriPlayer.feature.player" target="25" />
+      <module name="NeriPlayer.lyrics.parser" target="25" />
+      <module name="NeriPlayer.lyrics.runtime" target="25" />
+      <module name="NeriPlayer.netease" target="25" />
+      <module name="NeriPlayer.youtube" target="25" />
     </bytecodeTargetLevel>
   </component>
 </project>

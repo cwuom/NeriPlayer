@@ -44,6 +44,8 @@ dependencies {
 val platformCoverageClasses = tasks.named<Jar>("coverageClassesJar")
 val platformDomainScope = layout.buildDirectory.file("reports/domain-dependencies/scope.json")
 val generatePlatformDomainScope = tasks.register("generatePlatformDomainScope") {
+    group = "verification"
+    description = "Generate the platform dependency rules from the shared domain configuration."
     inputs.file(rootProject.file("config/quality/domain-dependencies.json"))
     outputs.file(platformDomainScope)
     doLast {

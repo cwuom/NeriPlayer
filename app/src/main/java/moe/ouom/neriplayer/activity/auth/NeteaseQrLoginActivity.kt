@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.activity.auth
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
@@ -46,6 +45,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.api.netease.auth.NeteaseQrLoginClient
 import moe.ouom.neriplayer.core.network.weblogin.ForegroundWebLoginGuard

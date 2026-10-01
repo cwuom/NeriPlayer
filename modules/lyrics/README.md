@@ -4,7 +4,7 @@
 
 解析实现按 `core/lyrics` 的职责组织。共用偏移计算保留 `data/settings/lyrics` 包名，嵌入歌词兼容保留 `util/media` 包名；设置读取和持久化由 `:local` 维护。数据契约来自 `:model`，通用辅助来自 `:common`，上游解析能力来自 `:accompanist-lyrics-core`。
 
-SDK 接入与位置锚点位于 `core/lyricon`，`lyrics/integration` 维护输出控制器、歌曲快照、异步请求代次、取消与偏移快照。原协调器保留 `core/player/lyrics` 包名和内部可见性。位置推送使用独立的 200 ms feed 与 elapsed realtime 锚点，不能随播放器 UI 刷新节奏改变前后台时序。
+SDK 接入与位置锚点位于 `core/lyricon`。`lyrics/integration/LyriconPlaybackOutput` 是输出入口，直接维护歌曲和偏好快照、歌词加载与偏移发布；异步请求代次和取消由内部协调器管理。协调器保留 `core/player/lyrics` 包名和内部可见性。位置推送使用独立的 200 ms feed 与 elapsed realtime 锚点，不能随播放器 UI 刷新节奏改变前后台时序。
 
 本库不依赖平台、账号仓库或播放器实现。播放器通过 `LyriconLyricsLoader` 窄端口提供歌词，并输入偏好、歌曲、播放状态、进度与生命周期快照；异步输出不读取播放器私有状态。解析组件保持与 SDK 输出分开的职责和窄依赖，解析模型变化需同时检查逐字、翻译与既有消费者。
 

@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.activity.auth
 
-import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
@@ -44,6 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.api.bilibili.auth.BiliQrLoginClient
 import moe.ouom.neriplayer.data.model.bilibili.auth.BiliQrLoginSession
