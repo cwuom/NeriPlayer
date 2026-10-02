@@ -35,6 +35,38 @@ import org.mockito.Mockito.`when`
 class BackupManagerRoundTripTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun oversizedMetadataFailsBeforeAnyLocalRepositoryOrLyricStorageIsApplied() = runBlocking {
+        Fixture(BackupJsonLimits(maxMetadataCharacters = 64)).use { fixture ->
+            fixture.input = """{"version":"2.3","playlists":[{"id":9,"name":"existing","songs":[]}],"lyricOverrides":[{"id":7,"originalLyric":"${"x".repeat(256)}"}]}""".toByteArray()
+            clearInvocations(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertTrue(fixture.manager.importPlaylists(fixture.uri).isFailure)
+            verifyNoInteractions(fixture.playlists, fixture.history, fixture.stats, fixture.storage)
+            assertTrue(fixture.cache.walkTopDown().none { it.isFile })
+        }
+    }
+
+    @Test fun exportCannotReportSuccessWhenTheMetadataObjectBudgetWouldRejectItsBackup() = runBlocking {
+        Fixture(BackupJsonLimits(maxMetadataObjects = 2)).use { fixture ->
+            `when`(fixture.history.syncSnapshot()).thenReturn(listOf(entry(1)))
+            assertTrue(fixture.manager.exportPlaylists(fixture.uri).isFailure)
+        }
+    }
+
+    @Test fun exportedQuotedTokensUseTheSameExactBoundaryAsTheReader() = runBlocking {
+        for ((characters, allowed) in listOf(32 to true, 33 to false)) {
+            val limits = BackupJsonLimits(maxTokenCharacters = 34)
+            Fixture(limits).use { fixture ->
+                `when`(fixture.history.syncSnapshot()).thenReturn(listOf(entry(1).copy(name = "n".repeat(characters))))
+                val result = fixture.manager.exportPlaylists(fixture.uri)
+                assertEquals(allowed, result.isSuccess)
+                if (allowed) {
+                    BackupJsonReader(fixture.store(), limits = limits).readMetadata(fixture.output.toString(Charsets.UTF_8.name()).reader())
+                        .let { assertEquals("n".repeat(32), it.recentPlays.orEmpty().single().song.name) }
+                }
+            }
+        }
+    }
+
     @Test fun exportThenImportRetainsEveryHistoryIdentityBeyondOneThousand() = runBlocking {
         Fixture().use { fixture ->
             val source = (1L..1001L).map(::entry)
@@ -71,7 +103,7 @@ class BackupManagerRoundTripTest {
     private fun entry(id: Long) = PlayedEntry(id = id, name = "song $id", artist = "artist", album = "netease",
         albumId = 1, durationMs = 100, coverUrl = null, playedAt = id)
 
-    private inner class Fixture : Closeable {
+    private inner class Fixture(limits: BackupJsonLimits = BackupJsonLimits()) : Closeable {
         val cache = temporary.newFolder()
         val uri = mock(Uri::class.java)
         val output = ByteArrayOutputStream()
@@ -89,8 +121,8 @@ class BackupManagerRoundTripTest {
             replaceSingleton(PlayHistoryRepository::class.java, history),
             replaceSingleton(PlaybackStatsRepository::class.java, stats)
         )
-        private val storage = mock(SecureTokenStorage::class.java)
-        val manager = BackupManager(context) { storage }
+        val storage = mock(SecureTokenStorage::class.java)
+        val manager = BackupManager(context, limits) { storage }
 
         init {
             `when`(context.cacheDir).thenReturn(cache)

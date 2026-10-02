@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.data.sync.store.state
 
 import java.io.File
+import java.io.IOException
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
 import moe.ouom.neriplayer.data.sync.merge.engine.TestSyncMergeHost
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
@@ -121,6 +123,53 @@ class SyncPlaylistDeletionStorageTest {
         assertEquals(timestamps, prefs.durableValues[KEY_DELETED_PLAYLIST_TIMESTAMPS])
         assertEquals(mapOf(8L to 30L), store.getDeletedPlaylistTimestamps())
         assertEquals(mapOf(7L to 20L), SecureTokenStorage(prefs.restart().preferences, directory).getDeletedPlaylistTimestamps())
+        assertEquals(0L, store.getSyncMutationVersion())
+    }
+
+    @Test
+    fun `failed second playlist section reclaims the first unpublished section on every retry`() {
+        val prefs = MemorySyncPreferences()
+        val directory = temporary.newFolder()
+        var attempts = 0
+        val store = SecureTokenStorage(prefs.preferences, directory) {
+            attempts++
+            if (attempts % 2 == 0) throw IOException("timestamp generation directory sync failed")
+        }
+        repeat(20) {
+            assertThrows(IllegalStateException::class.java) { store.addDeletedPlaylistId(7) }
+            assertTrue(prefs.values.isEmpty())
+            assertTrue(prefs.durableValues.isEmpty())
+        }
+
+        assertEquals(40, attempts)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+        assertTrue(store.getDeletedPlaylistIds().isEmpty())
+        assertTrue(store.getDeletedPlaylistTimestamps().isEmpty())
+        assertEquals(0L, store.getSyncMutationVersion())
+    }
+
+    @Test
+    fun `failed playlist mutation preparation cannot orphan earlier song tombstone generations`() {
+        val prefs = MemorySyncPreferences()
+        val directory = temporary.newFolder()
+        val songDeletion = SyncPlaylistSongDeletion(playlistId = 7, songId = 9, album = "netease", deletedAt = 20)
+        var attempts = 0
+        val store = SecureTokenStorage(prefs.preferences, directory) {
+            attempts++
+            if (attempts % 2 == 0) throw IOException("playlist ids directory sync failed")
+        }
+        repeat(20) {
+            assertThrows(IllegalStateException::class.java) {
+                store.applyPlaylistSyncMutation(listOf(songDeletion), emptyList(), listOf(7), emptyList(), emptySet())
+            }
+            assertTrue(prefs.values.isEmpty())
+            assertTrue(prefs.durableValues.isEmpty())
+        }
+
+        assertEquals(40, attempts)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+        assertTrue(store.getPlaylistSongDeletions().isEmpty())
+        assertTrue(store.getDeletedPlaylistIds().isEmpty())
         assertEquals(0L, store.getSyncMutationVersion())
     }
 

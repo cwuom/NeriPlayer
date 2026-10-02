@@ -31,6 +31,8 @@ import com.google.gson.Gson
 import com.google.gson.stream.JsonWriter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
@@ -61,9 +63,10 @@ import java.util.Locale
  */
 class BackupManager internal constructor(
     private val context: Context,
+    private val jsonLimits: BackupJsonLimits = BackupJsonLimits(),
     private val storageFactory: (Context) -> SecureTokenStorage
 ) {
-    constructor(context: Context) : this(context, ::SecureTokenStorage)
+    constructor(context: Context) : this(context, storageFactory = ::SecureTokenStorage)
     private val gson = Gson()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
     
@@ -124,8 +127,9 @@ class BackupManager internal constructor(
             val recentPlays = historyRepo.syncSnapshot()
                 .filter { BackupMetadataMapper.shouldExportHistory(it, context) }
                 .map(BackupMetadataMapper::toSyncRecentPlay)
+            val exportContext = currentCoroutineContext()
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                JsonWriter(outputStream.writer(Charsets.UTF_8)).use { writer ->
+                JsonWriter(outputStream.writer(Charsets.UTF_8).withBackupJsonBudget(jsonLimits) { exportContext.ensureActive() }).use { writer ->
                     writer.beginObject()
                     writer.name("version").value("2.3")
                     writer.name("timestamp").value(System.currentTimeMillis())
@@ -420,7 +424,8 @@ class BackupManager internal constructor(
     private fun backupReader() = BackupJsonReader(
         FileSyncPlaybackDatasetStore(File(context.cacheDir, "backup-playback")),
         { BackupMetadataMapper.sanitizeTrackStat(it, context) },
-        { BackupMetadataMapper.sanitizePlaybackStatBucket(it, context) }
+        { BackupMetadataMapper.sanitizePlaybackStatBucket(it, context) },
+        jsonLimits
     )
 
     private suspend fun readBackup(uri: Uri): BackupJsonContent {

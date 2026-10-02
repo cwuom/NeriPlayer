@@ -33,6 +33,7 @@ internal class SyncDeletionStateStorage(
     }
 ) {
     private val gson = Gson()
+    private var preparingGenerations: MutableList<File>? = null
 
     fun marker(key: String): String? {
         val raw = preferences.getString(key, null) ?: return null
@@ -155,50 +156,67 @@ internal class SyncDeletionStateStorage(
         return checkNotNull(json.nextString().toLongOrNull()) { "Invalid playlist deletion ID" }
     }
 
-    fun write(editor: SharedPreferences.Editor, key: String, value: Any?) {
+    fun write(editor: SharedPreferences.Editor, key: String, value: Any?) = synchronized(syncMutationLock) {
         val path = directory
         if (path == null) {
             if (value == null) editor.remove(key) else editor.putString(key, gson.toJson(value))
-            return
+            return@synchronized
         }
-        writeFileState(editor, path, key, value)
+        val batch = checkNotNull(preparingGenerations) { "File-backed sync state requires a preparation batch" }
+        writeFileState(editor, path, key, value, batch)
     }
 
-    private fun writeFileState(editor: SharedPreferences.Editor, path: File, key: String, value: Any?) {
+    private fun writeFileState(editor: SharedPreferences.Editor, path: File, key: String, value: Any?, batch: MutableList<File>) {
         check(path.isDirectory || path.mkdirs()) { "Cannot create sync deletion directory" }
-        val previous = preferences.getString(key, null)?.let { previousGeneration(key, it) }
-        if (value == null) editor.remove(key)
-        else editor.putString(key, writeGeneration { writer -> gson.toJson(value, writer) })
-        if (previous == null) editor.remove(backupKey(key))
-        else editor.putString(backupKey(key), previous)
+        val owned = mutableListOf<File>()
+        try {
+            val previous = preferences.getString(key, null)?.let { previousGeneration(key, it, owned) }
+            val current = value?.let { writeGeneration(owned) { writer -> gson.toJson(it, writer) } }
+            if (current == null) editor.remove(key) else editor.putString(key, current)
+            if (previous == null) editor.remove(backupKey(key)) else editor.putString(backupKey(key), previous)
+            batch.addAll(owned)
+        } catch (failure: Exception) {
+            deleteUnpublished(owned, failure)
+            throw failure
+        }
     }
 
     // 读取方只确认自身 prefs 的耐久性，不清理其它持有方仍在重试的 generation
     fun confirm(): Boolean = preferences.commitEdit {}
 
-    fun commitEdit(action: SharedPreferences.Editor.() -> Unit): Boolean {
-        val committed = preferences.commitEdit(action)
-        if (committed) cleanUnreferencedGenerations()
-        return committed
-    }
-
-    fun commit(editor: SharedPreferences.Editor): Boolean {
+    fun commitEdit(action: SharedPreferences.Editor.() -> Unit): Boolean = synchronized(syncMutationLock) {
+        val editor = prepareEditor(action)
+        // commit 可能已经更新内存或磁盘，进入此边界后不能再回收生成文件
         val committed = editor.commit()
         if (committed) cleanUnreferencedGenerations()
-        return committed
+        committed
     }
 
-    private fun previousGeneration(key: String, raw: String): String {
+    private fun prepareEditor(action: SharedPreferences.Editor.() -> Unit): SharedPreferences.Editor {
+        val outer = preparingGenerations
+        val owned = mutableListOf<File>()
+        preparingGenerations = owned
+        try {
+            return preferences.edit().also { it.action() }
+        } catch (failure: Exception) {
+            deleteUnpublished(owned, failure)
+            throw failure
+        } finally {
+            preparingGenerations = outer
+        }
+    }
+
+    private fun previousGeneration(key: String, raw: String, owned: MutableList<File>): String {
         if (raw.startsWith(FILE_PREFIX)) {
             validateGeneration(raw)
             return raw
         }
         if (key == KEY_DELETED_PLAYLIST_IDS) {
             val ids = readInlinePlaylistIds(raw)
-            return writeGeneration { writer -> gson.toJson(ids, writer) }
+            return writeGeneration(owned) { writer -> gson.toJson(ids, writer) }
         }
         check(!JsonParser.parseString(raw).isJsonNull) { "Deletion state has no valid document" }
-        return writeGeneration { it.write(raw) }
+        return writeGeneration(owned) { it.write(raw) }
     }
 
     private fun validateGeneration(marker: String) {
@@ -226,7 +244,7 @@ internal class SyncDeletionStateStorage(
         return decoded
     }
 
-    private fun writeGeneration(write: (OutputStreamWriter) -> Unit): String {
+    private fun writeGeneration(owned: MutableList<File>, write: (OutputStreamWriter) -> Unit): String {
         val path = checkNotNull(directory)
         val name = "${UUID.randomUUID()}.json"
         val temporary = File(path, "$name.tmp")
@@ -242,10 +260,21 @@ internal class SyncDeletionStateStorage(
             }
             Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE)
             syncDirectory(path)
+            owned += destination
             return "$FILE_PREFIX$name:${digest.digest().hex()}"
         } catch (error: Exception) {
-            temporary.delete()
+            deleteUnpublished(listOf(temporary, destination), error)
             throw IllegalStateException("Failed to persist sync deletion generation", error)
+        }
+    }
+
+    private fun deleteUnpublished(files: List<File>, failure: Exception) {
+        for (file in files) {
+            try {
+                Files.deleteIfExists(file.toPath())
+            } catch (cleanup: Exception) {
+                failure.addSuppressed(cleanup)
+            }
         }
     }
 

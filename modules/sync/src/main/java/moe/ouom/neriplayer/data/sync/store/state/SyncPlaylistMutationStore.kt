@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
 
-internal class SyncPlaylistMutationStore(private val encryptedPrefs: SharedPreferences,
+internal class SyncPlaylistMutationStore(encryptedPrefs: SharedPreferences,
     private val playlists: SyncPlaylistDeletionStore,
     private val songs: SyncPlaylistSongDeletionStore,
     private val files: SyncDeletionStateStorage) {
@@ -52,11 +52,12 @@ internal class SyncPlaylistMutationStore(private val encryptedPrefs: SharedPrefe
                 deletedTimestamps -= playlistId
             }
 
-            val editor = encryptedPrefs.edit()
-            files.write(editor, KEY_PLAYLIST_SONG_DELETIONS, playlistDeletions.takeIf { it.isNotEmpty() })
-            playlists.writeDeletionState(editor, deletedIds, deletedTimestamps)
-            val nextVersion = mutation.bump(editor)
-            check(files.commit(editor)) { "Failed to persist playlist sync mutation" }
+            var nextVersion = 0L
+            check(files.commitEdit {
+                files.write(this, KEY_PLAYLIST_SONG_DELETIONS, playlistDeletions.takeIf { it.isNotEmpty() })
+                playlists.writeDeletionState(this, deletedIds, deletedTimestamps)
+                nextVersion = mutation.bump(this)
+            }) { "Failed to persist playlist sync mutation" }
             return nextVersion
         }
     }
