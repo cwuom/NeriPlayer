@@ -19,7 +19,7 @@ class SyncLegacyLyricMigrationTest {
     private val song = SongItem(1L, "song", "artist", "netease", 1L, 100L, null)
 
     @Test
-    fun `old automatic matching does not become a confirmed lyric edit`() {
+    fun `old matching is preserved when its edit provenance is unknown`() {
         val automatic = song.copy(
             matchedLyric = "automatically fetched lyrics",
             matchedTranslatedLyric = "automatically fetched translation",
@@ -28,11 +28,11 @@ class SyncLegacyLyricMigrationTest {
             matchedSongId = "42"
         )
         val snapshot = SyncSong.fromSongItem(automatic)
-        assertNull(snapshot.matchedLyric)
-        assertNull(snapshot.matchedTranslatedLyric)
-        assertNull(snapshot.matchedRomanizedLyric)
-        assertFalse(snapshot.lyricSyncEdited == true)
-        assertEquals(0L, snapshot.lyricSyncRevision)
+        assertEquals(automatic.matchedLyric, snapshot.matchedLyric)
+        assertEquals(automatic.matchedTranslatedLyric, snapshot.matchedTranslatedLyric)
+        assertEquals(automatic.matchedRomanizedLyric, snapshot.matchedRomanizedLyric)
+        assertEquals(true, snapshot.lyricSyncEdited)
+        assertEquals(1L, snapshot.lyricSyncRevision)
         assertEquals("42", snapshot.matchedSongId)
     }
 
@@ -40,12 +40,42 @@ class SyncLegacyLyricMigrationTest {
     fun `unconfirmed local lyrics remain available after a metadata only round trip`() {
         val unknown = song.copy(matchedLyric = "unconfirmed old lyrics", matchedTranslatedLyric = "old translation")
         val snapshot = SyncSong.fromSongItem(unknown)
-        assertNull(snapshot.matchedLyric)
+        assertEquals(unknown.matchedLyric, snapshot.matchedLyric)
         val restored = snapshot.toSongItem(unknown)
         assertEquals(unknown.matchedLyric, restored.matchedLyric)
         assertEquals(unknown.matchedTranslatedLyric, restored.matchedTranslatedLyric)
-        assertNull(restored.lyricSyncEdited)
+        assertEquals(true, restored.lyricSyncEdited)
         assertNull(restored.originalLyric)
+    }
+
+    @Test
+    fun `explicit optimization omits ambiguous old lyrics but keeps bilibili and confirmed edits`() {
+        val unknown = song.copy(matchedLyric = "old lyrics", originalLyric = "original")
+        val optimized = SyncSong.fromSongItem(unknown, optimizeLegacyLyrics = true)
+        assertNull(optimized.matchedLyric)
+        assertNull(optimized.originalLyric)
+        assertFalse(optimized.lyricSyncEdited == true)
+        val bilibili = SyncSong.fromSongItem(unknown.copy(album = "Bilibili", channelId = "bilibili", lyricSyncEdited = false),
+            optimizeLegacyLyrics = true)
+        assertEquals("old lyrics", bilibili.matchedLyric)
+        assertEquals("original", bilibili.originalLyric)
+        assertEquals(true, bilibili.lyricSyncEdited)
+        assertEquals("old lyrics", SyncSong.fromSongItem(unknown.copy(lyricSyncEdited = true),
+            optimizeLegacyLyrics = true).matchedLyric)
+    }
+
+    @Test
+    fun `baseline only old lyrics survive the initial snapshot and first restore`() {
+        val unknown = song.copy(originalLyric = "original", originalTranslatedLyric = "translated",
+            originalRomanizedLyric = "romanized")
+        val snapshot = SyncSong.fromSongItem(unknown)
+        val restored = snapshot.toSongItem()
+        assertEquals("original", restored.matchedLyric)
+        assertEquals("translated", restored.matchedTranslatedLyric)
+        assertEquals("romanized", restored.matchedRomanizedLyric)
+        assertEquals("original", restored.originalLyric)
+        assertEquals(1L, restored.lyricSyncRevision)
+        assertEquals(true, restored.lyricSyncEdited)
     }
 
     @Test

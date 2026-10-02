@@ -15,16 +15,59 @@ import org.junit.Test
 
 class PlaybackLyricOverrideProjectionTest {
     @Test
-    fun `unconfirmed recovery is available locally without becoming an edit or overriding a reset`() {
+    fun `a bilibili compatibility edit cannot be replaced by its baseline as a fabricated local version`() {
+        val local = song().copy(album = "Bilibili", channelId = "bilibili", audioId = "BV1synthetic",
+            subAudioId = "1", lyricSyncEdited = false)
+        val remote = SyncSong(id = local.id, album = local.album, channelId = local.channelId,
+            audioId = local.audioId, subAudioId = local.subAudioId,
+            matchedLyric = "edit", matchedTranslatedLyric = "translation", matchedRomanizedLyric = "romanized",
+            originalLyric = "origin", originalTranslatedLyric = "baseline translation",
+            originalRomanizedLyric = "baseline romanized", lyricSyncEdited = true, lyricSyncRevision = 1)
+
+        val restored = PlaybackLyricOverrideProjection(listOf(remote)).song(local)
+
+        assertEquals("edit", restored.matchedLyric)
+        assertEquals("translation", restored.matchedTranslatedLyric)
+        assertEquals("romanized", restored.matchedRomanizedLyric)
+        assertEquals("origin", restored.originalLyric)
+        assertEquals("baseline translation", restored.originalTranslatedLyric)
+        assertEquals("baseline romanized", restored.originalRomanizedLyric)
+        assertEquals(true, restored.lyricSyncEdited)
+        assertEquals(1L, restored.lyricSyncRevision)
+        assertSame(restored, PlaybackLyricOverrideProjection(listOf(remote)).song(restored))
+    }
+
+    @Test
+    fun `unconfirmed local numeric versions cannot block committed remote edits or resets`() {
+        for (revision in listOf(999L, Long.MAX_VALUE)) {
+            val local = song().copy(matchedLyric = "legacy edit", originalLyric = "local baseline",
+                lyricSyncRevision = revision)
+            val edited = PlaybackLyricOverrideProjection(listOf(edit())).song(local)
+            assertEquals("edit", edited.matchedLyric)
+            assertEquals(true, edited.lyricSyncEdited)
+            assertEquals(20L, edited.lyricSyncRevision)
+            val cleared = PlaybackLyricOverrideProjection(listOf(reset())).song(local)
+            assertEquals("local baseline", cleared.matchedLyric)
+            assertEquals(false, cleared.lyricSyncEdited)
+            assertEquals(20L, cleared.lyricSyncRevision)
+        }
+    }
+
+    @Test
+    fun `legacy recovery becomes a preserved edit without overriding a committed reset`() {
         val legacy = edit().copy(lyricSyncEdited = null, lyricSyncRevision = 0)
         val recovered = PlaybackLyricOverrideProjection(listOf(legacy)).song(song())
         assertEquals("edit", recovered.matchedLyric)
         assertEquals("translation", recovered.matchedTranslatedLyric)
         assertEquals("romanized", recovered.matchedRomanizedLyric)
-        assertNull(recovered.lyricSyncEdited)
-        assertEquals(0L, recovered.lyricSyncRevision)
+        assertEquals(true, recovered.lyricSyncEdited)
+        assertEquals(1L, recovered.lyricSyncRevision)
         val cached = song().copy(matchedLyric = "current network cache", lyricSyncEdited = false)
-        assertSame(cached, PlaybackLyricOverrideProjection(listOf(legacy)).song(cached))
+        val restoredCache = PlaybackLyricOverrideProjection(listOf(legacy)).song(cached)
+        assertEquals("edit", restoredCache.matchedLyric)
+        assertEquals("current network cache", restoredCache.originalLyric)
+        assertEquals(true, restoredCache.lyricSyncEdited)
+        assertEquals(1L, restoredCache.lyricSyncRevision)
         val resetSong = song().copy(lyricSyncEdited = false, lyricSyncRevision = 21)
         assertSame(resetSong, PlaybackLyricOverrideProjection(listOf(legacy)).song(resetSong))
         val projectedReset = PlaybackLyricOverrideProjection(listOf(legacy, reset())).song(song())

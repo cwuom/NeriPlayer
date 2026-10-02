@@ -9,6 +9,7 @@ internal class MemorySyncPreferences(initial: Map<String, Any> = emptyMap()) {
     val durableValues = ConcurrentHashMap(initial)
     val commits = mutableListOf<Set<String>>()
     var failNextCommit = false
+    var failCommitNumber: Int? = null
     var delayMissingDeviceRead = false
 
     fun restart(): MemorySyncPreferences = synchronized(values) {
@@ -58,7 +59,7 @@ internal class MemorySyncPreferences(initial: Map<String, Any> = emptyMap()) {
     }
 
     private fun persistMemory(): Boolean {
-        if (failNextCommit) {
+        if (failNextCommit || commits.size == failCommitNumber) {
             failNextCommit = false
             return false
         }

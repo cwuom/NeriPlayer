@@ -35,11 +35,13 @@ class SyncArchiveLegacyDeviceMigrationTest {
             prepared.content to prepared.objects.associate { it.path to it.content }
         }
         val retained = mutableListOf<SyncSong>()
-        val secondDevice = SyncArchiveRepository(temporary.newFolder()) { data -> retained += data.lyricOverrides }
+        val secondDevice = SyncArchiveRepository(temporary.newFolder()) { data ->
+            retained += data.lyricOverrides.filter { it.lyricSyncEdited == null }
+        }
         val received = secondDevice.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow()
 
-        assertNull(received.playlists.single().songs.single().matchedLyric)
-        assertTrue(received.lyricOverrides.isEmpty())
+        assertEquals(legacy.matchedLyric, received.playlists.single().songs.single().matchedLyric)
+        assertEquals(listOf(SyncSongLyricMergePolicy.prepareLegacy(legacy)), received.lyricOverrides)
         assertEquals(listOf(legacy), retained)
     }
 
@@ -224,7 +226,7 @@ class SyncArchiveLegacyDeviceMigrationTest {
     }
 
     @Test
-    fun `empty and already classified remote data clears a previously captured migration source`() {
+    fun `new capture replaces the previous source and preserves unknown baseline only lyrics`() {
         val inputs = listOf(
             SyncData(),
             SyncData(lyricOverrides = listOf(legacy.copy(lyricSyncEdited = true, lyricSyncRevision = 20))),
@@ -240,7 +242,11 @@ class SyncArchiveLegacyDeviceMigrationTest {
             }
             repository.captureLegacyLyrics(input)
             repository.prepare(SyncSongLyricMergePolicy.converge(input)).use { prepared ->
-                assertNull(SyncArchiveCodec.readManifest(prepared.content).legacyLyrics)
+                if (input.lyricOverrides.singleOrNull()?.lyricSyncEdited == null && input.lyricOverrides.isNotEmpty()) {
+                    assertTrue(SyncArchiveCodec.readManifest(prepared.content).legacyLyrics != null)
+                } else {
+                    assertNull(SyncArchiveCodec.readManifest(prepared.content).legacyLyrics)
+                }
                 assertFalse(prepared.objects.any { it.path == previousPath })
                 assertFalse(previousPath in prepared.paths)
             }
@@ -267,9 +273,15 @@ class SyncArchiveLegacyDeviceMigrationTest {
         }.getOrThrow()
         assertEquals(setOf(empty, translated, romanized), recovery.data.single().lyricOverrides.toSet())
         assertEquals(3, recovery.data.single().lyricOverrides.size)
-        assertTrue(received.lyricOverrides.isEmpty())
-        assertNull(received.favoritePlaylists.single().songs.single().matchedTranslatedLyric)
-        assertNull(received.recentPlays.single().song.matchedRomanizedLyric)
+        assertEquals(3, received.lyricOverrides.size)
+        assertTrue(received.lyricOverrides.all { it.lyricSyncEdited == true && it.lyricSyncRevision == 1L })
+        assertEquals("", received.lyricOverrides.single { it.id == empty.id }.matchedLyric)
+        assertEquals(translated.matchedTranslatedLyric,
+            received.favoritePlaylists.single().songs.single().matchedTranslatedLyric)
+        assertEquals(translated.originalTranslatedLyric,
+            received.favoritePlaylists.single().songs.single().originalTranslatedLyric)
+        assertEquals(romanized.matchedRomanizedLyric, received.recentPlays.single().song.matchedRomanizedLyric)
+        assertEquals(romanized.originalRomanizedLyric, received.recentPlays.single().song.originalRomanizedLyric)
     }
 
     @Test
@@ -284,7 +296,7 @@ class SyncArchiveLegacyDeviceMigrationTest {
         val reader = SyncArchiveRepository(temporary.newFolder(), recovery)
         val received = reader.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow()
         assertEquals(listOf(large), recovery.data.single().lyricOverrides)
-        assertTrue(received.lyricOverrides.isEmpty())
+        assertEquals(listOf(SyncSongLyricMergePolicy.prepareLegacy(large)), received.lyricOverrides)
         assertTrue(published.second.keys.all { it in reader.lastReferencedPaths })
     }
 
@@ -301,6 +313,7 @@ class SyncArchiveLegacyDeviceMigrationTest {
         val data = mutableListOf<SyncData>()
         var failure: IOException? = null
         override fun isCompleted(sourceHash: String): Boolean = sourceHash in completed
+        override fun preservedLyrics(): List<SyncSong> = data.flatMap { it.lyricOverrides }
         override fun recover(sourceHash: String, data: SyncData) {
             failure?.let { throw it }
             this.data += data

@@ -88,8 +88,9 @@ class SyncLyricOverrideLookupTest {
         assertNull(reset.matchedTranslatedLyric)
         assertNull(reset.matchedRomanizedLyric)
         val edited = result.single { it.id == 999L }
-        assertNull(edited.lyricSyncEdited)
-        assertEquals(0L, edited.lyricSyncRevision)
+        assertEquals(true, edited.lyricSyncEdited)
+        assertEquals(1L, edited.lyricSyncRevision)
+        assertEquals("network baseline", edited.originalLyric)
         assertEquals("edit 999", edited.matchedLyric)
         assertEquals("translation", edited.matchedTranslatedLyric)
         assertEquals("romanized", edited.matchedRomanizedLyric)
@@ -166,7 +167,8 @@ class SyncLyricOverrideLookupTest {
         fixture.prefs.values[KEY_LYRIC_OVERRIDES] = """[{"id":1,"album":"Netease","matchedLyric":"manual","matchedLyricSource":"CLOUD_MUSIC"},{"id":2,"album":"netease","matchedLyric":"cached","lyricSyncEdited":false}]"""
         val selected = fixture.store.getLyricOverridesForIdentityKeys(setOf("1|netease|", "2|netease|"))
         assertEquals(1L, selected.single().id)
-        assertNull(selected.single().lyricSyncEdited)
+        assertEquals(true, selected.single().lyricSyncEdited)
+        assertEquals(1L, selected.single().lyricSyncRevision)
         assertEquals("manual", selected.single().matchedLyric)
     }
 

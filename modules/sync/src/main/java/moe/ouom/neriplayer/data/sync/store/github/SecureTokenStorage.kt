@@ -49,6 +49,7 @@ class SecureTokenStorage internal constructor(
     private val lyricOverrides = SyncLyricOverrideStore(encryptedPrefs, deletionFiles, directory)
     private val lyricLookup = SyncLyricOverrideLookup(deletionFiles)
     private val legacyLyricArchiveReceipts = SyncLegacyLyricArchiveReceiptStore(encryptedPrefs, deletionFiles)
+    private val legacyLyricOptimization = SyncLegacyLyricOptimizationStore(encryptedPrefs, deletionFiles)
 
     fun saveToken(token: String) = configuration.saveToken(token)
 
@@ -158,6 +159,10 @@ class SecureTokenStorage internal constructor(
     ): Boolean = deletionState.setDeletionStateIfMutationVersion(expectedMutationVersion, recentPlayDeletions, playlistSongDeletions)
 
     fun getLyricOverrides(): List<SyncSong> = lyricOverrides.getLyricOverrides()
+
+    fun isLegacyLyricOptimizationEnabled(): Boolean = legacyLyricOptimization.isEnabled()
+
+    fun setLegacyLyricOptimizationEnabled(enabled: Boolean) = legacyLyricOptimization.setEnabled(enabled)
 
     fun retainLegacyLyrics(data: moe.ouom.neriplayer.data.model.sync.SyncData) = lyricOverrides.retainLegacyLyrics(data)
 

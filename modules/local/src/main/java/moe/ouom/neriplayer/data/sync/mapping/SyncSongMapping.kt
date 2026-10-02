@@ -9,22 +9,20 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.toSyncableRemoteSongOrNull
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
-import moe.ouom.neriplayer.data.model.sync.hasUserEditedLyricsForSync
+import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 
-fun SyncSong.Companion.fromSongItemOrNull(song: SongItem, context: Context? = null): SyncSong? {
+fun SyncSong.Companion.fromSongItemOrNull(song: SongItem, context: Context? = null, optimizeLegacyLyrics: Boolean = false): SyncSong? {
     return song
         .toSyncableRemoteSongOrNull(context)
-        ?.let { syncableSong -> fromSongItem(syncableSong, context) }
+        ?.let { syncableSong -> fromSongItem(syncableSong, context, optimizeLegacyLyrics) }
 }
 
-fun SyncSong.Companion.fromSongItem(song: SongItem, context: Context? = null): SyncSong {
+fun SyncSong.Companion.fromSongItem(song: SongItem, context: Context? = null, optimizeLegacyLyrics: Boolean = false): SyncSong {
     val mapper = context?.let { CoverUrlMapper.getInstance(it) }
     val syncCoverUrl = sanitizeCoverUrlForSync(song.coverUrl, mapper)
     val syncCustomCoverUrl = sanitizeCoverUrlForSync(song.customCoverUrl, mapper)
     val syncOriginalCoverUrl = sanitizeCoverUrlForSync(song.originalCoverUrl, mapper)
-    val editedLyrics = song.hasUserEditedLyricsForSync()
-
-    return SyncSong(
+    val raw = SyncSong(
         id = song.id,
         name = song.name,
         artist = song.artist,
@@ -34,11 +32,14 @@ fun SyncSong.Companion.fromSongItem(song: SongItem, context: Context? = null): S
         coverUrl = syncCoverUrl,
         mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri),
         addedAt = song.addedAt.coerceAtLeast(0L),
-        matchedLyric = song.matchedLyric.takeIf { editedLyrics },
-        matchedTranslatedLyric = song.matchedTranslatedLyric.takeIf { editedLyrics },
-        matchedRomanizedLyric = song.matchedRomanizedLyric.takeIf { editedLyrics },
-        lyricSyncEdited = editedLyrics,
-        lyricSyncRevision = if (song.lyricSyncEdited == null) 0L else maxOf(song.lyricSyncRevision, if (editedLyrics) 1L else 0L),
+        matchedLyric = song.matchedLyric,
+        matchedTranslatedLyric = song.matchedTranslatedLyric,
+        matchedRomanizedLyric = song.matchedRomanizedLyric,
+        originalLyric = song.originalLyric,
+        originalTranslatedLyric = song.originalTranslatedLyric,
+        originalRomanizedLyric = song.originalRomanizedLyric,
+        lyricSyncEdited = song.lyricSyncEdited,
+        lyricSyncRevision = song.lyricSyncRevision,
         matchedLyricSource = song.matchedLyricSource?.name,
         matchedSongId = song.matchedSongId,
         userLyricOffsetMs = song.userLyricOffsetMs,
@@ -55,6 +56,7 @@ fun SyncSong.Companion.fromSongItem(song: SongItem, context: Context? = null): S
         syncMembershipTokens = song.syncMembershipTokens.normalizedSyncCausalTokens(),
         syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
     )
+    return SyncSongLyricMergePolicy.prepareLegacy(raw, optimizeLegacyLyrics)
 }
 
 fun SyncSong.toSongItem(existing: SongItem? = null): SongItem {
@@ -98,7 +100,8 @@ fun SyncSong.toSongItem(existing: SongItem? = null): SongItem {
 
 private fun restoreSyncLyrics(restored: SongItem, existing: SongItem?): SongItem {
     if (existing == null) return restored
-    if (existing.lyricSyncRevision > restored.lyricSyncRevision) {
+    val localRevision = if (existing.lyricSyncEdited == null) 0L else existing.lyricSyncRevision
+    if (localRevision > restored.lyricSyncRevision) {
         return preserveNewerLocalLyrics(restored, existing)
     }
     return applyRemoteLyrics(restored, existing)
@@ -145,4 +148,4 @@ private fun applyRemoteLyrics(restored: SongItem, existing: SongItem): SongItem 
 }
 
 private fun preservedOriginalLyric(localOriginal: String?, remoteOriginal: String?, localMatched: String?, knownCache: Boolean): String? =
-    localOriginal ?: remoteOriginal ?: if (knownCache) localMatched else null
+    remoteOriginal ?: localOriginal ?: if (knownCache) localMatched else null

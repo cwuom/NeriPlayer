@@ -4,11 +4,28 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncLegacyLyricPreservationTest {
     private val song = SongItem(id = 7L, name = "title", artist = "artist", album = "album",
         albumId = 3L, durationMs = 120_000L, coverUrl = null)
+
+    @Test
+    fun `each matched or original variant including empty text counts as a retained payload`() {
+        assertFalse(song.hasSyncLyricText())
+        assertFalse(SyncSong().hasSyncLyricText())
+        val variants = listOf(
+            song.copy(matchedLyric = ""), song.copy(matchedTranslatedLyric = ""),
+            song.copy(matchedRomanizedLyric = ""), song.copy(originalLyric = ""),
+            song.copy(originalTranslatedLyric = ""), song.copy(originalRomanizedLyric = "")
+        )
+        variants.forEach { variant ->
+            assertTrue(variant.hasSyncLyricText())
+            assertTrue(requireNotNull(variant.toLegacyLyricRecoveryCandidateOrNull()).hasSyncLyricText())
+        }
+    }
 
     @Test
     fun `unknown cache retains full local text without becoming a confirmed edit`() {
@@ -46,9 +63,20 @@ class SyncLegacyLyricPreservationTest {
     }
 
     @Test
-    fun `confirmed edits resets and baseline only data do not enter unknown local cache`() {
+    fun `confirmed edits and known caches do not enter unknown local cache`() {
         assertNull(song.copy(matchedLyric = "edit", lyricSyncEdited = true).toLegacyLyricRecoveryCandidateOrNull())
         assertNull(song.copy(matchedLyric = "cache", lyricSyncEdited = false).toLegacyLyricRecoveryCandidateOrNull())
-        assertNull(song.copy(originalLyric = "baseline").toLegacyLyricRecoveryCandidateOrNull())
+    }
+
+    @Test
+    fun `baseline only legacy variants are retained without inventing matched text`() {
+        val retained = requireNotNull(song.copy(originalLyric = "baseline", originalTranslatedLyric = "",
+            originalRomanizedLyric = "romanized").toLegacyLyricRecoveryCandidateOrNull())
+        assertEquals("baseline", retained.originalLyric)
+        assertEquals("", retained.originalTranslatedLyric)
+        assertEquals("romanized", retained.originalRomanizedLyric)
+        assertNull(retained.matchedLyric)
+        assertNull(retained.lyricSyncEdited)
+        assertEquals(0L, retained.lyricSyncRevision)
     }
 }

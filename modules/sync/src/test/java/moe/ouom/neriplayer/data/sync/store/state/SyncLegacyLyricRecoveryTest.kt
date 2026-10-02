@@ -27,17 +27,29 @@ class SyncLegacyLyricRecoveryTest {
     private val key = "1|netease|"
 
     @Test
-    fun `auxiliary only legacy cache survives restart without retaining confirmed states or baselines`() {
+    fun `baseline only legacy lyrics remain durable candidates after restart`() {
+        val preferences = MemorySyncPreferences()
+        val directory = temporary.newFolder()
+        val baseline = legacy.copy(matchedLyric = null, matchedTranslatedLyric = null, matchedRomanizedLyric = null)
+        SecureTokenStorage(preferences.preferences, directory).retainLegacyLyricCandidates(listOf(baseline))
+        val restarted = SecureTokenStorage(preferences.restart().preferences, directory)
+        assertEquals(listOf(baseline), restarted.getLegacyLyricCandidates())
+        assertEquals(0L, restarted.getSyncMutationVersion())
+    }
+
+    @Test
+    fun `auxiliary and baseline only legacy lyrics survive restart without retaining confirmed states`() {
         val preferences = MemorySyncPreferences()
         val directory = temporary.newFolder()
         val storage = SecureTokenStorage(preferences.preferences, directory)
         val translated = SyncSong(id = 2, album = "netease", matchedTranslatedLyric = "")
         val romanized = SyncSong(id = 3, album = "netease", matchedRomanizedLyric = "romanized")
+        val baseline = SyncSong(id = 4, album = "netease", originalLyric = "baseline only")
         storage.retainLegacyLyricCandidates(listOf(translated, romanized,
-            SyncSong(id = 4, album = "netease", originalLyric = "baseline only"),
+            baseline,
             legacy.copy(lyricSyncEdited = false), legacy.copy(lyricSyncEdited = true, lyricSyncRevision = 9)))
         val restarted = SecureTokenStorage(preferences.restart().preferences, directory)
-        assertEquals(listOf(translated, romanized), restarted.getLegacyLyricCandidates())
+        assertEquals(listOf(translated, romanized, baseline), restarted.getLegacyLyricCandidates())
         assertTrue(restarted.getLyricOverrides().isEmpty())
         assertEquals(0L, restarted.getSyncMutationVersion())
     }
@@ -49,14 +61,14 @@ class SyncLegacyLyricRecoveryTest {
         val storage = SecureTokenStorage(preferences.preferences, directory)
         val original = SyncData(recentPlays = listOf(SyncRecentPlay(song = legacy, playedAt = 10)))
         val decoded = decoder(storage).decode(SyncDataSerializer.serialize(original, false)) { IOException("empty") }.getOrThrow()
-        assertNull(decoded.recentPlays.single().song.matchedLyric)
-        assertTrue(decoded.lyricOverrides.isEmpty())
+        assertEquals(legacy.matchedLyric, decoded.recentPlays.single().song.matchedLyric)
+        assertEquals(legacy.originalLyric, decoded.lyricOverrides.single().originalLyric)
         val deletion = SyncData(recentPlayDeletions = listOf(SyncRecentPlayDeletion(songId = 1, album = "netease", deletedAt = 20)))
         val merged = SyncDataMerger(TestSyncMergeHost()).merge(deletion, decoded, 0).mergedData
         assertTrue(merged.recentPlays.isEmpty())
-        assertTrue(merged.lyricOverrides.isEmpty())
+        assertEquals(SyncSongLyricMergePolicy.prepareLegacy(legacy), merged.lyricOverrides.single())
         val restarted = SecureTokenStorage(preferences.restart().preferences, directory)
-        assertEquals(legacy, restarted.getLyricOverridesForIdentityKeys(setOf(key)).single())
+        assertEquals(SyncSongLyricMergePolicy.prepareLegacy(legacy), restarted.getLyricOverridesForIdentityKeys(setOf(key)).single())
         assertTrue(restarted.getLyricOverrides().isEmpty())
         assertEquals(0L, restarted.getSyncMutationVersion())
     }
@@ -100,7 +112,7 @@ class SyncLegacyLyricRecoveryTest {
         assertTrue(decoder(failingFiles).decode(bytes) { IOException("empty") }.isFailure)
         assertTrue(SecureTokenStorage(preferences.restart().preferences, directory).getLyricOverridesForIdentityKeys(setOf(key)).isEmpty())
         decoder(storage).decode(bytes) { IOException("empty") }.getOrThrow()
-        assertEquals(legacy, SecureTokenStorage(preferences.restart().preferences, directory).getLyricOverridesForIdentityKeys(setOf(key)).single())
+        assertEquals(SyncSongLyricMergePolicy.prepareLegacy(legacy), SecureTokenStorage(preferences.restart().preferences, directory).getLyricOverridesForIdentityKeys(setOf(key)).single())
     }
 
     @Test
@@ -110,7 +122,7 @@ class SyncLegacyLyricRecoveryTest {
         val files = SyncDeletionStateStorage(preferences.preferences, directory)
         assertTrue(files.commitEdit { files.write(this, KEY_LYRIC_OVERRIDES, listOf(legacy)) })
         val storage = SecureTokenStorage(preferences.preferences, directory)
-        assertTrue(storage.getLyricOverrides().isEmpty())
+        assertEquals(SyncSongLyricMergePolicy.prepareLegacy(legacy), storage.getLyricOverrides().single())
         storage.recordLyricOverride(legacy.copy(matchedLyric = "confirmed", lyricSyncEdited = true, lyricSyncRevision = 20))
         val marker = preferences.values[KEY_LEGACY_LYRIC_RECOVERY] as String
         val recovery = File(directory, marker.split(':')[1])

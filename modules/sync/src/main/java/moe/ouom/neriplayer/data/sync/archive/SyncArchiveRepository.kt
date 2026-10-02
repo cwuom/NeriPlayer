@@ -15,6 +15,8 @@ import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 
 class SyncArchiveRepository private constructor(
     cacheDirectory: File,
@@ -36,7 +38,7 @@ class SyncArchiveRepository private constructor(
         private set
 
     fun captureLegacyLyrics(data: SyncData) {
-        val captured = legacyArchive.capture(data)
+        val captured = legacyArchive.capture(data, legacyRecovery?.optimizeLegacyLyrics() == true)
         legacySource = captured?.source
         capturedLegacyObjects = captured?.objects.orEmpty()
     }
@@ -109,12 +111,13 @@ class SyncArchiveRepository private constructor(
             val data = SyncArchiveInputStream(refs.data, cache).use {
                 SyncArchiveRecords.read(manifest.header, it, manifest.recordCount, manifest.rawDataBytes, beforeNormalization) { context.ensureActive() }
             }
-            val legacyPaths = recoverLegacyLyrics(manifest.legacyLyrics, fetch)
+            val recovered = recoverLegacyLyrics(manifest.legacyLyrics, fetch)
+            val restored = restorePreservedLyrics(data, recovered.lyrics)
             legacySource = manifest.legacyLyrics
             capturedLegacyObjects = emptyList()
-            lastReferencedPaths = refs.paths + legacyPaths
+            lastReferencedPaths = refs.paths + recovered.paths
             cache.trim(lastReferencedPaths)
-            Result.success(data)
+            Result.success(restored)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -148,25 +151,33 @@ class SyncArchiveRepository private constructor(
         paths: Set<String>,
         fetch: suspend (String) -> Result<ByteArray>
     ): SyncDataset {
-        val legacyPaths = try {
-            recoverLegacyLyrics(manifest.legacyLyrics, fetch)
+        val (restored, legacyPaths) = try {
+            val recovered = recoverLegacyLyrics(manifest.legacyLyrics, fetch)
+            val data = restorePreservedLyrics(dataset.data, recovered.lyrics)
+            val restored = if (data === dataset.data) dataset else SyncDataset(data, dataset.playback,
+                dataset.capturedPlaybackRevision, dataset.playbackMatchesCaptured)
+            restored to recovered.paths
         } catch (error: Exception) {
             try { dataset.close() } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
             throw error
         }
         legacySource = manifest.legacyLyrics
         capturedLegacyObjects = emptyList()
-        return approveDataset(dataset, paths + legacyPaths)
+        return approveDataset(restored, paths + legacyPaths)
     }
 
     private suspend fun recoverLegacyLyrics(
         source: SyncLegacyLyricSource?,
         fetch: suspend (String) -> Result<ByteArray>
-    ): Set<String> {
-        if (source == null) return emptySet()
+    ): RecoveredLegacyLyrics {
+        if (source == null) return RecoveredLegacyLyrics(emptySet(), emptyList())
         coroutineContext.ensureActive()
         val recovery = legacyRecovery
-        if (recovery?.isCompleted(source.hash) == true) return setOf(source.root.path)
+        if (recovery?.isCompleted(source.hash) == true) {
+            val preserved = recovery.preservedLyrics()
+            coroutineContext.ensureActive()
+            return RecoveredLegacyLyrics(setOf(source.root.path), preserved)
+        }
         val refs = resolve(source.manifest(), fetch)
         val context = coroutineContext
         val data = SyncArchiveInputStream(refs.data, cache).use {
@@ -174,9 +185,19 @@ class SyncArchiveRepository private constructor(
         }
         context.ensureActive()
         if (recovery == null) beforeNormalization(data) else recovery.recover(source.hash, data)
+        val preserved = recovery?.preservedLyrics().orEmpty()
         context.ensureActive()
-        return refs.paths
+        return RecoveredLegacyLyrics(refs.paths, data.lyricOverrides + preserved)
     }
+
+    private fun restorePreservedLyrics(data: SyncData, candidates: List<SyncSong>): SyncData {
+        if (candidates.isEmpty()) return data
+        val optimize = legacyRecovery?.optimizeLegacyLyrics() == true
+        val preserved = candidates.map { SyncSongLyricMergePolicy.prepareLegacy(it, optimize) }
+        return SyncSongLyricMergePolicy.converge(data.copy(lyricOverrides = data.lyricOverrides + preserved))
+    }
+
+    private data class RecoveredLegacyLyrics(val paths: Set<String>, val lyrics: List<SyncSong>)
 
     private suspend fun decodeDataset(
         manifest: SyncArchiveManifest, refs: Resolved, store: SyncPlaybackDatasetStore,

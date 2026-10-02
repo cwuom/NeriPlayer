@@ -2,14 +2,16 @@ package moe.ouom.neriplayer.data.sync.archive
 
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.model.sync.hasSyncLyricText
 import moe.ouom.neriplayer.data.sync.identity.stableKey
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 
 internal object SyncArchiveLyricProjection {
     fun reference(song: SyncSong): SyncSong {
         val normalized = SyncSongLyricMergePolicy.normalize(song)
-        if (normalized.matchedLyric == null && normalized.matchedTranslatedLyric == null && normalized.matchedRomanizedLyric == null) return normalized
-        return normalized.copy(matchedLyric = null, matchedTranslatedLyric = null, matchedRomanizedLyric = null)
+        if (!normalized.hasSyncLyricText()) return normalized
+        return normalized.copy(matchedLyric = null, matchedTranslatedLyric = null, matchedRomanizedLyric = null,
+            originalLyric = null, originalTranslatedLyric = null, originalRomanizedLyric = null)
     }
 
     fun restore(data: SyncData, beforeNormalization: (SyncData) -> Unit = {}): SyncData {

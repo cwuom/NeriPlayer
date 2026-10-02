@@ -30,6 +30,7 @@ class WebDavSyncViewModel : ViewModel() {
 
     private var storage: WebDavStorage? = null
     internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
+    internal var targetSyncOperation: (suspend (String) -> Result<SyncResult>)? = null
     private var syncJob: Job? = null
 
     fun initialize(context: Context) {
@@ -37,7 +38,9 @@ class WebDavSyncViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             if (storage == null) {
                 storage = WebDavStorage(appContext)
-                syncOperation = WebDavSyncManager.getInstance(appContext)::performSync
+                val manager = WebDavSyncManager.getInstance(appContext)
+                syncOperation = manager::performSync
+                targetSyncOperation = manager::performSyncForTarget
             }
             loadConfiguration()
         }
@@ -109,11 +112,31 @@ class WebDavSyncViewModel : ViewModel() {
         }
     }
 
+    fun performSyncForTarget(
+        context: Context,
+        targetId: String,
+        onFinished: () -> Unit = {},
+        onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}
+    ) {
+        val operation = targetSyncOperation ?: return
+        if (targetId.isBlank()) return
+        startSync(context, { operation(targetId) }, onUpgradeRequired, onFinished)
+    }
+
     fun performSync(context: Context, onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}) {
-        if (syncJob?.isActive == true) return
         val operation = syncOperation ?: return
+        startSync(context, operation, onUpgradeRequired)
+    }
+
+    private fun startSync(
+        context: Context,
+        operation: suspend () -> Result<SyncResult>,
+        onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit,
+        onFinished: () -> Unit = {}
+    ) {
+        if (syncJob?.isActive == true) return
         val appContext = context.applicationContext
-        _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null)
+        _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null, successMessage = null)
 
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             val result = operation()
@@ -121,15 +144,19 @@ class WebDavSyncViewModel : ViewModel() {
             if (syncJob !== coroutineContext[Job]) return@launch
             if (result.isSuccess) {
                 val syncResult = result.getOrNull()!!
-                val lastSyncTime = storage?.getLastSyncTime() ?: _uiState.value.lastSyncTime
-                _uiState.value = _uiState.value.copy(
-                    isSyncing = false,
-                    syncResult = syncResult,
-                    lastSyncTime = lastSyncTime,
-                    successMessage = syncResult.message
-                )
-                if (_uiState.value.autoSyncEnabled) {
-                    WebDavSyncWorker.schedulePeriodicSync(appContext)
+                if (syncResult.success) {
+                    val lastSyncTime = storage?.getLastSyncTime() ?: _uiState.value.lastSyncTime
+                    _uiState.value = _uiState.value.copy(
+                        isSyncing = false,
+                        syncResult = syncResult,
+                        lastSyncTime = lastSyncTime,
+                        successMessage = syncResult.message
+                    )
+                    if (_uiState.value.autoSyncEnabled) {
+                        WebDavSyncWorker.schedulePeriodicSync(appContext)
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(isSyncing = false, errorMessage = syncResult.message)
                 }
             } else {
                 val error = result.exceptionOrNull()
@@ -167,6 +194,7 @@ class WebDavSyncViewModel : ViewModel() {
             if (syncJob === job) {
                 syncJob = null
                 _uiState.value = _uiState.value.copy(isSyncing = false)
+                onFinished()
             }
         }
         job.start()

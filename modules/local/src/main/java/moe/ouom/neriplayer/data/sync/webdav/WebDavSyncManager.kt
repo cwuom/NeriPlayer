@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncResult
@@ -39,6 +40,7 @@ import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
 import moe.ouom.neriplayer.data.sync.runtime.SyncSession
 import java.io.File
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
+import moe.ouom.neriplayer.data.sync.host.verifyTargetSyncCompletion
 import moe.ouom.neriplayer.common.locale.LanguageManager
 
 class WebDavSyncManager private constructor(context: Context) {
@@ -54,7 +56,14 @@ class WebDavSyncManager private constructor(context: Context) {
             instance.get { WebDavSyncManager(context.applicationContext) }
     }
 
-    suspend fun performSync(): Result<SyncResult> = protocolUpgrade.executeIfApproved {
+    suspend fun performSync(): Result<SyncResult> = executeSync(null)
+
+    suspend fun performSyncForTarget(targetId: String): Result<SyncResult> =
+        verifyTargetSyncCompletion(executeSync(targetId), targetId) { target ->
+            protocolUpgrade.versionFlow(target).first()
+        }
+
+    private suspend fun executeSync(expectedTargetId: String?): Result<SyncResult> = protocolUpgrade.executeIfApproved {
         withContext(Dispatchers.IO) {
             val localizedContext = LanguageManager.applyLanguage(appContext)
             SyncSession(
@@ -64,7 +73,7 @@ class WebDavSyncManager private constructor(context: Context) {
                 noChangeMessage = localizedContext.getString(CoreCommonR.string.webdav_sync_no_change),
                 initialUploadMessage = localizedContext.getString(CoreCommonR.string.sync_initial_uploaded),
                 inProgressError = { WebDavSyncInProgressException(localizedContext.getString(CoreCommonR.string.webdav_sync_in_progress)) }
-            ).execute { createWebDavSyncBackend(appContext) }
+            ).execute { createWebDavSyncBackend(appContext, expectedTargetId) }
         }
     }
 }

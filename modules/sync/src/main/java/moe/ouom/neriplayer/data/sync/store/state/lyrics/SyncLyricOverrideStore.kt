@@ -26,10 +26,14 @@ internal class SyncLyricOverrideStore(
     val version: StateFlow<Long> = notifications.changes
 
     fun getLyricOverrides(): List<SyncSong> = synchronized(syncMutationLock) {
+        SyncSongLyricMergePolicy.mergeOverrides(readCurrentOverrides())
+    }
+
+    private fun readCurrentOverrides(): List<SyncSong> {
         val type = object : TypeToken<List<SyncSong>>() {}.type
         val current = files.read<List<SyncSong>>(KEY_LYRIC_OVERRIDES, type).orEmpty()
         if (recovery.retain(current)) notifications.committed(notificationMarker())
-        SyncSongLyricMergePolicy.mergeOverrides(current)
+        return current
     }
 
     fun retainLegacyLyrics(data: SyncData) = synchronized(syncMutationLock) {
@@ -47,14 +51,15 @@ internal class SyncLyricOverrideStore(
 
     fun recordLyricOverride(song: SyncSong) {
         synchronized(syncMutationLock) {
-            val current = getLyricOverrides()
+            val stored = readCurrentOverrides()
+            val current = SyncSongLyricMergePolicy.mergeOverrides(stored)
             val merged = SyncSongLyricMergePolicy.mergeOverrides(current + song)
             // commit 失败也会更新偏好内存，等值重试仍需确认落盘
             check(files.commitEdit {
-                if (merged != current) {
+                if (merged != stored) {
                     files.write(this, KEY_LYRIC_OVERRIDES, merged)
-                    mutation.bump(this)
                 }
+                if (merged != current) mutation.bump(this)
             }) { "Failed to persist user lyric override" }
             notifications.committed(notificationMarker())
         }
@@ -63,11 +68,12 @@ internal class SyncLyricOverrideStore(
     fun setLyricOverridesIfMutationVersion(expected: Long, overrides: List<SyncSong>): Boolean {
         return synchronized(syncMutationLock) {
             if (preferences.getLong(KEY_SYNC_MUTATION_VERSION, 0L) != expected) return@synchronized false
-            val current = getLyricOverrides()
+            val stored = readCurrentOverrides()
+            val current = SyncSongLyricMergePolicy.mergeOverrides(stored)
             val merged = SyncSongLyricMergePolicy.mergeOverrides(current + overrides)
             // 相同内容可能来自上次失败提交，确认成功后再通知共享队列
             check(files.commitEdit {
-                if (merged != current) files.write(this, KEY_LYRIC_OVERRIDES, merged)
+                if (merged != stored) files.write(this, KEY_LYRIC_OVERRIDES, merged)
             }) { "Failed to persist synchronized lyric overrides" }
             notifications.committed(notificationMarker())
             true

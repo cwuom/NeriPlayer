@@ -22,7 +22,7 @@ class SyncLegacyLyricSourceValidationTest {
     private val legacy = SyncSong(id = 7, album = "netease", matchedLyric = "old user text")
 
     @Test
-    fun `valid nested migration indexes recover the candidate while leaving normal data empty`() = runTest {
+    fun `valid nested migration indexes restore the preserved candidate into normal data`() = runTest {
         val fixture = archive(listOf(15 to legacy))
         val cache = SyncArchiveCache(temporary.newFolder())
         val inner = cache.store(ProtoBuf.encodeToByteArray(SyncArchiveIndex(listOf(fixture.source.root))), index = true)
@@ -35,7 +35,9 @@ class SyncLegacyLyricSourceValidationTest {
 
         assertEquals(listOf(legacy), recovery.data.single().lyricOverrides)
         assertTrue(recovery.isCompleted(source.hash))
-        assertTrue(received.lyricOverrides.isEmpty())
+        assertEquals(legacy.matchedLyric, received.lyricOverrides.single().matchedLyric)
+        assertEquals(true, received.lyricOverrides.single().lyricSyncEdited)
+        assertEquals(1L, received.lyricOverrides.single().lyricSyncRevision)
         assertEquals(objects.keys, reader.lastReferencedPaths)
     }
 

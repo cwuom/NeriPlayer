@@ -9,10 +9,10 @@ import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.model.sync.toLegacyLyricRecoveryCandidateOrNull
 
-fun SyncFavoritePlaylist.Companion.fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null): SyncFavoritePlaylist {
+fun SyncFavoritePlaylist.Companion.fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null, optimizeLegacyLyrics: Boolean = false): SyncFavoritePlaylist {
     val mapper = context?.let { CoverUrlMapper.getInstance(it) }
     if (playlist.isDeleted) return deletedFavoritePlaylist(playlist, mapper)
-    val syncedSongs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) }
+    val syncedSongs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context, optimizeLegacyLyrics) }
     val hasFilteredLocalSongs = syncedSongs.size != playlist.songs.size
     val syncedCoverUrl = sanitizeCoverUrlForSync(playlist.coverUrl, mapper)
         ?: syncedSongs.firstOrNull()?.coverUrl

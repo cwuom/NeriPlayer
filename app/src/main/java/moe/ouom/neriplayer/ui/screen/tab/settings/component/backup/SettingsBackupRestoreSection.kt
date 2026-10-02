@@ -104,6 +104,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeSetting
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeWarning
 import moe.ouom.neriplayer.ui.sync.upgrade.rememberSyncProtocolUpgradeViewModel
+import moe.ouom.neriplayer.ui.sync.lyrics.SyncLyricOptimizationSetting
 
 @Composable
 internal fun SettingsBackupRestoreSection(
@@ -188,19 +189,23 @@ internal fun SettingsBackupRestoreSection(
         LaunchedEffect(githubTarget, webDavTarget, configTransferUiState.lastImportSuccess) {
             syncUpgradeVm.refreshTargets()
         }
+        fun performGitHubSync(targetId: String) {
+            githubVm?.performSyncForTarget(context, targetId, onFinished = syncUpgradeVm::refreshTargets) { challenge ->
+                syncUpgradeVm.requestUpgrade(challenge) { performGitHubSync(challenge.targetId) }
+            }
+        }
         fun requestGitHubSync() {
-            syncUpgradeVm.requestSync {
-                githubVm?.performSync(context) { challenge ->
-                    syncUpgradeVm.requestUpgrade(challenge, ::requestGitHubSync)
-                }
+            val targetId = githubTarget ?: return
+            syncUpgradeVm.requestSync(targetId) { performGitHubSync(targetId) }
+        }
+        fun performWebDavSync(targetId: String) {
+            webDavVm?.performSyncForTarget(context, targetId, onFinished = syncUpgradeVm::refreshTargets) { challenge ->
+                syncUpgradeVm.requestUpgrade(challenge) { performWebDavSync(challenge.targetId) }
             }
         }
         fun requestWebDavSync() {
-            syncUpgradeVm.requestSync {
-                webDavVm?.performSync(context) { challenge ->
-                    syncUpgradeVm.requestUpgrade(challenge, ::requestWebDavSync)
-                }
-            }
+            val targetId = webDavTarget ?: return
+            syncUpgradeVm.requestSync(targetId) { performWebDavSync(targetId) }
         }
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
         var showConfigExportWarningDialog by remember { mutableStateOf(false) }
@@ -583,6 +588,7 @@ internal fun SettingsBackupRestoreSection(
             )
 
             SyncProtocolUpgradeSetting(githubTarget)
+            SyncLyricOptimizationSetting(upgradeSaving = syncUpgradeState.isSaving)
 
             ListItem(
                 leadingContent = {
@@ -752,6 +758,7 @@ internal fun SettingsBackupRestoreSection(
             )
 
             SyncProtocolUpgradeSetting(webDavTarget)
+            SyncLyricOptimizationSetting(upgradeSaving = syncUpgradeState.isSaving)
 
             ListItem(
                 leadingContent = {

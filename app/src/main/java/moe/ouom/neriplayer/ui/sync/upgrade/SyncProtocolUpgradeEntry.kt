@@ -30,15 +30,21 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.Context
+import android.widget.Toast
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
+import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.sync.github.GitHubSyncManager
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 
 @Composable
@@ -49,12 +55,30 @@ internal fun rememberSyncProtocolUpgradeViewModel(): SyncProtocolUpgradeViewMode
         object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val repository = SyncProtocolUpgradeRepository(appContext)
+                val immediateSync = SyncUpgradeImmediateSync(
+                    performSync = { target -> performConfiguredSync(appContext, target) },
+                    confirmLegacy = repository::confirmAllDevicesUpdated,
+                    isTargetActive = { target -> target in activeSyncTargets(appContext) },
+                    hasCurrentProtocol = { target ->
+                        repository.versionFlow(target).first() == SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION
+                    }
+                )
                 return checkNotNull(
                     modelClass.cast(
                         SyncProtocolUpgradeViewModel(
                             pendingFlow = repository.pendingFlow,
                             saveConfirmation = repository::confirmAllDevicesUpdated,
-                            loadActiveTargets = { activeSyncTargets(appContext) }
+                            loadActiveTargets = { activeSyncTargets(appContext) },
+                            startupTargetsFlow = repository.startupPendingFlow,
+                            initializeStartupTargets = { repository.initializeStartupTargets(activeSyncTargets(appContext)) },
+                            saveOptimization = { optimize -> withContext(Dispatchers.IO) {
+                                SecureTokenStorage(appContext).setLegacyLyricOptimizationEnabled(optimize)
+                            } },
+                            performImmediateSync = { target, approveDetectedLegacy ->
+                                val result = immediateSync.execute(target, approveDetectedLegacy)
+                                if (result.getOrNull()?.success == true) repository.completeStartupUpgrade(target)
+                                result
+                            }
                         )
                     )
                 )
@@ -62,6 +86,22 @@ internal fun rememberSyncProtocolUpgradeViewModel(): SyncProtocolUpgradeViewMode
         }
     }
     return viewModel(viewModelStoreOwner = activity, factory = factory)
+}
+
+private suspend fun performConfiguredSync(context: Context, targetId: String): Result<SyncResult> = withContext(Dispatchers.IO) {
+    val github = SecureTokenStorage(context)
+    if (github.isConfigured() && SyncProtocolUpgradeRepository.githubTargetHash(
+        github.getRepoOwner().orEmpty(), github.getRepoName().orEmpty()
+    ) == targetId) {
+        return@withContext GitHubSyncManager.getInstance(context).performSyncForTarget(targetId)
+    }
+    val webDav = WebDavStorage(context)
+    if (webDav.isConfigured() && SyncProtocolUpgradeRepository.webDavTargetHash(
+        webDav.getServerUrl().orEmpty(), webDav.getBasePath(), webDav.getUsername().orEmpty()
+    ) == targetId) {
+        return@withContext WebDavSyncManager.getInstance(context).performSyncForTarget(targetId)
+    }
+    Result.failure(IOException("Sync target changed"))
 }
 
 private suspend fun activeSyncTargets(context: Context): Set<String> = withContext(Dispatchers.IO) {
@@ -102,10 +142,14 @@ internal fun StartupSyncUpgradePrompt(
     canShowDialog: Boolean,
     viewModel: SyncProtocolUpgradeViewModel = rememberSyncProtocolUpgradeViewModel(),
     isResumed: Boolean = rememberSyncUpgradeResumed(),
+    resultContent: @Composable (SyncResult, () -> Unit) -> Unit = { result, consume ->
+        SyncUpgradeResultNotice(result, consume)
+    },
     dialogContent: @Composable (SyncProtocolUpgradeUiState, () -> Unit) -> Unit = { state, onDefer ->
         SyncProtocolUpgradeDialog(
             state = state,
             onAllDevicesUpdatedChange = viewModel::setAllDevicesUpdated,
+            onOptimizeDataChange = viewModel::setOptimizeData,
             onConfirm = viewModel::confirm,
             onDefer = onDefer
         )
@@ -113,7 +157,7 @@ internal fun StartupSyncUpgradePrompt(
 ) {
     val state by viewModel.uiState.collectAsState()
     var deferred by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(canShowDialog, isResumed, state.approved, deferred) {
+    LaunchedEffect(canShowDialog, isResumed, state.approved, state.challenge, state.startupTargetId, deferred) {
         if (canShowDialog && isResumed && state.approved == false && !deferred) {
             viewModel.openConfirmation()
         }
@@ -122,6 +166,18 @@ internal fun StartupSyncUpgradePrompt(
         dialogContent(state) {
             if (viewModel.dismissConfirmation()) deferred = true
         }
+    }
+    state.syncResult?.takeIf { it.message.isNotBlank() }?.let { result ->
+        resultContent(result, viewModel::clearSyncResult)
+    }
+}
+
+@Composable
+private fun SyncUpgradeResultNotice(result: SyncResult, consume: () -> Unit) {
+    val context = LocalContext.current
+    LaunchedEffect(result) {
+        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+        consume()
     }
 }
 

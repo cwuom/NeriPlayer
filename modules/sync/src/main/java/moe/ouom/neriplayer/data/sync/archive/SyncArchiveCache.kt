@@ -20,7 +20,6 @@ internal class SyncArchiveCache(private val directory: File) {
         val compressed = SyncArchiveCodec.compress(raw)
         val ref = SyncArchiveRef(SyncArchiveCodec.digest(compressed), rawHash, raw.size, compressed.size, index)
         save(ref, compressed)
-        writeAtomic(pointer, ProtoBuf.encodeToByteArray(ref))
         return ref
     }
 
@@ -46,6 +45,8 @@ internal class SyncArchiveCache(private val directory: File) {
         SyncArchiveCodec.decodeObject(ref, compressed)
         writeAtomic(File(directory, ref.path), compressed)
         File(directory, ref.path).setLastModified(System.currentTimeMillis())
+        // 下载块也建立已校验的原始内容索引，首次本地发布即可复用
+        writeAtomic(File(directory, "${ref.rawHash}-${ref.index}.ref"), ProtoBuf.encodeToByteArray(ref))
     }
 
     fun readCompressed(ref: SyncArchiveRef): ByteArray {

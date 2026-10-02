@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.sync.store.state.KEY_LEGACY_LYRIC_RECOVERY
 
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.model.sync.hasSyncLyricText
 
 internal class SyncLegacyLyricRecoveryStore(private val files: SyncDeletionStateStorage) {
     fun retain(candidates: List<SyncSong>): Boolean {
@@ -24,5 +25,5 @@ internal class SyncLegacyLyricRecoveryStore(private val files: SyncDeletionState
 
 internal fun hasUnconfirmedLegacyLyrics(song: SyncSong): Boolean {
     if (song.lyricSyncEdited != null) return false
-    return song.matchedLyric != null || song.matchedTranslatedLyric != null || song.matchedRomanizedLyric != null
+    return song.hasSyncLyricText()
 }

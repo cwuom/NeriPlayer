@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.store.testing.MemorySyncPreferences
+import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -35,10 +36,12 @@ class SyncArchiveLegacyLyricRecoveryTest {
             val data = if (disk) reader.readDataset(content, FileSyncPlaybackDatasetStore(temporary.newFolder()), { it }, { it }) {
                 Result.success(objects.getValue(it))
             }.getOrThrow().use { it.data } else reader.read(content) { Result.success(objects.getValue(it)) }.getOrThrow()
-            assertNull(data.playlists.single().songs.single().matchedLyric)
-            assertTrue(data.lyricOverrides.isEmpty())
+            assertEquals(legacy.matchedLyric, data.playlists.single().songs.single().matchedLyric)
+            assertEquals(legacy.originalRomanizedLyric, data.lyricOverrides.single().originalRomanizedLyric)
+            assertEquals(1L, data.lyricOverrides.single().lyricSyncRevision)
             val recovered = SecureTokenStorage(preferences.restart().preferences, directory).getLyricOverridesForIdentityKeys(setOf("1|netease|"))
-            assertEquals(legacy.copy(lyricSyncRevision = 0), recovered.single())
+            assertEquals(SyncSongLyricMergePolicy.prepareLegacy(legacy), recovered.single())
+            assertEquals(legacy.copy(lyricSyncRevision = 0), storage.getLegacyLyricCandidates().single())
         }
     }
 

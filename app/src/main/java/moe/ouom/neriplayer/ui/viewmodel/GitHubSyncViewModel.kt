@@ -57,6 +57,7 @@ class GitHubSyncViewModel : ViewModel() {
 
     private var storage: SecureTokenStorage? = null
     internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
+    internal var targetSyncOperation: (suspend (String) -> Result<SyncResult>)? = null
     private var syncJob: Job? = null
 
     fun initialize(context: Context) {
@@ -64,7 +65,9 @@ class GitHubSyncViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             if (storage == null) {
                 storage = SecureTokenStorage(appContext)
-                syncOperation = GitHubSyncManager.getInstance(appContext)::performSync
+                val manager = GitHubSyncManager.getInstance(appContext)
+                syncOperation = manager::performSync
+                targetSyncOperation = manager::performSyncForTarget
             }
             loadConfiguration()
         }
@@ -215,11 +218,31 @@ class GitHubSyncViewModel : ViewModel() {
     /**
      * 执行同步
      */
+    fun performSyncForTarget(
+        context: Context,
+        targetId: String,
+        onFinished: () -> Unit = {},
+        onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}
+    ) {
+        val operation = targetSyncOperation ?: return
+        if (targetId.isBlank()) return
+        startSync(context, { operation(targetId) }, onUpgradeRequired, onFinished)
+    }
+
     fun performSync(context: Context, onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}) {
-        if (syncJob?.isActive == true) return
         val operation = syncOperation ?: return
+        startSync(context, operation, onUpgradeRequired)
+    }
+
+    private fun startSync(
+        context: Context,
+        operation: suspend () -> Result<SyncResult>,
+        onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit,
+        onFinished: () -> Unit = {}
+    ) {
+        if (syncJob?.isActive == true) return
         val appContext = context.applicationContext
-        _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null)
+        _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null, successMessage = null)
 
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             val result = operation()
@@ -285,6 +308,7 @@ class GitHubSyncViewModel : ViewModel() {
             if (syncJob === job) {
                 syncJob = null
                 _uiState.value = _uiState.value.copy(isSyncing = false)
+                onFinished()
             }
         }
         job.start()

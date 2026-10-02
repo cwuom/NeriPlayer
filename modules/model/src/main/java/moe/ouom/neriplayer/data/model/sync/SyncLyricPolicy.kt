@@ -4,9 +4,17 @@ import moe.ouom.neriplayer.data.model.SongItem
 
 fun SongItem.hasUserEditedLyricsForSync(): Boolean = lyricSyncEdited == true
 
+fun SongItem.hasSyncLyricText(): Boolean =
+    matchedLyric != null || matchedTranslatedLyric != null || matchedRomanizedLyric != null ||
+        originalLyric != null || originalTranslatedLyric != null || originalRomanizedLyric != null
+
+fun SyncSong.hasSyncLyricText(): Boolean =
+    matchedLyric != null || matchedTranslatedLyric != null || matchedRomanizedLyric != null ||
+        originalLyric != null || originalTranslatedLyric != null || originalRomanizedLyric != null
+
 fun SongItem.toLegacyLyricRecoveryCandidateOrNull(): SyncSong? {
     if (lyricSyncEdited != null) return null
-    if (matchedLyric == null && matchedTranslatedLyric == null && matchedRomanizedLyric == null) return null
+    if (!hasSyncLyricText()) return null
     return SyncSong(
         id = id, name = name, artist = artist, album = album, albumId = albumId,
         mediaUri = mediaUri, channelId = channelId, audioId = audioId, subAudioId = subAudioId,

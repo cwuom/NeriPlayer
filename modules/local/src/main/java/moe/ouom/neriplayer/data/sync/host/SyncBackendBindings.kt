@@ -20,14 +20,25 @@ import java.io.File
 import moe.ouom.neriplayer.data.sync.mapping.stats.SyncPlaybackStatMapping
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 
-internal fun createGitHubSyncBackend(context: Context, storage: SecureTokenStorage): GitHubSyncBackend {
+internal fun createGitHubSyncBackend(
+    context: Context,
+    storage: SecureTokenStorage,
+    expectedTargetId: String? = null
+): GitHubSyncBackend {
+    val configuredOwner = storage.getRepoOwner()
+    val configuredRepo = storage.getRepoName()
+    val capturedTarget = if (configuredOwner != null && configuredRepo != null)
+        SyncProtocolUpgradeRepository.githubTargetHash(configuredOwner, configuredRepo) else null
+    requireExpectedSyncTarget(expectedTargetId, capturedTarget)
     val localized = LanguageManager.applyLanguage(context)
     val message = localized.getString(CoreCommonR.string.github_not_configured)
     val token = configuredValue(storage.getToken(), message)
-    val owner = configuredValue(storage.getRepoOwner(), message)
-    val repo = configuredValue(storage.getRepoName(), message)
-    val target = SyncProtocolUpgradeRepository.githubTargetHash(owner, repo)
+    val owner = configuredValue(configuredOwner, message)
+    val repo = configuredValue(configuredRepo, message)
+    val target = checkNotNull(capturedTarget)
     val upgrades = SyncProtocolUpgradeRepository(context)
     return GitHubSyncBackend(
         storage, createGitHubSyncClient(context, token), owner, repo, syncDecoder(context),
@@ -43,14 +54,20 @@ internal fun createGitHubSyncBackend(context: Context, storage: SecureTokenStora
     )
 }
 
-internal fun createWebDavSyncBackend(context: Context): WebDavSyncBackend {
+internal fun createWebDavSyncBackend(context: Context, expectedTargetId: String? = null): WebDavSyncBackend {
+    val webDavStorage = WebDavStorage(context)
+    val serverUrl = webDavStorage.getServerUrl()?.takeIf { it.isNotBlank() }
+    val basePath = webDavStorage.getBasePath()
+    val configuredUsername = webDavStorage.getUsername()
+    val capturedTarget = if (serverUrl != null && configuredUsername != null)
+        SyncProtocolUpgradeRepository.webDavTargetHash(serverUrl, basePath, configuredUsername) else null
+    requireExpectedSyncTarget(expectedTargetId, capturedTarget)
     val localized = LanguageManager.applyLanguage(context)
     val message = localized.getString(CoreCommonR.string.webdav_not_configured)
-    val webDavStorage = WebDavStorage(context)
-    val remoteUrl = configuredValue(webDavStorage.getRemoteFileUrl(), message)
-    val username = configuredValue(webDavStorage.getUsername(), message)
+    val remoteUrl = configuredValue(serverUrl?.let { WebDavApiClient.buildRemoteFileUrl(it, basePath) }, message)
+    val username = configuredValue(configuredUsername, message)
     val password = configuredValue(webDavStorage.getPassword(), message)
-    val target = SyncProtocolUpgradeRepository.webDavTargetHash(checkNotNull(webDavStorage.getServerUrl()), webDavStorage.getBasePath(), username)
+    val target = checkNotNull(capturedTarget)
     val upgrades = SyncProtocolUpgradeRepository(context)
     return WebDavSyncBackend(
         webDavStorage, createWebDavSyncClient(context, username, password), remoteUrl, syncDecoder(context),
@@ -70,6 +87,8 @@ private fun archiveRepository(context: Context, provider: String, identity: Stri
     val namespace = WebDavApiClient.calculateFingerprint(identity.toByteArray(Charsets.UTF_8))
     val storage = SecureTokenStorage(context.applicationContext)
     val recovery = object : SyncLegacyLyricRecovery {
+        override fun preservedLyrics(): List<SyncSong> = storage.getLegacyLyricCandidates()
+        override fun optimizeLegacyLyrics(): Boolean = storage.isLegacyLyricOptimizationEnabled()
         override fun isCompleted(sourceHash: String): Boolean = storage.isLegacyLyricArchiveRecovered(targetId, sourceHash)
         override fun recover(sourceHash: String, data: SyncData) {
             if (isCompleted(sourceHash)) return
@@ -84,11 +103,19 @@ private fun archiveRepository(context: Context, provider: String, identity: Stri
 private fun configuredValue(value: String?, message: String): String =
     value ?: throw IllegalStateException(message)
 
+private fun requireExpectedSyncTarget(expectedTargetId: String?, configuredTargetId: String?) {
+    check(expectedTargetId == null || expectedTargetId == configuredTargetId) { "Sync target changed" }
+}
+
 private fun syncDecoder(context: Context): SyncRemoteSnapshotDecoder {
     val host = AndroidSyncSanitizationHost(context)
     val storage = SecureTokenStorage(context.applicationContext)
     return SyncRemoteSnapshotDecoder(
-        SyncDataSanitizer(host)::sanitize,
+        { data ->
+            SyncDataSanitizer(host).sanitize(
+                SyncSongLyricMergePolicy.prepareLegacy(data, storage.isLegacyLyricOptimizationEnabled())
+            )
+        },
         { SyncPlaybackStatMapping.sanitize(it, host) },
         { SyncPlaybackStatMapping.sanitize(it, host) },
         beforeSanitize = storage::retainLegacyLyrics

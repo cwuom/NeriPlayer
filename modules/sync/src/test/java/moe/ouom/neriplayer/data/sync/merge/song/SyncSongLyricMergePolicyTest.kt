@@ -38,7 +38,7 @@ class SyncSongLyricMergePolicyTest {
         assertEquals("edit", records.single().matchedLyric)
         assertEquals("", records.single().name)
         assertNull(records.single().coverUrl)
-        assertNull(records.single().originalLyric)
+        assertEquals("cache", records.single().originalLyric)
     }
     @Test
     fun `reset propagates from one playlist to stale copies in favorites and history`() {
@@ -83,6 +83,9 @@ class SyncSongLyricMergePolicyTest {
             base.copy(matchedLyric = "original edit"),
             base.copy(matchedTranslatedLyric = "translated edit"),
             base.copy(matchedRomanizedLyric = "romanized edit"),
+            base.copy(originalLyric = "original baseline"),
+            base.copy(originalTranslatedLyric = "translation baseline"),
+            base.copy(originalRomanizedLyric = "romanized baseline"),
             base.copy(matchedLyricSource = "NETEASE"),
             base.copy(matchedSongId = "matched song")
         )
@@ -121,13 +124,13 @@ class SyncSongLyricMergePolicyTest {
     }
 
     @Test
-    fun `legacy baseline and unknown matching are omitted until an edit is confirmed`() {
+    fun `legacy baseline and unknown matching are preserved conservatively`() {
         val cache = SyncSong(matchedLyric = "base", originalLyric = "base")
         val edit = cache.copy(matchedLyric = "edit")
-        assertNull(SyncSongLyricMergePolicy.normalize(cache).matchedLyric)
-        assertNull(SyncSongLyricMergePolicy.normalize(edit).matchedLyric)
-        assertEquals(0L, SyncSongLyricMergePolicy.normalize(edit).lyricSyncRevision)
+        assertEquals("base", SyncSongLyricMergePolicy.normalize(cache).matchedLyric)
+        assertEquals("edit", SyncSongLyricMergePolicy.normalize(edit).matchedLyric)
+        assertEquals(1L, SyncSongLyricMergePolicy.normalize(edit).lyricSyncRevision)
         assertEquals("edit", SyncSongLyricMergePolicy.normalize(edit.copy(lyricSyncEdited = true)).matchedLyric)
-        assertNull(SyncSongLyricMergePolicy.normalize(edit).originalLyric)
+        assertEquals("base", SyncSongLyricMergePolicy.normalize(edit).originalLyric)
     }
 }

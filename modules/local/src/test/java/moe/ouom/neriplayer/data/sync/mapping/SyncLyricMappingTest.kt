@@ -21,7 +21,7 @@ class SyncLyricMappingTest {
             id = 1L, name = "song", artist = "artist", album = "netease",
             albumId = 1L, durationMs = 100L, coverUrl = null,
             matchedLyric = "cached original", matchedTranslatedLyric = "cached translation",
-            originalLyric = "cached original", originalTranslatedLyric = "cached translation"
+            originalLyric = "cached original", originalTranslatedLyric = "cached translation", lyricSyncEdited = false
         )
 
         val snapshot = SyncSong.fromSongItem(song)
@@ -33,7 +33,7 @@ class SyncLyricMappingTest {
     }
 
     @Test
-    fun `edited lyrics include all variants but exclude original cache`() {
+    fun `edited lyrics include all variants and retain the original baseline`() {
         val snapshot = SyncSong.fromSongItem(song().copy(
             matchedLyric = "edit", matchedTranslatedLyric = "translation", matchedRomanizedLyric = "romanized",
             originalLyric = "cached", lyricSyncEdited = true, lyricSyncRevision = 20L
@@ -44,7 +44,7 @@ class SyncLyricMappingTest {
         assertEquals("romanized", snapshot.matchedRomanizedLyric)
         assertEquals(20L, snapshot.lyricSyncRevision)
         assertTrue(snapshot.lyricSyncEdited == true)
-        assertNull(snapshot.originalLyric)
+        assertEquals("cached", snapshot.originalLyric)
     }
 
     @Test
@@ -57,11 +57,12 @@ class SyncLyricMappingTest {
     }
 
     @Test
-    fun `confirmed old override receives an edit revision without uploading its baseline`() {
+    fun `confirmed old override receives an edit revision with its original baseline`() {
         val snapshot = SyncSong.fromSongItem(song().copy(matchedLyric = "edit", originalLyric = "base", lyricSyncEdited = true))
         assertEquals("edit", snapshot.matchedLyric)
         assertEquals(1L, snapshot.lyricSyncRevision)
         assertTrue(snapshot.lyricSyncEdited == true)
+        assertEquals("base", snapshot.originalLyric)
     }
 
     @Test
@@ -103,6 +104,23 @@ class SyncLyricMappingTest {
     }
 
     @Test
+    fun `unknown numeric legacy revisions cannot block newer remote edits or resets`() {
+        val legacy = song().copy(matchedLyric = "unknown legacy edit", originalLyric = "original",
+            lyricSyncEdited = null, lyricSyncRevision = 999L)
+        val edit = SyncSong.fromSongItem(song().copy(matchedLyric = "remote edit",
+            lyricSyncEdited = true, lyricSyncRevision = 20L))
+        val restored = edit.toSongItem(legacy)
+        assertEquals("remote edit", restored.matchedLyric)
+        assertEquals(20L, restored.lyricSyncRevision)
+        assertEquals(true, restored.lyricSyncEdited)
+        val reset = SyncSong.fromSongItem(song().copy(lyricSyncEdited = false, lyricSyncRevision = 20L))
+        val resetRestored = reset.toSongItem(legacy)
+        assertEquals("original", resetRestored.matchedLyric)
+        assertEquals(20L, resetRestored.lyricSyncRevision)
+        assertFalse(resetRestored.lyricSyncEdited == true)
+    }
+
+    @Test
     fun `old remote edits cannot replace a newer local reset`() {
         val existing = song().copy(matchedLyric = "base", originalLyric = "base", lyricSyncEdited = false, lyricSyncRevision = 20L)
         val old = SyncSong.fromSongItem(existing.copy(matchedLyric = "old edit", lyricSyncEdited = true, lyricSyncRevision = 10L))
@@ -132,6 +150,21 @@ class SyncLyricMappingTest {
         assertEquals("local cache", reset.toSongItem(applied).matchedLyric)
         assertEquals("local translation", reset.toSongItem(applied).matchedTranslatedLyric)
         assertEquals("local romanized", reset.toSongItem(applied).matchedRomanizedLyric)
+    }
+
+    @Test
+    fun `remote full baseline replaces older local baseline and survives a later reset`() {
+        val existing = song().copy(originalLyric = "older original", originalTranslatedLyric = "older translation",
+            originalRomanizedLyric = "older romanized", lyricSyncEdited = true, lyricSyncRevision = 10L)
+        val incoming = SyncSong.fromSongItem(song().copy(matchedLyric = "remote edit",
+            originalLyric = "remote original", originalTranslatedLyric = "remote translation",
+            originalRomanizedLyric = "remote romanized", lyricSyncEdited = true, lyricSyncRevision = 20L))
+        val restored = incoming.toSongItem(existing)
+        assertEquals("remote original", restored.originalLyric)
+        assertEquals("remote translation", restored.originalTranslatedLyric)
+        assertEquals("remote romanized", restored.originalRomanizedLyric)
+        val reset = SyncSong.fromSongItem(restored.copy(lyricSyncEdited = false, lyricSyncRevision = 21L))
+        assertEquals("remote original", reset.toSongItem(restored).matchedLyric)
     }
 
     @Test

@@ -11,10 +11,13 @@ import kotlinx.serialization.protobuf.ProtoNumber
 import kotlinx.serialization.Serializable
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 
 interface SyncLegacyLyricRecovery {
     fun isCompleted(sourceHash: String): Boolean
     fun recover(sourceHash: String, data: SyncData)
+    fun preservedLyrics(): List<SyncSong> = emptyList()
+    fun optimizeLegacyLyrics(): Boolean = false
 }
 
 @Serializable
@@ -40,7 +43,7 @@ internal data class SyncLegacyLyricSource(
 internal data class CapturedLegacyLyrics(val source: SyncLegacyLyricSource, val objects: List<SyncArchiveRef>)
 
 internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache) {
-    fun capture(data: SyncData): CapturedLegacyLyrics? {
+    fun capture(data: SyncData, optimize: Boolean = false): CapturedLegacyLyrics? {
         val chunks = ArrayList<SyncArchiveRef>()
         val objects = LinkedHashMap<String, SyncArchiveRef>()
         val chunker = SyncContentChunker { raw ->
@@ -51,7 +54,7 @@ internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache) {
         }
         var count = 0L
         DataOutputStream(chunker).use { output ->
-            candidates(data).forEach { candidate ->
+            candidates(data, optimize).forEach { candidate ->
                 val bytes = ProtoBuf.encodeToByteArray(candidate)
                 require(bytes.size <= SyncArchiveLimits.MAX_RECORD_BYTES) { "Single legacy lyric record exceeds safe budget" }
                 require(bytes.size.toLong() + FRAME_BYTES <= SyncArchiveLimits.MAX_LEGACY_SOURCE_RAW_BYTES - chunker.totalBytes) {
@@ -87,10 +90,11 @@ internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache) {
         return SyncData(lyricOverrides = candidates)
     }
 
-    private fun candidates(data: SyncData): Sequence<SyncSong> {
+    private fun candidates(data: SyncData, optimize: Boolean): Sequence<SyncSong> {
         val songs = data.lyricOverrides.asSequence() + data.playlists.asSequence().flatMap { it.songs.asSequence() } +
             data.favoritePlaylists.asSequence().flatMap { it.songs.asSequence() } + data.recentPlays.asSequence().map { it.song }
-        return songs.filter(::hasUnknownLyrics).map { song ->
+        return songs.filter(::hasUnknownLyrics)
+            .filter { !optimize || SyncSongLyricMergePolicy.prepareLegacy(it, optimize).lyricSyncEdited == true }.map { song ->
             SyncSong(
                 id = song.id, album = song.album, mediaUri = song.mediaUri,
                 channelId = song.channelId, audioId = song.audioId, subAudioId = song.subAudioId,
@@ -104,7 +108,8 @@ internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache) {
     }
 
     private fun hasUnknownLyrics(song: SyncSong): Boolean = song.lyricSyncEdited == null &&
-        (song.matchedLyric != null || song.matchedTranslatedLyric != null || song.matchedRomanizedLyric != null)
+        (song.matchedLyric != null || song.matchedTranslatedLyric != null || song.matchedRomanizedLyric != null ||
+            song.originalLyric != null || song.originalTranslatedLyric != null || song.originalRomanizedLyric != null)
 
     private companion object {
         const val LEGACY_RECORD_KIND = 15

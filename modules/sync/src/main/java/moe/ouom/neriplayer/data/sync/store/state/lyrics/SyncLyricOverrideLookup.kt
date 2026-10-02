@@ -42,14 +42,10 @@ internal class SyncLyricOverrideLookup(private val files: SyncDeletionStateStora
             val key = song.identity().stableKey()
             if (key in identityKeys) {
                 val previous = selected[key]
-                if (hasUnconfirmedLegacyLyrics(song)) {
-                    if (previous == null || previous.lyricSyncEdited == null) selected[key] = song.copy(lyricSyncRevision = 0L)
-                } else {
-                    val normalized = SyncSongLyricMergePolicy.normalize(song)
-                    if (normalized.lyricSyncRevision > 0L) {
-                        selected[key] = if (previous == null || previous.lyricSyncEdited == null) normalized else
-                            SyncSongLyricMergePolicy.merge(previous, listOf(previous, normalized))
-                    }
+                val normalized = SyncSongLyricMergePolicy.prepareLegacy(song)
+                if (normalized.lyricSyncRevision > 0L) {
+                    selected[key] = if (previous == null) normalized else
+                        SyncSongLyricMergePolicy.merge(previous, listOf(previous, normalized))
                 }
             }
         }

@@ -50,6 +50,24 @@ class StartupSyncUpgradePromptTest {
     }
 
     @Test
+    fun `an old configured installation prompts before remote format is downloaded`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val model = SyncProtocolUpgradeViewModel(flowOf(emptyList()), { _, _ -> },
+            startupTargetsFlow = flowOf(setOf(challenge.targetId))).also(viewModels::add)
+        val fixture = PromptCompositionFixture(this, model)
+        try {
+            fixture.start()
+            fixture.pump()
+            assertEquals(challenge.targetId, fixture.visibleState?.startupTargetId)
+            assertNull(fixture.visibleState?.challenge)
+            assertFalse(requireNotNull(fixture.visibleState).optimizeData)
+            assertFalse(requireNotNull(fixture.visibleState).canConfirm)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun `production startup waits for loaded approval resumed lifecycle and other startup dialogs`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val approvals = MutableSharedFlow<Boolean>()

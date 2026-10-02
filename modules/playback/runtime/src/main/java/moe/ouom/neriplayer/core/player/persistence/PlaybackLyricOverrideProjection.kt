@@ -7,7 +7,6 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.sync.SyncSong
-import moe.ouom.neriplayer.data.model.sync.hasUserEditedLyricsForSync
 import moe.ouom.neriplayer.data.sync.identity.identity
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
@@ -29,9 +28,10 @@ internal class PlaybackLyricOverrideProjection(overrides: List<SyncSong>) {
     fun song(existing: SongItem): SongItem {
         val key = playbackLyricIdentityKey(existing)
         val remote = byIdentity[key] ?: return recoverLegacyLyrics(existing, key)
-        if (existing.lyricSyncRevision > remote.lyricSyncRevision) return existing
-        val latest = if (remote.lyricSyncRevision > maxOf(existing.lyricSyncRevision, 1L)) remote else {
-            SyncSongLyricMergePolicy.merge(remote, listOf(remote, localLyricState(existing, remote)))
+        val local = SyncSongLyricMergePolicy.normalize(localLyricState(existing, remote))
+        if (local.lyricSyncRevision > remote.lyricSyncRevision) return existing
+        val latest = if (remote.lyricSyncRevision > maxOf(local.lyricSyncRevision, 1L)) remote else {
+            SyncSongLyricMergePolicy.merge(remote, listOf(remote, local))
         }
         val restored = latest.toSongItem(existing)
         val projected = existing.copy(
@@ -70,15 +70,17 @@ internal class PlaybackLyricOverrideProjection(overrides: List<SyncSong>) {
     }
 
     private fun localLyricState(song: SongItem, identity: SyncSong): SyncSong {
-        val edited = song.hasUserEditedLyricsForSync()
         return identity.copy(
-            matchedLyric = song.matchedLyric.takeIf { edited },
-            matchedTranslatedLyric = song.matchedTranslatedLyric.takeIf { edited },
-            matchedRomanizedLyric = song.matchedRomanizedLyric.takeIf { edited },
+            matchedLyric = song.matchedLyric,
+            matchedTranslatedLyric = song.matchedTranslatedLyric,
+            matchedRomanizedLyric = song.matchedRomanizedLyric,
+            originalLyric = song.originalLyric,
+            originalTranslatedLyric = song.originalTranslatedLyric,
+            originalRomanizedLyric = song.originalRomanizedLyric,
             matchedLyricSource = song.matchedLyricSource?.name,
             matchedSongId = song.matchedSongId,
-            lyricSyncEdited = edited,
-            lyricSyncRevision = maxOf(song.lyricSyncRevision, if (edited) 1L else 0L)
+            lyricSyncEdited = song.lyricSyncEdited,
+            lyricSyncRevision = song.lyricSyncRevision
         )
     }
 

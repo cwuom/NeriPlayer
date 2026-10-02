@@ -873,9 +873,11 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   transport envelope and does not change the stored body. New sync uses a Protobuf
   record stream with ZSTD content chunks capped at 2 MiB each. A manifest commits
   the complete snapshot; unchanged chunks are reused.
-- The new sync format is not backward compatible. Update every participating device to a version supporting it,
-  then confirm the upgrade in the startup dialog or sync settings. Deferring keeps the app usable while data sync
-  stays paused. Existing cloud data is migrated during the next sync after confirmation; offline device versions
+- New installations default to V3. Existing installations show the upgrade dialog on their first updated launch;
+  newly configured targets prompt when traditional cloud data is detected. The format is not backward compatible:
+  update every participating device before confirming. Confirmation immediately syncs and migrates that target.
+  Legacy lyrics are fully preserved by default, with an optional lossy optimization and a red warning in the dialog.
+  Deferring keeps the app usable while sync for targets awaiting upgrade stays paused. Offline device versions
   cannot be verified automatically.
 
 ### Downloads, local import, and backups
@@ -1021,7 +1023,7 @@ Current sync targets:
 1. Open Backup & Sync in Settings.
 2. Create a GitHub Personal Access Token with `repo` permission.
 3. Validate the token, then either create the default private repository or use an existing one.
-4. Update every participating device to a version supporting the new format and confirm the sync database upgrade.
+4. New installations use V3 directly. If an upgrade dialog appears, update every participating device before confirming; confirmation immediately syncs and migrates the target.
 5. Enable automatic sync, or run a manual sync.
 
 ---

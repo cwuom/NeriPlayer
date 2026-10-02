@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 internal fun SyncProtocolUpgradeDialog(
     state: SyncProtocolUpgradeUiState,
     onAllDevicesUpdatedChange: (Boolean) -> Unit,
+    onOptimizeDataChange: (Boolean) -> Unit,
     onConfirm: () -> Unit,
     onDefer: () -> Unit
 ) {
@@ -43,28 +44,30 @@ internal fun SyncProtocolUpgradeDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(stringResource(CoreCommonR.string.sync_upgrade_message))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .toggleable(
-                            value = state.allDevicesUpdated,
-                            enabled = !state.isSaving,
-                            role = Role.Checkbox,
-                            onValueChange = onAllDevicesUpdatedChange
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Checkbox(
-                        checked = state.allDevicesUpdated,
-                        onCheckedChange = null,
-                        enabled = !state.isSaving
-                    )
-                    Text(stringResource(CoreCommonR.string.sync_upgrade_all_devices_updated))
+                SyncUpgradeCheckbox(
+                    checked = state.optimizeData,
+                    title = stringResource(CoreCommonR.string.sync_upgrade_optimization_option),
+                    enabled = !state.isSaving,
+                    onValueChange = onOptimizeDataChange
+                )
+                if (state.optimizeData) {
+                    Text(stringResource(CoreCommonR.string.sync_lyric_optimization_warning),
+                        color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(CoreCommonR.string.sync_lyric_optimization_existing),
+                        style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text(stringResource(CoreCommonR.string.sync_upgrade_optimization_default_hint),
+                        style = MaterialTheme.typography.bodySmall)
                 }
+                SyncUpgradeCheckbox(
+                    checked = state.allDevicesUpdated,
+                    title = stringResource(CoreCommonR.string.sync_upgrade_all_devices_updated),
+                    enabled = !state.isSaving,
+                    onValueChange = onAllDevicesUpdatedChange
+                )
                 if (state.hasError) {
                     Text(
-                        text = stringResource(CoreCommonR.string.sync_upgrade_failed),
+                        text = stringResource(CoreCommonR.string.sync_upgrade_attempt_failed),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -74,7 +77,8 @@ internal fun SyncProtocolUpgradeDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text(stringResource(CoreCommonR.string.sync_upgrade_saving))
+                        Text(stringResource(if (state.isSyncing) CoreCommonR.string.sync_upgrade_syncing
+                            else CoreCommonR.string.sync_upgrade_saving))
                     }
                 }
             }
@@ -90,4 +94,18 @@ internal fun SyncProtocolUpgradeDialog(
             }
         }
     )
+}
+
+@Composable
+private fun SyncUpgradeCheckbox(checked: Boolean, title: String, enabled: Boolean, onValueChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().toggleable(
+            value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onValueChange
+        ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Text(title)
+    }
 }
