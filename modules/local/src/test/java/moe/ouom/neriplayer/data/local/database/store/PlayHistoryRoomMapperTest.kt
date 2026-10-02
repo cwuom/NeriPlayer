@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.local.database.store.stats.toDomain
+
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -22,6 +24,13 @@ class PlayHistoryRoomMapperTest {
                 coverUrl = "file:///cover.jpg",
                 mediaUri = "content://media/42",
                 matchedLyric = "lyric",
+                matchedRomanizedLyric = "romanized",
+                originalRomanizedLyric = "base romanized",
+                matchedLyricSource = moe.ouom.neriplayer.data.model.music.MusicPlatform.CLOUD_MUSIC,
+                matchedSongId = "42",
+                userLyricOffsetMs = 150L,
+                lyricSyncRevision = 300L,
+                lyricSyncEdited = true,
                 customName = "custom",
                 localFileName = "song.flac",
                 localFilePath = "/music/song.flac",

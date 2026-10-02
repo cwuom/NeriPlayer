@@ -13,6 +13,9 @@ import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 
 internal interface NowPlayingLyricsSources {
+    fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
+        preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? = null
+
     fun hasManagedDownload(song: SongItem): Boolean
     fun scheduleManagedRefresh(context: Context)
     fun fastDownloaded(context: Context, song: SongItem): ManagedDownloadStorage.DownloadedLyricsBundle?
@@ -27,6 +30,10 @@ internal interface NowPlayingLyricsSources {
 }
 
 internal object PlatformNowPlayingLyricsSources : NowPlayingLyricsSources {
+    override fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
+        preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? =
+        PlayerManager.getCachedPreferredLyricSourceResult(song, source, preferWordTimedLyrics)
+
     override fun hasManagedDownload(song: SongItem): Boolean = hasCachedLocalDownload(song)
 
     override fun scheduleManagedRefresh(context: Context) {

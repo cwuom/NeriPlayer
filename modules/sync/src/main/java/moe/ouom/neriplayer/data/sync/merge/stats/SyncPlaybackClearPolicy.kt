@@ -2,39 +2,24 @@ package moe.ouom.neriplayer.data.sync.merge.stats
 
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 
 internal object SyncPlaybackClearPolicy {
-    fun shouldKeepAfterClear(stat: SyncTrackStat, playbackStatsClearedAt: Long): Boolean {
-        if (playbackStatsClearedAt <= 0L) return true
-        return stat.lastPlayedAt >= playbackStatsClearedAt
-    }
-
-    fun shouldKeepAfterClear(
-        bucket: SyncPlaybackStatBucket,
-        playbackStatsClearedAt: Long
-    ): Boolean {
-        if (playbackStatsClearedAt <= 0L) return true
-        return bucket.lastPlayedAt >= playbackStatsClearedAt
-    }
-
     fun normalizeAfterClear(
         stat: SyncTrackStat,
         playbackStatsClearedAt: Long
     ): SyncTrackStat? {
-        if (!shouldKeepAfterClear(stat, playbackStatsClearedAt)) return null
-        val counterShards = SyncCounterShardPolicy.normalizeCounterShards(stat.counterShards)
-        if (playbackStatsClearedAt <= 0L) return stat.copy(
-            counterShards = counterShards
-        )
-
-        val normalizedFirstPlayedAt = firstPlayedAfterClear(stat.firstPlayedAt, stat.lastPlayedAt, playbackStatsClearedAt)
-        val normalizedShards = SyncCounterShardPolicy.normalizeCounterShards(
-            counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
-        )
+        val normalizedShards = retainedShards(stat.counterShards, stat.firstPlayedAt, stat.lastPlayedAt, playbackStatsClearedAt)
+            ?: return null
+        if (playbackStatsClearedAt <= 0L || normalizedShards.isEmpty()) return stat.copy(counterShards = normalizedShards)
+        val totals = totals(normalizedShards)
         return stat.copy(
-            firstPlayedAt = normalizedFirstPlayedAt,
-            counterBaseListenMs = if (counterShards.isEmpty()) stat.counterBaseListenMs else 0L,
-            counterBasePlayCount = if (counterShards.isEmpty()) stat.counterBasePlayCount else 0,
+            totalListenMs = totals.listenMs,
+            playCount = totals.playCount,
+            firstPlayedAt = totals.firstPlayedAt,
+            lastPlayedAt = totals.lastPlayedAt,
+            counterBaseListenMs = 0L,
+            counterBasePlayCount = 0,
             counterShards = normalizedShards
         )
     }
@@ -43,22 +28,47 @@ internal object SyncPlaybackClearPolicy {
         bucket: SyncPlaybackStatBucket,
         playbackStatsClearedAt: Long
     ): SyncPlaybackStatBucket? {
-        if (!shouldKeepAfterClear(bucket, playbackStatsClearedAt)) return null
-        val counterShards = SyncCounterShardPolicy.normalizeCounterShards(bucket.counterShards)
-        if (playbackStatsClearedAt <= 0L) return bucket.copy(
-            counterShards = counterShards
-        )
-
-        val normalizedFirstPlayedAt = firstPlayedAfterClear(bucket.firstPlayedAt, bucket.lastPlayedAt, playbackStatsClearedAt)
-        val normalizedShards = SyncCounterShardPolicy.normalizeCounterShards(
-            counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
-        )
+        val normalizedShards = retainedShards(bucket.counterShards, bucket.firstPlayedAt, bucket.lastPlayedAt, playbackStatsClearedAt)
+            ?: return null
+        if (playbackStatsClearedAt <= 0L || normalizedShards.isEmpty()) return bucket.copy(counterShards = normalizedShards)
+        val totals = totals(normalizedShards)
         return bucket.copy(
-            firstPlayedAt = normalizedFirstPlayedAt,
-            counterBaseListenMs = if (counterShards.isEmpty()) bucket.counterBaseListenMs else 0L,
-            counterBasePlayCount = if (counterShards.isEmpty()) bucket.counterBasePlayCount else 0,
+            totalListenMs = totals.listenMs,
+            playCount = totals.playCount,
+            firstPlayedAt = totals.firstPlayedAt,
+            lastPlayedAt = totals.lastPlayedAt,
+            counterBaseListenMs = 0L,
+            counterBasePlayCount = 0,
             counterShards = normalizedShards
         )
+    }
+
+    private fun retainedShards(shards: List<SyncPlaybackCounterShard>, first: Long, last: Long, clearedAt: Long): List<SyncPlaybackCounterShard>? {
+        val normalized = SyncCounterShardPolicy.normalizeCounterShards(shards)
+        if (clearedAt <= 0L) return normalized
+        if (last < clearedAt) return null
+        if (normalized.isEmpty()) return normalized.takeIf { first in clearedAt..last }
+        return currentEpochShards(normalized, clearedAt)
+    }
+
+    // 旧 epoch 的累计值无法分离清除前后增量，不能根据一次新播放把旧总量带回来
+    private fun currentEpochShards(shards: List<SyncPlaybackCounterShard>, clearedAt: Long): List<SyncPlaybackCounterShard>? =
+        shards.filter { it.epochStartedAt >= clearedAt && it.firstPlayedAt >= clearedAt }.takeIf { it.isNotEmpty() }
+
+    private data class Totals(val listenMs: Long, val playCount: Int, val firstPlayedAt: Long, val lastPlayedAt: Long)
+
+    private fun totals(shards: List<SyncPlaybackCounterShard>): Totals {
+        var listenMs = 0L
+        var playCount = 0
+        var first = Long.MAX_VALUE
+        var last = 0L
+        for (shard in shards) {
+            listenMs = SyncPlaybackCounterArithmetic.add(listenMs, shard.totalListenMs)
+            playCount = SyncPlaybackCounterArithmetic.add(playCount, shard.playCount)
+            first = minOf(first, shard.firstPlayedAt)
+            last = maxOf(last, shard.lastPlayedAt)
+        }
+        return Totals(listenMs, playCount, first, last)
     }
 
     fun counterBaseListenMs(
@@ -105,6 +115,4 @@ internal object SyncPlaybackClearPolicy {
         return bucket.counterBasePlayCount.coerceAtLeast(0)
     }
 
-    private fun firstPlayedAfterClear(first: Long, last: Long, clearedAt: Long): Long =
-        if (first >= clearedAt && first <= last) first else last
 }

@@ -24,22 +24,28 @@ package moe.ouom.neriplayer.data.history
  */
 
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
+import moe.ouom.neriplayer.data.sync.mapping.fromSongItemOrNull
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomImportStatus
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomStore
@@ -56,6 +62,7 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.File
+import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
 
 internal fun SongItem.toPlayedEntry(now: Long): PlayedEntry {
@@ -70,6 +77,13 @@ internal fun SongItem.toPlayedEntry(now: Long): PlayedEntry {
         mediaUri = mediaUri,
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
+        matchedRomanizedLyric = matchedRomanizedLyric,
+        originalRomanizedLyric = originalRomanizedLyric,
+        matchedLyricSource = matchedLyricSource,
+        matchedSongId = matchedSongId,
+        userLyricOffsetMs = userLyricOffsetMs,
+        lyricSyncRevision = lyricSyncRevision,
+        lyricSyncEdited = lyricSyncEdited,
         customCoverUrl = customCoverUrl,
         customName = customName,
         customArtist = customArtist,
@@ -100,6 +114,13 @@ fun PlayedEntry.toSongItem(): SongItem {
         mediaUri = localFilePath ?: mediaUri,
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
+        matchedRomanizedLyric = matchedRomanizedLyric,
+        originalRomanizedLyric = originalRomanizedLyric,
+        matchedLyricSource = matchedLyricSource,
+        matchedSongId = matchedSongId,
+        userLyricOffsetMs = userLyricOffsetMs,
+        lyricSyncRevision = lyricSyncRevision,
+        lyricSyncEdited = lyricSyncEdited,
         customCoverUrl = customCoverUrl,
         customName = customName,
         customArtist = customArtist,
@@ -138,7 +159,15 @@ class PlayHistoryRepository private constructor(
     private val file: File by lazy { File(app.filesDir, "play_history.json") }
     @Volatile
     private var roomStorageEnabled = roomStore != null
+    @Volatile
+    private var initialized = false
+    private var initialLoadFailure: Exception? = null
     private val _history = MutableStateFlow(loadInitialHistory())
+    @Volatile
+    private var persistedHistory = _history.value
+    @Volatile
+    private var baselineTrusted = initialized
+    private var pendingUiChanges = false
     val historyFlow: StateFlow<List<PlayedEntry>> = _history
     private val storage by lazy { SecureTokenStorage(app) }
     private val syncPreferences by lazy { SyncPreferences(app) }
@@ -147,20 +176,16 @@ class PlayHistoryRepository private constructor(
     private var pendingSettledSyncJob: Job? = null
 
     private fun loadInitialHistory(): List<PlayedEntry> {
+        return runBlocking(Dispatchers.IO) {
+            tryLoadHistory()?.also { initialized = true }.orEmpty()
+        }
+    }
+
+    private suspend fun loadTrustedHistory(): List<PlayedEntry> {
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
-            val roomEntries = runCatching {
-                runBlocking {
-                    activeRoomStore.readIfRoomPrimary()
-                }
-            }.onFailure { error ->
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "PlayHistoryRepo",
-                    "Failed to read Room history; falling back to legacy JSON",
-                    error
-                )
-            }.getOrNull()
+            // 读取失败不能证明 Room 尚未接管，旧 JSON 可能已经过时或被清理
+            val roomEntries = activeRoomStore.readIfRoomPrimary()
             if (roomEntries != null) {
                 LegacyJsonCleanupRequests.schedule(app, "play-history-room-load")
                 return roomEntries
@@ -171,10 +196,9 @@ class PlayHistoryRepository private constructor(
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             val imported = runCatching {
-                runBlocking {
-                    activeRoomStore.importLegacyAndPromote(legacyEntries)
-                }
+                activeRoomStore.importLegacyAndPromote(legacyEntries)
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 roomStorageEnabled = false
                 NPLogger.e(
                     "PlayHistoryRepo",
@@ -196,60 +220,127 @@ class PlayHistoryRepository private constructor(
     }
 
     private fun loadLegacyFromDisk(): List<PlayedEntry> {
-        return try {
-            if (!file.exists()) return emptyList()
-            val raw = file.readText()
-            val type = object : TypeToken<List<PlayedEntry>>() {}.type
-            gson.fromJson<List<PlayedEntry>>(raw, type).orEmpty()
-                .sortedByDescending { it.playedAt }
-                .distinctBy { it.identityKey() }
-                .take(1000)
-        } catch (_: Throwable) {
-            emptyList()
+        if (!file.exists()) return emptyList()
+        val type = object : TypeToken<List<PlayedEntry>>() {}.type
+        return (gson.fromJson<List<PlayedEntry>>(file.readText(), type)
+            ?: throw IOException("Play history JSON has no valid list"))
+            .sortedByDescending { it.playedAt }
+            .distinctBy { it.identityKey() }
+    }
+
+    private suspend fun tryLoadHistory(): List<PlayedEntry>? = try {
+        loadTrustedHistory().also { initialLoadFailure = null }
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        initialLoadFailure = error
+        NPLogger.e("PlayHistoryRepo", "History unavailable; preserving storage for retry", error)
+        null
+    }
+
+    private suspend fun ensureInitializedLocked(): Boolean {
+        if (initialized) return recoverBaselineLocked()
+        val loaded = tryLoadHistory() ?: return false
+        _history.value = loaded
+        persistedHistory = loaded
+        baselineTrusted = true
+        pendingUiChanges = false
+        initialized = true
+        return true
+    }
+
+    private suspend fun recoverBaselineLocked(): Boolean = try {
+        if (!baselineTrusted) {
+            // 事务可能已经提交后才通知取消，必须重新读取实际主存再计算增量
+            val roomHistory = roomStore?.readIfRoomPrimary()
+            val actual = roomHistory ?: loadLegacyFromDisk()
+            currentCoroutineContext().ensureActive()
+            persistedHistory = actual
+            roomStorageEnabled = roomHistory != null
+            baselineTrusted = true
+        }
+        if (!pendingUiChanges) _history.value = persistedHistory
+        true
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        initialLoadFailure = error
+        NPLogger.e("PlayHistoryRepo", "History authority unavailable; refusing an uncertain baseline", error)
+        false
+    }
+
+    private fun publishUiHistory(history: List<PlayedEntry>) {
+        pendingUiChanges = true
+        _history.value = history
+    }
+
+    private fun confirmPersistedHistory(history: List<PlayedEntry>) {
+        persistedHistory = history
+        baselineTrusted = true
+        if (_history.value == history) pendingUiChanges = false
+    }
+
+    suspend fun awaitInitialized(): Boolean = withContext(Dispatchers.IO) {
+        historyMutex.withLock {
+            ensureInitializedLocked() && flushPendingWritesLocked()
         }
     }
 
-    private fun persistToDisk(list: List<PlayedEntry>) {
-        runCatching {
-            file.writeTextAtomically(gson.toJson(list))
-        }.onFailure { error ->
+    fun syncSnapshot(): List<PlayedEntry> {
+        if (!initialized || !baselineTrusted) throw IOException("Play history has no trusted snapshot", initialLoadFailure)
+        val current = _history.value
+        if (current != persistedHistory || !baselineTrusted) throw IOException("Play history still has uncommitted changes")
+        return current
+    }
+
+    private suspend fun flushPendingWritesLocked(): Boolean = try {
+        persistSnapshotChecked(_history.value)
+        true
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        NPLogger.e("PlayHistoryRepo", "History changes remain pending until persistence recovers", error)
+        false
+    }
+
+    private suspend fun persistSnapshot(next: List<PlayedEntry>) {
+        try {
+            persistSnapshotChecked(next)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
             NPLogger.e("PlayHistoryRepo", "Failed to persist play history", error)
         }
     }
 
-    private suspend fun persistSnapshot(
-        previous: List<PlayedEntry>,
-        next: List<PlayedEntry>
-    ) {
+    private suspend fun persistSnapshotChecked(next: List<PlayedEntry>) {
+        currentCoroutineContext().ensureActive()
+        if (!initialized || !baselineTrusted) throw IOException("Cannot write unknown play history", initialLoadFailure)
+        if (next == persistedHistory) {
+            confirmPersistedHistory(next)
+            return
+        }
+        baselineTrusted = false
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
-            val roomWriteSucceeded = runCatching {
-                activeRoomStore.writeIncremental(previous = previous, next = next)
-            }.onFailure { error ->
+            try {
+                activeRoomStore.writeIncremental(previous = persistedHistory, next = next)
+                confirmPersistedHistory(next)
+                return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
                 roomStorageEnabled = false
                 NPLogger.e(
                     "PlayHistoryRepo",
                     "Failed to write Room history; falling back to legacy JSON",
                     error
                 )
-            }.isSuccess
-            if (roomWriteSucceeded) {
-                return
             }
         }
 
-        persistToDisk(next)
-        roomStore?.let { fallbackStore ->
-            runCatching {
-                fallbackStore.markLegacyJsonPrimary()
-            }.onFailure { error ->
-                NPLogger.e(
-                    "PlayHistoryRepo",
-                    "Failed to mark legacy history fallback state",
-                    error
-                )
-            }
-        }
+        currentCoroutineContext().ensureActive()
+        file.writeTextAtomically(gson.toJson(next))
+        currentCoroutineContext().ensureActive()
+        roomStore?.markLegacyJsonPrimary()
+        confirmPersistedHistory(next)
     }
 
     private fun markSyncMutation() {
@@ -314,6 +405,7 @@ class PlayHistoryRepository private constructor(
     fun record(song: SongItem, now: Long = System.currentTimeMillis()) {
         scope.launch {
             historyMutex.withLock {
+                if (!ensureInitializedLocked()) return@withLock
                 NPLogger.d("PlayHistoryRepo", "record() called: songId=${song.id}, name=${song.name}")
                 val current = _history.value
                 NPLogger.d("PlayHistoryRepo", "Current history size: ${current.size}")
@@ -338,12 +430,11 @@ class PlayHistoryRepository private constructor(
                 }
                     .sortedByDescending { it.playedAt }
                     .distinctBy { it.identityKey() }
-                    .take(1000)
 
                 markSyncMutation()
                 NPLogger.d("PlayHistoryRepo", "Updated history size: ${updated.size}, latest: ${updated.firstOrNull()?.name}")
-                _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                publishUiHistory(updated)
+                persistSnapshot(updated)
 
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
@@ -373,6 +464,7 @@ class PlayHistoryRepository private constructor(
         val normalizedPositionMs = positionMs.coerceAtLeast(0L)
         scope.launch {
             historyMutex.withLock {
+                if (!ensureInitializedLocked()) return@withLock
                 val current = _history.value
                 val songIdentityKey = song.identityKey()
                 val existingIndex = current.indexOfFirst { it.identityKey() == songIdentityKey }
@@ -402,11 +494,10 @@ class PlayHistoryRepository private constructor(
                 }
                     .sortedByDescending { it.playedAt }
                     .distinctBy { it.identityKey() }
-                    .take(1000)
 
                 markSyncMutation()
-                _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                publishUiHistory(updated)
+                persistSnapshot(updated)
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
                 }
@@ -425,10 +516,15 @@ class PlayHistoryRepository private constructor(
     ) {
         scope.launch {
             historyMutex.withLock {
+                if (!ensureInitializedLocked()) return@withLock
                 NPLogger.d(
                     "PlayHistoryRepo",
                     "updateSongMetadata() called: songId=${originalSong.id}"
                 )
+                if (updatedSong.lyricSyncEdited != null && updatedSong.lyricSyncRevision > 0L) {
+                    SyncSong.fromSongItemOrNull(updatedSong, app)
+                        ?.let(storage::recordLyricOverride)
+                }
                 val current = _history.value
                 val existingIndex = current.indexOfFirst { it.identityKey() == originalSong.identityKey() }
                 if (existingIndex == -1) {
@@ -444,10 +540,9 @@ class PlayHistoryRepository private constructor(
                 }
                     .sortedByDescending { it.playedAt }
                     .distinctBy { it.identityKey() }
-                    .take(1000)
 
-                _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                publishUiHistory(updated)
+                persistSnapshot(updated)
                 if (triggerSync) {
                     triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
                 }
@@ -458,6 +553,7 @@ class PlayHistoryRepository private constructor(
     fun clear() {
         scope.launch {
             historyMutex.withLock {
+                if (!ensureInitializedLocked()) return@withLock
                 val current = _history.value
                 if (current.isEmpty()) {
                     return@withLock
@@ -474,21 +570,8 @@ class PlayHistoryRepository private constructor(
                     markSyncMutation()
                 }
 
-                _history.value = emptyList()
-                if (roomStorageEnabled && roomStore != null) {
-                    runCatching { roomStore.clear() }
-                        .onFailure { error ->
-                            roomStorageEnabled = false
-                            NPLogger.e(
-                                "PlayHistoryRepo",
-                                "Failed to clear Room history; falling back to legacy JSON",
-                                error
-                            )
-                        }
-                }
-                if (!roomStorageEnabled) {
-                    persistToDisk(emptyList())
-                }
+                publishUiHistory(emptyList())
+                persistSnapshot(emptyList())
                 triggerSyncIfNeeded(markMutation = false)
             }
         }
@@ -501,6 +584,7 @@ class PlayHistoryRepository private constructor(
 
         scope.launch {
             historyMutex.withLock {
+                if (!ensureInitializedLocked()) return@withLock
                 val current = _history.value
                 val removalKeys = songs.map { it.identityKey() }.toSet()
                 val removedEntries = current.filter { it.identityKey() in removalKeys }
@@ -520,8 +604,8 @@ class PlayHistoryRepository private constructor(
                 }
 
                 val updated = current.filterNot { it.identityKey() in removalKeys }
-                _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                publishUiHistory(updated)
+                persistSnapshot(updated)
                 triggerSyncIfNeeded(markMutation = false)
             }
         }
@@ -529,15 +613,14 @@ class PlayHistoryRepository private constructor(
 
     suspend fun updateHistory(entries: List<PlayedEntry>) {
         historyMutex.withLock {
+            if (!ensureInitializedLocked()) throw IOException("Cannot replace unknown play history", initialLoadFailure)
             NPLogger.d("PlayHistoryRepo", "updateHistory() called: entries=${entries.size}")
-            val clipped = entries
+            val normalized = entries
                 .sortedByDescending { it.playedAt }
                 .distinctBy { it.identityKey() }
-                .take(1000)
-            NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
-            val previous = _history.value
-            _history.value = clipped
-            persistSnapshot(previous = previous, next = clipped)
+            NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${normalized.size} entries, latest: ${normalized.firstOrNull()?.name}")
+            publishUiHistory(normalized)
+            persistSnapshot(normalized)
         }
     }
 
@@ -546,16 +629,17 @@ class PlayHistoryRepository private constructor(
         expectedMutationVersion: Long
     ): Boolean {
         return historyMutex.withLock {
+            if (!ensureInitializedLocked()) return@withLock false
             if (storage.getSyncMutationVersion() != expectedMutationVersion) {
                 return@withLock false
             }
-            val clipped = entries
+            val normalized = entries
                 .sortedByDescending { it.playedAt }
                 .distinctBy { it.identityKey() }
-                .take(1000)
-            val previous = _history.value
-            _history.value = clipped
-            persistSnapshot(previous = previous, next = clipped)
+            persistSnapshotChecked(normalized)
+            currentCoroutineContext().ensureActive()
+            _history.value = normalized
+            pendingUiChanges = false
             true
         }
     }
@@ -579,6 +663,13 @@ class PlayHistoryRepository private constructor(
             mediaUri = song.mediaUri,
             matchedLyric = song.matchedLyric,
             matchedTranslatedLyric = song.matchedTranslatedLyric,
+            matchedRomanizedLyric = song.matchedRomanizedLyric,
+            originalRomanizedLyric = song.originalRomanizedLyric,
+            matchedLyricSource = song.matchedLyricSource,
+            matchedSongId = song.matchedSongId,
+            userLyricOffsetMs = song.userLyricOffsetMs,
+            lyricSyncRevision = song.lyricSyncRevision,
+            lyricSyncEdited = song.lyricSyncEdited,
             customCoverUrl = song.customCoverUrl,
             customName = song.customName,
             customArtist = song.customArtist,

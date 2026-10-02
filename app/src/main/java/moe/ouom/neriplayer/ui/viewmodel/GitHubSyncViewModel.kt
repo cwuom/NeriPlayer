@@ -34,6 +34,9 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -51,14 +54,15 @@ class GitHubSyncViewModel : ViewModel() {
     val uiState: StateFlow<GitHubSyncUiState> = _uiState
 
     private var storage: SecureTokenStorage? = null
-    private var syncManager: GitHubSyncManager? = null
+    internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
+    private var syncJob: Job? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         viewModelScope.launch(Dispatchers.IO) {
             if (storage == null) {
                 storage = SecureTokenStorage(appContext)
-                syncManager = GitHubSyncManager.getInstance(appContext)
+                syncOperation = GitHubSyncManager.getInstance(appContext)::performSync
             }
             loadConfiguration()
         }
@@ -210,12 +214,15 @@ class GitHubSyncViewModel : ViewModel() {
      * 执行同步
      */
     fun performSync(context: Context) {
+        if (syncJob?.isActive == true) return
+        val operation = syncOperation ?: return
         val appContext = context.applicationContext
         _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null)
 
-        viewModelScope.launch {
-            val manager = syncManager ?: return@launch
-            val result = manager.performSync()
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            val result = operation()
+            coroutineContext.ensureActive()
+            if (syncJob !== coroutineContext[Job]) return@launch
 
             if (result.isSuccess) {
                 val syncResult = result.getOrNull()!!
@@ -265,6 +272,14 @@ class GitHubSyncViewModel : ViewModel() {
                 }
             }
         }
+        syncJob = job
+        job.invokeOnCompletion {
+            if (syncJob === job) {
+                syncJob = null
+                _uiState.value = _uiState.value.copy(isSyncing = false)
+            }
+        }
+        job.start()
     }
 
     /**
@@ -287,6 +302,9 @@ class GitHubSyncViewModel : ViewModel() {
      */
     fun clearConfiguration(context: Context) {
         val appContext = context.applicationContext
+        val activeSync = syncJob
+        syncJob = null
+        activeSync?.cancel()
         storage?.clearAll()
         GitHubSyncWorker.cancelAllSync(appContext)
         _uiState.value = GitHubSyncUiState()

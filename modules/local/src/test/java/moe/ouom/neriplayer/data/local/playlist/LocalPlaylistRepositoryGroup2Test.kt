@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.data.local.playlist
 import moe.ouom.neriplayer.data.sync.mapping.fromSongItem
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -13,11 +15,177 @@ import moe.ouom.neriplayer.data.model.sync.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.anyList
+import org.mockito.Mockito.anyLong
+import org.mockito.Mockito.anyString
+import org.mockito.Mockito.doAnswer
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
 import java.io.File
 import java.io.IOException
 
 
 class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
+
+    @Test
+    fun `failed Room fallback marker keeps memory unchanged and retries before acknowledging sync`() = runTest {
+        val initial = LocalPlaylist(id = 140L, name = "initial")
+        val remote = initial.copy(name = "remote")
+        val storage = RecordingStorage(primary = null)
+        val room = mock(LocalPlaylistRoomStore::class.java)
+        val markerFailure = IOException("Room primary marker unavailable")
+        var failMarker = true
+        var roomPrimary = true
+        `when`(room.readIfRoomPrimary()).thenAnswer { if (roomPrimary) listOf(initial) else null }
+        doAnswer { throw IOException("Room write unavailable") }.`when`(room)
+            .writeIncremental(anyList(), anyList(), anyString(), anyLong())
+        doAnswer {
+            if (failMarker) throw markerFailure
+            roomPrimary = false
+            Unit
+        }.`when`(room).markLegacyJsonPrimary(anyString(), anyLong())
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(), file = File(tempFolder.root, "failed_room_marker.json"),
+            normalizePlaylists = { it }, autoSyncEnabled = false,
+            storage = storage, syncMutationStore = syncStore, roomStore = room
+        )
+
+        repeat(2) {
+            val failure = runCatching {
+                repository.applySyncedPlaylistsIfUnchanged(listOf(remote), syncStore.mutationVersion)
+            }.exceptionOrNull()
+            assertPreservedFailure(markerFailure, failure)
+            assertEquals(listOf(initial), repository.playlists.value)
+            assertEquals(1, repository.playlistCount.value)
+            assertTrue(repository.roomStorageEnabled)
+        }
+        assertTrue(requireNotNull(storage.primary).contains("remote"))
+        verify(room, times(2)).markLegacyJsonPrimary(anyString(), anyLong())
+        val restarted = LocalPlaylistRepository.createForTest(
+            context = mockContext(), file = File(tempFolder.root, "failed_room_marker.json"),
+            normalizePlaylists = { it }, autoSyncEnabled = false,
+            storage = storage, syncMutationStore = syncStore, roomStore = room
+        )
+        assertEquals(listOf(initial), restarted.playlists.value)
+
+        failMarker = false
+        assertTrue(repository.applySyncedPlaylistsIfUnchanged(listOf(remote), syncStore.mutationVersion))
+        assertEquals(listOf(remote), repository.playlists.value)
+        assertEquals(0L, syncStore.mutationVersion)
+        verify(room, times(3)).markLegacyJsonPrimary(anyString(), anyLong())
+    }
+
+    @Test
+    fun `failed JSON fallback restores Room retry requirement without publishing`() = runTest {
+        val initial = LocalPlaylist(id = 141L, name = "initial")
+        val storage = RecordingStorage(primary = null, failCommit = true)
+        val room = mock(LocalPlaylistRoomStore::class.java)
+        `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
+        doAnswer { throw IOException("Room write unavailable") }.`when`(room)
+            .writeIncremental(anyList(), anyList(), anyString(), anyLong())
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(), file = File(tempFolder.root, "failed_room_fallback_json.json"),
+            normalizePlaylists = { it }, autoSyncEnabled = false,
+            storage = storage, roomStore = room
+        )
+        val remote = initial.copy(name = "remote")
+
+        assertTrue(runCatching {
+            repository.applySyncedPlaylistsIfUnchanged(listOf(remote), 0L)
+        }.exceptionOrNull() is IOException)
+        assertEquals(listOf(initial), repository.playlists.value)
+        assertTrue(repository.roomStorageEnabled)
+        verify(room, never()).markLegacyJsonPrimary(anyString(), anyLong())
+
+        storage.failCommit = false
+        assertTrue(repository.applySyncedPlaylistsIfUnchanged(listOf(remote), 0L))
+        assertEquals(listOf(remote), repository.playlists.value)
+        verify(room).markLegacyJsonPrimary(anyString(), anyLong())
+    }
+
+    @Test
+    fun `cancelled Room write propagates without writing JSON or switching primary`() = runTest {
+        val initial = LocalPlaylist(id = 142L, name = "initial")
+        val storage = RecordingStorage(primary = null)
+        val room = mock(LocalPlaylistRoomStore::class.java)
+        val cancelled = CancellationException("cancelled Room commit")
+        `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
+        doAnswer { throw cancelled }.`when`(room)
+            .writeIncremental(anyList(), anyList(), anyString(), anyLong())
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(), file = File(tempFolder.root, "cancelled_room_commit.json"),
+            normalizePlaylists = { it }, autoSyncEnabled = false,
+            storage = storage, roomStore = room
+        )
+
+        val failure = runCatching {
+            repository.applySyncedPlaylistsIfUnchanged(listOf(initial.copy(name = "remote")), 0L)
+        }.exceptionOrNull()
+
+        assertPreservedFailure(cancelled, failure)
+        assertEquals(listOf(initial), repository.playlists.value)
+        assertTrue(repository.roomStorageEnabled)
+        assertEquals(0, storage.commitCount)
+        verify(room, never()).markLegacyJsonPrimary(anyString(), anyLong())
+    }
+
+    @Test
+    fun `Room outbox read failure preserves authority and refuses empty legacy fallback on every retry`() = runTest {
+        val initial = LocalPlaylist(id = 143L, name = "initial")
+        val storage = RecordingStorage(primary = null)
+        val room = mock(LocalPlaylistRoomStore::class.java)
+        `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(), file = File(tempFolder.root, "failed_room_outbox_read.json"),
+            normalizePlaylists = { it }, autoSyncEnabled = false,
+            storage = storage, roomStore = room
+        )
+        val readFailure = IOException("Room outbox unavailable")
+        doAnswer { throw readFailure }.`when`(room).readPendingSyncMutationOutbox()
+
+        repeat(2) {
+            val failure = checkNotNull(runCatching {
+                repository.applySyncedPlaylistsIfUnchanged(listOf(initial.copy(name = "remote")), 0L)
+            }.exceptionOrNull())
+            assertTrue(generateSequence(failure) { it.cause }.any { it === readFailure })
+            assertEquals(listOf(initial), repository.playlists.value)
+            assertTrue(repository.roomStorageEnabled)
+            assertTrue(repository.syncMutationPending.value)
+            assertEquals(0, storage.commitCount)
+        }
+        verify(room, never()).markLegacyJsonPrimary(anyString(), anyLong())
+        verify(room, never()).writeIncremental(anyList(), anyList(), anyString(), anyLong())
+    }
+
+    @Test
+    fun `cancelled fallback marker propagates and retains Room primary retry`() = runTest {
+        val initial = LocalPlaylist(id = 144L, name = "initial")
+        val storage = RecordingStorage(primary = null)
+        val room = mock(LocalPlaylistRoomStore::class.java)
+        `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
+        doAnswer { throw IOException("Room write unavailable") }.`when`(room)
+            .writeIncremental(anyList(), anyList(), anyString(), anyLong())
+        val cancelled = CancellationException("cancelled primary switch")
+        doAnswer { throw cancelled }.`when`(room).markLegacyJsonPrimary(anyString(), anyLong())
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(), file = File(tempFolder.root, "cancelled_room_marker.json"),
+            normalizePlaylists = { it }, autoSyncEnabled = false,
+            storage = storage, roomStore = room
+        )
+
+        repeat(2) {
+            assertPreservedFailure(cancelled, runCatching {
+                repository.applySyncedPlaylistsIfUnchanged(listOf(initial.copy(name = "remote")), 0L)
+            }.exceptionOrNull())
+            assertEquals(listOf(initial), repository.playlists.value)
+            assertTrue(repository.roomStorageEnabled)
+        }
+        verify(room, times(2)).markLegacyJsonPrimary(anyString(), anyLong())
+    }
 
     @Test
     fun `sync apply succeeds without advancing local mutation epoch`() = runTest {
@@ -731,5 +899,12 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
         }
 
         assertTrue(result.exceptionOrNull() is IOException)
+    }
+
+    private fun assertPreservedFailure(original: Throwable, actual: Throwable?) {
+        val failure = checkNotNull(actual) { "Expected persistence failure to propagate" }
+        assertEquals(original.javaClass, failure.javaClass)
+        assertEquals(original.message, failure.message)
+        assertTrue("Propagated failure must retain the original exception", generateSequence(failure) { it.cause }.any { it === original })
     }
 }

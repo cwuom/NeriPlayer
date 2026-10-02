@@ -8,7 +8,11 @@ import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.local.audioimport.localSongNewestFirstComparator
@@ -26,20 +30,26 @@ import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
-import org.json.JSONObject
 import java.io.IOException
 import java.io.StringReader
 import java.security.MessageDigest
 
 internal fun LocalPlaylistRepository.completeInitialLoad() {
     try {
-        loadFromDisk()
-        _initializationReadyFlow.value = true
-        initialLoad.complete(Unit)
+        runBlocking {
+            playlistCommitMutex.withLock {
+                loadFromDisk()
+                initialLoadFailure = null
+                _initializationReadyFlow.value = true
+                initialLoad.complete(Unit)
+            }
+        }
     } catch (error: Exception) {
         NPLogger.e("LocalPlaylistRepo", "Failed to load playlists", error)
         initialLoadFailure = error
+        _initializationReadyFlow.value = false
         initialLoad.complete(Unit)
+        if (error is CancellationException) throw error
     }
 }
 
@@ -130,18 +140,9 @@ internal fun LocalPlaylistRepository.readRoomPrimary(): List<LocalPlaylist>? {
         return null
     }
     val activeRoomStore = roomStore
-    return runCatching {
-        runBlocking {
-            activeRoomStore.readIfRoomPrimary()
-        }
-    }.onFailure { error ->
-        roomStorageEnabled = false
-        NPLogger.e(
-            "LocalPlaylistRepo",
-            "Failed to read Room playlists; falling back to legacy storage",
-            error
-        )
-    }.getOrNull()
+    return runBlocking {
+        activeRoomStore.readIfRoomPrimary()
+    }
 }
 
 internal fun LocalPlaylistRepository.readStoredPlaylists(): PlaylistLoadResult {
@@ -480,6 +481,7 @@ internal suspend fun <T> LocalPlaylistRepository.commitPlaylistMutation(block: s
         requireInitialized()
         playlistCommitMutex.lock()
         try {
+            initialLoadFailure?.let { throw it }
             block()
         } finally {
             playlistCommitMutex.unlock()
@@ -495,10 +497,11 @@ internal suspend fun LocalPlaylistRepository.publishLocked(
 ) {
     val normalized = normalizePlaylistOrder(playlists)
     val stateChanged = normalized != _playlists.value
+    if (markLocalMutation) {
+        // 先确认用户意图，让已经捕获的同步结果在墓碑确认失败时也失效
+        syncMutationStore.markSyncMutation()
+    }
     if (!stateChanged && syncMutation.isEmpty) {
-        if (markLocalMutation) {
-            syncMutationStore.markSyncMutation()
-        }
         if (triggerSync && autoSyncEnabled) {
             scheduleAutoSync()
         }
@@ -512,19 +515,21 @@ internal suspend fun LocalPlaylistRepository.publishLocked(
     } else {
         null
     }
-    val pendingOutbox = preparePendingSyncMutationUpdate(
-        currentDomainDigest = currentDomainDigest,
-        legacyPrimaryText = legacyPrimaryText,
-        nextDomainDigest = nextDomainDigest,
-        syncMutation = syncMutation
-    )
-    // 没有墓碑要提交时可以先推进版本, 含墓碑的变更由存储层和版本一起提交
-    if (markLocalMutation && syncMutation.isEmpty && pendingOutbox == null) {
-        syncMutationStore.markSyncMutation()
-    }
     val roomWasEnabledBeforeOutbox = roomStorageEnabled
-    if (pendingOutbox != null || !syncMutation.isEmpty) {
-        writePendingSyncMutation(pendingOutbox)
+    val pendingOutbox = try {
+        val prepared = preparePendingSyncMutationUpdate(
+            currentDomainDigest = currentDomainDigest,
+            legacyPrimaryText = legacyPrimaryText,
+            nextDomainDigest = nextDomainDigest,
+            syncMutation = syncMutation
+        )
+        if (prepared != null || !syncMutation.isEmpty) {
+            writePendingSyncMutation(prepared)
+        }
+        prepared
+    } catch (error: Exception) {
+        if (roomWasEnabledBeforeOutbox) roomStorageEnabled = true
+        throw error
     }
     var committedToRoom = false
     var roomFallbackRequired = roomWasEnabledBeforeOutbox && !roomStorageEnabled
@@ -539,6 +544,10 @@ internal suspend fun LocalPlaylistRepository.publishLocked(
         }.onSuccess {
             committedToRoom = true
         }.onFailure { error ->
+            if (error is CancellationException) {
+                invalidatePendingSyncMutationBaseline(error)
+                throw error
+            }
             roomFallbackRequired = true
             roomStorageEnabled = false
             NPLogger.e(
@@ -549,19 +558,7 @@ internal suspend fun LocalPlaylistRepository.publishLocked(
         }
     }
     if (stateChanged && !committedToRoom) {
-        persistToDisk(normalized)
-        val fallbackRoomStore = roomStore
-        if (roomFallbackRequired && fallbackRoomStore != null) {
-            runCatching {
-                fallbackRoomStore.markLegacyJsonPrimary(nextDomainDigest)
-            }.onFailure { error ->
-                NPLogger.e(
-                    "LocalPlaylistRepo",
-                    "Failed to mark legacy JSON fallback state in Room",
-                    error
-                )
-            }
-        }
+        persistLegacyPlaylistFallback(normalized, nextDomainDigest, roomFallbackRequired)
     }
     if (stateChanged) {
         _playlists.value = normalized
@@ -571,6 +568,7 @@ internal suspend fun LocalPlaylistRepository.publishLocked(
         val settled = runCatching {
             settlePendingSyncMutation(pendingOutbox, triggerSync)
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             _syncMutationPending.value = true
             NPLogger.e(
                 "LocalPlaylistRepo",
@@ -584,21 +582,44 @@ internal suspend fun LocalPlaylistRepository.publishLocked(
     }
 }
 
+private suspend fun LocalPlaylistRepository.persistLegacyPlaylistFallback(
+    playlists: List<LocalPlaylist>,
+    domainDigest: String,
+    roomFallbackRequired: Boolean
+) {
+    try {
+        persistToDisk(playlists)
+        if (roomFallbackRequired) {
+            requireNotNull(roomStore).markLegacyJsonPrimary(domainDigest)
+        }
+    } catch (error: Exception) {
+        // 主存切换未提交时 Room 仍是权威来源，重试必须再次确认切换
+        if (roomFallbackRequired) roomStorageEnabled = true
+        invalidatePendingSyncMutationBaseline(error)
+        throw error
+    }
+}
+
 internal fun LocalPlaylistRepository.recoverPendingSyncMutation(committedDomainDigest: String): Boolean {
-    return runCatching {
+    try {
         runBlocking {
             flushPendingSyncMutation(committedDomainDigest)
         }
-    }.onFailure { error ->
+        return true
+    } catch (error: Exception) {
+        _syncMutationPending.value = true
         NPLogger.e("LocalPlaylistRepo", "Failed to replay playlist sync mutation", error)
-    }.isSuccess
+        throw error
+    }
 }
 
 internal suspend fun LocalPlaylistRepository.flushPendingSyncMutation(committedDomainDigest: String): Boolean {
+    _syncMutationPending.value = true
     val committedOutbox = readPendingSyncMutationOutbox(
         committedDomainDigest = committedDomainDigest,
         legacyPrimaryText = storage.readPrimary()
     )
+    currentCoroutineContext().ensureActive()
     if (committedOutbox == null) {
         clearPendingSyncMutation()
         _syncMutationPending.value = false
@@ -632,21 +653,7 @@ internal fun LocalPlaylistRepository.decodeCommittedSyncMutationOutbox(
     committedDomainDigest: String,
     legacyPrimaryText: String?
 ): LocalPlaylistSyncMutationOutbox? {
-    val outbox = runCatching {
-        val root = JSONObject(text)
-        if (root.has("mutations")) {
-            requireNotNull(gson.fromJson(text, LocalPlaylistSyncMutationOutbox::class.java))
-        } else {
-            LocalPlaylistSyncMutationOutbox(
-                mutations = listOf(
-                    requireNotNull(gson.fromJson(text, LocalPlaylistSyncMutation::class.java))
-                )
-            )
-        }
-    }.getOrElse { error ->
-        NPLogger.e("LocalPlaylistRepo", "Discarding corrupt playlist sync mutation", error)
-        return null
-    }
+    val outbox = decodeLocalPlaylistSyncMutationOutbox(text)
     return trimCommittedSyncMutationOutbox(
         outbox = outbox,
         committedDomainDigest = committedDomainDigest,
@@ -663,7 +670,7 @@ internal fun LocalPlaylistRepository.trimCommittedSyncMutationOutbox(
     val legacyDigest = legacyPrimaryText?.let(::primaryDigest)
     val committedIndex = outbox.mutations.indexOfLast { mutation ->
         mutation.expectedPrimaryDigest == committedDomainDigest ||
-            mutation.expectedPrimaryDigest == legacyDigest
+            (legacyDigest != null && mutation.expectedPrimaryDigest == legacyDigest)
     }
     if (committedIndex < 0) return null
     return LocalPlaylistSyncMutationOutbox(
@@ -675,18 +682,10 @@ internal suspend fun LocalPlaylistRepository.readPendingSyncMutationOutbox(
     committedDomainDigest: String,
     legacyPrimaryText: String?
 ): LocalPlaylistSyncMutationOutbox? {
-    if (roomStorageEnabled && roomStore != null) {
-        val activeRoomStore = roomStore
-        val roomOutbox = runCatching {
-            activeRoomStore.readPendingSyncMutationOutbox()
-        }.onFailure { error ->
-            roomStorageEnabled = false
-            NPLogger.e(
-                "LocalPlaylistRepo",
-                "Failed to read Room sync outbox; falling back to legacy outbox",
-                error
-            )
-        }.getOrNull()
+    try {
+        currentCoroutineContext().ensureActive()
+        // 歌单主存切回 JSON 后，先前写入 Room 的待确认操作仍由 Room 持有
+        val roomOutbox = roomStore?.readPendingSyncMutationOutbox()
         if (roomOutbox != null) {
             return trimCommittedSyncMutationOutbox(
                 outbox = roomOutbox,
@@ -694,69 +693,69 @@ internal suspend fun LocalPlaylistRepository.readPendingSyncMutationOutbox(
                 legacyPrimaryText = legacyPrimaryText
             )
         }
+        val pendingText = storage.readPendingSyncMutation() ?: return null
+        return decodeCommittedSyncMutationOutbox(
+            text = pendingText,
+            committedDomainDigest = committedDomainDigest,
+            legacyPrimaryText = legacyPrimaryText
+        )
+    } catch (error: Exception) {
+        invalidatePendingSyncMutationBaseline(error)
+        throw error
     }
+}
 
-    val pendingText = storage.readPendingSyncMutation() ?: return null
-    return decodeCommittedSyncMutationOutbox(
-        text = pendingText,
-        committedDomainDigest = committedDomainDigest,
-        legacyPrimaryText = legacyPrimaryText
-    )
+private fun LocalPlaylistRepository.invalidatePendingSyncMutationBaseline(error: Exception) {
+    _syncMutationPending.value = true
+    initialLoadFailure = error
+    _initializationReadyFlow.value = false
 }
 
 internal suspend fun LocalPlaylistRepository.writePendingSyncMutation(outbox: LocalPlaylistSyncMutationOutbox?) {
-    if (roomStorageEnabled && roomStore != null) {
+    try {
+        currentCoroutineContext().ensureActive()
         val activeRoomStore = roomStore
-        val roomWriteSucceeded = runCatching {
-            if (outbox == null) {
-                activeRoomStore.clearPendingSyncMutationOutbox()
-            } else {
+        when {
+            outbox == null -> clearPendingSyncMutation()
+            activeRoomStore != null -> {
                 activeRoomStore.writePendingSyncMutationOutbox(outbox)
             }
-        }.onFailure { error ->
-            roomStorageEnabled = false
-            NPLogger.e(
-                "LocalPlaylistRepo",
-                "Failed to write Room sync outbox; falling back to legacy outbox",
-                error
-            )
-        }.isSuccess
-        if (roomWriteSucceeded) {
-            return
+            else -> storage.writePendingSyncMutation(gson.toJson(outbox))
         }
-    }
-    if (outbox == null) {
-        storage.clearPendingSyncMutation()
-    } else {
-        storage.writePendingSyncMutation(gson.toJson(outbox))
+        currentCoroutineContext().ensureActive()
+    } catch (error: Exception) {
+        _syncMutationPending.value = true
+        throw error
     }
 }
 
 internal suspend fun LocalPlaylistRepository.clearPendingSyncMutation() {
-    if (roomStorageEnabled && roomStore != null) {
-        val activeRoomStore = roomStore
-        try {
-            activeRoomStore.clearPendingSyncMutationOutbox()
-        } catch (error: Exception) {
-            roomStorageEnabled = false
-            NPLogger.e("LocalPlaylistRepo", "Failed to clear Room sync outbox", error)
-            throw IOException("Failed to clear Room sync outbox", error)
-        }
+    try {
+        currentCoroutineContext().ensureActive()
+        roomStore?.clearPendingSyncMutationOutbox()
+        currentCoroutineContext().ensureActive()
+        storage.clearPendingSyncMutation()
+        currentCoroutineContext().ensureActive()
+    } catch (error: Exception) {
+        _syncMutationPending.value = true
+        throw error
     }
-    storage.clearPendingSyncMutation()
 }
 
 internal suspend fun LocalPlaylistRepository.settlePendingSyncMutation(
     outbox: LocalPlaylistSyncMutationOutbox,
     triggerSync: Boolean
 ): Boolean {
+    _syncMutationPending.value = true
     val hasSyncMutation = outbox.mutations.any { mutation -> !mutation.isEmpty }
     try {
         outbox.mutations.forEach { mutation ->
+            currentCoroutineContext().ensureActive()
             if (!mutation.isEmpty) {
                 syncMutationStore.applyAndMarkMutation(mutation)
             }
         }
+        currentCoroutineContext().ensureActive()
         if ((triggerSync || hasSyncMutation) && autoSyncEnabled && !scheduleAutoSync()) {
             throw IOException("Failed to schedule playlist sync mutation")
         }
@@ -765,6 +764,7 @@ internal suspend fun LocalPlaylistRepository.settlePendingSyncMutation(
         return hasSyncMutation
     } catch (error: Exception) {
         _syncMutationPending.value = true
+        if (error is CancellationException) throw error
         throw IOException("Playlist saved but sync mutation is pending", error)
     }
 }

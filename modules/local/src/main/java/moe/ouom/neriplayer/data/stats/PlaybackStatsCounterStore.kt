@@ -13,11 +13,12 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
 import java.io.IOException
+import java.util.Collections
 
 private data class PlaybackStatsCounterState(
     val epochStartedAt: Long = 0L,
-    val trackShardsByIdentity: Map<String, List<SyncPlaybackCounterShard>> = emptyMap(),
-    val dailyShardsByBucketKey: Map<String, List<SyncPlaybackCounterShard>> = emptyMap()
+    val trackShardsByIdentity: Map<String, List<SyncPlaybackCounterShard>> = Collections.unmodifiableMap(emptyMap()),
+    val dailyShardsByBucketKey: Map<String, List<SyncPlaybackCounterShard>> = Collections.unmodifiableMap(emptyMap())
 )
 
 internal class PlaybackStatsCounterStore(
@@ -32,18 +33,18 @@ internal class PlaybackStatsCounterStore(
     private var state = PlaybackStatsCounterState()
 
     fun loadLegacy() {
-        updateState(load())
+        val loaded = load()
+        updateState(loaded.copy(
+            trackShardsByIdentity = loaded.trackShardsByIdentity.mapValues { (_, shards) -> normalizeOwnedShards(shards) },
+            dailyShardsByBucketKey = loaded.dailyShardsByBucketKey.mapValues { (_, shards) -> normalizeOwnedShards(shards) }
+        ))
     }
 
     fun snapshot(): PlaybackStatsSyncCounterSnapshot {
         val current = synchronized(lock) { state }
         return PlaybackStatsSyncCounterSnapshot(
-            trackShardsByIdentity = current.trackShardsByIdentity.mapValues { (_, shards) ->
-                SyncPlaybackStatMapper.normalizeCounterShards(shards)
-            },
-            dailyShardsByBucketKey = current.dailyShardsByBucketKey.mapValues { (_, shards) ->
-                SyncPlaybackStatMapper.normalizeCounterShards(shards)
-            }
+            trackShardsByIdentity = current.trackShardsByIdentity,
+            dailyShardsByBucketKey = current.dailyShardsByBucketKey
         )
     }
 
@@ -116,7 +117,7 @@ internal class PlaybackStatsCounterStore(
     ) {
         val trackShards = syncStats
             .associate { stat ->
-                stat.identityKey to SyncPlaybackStatMapper.normalizeCounterShards(stat.counterShards)
+                stat.identityKey to normalizeOwnedShards(stat.counterShards)
             }
             .filterValues { it.isNotEmpty() }
         val dailyShards = syncDailyStats
@@ -124,7 +125,7 @@ internal class PlaybackStatsCounterStore(
                 PlaybackStatsSyncCounterSnapshot.dailyCounterKey(
                     dayStartAt = bucket.dayStartAt,
                     identityKey = bucket.identityKey
-                ) to SyncPlaybackStatMapper.normalizeCounterShards(bucket.counterShards)
+                ) to normalizeOwnedShards(bucket.counterShards)
             }
             .filterValues { it.isNotEmpty() }
         updateState(
@@ -141,10 +142,10 @@ internal class PlaybackStatsCounterStore(
         epochStartedAt: Long
     ) {
         val trackShards = snapshot.trackShardsByIdentity
-            .mapValues { (_, shards) -> SyncPlaybackStatMapper.normalizeCounterShards(shards) }
+            .mapValues { (_, shards) -> normalizeOwnedShards(shards) }
             .filterValues { it.isNotEmpty() }
         val dailyShards = snapshot.dailyShardsByBucketKey
-            .mapValues { (_, shards) -> SyncPlaybackStatMapper.normalizeCounterShards(shards) }
+            .mapValues { (_, shards) -> normalizeOwnedShards(shards) }
             .filterValues { it.isNotEmpty() }
         updateState(
             PlaybackStatsCounterState(
@@ -178,7 +179,11 @@ internal class PlaybackStatsCounterStore(
 
     private fun updateState(nextState: PlaybackStatsCounterState) {
         synchronized(lock) {
-            state = nextState
+            // 新状态独占其 Map，旧快照只共享不可修改的分片列表
+            state = nextState.copy(
+                trackShardsByIdentity = Collections.unmodifiableMap(nextState.trackShardsByIdentity),
+                dailyShardsByBucketKey = Collections.unmodifiableMap(nextState.dailyShardsByBucketKey)
+            )
         }
     }
 
@@ -231,7 +236,11 @@ internal class PlaybackStatsCounterStore(
             } else {
                 add(updated)
             }
-        }.let(SyncPlaybackStatMapper::normalizeCounterShards)
+        }.let(::normalizeOwnedShards)
+    }
+
+    private fun normalizeOwnedShards(shards: List<SyncPlaybackCounterShard?>?): List<SyncPlaybackCounterShard> {
+        return Collections.unmodifiableList(SyncPlaybackStatMapper.normalizeCounterShards(shards))
     }
 
     private fun syncCounterDeviceId(): String {

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 
 /*
@@ -36,12 +37,15 @@ import moe.ouom.neriplayer.data.sync.host.AndroidSyncLocalDataStore
 import moe.ouom.neriplayer.data.sync.host.AndroidSyncMergeHost
 import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
 import moe.ouom.neriplayer.data.sync.runtime.SyncSession
+import java.io.File
+import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.common.locale.LanguageManager
 
 class GitHubSyncManager private constructor(context: Context) {
     private val appContext = context.applicationContext
-    private val storage = SecureTokenStorage(appContext)
-    private val local = AndroidSyncLocalDataStore(appContext, storage)
+    private val storage by lazy { SecureTokenStorage(appContext) }
+    private val local by lazy { AndroidSyncLocalDataStore(appContext, storage) }
+    private val protocolUpgrade = SyncProtocolUpgradeRepository(appContext)
 
     companion object {
         private val instance = SyncServiceInstance<GitHubSyncManager>()
@@ -50,14 +54,17 @@ class GitHubSyncManager private constructor(context: Context) {
             instance.get { GitHubSyncManager(context.applicationContext) }
     }
 
-    suspend fun performSync(): Result<SyncResult> = withContext(Dispatchers.IO) {
-        val localizedContext = LanguageManager.applyLanguage(appContext)
-        SyncSession(
-            local = local,
-            merger = SyncDataMerger(AndroidSyncMergeHost(localizedContext, CoreCommonR.string.github_sync_success_detail)),
-            noChangeMessage = localizedContext.getString(CoreCommonR.string.github_sync_no_change),
-            initialUploadMessage = localizedContext.getString(CoreCommonR.string.sync_initial_uploaded),
-            inProgressError = { GitHubSyncInProgressException(localizedContext.getString(CoreCommonR.string.github_sync_in_progress)) }
-        ).execute { createGitHubSyncBackend(appContext, storage) }
+    suspend fun performSync(): Result<SyncResult> = protocolUpgrade.executeIfApproved {
+        withContext(Dispatchers.IO) {
+            val localizedContext = LanguageManager.applyLanguage(appContext)
+            SyncSession(
+                local = local,
+                datasetStore = FileSyncPlaybackDatasetStore(File(appContext.cacheDir, "sync-v3/playback-staging")),
+                merger = SyncDataMerger(AndroidSyncMergeHost(localizedContext, CoreCommonR.string.github_sync_success_detail)),
+                noChangeMessage = localizedContext.getString(CoreCommonR.string.github_sync_no_change),
+                initialUploadMessage = localizedContext.getString(CoreCommonR.string.sync_initial_uploaded),
+                inProgressError = { GitHubSyncInProgressException(localizedContext.getString(CoreCommonR.string.github_sync_in_progress)) }
+            ).execute { createGitHubSyncBackend(appContext, storage) }
+        }
     }
 }

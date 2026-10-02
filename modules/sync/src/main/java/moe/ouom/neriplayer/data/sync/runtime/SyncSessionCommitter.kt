@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.data.sync.runtime
 
-import moe.ouom.neriplayer.data.model.sync.SyncMergeResult
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetMergeResult
 import moe.ouom.neriplayer.data.model.sync.SyncUploadResolution
 
 internal class SyncSessionCommitter(
@@ -9,13 +9,13 @@ internal class SyncSessionCommitter(
 ) {
     suspend fun <TVersion> commit(
         backend: SyncBackend<TVersion>,
-        resolution: SyncUploadResolution<SyncMergeResult, TVersion>,
+        resolution: SyncUploadResolution<SyncDatasetMergeResult, TVersion>,
         firstSync: Boolean,
         mutationVersion: Long
     ) {
         val applied = if (local.mutationVersion() == mutationVersion) {
             local.apply(
-                resolution.merged.mergedData,
+                resolution.merged.dataset,
                 firstSync || resolution.remoteChangedDuringSync,
                 mutationVersion
             )
@@ -23,7 +23,11 @@ internal class SyncSessionCommitter(
             false
         }
         val localUnchanged = applied && local.mutationVersion() == mutationVersion
-        backend.saveRemoteVersion(resolution.remoteVersion)
-        if (localUnchanged) backend.saveSyncTime(nowMs()) else backend.scheduleFollowUp()
+        if (localUnchanged) {
+            backend.saveRemoteVersion(resolution.remoteVersion)
+            backend.saveSyncTime(nowMs())
+        } else {
+            backend.scheduleFollowUp()
+        }
     }
 }

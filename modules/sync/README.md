@@ -1,25 +1,36 @@
-# 同步 / Sync
+# 🔄 同步 / Sync
 
 `:sync` 通过 GitHub 或 WebDAV 同步歌单、歌曲、历史与统计，负责传输、编解码、合并和冲突重试。共享模型在 `:model`，Android 仓库与 Worker 适配在 `:local`。
 
 `:sync` synchronizes playlists, songs, history, and statistics through GitHub or WebDAV. It handles transport, codecs, merging, and conflict retries. Shared models live in `:model`; Android repository and Worker adapters are in `:local`.
 
-## 结构 / Layout
+## 🧩 结构 / Layout
 
 源码位于 `src/main/java/moe/ouom/neriplayer`。
 
 Sources are in `src/main/java/moe/ouom/neriplayer`.
 
 - `api/sync`：GitHub/WebDAV 请求与响应 / GitHub/WebDAV requests and responses
+- `data/sync/archive`：v3 分块记录流、ZSTD、Merkle 校验与块缓存 / v3 chunked records, ZSTD, Merkle validation, and chunk cache
 - `data/sync/runtime/SyncSession.kt`：会话入口，通过 `SyncLocalDataStore` 与 `SyncBackend` 读写 / session entry point, accessing data through `SyncLocalDataStore` and `SyncBackend`
 - `data/sync/codec`、`sanitize`、`change`、`merge`：编解码、清洗、变化检测与合并 / codecs, sanitization, change detection, and merging
 - `data/sync/remote`、`retry`、`store`、`schedule`：远端版本、重试、凭据与调度 / remote versions, retries, credentials, and scheduling
 
-GitHub 写入携带预期 head；WebDAV 使用 `If-None-Match`、ETag 或 Last-Modified 条件。缺少条件令牌时，先重读并确认远端指纹未变，再回退写入。凭据文件与键名、载荷格式和删除记录需保持升级兼容。
+v3 的根清单是唯一发布点。GitHub 固定 HEAD 读取，最终通过 GraphQL `updateRefs` 的 `beforeOid` 与 `force=false` 原子更新引用。WebDAV 使用 `If-None-Match: *` 创建内容对象与首次清单，后续清单必须使用强 ETag 的 `If-Match`；缺少强条件时停止发布。普通网络歌词不传全文，用户编辑与重置有独立持久版本；旧来源未知的歌词保守迁移。本地凭据、设备身份与删除状态保留，旧载荷只用于读取迁移。
 
-GitHub writes use an expected head; WebDAV uses `If-None-Match`, ETag, or Last-Modified conditions. Without a condition token, fallback writes require a reread confirming the remote fingerprint is unchanged. Credential files and keys, payload formats, and deletion records must remain compatible across upgrades.
+The v3 root manifest is the publication point. GitHub reads a fixed HEAD and atomically updates the ref through GraphQL `updateRefs` with `beforeOid` and `force=false`. WebDAV creates objects and the initial manifest with `If-None-Match: *`; later manifest writes require `If-Match` with a strong ETag. Publication stops when a strong condition is unavailable. Network lyric caches are omitted; user edits and resets have independent durable versions. Legacy lyrics with unknown provenance are preserved conservatively. Local credentials, device identities, and deletion state are preserved; legacy payloads are read only for migration.
 
-## 测试 / Tests
+新格式不向下兼容。启动弹窗与同步设置共用本机升级批准状态；用户必须声明所有参与同步的设备都已更新。未确认时，两种同步 Manager 阻止实际数据同步，后台任务静默结束。确认后的下一次同步才迁移云端旧数据，清除配置或导入设置不会自动批准。
+
+The new format is not backward compatible. The startup dialog and sync settings share local upgrade approval; the user must confirm that every participating device has been updated. Until confirmation, both managers block data sync and background jobs finish quietly. The next sync after confirmation migrates legacy cloud data. Clearing configuration or importing settings does not grant approval.
+
+分块解决单报文容量限制，变化块复用减少增量流量；初次全库总流量不能保证 3 MB。Android 仓库和合并仍保留全量列表，真实百万、千万规模的全过程有界内存尚未完成。
+
+Chunking removes the single-payload limit, and chunk reuse reduces incremental traffic. Initial full sync traffic is not guaranteed below 3 MB. Android repositories and merging still retain complete lists; bounded memory throughout real million- and ten-million-record workflows remains unfinished.
+
+歌词同步说明 / Lyric sync details: [歌词 / Lyrics](LYRIC_SYNC.md)。
+
+## 🧪 测试 / Tests
 
 ```bash
 ./gradlew :sync:verifyCrap :sync:verifyDomainDependencies :sync:lintDebug

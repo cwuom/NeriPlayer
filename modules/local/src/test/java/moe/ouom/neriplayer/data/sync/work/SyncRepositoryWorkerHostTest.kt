@@ -16,17 +16,19 @@ class SyncRepositoryWorkerHostTest {
         val events = mutableListOf<String>()
         val host = SyncRepositoryWorkerHost(
             SyncProvider.GITHUB, readAutoSync = { false }, readConfigured = { true },
+            readProtocolUpgradeApproved = { events += "approval"; false },
             readPlayback = { false }, readNetwork = { true }, defer = { events += "defer" },
             sync = { events += "sync"; Result.failure(IllegalStateException("offline")) },
             classifier = SyncWorkerFailureClassifier(emptyMap()), readSilentFailure = { false }, notifyFailure = { }
         )
         assertFalse(host.autoSyncEnabled())
         assertTrue(host.configured())
+        assertFalse(host.protocolUpgradeApproved())
         assertFalse(host.playbackActive())
         assertTrue(host.validatedNetwork())
         host.deferForPlayback()
         assertTrue(host.synchronize().isFailure)
-        assertEquals(listOf("defer", "sync"), events)
+        assertEquals(listOf("approval", "defer", "sync"), events)
     }
 
     @Test
@@ -34,7 +36,7 @@ class SyncRepositoryWorkerHostTest {
         for (provider in SyncProvider.entries) for (manual in listOf(false, true)) {
             val events = mutableListOf<String>()
             val host = SyncRepositoryWorkerHost(
-                provider, { true }, { true }, { false }, { true }, { },
+                provider, { true }, { true }, { true }, { false }, { true }, { },
                 sync = { error("unused") }, classifier = SyncWorkerFailureClassifier(mapOf(
                     SecurityException::class.java to SyncWorkerFailureKind.AUTHENTICATION,
                     UnsupportedOperationException::class.java to SyncWorkerFailureKind.MISSING_CONDITION,

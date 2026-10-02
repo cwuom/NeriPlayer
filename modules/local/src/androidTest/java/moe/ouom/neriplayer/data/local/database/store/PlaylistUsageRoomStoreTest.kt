@@ -9,6 +9,9 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import java.io.IOException
+import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -16,6 +19,51 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PlaylistUsageRoomStoreTest {
+    @Test
+    fun restoredProofAndCountersSurviveDatabaseReopenAndMalformedProofFailsClosed() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "usage-proof-${UUID.randomUUID()}.db"
+        fun open() = Room.databaseBuilder(context, NeriUserDataDatabase::class.java, name).allowMainThreadQueries().build()
+        val entry = UsageEntry(7, "fresh", null, 2, "netease", 1, 1,
+            counterShards = listOf(SyncPlaybackCounterShard(deviceId = "phone", playCount = 1, firstPlayedAt = 1, lastPlayedAt = 1)),
+            observedDeletionTokens = listOf(SyncCausalToken("usage-delete:a", 1)))
+        try {
+            val first = open()
+            try { PlaylistUsageRoomStore(first).replaceAll(listOf(entry)) } finally { first.close() }
+            val database = open()
+            try {
+                val store = PlaylistUsageRoomStore(database)
+                assertEquals(listOf(entry), store.readIfRoomPrimary())
+                for (json in listOf("broken", "null", "[null]", "[{}]", "[{\"deviceId\":\"x\",\"counter\":0}]", "[{\"deviceId\":\"x\",\"counter\":1.5}]")) {
+                    database.openHelper.writableDatabase.execSQL("UPDATE playlist_usage SET usage_deletion_tokens_json = ?", arrayOf(json))
+                    assertTrue(runCatching { store.readIfRoomPrimary() }.exceptionOrNull() is IOException)
+                    assertEquals(1, database.playlistUsageDao().getEntries().size)
+                    assertEquals(1, database.playlistUsageDao().getCounterShards().size)
+                }
+            } finally { database.close() }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun counterInsertFailureRollsBackRestorationProofWithTheCounters() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val old = UsageEntry(7, "old", null, 2, "netease", 10, 100)
+            val store = PlaylistUsageRoomStore(database)
+            store.replaceAll(listOf(old))
+            val fresh = old.copy(openCount = 1, lastOpened = 1, firstOpened = 1,
+                counterShards = listOf(SyncPlaybackCounterShard(deviceId = "phone", playCount = 1, firstPlayedAt = 1, lastPlayedAt = 1)),
+                observedDeletionTokens = listOf(SyncCausalToken("usage-delete:a", 1)))
+            database.openHelper.writableDatabase.execSQL("CREATE TRIGGER reject_usage_counter BEFORE INSERT ON playlist_usage_counter_shard BEGIN SELECT RAISE(ABORT, 'fixture counter failure'); END")
+            assertTrue(runCatching { store.writeIncremental(listOf(old), listOf(fresh)) }.isFailure)
+            assertEquals(listOf(old), store.readIfRoomPrimary())
+            assertTrue(database.playlistUsageDao().getCounterShards().isEmpty())
+        } finally { database.close() }
+    }
+
     @Test
     fun usageEntryAndCounterShardRoundTrip() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()

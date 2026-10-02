@@ -18,13 +18,41 @@ class SyncDeletionStateStorageTest {
 
     @Test
     fun `playlist legacy ids migrate once with mutation version in same commit`() {
-        prefs.values["deleted_playlist_ids"] = "7,bad,8,7"
+        prefs.values["deleted_playlist_ids"] = "7,8,7"
         assertEquals(setOf(7L, 8L), store.getDeletedPlaylistIds())
         val migrated = store.getDeletedPlaylistTimestamps()
         assertTrue(migrated.values.all { it > 0L })
         assertEquals(migrated, store.getDeletedPlaylistTimestamps())
         assertEquals(1L, store.getSyncMutationVersion())
         assertEquals(listOf(setOf("deleted_playlist_timestamps", "sync_mutation_version")), prefs.commits)
+    }
+
+    @Test
+    fun `damaged legacy playlist ids cannot silently forget a deletion`() {
+        for (raw in listOf("7,bad,8", "7,,8", "7,", "9223372036854775808", "null")) {
+            prefs.values["deleted_playlist_ids"] = raw
+            assertThrows(IllegalStateException::class.java) { store.getDeletedPlaylistIds() }
+            assertThrows(IllegalStateException::class.java) { store.addDeletedPlaylistId(9) }
+            assertEquals(raw, prefs.values["deleted_playlist_ids"])
+            assertEquals(0L, store.getSyncMutationVersion())
+        }
+        prefs.values["deleted_playlist_ids"] = ""
+        assertTrue(store.getDeletedPlaylistIds().isEmpty())
+    }
+
+    @Test
+    fun `JSON playlist ids preserve exact integers and reject malformed removal evidence`() {
+        prefs.values[KEY_DELETED_PLAYLIST_IDS] = "[7,8,7,9223372036854775807]"
+        assertEquals(setOf(7L, 8L, Long.MAX_VALUE), store.getDeletedPlaylistIds())
+        for (raw in listOf("[\"7\"]", "[7.0]", "[7,null]", "[9223372036854775808]", "[7]{}")) {
+            prefs.values[KEY_DELETED_PLAYLIST_IDS] = raw
+            assertThrows(IllegalStateException::class.java) { store.getDeletedPlaylistIds() }
+            assertThrows(IllegalStateException::class.java) { store.addDeletedPlaylistId(9) }
+            assertEquals(raw, prefs.values[KEY_DELETED_PLAYLIST_IDS])
+            assertEquals(0L, store.getSyncMutationVersion())
+        }
+        prefs.values[KEY_DELETED_PLAYLIST_IDS] = "[]"
+        assertTrue(store.getDeletedPlaylistIds().isEmpty())
     }
 
     @Test
@@ -64,9 +92,27 @@ class SyncDeletionStateStorageTest {
     }
 
     @Test
-    fun `history retains five hundred newest entries without bumping epoch on sync replace`() {
+    fun `legacy history source labels normalize through read add guarded replace and removal`() {
+        prefs.values["recent_play_deletions"] = """[{"songId":7,"album":"Netease","deletedAt":20,"deviceId":"legacy"}]"""
+        assertEquals(listOf(recent(7, 20, "legacy")), store.getRecentPlayDeletions())
+        store.addRecentPlayDeletions(listOf(recent(7, 30, "new").copy(album = "album")))
+        assertEquals(listOf(recent(7, 30, "new")), store.getRecentPlayDeletions())
+        assertEquals(1L, store.getSyncMutationVersion())
+        assertTrue(store.setDeletionStateIfMutationVersion(1, listOf(recent(7, 40).copy(album = "Netease")), emptyList()))
+        assertEquals(listOf(recent(7, 40)), store.getRecentPlayDeletions())
+        assertEquals(1L, store.getSyncMutationVersion())
+        store.removeRecentPlayDeletion(SongIdentity(7, "Netease", null))
+        assertTrue(store.getRecentPlayDeletions().isEmpty())
+        assertEquals(2L, store.getSyncMutationVersion())
+        store.addRecentPlayDeletions(listOf(recent(7).copy(album = "Netease")))
+        store.removeRecentPlayDeletion(SongIdentity(7, "netease", null))
+        assertTrue(store.getRecentPlayDeletions().isEmpty())
+    }
+
+    @Test
+    fun `history retains every deletion without bumping epoch on sync replace`() {
         store.setRecentPlayDeletions((1L..505L).map { recent(it, it) })
-        assertEquals(500, store.getRecentPlayDeletions().size)
+        assertEquals(505, store.getRecentPlayDeletions().size)
         assertEquals(505L, store.getRecentPlayDeletions().first().deletedAt)
         assertEquals(0L, store.getSyncMutationVersion())
         store.setRecentPlayDeletions(emptyList())
@@ -89,11 +135,11 @@ class SyncDeletionStateStorageTest {
     }
 
     @Test
-    fun `legacy usage JSON drops null keys and invalid values and keeps five hundred newest`() {
+    fun `legacy usage JSON normalizes invalid entries and retains every valid deletion`() {
         prefs.values["playlist_usage_deletions"] = """{" playlist ":3,"playlist":9,"bad":null," ":17,"old":-2}"""
         assertEquals(mapOf("playlist" to 9L, "old" to 1L), store.getPlaylistUsageDeletions())
         prefs.values["playlist_usage_deletions"] = (1..505).joinToString(",", "{", "}") { "\"$it\":$it" }
-        assertEquals(500, store.getPlaylistUsageDeletions().size)
+        assertEquals(505, store.getPlaylistUsageDeletions().size)
     }
 
     @Test
@@ -143,21 +189,21 @@ class SyncDeletionStateStorageTest {
     }
 
     @Test
-    fun `corrupt JSON cannot crash deletion reads`() {
+    fun `corrupt deletion documents stop sync instead of losing removal evidence`() {
         for (key in listOf("deleted_playlist_timestamps", "recent_play_deletions", "playlist_song_deletions", "playlist_usage_deletions")) prefs.values[key] = "broken"
-        assertTrue(store.getRecentPlayDeletions().isEmpty())
-        assertTrue(store.getPlaylistSongDeletions().isEmpty())
-        assertTrue(store.getPlaylistUsageDeletions().isEmpty())
+        assertThrows(IllegalStateException::class.java) { store.getRecentPlayDeletions() }
+        assertThrows(IllegalStateException::class.java) { store.getPlaylistSongDeletions() }
+        assertThrows(IllegalStateException::class.java) { store.getPlaylistUsageDeletions() }
         prefs.values["deleted_playlist_ids"] = "7"
-        assertEquals(setOf(7L), store.getDeletedPlaylistTimestamps().keys)
+        assertThrows(IllegalStateException::class.java) { store.getDeletedPlaylistTimestamps() }
     }
 
     @Test
-    fun `invalid legacy usage arrays and null documents stay empty`() {
+    fun `invalid legacy usage arrays and null documents cannot acknowledge empty state`() {
         prefs.values["playlist_usage_deletions"] = """[[null,3],["playlist",7]]"""
-        assertTrue(store.getPlaylistUsageDeletions().isEmpty())
+        assertThrows(IllegalStateException::class.java) { store.getPlaylistUsageDeletions() }
         prefs.values["playlist_usage_deletions"] = "null"
-        assertTrue(store.getPlaylistUsageDeletions().isEmpty())
+        assertThrows(IllegalStateException::class.java) { store.getPlaylistUsageDeletions() }
     }
 
     @Test

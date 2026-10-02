@@ -15,7 +15,11 @@ import moe.ouom.neriplayer.data.model.stats.TrackStat
             orders = [Index.Order.DESC],
             name = "index_playback_stat_last_played"
         ),
-        Index(value = ["media_uri"], name = "index_playback_stat_media_uri")
+        Index(value = ["media_uri"], name = "index_playback_stat_media_uri"),
+        Index(value = ["play_count", "identity_key"], orders = [Index.Order.DESC, Index.Order.ASC], name = "index_playback_stat_play_count"),
+        Index(value = ["total_listen_ms", "identity_key"], orders = [Index.Order.DESC, Index.Order.ASC], name = "index_playback_stat_listen_time"),
+        Index(value = ["last_played_at", "identity_key"], orders = [Index.Order.DESC, Index.Order.ASC], name = "index_playback_stat_recent_identity"),
+        Index(value = ["first_played_at", "identity_key"], name = "index_playback_stat_first_identity")
     ]
 )
 data class PlaybackStatEntity(
@@ -71,7 +75,9 @@ data class PlaybackStatEntity(
             orders = [Index.Order.DESC, Index.Order.ASC],
             name = "index_playback_stat_bucket_day"
         ),
-        Index(value = ["identity_key"], name = "index_playback_stat_bucket_identity")
+        Index(value = ["identity_key"], name = "index_playback_stat_bucket_identity"),
+        Index(value = ["identity_key", "day_start_at"], name = "index_playback_stat_bucket_identity_day"),
+        Index(value = ["identity_key", "last_played_at", "day_start_at"], orders = [Index.Order.ASC, Index.Order.DESC, Index.Order.DESC], name = "index_playback_stat_bucket_latest")
     ]
 )
 data class PlaybackStatBucketEntity(

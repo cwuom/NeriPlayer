@@ -28,7 +28,7 @@ internal class SyncPlaylistCollectionResult(
     val conflicts: List<SyncConflict> get() = entries.mapNotNull { it.conflict }
 }
 
-internal class SyncPlaylistCollectionMerger(host: SyncMergeHost) {
+internal class SyncPlaylistCollectionMerger(private val host: SyncMergeHost) {
     private val playlistMerger = SyncPlaylistMerger(host)
 
     fun merge(
@@ -39,8 +39,13 @@ internal class SyncPlaylistCollectionMerger(host: SyncMergeHost) {
     ): SyncPlaylistCollectionResult {
         val localById = local.associateBy { it.id }
         val remoteById = remote.associateBy { it.id }
+        val deletionsByPlaylist = deletions.groupBy(SyncPlaylistSongDeletion::playlistId)
         val entries = (localById.keys + remoteById.keys).mapNotNull { id ->
-            mergePair(localById[id], remoteById[id], lastSyncTime, deletions)
+            val left = localById[id]
+            val right = remoteById[id]
+            val descriptor = left?.let { host.systemPlaylist(it.id, it.name) }
+                ?: right?.let { host.systemPlaylist(it.id, it.name) }
+            mergePair(left, right, lastSyncTime, deletionsByPlaylist[descriptor?.id ?: id].orEmpty())
         }
         val mergedById = entries.associateBy({ it.mapKey }, { it.playlist })
         return SyncPlaylistCollectionResult(
@@ -54,16 +59,20 @@ internal class SyncPlaylistCollectionMerger(host: SyncMergeHost) {
         lastSyncTime: Long,
         deletions: List<SyncPlaylistSongDeletion>
     ): SyncPlaylistMergeEntry? = when {
-        local == null -> remote?.let(::unpaired)
-        remote == null -> unpaired(local)
+        local == null -> remote?.let { unpaired(it, deletions) }
+        remote == null -> unpaired(local, deletions)
         local.isDeleted || remote.isDeleted -> mergeDeletedPair(local, remote, lastSyncTime, deletions)
         else -> mergedEntry(playlistMerger.mergePlaylist(local, remote, lastSyncTime, deletions))
     }
 
-    private fun unpaired(playlist: SyncPlaylist) = SyncPlaylistMergeEntry(
-        playlist,
-        if (playlist.isDeleted) SyncPlaylistChange.DELETED else SyncPlaylistChange.ADDED
-    )
+    private fun unpaired(playlist: SyncPlaylist, deletions: List<SyncPlaylistSongDeletion>): SyncPlaylistMergeEntry {
+        val id = host.systemPlaylist(playlist.id, playlist.name)?.id ?: playlist.id
+        val songs = SyncPlaylistDeletionPolicy.applyDeletions(id, playlist.songs, deletions)
+        return SyncPlaylistMergeEntry(
+            if (songs == playlist.songs) playlist else playlist.copy(songs = songs),
+            if (playlist.isDeleted) SyncPlaylistChange.DELETED else SyncPlaylistChange.ADDED
+        )
+    }
 
     private fun mergeDeletedPair(
         local: SyncPlaylist,

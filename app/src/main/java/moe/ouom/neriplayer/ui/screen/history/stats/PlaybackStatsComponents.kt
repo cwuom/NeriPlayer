@@ -107,9 +107,9 @@ internal fun StatsEmptyContent(message: String) {
 
 @Composable
 internal fun StatsOverviewCard(
-    totalPlayCount: Int,
+    totalPlayCount: Long,
     totalListenMs: Long,
-    trackCount: Int
+    trackCount: Long
 ) {
     val shape = RoundedCornerShape(16.dp)
     val baseColor = MaterialTheme.colorScheme.secondaryContainer

@@ -11,7 +11,10 @@ internal object AppPlaybackStatsWritePort : PlaybackStatsWritePort {
             song = snapshot.song,
             listenedMs = snapshot.listenedMs,
             playCountIncrement = snapshot.playCountIncrement,
-            scheduleSync = snapshot.scheduleSync
+            scheduleSync = snapshot.scheduleSync,
+            eventId = snapshot.eventId,
+            playedAt = snapshot.playedAt,
+            observedClearedAt = snapshot.observedClearedAt
         )
         countedLocalPlaylistId(snapshot)?.let { playlistId ->
             PlayerDependencies.repositories.localPlaylistPlaybackStatsRepo.recordPlayNow(playlistId)
@@ -19,6 +22,8 @@ internal object AppPlaybackStatsWritePort : PlaybackStatsWritePort {
     }
 
     override fun hasPendingWrites(): Boolean = PlayerDependencies.repositories.playbackStatsRepo.hasPendingWrites()
+
+    fun clearedAt(): Long = PlayerDependencies.repositories.playbackStatsRepo.statsClearedAtFlow.value
 
     override suspend fun flushPendingWrites() {
         PlayerDependencies.repositories.playbackStatsRepo.flushPendingWrites()

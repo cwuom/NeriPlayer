@@ -28,12 +28,16 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -52,13 +56,19 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletionPolicy
+import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.mapping.sanitizeCoverUrlForSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.common.io.writeTextAtomically
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.File
+import java.io.IOException
 import java.util.UUID
+import kotlin.coroutines.CoroutineContext
 
 internal fun playlistUsageKey(source: String, id: Long, subtype: String?): String = buildString {
     append(source)
@@ -88,22 +98,27 @@ internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
     return list
         .filterNotNull()
         .map { entry ->
-            entry.copy(counterShards = entry.counterShards.orEmpty().filterNotNull())
+            entry.copy(
+                counterShards = entry.counterShards.orEmpty().filterNotNull(),
+                observedDeletionTokens = entry.observedDeletionTokens.normalizedSyncCausalTokens()
+            )
         }
         .filter(UsageEntry::hasPlayableTracks)
         .groupBy(UsageEntry::usageKey)
-        .map { (_, duplicates) -> mergeDuplicateUsageEntries(duplicates) }
+        .mapNotNull { (_, duplicates) -> mergeDuplicateUsageEntries(duplicates) }
         .sortedWith(usageEntryComparator)
 }
 
-private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
-    val latest = entries.sortedWith(usageEntryComparator).first()
-    val allLegacyCounters = entries.all { entry ->
+private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry? {
+    val knownTokens = entries.flatMap { it.observedDeletionTokens }.normalizedSyncCausalTokens()
+    val eligible = entries.filter { SyncPlaylistUsageDeletionPolicy.observes(it.observedDeletionTokens, knownTokens) }
+    val latest = eligible.sortedWith(usageEntryComparator).firstOrNull() ?: return null
+    val allLegacyCounters = eligible.all { entry ->
         entry.counterBaseOpenCount <= 0L && entry.counterShards.orEmpty().isEmpty()
     }
     if (!allLegacyCounters) {
         val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
-            local = entries.map(UsageEntry::toSyncPlaylistUsageStat),
+            local = eligible.map(UsageEntry::toSyncPlaylistUsageStat),
             remote = emptyList()
         ).single().toUsageEntry()
         return merged.copy(
@@ -118,11 +133,12 @@ private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
             subtitle = latest.subtitle
         )
     }
-    val mergedOpenCount = entries.sumOf(UsageEntry::openCount)
+    val mergedOpenCount = eligible.sumOf(UsageEntry::openCount)
         .coerceAtLeast(latest.openCount)
     return latest.copy(
         openCount = mergedOpenCount,
-        firstOpened = entries.fold(0L) { earliest, entry ->
+        observedDeletionTokens = knownTokens,
+        firstOpened = eligible.fold(0L) { earliest, entry ->
             minPositiveTimestamp(earliest, entry.firstOpened)
         }
     )
@@ -168,49 +184,46 @@ class PlaylistUsageRepository internal constructor(
     private var manuallyRemovedUsageKeysLoaded = false
     @Volatile
     private var roomStorageEnabled = roomStore != null
+    @Volatile
+    private var initialized = false
+    private var initialLoadFailure: Exception? = null
     private val initialEntries = load()
     private val _flow = MutableStateFlow(initialEntries)
+    @Volatile
     private var persistedEntries = initialEntries
+    @Volatile
+    private var baselineTrusted = initialized
+    private var pendingUiChanges = false
+    @Volatile
+    private var persistenceInProgress = false
+    @Volatile
+    private var writingTrustedSnapshot = false
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
 
     private fun load(): List<UsageEntry> {
+        return runBlocking(Dispatchers.IO) {
+            tryLoadEntries()?.also { initialized = true }.orEmpty()
+        }
+    }
+
+    private suspend fun loadTrustedEntries(): List<UsageEntry> {
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
-            val roomEntries = runCatching {
-                runBlocking { activeRoomStore.readIfRoomPrimary() }
-            }.onFailure { error ->
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "PlaylistUsageRepo",
-                    "Failed to read Room playlist usage; falling back to JSON",
-                    error
-                )
-            }.getOrNull()
+            // Room 主存不可读时不能使用旧 JSON 覆盖尚未恢复的数据
+            val roomEntries = activeRoomStore.readIfRoomPrimary()
             if (roomEntries != null) {
                 LegacyJsonCleanupRequests.schedule(appContext, "playlist-usage-room-load")
                 return normalizeUsageEntries(roomEntries)
             }
         }
 
-        val list: List<UsageEntry> = try {
-            if (!file.exists()) {
-                emptyList()
-            } else {
-                gson.fromJson<List<UsageEntry>>(
-                    file.readText(),
-                    object : TypeToken<List<UsageEntry>>() {}.type
-                ) ?: emptyList()
-            }
-        } catch (_: Throwable) {
-            emptyList()
-        }
-
-        val normalized = normalizeUsageEntries(list)
+        val normalized = loadLegacyEntries()
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             runCatching {
-                runBlocking { activeRoomStore.importLegacyAndPromote(normalized) }
+                activeRoomStore.importLegacyAndPromote(normalized)
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 roomStorageEnabled = false
                 NPLogger.e(
                     "PlaylistUsageRepo",
@@ -223,56 +236,186 @@ class PlaylistUsageRepository internal constructor(
         return normalized
     }
 
+    private fun loadLegacyEntries(): List<UsageEntry> {
+        if (!file.exists()) return emptyList()
+        val entries = gson.fromJson<List<UsageEntry>>(
+            file.readText(), object : TypeToken<List<UsageEntry>>() {}.type
+        ) ?: throw IOException("Playlist usage JSON has no valid list")
+        return normalizeUsageEntries(entries)
+    }
+
+    private suspend fun tryLoadEntries(): List<UsageEntry>? = try {
+        loadTrustedEntries().also { initialLoadFailure = null }
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        initialLoadFailure = error
+        NPLogger.e("PlaylistUsageRepo", "Usage unavailable; preserving storage for retry", error)
+        null
+    }
+
+    private fun ensureInitializedLocked(
+        context: CoroutineContext = Dispatchers.IO,
+        forPersistence: Boolean = false
+    ): Boolean {
+        // 活动保存期间允许 UI 更新，保存结束后未知基线必须先经串行恢复
+        if (initialized) return baselineTrusted || writingTrustedSnapshot || forPersistence
+        val loaded = runBlocking(context + Dispatchers.IO) { tryLoadEntries() } ?: return false
+        _flow.value = loaded
+        persistedEntries = loaded
+        baselineTrusted = true
+        pendingUiChanges = false
+        initialized = true
+        return true
+    }
+
+    private suspend fun recoverBaselineLocked(): Boolean = try {
+        if (!baselineTrusted) {
+            // 保存锁内重读实际主存，已提交后通知取消的事务不能继续沿用旧基线
+            val roomEntries = roomStore?.readIfRoomPrimary()
+            val actual = roomEntries?.let(::normalizeUsageEntries) ?: loadLegacyEntries()
+            currentCoroutineContext().ensureActive()
+            synchronized(mutationLock) {
+                persistedEntries = actual
+                roomStorageEnabled = roomEntries != null
+                baselineTrusted = true
+            }
+        }
+        synchronized(mutationLock) {
+            if (!pendingUiChanges) _flow.value = persistedEntries
+        }
+        true
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        initialLoadFailure = error
+        NPLogger.e("PlaylistUsageRepo", "Usage authority unavailable; refusing an uncertain baseline", error)
+        false
+    }
+
+    private fun publishUiEntries(entries: List<UsageEntry>) {
+        pendingUiChanges = true
+        _flow.value = entries
+    }
+
+    private fun confirmPersistedEntries(entries: List<UsageEntry>) {
+        synchronized(mutationLock) {
+            persistedEntries = entries
+            baselineTrusted = true
+            if (_flow.value == entries) pendingUiChanges = false
+        }
+    }
+
+    suspend fun awaitInitialized(): Boolean = withContext(Dispatchers.IO) {
+        val context = currentCoroutineContext()
+        val generation = synchronized(mutationLock) {
+            if (!ensureInitializedLocked(context, forPersistence = true)) return@withContext false
+            // 占用新的保存代次，等待中的旧 UI 保存不能在本轮确认之后迟到覆盖
+            persistenceGeneration += 1L
+            persistenceGeneration
+        }
+        flushPendingWrites(generation)
+    }
+
+    private suspend fun flushPendingWrites(generation: Long): Boolean = try {
+        withPersistenceLock {
+            if (!isLatestGeneration(generation) || !recoverBaselineLocked()) return@withPersistenceLock false
+            val snapshot = synchronized(mutationLock) {
+                if (generation != persistenceGeneration) return@withPersistenceLock false
+                val visible = visibleEntriesLocked(_flow.value)
+                if (visible != _flow.value) publishUiEntries(visible)
+                visible
+            }
+            persistEntriesChecked(snapshot)
+            synchronized(mutationLock) {
+                generation == persistenceGeneration && baselineTrusted && _flow.value == persistedEntries
+            }
+        }
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        NPLogger.e("PlaylistUsageRepo", "Usage changes remain pending until persistence recovers", error)
+        false
+    }
+
     private fun saveAsync(list: List<UsageEntry>) {
         val generation = synchronized(mutationLock) {
+            if (!initialized) return
+            // 较早操作迟到的保存不能覆盖已经发布的新快照
+            if (list != _flow.value) return
             persistenceGeneration += 1L
             persistenceGeneration
         }
         scope.launch {
-            persistenceMutex.withLock {
-                val isLatest = synchronized(mutationLock) {
-                    generation == persistenceGeneration
-                }
-                if (!isLatest) return@withLock
-
-                if (roomStorageEnabled && roomStore != null) {
-                    val activeRoomStore = roomStore
-                    val roomWriteSucceeded = runCatching {
-                        activeRoomStore.writeIncremental(
-                            previous = persistedEntries,
-                            next = list
-                        )
-                    }.onFailure { error ->
-                        roomStorageEnabled = false
-                        NPLogger.e(
-                            "PlaylistUsageRepo",
-                            "Failed to write Room playlist usage; falling back to JSON",
-                            error
-                        )
-                    }.isSuccess
-                    if (roomWriteSucceeded) {
-                        persistedEntries = list
-                        return@withLock
-                    }
-                }
-
-                runCatching { file.writeTextAtomically(gson.toJson(list)) }
-                    .onFailure { error ->
-                        NPLogger.e("PlaylistUsageRepo", "Failed to persist playlist usage", error)
-                    }
-                roomStore?.let { fallbackStore ->
-                    runCatching { fallbackStore.markLegacyJsonPrimary() }
-                        .onFailure { error ->
-                            NPLogger.e(
-                                "PlaylistUsageRepo",
-                                "Failed to mark playlist usage JSON fallback state",
-                                error
-                            )
-                        }
-                }
-                persistedEntries = list
+            try {
+                persistSnapshotChecked(list, generation)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NPLogger.e("PlaylistUsageRepo", "Failed to persist playlist usage", error)
             }
         }
+    }
+
+    private suspend fun persistSnapshotChecked(list: List<UsageEntry>, generation: Long): Boolean {
+        return withPersistenceLock {
+            if (!isLatestGeneration(generation)) return@withPersistenceLock false
+            if (!recoverBaselineLocked()) throw IOException("Cannot recover playlist usage authority", initialLoadFailure)
+            if (!isLatestGeneration(generation)) return@withPersistenceLock false
+            val visible = synchronized(mutationLock) {
+                val filtered = visibleEntriesLocked(list)
+                if (generation == persistenceGeneration && _flow.value == list && filtered != list) publishUiEntries(filtered)
+                filtered
+            }
+            persistEntriesChecked(visible)
+            true
+        }
+    }
+
+    private fun isLatestGeneration(generation: Long): Boolean = synchronized(mutationLock) {
+        generation == persistenceGeneration
+    }
+
+    private suspend fun <T> withPersistenceLock(action: suspend () -> T): T = persistenceMutex.withLock {
+        persistenceInProgress = true
+        try {
+            action()
+        } finally {
+            persistenceInProgress = false
+        }
+    }
+
+    private suspend fun persistEntriesChecked(list: List<UsageEntry>) {
+        currentCoroutineContext().ensureActive()
+        if (!initialized || !baselineTrusted) throw IOException("Cannot persist unknown playlist usage", initialLoadFailure)
+        if (list == persistedEntries) {
+            confirmPersistedEntries(list)
+            return
+        }
+        writingTrustedSnapshot = true
+        try {
+            baselineTrusted = false
+            persistEntriesToStorage(list)
+        } finally {
+            writingTrustedSnapshot = false
+        }
+    }
+
+    private suspend fun persistEntriesToStorage(list: List<UsageEntry>) {
+        if (roomStorageEnabled && roomStore != null) {
+            try {
+                roomStore.writeIncremental(previous = persistedEntries, next = list)
+                confirmPersistedEntries(list)
+                return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                roomStorageEnabled = false
+                NPLogger.e("PlaylistUsageRepo", "Failed to write Room playlist usage; falling back to JSON", error)
+            }
+        }
+        currentCoroutineContext().ensureActive()
+        file.writeTextAtomically(gson.toJson(list))
+        currentCoroutineContext().ensureActive()
+        roomStore?.markLegacyJsonPrimary()
+        confirmPersistedEntries(list)
     }
 
     fun recordOpen(
@@ -295,14 +438,20 @@ class PlaylistUsageRepository internal constructor(
             return
         }
 
-        val deviceId = syncCounterDeviceId()
         val out = synchronized(mutationLock) {
+            if (!ensureInitializedLocked()) return
+            val deviceId = syncCounterDeviceId()
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
-            clearManualRemovalLocked(targetKey)
+            var observed = emptyList<SyncCausalToken>()
+            if (!tryUiTombstoneOperation {
+                    observed = deletionBarriersLocked().firstOrNull { it.playlistKey == targetKey }?.deletionTokens.orEmpty()
+                    clearManualRemovalLocked(targetKey)
+                }) return
             val idx = data.indexOfFirst { it.usageKey() == targetKey }
-            val updated = if (idx >= 0) {
-                data[idx].copy(
+            val previous = data.getOrNull(idx)?.takeIf { SyncPlaylistUsageDeletionPolicy.observes(it.observedDeletionTokens, observed) }
+            val updated = if (previous != null) {
+                previous.copy(
                     name = name,
                     picUrl = picUrl?.takeIf { it.isNotBlank() } ?: data[idx].picUrl,
                     trackCount = trackCount,
@@ -311,7 +460,8 @@ class PlaylistUsageRepository internal constructor(
                     browseId = browseId,
                     playlistId = playlistId,
                     subtype = subtype,
-                    subtitle = subtitle ?: data[idx].subtitle
+                    subtitle = subtitle ?: previous.subtitle,
+                    observedDeletionTokens = (previous.observedDeletionTokens + observed).normalizedSyncCausalTokens()
                 )
             } else {
                 UsageEntry(
@@ -328,7 +478,8 @@ class PlaylistUsageRepository internal constructor(
                     browseId = browseId,
                     playlistId = playlistId,
                     subtype = subtype,
-                    subtitle = subtitle
+                    subtitle = subtitle,
+                    observedDeletionTokens = observed
                 )
             }
             val counted = updated.recordOpen(
@@ -341,45 +492,87 @@ class PlaylistUsageRepository internal constructor(
             } else {
                 data.add(counted)
             }
-            normalizeUsageEntries(data).also { _flow.value = it }
+            normalizeUsageEntries(data).also(::publishUiEntries)
         }
         saveAsync(out)
         triggerSync()
     }
 
     fun syncStats(): List<SyncPlaylistUsageStat> {
+        return syncStatsAndDeletions().first
+    }
+
+    fun syncStatsAndDeletions(): Pair<List<SyncPlaylistUsageStat>, List<SyncPlaylistUsageDeletion>> {
         return synchronized(mutationLock) {
-            _flow.value.map(UsageEntry::toSyncPlaylistUsageStat)
+            if (!initialized || !baselineTrusted) throw IOException("Playlist usage has no trusted snapshot", initialLoadFailure)
+            if (persistenceInProgress || _flow.value != persistedEntries) {
+                throw IOException("Playlist usage still has uncommitted changes")
+            }
+            val barriers = deletionBarriersLocked()
+            SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+                _flow.value.map(UsageEntry::toSyncPlaylistUsageStat), emptyList(), barriers
+            ) to barriers
         }
     }
 
     fun applyMergedStats(stats: List<SyncPlaylistUsageStat>) {
         val out = synchronized(mutationLock) {
-            val current = _flow.value
-            val manualRemovals = manualRemovalTimestampsLocked()
-            val localStats = current
-                .filter { entry ->
-                    !isManuallyRemoved(entry.usageKey(), entry.lastOpened, manualRemovals)
-                }
-                .map(UsageEntry::toSyncPlaylistUsageStat)
-            val remoteStats = stats.filter { stat ->
-                !isManuallyRemoved(stat.playlistKey.trim(), stat.lastOpenedAt, manualRemovals)
-            }
-            val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
-                local = localStats,
-                remote = remoteStats
-            )
-            val previousByKey = current.associateBy(UsageEntry::usageKey)
-            val mergedEntries = merged.map(SyncPlaylistUsageStat::toUsageEntry).map { entry ->
-                val previousCover = previousByKey[entry.usageKey()]?.picUrl
-                    ?.takeIf { it.isNotBlank() }
-                val stableCover = entry.picUrl?.takeIf { it.isNotBlank() } ?: previousCover
-                if (stableCover == entry.picUrl) entry else entry.copy(picUrl = stableCover)
-            }
-            normalizeUsageEntries(mergedEntries)
-                .also { _flow.value = it }
+            if (!ensureInitializedLocked()) return
+            var barriers = emptyList<SyncPlaylistUsageDeletion>()
+            if (!tryUiTombstoneOperation { barriers = deletionBarriersLocked() }) return
+            mergeStatsLocked(stats, barriers).also(::publishUiEntries)
         }
         saveAsync(out)
+    }
+
+    suspend fun applyMergedStatsAndPersist(
+        stats: List<SyncPlaylistUsageStat>,
+        deletions: List<SyncPlaylistUsageDeletion> = emptyList()
+    ) {
+        val context = currentCoroutineContext()
+        val generation = synchronized(mutationLock) {
+            if (!ensureInitializedLocked(context, forPersistence = true)) throw IOException("Cannot apply unknown playlist usage", initialLoadFailure)
+            persistenceGeneration += 1L
+            persistenceGeneration
+        }
+        withPersistenceLock {
+            if (!isLatestGeneration(generation)) throw IOException("Playlist usage changed before sync persistence")
+            if (!recoverBaselineLocked()) throw IOException("Cannot recover playlist usage authority", initialLoadFailure)
+            val (previous, next) = synchronized(mutationLock) {
+                if (generation != persistenceGeneration) throw IOException("Playlist usage changed before sync persistence")
+                if (deletions.isNotEmpty()) syncStorage.mergePlaylistUsageDeletionBarriers(deletions)
+                manualRemovalTimestampsLocked(forceReload = true)
+                val previous = _flow.value
+                val next = mergeStatsLocked(stats)
+                previous to next
+            }
+            persistEntriesChecked(next)
+            currentCoroutineContext().ensureActive()
+            synchronized(mutationLock) {
+                if (generation != persistenceGeneration || _flow.value != previous) {
+                    throw IOException("Playlist usage changed during sync persistence")
+                }
+                _flow.value = next
+                pendingUiChanges = false
+            }
+        }
+    }
+
+    private fun mergeStatsLocked(
+        stats: List<SyncPlaylistUsageStat>,
+        barriers: List<SyncPlaylistUsageDeletion> = deletionBarriersLocked()
+    ): List<UsageEntry> {
+        val current = _flow.value
+        val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+            current.map(UsageEntry::toSyncPlaylistUsageStat), stats, barriers
+        )
+        val previousByKey = current.associateBy(UsageEntry::usageKey)
+        val mergedEntries = merged.map(SyncPlaylistUsageStat::toUsageEntry).map { entry ->
+            val previousCover = previousByKey[entry.usageKey()]?.picUrl?.takeIf { it.isNotBlank() }
+            val stableCover = entry.picUrl?.takeIf { it.isNotBlank() } ?: previousCover
+            if (stableCover == entry.picUrl) entry else entry.copy(picUrl = stableCover)
+        }
+        return normalizeUsageEntries(mergedEntries)
     }
 
     /** 刷新歌单信息；详情加载出有效曲目时可补齐打开记录 */
@@ -402,13 +595,18 @@ class PlaylistUsageRepository internal constructor(
             return
         }
 
-        val deviceId = syncCounterDeviceId()
         val out = synchronized(mutationLock) {
+            if (!ensureInitializedLocked()) return
+            val deviceId = syncCounterDeviceId()
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
-            clearManualRemovalLocked(targetKey)
+            var observed = emptyList<SyncCausalToken>()
+            if (!tryUiTombstoneOperation {
+                    observed = deletionBarriersLocked().firstOrNull { it.playlistKey == targetKey }?.deletionTokens.orEmpty()
+                    clearManualRemovalLocked(targetKey)
+                }) return
             val idx = data.indexOfFirst { it.usageKey() == targetKey }
-            if (idx >= 0) {
+            if (idx >= 0 && SyncPlaylistUsageDeletionPolicy.observes(data[idx].observedDeletionTokens, observed)) {
                 val old = data[idx]
                 data[idx] = old.copy(
                     name = name,
@@ -422,6 +620,7 @@ class PlaylistUsageRepository internal constructor(
                     subtitle = subtitle ?: old.subtitle
                 )
             } else {
+                if (idx >= 0) data.removeAt(idx)
                 data += UsageEntry(
                     id = id,
                     name = name,
@@ -436,11 +635,12 @@ class PlaylistUsageRepository internal constructor(
                     browseId = browseId,
                     playlistId = playlistId,
                     subtype = subtype,
-                    subtitle = subtitle
+                    subtitle = subtitle,
+                    observedDeletionTokens = observed
                 ).recordOpen(deviceId = deviceId, openedAt = now)
             }
 
-            normalizeUsageEntries(data).also { _flow.value = it }
+            normalizeUsageEntries(data).also(::publishUiEntries)
         }
         saveAsync(out)
         triggerSync()
@@ -456,6 +656,7 @@ class PlaylistUsageRepository internal constructor(
         resolveLocalMetadataFallback: Boolean = true
     ) {
         val out = synchronized(mutationLock) {
+            if (!ensureInitializedLocked()) return
             val current = _flow.value
             val localEntryIds = current.asSequence()
                 .filter { entry -> entry.source == SOURCE_LOCAL }
@@ -543,7 +744,7 @@ class PlaylistUsageRepository internal constructor(
 
             if (!changed) return@synchronized null
 
-            normalizeUsageEntries(updated).also { _flow.value = it }
+            normalizeUsageEntries(updated).also(::publishUiEntries)
         }
         out?.let(::saveAsync)
     }
@@ -554,6 +755,7 @@ class PlaylistUsageRepository internal constructor(
         resolveLocalMetadataFallback: Boolean = true
     ) {
         val out = synchronized(mutationLock) {
+            if (!ensureInitializedLocked()) return
             val current = _flow.value
             if (current.none { it.source == SOURCE_LOCAL_ARTIST }) {
                 return@synchronized null
@@ -612,7 +814,7 @@ class PlaylistUsageRepository internal constructor(
 
             if (!changed) return@synchronized null
 
-            normalizeUsageEntries(updated).also { _flow.value = it }
+            normalizeUsageEntries(updated).also(::publishUiEntries)
         }
         out?.let(::saveAsync)
     }
@@ -621,13 +823,14 @@ class PlaylistUsageRepository internal constructor(
     fun removeEntry(id: Long, source: String, subtype: String? = null) {
         val targetKey = playlistUsageKey(source, id, subtype)
         val out = synchronized(mutationLock) {
-            rememberManualRemovalLocked(targetKey)
+            if (!ensureInitializedLocked()) return
+            if (!tryUiTombstoneOperation { rememberManualRemovalLocked(targetKey) }) return
             val data = _flow.value.toMutableList()
             val removed = data.removeAll { it.usageKey() == targetKey }
             if (!removed) {
                 return@synchronized null
             }
-            normalizeUsageEntries(data).also { _flow.value = it }
+            normalizeUsageEntries(data).also(::publishUiEntries)
         }
         out?.let(::saveAsync)
         triggerSync()
@@ -635,11 +838,12 @@ class PlaylistUsageRepository internal constructor(
 
     private fun removeEntryIfPresent(id: Long, source: String, subtype: String? = null) {
         val out = synchronized(mutationLock) {
+            if (!ensureInitializedLocked()) return
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
             val removed = data.removeAll { it.usageKey() == targetKey }
             if (!removed) return
-            normalizeUsageEntries(data).also { _flow.value = it }
+            normalizeUsageEntries(data).also(::publishUiEntries)
         }
         saveAsync(out)
     }
@@ -649,14 +853,33 @@ class PlaylistUsageRepository internal constructor(
             .getOrDefault(fallbackCounterDeviceId)
     }
 
-    private fun manualRemovalTimestampsLocked(): MutableMap<String, Long> {
-        if (!manuallyRemovedUsageKeysLoaded) {
-            val persisted = runCatching { syncStorage.getPlaylistUsageDeletions() }
-                .getOrDefault(emptyMap())
+    private fun manualRemovalTimestampsLocked(forceReload: Boolean = false): MutableMap<String, Long> {
+        if (forceReload || !manuallyRemovedUsageKeysLoaded) {
+            val persisted = try {
+                syncStorage.getPlaylistUsageDeletionsConfirmed()
+            } catch (error: Exception) {
+                manuallyRemovedUsageKeysLoaded = false
+                throw error
+            }
+            manuallyRemovedUsageKeys.clear()
             manuallyRemovedUsageKeys.putAll(persisted)
             manuallyRemovedUsageKeysLoaded = true
         }
         return manuallyRemovedUsageKeys
+    }
+
+    private fun deletionBarriersLocked(): List<SyncPlaylistUsageDeletion> {
+        val legacy = manualRemovalTimestampsLocked(forceReload = true)
+        return SyncPlaylistUsageDeletionPolicy.merge(
+            syncStorage.getPlaylistUsageDeletionBarriersConfirmed().orEmpty() + SyncPlaylistUsageDeletionPolicy.fromLegacy(legacy)
+        )
+    }
+
+    private fun visibleEntriesLocked(entries: List<UsageEntry>): List<UsageEntry> {
+        val barriers = deletionBarriersLocked().associateBy { it.playlistKey }
+        return entries.filter { entry ->
+            SyncPlaylistUsageDeletionPolicy.observes(entry.observedDeletionTokens, barriers[entry.usageKey()]?.deletionTokens.orEmpty())
+        }
     }
 
     private fun rememberManualRemovalLocked(
@@ -668,41 +891,42 @@ class PlaylistUsageRepository internal constructor(
         if (normalizedTimestamp <= (removals[playlistKey] ?: 0L)) {
             return
         }
-        removals[playlistKey] = normalizedTimestamp
-        runCatching {
+        try {
             syncStorage.addPlaylistUsageDeletion(playlistKey, normalizedTimestamp)
-        }.onFailure { error ->
-            NPLogger.w(
-                "PlaylistUsageRepo",
-                "Failed to persist manually removed playlist usage",
-                error
-            )
+        } catch (error: Exception) {
+            manuallyRemovedUsageKeysLoaded = false
+            throw error
         }
+        removals[playlistKey] = normalizedTimestamp
     }
 
     private fun clearManualRemovalLocked(playlistKey: String) {
         val removals = manualRemovalTimestampsLocked()
-        if (removals.remove(playlistKey) == null) {
+        if (playlistKey !in removals) {
             return
         }
-        runCatching {
+        try {
             syncStorage.removePlaylistUsageDeletion(playlistKey)
-        }.onFailure { error ->
-            NPLogger.w(
-                "PlaylistUsageRepo",
-                "Failed to clear manually removed playlist usage",
-                error
-            )
+        } catch (error: Exception) {
+            manuallyRemovedUsageKeysLoaded = false
+            throw error
         }
+        removals.remove(playlistKey)
     }
 
-    private fun isManuallyRemoved(
-        playlistKey: String,
-        openedAt: Long,
-        removals: Map<String, Long>
-    ): Boolean {
-        val removedAt = removals[playlistKey] ?: return false
-        return openedAt <= removedAt
+    private fun tryUiTombstoneOperation(operation: () -> Unit): Boolean {
+        return try {
+            operation()
+            true
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            NPLogger.w(
+                "PlaylistUsageRepo",
+                "Playlist usage mutation refused until deletion state recovers",
+                error
+            )
+            false
+        }
     }
 
     private fun triggerSync() {
@@ -764,7 +988,8 @@ private fun UsageEntry.toSyncPlaylistUsageStat(): SyncPlaylistUsageStat {
         mid = mid ?: 0L,
         browseId = browseId,
         playlistId = playlistId,
-        subtitle = subtitle
+        subtitle = subtitle,
+        observedDeletionTokens = observedDeletionTokens.normalizedSyncCausalTokens()
     )
 }
 
@@ -785,7 +1010,8 @@ private fun SyncPlaylistUsageStat.toUsageEntry(): UsageEntry {
         browseId = browseId,
         playlistId = playlistId,
         subtype = subtype,
-        subtitle = subtitle
+        subtitle = subtitle,
+        observedDeletionTokens = observedDeletionTokens.normalizedSyncCausalTokens()
     )
 }
 

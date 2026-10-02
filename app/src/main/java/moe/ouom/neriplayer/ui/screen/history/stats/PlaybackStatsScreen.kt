@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.ClearAll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,12 +36,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
+import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatBucketsForPeriod
-import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatsCompatForPeriod
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
@@ -58,41 +58,21 @@ fun PlaybackStatsScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     offlineMode: Boolean = false
 ) {
-    val stats by AppContainer.playbackStatsRepo.statsFlow.collectAsStateWithLifecycle()
-    val dailyStats by AppContainer.playbackStatsRepo.dailyStatsFlow.collectAsStateWithLifecycle()
     val mini = LocalMiniPlayerHeight.current
     var selectedPeriod by remember { mutableStateOf(PlaybackStatsPeriod.ALL) }
     var sortMode by remember { mutableStateOf(StatsSortMode.PLAY_COUNT) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
-    val periodNeedsCompatBreakdown = remember(stats, dailyStats, selectedPeriod) {
-        selectedPeriod != PlaybackStatsPeriod.ALL &&
-            stats.isNotEmpty() &&
-            dailyStats.isEmpty()
-    }
-
-    val periodStats = remember(stats, dailyStats, selectedPeriod) {
-        if (selectedPeriod == PlaybackStatsPeriod.ALL) {
-            stats
-        } else if (dailyStats.isEmpty()) {
-            aggregatePlaybackStatsCompatForPeriod(stats, selectedPeriod)
-        } else {
-            aggregatePlaybackStatBucketsForPeriod(dailyStats, selectedPeriod)
-        }
-    }
+    val query = remember(selectedPeriod, sortMode) { PlaybackStatsQuery(selectedPeriod, PlaybackStatsSort.valueOf(sortMode.name)) }
+    var pageRequest by remember(query) { mutableStateOf(StatsPageRequest()) }
+    val pageState by rememberStatsPage(query, pageRequest)
+    val periodStats = pageState.page.tracks
+    val sortedStats = periodStats
+    val periodNeedsCompatBreakdown = pageState.summary.usesLegacyBreakdown
     val usesCompatPeriodStats = periodNeedsCompatBreakdown && periodStats.isNotEmpty()
-    val sortedStats = remember(periodStats, sortMode) {
-        when (sortMode) {
-            StatsSortMode.PLAY_COUNT -> periodStats.sortedByDescending { it.playCount }
-            StatsSortMode.LISTEN_TIME -> periodStats.sortedByDescending { it.totalListenMs }
-            StatsSortMode.RECENT -> periodStats.sortedByDescending { it.lastPlayedAt }
-            StatsSortMode.FIRST_PLAYED -> periodStats.sortedBy { it.firstPlayedAt }
-        }
-    }
-
-    val totalPlayCount = remember(periodStats) { periodStats.sumOf { it.playCount } }
-    val totalListenMs = remember(periodStats) { periodStats.sumOf { it.totalListenMs } }
-    val trackCount = periodStats.size
+    val totalPlayCount = pageState.summary.totalPlayCount
+    val totalListenMs = pageState.summary.totalListenMs
+    val trackCount = pageState.summary.trackCount
 
     if (showClearDialog) {
         AlertDialog(
@@ -164,8 +144,14 @@ fun PlaybackStatsScreen(
                 )
             }
         ) { innerPadding ->
-            val hasAnyStats = stats.isNotEmpty() || dailyStats.isNotEmpty()
-            if (!hasAnyStats) {
+            val hasAnyStats = pageState.summary.hasAnyStats
+            if (pageState.loading) {
+                Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            } else if (pageState.failed) {
+                Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                    HapticTextButton(onClick = { pageRequest = pageRequest.copy(retry = pageRequest.retry + 1) }) { Text(stringResource(CoreCommonR.string.stats_load_failed)) }
+                }
+            } else if (!hasAnyStats) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -237,7 +223,7 @@ fun PlaybackStatsScreen(
                         }
 
                         // Top 5 条形图
-                        if (sortedStats.size >= 2) {
+                        if (pageRequest.offset == 0 && sortedStats.size >= 2) {
                             item {
                                 TopTracksBarChart(
                                     tracks = sortedStats.take(5),
@@ -250,7 +236,7 @@ fun PlaybackStatsScreen(
                         // 歌曲列表
                         itemsIndexed(sortedStats, key = { _, stat -> stat.identityKey }) { index, stat ->
                             StatTrackRow(
-                                rank = index + 1,
+                                rank = pageRequest.offset + index + 1,
                                 stat = stat,
                                 offlineMode = offlineMode,
                                 onClick = {
@@ -258,6 +244,9 @@ fun PlaybackStatsScreen(
                                     onSongClick(listOf(songItem), 0)
                                 }
                             )
+                        }
+                        item(key = "stats_page_navigation") {
+                            StatsPageNavigation(pageState, pageRequest) { pageRequest = it }
                         }
                     }
                 }

@@ -23,6 +23,14 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import android.app.Application
+import android.util.LruCache
+import moe.ouom.neriplayer.platform.lyrics.repository.AmllLyricsRepository
+import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher
+import moe.ouom.neriplayer.platform.lyrics.repository.LrcLibLyricsRepository
+import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
+import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
+import org.mockito.Mockito
 
 class PlayerLyricsProviderTest {
     private class TestLyricsCache : PlayerLyricsProvider.NeteaseLyricsCacheStore {
@@ -210,6 +218,82 @@ class PlayerLyricsProviderTest {
                 LyricSourcePreference.Kugou
             )
         )
+    }
+
+    @Test
+    fun `preferred source fills absent edited variants and is skipped only when every edited track is supplied`() {
+        val base = SongItem(2, "Signal", "Artist One", "netease", 0, 240_000, null,
+            lyricSyncEdited = true, lyricSyncRevision = 20)
+        listOf(
+            base.copy(matchedLyric = "[00:01.00]user original"),
+            base.copy(matchedTranslatedLyric = "[00:01.00]user translation"),
+            base.copy(matchedRomanizedLyric = "[00:01.00]user romanized"),
+            base.copy(matchedLyric = "")
+        ).forEach { edited ->
+            assertTrue(shouldTryPreferredLyricSource(edited, LyricSourcePreference.Kugou))
+        }
+        assertFalse(shouldTryPreferredLyricSource(base.copy(matchedLyric = "", matchedTranslatedLyric = "", matchedRomanizedLyric = ""),
+            LyricSourcePreference.Kugou))
+        assertFalse(shouldTryPreferredLyricSource(base.copy(matchedLyric = "original", matchedTranslatedLyric = "translation", matchedRomanizedLyric = "romanized"),
+            LyricSourcePreference.Kugou))
+        assertTrue(shouldTryPreferredLyricSource(base.copy(matchedLyric = "cache", lyricSyncEdited = false),
+            LyricSourcePreference.Kugou))
+        for (marker in listOf(null, false)) {
+            assertFalse(shouldTryPreferredLyricSource(base.copy(matchedLyric = "", lyricSyncEdited = marker), LyricSourcePreference.Kugou))
+        }
+    }
+
+    @Test
+    fun `public lyric getters return supplied edited track before preferred or storage dependencies`() = runTest {
+        for (text in listOf("[00:01.00]user", "")) {
+            val dependencies = LyricGetterDependencies()
+            val base = SongItem(2, "Signal", "Artist", "netease", 0, 60_000, null,
+                lyricSyncEdited = true, lyricSyncRevision = 20)
+            val original = PlayerLyricsProvider.getLyrics(base.copy(matchedLyric = text), dependencies.application,
+                dependencies.netease, dependencies.neteaseCache, dependencies.youtube, dependencies.lrcLib,
+                dependencies.matcher, dependencies.amll, true, true, LyricSourcePreference.Kugou, dependencies.youtubeCache, "bili")
+            val translated = PlayerLyricsProvider.getTranslatedLyrics(base.copy(matchedTranslatedLyric = text), dependencies.application,
+                dependencies.netease, dependencies.neteaseCache, dependencies.matcher, true,
+                LyricSourcePreference.Kugou, dependencies.youtubeCache, "bili")
+            val romanized = PlayerLyricsProvider.getRomanizedLyrics(base.copy(matchedRomanizedLyric = text), dependencies.application,
+                dependencies.netease, dependencies.neteaseCache, dependencies.matcher, true, LyricSourcePreference.Kugou, "bili")
+            val expected = if (text.isEmpty()) emptyList() else listOf("user")
+            assertEquals(expected, original.map { it.text })
+            assertEquals(expected, translated.map { it.text })
+            assertEquals(expected, romanized.map { it.text })
+            Mockito.verifyNoInteractions(dependencies.application, dependencies.netease, dependencies.neteaseCache,
+                dependencies.youtube, dependencies.lrcLib, dependencies.matcher, dependencies.amll, dependencies.youtubeCache)
+        }
+    }
+
+    private class LyricGetterDependencies {
+        val application = mock<Application>()
+        val netease = mock<NeteaseClient>()
+        val neteaseCache = mock<LruCache<Long, NeteaseLyricsCacheEntry>>()
+        val youtube = mock<YouTubeMusicClient>()
+        val youtubeCache = mock<LruCache<String, YouTubeMusicLyricsCacheEntry>>()
+        val lrcLib = mock<LrcLibLyricsRepository>()
+        val matcher = mock<EditableLyricsMatcher>()
+        val amll = mock<AmllLyricsRepository>()
+        private inline fun <reified T : Any> mock(): T = Mockito.mock(T::class.java)
+    }
+
+    @Test
+    fun `confirmed original translation and romanization keep supplied text and explicit clears`() {
+        val edited = SongItem(2, "Signal", "Artist", "__local_files__", 0, 60_000, null,
+            lyricSyncEdited = true, lyricSyncRevision = 20,
+            matchedLyric = "[00:01.00]original", matchedTranslatedLyric = "[00:01.00]translation",
+            matchedRomanizedLyric = "[00:01.00]romanized",
+            originalLyric = "old original", originalTranslatedLyric = "old translation", originalRomanizedLyric = "old romanized")
+        val variants = listOf(edited.matchedLyric, edited.matchedTranslatedLyric, edited.matchedRomanizedLyric)
+        assertEquals(listOf("original", "translation", "romanized"), variants.map { text ->
+            PlayerLyricsProvider.parseConfirmedUserLyricEntries(edited, text)?.single()?.text
+        })
+        assertTrue(PlayerLyricsProvider.parseConfirmedUserLyricEntries(edited, "")!!.isEmpty())
+        assertNull(PlayerLyricsProvider.parseConfirmedUserLyricEntries(edited, null))
+        for (marker in listOf(null, false)) {
+            assertNull(PlayerLyricsProvider.parseConfirmedUserLyricEntries(edited.copy(lyricSyncEdited = marker), edited.matchedLyric))
+        }
     }
 
     @Test

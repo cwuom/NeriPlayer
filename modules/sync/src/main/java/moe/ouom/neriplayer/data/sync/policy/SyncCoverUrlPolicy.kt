@@ -25,10 +25,14 @@ fun sanitizeCoverUrlForSync(coverUrl: String?): String? {
 }
 
 fun SyncSong.sanitizeCoverUrlsForSync(): SyncSong {
+    val cover = sanitizeCoverUrlForSync(coverUrl)
+    val custom = sanitizeCoverUrlForSync(customCoverUrl)
+    val original = sanitizeCoverUrlForSync(originalCoverUrl)
+    if (cover == coverUrl && custom == customCoverUrl && original == originalCoverUrl) return this
     return copy(
-        coverUrl = sanitizeCoverUrlForSync(coverUrl),
-        customCoverUrl = sanitizeCoverUrlForSync(customCoverUrl),
-        originalCoverUrl = sanitizeCoverUrlForSync(originalCoverUrl)
+        coverUrl = cover,
+        customCoverUrl = custom,
+        originalCoverUrl = original
     )
 }
 

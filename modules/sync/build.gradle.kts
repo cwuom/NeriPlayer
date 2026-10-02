@@ -12,6 +12,8 @@ plugins {
 
 android {
     namespace = "moe.ouom.neriplayer.data.sync"
+    defaultConfig.consumerProguardFiles("consumer-rules.pro")
+    defaultConfig.testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 }
 
 dependencies {
@@ -25,11 +27,22 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
     implementation(libs.gson)
+    implementation(libs.zstd.jni) {
+        artifact { type = "aar"; extension = "aar" }
+    }
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.zstd.jni)
+    testImplementation(libs.mockwebserver)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+}
+
+tasks.withType<Test>().configureEach {
+    systemProperty("runSyncScale", providers.systemProperty("runSyncScale").getOrElse("false"))
 }
 
 val modelProject = project(":model")

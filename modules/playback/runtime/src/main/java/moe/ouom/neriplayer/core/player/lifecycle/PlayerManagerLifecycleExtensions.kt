@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
@@ -64,6 +65,8 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.applyRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.applyCommittedLyricOverrides
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.player.persistence.restoreState
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
@@ -288,6 +291,7 @@ internal fun PlayerManager.initializeImpl(
             initializePlaybackEngine(app, effectiveMaxCacheSize)
             observePlaybackSettings()
             completeInitialization(restoredStateSnapshot, effectiveMaxCacheSize)
+            observeCommittedLyricOverrides()
         } catch (error: Throwable) {
             rollbackInitialization(error, effectiveMaxCacheSize)
         }
@@ -338,7 +342,7 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
     lastStatePersistAtMs = 0L
     playbackProgressOwner.resetPersistenceClock()
     playbackStatsOwner = PlaybackStatsOwner(
-        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey)
+        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey, readClearedAt = AppPlaybackStatsWritePort::clearedAt)
     )
     val appWasInForeground = usbExclusiveLivenessOwner.appInForeground
     usbExclusiveLivenessOwner.cancelJobs()
@@ -1522,6 +1526,27 @@ private fun PlayerManager.observePlaybackSettings() {
         }
     }
 
+}
+
+private fun PlayerManager.observeCommittedLyricOverrides() {
+    ioScope.launch {
+        try {
+            val storage = SecureTokenStorage(application)
+            storage.lyricOverridesVersion.collect {
+                try {
+                    applyCommittedLyricOverrides(storage)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    NPLogger.e("NERI-PlayerManager", "Failed to refresh committed lyric overrides", error)
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.e("NERI-PlayerManager", "Failed to observe committed lyric overrides", error)
+        }
+    }
 }
 
 private fun PlayerManager.completeInitialization(

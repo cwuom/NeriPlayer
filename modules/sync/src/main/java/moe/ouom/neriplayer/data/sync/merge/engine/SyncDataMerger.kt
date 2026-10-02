@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.merge.engine
 
 import moe.ouom.neriplayer.data.model.sync.SyncMergeResult
 import moe.ouom.neriplayer.data.sync.merge.history.SyncRecentPlayMerger
+import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 import moe.ouom.neriplayer.data.sync.merge.host.SyncMergeHost
 import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistCollectionMerger
 import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
@@ -10,6 +11,7 @@ import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePoli
 import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletionPolicy
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 
 class SyncDataMerger(
@@ -21,6 +23,10 @@ class SyncDataMerger(
         remote: SyncData,
         lastSyncTime: Long
     ): SyncMergeResult {
+        // 先保留输入中的歌词版本，容器删除和历史窗口不能丢掉编辑或恢复记录
+        val mergedLyricOverrides = SyncSongLyricMergePolicy.mergeOverrides(
+            SyncSongLyricMergePolicy.collectOverrides(local) + SyncSongLyricMergePolicy.collectOverrides(remote)
+        )
         val mergedPlaylistSongDeletions = SyncPlaylistDeletionPolicy.mergeDeletions(
             local.playlistSongDeletions, remote.playlistSongDeletions
         )
@@ -50,7 +56,7 @@ class SyncDataMerger(
             deletions = mergedRecentPlayDeletions
         )
         val playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
-        // 收尾顺序与桌面 three_way_merge 逐字一致: 先用"未裁剪"的合并日桶抬升聚合值 (消除"年 > 总") , 再分别裁剪
+        // 用完整合并日桶抬升聚合值，避免长周期统计大于总计
         val finalizedPlaybackStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
             mergedStats = SyncPlaybackStatsMergePolicy.merge(
                 local = local.playbackStats,
@@ -65,10 +71,12 @@ class SyncDataMerger(
         )
         val mergedPlaybackStats = finalizedPlaybackStats.stats
         val mergedPlaybackStatBuckets = finalizedPlaybackStats.buckets
+        val mergedUsageDeletions = SyncPlaylistUsageDeletionPolicy.merge(local.playlistUsageDeletions + remote.playlistUsageDeletions)
         val mergedPlaylistUsageStats = SyncPlaylistUsageStatsMergePolicy
             .mergePlaylistUsageStats(
                 local = local.playlistUsageStats,
-                remote = remote.playlistUsageStats
+                remote = remote.playlistUsageStats,
+                deletions = mergedUsageDeletions
             )
         val finalizedLocalPlaylistPlaybackStats =
             SyncPlaylistUsageStatsMergePolicy.finalizeLocalPlaylistPlaybackStats(
@@ -103,13 +111,15 @@ class SyncDataMerger(
             playbackStatBuckets = mergedPlaybackStatBuckets,
             playlistSongDeletions = prunedPlaylistSongDeletions,
             playlistUsageStats = mergedPlaylistUsageStats,
+            playlistUsageDeletions = mergedUsageDeletions,
             localPlaylistPlaybackStats = finalizedLocalPlaylistPlaybackStats.stats,
             localPlaylistPlaybackBuckets = finalizedLocalPlaylistPlaybackStats.buckets,
-            biliVideoSkipRules = mergedBiliVideoSkipRules
+            biliVideoSkipRules = mergedBiliVideoSkipRules,
+            lyricOverrides = mergedLyricOverrides
         )
 
         return SyncMergeResult(
-            mergedData = mergedData,
+            mergedData = SyncSongLyricMergePolicy.converge(mergedData),
             syncResult = SyncResult(
                 success = true,
                 message = host.mergeSuccessMessage,
@@ -129,7 +139,7 @@ class SyncDataMerger(
         val playlistsAdded = localData.playlists.count { !it.isDeleted }
         val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
         val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
-        // 首次同步同样走收尾 (顺序与桌面一致: 先用"未裁剪"桶抬升, 再裁剪) , 避免初始快照突破同步正文安全上限
+        // 首次同步也用完整日桶校正总计，统计容量由分块协议承载
         val finalizedInitialStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
             mergedStats = localData.playbackStats,
             mergedBuckets = localData.playbackStatBuckets
@@ -140,13 +150,17 @@ class SyncDataMerger(
                 buckets = localData.localPlaylistPlaybackBuckets
             )
         return SyncMergeResult(
-            mergedData = localData.copy(
+            mergedData = SyncSongLyricMergePolicy.converge(localData.copy(
                 lastModified = nowMs(),
+                playlistUsageDeletions = SyncPlaylistUsageDeletionPolicy.merge(localData.playlistUsageDeletions),
+                playlistUsageStats = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+                    localData.playlistUsageStats, emptyList(), localData.playlistUsageDeletions
+                ),
                 playbackStats = finalizedInitialStats.stats,
                 playbackStatBuckets = finalizedInitialStats.buckets,
                 localPlaylistPlaybackStats = finalizedInitialLocalPlaylistStats.stats,
                 localPlaylistPlaybackBuckets = finalizedInitialLocalPlaylistStats.buckets
-            ),
+            )),
             syncResult = SyncResult(
                 success = true,
                 message = host.initialUploadMessage,

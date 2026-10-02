@@ -27,8 +27,9 @@ class SyncWorkerExecution(private val host: SyncWorkerHost) {
         return host.handleFailure(result.exceptionOrNull(), manual, unexpected = false)
     }
 
-    private fun eligible(manual: Boolean): Boolean {
+    private suspend fun eligible(manual: Boolean): Boolean {
         if (!manual && !host.autoSyncEnabled()) return false
-        return host.configured()
+        if (!host.configured()) return false
+        return host.protocolUpgradeApproved()
     }
 }

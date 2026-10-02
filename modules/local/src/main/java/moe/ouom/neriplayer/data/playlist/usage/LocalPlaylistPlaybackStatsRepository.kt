@@ -8,11 +8,16 @@ import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackSyncSnapshot
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
@@ -29,6 +34,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 class LocalPlaylistPlaybackStatsRepository private constructor(
@@ -60,22 +66,28 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     private val mutex = Mutex()
     @Volatile
     private var roomStorageEnabled = roomStore != null
+    @Volatile
+    private var initialized = false
+    private var initialLoadFailure: Exception? = null
     private val _stats = MutableStateFlow(loadInitialStats())
+    @Volatile
+    private var persistedStats = _stats.value
+    @Volatile
+    private var baselineTrusted = initialized
+    private var pendingUiChanges = false
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
 
     private fun loadInitialStats(): List<LocalPlaylistPlaybackStat> {
+        return runBlocking(Dispatchers.IO) {
+            tryLoadStats()?.also { initialized = true }.orEmpty()
+        }
+    }
+
+    private suspend fun loadTrustedStats(): List<LocalPlaylistPlaybackStat> {
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
-            val roomStats = runCatching {
-                runBlocking { activeRoomStore.readIfRoomPrimary() }
-            }.onFailure { error ->
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "LocalPlaylistPlaybackRepo",
-                    "Failed to read Room local playlist playback stats",
-                    error
-                )
-            }.getOrNull()
+            // 读取失败时不能把旧 JSON 当成完整主存
+            val roomStats = activeRoomStore.readIfRoomPrimary()
             if (roomStats != null) {
                 LegacyJsonCleanupRequests.schedule(
                     appContext,
@@ -89,8 +101,9 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             runCatching {
-                runBlocking { activeRoomStore.importLegacyAndPromote(legacyStats) }
+                activeRoomStore.importLegacyAndPromote(legacyStats)
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 roomStorageEnabled = false
                 NPLogger.e(
                     "LocalPlaylistPlaybackRepo",
@@ -106,11 +119,70 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
         return legacyStats
     }
 
+    private suspend fun tryLoadStats(): List<LocalPlaylistPlaybackStat>? = try {
+        loadTrustedStats().also { initialLoadFailure = null }
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        initialLoadFailure = error
+        NPLogger.e("LocalPlaylistPlaybackRepo", "Playback stats unavailable; preserving storage for retry", error)
+        null
+    }
+
+    private suspend fun ensureInitializedLocked(): Boolean {
+        if (initialized) return recoverBaselineLocked()
+        val loaded = tryLoadStats() ?: return false
+        _stats.value = loaded
+        persistedStats = loaded
+        baselineTrusted = true
+        pendingUiChanges = false
+        initialized = true
+        return true
+    }
+
+    private suspend fun recoverBaselineLocked(): Boolean = try {
+        if (!baselineTrusted) {
+            // 提交成功和取消通知可能交错，旧内存基线不能代替实际主存
+            val roomStats = roomStore?.readIfRoomPrimary()
+            val actual = roomStats?.let(::normalizeLocalPlaylistPlaybackStats) ?: loadFromDisk()
+            currentCoroutineContext().ensureActive()
+            persistedStats = actual
+            roomStorageEnabled = roomStats != null
+            baselineTrusted = true
+        }
+        if (!pendingUiChanges) _stats.value = persistedStats
+        true
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        initialLoadFailure = error
+        NPLogger.e("LocalPlaylistPlaybackRepo", "Playback authority unavailable; refusing an uncertain baseline", error)
+        false
+    }
+
+    private fun confirmPersistedStats(stats: List<LocalPlaylistPlaybackStat>) {
+        persistedStats = stats
+        baselineTrusted = true
+        if (_stats.value == stats) pendingUiChanges = false
+    }
+
+    suspend fun awaitInitialized(): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock { ensureInitializedLocked() && flushPendingWritesLocked() }
+    }
+
+    private suspend fun flushPendingWritesLocked(): Boolean = try {
+        persistSnapshotChecked(_stats.value)
+        true
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        NPLogger.e("LocalPlaylistPlaybackRepo", "Playback changes remain pending until persistence recovers", error)
+        false
+    }
+
     suspend fun recordPlayNow(
         playlistId: Long,
         playedAt: Long = System.currentTimeMillis()
     ) {
         mutex.withLock {
+            if (!ensureInitializedLocked()) return@withLock
             val current = _stats.value
             val updated = recordLocalPlaylistPlay(
                 current = current,
@@ -118,13 +190,16 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
                 playedAt = playedAt,
                 deviceId = syncCounterDeviceId()
             )
+            pendingUiChanges = true
             _stats.value = updated
-            persistSnapshot(current, updated)
+            persistSnapshot(updated)
         }
     }
 
     fun syncSnapshot(): LocalPlaylistPlaybackSyncSnapshot {
+        if (!initialized || !baselineTrusted) throw IOException("Local playlist playback has no trusted snapshot", initialLoadFailure)
         val stats = _stats.value
+        if (stats != persistedStats || !baselineTrusted) throw IOException("Local playlist playback still has uncommitted changes")
         return LocalPlaylistPlaybackSyncSnapshot(
             stats = stats.map(LocalPlaylistPlaybackStat::toSyncStat),
             buckets = stats.flatMap { stat ->
@@ -140,6 +215,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
         buckets: List<SyncLocalPlaylistPlaybackBucket>
     ) {
         mutex.withLock {
+            if (!ensureInitializedLocked()) throw IOException("Cannot apply unknown local playlist playback", initialLoadFailure)
             val currentStats = _stats.value
             val currentSyncStats = currentStats.map(LocalPlaylistPlaybackStat::toSyncStat)
             val currentSyncBuckets = currentStats.flatMap { stat ->
@@ -158,8 +234,10 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
                 )
             )
             val updated = finalized.toLocalPlaybackStats()
+            persistSnapshotChecked(updated)
+            currentCoroutineContext().ensureActive()
             _stats.value = updated
-            persistSnapshot(currentStats, updated)
+            pendingUiChanges = false
         }
     }
 
@@ -178,56 +256,57 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     }
 
     private fun loadFromDisk(): List<LocalPlaylistPlaybackStat> {
-        val parsed = runCatching {
-            if (!file.exists()) {
-                emptyList()
-            } else {
-                gson.fromJson<List<LocalPlaylistPlaybackStat>>(
-                    file.readText(),
-                    object : TypeToken<List<LocalPlaylistPlaybackStat>>() {}.type
-                ).orEmpty()
-            }
-        }.getOrDefault(emptyList())
+        val parsed = if (!file.exists()) {
+            emptyList()
+        } else {
+            gson.fromJson<List<LocalPlaylistPlaybackStat>>(
+                file.readText(),
+                object : TypeToken<List<LocalPlaylistPlaybackStat>>() {}.type
+            ) ?: throw IOException("Local playlist playback JSON has no valid list")
+        }
         return normalizeLocalPlaylistPlaybackStats(parsed)
     }
 
-    private fun persist(stats: List<LocalPlaylistPlaybackStat>) {
-        runCatching {
-            file.writeTextAtomically(gson.toJson(stats))
+    private suspend fun persistSnapshot(next: List<LocalPlaylistPlaybackStat>) {
+        try {
+            persistSnapshotChecked(next)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            NPLogger.e("LocalPlaylistPlaybackRepo", "Failed to persist local playlist playback stats", error)
         }
     }
 
-    private suspend fun persistSnapshot(
-        previous: List<LocalPlaylistPlaybackStat>,
-        next: List<LocalPlaylistPlaybackStat>
-    ) {
+    private suspend fun persistSnapshotChecked(next: List<LocalPlaylistPlaybackStat>) {
+        currentCoroutineContext().ensureActive()
+        if (!initialized || !baselineTrusted) throw IOException("Cannot persist unknown local playlist playback", initialLoadFailure)
+        if (next == persistedStats) {
+            confirmPersistedStats(next)
+            return
+        }
+        baselineTrusted = false
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
-            val roomWriteSucceeded = runCatching {
-                activeRoomStore.writeIncremental(previous, next)
-            }.onFailure { error ->
+            try {
+                activeRoomStore.writeIncremental(persistedStats, next)
+                confirmPersistedStats(next)
+                return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
                 roomStorageEnabled = false
                 NPLogger.e(
                     "LocalPlaylistPlaybackRepo",
                     "Failed to write Room local playlist playback stats",
                     error
                 )
-            }.isSuccess
-            if (roomWriteSucceeded) {
-                return
             }
         }
-        persist(next)
-        roomStore?.let { fallbackStore ->
-            runCatching { fallbackStore.markLegacyJsonPrimary() }
-                .onFailure { error ->
-                    NPLogger.e(
-                        "LocalPlaylistPlaybackRepo",
-                        "Failed to mark local playlist playback JSON fallback state",
-                        error
-                    )
-                }
-        }
+        currentCoroutineContext().ensureActive()
+        file.writeTextAtomically(gson.toJson(next))
+        currentCoroutineContext().ensureActive()
+        roomStore?.markLegacyJsonPrimary()
+        confirmPersistedStats(next)
     }
 
     private fun syncCounterDeviceId(): String {

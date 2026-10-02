@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import androidx.room.withTransaction
+import moe.ouom.neriplayer.data.model.lyrics.LyricSyncPersistence
+import moe.ouom.neriplayer.data.model.lyrics.readLyricSyncPersistence
+import moe.ouom.neriplayer.data.model.lyrics.toPersistenceJson
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.data.model.playback.PersistedSongItem
@@ -203,11 +206,16 @@ private fun PersistedSongItem.toEntity(
         audioId = audioId,
         subAudioId = subAudioId,
         playlistContextId = playlistContextId,
-        streamUrl = streamUrl
+        streamUrl = streamUrl,
+        lyricSyncPayloadJson = LyricSyncPersistence(
+            revision = lyricSyncRevision, edited = lyricSyncEdited,
+            romanized = matchedRomanizedLyric, originalRomanized = originalRomanizedLyric
+        ).toPersistenceJson()
     )
 }
 
 private fun PlaybackQueueSongEntity.toPersistedSong(): PersistedSongItem {
+    val lyrics = readLyricSyncPersistence(lyricSyncPayloadJson)
     return PersistedSongItem(
         id = id,
         name = name,
@@ -219,6 +227,10 @@ private fun PlaybackQueueSongEntity.toPersistedSong(): PersistedSongItem {
         mediaUri = mediaUri,
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
+        matchedRomanizedLyric = lyrics.romanized,
+        originalRomanizedLyric = lyrics.originalRomanized,
+        lyricSyncRevision = lyrics.revision,
+        lyricSyncEdited = lyrics.edited,
         matchedLyricSource = matchedLyricSource?.let { value ->
             runCatching { MusicPlatform.valueOf(value) }.getOrNull()
         },

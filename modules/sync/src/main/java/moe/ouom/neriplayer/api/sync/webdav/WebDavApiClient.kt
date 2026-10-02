@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.api.sync.webdav
 
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.api.sync.http.SyncResponseBodyReader
+import moe.ouom.neriplayer.api.sync.http.SyncFileTransferLimits
 import moe.ouom.neriplayer.api.sync.http.syncTransportResult
 import okhttp3.Credentials
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -72,6 +73,14 @@ class WebDavApiClient(
             urlBuilder.addPathSegment(DEFAULT_REMOTE_FILE_NAME)
             return urlBuilder.build().toString()
         }
+
+        fun buildSiblingFileUrl(remoteUrl: String, fileName: String): String {
+            require(fileName.isNotBlank() && !fileName.contains('/') && !fileName.contains("..")) {
+                "Invalid sync archive file name"
+            }
+            val url = remoteUrl.toHttpUrl()
+            return url.newBuilder().setPathSegment(url.pathSize - 1, fileName).build().toString()
+        }
     }
 
     fun validateConnection(serverUrl: String, basePath: String): Result<Unit> {
@@ -119,10 +128,17 @@ class WebDavApiClient(
                 .get()
                 .build()
 
-            client.newCall(request).execute().use { response ->
+            val call = client.newCall(request)
+            call.execute().use { response ->
                 when {
                     response.isSuccessful -> {
-                        val body = SyncResponseBodyReader.read(response.body)
+                        val body = try {
+                            SyncResponseBodyReader.read(response.body, SyncFileTransferLimits.responseBudget(request.url.encodedPath))
+                        } catch (error: IOException) {
+                            // 先切断连接，避免关闭响应时为复用连接继续读取超限正文
+                            call.cancel()
+                            throw error
+                        }
                         WebDavRemoteFileSnapshot(
                             content = body,
                             fingerprint = calculateFingerprint(body),
@@ -144,7 +160,8 @@ class WebDavApiClient(
                     }
 
                     else -> {
-                        val errorBody = SyncResponseBodyReader.readText(response.body)
+                        val errorBody = SyncResponseBodyReader.read(response.body,
+                            SyncFileTransferLimits.responseBudget(request.url.encodedPath), call::cancel).toString(Charsets.UTF_8)
                         throw WebDavApiException(
                             response.code,
                             "Failed to get file: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}"

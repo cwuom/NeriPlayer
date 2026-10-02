@@ -40,9 +40,9 @@ class SyncLocalMappingTest {
         assertEquals(listOf(2L, 1L), result.map { it.id })
         assertEquals(8L, result.last().resumePositionMs)
         assertTrue(mapper.history(SyncData(), emptyList()).isEmpty())
-        val capped = mapper.history(SyncData(recentPlays = (1..501).map { remote.copy(playedAt = it.toLong()) }), emptyList())
-        assertEquals(500, capped.size)
-        assertEquals(501L, capped.first().playedAt)
+        val complete = mapper.history(SyncData(recentPlays = (1..501).map { remote.copy(playedAt = it.toLong()) }), emptyList())
+        assertEquals(501, complete.size)
+        assertEquals(501L, complete.first().playedAt)
     }
 
     @Test

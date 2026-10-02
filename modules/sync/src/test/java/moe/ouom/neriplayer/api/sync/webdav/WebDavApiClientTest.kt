@@ -20,6 +20,15 @@ class WebDavApiClientTest {
     }
 
     @Test
+    fun `archive sibling names retain configured parent path without allowing traversal`() {
+        assertEquals("https://example.test/dav/a%20b/manifest", WebDavApiClient.buildSiblingFileUrl(
+            "https://example.test/dav/a%20b/neriplayer-sync.json", "manifest"))
+        for (name in listOf("", "../object", "/object", "a/b")) {
+            assertTrue(runCatching { WebDavApiClient.buildSiblingFileUrl(remote, name) }.isFailure)
+        }
+    }
+
+    @Test
     fun `read preserves bytes fingerprint and strong response validators`() {
         val content = byteArrayOf(0, 1, 0xFF.toByte())
         val fixture = SyncHttpFixture(content = content, headers = mapOf("ETag" to " \"version\" ", "Last-Modified" to " yesterday "))

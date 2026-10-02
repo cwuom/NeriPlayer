@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.model.stats
 
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 
 data class UsageEntry(
     val id: Long,
@@ -19,4 +20,5 @@ data class UsageEntry(
     val playlistId: String? = null,
     val subtype: String? = null,
     val subtitle: String? = null,
+    val observedDeletionTokens: List<SyncCausalToken> = emptyList(),
 )

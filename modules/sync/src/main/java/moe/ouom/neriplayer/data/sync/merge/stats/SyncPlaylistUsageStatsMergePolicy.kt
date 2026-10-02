@@ -6,20 +6,23 @@ import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackBucket
 import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletionPolicy
+import moe.ouom.neriplayer.data.model.sync.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.policy.sanitizeCoverUrlForSync
-
-private const val LOCAL_PLAYLIST_BUCKET_RETENTION_DAYS = 400L
-private const val MAX_LOCAL_PLAYLIST_PLAYBACK_BUCKETS = 8_000
-private const val MILLIS_PER_DAY = 86_400_000L
 
 object SyncPlaylistUsageStatsMergePolicy {
     fun mergePlaylistUsageStats(
         local: List<SyncPlaylistUsageStat>,
-        remote: List<SyncPlaylistUsageStat>
+        remote: List<SyncPlaylistUsageStat>,
+        deletions: List<SyncPlaylistUsageDeletion> = emptyList()
     ): List<SyncPlaylistUsageStat> {
         val merged = TreeMap<String, SyncPlaylistUsageStat>()
+        val barriers = SyncPlaylistUsageDeletionPolicy.merge(deletions).associateBy { it.playlistKey }
         (local.asSequence() + remote.asSequence())
             .mapNotNull(::sanitize)
+            // 每个候选必须先独立覆盖全部删除，两个不完整证明不能拼成恢复证据
+            .filter { stat -> SyncPlaylistUsageDeletionPolicy.observes(stat.observedDeletionTokens, barriers[stat.playlistKey]?.deletionTokens.orEmpty()) }
             .forEach { stat ->
                 val existing = merged[stat.playlistKey]
                 if (existing == null) {
@@ -57,7 +60,8 @@ object SyncPlaylistUsageStatsMergePolicy {
             lastOpenedAt = counters.lastOccurredAt,
             openCount = counters.totalCount.toBoundedInt(),
             counterBaseOpenCount = counters.counterBaseCount,
-            counterShards = counters.counterShards
+            counterShards = counters.counterShards,
+            observedDeletionTokens = (existing.observedDeletionTokens + stat.observedDeletionTokens).normalizedSyncCausalTokens()
         )
     }
 
@@ -153,12 +157,10 @@ object SyncPlaylistUsageStatsMergePolicy {
     ): LocalPlaylistPlaybackSyncResult {
         val mergedBuckets = mergeLocalPlaylistPlaybackBuckets(buckets, emptyList())
         val mergedStats = mergeLocalPlaylistPlaybackStats(stats, emptyList())
-        val bucketTotals = mergedBuckets.groupBy(SyncLocalPlaylistPlaybackBucket::playlistId)
-            .mapValues { (_, playlistBuckets) ->
-                playlistBuckets.fold(PlaylistBucketTotals()) { totals, bucket ->
-                    totals.add(bucket)
-                }
-            }
+        val bucketTotals = LinkedHashMap<Long, PlaylistBucketTotals>()
+        mergedBuckets.forEach { bucket ->
+            bucketTotals[bucket.playlistId] = (bucketTotals[bucket.playlistId] ?: PlaylistBucketTotals()).add(bucket)
+        }
         val statIds = mergedStats.mapTo(mutableSetOf()) { it.playlistId }
         val liftedStats = mergedStats.map { stat ->
             val totals = bucketTotals[stat.playlistId] ?: return@map stat
@@ -179,7 +181,7 @@ object SyncPlaylistUsageStatsMergePolicy {
             }
         return LocalPlaylistPlaybackSyncResult(
             stats = liftedStats.sortedBy(SyncLocalPlaylistPlaybackStat::playlistId),
-            buckets = trimLocalPlaylistPlaybackBuckets(mergedBuckets)
+            buckets = mergedBuckets
         )
     }
 
@@ -203,7 +205,8 @@ object SyncPlaylistUsageStatsMergePolicy {
             firstOpenedAt = counters.firstOccurredAt,
             lastOpenedAt = counters.lastOccurredAt,
             counterBaseOpenCount = counters.counterBaseCount,
-            counterShards = counters.counterShards
+            counterShards = counters.counterShards,
+            observedDeletionTokens = stat.observedDeletionTokens.normalizedSyncCausalTokens()
         )
     }
 
@@ -353,22 +356,7 @@ object SyncPlaylistUsageStatsMergePolicy {
     private fun lastShardOccurredAt(shards: List<SyncPlaybackCounterShard>): Long =
         shards.maxOf(SyncPlaybackCounterShard::lastPlayedAt)
 
-    private fun trimLocalPlaylistPlaybackBuckets(
-        buckets: List<SyncLocalPlaylistPlaybackBucket>
-    ): List<SyncLocalPlaylistPlaybackBucket> {
-        val newestDayStartAt = buckets.maxOfOrNull(SyncLocalPlaylistPlaybackBucket::dayStartAt)
-            ?: return emptyList()
-        val cutoff = newestDayStartAt - LOCAL_PLAYLIST_BUCKET_RETENTION_DAYS * MILLIS_PER_DAY
-        val retained = buckets.filter { it.dayStartAt >= cutoff }
-        if (retained.size <= MAX_LOCAL_PLAYLIST_PLAYBACK_BUCKETS) return retained
-        return retained
-            .sortedWith(
-                compareByDescending<SyncLocalPlaylistPlaybackBucket> { it.dayStartAt }
-                    .thenByDescending { it.playCount }
-                    .thenBy { it.playlistId }
-            )
-            .take(MAX_LOCAL_PLAYLIST_PLAYBACK_BUCKETS)
-    }
+
 }
 
 private data class CounterInput(

@@ -7,15 +7,17 @@ import moe.ouom.neriplayer.api.sync.github.GitHubApiClient
 import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.github.GitHubFileNotFoundException
 import moe.ouom.neriplayer.api.sync.github.GitHubContentConflictException
+import moe.ouom.neriplayer.api.sync.github.GitHubSyncHead
 
 import moe.ouom.neriplayer.common.logging.NPLogger
-import moe.ouom.neriplayer.data.model.sync.SyncData
-import moe.ouom.neriplayer.data.model.sync.SyncRemoteSnapshot
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.sync.codec.SyncDataSerializer
+import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRepository
 import moe.ouom.neriplayer.data.sync.remote.SyncFallbackFileReader
 import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
 import moe.ouom.neriplayer.data.sync.runtime.SyncBackend
-import java.io.IOException
 
 internal class GitHubSyncBackend(
     private val storage: SecureTokenStorage,
@@ -24,7 +26,9 @@ internal class GitHubSyncBackend(
     private val repo: String,
     private val decoder: SyncRemoteSnapshotDecoder,
     private val invalidBackup: () -> Exception,
-    private val followUp: () -> Unit
+    private val followUp: () -> Unit,
+    private val archive: SyncArchiveRepository,
+    private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets
 ) : SyncBackend<GitHubSyncBackend.Version> {
     private val useDataSaver = storage.isDataSaverMode()
     private val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
@@ -33,14 +37,14 @@ internal class GitHubSyncBackend(
     override val lastSyncTime: Long get() = storage.getLastSyncTime()
     override val mutationConflictMessage = "Local state changed during GitHub sync"
 
-    override suspend fun fetch(): Result<SyncRemoteSnapshot<Version>> =
-        fetchRemoteSnapshot(preferredFileName, useDataSaver)
+    override suspend fun fetch(): Result<SyncDatasetRemoteSnapshot<Version>> =
+        fetchRemoteSnapshot()
 
-    override suspend fun refetch(version: Version): Result<SyncRemoteSnapshot<Version>> =
-        fetchRemoteSnapshot(version.fileName, SyncDataSerializer.isBinaryFileName(version.fileName))
+    override suspend fun refetch(version: Version): Result<SyncDatasetRemoteSnapshot<Version>> =
+        fetchRemoteSnapshot()
 
-    override suspend fun upload(data: SyncData, version: Version): Result<Version> =
-        uploadLocalData(data, version.sha, version.fileName).map { Version(it, version.fileName) }
+    override suspend fun upload(data: SyncDataset, version: Version): Result<Version> =
+        uploadLocalData(data, version)
 
     override fun remoteChanged(version: Version): Boolean {
         val lastSha = storage.getLastRemoteSha() ?: return false
@@ -57,45 +61,83 @@ internal class GitHubSyncBackend(
         if (error is TokenExpiredException) storage.clearToken()
     }
 
-    data class Version(val sha: String?, val fileName: String)
+    data class Version(
+        val sha: String?,
+        val fileName: String,
+        val branch: String? = null,
+        val knownPaths: Set<String> = emptySet()
+    )
 
-    private suspend fun fetchRemoteSnapshot(
-        preferredFileName: String,
-        useDataSaver: Boolean
-    ): Result<SyncRemoteSnapshot<Version>> {
+    private suspend fun fetchRemoteSnapshot(): Result<SyncDatasetRemoteSnapshot<Version>> {
+        val head = apiClient.getRepositoryHead(owner, repo).getOrElse { return Result.failure(it) }
+        val manifest = apiClient.getFileContentAtRef(owner, repo, SyncArchiveRepository.MANIFEST_FILE_NAME, head.sha)
+            .getOrElse { error ->
+                return if (error is GitHubFileNotFoundException) fetchLegacySnapshot(head) else Result.failure(error)
+            }
+        return decodeArchive(manifest, head)
+    }
+
+    private suspend fun fetchLegacySnapshot(head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
         val fetched = SyncFallbackFileReader.read(
             preferredFileName = preferredFileName,
             fallbackFileNames = SyncDataSerializer.getReadFallbackFileNames(useDataSaver),
-            fetch = { fileName -> apiClient.getFileContentStrict(owner, repo, fileName) },
+            fetch = { fileName -> apiClient.getFileContentAtRef(owner, repo, fileName, head.sha) },
             isMissing = { it is GitHubFileNotFoundException }
-        )
-        if (fetched.isFailure) return Result.failure(fetched.exceptionOrNull() ?: IOException("Failed to fetch remote data"))
-        val remote = fetched.getOrThrow()
-            ?: return Result.success(SyncRemoteSnapshot(null, Version(null, preferredFileName)))
-        val (content, sha) = remote.content
+        ).getOrElse { return Result.failure(it) }
+        val remote = fetched
+            ?: return Result.success(SyncDatasetRemoteSnapshot(null, Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch)))
+        return decodeLegacyContent(remote.content, head)
+    }
+
+    private suspend fun decodeLegacyContent(content: ByteArray, head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
+        if (SyncArchiveRepository.isManifest(content)) {
+            return decodeArchive(content, head).map { it.copy(requiresMigrationUpload = true) }
+        }
         // 损坏正文直接失败，文件名回退只用于远端文件不存在的情况
         return decoder.decode(content, invalidBackup).map { data ->
-            SyncRemoteSnapshot(
-                data = data,
-                version = Version(sha, preferredFileName),
-                requiresMigrationUpload = remote.fileName != preferredFileName
+            SyncDatasetRemoteSnapshot(
+                dataset = datasetStore.fromLegacy(data),
+                version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch),
+                requiresMigrationUpload = true
             )
         }.onFailure { NPLogger.e(TAG, "Failed to parse remote data, aborting sync without stale fallback", it) }
     }
 
-    private suspend fun uploadLocalData(
-        data: SyncData,
-        sha: String?,
-        fileName: String
-    ): Result<String> {
-        val useDataSaver = SyncDataSerializer.isBinaryFileName(fileName)
-        val content = SyncDataSerializer.serialize(data, useDataSaver)
-        NPLogger.d(
-            TAG,
-            "Upload data size: ${content.size} bytes (DataSaver: $useDataSaver, File: $fileName)"
-        )
+    private suspend fun decodeArchive(content: ByteArray, head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
+        return archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize) { path -> apiClient.getFileContentAtRef(owner, repo, path, head.sha) }.map { dataset ->
+            SyncDatasetRemoteSnapshot(
+                dataset = sanitizeDataset(dataset),
+                version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, archive.lastReferencedPaths)
+            )
+        }
+    }
 
-        return apiClient.updateFileContent(owner, repo, content, sha, fileName)
+    private fun sanitizeDataset(dataset: SyncDataset): SyncDataset = try {
+        SyncDataset(decoder.sanitize(dataset.data), dataset.playback)
+    } catch (error: Exception) {
+        dataset.close()
+        throw error
+    }
+
+    private suspend fun uploadLocalData(
+        data: SyncDataset,
+        version: Version
+    ): Result<Version> {
+        val head = resolveUploadHead(version).getOrElse { return Result.failure(it) }
+        return archive.prepareCancellable(data).use { prepared ->
+            val files = prepared.objects(version.knownPaths)
+                .map { it.path to it.content } + sequenceOf(SyncArchiveRepository.MANIFEST_FILE_NAME to prepared.content)
+            apiClient.updateFilesContent(owner, repo, files, head).map { sha ->
+                Version(sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, prepared.paths)
+            }
+        }
+    }
+
+    private suspend fun resolveUploadHead(version: Version): Result<GitHubSyncHead> {
+        val sha = version.sha
+        val branch = version.branch
+        if (sha != null && branch != null) return Result.success(GitHubSyncHead(branch, sha))
+        return apiClient.getRepositoryHead(owner, repo).map { remote -> remote.copy(sha = sha ?: remote.sha) }
     }
 
     private companion object {

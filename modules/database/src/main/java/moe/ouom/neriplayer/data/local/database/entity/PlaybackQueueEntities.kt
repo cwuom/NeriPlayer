@@ -91,5 +91,7 @@ data class PlaybackQueueSongEntity(
     @ColumnInfo(name = "playlist_context_id")
     val playlistContextId: String?,
     @ColumnInfo(name = "stream_url")
-    val streamUrl: String?
+    val streamUrl: String?,
+    @ColumnInfo(name = "lyric_sync_payload_json")
+    val lyricSyncPayloadJson: String? = null
 )

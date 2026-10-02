@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.sync.merge.song.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.model.sync.SyncConflict
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.policy.mergePositiveTimestamp
 
 internal data class PlaylistMergeResult(
@@ -35,7 +36,6 @@ internal class SyncPlaylistMerger(private val host: SyncMergeHost) {
         val name = SyncPlaylistNamePolicy(host).resolve(local, remote, systemDescriptor?.currentName, lastSyncTime)
         var isUpdated = name.isUpdated
 
-        val localSongs = local.songs.map { it.identity() }.toSet()
         val songMergeResult = SyncPlaylistSongMergePolicy.mergeSongs(
             localSongs = local.songs,
             remoteSongs = remote.songs,
@@ -55,9 +55,7 @@ internal class SyncPlaylistMerger(private val host: SyncMergeHost) {
             isUpdated = true
         }
 
-        val mergedIdentities = mergedSongs.map { it.identity() }.toSet()
-        val songsAdded = (mergedIdentities - localSongs).size
-        val songsRemoved = (localSongs - mergedIdentities).size
+        val identityChanges = countIdentityChanges(local.songs, mergedSongs)
 
         return PlaylistMergeResult(
             playlist = SyncPlaylist(
@@ -69,11 +67,22 @@ internal class SyncPlaylistMerger(private val host: SyncMergeHost) {
                 songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
             ),
             conflict = name.conflict,
-            songsAdded = songsAdded,
-            songsRemoved = songsRemoved,
+            songsAdded = identityChanges.added,
+            songsRemoved = identityChanges.removed,
             isUpdated = isUpdated
         )
     }
+
+    private fun countIdentityChanges(localSongs: List<SyncSong>, mergedSongs: List<SyncSong>): SongIdentityChanges {
+        val localIdentities = localSongs.mapTo(HashSet()) { it.identity() }
+        val mergedIdentities = mergedSongs.mapTo(HashSet()) { it.identity() }
+        return SongIdentityChanges(
+            added = mergedIdentities.count { it !in localIdentities },
+            removed = localIdentities.count { it !in mergedIdentities }
+        )
+    }
+
+    private data class SongIdentityChanges(val added: Int, val removed: Int)
 
     fun mergeDeletedPlaylist(
         local: SyncPlaylist,

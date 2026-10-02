@@ -18,20 +18,26 @@ fun SyncSong.copyWithNormalizedMembershipTokens(
     addedAt: Long = this.addedAt,
     legacyAddedAt: Long? = this.legacyAddedAt
 ): SyncSong {
+    val tokens = if (syncMembershipTokens.isNullOrEmpty()) emptyList() else syncMembershipTokens.normalizedSyncCausalTokens()
+    if (mediaUri == this.mediaUri && addedAt == this.addedAt && legacyAddedAt == this.legacyAddedAt &&
+        tokens == syncMembershipTokens
+    ) return this
     return copy(
         mediaUri = mediaUri,
         addedAt = addedAt,
         legacyAddedAt = legacyAddedAt,
-        syncMembershipTokens = syncMembershipTokens.normalizedSyncCausalTokens()
+        syncMembershipTokens = tokens
     )
 }
 
 fun SyncPlaylistSongDeletion.copyWithNormalizedMembershipTokens(
     mediaUri: String? = this.mediaUri
 ): SyncPlaylistSongDeletion {
+    val tokens = if (removedMembershipTokens.isNullOrEmpty()) emptyList() else removedMembershipTokens.normalizedSyncCausalTokens()
+    if (mediaUri == this.mediaUri && tokens == removedMembershipTokens) return this
     return copy(
         mediaUri = mediaUri,
-        removedMembershipTokens = removedMembershipTokens.normalizedSyncCausalTokens()
+        removedMembershipTokens = tokens
     )
 }
 

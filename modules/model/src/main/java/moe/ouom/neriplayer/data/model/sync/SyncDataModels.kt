@@ -30,7 +30,9 @@ data class SyncData(
     @ProtoNumber(14) val playlistUsageStats: List<SyncPlaylistUsageStat> = emptyList(),
     @ProtoNumber(15) val localPlaylistPlaybackStats: List<SyncLocalPlaylistPlaybackStat> = emptyList(),
     @ProtoNumber(16) val localPlaylistPlaybackBuckets: List<SyncLocalPlaylistPlaybackBucket> = emptyList(),
-    @ProtoNumber(17) val biliVideoSkipRules: List<SyncBiliVideoSkipRule> = emptyList()
+    @ProtoNumber(17) val biliVideoSkipRules: List<SyncBiliVideoSkipRule> = emptyList(),
+    @ProtoNumber(18) val lyricOverrides: List<SyncSong> = emptyList(),
+    @ProtoNumber(19) val playlistUsageDeletions: List<SyncPlaylistUsageDeletion> = emptyList()
 )
 
 @Serializable
@@ -77,7 +79,11 @@ data class SyncSong(
     @ProtoNumber(27) val syncMembershipTokens: List<SyncCausalToken> = emptyList(),
     @ProtoNumber(28) val syncMetadataVersion: Int = LEGACY_SYNC_METADATA_VERSION,
     // legacy 快照迁移会重写 addedAt 以恢复展示顺序, 删除判定仍需保留原始值
-    @ProtoNumber(29) val legacyAddedAt: Long? = null
+    @ProtoNumber(29) val legacyAddedAt: Long? = null,
+    @ProtoNumber(30) val lyricSyncRevision: Long = 0L,
+    @ProtoNumber(31) val lyricSyncEdited: Boolean? = null,
+    @ProtoNumber(32) val matchedRomanizedLyric: String? = null,
+    @ProtoNumber(33) val originalRomanizedLyric: String? = null
 ) {
     companion object
 }
@@ -272,7 +278,15 @@ data class SyncPlaylistUsageStat(
     @ProtoNumber(14) val mid: Long = 0L,
     @ProtoNumber(15) val browseId: String? = null,
     @ProtoNumber(16) val playlistId: String? = null,
-    @ProtoNumber(17) val subtitle: String? = null
+    @ProtoNumber(17) val subtitle: String? = null,
+    @ProtoNumber(18) val observedDeletionTokens: List<SyncCausalToken> = emptyList()
+)
+
+@Serializable
+data class SyncPlaylistUsageDeletion(
+    @ProtoNumber(1) val playlistKey: String = "",
+    @ProtoNumber(2) val deletionTokens: List<SyncCausalToken> = emptyList(),
+    @ProtoNumber(3) val deletedAt: Long = 0L
 )
 
 @Serializable

@@ -31,6 +31,19 @@ class SyncPlaybackStatMappingTest {
     )
 
     @Test
+    fun `overflowing shard sums cannot invent a legacy counter base`() {
+        val shards = listOf("a", "b").map { device ->
+            SyncPlaybackCounterShard(deviceId = device, totalListenMs = Long.MAX_VALUE, playCount = Int.MAX_VALUE)
+        }
+        val mapped = SyncPlaybackStatMapping.fromTrackStat(stat, shards)
+        val mappedBucket = SyncPlaybackStatMapping.fromPlaybackStatBucket(bucket, shards)
+        assertEquals(0L, mapped.counterBaseListenMs)
+        assertEquals(0, mapped.counterBasePlayCount)
+        assertEquals(0L, mappedBucket.counterBaseListenMs)
+        assertEquals(0, mappedBucket.counterBasePlayCount)
+    }
+
+    @Test
     fun `local file paths and provider references exclude statistics from sync`() {
         assertTrue(SyncPlaybackStatMapping.shouldSync(stat, Host))
         assertTrue(SyncPlaybackStatMapping.shouldSync(stat.copy(localFilePath = " "), Host))

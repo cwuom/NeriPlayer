@@ -53,6 +53,8 @@
     "moe/ouom/neriplayer/data/model/sync/SyncMergeModels.kt",
     "moe/ouom/neriplayer/data/model/sync/SyncSessionModels.kt",
     "moe/ouom/neriplayer/data/model/sync/SyncLocatedRemoteFile.kt",
+    "moe/ouom/neriplayer/data/model/sync/SyncLyricPolicy.kt",
+    "moe/ouom/neriplayer/ui/sync/upgrade/SyncProtocolUpgradeViewModel.kt",
     "moe/ouom/neriplayer/platform/comments/repository/NeteaseCommentPagination.kt",
     "moe/ouom/neriplayer/platform/comments/CommentMemoryCache.kt",
     "moe/ouom/neriplayer/api/ltw/**/*.kt",

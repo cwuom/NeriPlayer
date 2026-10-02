@@ -25,10 +25,10 @@ package moe.ouom.neriplayer.data.backup
 
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.sync.identity.identity
-import moe.ouom.neriplayer.data.sync.mapping.fromLocalPlaylist
 import android.content.Context
 import android.net.Uri
 import com.google.gson.Gson
+import com.google.gson.stream.JsonWriter
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,6 +44,8 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.common.logging.NPLogger
 import java.io.IOException
@@ -86,6 +88,8 @@ class BackupManager(private val context: Context) {
         val playbackStats: List<SyncTrackStat>? = emptyList(),
         val playbackStatBuckets: List<SyncPlaybackStatBucket>? = emptyList(),
         val playbackStatsClearedAt: Long = 0L,
+        val legacyLyricCandidates: List<SyncSong>? = emptyList(),
+        val lyricOverrides: List<SyncSong>? = emptyList(),
         val exportDate: String? = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
     )
     
@@ -97,41 +101,48 @@ class BackupManager(private val context: Context) {
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
             playlistRepo.requireInitialized()
             val historyRepo = PlayHistoryRepository.getInstance(context)
+            if (!historyRepo.awaitInitialized()) {
+                throw IOException("Play history initialization failed")
+            }
             val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
             if (!playbackStatsRepo.awaitInitialized()) {
                 throw IOException("Playback stats initialization failed")
             }
             val playlists = playlistRepo.playlists.value
 
-            // 使用SyncPlaylist转换，确保使用网络地址
+            // 本地备份保留未确认的旧全文，同步仍只上传明确编辑过的歌词
             val syncPlaylists = playlists.map { playlist ->
-                SyncPlaylist.fromLocalPlaylist(playlist, System.currentTimeMillis(), context)
+                BackupMetadataMapper.toSyncPlaylist(playlist, context)
             }
-            val recentPlays = historyRepo.historyFlow.value
+            val syncStorage = SecureTokenStorage(context)
+            val lyricOverrides = syncStorage.getLyricOverrides()
+            val legacyLyricCandidates = syncStorage.getLegacyLyricCandidates()
+            val recentPlays = historyRepo.syncSnapshot()
                 .filter { BackupMetadataMapper.shouldExportHistory(it, context) }
                 .take(MAX_BACKUP_HISTORY_COUNT)
                 .map(BackupMetadataMapper::toSyncRecentPlay)
-            val playbackStats = playbackStatsRepo.statsFlow.value
-                .filter { BackupMetadataMapper.shouldExportTrackStat(it, context) }
-                .map(BackupMetadataMapper::toSyncTrackStat)
-            val playbackStatBuckets = playbackStatsRepo.dailyStatsFlow.value
-                .filter { BackupMetadataMapper.shouldExportPlaybackStatBucket(it, context) }
-                .map(BackupMetadataMapper::toSyncPlaybackStatBucket)
-
-            val backupData = BackupData(
-                version = "2.2",
-                playlists = syncPlaylists,
-                recentPlays = recentPlays,
-                playbackStats = playbackStats,
-                playbackStatBuckets = playbackStatBuckets,
-                playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value,
-                exportDate = dateFormat.format(Date())
-            )
-
-            val json = gson.toJson(backupData)
-
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                outputStream.write(json.toByteArray(Charsets.UTF_8))
+                JsonWriter(outputStream.writer(Charsets.UTF_8)).use { writer ->
+                    writer.beginObject()
+                    writer.name("version").value("2.3")
+                    writer.name("timestamp").value(System.currentTimeMillis())
+                    writer.name("playlists").beginArray()
+                    syncPlaylists.forEach { gson.toJson(it, SyncPlaylist::class.java, writer) }
+                    writer.endArray()
+                    writer.name("recentPlays").beginArray()
+                    recentPlays.forEach { gson.toJson(it, SyncRecentPlay::class.java, writer) }
+                    writer.endArray()
+                    writer.name("legacyLyricCandidates").beginArray()
+                    legacyLyricCandidates.forEach { gson.toJson(it, SyncSong::class.java, writer) }
+                    writer.endArray()
+                    writer.name("lyricOverrides").beginArray()
+                    lyricOverrides.forEach { gson.toJson(it, SyncSong::class.java, writer) }
+                    writer.endArray()
+                    val stats = playbackStatsRepo.writeBackupStatistics(writer)
+                    writer.name("playbackStatsClearedAt").value(stats.clearedAt)
+                    writer.name("exportDate").value(dateFormat.format(Date()))
+                    writer.endObject()
+                }
             } ?: throw IOException(context.getString(CoreCommonR.string.error_cannot_open_output))
 
             val fileName = "${BACKUP_FILE_PREFIX}_${dateFormat.format(Date())}$BACKUP_FILE_EXTENSION"
@@ -161,6 +172,9 @@ class BackupManager(private val context: Context) {
                 val playlistRepo = LocalPlaylistRepository.getInstance(context)
                 playlistRepo.requireInitialized()
                 val historyRepo = PlayHistoryRepository.getInstance(context)
+                if (!historyRepo.awaitInitialized()) {
+                    throw IOException("Play history initialization failed")
+                }
                 val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
                 if (!playbackStatsRepo.awaitInitialized()) {
                     throw IOException("Playback stats initialization failed")
@@ -168,6 +182,14 @@ class BackupManager(private val context: Context) {
                 val currentPlaylists = playlistRepo.playlists.value.toMutableList()
                 val playlistLookup = buildPlaylistLookup(currentPlaylists)
                 val syncStorage = SecureTokenStorage(context)
+                syncStorage.retainLegacyLyrics(SyncData(
+                    playlists = backupPlaylists,
+                    recentPlays = backupData.recentPlays.orEmpty(),
+                    lyricOverrides = backupData.legacyLyricCandidates.orEmpty() + backupData.lyricOverrides.orEmpty()
+                ))
+                check(syncStorage.setLyricOverridesIfMutationVersion(syncStorage.getSyncMutationVersion(), backupData.lyricOverrides.orEmpty())) {
+                    "Local state changed while restoring lyric overrides"
+                }
                 var restoreAddedAtFloor = maxOf(
                     System.currentTimeMillis(),
                     currentPlaylists.asSequence()

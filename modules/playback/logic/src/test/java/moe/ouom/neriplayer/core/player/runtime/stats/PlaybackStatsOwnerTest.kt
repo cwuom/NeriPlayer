@@ -14,10 +14,77 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
+import java.io.IOException
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackStatsOwnerTest {
+    @Test
+    fun `blocking drain retries an unaccepted delta after its asynchronous job completed`() = runTest {
+        var now = 0L
+        var unavailable = true
+        val accepted = mutableListOf<PlaybackStatsSnapshot>()
+        var flushes = 0
+        val writes = object : PlaybackStatsWritePort {
+            override suspend fun record(snapshot: PlaybackStatsSnapshot) {
+                if (unavailable) throw IOException("journal unavailable")
+                accepted += snapshot
+            }
+            override fun hasPendingWrites() = false
+            override suspend fun flushPendingWrites() { flushes++ }
+        }
+        val owner = PlaybackStatsOwner(
+            backgroundScope, writes, PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { now }),
+            blockForPersistence = { _, block -> runBlocking { block() } }
+        )
+        owner.onSongChanged(song(1), null, true)
+        owner.onPlayingChanged(true, "start", true)
+        now = 30_000
+        owner.flushPeriodic(true)
+        runCurrent()
+        unavailable = false
+        owner.drainBlocking("recovered", true)
+        owner.drainBlocking("already_done", true)
+        assertEquals(1, accepted.size)
+        assertEquals(30_000L, accepted.single().listenedMs)
+        assertEquals(1, flushes)
+    }
+
+    @Test
+    fun `unaccepted playback delta is retained and retried before the next delta`() = runTest {
+        var now = 0L
+        var unavailable = true
+        val attempts = mutableListOf<PlaybackStatsSnapshot>()
+        val accepted = mutableListOf<PlaybackStatsSnapshot>()
+        val writes = object : PlaybackStatsWritePort {
+            override suspend fun record(snapshot: PlaybackStatsSnapshot) {
+                attempts += snapshot
+                if (unavailable) throw IOException("journal unavailable")
+                accepted += snapshot
+            }
+            override fun hasPendingWrites() = false
+            override suspend fun flushPendingWrites() = Unit
+        }
+        val owner = PlaybackStatsOwner(backgroundScope, writes, PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { now }))
+        owner.onSongChanged(song(1), null, true)
+        owner.onPlayingChanged(true, "start", true)
+        now = 30_000
+        owner.flushPeriodic(true)
+        runCurrent()
+        assertEquals(1, attempts.size)
+        assertTrue(accepted.isEmpty())
+        unavailable = false
+        now = 60_000
+        owner.onTrackEnded(true)
+        runCurrent()
+
+        assertEquals(2, accepted.size)
+        assertSame(attempts.first(), accepted.first())
+        assertEquals(listOf(30_000L, 30_000L), accepted.map { it.listenedMs })
+        assertEquals(listOf(1, 0), accepted.map { it.playCountIncrement })
+    }
+
     @Test
     fun `song transition records listened time and attributed local playlist play`() = runTest {
         var now = 0L

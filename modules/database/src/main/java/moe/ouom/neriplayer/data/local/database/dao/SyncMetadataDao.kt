@@ -19,6 +19,12 @@ interface SyncMetadataDao {
     )
     suspend fun getOutbox(statuses: List<String>, limit: Int): List<SyncOutboxEntity>
 
+    @Query(
+        "SELECT * FROM sync_outbox WHERE status IN (:statuses) AND sequence > :afterSequence " +
+            "ORDER BY sequence ASC LIMIT :limit"
+    )
+    suspend fun getOutboxPage(statuses: List<String>, afterSequence: Long, limit: Int): List<SyncOutboxEntity>
+
     @Query("DELETE FROM sync_outbox WHERE status = :status")
     suspend fun deleteOutboxByStatus(status: String)
 

@@ -61,6 +61,22 @@ class PlayerQueueStateStore(private val identity: QueueSongIdentity) {
         return updatedSong
     }
 
+    fun projectSongs(transform: (List<SongItem>) -> List<SongItem>): Boolean = synchronized(lock) {
+        val queue = projectSnapshot(current.queue, transform)
+        val restore = current.shuffleRestore?.let { projectSnapshot(it, transform) }
+        if (queue === current.queue && restore === current.shuffleRestore) return@synchronized false
+        publishLocked(current.copy(queue = queue, shuffleRestore = restore))
+        true
+    }
+
+    private fun projectSnapshot(
+        snapshot: PlayerQueueSnapshot,
+        transform: (List<SongItem>) -> List<SongItem>
+    ): PlayerQueueSnapshot {
+        val playlist = transform(snapshot.playlist)
+        return if (playlist === snapshot.playlist) snapshot else PlayerQueueSnapshot.from(playlist, snapshot.currentIndex)
+    }
+
     fun setLocalShuffle(
         enabled: Boolean,
         currentSong: SongItem?,

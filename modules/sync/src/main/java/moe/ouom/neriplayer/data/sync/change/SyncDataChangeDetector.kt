@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
 object SyncDataChangeDetector {
     fun hasDataChanged(remote: SyncData, merged: SyncData): Boolean =
         SyncPlaylistChangeDetector.playlistsChanged(remote, merged) ||
+            remote.lyricOverrides != merged.lyricOverrides ||
             SyncPlaylistChangeDetector.favoritesChanged(remote, merged) ||
             SyncHistoryChangeDetector.changed(remote, merged) ||
             !SyncBiliVideoSkipMergePolicy.same(remote.biliVideoSkipRules, merged.biliVideoSkipRules) ||

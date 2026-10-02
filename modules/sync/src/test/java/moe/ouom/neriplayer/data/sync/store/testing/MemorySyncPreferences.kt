@@ -6,9 +6,14 @@ import org.mockito.Mockito.mock
 
 internal class MemorySyncPreferences(initial: Map<String, Any> = emptyMap()) {
     val values = ConcurrentHashMap(initial)
+    val durableValues = ConcurrentHashMap(initial)
     val commits = mutableListOf<Set<String>>()
     var failNextCommit = false
     var delayMissingDeviceRead = false
+
+    fun restart(): MemorySyncPreferences = synchronized(values) {
+        MemorySyncPreferences(durableValues.toMap())
+    }
 
     val preferences: SharedPreferences = mock(SharedPreferences::class.java) { call ->
         val key = call.arguments.firstOrNull() as? String
@@ -38,19 +43,27 @@ internal class MemorySyncPreferences(initial: Map<String, Any> = emptyMap()) {
                 "clear" -> { clear = true; call.mock }
                 "commit", "apply" -> synchronized(values) {
                     commits += changes.keys.toSet()
-                    if (failNextCommit) {
-                        failNextCommit = false
-                        false
-                    } else {
-                        if (clear) values.clear()
-                        changes.forEach { (key, value) ->
-                            if (value == null) values.remove(key) else values[key] = value
-                        }
-                        if (call.method.name == "commit") true else null
+                    if (clear) values.clear()
+                    changes.forEach { (key, value) ->
+                        if (value == null) values.remove(key) else values[key] = value
                     }
+                    changes.clear()
+                    clear = false
+                    val committed = persistMemory()
+                    if (call.method.name == "commit") committed else null
                 }
                 else -> call.mock
             }
         }
+    }
+
+    private fun persistMemory(): Boolean {
+        if (failNextCommit) {
+            failNextCommit = false
+            return false
+        }
+        durableValues.clear()
+        durableValues.putAll(values)
+        return true
     }
 }

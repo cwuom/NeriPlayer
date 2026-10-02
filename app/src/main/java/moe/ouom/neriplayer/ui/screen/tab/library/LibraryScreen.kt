@@ -65,16 +65,18 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.model.stats.PlaybackStatsHotPlaylist
-import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist
+import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylistPreview
+import moe.ouom.neriplayer.data.stats.hotPlaybackStatsQuery
 import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -149,25 +151,22 @@ internal fun persistLocalArtistSortMode(context: Context, sortMode: LocalArtistS
 }
 
 @Composable
-internal fun rememberHotPlaylists(): List<PlaybackStatsHotPlaylist>? {
-    val hotPlaylists by produceState<List<PlaybackStatsHotPlaylist>?>(initialValue = null) {
-        val statsRepository = withContext(Dispatchers.IO) {
-            AppContainer.playbackStatsRepo
-        }
-        combine(
-            statsRepository.statsFlow,
-            statsRepository.dailyStatsFlow
-        ) { stats, dailyStats ->
-            stats to dailyStats
-        }.collect { (stats, dailyStats) ->
-            value = withContext(Dispatchers.Default) {
-                HotPlaylistPeriods.map { period ->
-                    buildPlaybackStatsHotPlaylist(
-                        stats = stats,
-                        dailyStats = dailyStats,
-                        period = period
-                    )
-                }
+internal fun rememberHotPlaylists(retry: Int = 0): Result<List<PlaybackStatsHotPlaylistPreview>>? {
+    val hotPlaylists by produceState<Result<List<PlaybackStatsHotPlaylistPreview>>?>(initialValue = null, key1 = retry) {
+        value = null
+        val repository = withContext(Dispatchers.IO) { AppContainer.playbackStatsRepo }
+        repository.revisionFlow.catch { error ->
+            if (error is CancellationException) throw error
+            value = Result.failure(error)
+        }.collectLatest {
+            value = try {
+                Result.success(HotPlaylistPeriods.map { period ->
+                    val query = hotPlaybackStatsQuery(period)
+                    PlaybackStatsHotPlaylistPreview(period, repository.readPage(query, pageSize = 4).tracks, repository.readSummary(query))
+                })
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Result.failure(error)
             }
         }
     }

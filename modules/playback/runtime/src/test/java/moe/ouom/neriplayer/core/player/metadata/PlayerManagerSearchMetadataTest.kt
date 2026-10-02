@@ -17,6 +17,20 @@ import org.junit.Test
 class PlayerManagerSearchMetadataTest {
 
     @Test
+    fun `manual matching preserves cached romanized baseline for later lyric restoration`() {
+        val original = SongItem(1L, "song", "artist", "netease", 0L, 1L, null,
+            matchedRomanizedLyric = "cached romanized", lyricSyncEdited = false)
+        for (customOverride in listOf(false, true)) {
+            val matched = applyManualSearchMetadata(
+                original, "new song", "new artist", null, "selected lyric", null,
+                MusicPlatform.CLOUD_MUSIC, "matched", customOverride
+            )
+            assertEquals("cached romanized", matched.originalRomanizedLyric)
+            assertTrue(matched.lyricSyncEdited == true)
+        }
+    }
+
+    @Test
     fun `search summary fallback keeps selected display metadata`() {
         val selectedSong = SongSearchInfo(
             id = "remote-id",
@@ -365,6 +379,24 @@ class PlayerManagerSearchMetadataTest {
         assertEquals("[00:00.00]新译文", updatedSong.matchedTranslatedLyric)
         assertEquals("[00:00.00]旧原文", updatedSong.originalLyric)
         assertEquals("[00:00.00]旧译文", updatedSong.originalTranslatedLyric)
+        assertTrue(updatedSong.lyricSyncEdited == true)
+        assertTrue(updatedSong.lyricSyncRevision > 0L)
+    }
+
+    @Test
+    fun `automatic lyric cache update does not create an edit revision`() {
+        val song = SongItem(id = 1L, name = "song", artist = "artist", album = "netease", albumId = 0L, durationMs = 1L, coverUrl = null)
+        val updated = song.withUpdatedLyricsPreservingOriginal(newLyrics = "cached", userEdited = false)
+        assertEquals(false, updated.lyricSyncEdited)
+        assertEquals(0L, updated.lyricSyncRevision)
+    }
+
+    @Test
+    fun `manual lyric revision remains monotonic after clock moves backwards`() {
+        val song = SongItem(id = 1L, name = "song", artist = "artist", album = "netease", albumId = 0L, durationMs = 1L, coverUrl = null,
+            lyricSyncRevision = Long.MAX_VALUE - 1000L)
+        val updated = song.withUpdatedLyricsPreservingOriginal(newLyrics = "edit")
+        assertEquals(Long.MAX_VALUE - 999L, updated.lyricSyncRevision)
     }
 
     @Test

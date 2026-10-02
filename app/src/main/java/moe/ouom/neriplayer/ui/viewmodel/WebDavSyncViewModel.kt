@@ -6,6 +6,9 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -24,14 +27,15 @@ class WebDavSyncViewModel : ViewModel() {
     val uiState: StateFlow<WebDavSyncUiState> = _uiState
 
     private var storage: WebDavStorage? = null
-    private var syncManager: WebDavSyncManager? = null
+    internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
+    private var syncJob: Job? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         viewModelScope.launch(Dispatchers.IO) {
             if (storage == null) {
                 storage = WebDavStorage(appContext)
-                syncManager = WebDavSyncManager.getInstance(appContext)
+                syncOperation = WebDavSyncManager.getInstance(appContext)::performSync
             }
             loadConfiguration()
         }
@@ -104,12 +108,15 @@ class WebDavSyncViewModel : ViewModel() {
     }
 
     fun performSync(context: Context) {
+        if (syncJob?.isActive == true) return
+        val operation = syncOperation ?: return
         val appContext = context.applicationContext
         _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null)
 
-        viewModelScope.launch {
-            val manager = syncManager ?: return@launch
-            val result = manager.performSync()
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            val result = operation()
+            coroutineContext.ensureActive()
+            if (syncJob !== coroutineContext[Job]) return@launch
             if (result.isSuccess) {
                 val syncResult = result.getOrNull()!!
                 val lastSyncTime = storage?.getLastSyncTime() ?: _uiState.value.lastSyncTime
@@ -147,6 +154,14 @@ class WebDavSyncViewModel : ViewModel() {
                 }
             }
         }
+        syncJob = job
+        job.invokeOnCompletion {
+            if (syncJob === job) {
+                syncJob = null
+                _uiState.value = _uiState.value.copy(isSyncing = false)
+            }
+        }
+        job.start()
     }
 
     fun toggleAutoSync(context: Context, enabled: Boolean) {
@@ -162,6 +177,9 @@ class WebDavSyncViewModel : ViewModel() {
 
     fun clearConfiguration(context: Context) {
         val appContext = context.applicationContext
+        val activeSync = syncJob
+        syncJob = null
+        activeSync?.cancel()
         storage?.clearAll()
         WebDavSyncWorker.cancelAllSync(appContext)
         _uiState.value = WebDavSyncUiState()

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.sync.work
 
 import android.content.Context
+import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAccessDeniedException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavDirectoryNotFoundException
@@ -10,6 +11,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
 import moe.ouom.neriplayer.data.sync.host.SyncPlaybackActivity
+import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerFailureClassifier
 import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerHost
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
@@ -26,6 +28,7 @@ internal fun createWebDavWorkerHost(context: Context): SyncWorkerHost {
     return SyncRepositoryWorkerHost(
         provider = SyncProvider.WEBDAV,
         readAutoSync = { storage.isAutoSyncEnabled() }, readConfigured = { storage.isConfigured() },
+        readProtocolUpgradeApproved = { SyncProtocolUpgradeRepository(context).approvedFlow.first() },
         readPlayback = { SyncPlaybackActivity.isActive }, readNetwork = { hasValidatedSyncNetwork(context) },
         defer = { WebDavSyncWorker.scheduleDelayedSync(context, initialDelayMs = 60_000L, appendToCurrentWork = true) },
         sync = { WebDavSyncManager.getInstance(context).performSync() },

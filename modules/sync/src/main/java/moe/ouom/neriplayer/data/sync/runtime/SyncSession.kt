@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.data.sync.runtime
 
 import kotlinx.coroutines.CancellationException
-import moe.ouom.neriplayer.data.model.sync.SyncData
-import moe.ouom.neriplayer.data.model.sync.SyncMergeResult
-import moe.ouom.neriplayer.data.model.sync.SyncRemoteSnapshot
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetMergeResult
+import moe.ouom.neriplayer.data.sync.merge.dataset.SyncDatasetMerger
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.model.sync.SyncUploadResolution
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
@@ -14,12 +16,14 @@ import java.io.IOException
 
 class SyncSession(
     private val local: SyncLocalDataStore,
-    private val merger: SyncDataMerger,
+    merger: SyncDataMerger,
+    datasetStore: SyncPlaybackDatasetStore,
     private val noChangeMessage: String,
     private val initialUploadMessage: String,
     private val inProgressError: () -> Exception,
     private val nowMs: () -> Long = System::currentTimeMillis
 ) {
+    private val merger = SyncDatasetMerger(merger, datasetStore)
     suspend fun <TVersion> execute(backendFactory: () -> SyncBackend<TVersion>): Result<SyncResult> {
         if (!local.awaitInitialized()) {
             return Result.failure(IllegalStateException("Local playlist initialization failed"))
@@ -38,52 +42,49 @@ class SyncSession(
 
     private suspend fun <TVersion> sync(backend: SyncBackend<TVersion>): Result<SyncResult> {
         val mutationVersion = local.mutationVersion()
-        val localData = local.snapshot()
-        val fetched = backend.fetch()
-        if (fetched.isFailure) return failure(backend, fetched.exceptionOrNull())
-        val remote = fetched.getOrThrow()
-        val firstSync = backend.isFirstSync
-        val resolved = resolveUpload(backend, localData, remote, mutationVersion)
-        if (resolved.isFailure) return uploadFailure(backend, resolved.exceptionOrNull())
-        val resolution = resolved.getOrThrow()
-        SyncSessionCommitter(local, nowMs).commit(backend, resolution, firstSync, mutationVersion)
-        return Result.success(
-            SyncSessionResultPolicy.result(
-                resolution, firstSync, remote.data == null, noChangeMessage, initialUploadMessage
-            )
-        )
+        local.snapshot().use { localData ->
+            val fetched = backend.fetch()
+            if (fetched.isFailure) return failure(backend, fetched.exceptionOrNull())
+            val remote = fetched.getOrThrow()
+            val initialRemoteMissing = remote.dataset == null
+            val firstSync = backend.isFirstSync
+            val resolved = resolveUpload(backend, localData, remote, mutationVersion)
+            if (resolved.isFailure) return uploadFailure(backend, resolved.exceptionOrNull())
+            val resolution = resolved.getOrThrow()
+            resolution.merged.dataset.use {
+                SyncSessionCommitter(local, nowMs).commit(backend, resolution, firstSync, mutationVersion)
+                return Result.success(SyncSessionResultPolicy.result(
+                    resolution, firstSync, initialRemoteMissing, noChangeMessage, initialUploadMessage
+                ))
+            }
+        }
     }
 
     private suspend fun <TVersion> resolveUpload(
         backend: SyncBackend<TVersion>,
-        localData: SyncData,
-        remote: SyncRemoteSnapshot<TVersion>,
+        localData: SyncDataset,
+        remote: SyncDatasetRemoteSnapshot<TVersion>,
         mutationVersion: Long
-    ): Result<SyncUploadResolution<SyncMergeResult, TVersion>> {
+    ): Result<SyncUploadResolution<SyncDatasetMergeResult, TVersion>> {
         val lastSyncTime = backend.lastSyncTime
         return SyncUploadRetryExecutor.execute(
             initialRemote = remote,
             initialVersion = remote.version,
             initialRemoteChangedDuringSync = backend.remoteChanged(remote.version),
-            merge = { snapshot -> merge(localData, snapshot.data, lastSyncTime) },
-            hasMeaningfulChange = { snapshot, merged -> shouldUpload(snapshot, merged.mergedData) },
+            merge = { snapshot -> merger.merge(localData, snapshot.dataset, lastSyncTime) },
+            hasMeaningfulChange = { snapshot, merged -> merger.changed(snapshot.dataset, merged.dataset, snapshot.requiresMigrationUpload) },
             upload = { merged, version ->
                 if (local.mutationVersion() != mutationVersion) {
                     Result.failure(LocalSyncMutationConflictException(backend.mutationConflictMessage))
                 } else {
-                    backend.upload(merged.mergedData, version)
+                    backend.upload(merged.dataset, version)
                 }
             },
             refetch = { version -> backend.refetch(version).map { it to it.version } },
-            isConflict = backend::isConflict
+            isConflict = backend::isConflict,
+            disposeMerged = { it.dataset.close() },
+            disposeRemote = { it.dataset?.close() }
         )
-    }
-
-    private fun merge(localData: SyncData, remoteData: SyncData?, lastSyncTime: Long): SyncMergeResult =
-        if (remoteData == null) merger.initial(localData) else merger.merge(localData, remoteData, lastSyncTime)
-
-    private fun <TVersion> shouldUpload(remote: SyncRemoteSnapshot<TVersion>, merged: SyncData): Boolean {
-        return SyncUploadPolicy.shouldUpload(remote.data, remote.requiresMigrationUpload, merged)
     }
 
     private fun <TVersion> uploadFailure(backend: SyncBackend<TVersion>, error: Throwable?): Result<SyncResult> {

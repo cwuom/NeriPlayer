@@ -1096,7 +1096,7 @@ class LocalPlaylistRepositoryTest : LocalPlaylistRepositoryTestSupport() {
         )
 
         assertEquals(listOf(playlist.id), syncStore.applied.single().restoredPlaylistIds)
-        assertEquals(1L, syncStore.mutationVersion)
+        assertEquals(2L, syncStore.mutationVersion)
         assertEquals(1, autoSyncTriggerCount)
     }
 

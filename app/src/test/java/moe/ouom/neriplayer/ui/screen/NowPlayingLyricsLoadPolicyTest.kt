@@ -7,6 +7,10 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.ManagedLyricVariant
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingFastLyricsState
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingImmediateLyricsState
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.buildNowPlayingInitialLyricsState
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolveManagedDownloadFastLyricText
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.resolvePreferredNeteaseLyricSongId
 import org.junit.Assert.assertEquals
@@ -17,6 +21,35 @@ import org.junit.Test
 
 class NowPlayingLyricsLoadPolicyTest {
     private val song = SongItem(61L, "Song", "Artist", "Album", 1L, 60_000L, null)
+
+    @Test
+    fun `confirmed original preserves user collapsed content while absent variants retain preferred fallback`() {
+        val collapsed = "[00:00.00]one\n[00:00.00]two\n[00:00.00]three"
+        val preferred = PreferredLyricSourceResult(listOf(LyricEntry("cache", 1000, 2000)),
+            listOf(LyricEntry("translation cache", 1000, 2000)), source = LyricSourcePreference.Kugou)
+        val edited = song.copy(matchedLyric = collapsed, lyricSyncEdited = true, lyricSyncRevision = 20)
+        val state = buildNowPlayingInitialLyricsState(edited, preferred)
+        assertEquals(collapsed, state.rawLyrics)
+        assertEquals(listOf("one", "two", "three"), state.lyrics.map { it.text })
+        assertEquals("translation cache", state.translatedLyrics.single().text)
+        for (marker in listOf(null, false)) {
+            assertEquals("cache", buildNowPlayingInitialLyricsState(edited.copy(lyricSyncEdited = marker), preferred).lyrics.single().text)
+        }
+    }
+
+    @Test
+    fun `confirmed independent translation clear removes inline fallback from ordinary lyric rows`() {
+        val preferred = PreferredLyricSourceResult(listOf(LyricEntry("original", 1000, 2000, translation = "old embedded")),
+            source = LyricSourcePreference.Kugou)
+        val edited = song.copy(lyricSyncEdited = true, lyricSyncRevision = 20, matchedTranslatedLyric = "")
+        val cleared = buildNowPlayingInitialLyricsState(edited, preferred)
+        assertEquals("original", cleared.lyrics.single().text)
+        assertNull(cleared.lyrics.single().translation)
+        assertTrue(cleared.plainLyrics.all { it.translation == null })
+        assertEquals("", cleared.rawTranslatedLyrics)
+        assertTrue(cleared.translatedLyrics.isEmpty())
+        assertEquals("old embedded", buildNowPlayingInitialLyricsState(edited.copy(matchedTranslatedLyric = null), preferred).lyrics.single().translation)
+    }
 
     @Test
     fun `netease match id wins and direct source id is used only for tagged song`() {

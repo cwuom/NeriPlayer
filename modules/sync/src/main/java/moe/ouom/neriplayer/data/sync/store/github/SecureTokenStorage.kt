@@ -4,25 +4,50 @@ import android.content.SharedPreferences
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import android.content.Context
+import android.system.Os
+import android.system.OsConstants
+import kotlinx.coroutines.flow.StateFlow
+import java.io.File
 import moe.ouom.neriplayer.data.sync.store.state.*
+import moe.ouom.neriplayer.data.sync.store.state.lyrics.SyncLyricOverrideStore
+import moe.ouom.neriplayer.data.sync.store.state.lyrics.SyncLyricOverrideLookup
 import moe.ouom.neriplayer.data.sync.store.secure.EncryptedSyncPreferences
 
-class SecureTokenStorage internal constructor(encryptedPrefs: SharedPreferences) {
-    constructor(context: Context) : this(EncryptedSyncPreferences.open(context, GITHUB_PREFS_NAME, "NERI-SecureTokenStorage"))
+class SecureTokenStorage internal constructor(
+    encryptedPrefs: SharedPreferences,
+    directory: File? = null,
+    syncDirectory: ((File) -> Unit)? = null
+) {
+    constructor(context: Context) : this(
+        EncryptedSyncPreferences.open(context, GITHUB_PREFS_NAME, "NERI-SecureTokenStorage", recoverOnFailure = false),
+        File(context.noBackupFilesDir, "sync-deletions"),
+        { path ->
+            val descriptor = Os.open(path.path, OsConstants.O_RDONLY, 0)
+            try { Os.fsync(descriptor) } finally { Os.close(descriptor) }
+        }
+    )
+
+    private val deletionFiles = if (syncDirectory == null) SyncDeletionStateStorage(encryptedPrefs, directory)
+        else SyncDeletionStateStorage(encryptedPrefs, directory, syncDirectory)
 
     private val configuration = GitHubSyncConfigurationStore(encryptedPrefs)
     private val device = SyncDeviceStateStore(encryptedPrefs)
     private val mutation = SyncMutationVersionStore(encryptedPrefs)
-    private val playlists = SyncPlaylistDeletionStore(encryptedPrefs)
-    private val recent = SyncRecentPlayDeletionStore(encryptedPrefs)
-    private val usage = SyncPlaylistUsageDeletionStore(encryptedPrefs)
-    private val songs = SyncPlaylistSongDeletionStore(encryptedPrefs)
-    private val playlistMutation = SyncPlaylistMutationStore(encryptedPrefs, playlists, songs)
-    private val deletionState = SyncDeletionStateCommitter(encryptedPrefs)
+    private val playlists = SyncPlaylistDeletionStore(encryptedPrefs, deletionFiles)
+    private val recent = SyncRecentPlayDeletionStore(encryptedPrefs, deletionFiles)
+    private val usage = SyncPlaylistUsageDeletionStore(encryptedPrefs, deletionFiles)
+    private val songs = SyncPlaylistSongDeletionStore(encryptedPrefs, deletionFiles)
+    private val playlistMutation = SyncPlaylistMutationStore(encryptedPrefs, playlists, songs, deletionFiles)
+    private val deletionState = SyncDeletionStateCommitter(encryptedPrefs, deletionFiles)
+    private val lyricOverrides = SyncLyricOverrideStore(encryptedPrefs, deletionFiles, directory)
+    private val lyricLookup = SyncLyricOverrideLookup(deletionFiles)
 
     fun saveToken(token: String) = configuration.saveToken(token)
 
@@ -78,6 +103,9 @@ class SecureTokenStorage internal constructor(encryptedPrefs: SharedPreferences)
 
     fun removeDeletedPlaylistIds(playlistIds: Set<Long>) = playlists.removeDeletedPlaylistIds(playlistIds)
 
+    fun setPlaylistDeletionStateIfMutationVersion(expected: Long, snapshots: List<SyncPlaylist>, clearRestored: Boolean = true): Boolean =
+        playlists.setPlaylistDeletionStateIfMutationVersion(expected, snapshots, clearRestored)
+
     fun applyPlaylistSyncMutation(
         addedSongDeletions: List<SyncPlaylistSongDeletion>,
         removedSongDeletions: List<Pair<Long, Collection<SongIdentity>>>,
@@ -95,6 +123,15 @@ class SecureTokenStorage internal constructor(encryptedPrefs: SharedPreferences)
     fun removeRecentPlayDeletion(identity: SongIdentity) = recent.removeRecentPlayDeletion(identity)
 
     fun getPlaylistUsageDeletions(): Map<String, Long> = usage.getPlaylistUsageDeletions()
+
+    fun getPlaylistUsageDeletionsConfirmed(): Map<String, Long> = usage.getPlaylistUsageDeletionsConfirmed()
+
+    fun getPlaylistUsageDeletionBarriersConfirmed(): List<SyncPlaylistUsageDeletion> = usage.getPlaylistUsageDeletionBarriersConfirmed()
+
+    fun mergePlaylistUsageDeletionBarriers(deletions: List<SyncPlaylistUsageDeletion>) = usage.mergePlaylistUsageDeletionBarriers(deletions)
+
+    fun mergePlaylistUsageDeletionBarriersIfMutationVersion(expected: Long, deletions: List<SyncPlaylistUsageDeletion>): Boolean =
+        usage.mergePlaylistUsageDeletionBarriersIfMutationVersion(expected, deletions)
 
     fun addPlaylistUsageDeletion(playlistKey: String, deletedAt: Long = System.currentTimeMillis()) = usage.addPlaylistUsageDeletion(playlistKey, deletedAt)
 
@@ -118,6 +155,27 @@ class SecureTokenStorage internal constructor(encryptedPrefs: SharedPreferences)
         recentPlayDeletions: List<SyncRecentPlayDeletion>,
         playlistSongDeletions: List<SyncPlaylistSongDeletion>
     ): Boolean = deletionState.setDeletionStateIfMutationVersion(expectedMutationVersion, recentPlayDeletions, playlistSongDeletions)
+
+    fun getLyricOverrides(): List<SyncSong> = lyricOverrides.getLyricOverrides()
+
+    fun retainLegacyLyrics(data: moe.ouom.neriplayer.data.model.sync.SyncData) = lyricOverrides.retainLegacyLyrics(data)
+
+    fun retainLegacyLyricCandidates(candidates: List<SyncSong>) = lyricOverrides.retainLegacyLyricCandidates(candidates)
+
+    fun getLegacyLyricCandidatesForIdentityKey(identityKey: String, checkActive: () -> Unit = {}): List<SyncSong> =
+        lyricLookup.readLegacy(identityKey, checkActive)
+
+    fun getLegacyLyricCandidates(checkActive: () -> Unit = {}): List<SyncSong> = lyricLookup.readLegacy(null, checkActive)
+
+    fun getLyricOverridesForIdentityKeys(identityKeys: Set<String>, checkActive: () -> Unit = {}): List<SyncSong> =
+        lyricLookup.read(identityKeys, checkActive)
+
+    val lyricOverridesVersion: StateFlow<Long> = lyricOverrides.version
+
+    fun recordLyricOverride(song: SyncSong) = lyricOverrides.recordLyricOverride(song)
+
+    fun setLyricOverridesIfMutationVersion(expected: Long, overrides: List<SyncSong>): Boolean =
+        lyricOverrides.setLyricOverridesIfMutationVersion(expected, overrides)
 
     fun setTokenWarningDismissed(dismissed: Boolean) = configuration.setTokenWarningDismissed(dismissed)
 

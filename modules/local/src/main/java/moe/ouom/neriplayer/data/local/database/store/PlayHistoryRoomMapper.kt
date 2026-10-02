@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.local.database.store.stats.toDomain
 
+
+import moe.ouom.neriplayer.data.model.lyrics.LyricSyncPersistence
+import moe.ouom.neriplayer.data.model.lyrics.readLyricSyncPersistence
+import moe.ouom.neriplayer.data.model.lyrics.toPersistenceJson
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.local.database.entity.PlayHistoryEntity
 import moe.ouom.neriplayer.data.model.SongIdentity
@@ -35,6 +40,7 @@ internal class PlayHistoryRoomMapper {
         check(expectedIdentity == identityKey) {
             "Play history identity mismatch: expected=$expectedIdentity actual=$identityKey"
         }
+        val lyrics = readLyricSyncPersistence(lyricSyncPayloadJson)
         return PlayedEntry(
             id = id,
             name = name,
@@ -47,6 +53,13 @@ internal class PlayHistoryRoomMapper {
             mediaUri = mediaUri,
             matchedLyric = matchedLyric,
             matchedTranslatedLyric = matchedTranslatedLyric,
+            matchedRomanizedLyric = lyrics.romanized,
+            originalRomanizedLyric = lyrics.originalRomanized,
+            matchedLyricSource = lyrics.source,
+            matchedSongId = lyrics.matchedSongId,
+            userLyricOffsetMs = lyrics.userOffsetMs,
+            lyricSyncRevision = lyrics.revision,
+            lyricSyncEdited = lyrics.edited,
             customCoverUrl = customCoverUrl,
             customName = customName,
             customArtist = customArtist,
@@ -102,6 +115,11 @@ private fun PlayedEntry.toEntity(): PlayHistoryEntity {
         audioId = audioId,
         subAudioId = subAudioId,
         sourceStableKey = sourceStableKey,
-        playedAt = playedAt
+        playedAt = playedAt,
+        lyricSyncPayloadJson = LyricSyncPersistence(
+            revision = lyricSyncRevision, edited = lyricSyncEdited,
+            romanized = matchedRomanizedLyric, originalRomanized = originalRomanizedLyric,
+            source = matchedLyricSource, matchedSongId = matchedSongId, userOffsetMs = userLyricOffsetMs
+        ).toPersistenceJson()
     )
 }

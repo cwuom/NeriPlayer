@@ -52,10 +52,10 @@ private fun legacyOrderAnchor(songs: List<SyncSong>, playlistModifiedAt: Long): 
 
 private fun List<SyncSong>.sortedByAddedAtForDisplay(): List<SyncSong> {
     if (size < 2) return this
-    return withIndex()
-        .sortedWith(
-            compareByDescending<IndexedValue<SyncSong>> { it.value.addedAt }
-                .thenBy { it.index }
-        )
-        .map { it.value }
+    var previousAddedAt = Long.MAX_VALUE
+    for (song in this) {
+        if (song.addedAt > previousAddedAt) return sortedByDescending { it.addedAt }
+        previousAddedAt = song.addedAt
+    }
+    return this
 }

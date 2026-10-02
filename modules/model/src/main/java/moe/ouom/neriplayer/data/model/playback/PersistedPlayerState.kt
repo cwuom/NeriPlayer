@@ -30,7 +30,11 @@ data class PersistedSongItem(
     val audioId: String? = null,
     val subAudioId: String? = null,
     val playlistContextId: String? = null,
-    val streamUrl: String? = null
+    val streamUrl: String? = null,
+    val matchedRomanizedLyric: String? = null,
+    val originalRomanizedLyric: String? = null,
+    val lyricSyncRevision: Long = 0L,
+    val lyricSyncEdited: Boolean? = null
 )
 
 data class PersistedState(

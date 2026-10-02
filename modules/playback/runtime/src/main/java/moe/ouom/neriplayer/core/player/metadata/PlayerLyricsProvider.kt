@@ -221,7 +221,14 @@ fun shouldTryPreferredLyricSource(
     preference: LyricSourcePreference
 ): Boolean = preference != LyricSourcePreference.Automatic &&
     !song.isLocalSong() &&
-    resolveStoredLyricText(song.matchedLyric, song.originalLyric) != ""
+    hasPreferredSourceFallback(song)
+
+private fun hasPreferredSourceFallback(song: SongItem): Boolean {
+    if (song.lyricSyncEdited == true) {
+        return listOf(song.matchedLyric, song.matchedTranslatedLyric, song.matchedRomanizedLyric).any { it == null }
+    }
+    return resolveStoredLyricText(song.matchedLyric, song.originalLyric) != ""
+}
 
 internal fun shouldBlockExternalYouTubeMusicTranslation(rawLyric: String?): Boolean {
     return when (resolveLocalLyricOverrideState(rawLyric)) {
@@ -686,6 +693,12 @@ object PlayerLyricsProvider {
         }
     }
 
+    internal fun parseConfirmedUserLyricEntries(song: SongItem, text: String?): List<LyricEntry>? {
+        if (song.lyricSyncEdited != true || text == null) return null
+        // 确认编辑的空串表示清空，解析失败也不能让来源缓存覆盖用户分轨
+        return parseLocalLyricOverride(text, song.durationMs, "用户编辑歌词解析失败").orEmpty()
+    }
+
     private fun parseSafeLyricEntries(
         rawLyric: String,
         durationMs: Long,
@@ -816,6 +829,7 @@ object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
+            parseConfirmedUserLyricEntries(song, song.matchedTranslatedLyric)?.let { return@withContext it }
             tryGetPreferredLyricSourceResult(
                 song = song,
                 preference = defaultLyricSource,
@@ -849,14 +863,10 @@ object PlayerLyricsProvider {
                 null
             }
             val localTranslatedLyric = localLyrics?.translatedLyric
-            val storedTranslatedLyric = if (song.isLocalSong()) {
-                null
-            } else {
-                resolveStoredLyricText(
-                    currentLyric = song.matchedTranslatedLyric,
-                    legacyLyric = song.originalTranslatedLyric
-                )
-            }
+            val storedTranslatedLyric = resolveStoredLyricText(
+                currentLyric = song.matchedTranslatedLyric,
+                legacyLyric = song.originalTranslatedLyric
+            )
             val downloadedTranslatedLyric = when {
                 managedLyrics != null -> managedLyrics.translatedLyric
                 canReadManagedDownloadLyrics -> {
@@ -864,7 +874,8 @@ object PlayerLyricsProvider {
                 }
                 else -> null
             }
-            val selectedTranslatedLyric = resolveLocalFirstLyricText(
+            val selectedTranslatedLyric = resolveLyricTextForPlayback(
+                isManagedLocalDownload = isManagedLocalDownload,
                 localLyric = localTranslatedLyric,
                 storedLyric = storedTranslatedLyric,
                 downloadedLyric = downloadedTranslatedLyric
@@ -971,6 +982,7 @@ object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
+            parseConfirmedUserLyricEntries(song, song.matchedRomanizedLyric)?.let { return@withContext it }
             tryGetPreferredLyricSourceResult(
                 song = song,
                 preference = defaultLyricSource,
@@ -1023,6 +1035,11 @@ object PlayerLyricsProvider {
                     logPrefix = "本地音译歌词读取失败"
                 )?.let { return@withContext it }
             }
+            parseLocalLyricOverride(
+                rawLyric = resolveStoredLyricText(song.matchedRomanizedLyric, song.originalRomanizedLyric),
+                durationMs = song.durationMs,
+                logPrefix = "已存音译歌词读取失败"
+            )?.let { return@withContext it }
             if (!shouldLoadRemoteLyrics(song)) {
                 return@withContext emptyList()
             }
@@ -1076,6 +1093,7 @@ object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
+            parseConfirmedUserLyricEntries(song, song.matchedLyric)?.let { return@withContext it }
             tryGetPreferredLyricSourceResult(
                 song = song,
                 preference = defaultLyricSource,
@@ -1108,14 +1126,10 @@ object PlayerLyricsProvider {
             } else {
                 null
             }
-            val storedLyric = if (song.isLocalSong()) {
-                null
-            } else {
-                resolveStoredLyricText(
-                    currentLyric = song.matchedLyric,
-                    legacyLyric = song.originalLyric
-                )
-            }
+            val storedLyric = resolveStoredLyricText(
+                currentLyric = song.matchedLyric,
+                legacyLyric = song.originalLyric
+            )
             val downloadedLyric = when {
                 managedLyrics != null -> managedLyrics.lyric
                 canReadManagedDownloadLyrics -> {
@@ -1123,7 +1137,8 @@ object PlayerLyricsProvider {
                 }
                 else -> null
             }
-            val selectedLyric = resolveLocalFirstLyricText(
+            val selectedLyric = resolveLyricTextForPlayback(
+                isManagedLocalDownload = isManagedLocalDownload,
                 localLyric = localLyric,
                 storedLyric = storedLyric,
                 downloadedLyric = downloadedLyric

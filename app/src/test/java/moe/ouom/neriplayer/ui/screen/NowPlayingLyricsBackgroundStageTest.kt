@@ -4,6 +4,8 @@ import android.content.Context
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
@@ -19,6 +21,67 @@ import org.mockito.Mockito
 class NowPlayingLyricsBackgroundStageTest {
     private val context = Mockito.mock(Context::class.java)
     private val remote = SongItem(7L, "Remote", "Artist", "Album", 1L, 60_000L, null)
+
+    @Test
+    fun `preferred background hit fills absent tracks and overlays partial edits before returning`() = runTest {
+        var preferredReads = 0
+        val preferred = PreferredLyricSourceResult(listOf(LyricEntry("preferred original", 1000, 2000)),
+            listOf(LyricEntry("preferred translation", 1000, 2000)),
+            listOf(LyricEntry("preferred romanized", 1000, 2000)), LyricSourcePreference.Kugou)
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun preferred(song: SongItem, source: LyricSourcePreference): PreferredLyricSourceResult {
+                preferredReads++
+                return preferred
+            }
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val base = remote.copy(lyricSyncEdited = true, lyricSyncRevision = 20)
+        for (edited in listOf(base.copy(matchedLyric = "[00:01.00]user original"),
+            base.copy(matchedTranslatedLyric = "[00:01.00]user translation"),
+            base.copy(matchedRomanizedLyric = "[00:01.00]user romanized"), base.copy(matchedLyric = ""))) {
+            val input = request(edited, source = LyricSourcePreference.Kugou)
+            val loaded = stages.readBackground(input, stages.readFast(input))
+            assertEquals(edited.matchedLyric?.substringAfter(']') ?: "preferred original", loaded.lyrics.firstOrNull()?.text.orEmpty())
+            assertEquals(edited.matchedTranslatedLyric?.substringAfter(']') ?: "preferred translation", loaded.translatedLyrics.firstOrNull()?.text.orEmpty())
+            assertEquals(edited.matchedRomanizedLyric?.substringAfter(']') ?: "preferred romanized", loaded.phoneticLyrics.firstOrNull()?.text.orEmpty())
+        }
+        assertEquals(4, preferredReads)
+    }
+
+    @Test
+    fun `background sources cannot replace confirmed variants and unspecified tracks still use local fallback`() = runTest {
+        val local = remote.copy(album = "__local_files__", mediaUri = "content://media/audio/7")
+        for (managed in listOf(false, true)) {
+            val sources = object : FakeNowPlayingLyricsSources() {
+                override fun hasManagedDownload(song: SongItem) = managed
+                override fun inspectLocal(context: Context, song: SongItem, includeEmbedded: Boolean) =
+                    LocalLyricsScanMetadata("[00:01.00]source original", "[00:01.00]source translation", "[00:01.00]source romanized")
+                override fun fastDownloaded(context: Context, song: SongItem) = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    "[00:01.00]source original", "[00:01.00]source translation", "[00:01.00]source romanized",
+                    hasOriginalSidecar = true, hasTranslatedSidecar = true, hasRomanizedSidecar = true)
+                override suspend fun preferred(song: SongItem, source: LyricSourcePreference): PreferredLyricSourceResult =
+                    error("confirmed user edit must bypass preferred replacement")
+                override suspend fun onlineOriginal(song: SongItem): List<LyricEntry> = error("local fallback must suffice")
+                override suspend fun onlineTranslated(song: SongItem): List<LyricEntry> = error("local fallback must suffice")
+                override suspend fun onlineRomanized(song: SongItem): List<LyricEntry> = error("local fallback must suffice")
+            }
+            val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+            val base = local.copy(lyricSyncEdited = true, lyricSyncRevision = 20)
+            for (edited in listOf(
+                base.copy(matchedLyric = "[00:01.00]user original", matchedTranslatedLyric = "[00:01.00]user translation",
+                    matchedRomanizedLyric = "[00:01.00]user romanized"),
+                base.copy(matchedTranslatedLyric = "[00:01.00]user translation"),
+                base.copy(matchedRomanizedLyric = "[00:01.00]user romanized"),
+                base.copy(matchedLyric = "", matchedTranslatedLyric = "", matchedRomanizedLyric = "")
+            )) {
+                val input = request(edited, source = LyricSourcePreference.Kugou)
+                val loaded = stages.readBackground(input, stages.readFast(input))
+                assertEquals(edited.matchedLyric?.substringAfter(']') ?: "source original", loaded.lyrics.firstOrNull()?.text.orEmpty())
+                assertEquals(edited.matchedTranslatedLyric?.substringAfter(']') ?: "source translation", loaded.translatedLyrics.firstOrNull()?.text.orEmpty())
+                assertEquals(edited.matchedRomanizedLyric?.substringAfter(']') ?: "source romanized", loaded.phoneticLyrics.firstOrNull()?.text.orEmpty())
+            }
+        }
+    }
 
     @Test
     fun `preferred source replaces cached first frame without mixing fallback`() = runTest {

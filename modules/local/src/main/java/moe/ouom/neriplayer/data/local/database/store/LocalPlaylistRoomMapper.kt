@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.local.database.store.stats.toDomain
+import moe.ouom.neriplayer.data.local.database.store.stats.toTrackEntity
+
 
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -33,9 +36,140 @@ internal data class LocalPlaylistRoomValidationResult(
     val firstMismatch: String?
 )
 
+internal data class LocalPlaylistMemberPosition(
+    val playlistId: Long,
+    val identityKey: String,
+    val displayPosition: Int
+)
+
+internal class LocalPlaylistRoomWriteSet {
+    val playlists = ArrayList<LocalPlaylistEntity>()
+    val removedPlaylistIds = ArrayList<Long>()
+    val removedMembers = LinkedHashMap<Long, MutableList<String>>()
+    val members = ArrayList<PlaylistMemberEntity>()
+    val positions = ArrayList<LocalPlaylistMemberPosition>()
+    val removedTokens = ArrayList<PlaylistMemberTokenEntity>()
+    val memberTokens = ArrayList<PlaylistMemberTokenEntity>()
+    val tracks = ArrayList<TrackEntity>()
+    val orphanCandidates = linkedSetOf<String>()
+    val touchedTrackIdentities = linkedSetOf<String>()
+    var domainChanged = false
+}
+
 internal class LocalPlaylistRoomMapper(
     private val gson: Gson = Gson()
 ) {
+    fun toWriteSet(previous: List<LocalPlaylist>, next: List<LocalPlaylist>): LocalPlaylistRoomWriteSet {
+        val changes = LocalPlaylistRoomWriteSet()
+        val previousById = previous.associateBy(LocalPlaylist::id)
+        val previousPositions = previous.withIndex().associate { it.value.id to it.index }
+        val nextIds = next.mapTo(hashSetOf(), LocalPlaylist::id)
+        previous.filter { it.id !in nextIds }.forEach { playlist ->
+            changes.removedPlaylistIds += playlist.id
+            playlist.songs.forEach { changes.orphanCandidates += it.stableKey() }
+        }
+        val changedPlaylists = next.withIndex().filter { (position, playlist) ->
+            previousById[playlist.id] != playlist || previousPositions[playlist.id] != position
+        }
+        changedPlaylists.forEach { (position, playlist) ->
+            val old = previousById[playlist.id]
+            val header = playlist.toEntity(position)
+            if (old?.toEntity(previousPositions.getValue(playlist.id)) != header) changes.playlists += header
+            appendMemberChanges(playlist.id, old?.songs.orEmpty(), playlist.songs, changes)
+        }
+        changes.domainChanged = changedPlaylists.isNotEmpty() || changes.removedPlaylistIds.isNotEmpty()
+        appendFirstTrackCandidates(changedPlaylists.map { it.value }, changes)
+        return changes
+    }
+
+    private fun appendMemberChanges(
+        playlistId: Long,
+        previous: List<SongItem>,
+        next: List<SongItem>,
+        changes: LocalPlaylistRoomWriteSet
+    ) {
+        if (sameOrderedIdentities(previous, next)) {
+            next.forEachIndexed { position, song ->
+                if (previous[position] != song) {
+                    appendMemberUpdate(playlistId, song.stableKey(), previous[position], position, song, position, changes)
+                }
+            }
+            return
+        }
+        val remaining = previous.withIndex().associateByTo(linkedMapOf()) { it.value.stableKey() }
+        next.forEachIndexed { position, song ->
+            val identityKey = song.stableKey()
+            val old = remaining.remove(identityKey)
+            appendMemberUpdate(playlistId, identityKey, old?.value, old?.index, song, position, changes)
+        }
+        remaining.forEach { (identityKey, _) ->
+            changes.removedMembers.getOrPut(playlistId) { ArrayList() } += identityKey
+            changes.orphanCandidates += identityKey
+        }
+    }
+
+    private fun sameOrderedIdentities(previous: List<SongItem>, next: List<SongItem>): Boolean {
+        if (previous.size != next.size) return false
+        return previous.indices.all { index ->
+            previous[index] == next[index] || previous[index].stableKey() == next[index].stableKey()
+        }
+    }
+
+    private fun appendMemberUpdate(
+        playlistId: Long,
+        identityKey: String,
+        previous: SongItem?,
+        previousPosition: Int?,
+        next: SongItem,
+        nextPosition: Int,
+        changes: LocalPlaylistRoomWriteSet
+    ) {
+        val samePayload = previous == next ||
+            previous?.withoutTransientDatabaseState() == next.withoutTransientDatabaseState()
+        if (!samePayload) {
+            changes.members += next.toMemberEntity(playlistId, identityKey, nextPosition)
+            changes.touchedTrackIdentities += identityKey
+            appendTokenChanges(playlistId, identityKey, previous, next, changes)
+        } else if (previousPosition != nextPosition) {
+            changes.positions += LocalPlaylistMemberPosition(playlistId, identityKey, nextPosition)
+        }
+    }
+
+    private fun appendTokenChanges(
+        playlistId: Long,
+        identityKey: String,
+        previous: SongItem?,
+        next: SongItem,
+        changes: LocalPlaylistRoomWriteSet
+    ) {
+        val oldTokens = previous?.syncMembershipTokens.normalizedSyncCausalTokens()
+        val nextTokens = next.syncMembershipTokens.normalizedSyncCausalTokens()
+        if (oldTokens == nextTokens) return
+        val nextSet = nextTokens.toHashSet()
+        oldTokens.forEachIndexed { index, token ->
+            if (token !in nextSet) changes.removedTokens += token.toEntity(playlistId, identityKey, index)
+        }
+        val oldPositions = oldTokens.withIndex().associate { it.value to it.index }
+        nextTokens.forEachIndexed { index, token ->
+            if (oldPositions[token] != index) changes.memberTokens += token.toEntity(playlistId, identityKey, index)
+        }
+    }
+
+    private fun SyncCausalToken.toEntity(playlistId: Long, identityKey: String, index: Int) =
+        PlaylistMemberTokenEntity(playlistId, identityKey, deviceId, counter, index)
+
+    private fun appendFirstTrackCandidates(playlists: List<LocalPlaylist>, changes: LocalPlaylistRoomWriteSet) {
+        val remaining = changes.touchedTrackIdentities.toMutableSet()
+        if (remaining.isEmpty()) return
+        for (playlist in playlists) {
+            for (song in playlist.songs) {
+                val identityKey = song.stableKey()
+                if (remaining.remove(identityKey)) changes.tracks += song.toTrackEntity(identityKey)
+                if (remaining.isEmpty()) return
+            }
+        }
+    }
+
     fun toSnapshot(
         playlists: List<LocalPlaylist>,
         sourceDigest: String? = null,
@@ -51,7 +185,7 @@ internal class LocalPlaylistRoomMapper(
             playlist.songs.forEachIndexed { songIndex, song ->
                 val identity = song.identity()
                 val identityKey = identity.stableKey()
-                trackMap.putIfAbsent(identityKey, song.toTrackEntity(identityKey))
+                trackMap.getOrPut(identityKey) { song.toTrackEntity(identityKey) }
                 memberEntities += song.toMemberEntity(
                     playlistId = playlist.id,
                     identityKey = identityKey,

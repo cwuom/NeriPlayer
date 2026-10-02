@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.lyrics.parser.isNeteaseYrc
 import moe.ouom.neriplayer.lyrics.parser.isTtmlLyrics
 import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -268,19 +269,20 @@ internal fun buildAdvancedSyncedLyrics(
         rawLyrics = rawLyrics,
         lyrics = lyrics
     )
+    if (rawTranslatedLyrics != null) {
+        return baseLyrics.withoutEmbeddedTranslations().attachTranslations(
+            parseNeteaseLyricsAuto(rawTranslatedLyrics), replaceExisting = true
+        )
+    }
     if (showPhoneticAsTranslation) {
+        val phoneticBase = baseLyrics.withoutEmbeddedTranslations()
         return if (translatedLyrics.isNotEmpty()) {
-            baseLyrics.attachTranslations(translatedLyrics, replaceExisting = true)
+            phoneticBase.attachTranslations(translatedLyrics, replaceExisting = true)
         } else {
-            baseLyrics.withPhoneticsAsTranslations()
+            phoneticBase.withPhoneticsAsTranslations()
         }
     }
-    val translationEntries = when {
-        !rawTranslatedLyrics.isNullOrBlank() -> parseNeteaseLrc(rawTranslatedLyrics)
-        translatedLyrics.isNotEmpty() -> translatedLyrics
-        else -> emptyList()
-    }
-    return baseLyrics.attachTranslations(translationEntries)
+    return baseLyrics.attachTranslations(translatedLyrics)
 }
 
 fun buildPhoneticLyricEntries(
@@ -387,6 +389,17 @@ private fun LyricEntry.extractWordContent(index: Int): String {
         cursor = endExclusive
     }
     return ""
+}
+
+private fun SyncedLyrics.withoutEmbeddedTranslations(): SyncedLyrics =
+    copy(lines = lines.map(ISyncedLine::withoutEmbeddedTranslation))
+
+private fun ISyncedLine.withoutEmbeddedTranslation(): ISyncedLine = when (this) {
+    is KaraokeLine.MainKaraokeLine -> copy(translation = null,
+        accompanimentLines = accompanimentLines?.map { it.copy(translation = null) })
+    is KaraokeLine.AccompanimentKaraokeLine -> copy(translation = null)
+    is SyncedLine -> copy(translation = null)
+    else -> this
 }
 
 private fun SyncedLyrics.attachTranslations(

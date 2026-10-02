@@ -14,6 +14,8 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +23,70 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class LocalPlaylistRepositoryRoomStoreTest {
+    @Test
+    fun failedRoomAndFallbackMarkerKeepOldPrimaryAcrossRetriesAndRestart() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val initial = LocalPlaylist(id = 601L, name = "initial")
+            val remote = initial.copy(name = "remote")
+            val roomStore = LocalPlaylistRoomStore(database)
+            roomStore.replacePlaylists(listOf(initial), LocalPlaylistRoomStore.domainDigest(listOf(initial)))
+            val storage = RecordingStorage()
+            val syncStore = RecordingSyncMutationStore()
+            val repository = LocalPlaylistRepository.createForTest(
+                context = context, file = File(context.cacheDir, "failed_room_fallback_unused.json"),
+                normalizePlaylists = { it }, autoSyncEnabled = false,
+                storage = storage, syncMutationStore = syncStore, roomStore = roomStore
+            )
+            val sqlite = database.openHelper.writableDatabase
+            sqlite.execSQL(
+                "CREATE TRIGGER reject_playlist_write BEFORE INSERT ON local_playlist " +
+                    "BEGIN SELECT RAISE(ABORT, 'injected playlist failure'); END"
+            )
+            sqlite.execSQL(
+                "CREATE TRIGGER reject_playlist_fallback BEFORE INSERT ON migration_metadata " +
+                    "WHEN NEW.key = 'local_playlist_cutover_state' AND NEW.value = 'legacy_json' " +
+                    "BEGIN SELECT RAISE(ABORT, 'injected marker failure'); END"
+            )
+
+            repeat(2) {
+                assertNotNull(runCatching {
+                    repository.applySyncedPlaylistsIfUnchanged(listOf(remote), 0L)
+                }.exceptionOrNull())
+                assertEquals(listOf(initial), repository.playlists.value)
+                assertEquals(listOf(initial), roomStore.readIfRoomPrimary())
+                assertTrue(repository.roomStorageEnabled)
+                assertEquals(0L, syncStore.mutationVersion)
+                assertTrue(syncStore.applied.isEmpty())
+            }
+            assertEquals(2, storage.commitCount)
+            assertTrue(requireNotNull(storage.primary).contains("remote"))
+            val restarted = LocalPlaylistRepository.createForTest(
+                context = context, file = File(context.cacheDir, "failed_room_fallback_unused.json"),
+                normalizePlaylists = { it }, autoSyncEnabled = false,
+                storage = storage, syncMutationStore = syncStore, roomStore = roomStore
+            )
+            assertEquals(listOf(initial), restarted.playlists.value)
+
+            sqlite.execSQL("DROP TRIGGER reject_playlist_fallback")
+            assertTrue(repository.applySyncedPlaylistsIfUnchanged(listOf(remote), 0L))
+            assertEquals(listOf(remote), repository.playlists.value)
+            assertFalse(roomStore.isRoomPrimary())
+            assertEquals(listOf(initial), roomStore.readPlaylists())
+
+            val recovered = LocalPlaylistRepository.createForTest(
+                context = context, file = File(context.cacheDir, "failed_room_fallback_unused.json"),
+                normalizePlaylists = { it }, autoSyncEnabled = false,
+                storage = storage, syncMutationStore = syncStore, roomStore = roomStore
+            )
+            assertEquals(listOf(remote), recovered.playlists.value)
+        } finally {
+            database.close()
+        }
+    }
+
     @Test
     fun roomPrimaryOutboxReplaysAndClearsOnRepositoryStartup() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -136,6 +202,22 @@ class LocalPlaylistRepositoryRoomStoreTest {
         override fun clearPendingSyncMutation() {
             pendingCleared = true
         }
+    }
+
+    private class RecordingStorage : LocalPlaylistStorage {
+        var primary: String? = null
+        var commitCount = 0
+
+        override fun readPrimary(): String? = primary
+
+        override fun readBackup(): String? = null
+
+        override fun commit(text: String, rotateBackup: Boolean, replaceBackupWithCommittedPrimary: Boolean) {
+            primary = text
+            commitCount++
+        }
+
+        override fun quarantinePrimary(): File? = null
     }
 
     private class RecordingSyncMutationStore : LocalPlaylistSyncMutationStore {

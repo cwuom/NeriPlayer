@@ -167,6 +167,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsScreen
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsSecondaryLineMode
 import moe.ouom.neriplayer.ui.screen.lyrics.hasDisplayableLyricTranslation
+import moe.ouom.neriplayer.ui.screen.lyrics.resolveEffectivePhoneticLyrics
 import moe.ouom.neriplayer.ui.screen.lyrics.resolveLyricsSecondaryLineMode
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverActionToolbar
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverPanel
@@ -193,6 +194,8 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequ
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldAdvanceNowPlayingLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldShowNowPlayingEmbeddedLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsLoadOwner
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
+import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsRefreshVersions
 import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekEnabled
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
@@ -703,14 +706,10 @@ fun NowPlayingScreen(
 
     val currentLyricSourceKey = currentSong?.stableKey()
     val lyricsLoadOwner = rememberNowPlayingLyricsLoadOwner(
-        context = context,
-        song = currentSong,
-        currentMediaUrl = currentMediaUrl,
-        preferWordTimedLyrics = preferWordTimedLyrics,
-        defaultLyricSource = defaultLyricSource,
-        lyricsPreferenceRevision = lyricsPreferenceRevision,
-        downloadPresenceVersion = downloadPresenceVersion,
-        downloadedLyricsRefreshVersion = downloadedLyricsRefreshVersion
+        request = NowPlayingLyricsLoadRequest(context, currentSong, currentMediaUrl,
+            preferWordTimedLyrics, defaultLyricSource, cachedPreferredLyrics = null),
+        versions = NowPlayingLyricsRefreshVersions(lyricsPreferenceRevision,
+            downloadPresenceVersion, downloadedLyricsRefreshVersion)
     )
     val loadedLyricsState = lyricsLoadOwner.state
     val secondaryLyricsResolved = lyricsLoadOwner.secondaryResolved
@@ -876,7 +875,7 @@ fun NowPlayingScreen(
 
     val phoneticLyrics =
         remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
-            remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
+            resolveEffectivePhoneticLyrics(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics)
         }
     val hasTranslation = remember(rawTranslatedLyricsText, translatedLyrics, lyrics) {
         hasDisplayableLyricTranslation(rawTranslatedLyricsText, translatedLyrics, lyrics)
@@ -1088,6 +1087,7 @@ fun NowPlayingScreen(
                             lyrics = lyrics,
                             rawLyrics = rawLyricsText,
                             rawTranslatedLyrics = rawTranslatedLyricsText,
+                            rawPhoneticLyrics = rawPhoneticLyricsText,
                             lyricBlurEnabled = lyricBlurEnabled,
                             lyricBlurAmount = lyricBlurAmount,
                             lyricFontScales = lyricFontScales,

@@ -16,7 +16,7 @@ internal object SyncSongMetadataMergePolicy {
         candidates: List<SyncSong>
     ): SyncSong {
         if (selected.syncMetadataVersion >= CURRENT_SYNC_METADATA_VERSION) {
-            return selected
+            return resolveLyricState(selected, candidates)
         }
 
         val currentPayload = candidates
@@ -24,10 +24,16 @@ internal object SyncSongMetadataMergePolicy {
             .filter { it.syncMetadataVersion >= CURRENT_SYNC_METADATA_VERSION }
             .maxByOrNull(::canonicalPayloadKey)
         if (currentPayload != null) {
-            return currentPayload
+            return resolveLyricState(currentPayload, candidates)
         }
 
-        return fillLegacySyncSongMetadata(selected, candidates)
+        return resolveLyricState(fillLegacySyncSongMetadata(selected, candidates), candidates)
+    }
+
+    private fun resolveLyricState(selected: SyncSong, candidates: List<SyncSong>): SyncSong {
+        // 旧元数据补全仍返回旧结构，协议迁移集中在快照输出与独立歌词记录阶段
+        if (selected.lyricSyncEdited == null && candidates.all { it.lyricSyncEdited == null }) return selected
+        return SyncSongLyricMergePolicy.merge(selected, candidates)
     }
 
     fun resolveAddedAt(selectedAddedAt: Long, candidates: List<SyncSong>): Long {

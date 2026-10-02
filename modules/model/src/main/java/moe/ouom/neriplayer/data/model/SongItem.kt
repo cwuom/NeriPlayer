@@ -48,5 +48,8 @@ data class SongItem(
     // playlist membership time is separate from the source file creation time
     val membershipAddedAtMs: Long? = null,
     // 保留迁移前的文件修改时间，复制后的 Provider 时间不能重排原有歌曲
-    val sourceModifiedAtMs: Long? = null
+    val sourceModifiedAtMs: Long? = null,
+    val lyricSyncRevision: Long = 0L,
+    // null 表示旧数据尚未区分用户修改与网络缓存
+    val lyricSyncEdited: Boolean? = null
 ) : Parcelable

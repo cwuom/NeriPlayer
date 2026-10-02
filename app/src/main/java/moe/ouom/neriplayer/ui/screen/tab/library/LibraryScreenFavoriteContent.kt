@@ -145,7 +145,9 @@ internal fun FavoritePlaylistList(
             else -> emptyList()
         }
     }
-    val hotPlaylists = if (isHotCategory) rememberHotPlaylists() else null
+    var hotPlaylistRetry by remember { mutableStateOf(0) }
+    val hotPlaylistResult = if (isHotCategory) rememberHotPlaylists(hotPlaylistRetry) else null
+    val hotPlaylists = hotPlaylistResult?.getOrNull()
 
     fun favoriteKey(favorite: FavoritePlaylist): String {
         return "${favorite.source}:${favorite.id}"
@@ -369,7 +371,11 @@ internal fun FavoritePlaylistList(
             }
         }
         if (isHotCategory) {
-            if (hotPlaylists == null) {
+            if (hotPlaylistResult?.isFailure == true) {
+                item(key = "favorite_hot_failed") {
+                    HapticTextButton(onClick = { hotPlaylistRetry += 1 }) { Text(stringResource(CoreCommonR.string.stats_load_failed)) }
+                }
+            } else if (hotPlaylists == null) {
                 item(key = "favorite_hot_loading") {
                     Box(
                         modifier = Modifier
@@ -391,7 +397,7 @@ internal fun FavoritePlaylistList(
                     } else {
                         stringResource(
                             CoreCommonR.string.library_hot_playlist_summary,
-                            playlist.tracks.size,
+                            playlist.trackCount,
                             formatPlayCount(context, playlist.totalPlayCount)
                         )
                     }
