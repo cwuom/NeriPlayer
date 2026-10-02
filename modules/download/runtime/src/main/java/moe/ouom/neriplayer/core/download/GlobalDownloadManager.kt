@@ -615,6 +615,7 @@ object GlobalDownloadManager {
     internal var refreshJob: Job? = null
     internal val refreshWaiters =
         mutableSetOf<CompletableDeferred<ManagedLibraryRefreshOutcome>>()
+    internal val directoryRefreshOperations = mutableSetOf<String>()
     internal var activeRefreshForceRefresh = false
     internal var catalogPersistJob: Job? = null
     internal val catalogPersistGeneration = AtomicLong(0L)
@@ -919,6 +920,14 @@ object GlobalDownloadManager {
         forceRefresh: Boolean = false
     ): ManagedLibraryRefreshOutcome {
         return this.scanLocalFilesAwaitImpl(context, forceRefresh)
+    }
+
+    fun refreshDownloadDirectory(
+        context: Context,
+        operationId: String,
+        onResult: suspend (ManagedLibraryRefreshOutcome) -> Unit
+    ): Deferred<Unit> {
+        return this.refreshDownloadDirectoryImpl(context, operationId, onResult)
     }
 
     internal fun shouldCompleteProcessingAfterCatalogPublish(

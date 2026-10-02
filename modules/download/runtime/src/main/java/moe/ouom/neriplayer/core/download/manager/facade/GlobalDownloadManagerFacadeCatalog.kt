@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.DownloadedSongMet
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -57,6 +58,7 @@ import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -82,10 +84,38 @@ internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     }
 }
 
+internal fun GlobalDownloadManager.refreshDownloadDirectoryImpl(
+    context: Context,
+    operationId: String,
+    onResult: suspend (ManagedLibraryRefreshOutcome) -> Unit
+): Deferred<Unit> {
+    val appContext = context.applicationContext
+    synchronized(this) { directoryRefreshOperations += operationId }
+    return scope.async {
+        try {
+            onResult(scanLocalFilesAwait(appContext, forceRefresh = true))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            runCatching { ManagedLibraryProcessingCoordinator.waitingForRetry(appContext, operationId) }
+            NPLogger.w(TAG, "下载目录扫描收尾失败，保留处理状态: ${error.message}", error)
+            throw error
+        }
+    }.also { task ->
+        task.invokeOnCompletion {
+            synchronized(this@refreshDownloadDirectoryImpl) {
+                directoryRefreshOperations.remove(operationId)
+            }
+        }
+    }
+}
+
 internal fun GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublishImpl(
     state: ManagedLibraryProcessingState,
     migrationRequestActive: Boolean
 ): Boolean {
+    val operationId = state.operationId
+    if (operationId != null && synchronized(this) { operationId in directoryRefreshOperations }) return false
     // 迁移由 Worker 校验目标后结束，直接切换目录的等待态可由后续扫描收敛
     return when (state) {
         is ManagedLibraryProcessingState.Running ->

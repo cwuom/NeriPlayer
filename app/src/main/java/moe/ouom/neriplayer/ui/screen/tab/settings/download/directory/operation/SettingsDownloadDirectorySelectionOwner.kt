@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.runDownload
 internal interface DownloadDirectorySelectionGateway {
     suspend fun persistGrant(targetUri: String, onPersisted: () -> Unit)
     suspend fun describe(targetUri: String): String
+    fun isConfiguredDirectory(targetUri: String): Boolean
     suspend fun releaseGrant(targetUri: String)
 }
 
@@ -45,6 +46,9 @@ internal class AndroidDownloadDirectorySelectionGateway(
         }
     )
 
+    override fun isConfiguredDirectory(targetUri: String): Boolean =
+        ManagedDownloadStorage.isConfiguredDirectoryUri(targetUri)
+
     override suspend fun releaseGrant(targetUri: String) {
         withContext(NonCancellable + Dispatchers.IO) {
             ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
@@ -68,7 +72,10 @@ private class SelectedDownloadDirectoryGrant(
     }
 
     suspend fun releaseIfNeeded() {
-        if (grantPersisted && !keepGrant) gateway.releaseGrant(targetUri)
+        // 目录生效后权限已交给存储层，离开设置页不能撤销它
+        if (grantPersisted && !keepGrant && !gateway.isConfiguredDirectory(targetUri)) {
+            gateway.releaseGrant(targetUri)
+        }
     }
 }
 

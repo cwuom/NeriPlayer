@@ -5,7 +5,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectoryPreparationResult
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.directory.operation.DownloadDirectorySelectionGateway
@@ -126,6 +129,46 @@ class SettingsDownloadDirectorySelectionOwnerTest {
         assertFalse(fixture.preparing.value)
     }
 
+    @Test
+    fun `cancellation after applying the selected directory keeps its configured grant`() = runTest {
+        val fixture = Fixture(this).apply {
+            beforePreparationReturns = { uri ->
+                gateway.configuredUri = uri
+                awaitCancellation()
+            }
+        }
+
+        fixture.owner.onPicked("content://new")
+        runCurrent()
+        val caller = requireNotNull(fixture.job.value)
+        caller.cancelAndJoin()
+
+        assertEquals(listOf("guard", "persist", "describe", "prepare:content://new:New"), fixture.events)
+        assertTrue(caller.isCancelled)
+        assertFalse(fixture.preparing.value)
+        assertNull(fixture.job.value)
+    }
+
+    @Test
+    fun `cancellation before applying the selected directory releases the unclaimed grant`() = runTest {
+        val fixture = Fixture(this).apply {
+            beforePreparationReturns = { awaitCancellation() }
+        }
+
+        fixture.owner.onPicked("content://new")
+        runCurrent()
+        val caller = requireNotNull(fixture.job.value)
+        caller.cancelAndJoin()
+
+        assertEquals(
+            listOf("guard", "persist", "describe", "prepare:content://new:New", "release:content://new"),
+            fixture.events
+        )
+        assertTrue(caller.isCancelled)
+        assertFalse(fixture.preparing.value)
+        assertNull(fixture.job.value)
+    }
+
     private class Fixture(scope: CoroutineScope) {
         val events = mutableListOf<String>()
         val gateway = FakeGateway(events)
@@ -134,6 +177,7 @@ class SettingsDownloadDirectorySelectionOwnerTest {
         val permissionLost = mutableStateOf(true)
         var blocked = false
         var preparation = DownloadDirectoryPreparationResult.KEEP_PERSISTED_PERMISSION
+        var beforePreparationReturns: suspend (String) -> Unit = {}
         val owner = DownloadDirectorySelectionOwner(
             gateway = gateway,
             scope = scope,
@@ -143,6 +187,7 @@ class SettingsDownloadDirectorySelectionOwnerTest {
             isBlocked = { events += "guard"; blocked },
             prepare = { uri, summary ->
                 events += "prepare:$uri:$summary"
+                beforePreparationReturns(uri)
                 preparation
             },
             onError = { events += "error:${it.message}" }
@@ -154,6 +199,7 @@ class SettingsDownloadDirectorySelectionOwnerTest {
         var persistError: Exception? = null
         var describeError: Exception? = null
         var cancelAfterPersist = false
+        var configuredUri: String? = null
 
         override suspend fun persistGrant(targetUri: String, onPersisted: () -> Unit) {
             events += "persist"
@@ -167,6 +213,8 @@ class SettingsDownloadDirectorySelectionOwnerTest {
             describeError?.let { throw it }
             return "New"
         }
+
+        override fun isConfiguredDirectory(targetUri: String): Boolean = configuredUri == targetUri
 
         override suspend fun releaseGrant(targetUri: String) {
             events += "release:$targetUri"
