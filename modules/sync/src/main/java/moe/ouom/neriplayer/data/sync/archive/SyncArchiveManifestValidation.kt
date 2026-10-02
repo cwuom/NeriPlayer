@@ -7,6 +7,7 @@ internal object SyncArchiveManifestValidation {
         validateCounts(manifest)
         validateRoot(manifest)
         require(SyncArchiveRecords.header(manifest.header) == manifest.header) { "Sync manifest embeds unexpected records" }
+        manifest.legacyLyrics?.validate()
     }
 
     private fun validateNonnegativeTotals(manifest: SyncArchiveManifest) {

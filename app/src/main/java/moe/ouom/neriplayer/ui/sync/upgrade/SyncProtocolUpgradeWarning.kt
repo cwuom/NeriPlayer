@@ -26,7 +26,7 @@ internal fun SyncProtocolUpgradeWarning(
     state: SyncProtocolUpgradeUiState,
     onConfirm: () -> Unit
 ) {
-    if (state.approved != false) return
+    if (state.approved != false || state.challenge == null) return
     val orange = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFFFB74D) else Color(0xFF934600)
     Surface(
         onClick = onConfirm,

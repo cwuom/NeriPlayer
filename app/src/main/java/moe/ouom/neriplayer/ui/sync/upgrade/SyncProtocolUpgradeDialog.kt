@@ -43,7 +43,6 @@ internal fun SyncProtocolUpgradeDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(stringResource(CoreCommonR.string.sync_upgrade_message))
-                Text(stringResource(CoreCommonR.string.sync_upgrade_legacy_lyrics))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

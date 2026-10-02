@@ -20,9 +20,9 @@ v3 的根清单是唯一发布点。GitHub 固定 HEAD 读取，最终通过 Gra
 
 The v3 root manifest is the publication point. GitHub reads a fixed HEAD and atomically updates the ref through GraphQL `updateRefs` with `beforeOid` and `force=false`. WebDAV creates objects and the initial manifest with `If-None-Match: *`; later manifest writes require `If-Match` with a strong ETag. Publication stops when a strong condition is unavailable. Network lyric caches are omitted; user edits and resets have independent durable versions. Legacy lyrics with unknown provenance are preserved conservatively. Local credentials, device identities, and deletion state are preserved; legacy payloads are read only for migration.
 
-新格式不向下兼容。启动弹窗与同步设置共用本机升级批准状态；用户必须声明所有参与同步的设备都已更新。未确认时，两种同步 Manager 阻止实际数据同步，后台任务静默结束。确认后的下一次同步才迁移云端旧数据，清除配置或导入设置不会自动批准。
+默认使用 V3，空远端或已有 V3 数据直接同步。读取到合法的传统云端数据后，才要求用户声明所有参与同步的设备已更新；确认绑定同步地址与旧内容指纹，其他地址或内容变化不能沿用许可。未确认时不迁移、不应用同步数据，后台任务静默结束。启动弹窗和设置顶部警告只显示当前已配置地址的待升级状态，设置显示“同步数据库版本”；确认后继续原同步请求。新格式不向下兼容，清除配置或导入设置不会批准传统数据迁移。
 
-The new format is not backward compatible. The startup dialog and sync settings share local upgrade approval; the user must confirm that every participating device has been updated. Until confirmation, both managers block data sync and background jobs finish quietly. The next sync after confirmation migrates legacy cloud data. Clearing configuration or importing settings does not grant approval.
+V3 is enabled by default, and empty or existing V3 remotes sync directly. A valid traditional cloud payload requires confirmation that every participating device has been updated. Approval is bound to the target and exact legacy content fingerprint; another target or changed content requires a new confirmation. Pending migration does not apply local data, and background jobs finish quietly. Startup and settings warnings concern configured targets only, and settings display the sync database version. Confirmation resumes the original sync request. The new format is not backward compatible; clearing or importing configuration does not approve traditional data migration.
 
 分块解决单报文容量限制，变化块复用减少增量流量；初次全库总流量不能保证 3 MB。Android 仓库和合并仍保留全量列表，真实百万、千万规模的全过程有界内存尚未完成。
 

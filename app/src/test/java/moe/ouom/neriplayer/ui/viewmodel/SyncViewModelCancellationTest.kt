@@ -16,6 +16,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,6 +38,22 @@ class SyncViewModelCancellationTest {
         gates.forEach { it.complete(Unit) }
         viewModels.forEach { it.viewModelScope.cancel() }
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `legacy remote requests confirmation without publishing a sync failure`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val challenge = SyncProtocolUpgradeChallenge("a".repeat(64), "1".repeat(64))
+        for (fixture in fixtures()) {
+            var requested: SyncProtocolUpgradeChallenge? = null
+            fixture.setOperation { Result.failure(SyncProtocolUpgradeRequiredException("upgrade", challenge)) }
+            fixture.performWithPrompt(mockContext()) { requested = it }
+            testScheduler.runCurrent()
+            assertEquals(challenge, requested)
+            assertFalse(fixture.isSyncing())
+            assertNull(fixture.errorMessage())
+            assertNull(fixture.successMessage())
+        }
     }
 
     @Test
@@ -130,18 +148,20 @@ class SyncViewModelCancellationTest {
         val github = GitHubSyncViewModel().also(viewModels::add)
         val webdav = WebDavSyncViewModel().also(viewModels::add)
         return listOf(
-            Fixture({ github.syncOperation = it }, github::performSync, github::clearConfiguration,
-                { github.uiState.value.isSyncing }, { github.uiState.value.successMessage }),
-            Fixture({ webdav.syncOperation = it }, webdav::performSync, webdav::clearConfiguration,
-                { webdav.uiState.value.isSyncing }, { webdav.uiState.value.successMessage })
+            Fixture({ github.syncOperation = it }, { github.performSync(it) }, github::performSync, github::clearConfiguration,
+                { github.uiState.value.isSyncing }, { github.uiState.value.successMessage }, { github.uiState.value.errorMessage }),
+            Fixture({ webdav.syncOperation = it }, { webdav.performSync(it) }, webdav::performSync, webdav::clearConfiguration,
+                { webdav.uiState.value.isSyncing }, { webdav.uiState.value.successMessage }, { webdav.uiState.value.errorMessage })
         )
     }
 
     private data class Fixture(
         val setOperation: (suspend () -> Result<SyncResult>) -> Unit,
         val perform: (Context) -> Unit,
+        val performWithPrompt: (Context, (SyncProtocolUpgradeChallenge) -> Unit) -> Unit,
         val clear: (Context) -> Unit,
         val isSyncing: () -> Boolean,
-        val successMessage: () -> String?
+        val successMessage: () -> String?,
+        val errorMessage: () -> String?
     )
 }

@@ -23,228 +23,241 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
+import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 class SyncProtocolUpgradeRepositoryTest {
     @get:Rule val temporary = TemporaryFolder()
+    private val first = SyncProtocolUpgradeChallenge("a".repeat(64), "1".repeat(64))
+    private val second = SyncProtocolUpgradeChallenge("b".repeat(64), "2".repeat(64))
 
-    @Test
-    fun `approval is persisted before sync and survives reopening the real file`() = runTest {
+    @Test fun `new installation uses the current sync format without confirmation`() = runTest {
+        val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore())
+        assertTrue(repository.approvedFlow.first())
+        assertNull(repository.pendingChallengeFlow.first())
+        assertEquals(3, repository.versionFlow(first.targetId).first())
+        assertEquals("synced", repository.executeIfApproved { Result.success("synced") }.getOrThrow())
+    }
+
+    @Test fun `legacy approval persists and only authorizes the exact detected content`() = runTest {
         val file = File(temporary.root, "approval.preferences_pb")
         withFileStore(file) { store ->
             val repository = SyncProtocolUpgradeRepository(store)
-            assertFalse(repository.approvedFlow.first())
-            repository.confirmAllDevicesUpdated(true)
-            assertTrue(repository.approvedFlow.first())
+            detect(repository, first)
+            assertEquals(0, repository.versionFlow(first.targetId).first())
+            assertFalse(repository.canSyncTarget(first.targetId))
+            repository.confirmAllDevicesUpdated(true, first)
+            assertTrue(repository.canSyncTarget(first.targetId))
             assertTrue(file.isFile)
         }
         withFileStore(file) { store ->
             val repository = SyncProtocolUpgradeRepository(store)
-            assertTrue(repository.approvedFlow.first())
-            assertEquals("synced", repository.executeIfApproved { Result.success("synced") }.getOrThrow())
+            repository.requireLegacyMigration(first)
+            assertNull(repository.pendingChallengeFlow.first())
+            detect(repository, first.copy(fingerprint = "3".repeat(64)))
         }
     }
 
-    @Test
-    fun `declining the all devices declaration does not write or approve`() = runTest {
+    @Test fun `old global approval cannot authorize newly detected legacy data`() = runTest {
+        for (version in listOf(2, 3)) {
+            val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore(preferencesOf(ApprovedVersion to version)))
+            assertTrue(repository.approvedFlow.first())
+            detect(repository, first)
+        }
+    }
+
+    @Test fun `approval cannot cross targets and a stale challenge cannot be confirmed`() = runTest {
+        val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore())
+        detect(repository, first)
+        repository.confirmAllDevicesUpdated(true, first)
+        detect(repository, second)
+        assertTrue(repository.canSyncTarget(first.targetId))
+        assertFalse(repository.canSyncTarget(second.targetId))
+        assertEquals(0, repository.versionFlow(first.targetId).first())
+        assertEquals(0, repository.versionFlow(second.targetId).first())
+        val changed = second.copy(fingerprint = "4".repeat(64))
+        detect(repository, changed)
+        assertTrue(runCatching { repository.confirmAllDevicesUpdated(true, second) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+        assertEquals(changed, repository.pendingChallengeFlow.first())
+        repository.confirmAllDevicesUpdated(true, changed)
+        repository.requireLegacyMigration(changed)
+    }
+
+    @Test fun `current remote observation consumes the old approval and legacy return requires confirmation`() = runTest {
+        val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore())
+        detect(repository, first)
+        repository.confirmAllDevicesUpdated(true, first)
+        repository.markCurrent(first.targetId)
+        assertNull(repository.pendingChallengeFlow.first())
+        assertEquals(3, repository.versionFlow(first.targetId).first())
+        detect(repository, first)
+    }
+
+    @Test fun `confirmation requires a detected challenge and the all devices declaration`() = runTest {
         val store = FaultInjectingDataStore()
         val repository = SyncProtocolUpgradeRepository(store)
-        assertTrue(runCatching { repository.confirmAllDevicesUpdated(false) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { repository.confirmAllDevicesUpdated(false, first) }.exceptionOrNull() is IllegalArgumentException)
         assertEquals(0, store.writeAttempts)
-        assertFalse(repository.approvedFlow.first())
+        assertTrue(runCatching { repository.confirmAllDevicesUpdated(true, first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+        assertNull(repository.pendingChallengeFlow.first())
+        assertTrue(runCatching { repository.confirmAllDevicesUpdated(true) }.exceptionOrNull() is IllegalStateException)
+        detect(repository, first)
+        detect(repository, second)
+        assertTrue(runCatching { repository.confirmAllDevicesUpdated(true) }.exceptionOrNull() is IllegalStateException)
     }
 
-    @Test
-    fun `pending approval returns typed failure without invoking the sync action`() = runTest {
-        val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore()) { "upgrade required" }
-        val failure = repository.executeIfApproved<String> { error("sync must not run") }.exceptionOrNull()
-        assertTrue(failure is SyncProtocolUpgradeRequiredException)
-        assertEquals("upgrade required", failure?.message)
-    }
-
-    @Test
-    fun `confirmation permits the sync action and preserves its result`() = runTest {
+    @Test fun `pending challenge permits probing without granting migration permission`() = runTest {
         val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore())
-        repository.confirmAllDevicesUpdated(true)
-        var calls = 0
+        detect(repository, first)
         val failure = IOException("backend failed")
-        val result = repository.executeIfApproved<String> { calls++; Result.failure(failure) }
-        assertEquals(1, calls)
-        assertSame(failure, result.exceptionOrNull())
+        assertSame(failure, repository.executeIfApproved<String> { Result.failure(failure) }.exceptionOrNull())
+        detect(repository, first)
     }
 
-    @Test
-    fun `older protocol approval still requires a new explicit confirmation`() = runTest {
-        val store = FaultInjectingDataStore(preferencesOf(ApprovedVersion to 2))
-        val repository = SyncProtocolUpgradeRepository(store)
-        assertFalse(repository.approvedFlow.first())
-        assertTrue(repository.executeIfApproved<String> { error("sync must not run") }.isFailure)
-        repository.confirmAllDevicesUpdated(true)
-        assertEquals(SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION, store.data.first()[ApprovedVersion])
-        assertTrue(repository.approvedFlow.first())
-    }
-
-    @Test
-    fun `future approval stays blocked and confirmation cannot downgrade its durable version`() = runTest {
+    @Test fun `future approval cannot be read synced migrated or downgraded`() = runTest {
+        val future = SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION + 1
         val file = File(temporary.root, "future.preferences_pb")
-        val futureVersion = SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION + 1
         withFileStore(file) { store ->
-            store.edit { it[ApprovedVersion] = futureVersion }
+            store.edit { it[ApprovedVersion] = future }
             val repository = SyncProtocolUpgradeRepository(store)
             assertFalse(repository.approvedFlow.first())
-            assertTrue(repository.executeIfApproved<String> { error("sync must not run") }
-                .exceptionOrNull() is SyncProtocolUpgradeRequiredException)
-            assertTrue(runCatching { repository.confirmAllDevicesUpdated(true) }
-                .exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+            assertEquals(future, repository.versionFlow(first.targetId).first())
+            assertTrue(repository.executeIfApproved<String> { error("must not sync") }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+            assertTrue(runCatching { repository.requireLegacyMigration(first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+            assertTrue(runCatching { repository.confirmAllDevicesUpdated(true, first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+            assertTrue(runCatching { repository.markCurrent(first.targetId) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+            assertTrue(runCatching { repository.pendingChallengeFlow.first() }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
         }
-        withFileStore(file) { store ->
-            assertEquals(futureVersion, store.data.first()[ApprovedVersion])
-            assertFalse(SyncProtocolUpgradeRepository(store).approvedFlow.first())
-        }
+        withFileStore(file) { store -> assertEquals(future, store.data.first()[ApprovedVersion]) }
     }
 
-    @Test
-    fun `failed durable update does not publish optimistic approval and can retry`() = runTest {
-        val failure = IOException("disk full")
-        val store = FaultInjectingDataStore().apply { writeFailure = failure }
+    @Test fun `failed confirmation preserves pending state and allows retry`() = runTest {
+        val store = FaultInjectingDataStore()
         val repository = SyncProtocolUpgradeRepository(store)
-        assertSame(failure, runCatching { repository.confirmAllDevicesUpdated(true) }.exceptionOrNull())
-        assertFalse(repository.approvedFlow.first())
-        assertTrue(repository.executeIfApproved<String> { error("sync must not run") }
-            .exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+        detect(repository, first)
+        val failure = IOException("disk full")
+        store.writeFailure = failure
+        assertSame(failure, runCatching { repository.confirmAllDevicesUpdated(true, first) }.exceptionOrNull())
         store.writeFailure = null
-        repository.confirmAllDevicesUpdated(true)
-        assertTrue(repository.approvedFlow.first())
+        detect(repository, first)
+        repository.confirmAllDevicesUpdated(true, first)
+        repository.requireLegacyMigration(first)
     }
 
-    @Test
-    fun `failed real file replacement cannot approve from the optimistic DataStore cache`() = runTest {
+    @Test fun `failed real file replacement cannot approve from optimistic cache`() = runTest {
         val file = File(temporary.root, "blocked.preferences_pb")
+        val backup = File(temporary.root, "blocked.backup")
         val blocker = File(file, "blocker")
         withFileStore(file) { store ->
+            detect(SyncProtocolUpgradeRepository(store), first)
             var blockReplacement = true
             val failingStore = object : DataStore<Preferences> {
                 override val data = store.data
-
-                override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
-                    return store.updateData { preferences ->
-                        val updated = transform(preferences)
-                        if (blockReplacement) {
-                            assertTrue(file.mkdir())
-                            blocker.writeText("block replacement")
-                            blockReplacement = false
-                        }
-                        updated
+                override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = store.updateData { preferences ->
+                    val updated = transform(preferences)
+                    if (blockReplacement && updated != preferences) {
+                        assertTrue(file.renameTo(backup))
+                        assertTrue(file.mkdir())
+                        blocker.writeText("block replacement")
+                        blockReplacement = false
                     }
+                    updated
                 }
             }
             val repository = SyncProtocolUpgradeRepository(failingStore)
-            assertFalse(repository.approvedFlow.first())
-            assertTrue(runCatching { repository.confirmAllDevicesUpdated(true) }.exceptionOrNull() is IOException)
-            assertTrue(repository.executeIfApproved<String> { error("sync must not run") }.exceptionOrNull() is IOException)
+            assertTrue(runCatching { repository.confirmAllDevicesUpdated(true, first) }.exceptionOrNull() is IOException)
+            assertTrue(runCatching { repository.requireLegacyMigration(first) }.exceptionOrNull() is IOException)
             assertTrue(blocker.delete())
             assertTrue(file.delete())
-            assertFalse(repository.approvedFlow.first())
-            repository.confirmAllDevicesUpdated(true)
-            assertTrue(repository.approvedFlow.first())
+            assertTrue(backup.renameTo(file))
         }
         withFileStore(file) { store ->
-            assertTrue(SyncProtocolUpgradeRepository(store).approvedFlow.first())
+            val repository = SyncProtocolUpgradeRepository(store)
+            detect(repository, first)
+            repository.confirmAllDevicesUpdated(true, first)
+            repository.requireLegacyMigration(first)
         }
     }
 
-    @Test
-    fun `cancelled durable update propagates cancellation and leaves sync blocked`() = runTest {
-        val cancellation = CancellationException("cancelled save")
-        val store = FaultInjectingDataStore().apply { writeFailure = cancellation }
+    @Test fun `cancelled confirmation does not authorize migration`() = runTest {
+        val store = FaultInjectingDataStore()
         val repository = SyncProtocolUpgradeRepository(store)
-        assertSame(cancellation, runCatching { repository.confirmAllDevicesUpdated(true) }.exceptionOrNull())
-        assertFalse(repository.approvedFlow.first())
-        assertTrue(repository.executeIfApproved<String> { error("sync must not run") }
-            .exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+        detect(repository, first)
+        val cancellation = CancellationException("cancelled save")
+        store.writeFailure = cancellation
+        assertSame(cancellation, runCatching { repository.confirmAllDevicesUpdated(true, first) }.exceptionOrNull())
+        store.writeFailure = null
+        detect(repository, first)
     }
 
-    @Test
-    fun `cancelling confirmation during the real DataStore transaction cannot approve after reopening`() = runTest {
+    @Test fun `cancelling the real confirmation transaction cannot approve after reopening`() = runTest {
         val file = File(temporary.root, "cancelled.preferences_pb")
         withFileStore(file) { store ->
+            detect(SyncProtocolUpgradeRepository(store), first)
             val saving = CompletableDeferred<Unit>()
             val blockedStore = object : DataStore<Preferences> {
                 override val data = store.data
-
-                override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
-                    return store.updateData { preferences ->
-                        val updated = transform(preferences)
+                override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = store.updateData { preferences ->
+                    val updated = transform(preferences)
+                    if (updated != preferences) {
                         saving.complete(Unit)
                         CompletableDeferred<Unit>().await()
-                        updated
                     }
+                    updated
                 }
             }
             val repository = SyncProtocolUpgradeRepository(blockedStore)
-            val confirmation = launch { repository.confirmAllDevicesUpdated(true) }
+            val confirmation = launch { repository.confirmAllDevicesUpdated(true, first) }
             saving.await()
             confirmation.cancelAndJoin()
             assertTrue(confirmation.isCancelled)
-            assertFalse(repository.approvedFlow.first())
         }
-        withFileStore(file) { store ->
-            assertFalse(SyncProtocolUpgradeRepository(store).approvedFlow.first())
-        }
+        withFileStore(file) { store -> detect(SyncProtocolUpgradeRepository(store), first) }
     }
 
-    @Test
-    fun `approval read failure is returned without invoking sync and confirmation cannot bypass it`() = runTest {
+    @Test fun `read failure cannot invoke sync and can retry after recovery`() = runTest {
         val failure = IOException("approval unavailable")
         val store = FaultInjectingDataStore().apply { readFailure = failure }
         val repository = SyncProtocolUpgradeRepository(store)
-        assertSame(failure, repository.executeIfApproved<String> { error("sync must not run") }.exceptionOrNull())
-        assertSame(failure, runCatching { repository.confirmAllDevicesUpdated(true) }.exceptionOrNull())
+        assertSame(failure, repository.executeIfApproved<String> { error("must not sync") }.exceptionOrNull())
+        assertSame(failure, runCatching { repository.confirmAllDevicesUpdated(true, first) }.exceptionOrNull())
         store.readFailure = null
-        assertFalse(repository.approvedFlow.first())
+        assertTrue(repository.approvedFlow.first())
     }
 
-    @Test
-    fun `cancelled approval read is propagated without invoking sync`() = runTest {
-        val cancellation = CancellationException("cancelled read")
+    @Test fun `reads thrown actions and returned action results propagate cancellation`() = runTest {
+        val cancellation = CancellationException("cancelled")
         val store = FaultInjectingDataStore().apply { readFailure = cancellation }
         val repository = SyncProtocolUpgradeRepository(store)
-        assertSame(cancellation, runCatching {
-            repository.executeIfApproved<String> { error("sync must not run") }
-        }.exceptionOrNull())
+        assertSame(cancellation, runCatching { repository.executeIfApproved<String> { error("must not sync") } }.exceptionOrNull())
+        store.readFailure = null
+        assertSame(cancellation, runCatching { repository.executeIfApproved<String> { throw cancellation } }.exceptionOrNull())
+        assertSame(cancellation, runCatching { repository.executeIfApproved<String> { Result.failure(cancellation) } }.exceptionOrNull())
     }
 
-    @Test
-    fun `sync action cancellation is propagated when thrown or returned`() = runTest {
-        val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore())
-        repository.confirmAllDevicesUpdated(true)
-        val cancellation = CancellationException("cancelled sync")
-        assertSame(cancellation, runCatching {
-            repository.executeIfApproved<String> { throw cancellation }
-        }.exceptionOrNull())
-        assertSame(cancellation, runCatching {
-            repository.executeIfApproved<String> { Result.failure(cancellation) }
-        }.exceptionOrNull())
+    @Test fun `target identity normalization retains WebDAV account separation`() {
+        assertEquals(SyncProtocolUpgradeRepository.githubTargetHash(" Owner ", " Repo "), SyncProtocolUpgradeRepository.githubTargetHash("owner", "repo"))
+        assertEquals(SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav/", "/music/", "user"), SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav", "music", "user"))
+        assertFalse(SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav", "music", "user") == SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav", "music", "other"))
+        assertFalse(SyncProtocolUpgradeRepository.githubTargetHash("a/b", "c") == SyncProtocolUpgradeRepository.githubTargetHash("a", "b/c"))
+    }
+
+    private suspend fun detect(repository: SyncProtocolUpgradeRepository, challenge: SyncProtocolUpgradeChallenge) {
+        val failure = runCatching { repository.requireLegacyMigration(challenge) }.exceptionOrNull()
+        assertTrue(failure is SyncProtocolUpgradeRequiredException)
+        assertEquals(challenge, (failure as SyncProtocolUpgradeRequiredException).challenge)
+        assertTrue(repository.pendingFlow.first().contains(challenge))
+        assertFalse(repository.approvedFlow.first())
     }
 
     private suspend fun TestScope.withFileStore(file: File, action: suspend (DataStore<Preferences>) -> Unit) {
         val job = SupervisorJob()
-        val store = PreferenceDataStoreFactory.create(
-            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + job),
-            produceFile = { file }
-        )
-        try {
-            action(store)
-        } finally {
-            job.cancelAndJoin()
-        }
+        val store = PreferenceDataStoreFactory.create(scope = CoroutineScope(StandardTestDispatcher(testScheduler) + job), produceFile = { file })
+        try { action(store) } finally { job.cancelAndJoin() }
     }
 
     private class FaultInjectingDataStore(initial: Preferences = emptyPreferences()) : DataStore<Preferences> {
@@ -252,23 +265,18 @@ class SyncProtocolUpgradeRepositoryTest {
         var readFailure: Exception? = null
         var writeFailure: Exception? = null
         var writeAttempts = 0
-
-        override val data: Flow<Preferences> = flow {
-            readFailure?.let { throw it }
-            emitAll(state)
-        }
-
+        override val data: Flow<Preferences> = flow { readFailure?.let { throw it }; emitAll(state) }
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
-            writeAttempts++
             readFailure?.let { throw it }
             val updated = transform(state.value)
-            writeFailure?.let { throw it }
+            if (updated != state.value) {
+                writeAttempts++
+                writeFailure?.let { throw it }
+            }
             state.value = updated
             return updated
         }
     }
 
-    companion object {
-        private val ApprovedVersion = intPreferencesKey("approved_protocol_version")
-    }
+    companion object { private val ApprovedVersion = intPreferencesKey("approved_protocol_version") }
 }

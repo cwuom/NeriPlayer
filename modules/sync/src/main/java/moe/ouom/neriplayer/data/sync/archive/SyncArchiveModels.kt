@@ -14,6 +14,8 @@ internal object SyncArchiveLimits {
     const val INDEX_FANOUT = 512
     const val MAX_TREE_DEPTH = 8
     const val CACHE_BYTES = 256L * 1024 * 1024
+    const val MAX_LEGACY_SOURCE_RAW_BYTES = 32L * 1024 * 1024
+    const val MAX_LEGACY_SOURCE_CHUNKS = 1024L
 }
 
 @Serializable
@@ -37,7 +39,8 @@ internal data class SyncArchiveManifest(
     @ProtoNumber(3) val root: SyncArchiveRef?,
     @ProtoNumber(4) val recordCount: Long,
     @ProtoNumber(5) val rawDataBytes: Long,
-    @ProtoNumber(6) val chunkCount: Long
+    @ProtoNumber(6) val chunkCount: Long,
+    @ProtoNumber(7) val legacyLyrics: SyncLegacyLyricSource? = null
 )
 
 class SyncArchiveObject(val path: String, val content: ByteArray)

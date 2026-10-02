@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 
 
@@ -18,6 +20,8 @@ import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRepository
 import moe.ouom.neriplayer.data.sync.remote.SyncFallbackFileReader
 import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
 import moe.ouom.neriplayer.data.sync.runtime.SyncBackend
+import moe.ouom.neriplayer.data.sync.host.observeCurrentSyncProtocol
+import moe.ouom.neriplayer.data.model.sync.SyncData
 
 internal class GitHubSyncBackend(
     private val storage: SecureTokenStorage,
@@ -28,7 +32,9 @@ internal class GitHubSyncBackend(
     private val invalidBackup: () -> Exception,
     private val followUp: () -> Unit,
     private val archive: SyncArchiveRepository,
-    private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets
+    private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets,
+    private val authorizeLegacyMigration: suspend (ByteArray) -> Unit = {},
+    private val currentProtocolObserved: suspend () -> Unit = {}
 ) : SyncBackend<GitHubSyncBackend.Version> {
     private val useDataSaver = storage.isDataSaverMode()
     private val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
@@ -84,17 +90,21 @@ internal class GitHubSyncBackend(
             fetch = { fileName -> apiClient.getFileContentAtRef(owner, repo, fileName, head.sha) },
             isMissing = { it is GitHubFileNotFoundException }
         ).getOrElse { return Result.failure(it) }
-        val remote = fetched
-            ?: return Result.success(SyncDatasetRemoteSnapshot(null, Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch)))
-        return decodeLegacyContent(remote.content, head)
+        if (fetched == null) {
+            archive.captureLegacyLyrics(SyncData())
+            return observeCurrentSyncProtocol(SyncDatasetRemoteSnapshot(null, Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch)), currentProtocolObserved)
+        }
+        return decodeLegacyContent(fetched.content, head)
     }
 
     private suspend fun decodeLegacyContent(content: ByteArray, head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
         if (SyncArchiveRepository.isManifest(content)) {
             return decodeArchive(content, head).map { it.copy(requiresMigrationUpload = true) }
         }
+        val context = currentCoroutineContext()
         // 损坏正文直接失败，文件名回退只用于远端文件不存在的情况
-        return decoder.decode(content, invalidBackup).map { data ->
+        return decoder.decodeForMigration(content, invalidBackup, authorizeLegacyMigration, archive::captureLegacyLyrics,
+            checkActive = { context.ensureActive() }).map { data ->
             SyncDatasetRemoteSnapshot(
                 dataset = datasetStore.fromLegacy(data),
                 version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch),
@@ -104,12 +114,14 @@ internal class GitHubSyncBackend(
     }
 
     private suspend fun decodeArchive(content: ByteArray, head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
-        return archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize) { path -> apiClient.getFileContentAtRef(owner, repo, path, head.sha) }.map { dataset ->
+        val dataset = archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize) { path -> apiClient.getFileContentAtRef(owner, repo, path, head.sha) }
+            .getOrElse { return Result.failure(it) }
+        return observeCurrentSyncProtocol(
             SyncDatasetRemoteSnapshot(
                 dataset = sanitizeDataset(dataset),
                 version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, archive.lastReferencedPaths)
-            )
-        }
+            ), currentProtocolObserved
+        )
     }
 
     private fun sanitizeDataset(dataset: SyncDataset): SyncDataset = try {
@@ -127,7 +139,8 @@ internal class GitHubSyncBackend(
         return archive.prepareCancellable(data).use { prepared ->
             val files = prepared.objects(version.knownPaths)
                 .map { it.path to it.content } + sequenceOf(SyncArchiveRepository.MANIFEST_FILE_NAME to prepared.content)
-            apiClient.updateFilesContent(owner, repo, files, head).map { sha ->
+            apiClient.updateFilesContent(owner, repo, files, head).mapCatching { sha ->
+                currentProtocolObserved()
                 Version(sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, prepared.paths)
             }
         }

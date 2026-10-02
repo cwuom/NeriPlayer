@@ -22,6 +22,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -51,7 +53,7 @@ class StartupSyncUpgradePromptTest {
     fun `production startup waits for loaded approval resumed lifecycle and other startup dialogs`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val approvals = MutableSharedFlow<Boolean>()
-        val model = SyncProtocolUpgradeViewModel(approvals) { }.also(viewModels::add)
+        val model = SyncProtocolUpgradeViewModel(approvals.map { if (it) emptyList() else listOf(challenge) }, { _, _ -> }).also(viewModels::add)
         val fixture = PromptCompositionFixture(this, model)
         try {
             fixture.start()
@@ -84,7 +86,7 @@ class StartupSyncUpgradePromptTest {
     fun `production defer survives recreation settings can reopen and a new startup prompts again`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var saves = 0
-        val model = SyncProtocolUpgradeViewModel(flowOf(false)) { saves++ }.also(viewModels::add)
+        val model = SyncProtocolUpgradeViewModel(flowOf(listOf(challenge)), { _, _ -> saves++ }).also(viewModels::add)
         val first = PromptCompositionFixture(this, model)
         val savedState = try {
             first.start()
@@ -106,10 +108,13 @@ class StartupSyncUpgradePromptTest {
             recreated.pump()
             assertNull(recreated.visibleState)
             var syncCalls = 0
-            model.requestSync { syncCalls++ }
+            model.requestSync {
+                syncCalls++
+                model.requestUpgrade(challenge) { syncCalls++ }
+            }
             recreated.pump()
             assertNotNull(recreated.visibleState)
-            assertEquals(0, syncCalls)
+            assertEquals(1, syncCalls)
             requireNotNull(recreated.onDefer).invoke()
             recreated.pump()
             assertNull(recreated.visibleState)
@@ -130,7 +135,7 @@ class StartupSyncUpgradePromptTest {
     @Test
     fun `production entry never prompts a previously confirmed device`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val model = SyncProtocolUpgradeViewModel(flowOf(true)) { error("must not save") }.also(viewModels::add)
+        val model = SyncProtocolUpgradeViewModel(flowOf(emptyList()), { _, _ -> error("must not save") }).also(viewModels::add)
         val fixture = PromptCompositionFixture(this, model)
         try {
             fixture.start()
@@ -147,13 +152,13 @@ class StartupSyncUpgradePromptTest {
     fun `production dialog gates confirmation on checkbox keeps failures visible and never approves cancellation`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var saves = 0
-        val model = SyncProtocolUpgradeViewModel(flowOf(false)) {
+        val model = SyncProtocolUpgradeViewModel(flowOf(listOf(challenge)), { _, _ ->
             when (++saves) {
                 1 -> throw IOException("save failed")
                 2 -> throw CancellationException("cancelled")
                 else -> Unit
             }
-        }.also(viewModels::add)
+        }).also(viewModels::add)
         val fixture = PromptCompositionFixture(this, model)
         try {
             fixture.start()
@@ -182,6 +187,8 @@ class StartupSyncUpgradePromptTest {
             fixture.close()
         }
     }
+
+    private val challenge = SyncProtocolUpgradeChallenge("a".repeat(64), "1".repeat(64))
 
     private class PromptCompositionFixture(
         private val scope: TestScope,

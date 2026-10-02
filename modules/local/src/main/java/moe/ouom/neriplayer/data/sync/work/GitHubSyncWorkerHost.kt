@@ -25,7 +25,11 @@ internal fun createGitHubWorkerHost(context: Context): SyncWorkerHost {
     val delegate = SyncRepositoryWorkerHost(
         provider = SyncProvider.GITHUB,
         readAutoSync = { storage.isAutoSyncEnabled() }, readConfigured = { storage.isConfigured() },
-        readProtocolUpgradeApproved = { SyncProtocolUpgradeRepository(context).approvedFlow.first() },
+        readProtocolUpgradeApproved = {
+            SyncProtocolUpgradeRepository(context).canSyncTarget(SyncProtocolUpgradeRepository.githubTargetHash(
+                storage.getRepoOwner().orEmpty(), storage.getRepoName().orEmpty()
+            ))
+        },
         readPlayback = { SyncPlaybackActivity.isActive }, readNetwork = { hasValidatedSyncNetwork(context) },
         defer = { GitHubSyncWorker.scheduleDelayedSync(context, initialDelayMs = 60_000L, appendToCurrentWork = true) },
         sync = { GitHubSyncManager.getInstance(context).performSync() },

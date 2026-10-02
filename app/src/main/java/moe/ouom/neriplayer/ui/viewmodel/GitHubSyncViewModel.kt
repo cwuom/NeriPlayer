@@ -44,6 +44,8 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.github.*
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 
 /**
  * GitHub 同步 ViewModel
@@ -213,7 +215,7 @@ class GitHubSyncViewModel : ViewModel() {
     /**
      * 执行同步
      */
-    fun performSync(context: Context) {
+    fun performSync(context: Context, onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}) {
         if (syncJob?.isActive == true) return
         val operation = syncOperation ?: return
         val appContext = context.applicationContext
@@ -246,6 +248,12 @@ class GitHubSyncViewModel : ViewModel() {
                 }
             } else {
                 val error = result.exceptionOrNull()
+                val challenge = (error as? SyncProtocolUpgradeRequiredException)?.challenge
+                if (challenge != null) {
+                    _uiState.value = _uiState.value.copy(isSyncing = false)
+                    onUpgradeRequired(challenge)
+                    return@launch
+                }
                 if (error is GitHubSyncInProgressException) {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,

@@ -21,6 +21,8 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncInProgressException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 
 class WebDavSyncViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(WebDavSyncUiState())
@@ -107,7 +109,7 @@ class WebDavSyncViewModel : ViewModel() {
         }
     }
 
-    fun performSync(context: Context) {
+    fun performSync(context: Context, onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}) {
         if (syncJob?.isActive == true) return
         val operation = syncOperation ?: return
         val appContext = context.applicationContext
@@ -131,6 +133,12 @@ class WebDavSyncViewModel : ViewModel() {
                 }
             } else {
                 val error = result.exceptionOrNull()
+                val challenge = (error as? SyncProtocolUpgradeRequiredException)?.challenge
+                if (challenge != null) {
+                    _uiState.value = _uiState.value.copy(isSyncing = false)
+                    onUpgradeRequired(challenge)
+                    return@launch
+                }
                 if (error is WebDavSyncInProgressException) {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,

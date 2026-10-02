@@ -19,6 +19,8 @@ import moe.ouom.neriplayer.data.sync.runtime.SyncBackend
 import java.io.IOException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import moe.ouom.neriplayer.data.sync.host.observeCurrentSyncProtocol
+import moe.ouom.neriplayer.data.model.sync.SyncData
 
 internal class WebDavSyncBackend(
     private val webDavStorage: WebDavStorage,
@@ -28,7 +30,9 @@ internal class WebDavSyncBackend(
     private val invalidBackup: () -> Exception,
     private val followUp: () -> Unit,
     private val archive: SyncArchiveRepository,
-    private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets
+    private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets,
+    private val authorizeLegacyMigration: suspend (ByteArray) -> Unit = {},
+    private val currentProtocolObserved: suspend () -> Unit = {}
 ) : SyncBackend<WebDavSyncBackend.Version> {
     private val manifestUrl = WebDavApiClient.buildSiblingFileUrl(remoteUrl, SyncArchiveRepository.MANIFEST_FILE_NAME)
     override val isFirstSync: Boolean get() = webDavStorage.getLastRemoteFingerprint() == null
@@ -79,15 +83,16 @@ internal class WebDavSyncBackend(
         version: Version,
         requiresMigrationUpload: Boolean = false
     ): Result<SyncDatasetRemoteSnapshot<Version>> {
-        return archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize) { path ->
+        val dataset = archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize) { path ->
             apiClient.getFileContentStrict(WebDavApiClient.buildSiblingFileUrl(remoteUrl, path)).map { it.content }
-        }.map { dataset ->
+        }.onFailure { NPLogger.e(TAG, "Failed to read remote archive", it) }.getOrElse { return Result.failure(it) }
+        return observeCurrentSyncProtocol(
             SyncDatasetRemoteSnapshot(
                 dataset = sanitizeDataset(dataset),
                 version = version.copy(knownPaths = archive.lastReferencedPaths),
                 requiresMigrationUpload = requiresMigrationUpload
-            )
-        }.onFailure { NPLogger.e(TAG, "Failed to read remote archive", it) }
+            ), currentProtocolObserved
+        )
     }
 
     private suspend fun fetchLegacySnapshot(): Result<SyncDatasetRemoteSnapshot<Version>> {
@@ -95,7 +100,9 @@ internal class WebDavSyncBackend(
         if (SyncArchiveRepository.isManifest(snapshot.content)) {
             return decodeArchive(snapshot.content, Version(null, true, snapshot.fingerprint), requiresMigrationUpload = true)
         }
-        return decoder.decode(snapshot.content, invalidBackup).map { data ->
+        val context = currentCoroutineContext()
+        return decoder.decodeForMigration(snapshot.content, invalidBackup, authorizeLegacyMigration, archive::captureLegacyLyrics,
+            checkActive = { context.ensureActive() }).map { data ->
             SyncDatasetRemoteSnapshot(
                 dataset = datasetStore.fromLegacy(data),
                 version = Version(null, createOnly = true, lastKnownFingerprint = snapshot.fingerprint),
@@ -104,9 +111,10 @@ internal class WebDavSyncBackend(
         }.onFailure { NPLogger.e(TAG, "Failed to parse remote data", it) }
     }
 
-    private fun legacyReadFailure(error: Throwable): Result<SyncDatasetRemoteSnapshot<Version>> =
+    private suspend fun legacyReadFailure(error: Throwable): Result<SyncDatasetRemoteSnapshot<Version>> =
         if (error is WebDavFileNotFoundException) {
-            Result.success(SyncDatasetRemoteSnapshot(null, Version(token = null, createOnly = true)))
+            archive.captureLegacyLyrics(SyncData())
+            observeCurrentSyncProtocol(SyncDatasetRemoteSnapshot(null, Version(token = null, createOnly = true)), currentProtocolObserved)
         } else {
             Result.failure(error)
         }
@@ -139,7 +147,10 @@ internal class WebDavSyncBackend(
                 content = prepared.content,
                 expectedVersion = version.token,
                 createOnly = version.createOnly
-            ).map { written -> Version(written.version, false, written.fingerprint, prepared.paths) }
+            ).mapCatching { written ->
+                currentProtocolObserved()
+                Version(written.version, false, written.fingerprint, prepared.paths)
+            }
         }
     }
 

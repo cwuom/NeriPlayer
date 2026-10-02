@@ -42,6 +42,7 @@
             <option value="$PROJECT_DIR$/modules/local" />
             <option value="$PROJECT_DIR$/modules/lyrics" />
             <option value="$PROJECT_DIR$/modules/model" />
+            <option value="$PROJECT_DIR$/modules/native" />
             <option value="$PROJECT_DIR$/modules/network" />
             <option value="$PROJECT_DIR$/modules/platform" />
             <option value="$PROJECT_DIR$/modules/playback" />

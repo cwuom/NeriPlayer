@@ -84,6 +84,7 @@ import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistorySyncPreferences
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
@@ -176,6 +177,31 @@ internal fun SettingsBackupRestoreSection(
         } else {
             WebDavSyncUiState()
         }
+        val githubTarget = if (githubState.isConfigured) {
+            SyncProtocolUpgradeRepository.githubTargetHash(githubState.repoOwner, githubState.repoName)
+        } else null
+        val webDavTarget = if (webDavState.isConfigured) {
+            SyncProtocolUpgradeRepository.webDavTargetHash(
+                webDavState.serverUrl, webDavState.basePath, webDavState.username
+            )
+        } else null
+        LaunchedEffect(githubTarget, webDavTarget, configTransferUiState.lastImportSuccess) {
+            syncUpgradeVm.refreshTargets()
+        }
+        fun requestGitHubSync() {
+            syncUpgradeVm.requestSync {
+                githubVm?.performSync(context) { challenge ->
+                    syncUpgradeVm.requestUpgrade(challenge, ::requestGitHubSync)
+                }
+            }
+        }
+        fun requestWebDavSync() {
+            syncUpgradeVm.requestSync {
+                webDavVm?.performSync(context) { challenge ->
+                    syncUpgradeVm.requestUpgrade(challenge, ::requestWebDavSync)
+                }
+            }
+        }
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
         var showConfigExportWarningDialog by remember { mutableStateOf(false) }
         var currentMode by remember { mutableStateOf(PlayHistoryUpdateMode.IMMEDIATE) }
@@ -250,7 +276,7 @@ internal fun SettingsBackupRestoreSection(
                         )
 
             if (shouldShowCard(0)) {
-                SyncProtocolUpgradeWarning(syncUpgradeState, syncUpgradeVm::openConfirmation)
+                SyncProtocolUpgradeWarning(syncUpgradeState) { syncUpgradeVm.openConfirmation() }
             }
 
             if (shouldShowCard(0)) BackupDetailCard(
@@ -556,7 +582,7 @@ internal fun SettingsBackupRestoreSection(
                 description = stringResource(CoreCommonR.string.settings_backup_github_section_desc)
             )
 
-            SyncProtocolUpgradeSetting()
+            SyncProtocolUpgradeSetting(githubTarget)
 
             ListItem(
                 leadingContent = {
@@ -660,7 +686,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            MiuixSettingsTextButton(onClick = { syncUpgradeVm.requestSync { githubVm?.performSync(context) } }) {
+                            MiuixSettingsTextButton(onClick = ::requestGitHubSync) {
                                 Text(stringResource(CoreCommonR.string.sync_title))
                             }
                         }
@@ -725,7 +751,7 @@ internal fun SettingsBackupRestoreSection(
                 description = stringResource(CoreCommonR.string.settings_backup_webdav_section_desc)
             )
 
-            SyncProtocolUpgradeSetting()
+            SyncProtocolUpgradeSetting(webDavTarget)
 
             ListItem(
                 leadingContent = {
@@ -829,7 +855,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            MiuixSettingsTextButton(onClick = { syncUpgradeVm.requestSync { webDavVm?.performSync(context) } }) {
+                            MiuixSettingsTextButton(onClick = ::requestWebDavSync) {
                                 Text(stringResource(CoreCommonR.string.sync_title))
                             }
                         }

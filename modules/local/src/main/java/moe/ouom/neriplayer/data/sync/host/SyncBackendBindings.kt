@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.sync.github.GitHubSyncBackend
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRepository
+import moe.ouom.neriplayer.data.sync.archive.SyncLegacyLyricRecovery
 import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
 import moe.ouom.neriplayer.data.sync.sanitize.SyncDataSanitizer
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
@@ -17,6 +18,8 @@ import moe.ouom.neriplayer.common.locale.LanguageManager
 import java.io.IOException
 import java.io.File
 import moe.ouom.neriplayer.data.sync.mapping.stats.SyncPlaybackStatMapping
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
+import moe.ouom.neriplayer.data.model.sync.SyncData
 
 internal fun createGitHubSyncBackend(context: Context, storage: SecureTokenStorage): GitHubSyncBackend {
     val localized = LanguageManager.applyLanguage(context)
@@ -24,13 +27,19 @@ internal fun createGitHubSyncBackend(context: Context, storage: SecureTokenStora
     val token = configuredValue(storage.getToken(), message)
     val owner = configuredValue(storage.getRepoOwner(), message)
     val repo = configuredValue(storage.getRepoName(), message)
+    val target = SyncProtocolUpgradeRepository.githubTargetHash(owner, repo)
+    val upgrades = SyncProtocolUpgradeRepository(context)
     return GitHubSyncBackend(
         storage, createGitHubSyncClient(context, token), owner, repo, syncDecoder(context),
         invalidBackup = { invalidBackup(context, CoreCommonR.string.github_backup_file_invalid) },
         followUp = {
             GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false, markMutation = false, appendToCurrentWork = true)
         },
-        archive = archiveRepository(context, "github", "$owner/$repo")
+        archive = archiveRepository(context, "github", "$owner/$repo", target),
+        authorizeLegacyMigration = { content ->
+            upgrades.requireLegacyMigration(SyncProtocolUpgradeChallenge(target, WebDavApiClient.calculateFingerprint(content)))
+        },
+        currentProtocolObserved = { upgrades.markCurrent(target) }
     )
 }
 
@@ -41,20 +50,35 @@ internal fun createWebDavSyncBackend(context: Context): WebDavSyncBackend {
     val remoteUrl = configuredValue(webDavStorage.getRemoteFileUrl(), message)
     val username = configuredValue(webDavStorage.getUsername(), message)
     val password = configuredValue(webDavStorage.getPassword(), message)
+    val target = SyncProtocolUpgradeRepository.webDavTargetHash(checkNotNull(webDavStorage.getServerUrl()), webDavStorage.getBasePath(), username)
+    val upgrades = SyncProtocolUpgradeRepository(context)
     return WebDavSyncBackend(
         webDavStorage, createWebDavSyncClient(context, username, password), remoteUrl, syncDecoder(context),
         invalidBackup = { invalidBackup(context, CoreCommonR.string.webdav_backup_file_invalid) },
         followUp = {
             WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false, markMutation = false, appendToCurrentWork = true)
         },
-        archive = archiveRepository(context, "webdav", remoteUrl)
+        archive = archiveRepository(context, "webdav", remoteUrl, target),
+        authorizeLegacyMigration = { content ->
+            upgrades.requireLegacyMigration(SyncProtocolUpgradeChallenge(target, WebDavApiClient.calculateFingerprint(content)))
+        },
+        currentProtocolObserved = { upgrades.markCurrent(target) }
     )
 }
 
-private fun archiveRepository(context: Context, provider: String, identity: String): SyncArchiveRepository {
+private fun archiveRepository(context: Context, provider: String, identity: String, targetId: String): SyncArchiveRepository {
     val namespace = WebDavApiClient.calculateFingerprint(identity.toByteArray(Charsets.UTF_8))
     val storage = SecureTokenStorage(context.applicationContext)
-    return SyncArchiveRepository(File(context.cacheDir, "sync-v3/$provider/$namespace"), storage::retainLegacyLyrics)
+    val recovery = object : SyncLegacyLyricRecovery {
+        override fun isCompleted(sourceHash: String): Boolean = storage.isLegacyLyricArchiveRecovered(targetId, sourceHash)
+        override fun recover(sourceHash: String, data: SyncData) {
+            if (isCompleted(sourceHash)) return
+            storage.retainLegacyLyrics(data)
+            storage.markLegacyLyricArchiveRecovered(targetId, sourceHash)
+        }
+    }
+    return SyncArchiveRepository(File(context.cacheDir, "sync-v3/$provider/$namespace"), legacyRecovery = recovery,
+        beforeNormalization = storage::retainLegacyLyrics)
 }
 
 private fun configuredValue(value: String?, message: String): String =

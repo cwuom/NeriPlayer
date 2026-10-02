@@ -8,7 +8,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
@@ -17,6 +16,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerOutcome
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerFailureClassifier
 import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerExecution
@@ -31,7 +31,32 @@ class SyncProtocolUpgradeWorkerHostTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
-    fun `real unapproved store stops both worker hosts before playback network or notification callbacks`() = runTest {
+    fun `new installation permits background remote detection for both providers`() = runTest {
+        val storeJob = SupervisorJob()
+        val store = PreferenceDataStoreFactory.create(
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + storeJob),
+            produceFile = { File(temporary.root, "fresh_worker.preferences_pb") }
+        )
+        try {
+            val repository = SyncProtocolUpgradeRepository(store)
+            var calls = 0
+            for (provider in SyncProvider.entries) {
+                val host = SyncRepositoryWorkerHost(provider, { true }, { true },
+                    { repository.canSyncTarget("a".repeat(64)) }, { false }, { true }, {},
+                    sync = { calls++; Result.success(moe.ouom.neriplayer.data.model.sync.SyncResult(success = true, message = "synced")) },
+                    classifier = SyncWorkerFailureClassifier(emptyMap()),
+                    readSilentFailure = { error("successful detection must not read notification settings") },
+                    notifyFailure = { error("successful detection must not notify") })
+                assertEquals(SyncWorkerOutcome.SUCCESS, SyncWorkerExecution(host).execute(false, false))
+            }
+            assertEquals(SyncProvider.entries.size, calls)
+        } finally {
+            storeJob.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun `detected legacy target stops both worker hosts before playback network or notification callbacks`() = runTest {
         val storeJob = SupervisorJob()
         val store = PreferenceDataStoreFactory.create(
             scope = CoroutineScope(StandardTestDispatcher(testScheduler) + storeJob),
@@ -39,10 +64,12 @@ class SyncProtocolUpgradeWorkerHostTest {
         )
         try {
             val repository = SyncProtocolUpgradeRepository(store)
+            val challenge = SyncProtocolUpgradeChallenge("a".repeat(64), "1".repeat(64))
+            assertTrue(runCatching { repository.requireLegacyMigration(challenge) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
             for (provider in SyncProvider.entries) {
                 val host = SyncRepositoryWorkerHost(
                     provider = provider, readAutoSync = { true }, readConfigured = { true },
-                    readProtocolUpgradeApproved = { repository.approvedFlow.first() },
+                    readProtocolUpgradeApproved = { repository.canSyncTarget(challenge.targetId) },
                     readPlayback = { error("pending approval must not check playback") },
                     readNetwork = { error("pending approval must not check network") },
                     defer = { error("pending approval must not defer work") },

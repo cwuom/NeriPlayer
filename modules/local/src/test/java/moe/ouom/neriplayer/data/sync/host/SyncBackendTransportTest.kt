@@ -33,6 +33,8 @@ import org.junit.Test
 import org.junit.After
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.*
@@ -50,6 +52,98 @@ class SyncBackendTransportTest {
     private val payload = SyncData(deviceId = "device", lastModified = 10,
         playlists = listOf(SyncPlaylist(id = 1, name = "playlist", songs = listOf(SyncSong(id = 2, name = "song")))))
     private val content = SyncDataSerializer.serialize(payload, false)
+
+    @Test
+    fun `GitHub conflict refetch to an empty target cannot republish a stale legacy source`() = runTest {
+        val fixture = GitHubFixture()
+        val legacy = payload.copy(playlists = listOf(payload.playlists.single().copy(
+            songs = listOf(payload.playlists.single().songs.single().copy(matchedLyric = "legacy edit")))))
+        fixture.files["backup.json"] = SyncDataSerializer.serialize(legacy, false)
+        val initial = fixture.backend.fetch().getOrThrow().tracked()
+        val published = fixture.backend.upload(initial.dataset!!, initial.version).getOrThrow()
+        fixture.backend.fetch().getOrThrow().tracked()
+        fixture.files.clear()
+        val removed = fixture.backend.refetch(published).getOrThrow().tracked()
+        assertNull(removed.dataset)
+        fixture.backend.upload(staged(payload), removed.version).getOrThrow()
+        val readable = SyncArchiveRepository(temporary.newFolder()).read(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)) {
+            fixture.files[it]?.let { bytes -> Result.success(bytes) } ?: Result.failure(IOException("removed legacy source"))
+        }
+        assertTrue("published archive must not reference removed legacy objects", readable.isSuccess)
+        assertEquals(payload, readable.getOrThrow())
+    }
+
+    @Test
+    fun `WebDAV conflict refetch to an empty target cannot republish a stale legacy source`() = runTest {
+        val fixture = WebDavFixture()
+        val legacy = payload.copy(playlists = listOf(payload.playlists.single().copy(
+            songs = listOf(payload.playlists.single().songs.single().copy(matchedLyric = "legacy edit")))))
+        fixture.body = SyncDataSerializer.serialize(legacy, false)
+        val initial = fixture.backend.fetch().getOrThrow().tracked()
+        val published = fixture.backend.upload(initial.dataset!!, initial.version).getOrThrow()
+        fixture.backend.fetch().getOrThrow().tracked()
+        fixture.files.clear()
+        fixture.readCode = 404
+        val removed = fixture.backend.refetch(published).getOrThrow().tracked()
+        assertNull(removed.dataset)
+        fixture.readCode = 200
+        fixture.backend.upload(staged(payload), removed.version).getOrThrow()
+        val readable = SyncArchiveRepository(temporary.newFolder()).read(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)) {
+            fixture.files[it]?.let { bytes -> Result.success(bytes) } ?: Result.failure(IOException("removed legacy source"))
+        }
+        assertTrue("published archive must not reference removed legacy objects", readable.isSuccess)
+        assertEquals(payload, readable.getOrThrow())
+    }
+
+    @Test
+    fun `GitHub requires target specific approval for initial and conflict legacy reads`() = runTest {
+        val fixture = GitHubFixture()
+        val required = SyncProtocolUpgradeRequiredException("upgrade", SyncProtocolUpgradeChallenge("a".repeat(64), "1".repeat(64)))
+        fixture.files["backup.json"] = content
+        fixture.authorizeMigration = { assertArrayEquals(content, it); throw required }
+        assertSame(required, fixture.backend.fetch().exceptionOrNull())
+        assertSame(required, fixture.backend.refetch(GitHubSyncBackend.Version("head", "backup.json")).exceptionOrNull())
+        assertTrue(fixture.writes.isEmpty())
+        assertEquals(0, fixture.currentObservations)
+        fixture.authorizeMigration = {}
+        val migrated = fixture.backend.fetch().getOrThrow().tracked()
+        assertEquals(payload, migrated.dataset?.data)
+        fixture.backend.upload(migrated.dataset!!, migrated.version).getOrThrow()
+        fixture.authorizeMigration = { error("v3 must not request legacy upgrade") }
+        fixture.backend.fetch().getOrThrow().tracked()
+        assertEquals(2, fixture.currentObservations)
+    }
+
+    @Test
+    fun `WebDAV requires target specific approval for initial and conflict legacy reads`() = runTest {
+        val fixture = WebDavFixture()
+        val required = SyncProtocolUpgradeRequiredException("upgrade", SyncProtocolUpgradeChallenge("b".repeat(64), "2".repeat(64)))
+        fixture.authorizeMigration = { assertArrayEquals(content, it); throw required }
+        assertSame(required, fixture.backend.fetch().exceptionOrNull())
+        assertSame(required, fixture.backend.refetch(WebDavSyncBackend.Version(null, true)).exceptionOrNull())
+        assertTrue(fixture.writes.isEmpty())
+        assertEquals(0, fixture.currentObservations)
+        fixture.authorizeMigration = {}
+        val migrated = fixture.backend.fetch().getOrThrow().tracked()
+        assertEquals(payload, migrated.dataset?.data)
+        fixture.backend.upload(migrated.dataset!!, migrated.version).getOrThrow()
+        fixture.authorizeMigration = { error("v3 must not request legacy upgrade") }
+        fixture.backend.fetch().getOrThrow().tracked()
+        assertEquals(2, fixture.currentObservations)
+    }
+
+    @Test
+    fun `empty GitHub and WebDAV targets clear stale upgrade state without legacy permission`() = runTest {
+        val github = GitHubFixture()
+        github.authorizeMigration = { error("empty target must not require upgrade") }
+        assertNull(github.backend.fetch().getOrThrow().tracked().dataset)
+        assertEquals(1, github.currentObservations)
+        val webdav = WebDavFixture()
+        webdav.readCode = 404
+        webdav.authorizeMigration = { error("empty target must not require upgrade") }
+        assertNull(webdav.backend.fetch().getOrThrow().tracked().dataset)
+        assertEquals(1, webdav.currentObservations)
+    }
 
     @Test
     fun `GitHub fallback requests migration while corrupt and unavailable files fail`() = runTest {
@@ -359,6 +453,8 @@ class SyncBackendTransportTest {
         private val pending = mutableMapOf<String, ByteArray>()
         var failure = 0
         var followUps = 0
+        var authorizeMigration: suspend (ByteArray) -> Unit = {}
+        var currentObservations = 0
         private val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
             val path = request.url.encodedPath
@@ -419,7 +515,9 @@ class SyncBackendTransportTest {
         }.build()
         val backend = GitHubSyncBackend(storage, GitHubApiClient("test-token", client, "expired", "https://sync.test"),
             "owner", "repo", SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
-            SyncArchiveRepository(temporary.newFolder()))
+            SyncArchiveRepository(temporary.newFolder()),
+            authorizeLegacyMigration = { authorizeMigration(it) },
+            currentProtocolObserved = { currentObservations++ })
     }
 
     private inner class WebDavFixture {
@@ -431,6 +529,8 @@ class SyncBackendTransportTest {
         var writeCode = 201
         var body = content
         var followUps = 0
+        var authorizeMigration: suspend (ByteArray) -> Unit = {}
+        var currentObservations = 0
         val writes = mutableListOf<Request>()
         private val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
@@ -471,7 +571,9 @@ class SyncBackendTransportTest {
         }.build()
         val backend = WebDavSyncBackend(webDavStorage, WebDavApiClient("test-user", "test-password", client, "auth"),
             "https://sync.test/backup", SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
-            SyncArchiveRepository(temporary.newFolder()))
+            SyncArchiveRepository(temporary.newFolder()),
+            authorizeLegacyMigration = { authorizeMigration(it) },
+            currentProtocolObserved = { currentObservations++ })
     }
 
     private fun response(request: Request, code: Int, body: ByteArray): Response = Response.Builder()

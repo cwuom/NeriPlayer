@@ -12,6 +12,8 @@
 
 历史与播放队列通过 Room 18 到 19 的 nullable JSON 扩展列保存编辑状态和罗马音。原有列及历史 schema 保持不变，旧行缺少扩展载荷时按旧数据处理；损坏的扩展 JSON 不会静默替换为未知状态。未选中的队列歌曲仍保留用户编辑的完整歌词。
 
+传统云端数据迁移时，来源不明的旧全文另存为不可变的压缩兼容记录，由 V3 清单保留固定引用。新设备首次接入时完整校验并自动写入本机旧歌词缓存，耐久成功后保存按同步地址隔离的回执；后续同步不再下载该全文。兼容记录不参与歌曲合并，也不会创建用户编辑版本，明确的编辑或恢复仍优先。正常同步只上传用户修改，兼容来源仅在迁移时创建并在后续清单中复用，旧客户端再写可变旧文件不会改变该来源。
+
 永久记录成功改变后，当前歌曲、活动队列与随机播放恢复队列都会接收歌词投影。启动恢复也使用最新永久记录，不增加同步 mutation。用户已确认的歌词编辑优先于普通来源缓存；页面按编辑状态与版本更新歌词加载所有者，防止重置后旧异步请求重新发布旧词。
 
 播放器逐条扫描永久记录，只保留这三类目标身份需要的版本；完整检查 EOF 和校验和后才投影。扫描期间新增队列歌曲会重新读取，重排相同身份只重新确认队列。同步会话与编辑保存仍有全量 registry 成本，这项优化不能证明整个千万记录同步过程内存有界。
@@ -21,5 +23,7 @@
 `lyricSyncEdited` distinguishes confirmed user edits, known caches/resets, and unconfirmed legacy data. New payloads carry full original, translated, and romanized lyrics only for confirmed user edits; baseline lyric caches stay local. Lyric revisions merge independently from playlist timestamps, and persistent higher revision reset markers prevent stale edits from returning. Missing ordinary lyrics preserve local caches. Unconfirmed old cloud lyrics are committed to a separate local ledger before normalization; a failed commit aborts sync. The ledger retains distinct versions, stays out of uploads, and automatically supplies local playback only when there is no current lyric payload or positive revision. Received confirmed edits are saved and displayed automatically without a selection or confirmation step; only a subsequent user edit creates a new upload revision. This is deterministic last revision conflict resolution; clocks and legacy clients remain compatibility boundaries.
 
 Committed overrides also refresh the active and shuffle restore queues without creating a new sync mutation. Playback restoration projects the durable override registry before publishing the queue. Confirmed edits take precedence over ordinary preferred-source caches; revision changes replace the lyric loading owner so stale asynchronous results cannot restore old edits.
+
+Traditional cloud migration preserves unknown lyric payloads in a separate immutable compressed compatibility source referenced by the V3 manifest. A new device validates it completely and restores the local legacy cache once; a durable receipt is isolated by sync target. The source does not enter song merging or create edit revisions, and explicit edits or resets retain priority. Later syncs reuse the source without downloading its full text again. Subsequent writes to the mutable legacy file cannot alter the frozen source.
 
 Playback scans the durable registry one record at a time and retains only identities needed by the current song and both queues. The entire document and checksum must pass before projection. New queue identities trigger another scan; reordering existing identities only rechecks the queue snapshot. Full sync and edit persistence still materialize the registry, so this optimization does not establish bounded memory for the complete ten-million-record sync flow.

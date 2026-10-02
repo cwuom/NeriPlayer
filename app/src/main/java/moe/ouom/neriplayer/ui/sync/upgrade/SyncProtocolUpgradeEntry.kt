@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.sync.upgrade
 
 import androidx.activity.compose.LocalActivity
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -29,8 +29,16 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 
 @Composable
@@ -44,8 +52,9 @@ internal fun rememberSyncProtocolUpgradeViewModel(): SyncProtocolUpgradeViewMode
                 return checkNotNull(
                     modelClass.cast(
                         SyncProtocolUpgradeViewModel(
-                            approvedFlow = repository.approvedFlow,
-                            saveConfirmation = repository::confirmAllDevicesUpdated
+                            pendingFlow = repository.pendingFlow,
+                            saveConfirmation = repository::confirmAllDevicesUpdated,
+                            loadActiveTargets = { activeSyncTargets(appContext) }
                         )
                     )
                 )
@@ -53,6 +62,23 @@ internal fun rememberSyncProtocolUpgradeViewModel(): SyncProtocolUpgradeViewMode
         }
     }
     return viewModel(viewModelStoreOwner = activity, factory = factory)
+}
+
+private suspend fun activeSyncTargets(context: Context): Set<String> = withContext(Dispatchers.IO) {
+    buildSet {
+        val github = SecureTokenStorage(context)
+        if (github.isConfigured()) {
+            add(SyncProtocolUpgradeRepository.githubTargetHash(
+                github.getRepoOwner().orEmpty(), github.getRepoName().orEmpty()
+            ))
+        }
+        val webDav = WebDavStorage(context)
+        if (webDav.isConfigured()) {
+            add(SyncProtocolUpgradeRepository.webDavTargetHash(
+                webDav.getServerUrl().orEmpty(), webDav.getBasePath(), webDav.getUsername().orEmpty()
+            ))
+        }
+    }
 }
 
 @Composable
@@ -101,25 +127,33 @@ internal fun StartupSyncUpgradePrompt(
 
 @Composable
 internal fun SyncProtocolUpgradeSetting(
+    targetId: String?,
     viewModel: SyncProtocolUpgradeViewModel = rememberSyncProtocolUpgradeViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current.applicationContext
+    val repository = remember(context) { SyncProtocolUpgradeRepository(context) }
+    val versionFlow = remember(repository, targetId) {
+        val versions = if (targetId == null) flowOf(SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION)
+            else repository.versionFlow(targetId)
+        versions.map { Result.success(it) }.catch { emit(Result.failure(it)) }
+    }
+    val version by versionFlow.collectAsStateWithLifecycle(initialValue = null)
     val summary = when {
-        state.approved == null -> CoreCommonR.string.sync_upgrade_status_loading
-        state.approved == true -> CoreCommonR.string.sync_upgrade_confirmed
-        state.isSaving -> CoreCommonR.string.sync_upgrade_saving
-        state.hasError -> CoreCommonR.string.sync_upgrade_failed
-        else -> CoreCommonR.string.sync_upgrade_status_pending
+        version == null -> stringResource(CoreCommonR.string.sync_upgrade_status_loading)
+        version?.isFailure == true -> stringResource(CoreCommonR.string.sync_upgrade_failed)
+        version?.getOrNull() == 0 -> stringResource(CoreCommonR.string.sync_database_version_legacy)
+        else -> stringResource(CoreCommonR.string.sync_database_version_number, checkNotNull(version?.getOrNull()))
     }
     ListItem(
         leadingContent = {
-            Icon(Icons.Outlined.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Outlined.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         },
-        headlineContent = { Text(stringResource(CoreCommonR.string.sync_upgrade_title)) },
-        supportingContent = { Text(stringResource(summary)) },
+        headlineContent = { Text(stringResource(CoreCommonR.string.sync_database_version_title)) },
+        supportingContent = { Text(summary) },
         modifier = Modifier.settingsItemClickable(
-            enabled = state.approved == false && !state.isSaving,
-            onClick = viewModel::openConfirmation
+            enabled = version?.getOrNull() == 0 && !state.isSaving,
+            onClick = { viewModel.openConfirmation(targetId) }
         ),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )

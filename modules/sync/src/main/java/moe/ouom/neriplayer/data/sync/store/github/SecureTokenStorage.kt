@@ -48,6 +48,7 @@ class SecureTokenStorage internal constructor(
     private val deletionState = SyncDeletionStateCommitter(encryptedPrefs, deletionFiles)
     private val lyricOverrides = SyncLyricOverrideStore(encryptedPrefs, deletionFiles, directory)
     private val lyricLookup = SyncLyricOverrideLookup(deletionFiles)
+    private val legacyLyricArchiveReceipts = SyncLegacyLyricArchiveReceiptStore(encryptedPrefs, deletionFiles)
 
     fun saveToken(token: String) = configuration.saveToken(token)
 
@@ -161,6 +162,12 @@ class SecureTokenStorage internal constructor(
     fun retainLegacyLyrics(data: moe.ouom.neriplayer.data.model.sync.SyncData) = lyricOverrides.retainLegacyLyrics(data)
 
     fun retainLegacyLyricCandidates(candidates: List<SyncSong>) = lyricOverrides.retainLegacyLyricCandidates(candidates)
+
+    fun isLegacyLyricArchiveRecovered(namespace: String, sourceHash: String): Boolean =
+        legacyLyricArchiveReceipts.isCompleted(namespace, sourceHash)
+
+    fun markLegacyLyricArchiveRecovered(namespace: String, sourceHash: String) =
+        legacyLyricArchiveReceipts.markCompleted(namespace, sourceHash)
 
     fun getLegacyLyricCandidatesForIdentityKey(identityKey: String, checkActive: () -> Unit = {}): List<SyncSong> =
         lyricLookup.readLegacy(identityKey, checkActive)
