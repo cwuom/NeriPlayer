@@ -32,6 +32,7 @@ internal object SyncArchiveCodec {
         requireHash(ref.rawHash, "raw")
         requireRawSize(ref.rawBytes)
         requireWireSize(ref.compressedBytes)
+        if (ref.index) require(ref.rawBytes <= SyncArchiveLimits.MAX_INDEX_RAW_BYTES) { "Sync index exceeds raw budget" }
     }
 
     private val hashPattern = Regex("[0-9a-f]{64}")

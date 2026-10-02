@@ -48,9 +48,9 @@ internal fun createGitHubSyncBackend(
         },
         archive = archiveRepository(context, "github", "$owner/$repo", target),
         authorizeLegacyMigration = { content ->
-            upgrades.requireLegacyMigration(SyncProtocolUpgradeChallenge(target, WebDavApiClient.calculateFingerprint(content)))
+            upgrades.requireLegacyMigration(migrationChallenge(target, content))
         },
-        currentProtocolObserved = { upgrades.markCurrent(target) }
+        currentProtocolObserved = { version -> upgrades.markCurrent(target, version) }
     )
 }
 
@@ -77,9 +77,9 @@ internal fun createWebDavSyncBackend(context: Context, expectedTargetId: String?
         },
         archive = archiveRepository(context, "webdav", remoteUrl, target),
         authorizeLegacyMigration = { content ->
-            upgrades.requireLegacyMigration(SyncProtocolUpgradeChallenge(target, WebDavApiClient.calculateFingerprint(content)))
+            upgrades.requireLegacyMigration(migrationChallenge(target, content))
         },
-        currentProtocolObserved = { upgrades.markCurrent(target) }
+        currentProtocolObserved = { version -> upgrades.markCurrent(target, version) }
     )
 }
 
@@ -88,7 +88,6 @@ private fun archiveRepository(context: Context, provider: String, identity: Stri
     val storage = SecureTokenStorage(context.applicationContext)
     val recovery = object : SyncLegacyLyricRecovery {
         override fun preservedLyrics(): List<SyncSong> = storage.getLegacyLyricCandidates()
-        override fun optimizeLegacyLyrics(): Boolean = storage.isLegacyLyricOptimizationEnabled()
         override fun isCompleted(sourceHash: String): Boolean = storage.isLegacyLyricArchiveRecovered(targetId, sourceHash)
         override fun recover(sourceHash: String, data: SyncData) {
             if (isCompleted(sourceHash)) return
@@ -113,13 +112,19 @@ private fun syncDecoder(context: Context): SyncRemoteSnapshotDecoder {
     return SyncRemoteSnapshotDecoder(
         { data ->
             SyncDataSanitizer(host).sanitize(
-                SyncSongLyricMergePolicy.prepareLegacy(data, storage.isLegacyLyricOptimizationEnabled())
+                SyncSongLyricMergePolicy.prepareLegacy(data)
             )
         },
         { SyncPlaybackStatMapping.sanitize(it, host) },
         { SyncPlaybackStatMapping.sanitize(it, host) },
         beforeSanitize = storage::retainLegacyLyrics
     )
+}
+
+private fun migrationChallenge(targetId: String, content: ByteArray): SyncProtocolUpgradeChallenge {
+    val version = if (SyncArchiveRepository.isManifest(content)) SyncArchiveRepository.protocolVersion(content) else 0
+    return SyncProtocolUpgradeChallenge(targetId, WebDavApiClient.calculateFingerprint(content), version,
+        SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION)
 }
 
 private fun invalidBackup(context: Context, @StringRes message: Int): IOException =

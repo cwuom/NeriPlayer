@@ -26,7 +26,6 @@ internal data class SyncProtocolUpgradeUiState(
     val startupTargetId: String? = null,
     val dialogRequested: Boolean = false,
     val allDevicesUpdated: Boolean = false,
-    val optimizeData: Boolean = false,
     val isSaving: Boolean = false,
     val isSyncing: Boolean = false,
     val syncResult: SyncResult? = null,
@@ -42,7 +41,7 @@ internal data class SyncProtocolUpgradeUiState(
         val hasPending = pending != null || startup != null
         if (!hasPending || pending != challenge || startup != startupTargetId) {
             return copy(approved = !hasPending, challenge = pending, startupTargetId = startup,
-                dialogRequested = false, allDevicesUpdated = false, optimizeData = false, hasError = false)
+                dialogRequested = false, allDevicesUpdated = false, hasError = false)
         }
         return copy(approved = false, hasError = false)
     }
@@ -54,7 +53,6 @@ internal class SyncProtocolUpgradeViewModel(
     private val loadActiveTargets: suspend () -> Set<String>? = { null },
     private val startupTargetsFlow: Flow<Set<String>> = flowOf(emptySet()),
     private val initializeStartupTargets: suspend () -> Unit = {},
-    private val saveOptimization: suspend (Boolean) -> Unit = {},
     private val performImmediateSync: suspend (String, Boolean) -> Result<SyncResult> = { _, _ ->
         Result.success(SyncResult(true, ""))
     }
@@ -132,7 +130,7 @@ internal class SyncProtocolUpgradeViewModel(
         mutableUiState.update { state ->
             if (state.isSaving || state.dialogRequested) state
             else state.copy(challenge = challenge, startupTargetId = startup, approved = false,
-                dialogRequested = true, allDevicesUpdated = false, optimizeData = false, hasError = false)
+                dialogRequested = true, allDevicesUpdated = false, hasError = false)
         }
     }
 
@@ -165,7 +163,7 @@ internal class SyncProtocolUpgradeViewModel(
                 retrySync = onRetry
                 mutableUiState.update {
                     it.copy(approved = false, challenge = challenge, startupTargetId = null, dialogRequested = true,
-                        allDevicesUpdated = false, optimizeData = false, hasError = false)
+                        allDevicesUpdated = false, hasError = false)
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -191,18 +189,12 @@ internal class SyncProtocolUpgradeViewModel(
         }
     }
 
-    fun setOptimizeData(optimize: Boolean) {
-        mutableUiState.update { state ->
-            if (state.isSaving || !state.dialogRequested) state else state.copy(optimizeData = optimize)
-        }
-    }
-
     fun dismissConfirmation(): Boolean {
         if (uiState.value.isSaving) return false
         retrySync = null
         savedChallenge = null
         mutableUiState.update {
-            it.copy(dialogRequested = false, allDevicesUpdated = false, optimizeData = false, hasError = false)
+            it.copy(dialogRequested = false, allDevicesUpdated = false, hasError = false)
         }
         updatePendingState()
         return true
@@ -244,8 +236,6 @@ internal class SyncProtocolUpgradeViewModel(
 
     private suspend fun persistUpgradeDecision(state: SyncProtocolUpgradeUiState, targetId: String) {
         check(isActiveTarget(targetId)) { "Sync target changed" }
-        saveOptimization(state.optimizeData)
-        coroutineContext.ensureActive()
         state.challenge?.let { persistDetectedConfirmation(it, state.allDevicesUpdated) }
     }
 
@@ -277,7 +267,7 @@ internal class SyncProtocolUpgradeViewModel(
         savedChallenge = null
         mutableUiState.update {
             it.copy(approved = false, challenge = challenge, startupTargetId = null, dialogRequested = true,
-                allDevicesUpdated = false, optimizeData = false, hasError = false)
+                allDevicesUpdated = false, hasError = false)
         }
     }
 
@@ -288,7 +278,7 @@ internal class SyncProtocolUpgradeViewModel(
         retrySync = null
         mutableUiState.update {
             it.copy(approved = next == null && startup == null, challenge = next, startupTargetId = startup,
-                dialogRequested = false, allDevicesUpdated = false, optimizeData = false, hasError = false,
+                dialogRequested = false, allDevicesUpdated = false, hasError = false,
                 syncResult = result)
         }
     }

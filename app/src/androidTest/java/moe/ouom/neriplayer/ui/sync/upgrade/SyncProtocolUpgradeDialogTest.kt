@@ -55,19 +55,14 @@ class SyncProtocolUpgradeDialogTest {
     fun oldUserPromptPreservesLyricsByDefaultAndDeferringNeverWritesOrSyncs() {
         val calls = mutableListOf<String>()
         showStartupPrompt(
-            optimize = { calls += "optimize:$it" },
             sync = { _, _ -> calls += "sync"; Result.success(SyncResult(true, "")) }
         )
 
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_title)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_optimization_option)).assertIsOff()
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_confirm)).assertIsNotEnabled()
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_lyric_optimization_warning)).assertDoesNotExist()
-
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_optimization_option))
-            .performScrollTo().performClick().assertIsOn()
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_lyric_optimization_warning))
+        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_lossless_hint))
             .performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_all_devices_updated)).assertIsOff()
+        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_confirm)).assertIsNotEnabled()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_defer)).performClick()
 
         waitForDialogClosed()
@@ -75,13 +70,12 @@ class SyncProtocolUpgradeDialogTest {
     }
 
     @Test
-    fun confirmedOptimizationIsSavedBeforeSyncAndDialogStaysBusyUntilCompletion() {
+    fun deviceDeclarationStartsSyncAndDialogStaysBusyUntilCompletion() {
         val calls = mutableListOf<String>()
         val complete = CompletableDeferred<Unit>().also(gates::add)
         val startup = MutableStateFlow<Set<String>>(emptySet())
         val model = showStartupPrompt(
             startup = startup,
-            optimize = { calls += "optimize:$it" },
             sync = { id, mayApprove ->
                 assertEquals(target, id)
                 assertTrue(mayApprove)
@@ -92,9 +86,7 @@ class SyncProtocolUpgradeDialogTest {
             }
         )
 
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_optimization_option))
-            .performScrollTo().performClick()
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_lyric_optimization_warning))
+        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_lossless_hint))
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_all_devices_updated))
             .performScrollTo().assertIsOff().performClick().assertIsOn()
@@ -108,12 +100,11 @@ class SyncProtocolUpgradeDialogTest {
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_syncing))
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_title)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_optimization_option)).assertIsNotEnabled()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_all_devices_updated)).assertIsNotEnabled()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_confirm)).assertIsNotEnabled()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_defer)).assertIsNotEnabled()
         composeRule.runOnIdle {
-            assertEquals(listOf("optimize:true", "sync"), calls)
+            assertEquals(listOf("sync"), calls)
             assertTrue(model.uiState.value.isSyncing)
             assertFalse(model.dismissConfirmation())
             complete.complete(Unit)
@@ -123,15 +114,14 @@ class SyncProtocolUpgradeDialogTest {
         composeRule.runOnIdle {
             assertEquals(true, model.uiState.value.approved)
             assertFalse(model.uiState.value.isSyncing)
-            assertEquals(listOf("optimize:true", "sync"), calls)
+            assertEquals(listOf("sync"), calls)
         }
     }
 
     @Test
-    fun confirmingDefaultChoicePreservesLyricsAndImmediatelySynchronizes() {
+    fun confirmingDeviceDeclarationImmediatelySynchronizes() {
         val calls = mutableListOf<String>()
         val model = showStartupPrompt(
-            optimize = { calls += "optimize:$it" },
             sync = { id, mayApprove ->
                 assertEquals(target, id)
                 assertTrue(mayApprove)
@@ -139,7 +129,8 @@ class SyncProtocolUpgradeDialogTest {
                 Result.success(SyncResult(true, ""))
             }
         )
-        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_optimization_option)).assertIsOff()
+        composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_lossless_hint))
+            .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_all_devices_updated))
             .performScrollTo().performClick()
         composeRule.onNodeWithText(text(CoreCommonR.string.sync_upgrade_confirm))
@@ -147,14 +138,13 @@ class SyncProtocolUpgradeDialogTest {
 
         waitForDialogClosed()
         composeRule.runOnIdle {
-            assertEquals(listOf("optimize:false", "sync"), calls)
+            assertEquals(listOf("sync"), calls)
             assertEquals(true, model.uiState.value.approved)
         }
     }
 
     private fun showStartupPrompt(
         startup: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet()),
-        optimize: suspend (Boolean) -> Unit,
         sync: suspend (String, Boolean) -> Result<SyncResult>
     ): SyncProtocolUpgradeViewModel {
         lateinit var model: SyncProtocolUpgradeViewModel
@@ -165,7 +155,6 @@ class SyncProtocolUpgradeDialogTest {
                 loadActiveTargets = { setOf(target) },
                 startupTargetsFlow = startup,
                 initializeStartupTargets = { startup.value = setOf(target) },
-                saveOptimization = optimize,
                 performImmediateSync = sync
             ).also(models::add)
         }

@@ -81,7 +81,8 @@ class SyncArchiveScaleTest {
     }
 
     private fun report(name: String, archive: SyncPreparedArchive, started: Long) {
-        val manifest = SyncArchiveCodec.readManifest(archive.content)
+        assertEquals(4, SyncArchiveRepository.protocolVersion(archive.content))
+        val manifest = SyncArchiveRepository.originalManifest(archive.content)
         val wire = archive.objects.sumOf { it.content.size.toLong() } + archive.content.size
         println("SYNC_SCALE name=$name records=${manifest.recordCount} raw=${manifest.rawDataBytes} wire=$wire objects=${archive.paths.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
     }

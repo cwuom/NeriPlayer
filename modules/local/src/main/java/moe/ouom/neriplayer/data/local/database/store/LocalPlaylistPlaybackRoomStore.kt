@@ -4,10 +4,15 @@ package moe.ouom.neriplayer.data.local.database.store
 import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.stats.LocalPlaylistPlaybackCounterShardEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore
 import moe.ouom.neriplayer.data.local.database.entity.stats.toEntity
 import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlayBucket
 import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import java.io.IOException
+
+internal class LocalPlaylistPlaybackEventConflictException : IOException("Local playlist event identity reused with different content")
 
 internal class LocalPlaylistPlaybackRoomStore(
     private val database: NeriUserDataDatabase
@@ -78,6 +83,27 @@ internal class LocalPlaylistPlaybackRoomStore(
             insertStats(next.filter { it.playlistId in changedIds })
             markRoomPrimary(now)
         }
+    }
+
+    suspend fun writeIncrementalOnce(
+        previous: List<LocalPlaylistPlaybackStat>,
+        next: List<LocalPlaylistPlaybackStat>,
+        eventId: String,
+        payloadHash: String,
+        now: Long
+    ): Boolean = database.withTransaction {
+        val receiptId = "local-playlist-play:$eventId"
+        val dao = database.playbackStatsSnapshotDao()
+        val receipt = dao.receipt(receiptId)
+        if (receipt != null) {
+            if (receipt.payloadHash != payloadHash) throw LocalPlaylistPlaybackEventConflictException()
+            return@withTransaction false
+        }
+        // 回执和递增共用事务，提交后的取消及进程重启都不会重复计数
+        writeIncremental(previous, next, now)
+        dao.insertReceipt(PlaybackStatsEventReceiptEntity(receiptId, now, payloadHash))
+        dao.pruneCompletedReceipts(PlaybackStatsRoomStore.RETAINED_EVENT_RECEIPTS)
+        true
     }
 
     private suspend fun insertStats(stats: List<LocalPlaylistPlaybackStat>) {

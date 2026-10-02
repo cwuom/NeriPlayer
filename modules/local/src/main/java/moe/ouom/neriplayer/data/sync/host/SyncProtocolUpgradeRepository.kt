@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.host
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -58,8 +59,9 @@ class SyncProtocolUpgradeRepository(
     fun versionFlow(targetId: String): Flow<Int> = verifiedFlow.map { preferences ->
         val storedVersion = storedProtocolVersion(preferences)
         if (storedVersion > CURRENT_PROTOCOL_VERSION) storedVersion
-        else if (targetId in startupTargets(preferences) || preferences[pendingKey(targetId)] != null || preferences[approvalKey(targetId)] != null) LEGACY_PROTOCOL_VERSION
-        else CURRENT_PROTOCOL_VERSION
+        else migrationForTarget(preferences, targetId)?.fromVersion
+            ?: observedVersion(preferences, targetId)
+            ?: if (targetId in startupTargets(preferences)) LEGACY_PROTOCOL_VERSION else CURRENT_PROTOCOL_VERSION
     }.distinctUntilChanged()
 
     suspend fun initializeStartupTargets(targetIds: Set<String>) {
@@ -70,10 +72,11 @@ class SyncProtocolUpgradeRepository(
         dataStore.edit { preferences ->
             currentCoroutineContext().ensureActive()
             ensureSupported(preferences)
-            if (preferences[StartupRegistrationVersion] == null) {
-                // 只登记首次新版启动前已有的配置，新地址仍等待真实远端格式检测
-                preferences[StartupLegacyTargets] = targets.filterTo(mutableSetOf()) { target ->
-                    target !in preferences[ObservedCurrentTargets].orEmpty() &&
+            migrateObservedTargets(preferences)
+            if ((preferences[StartupRegistrationVersion] ?: 0) < CURRENT_PROTOCOL_VERSION) {
+                // 每次协议升级登记已有地址，新配置仍等待真实远端检测
+                preferences[StartupLegacyTargets] = startupTargets(preferences) + targets.filter { target ->
+                    observedVersion(preferences, target) != CURRENT_PROTOCOL_VERSION &&
                         preferences[pendingKey(target)] == null && preferences[approvalKey(target)] == null
                 }
                 preferences[StartupRegistrationVersion] = CURRENT_PROTOCOL_VERSION
@@ -94,42 +97,45 @@ class SyncProtocolUpgradeRepository(
     }
 
     suspend fun requireLegacyMigration(challenge: SyncProtocolUpgradeChallenge) {
+        ensureSupportedChallenge(challenge)
         currentCoroutineContext().ensureActive()
         ensureSupported(verifiedPreferences())
         dataStore.edit { preferences ->
             currentCoroutineContext().ensureActive()
             ensureSupported(preferences)
-            if (preferences[approvalKey(challenge.targetId)] != challenge.fingerprint) {
-                preferences[pendingKey(challenge.targetId)] = challenge.fingerprint
+            preferences[observedKey(challenge.targetId)] = challenge.fromVersion
+            if (preferences[approvalKey(challenge.targetId)] != encodeChallenge(challenge)) {
+                preferences[pendingKey(challenge.targetId)] = encodeChallenge(challenge)
                 preferences.remove(approvalKey(challenge.targetId))
             }
         }
         val preferences = verifiedPreferences()
         ensureSupported(preferences)
-        if (preferences[approvalKey(challenge.targetId)] != challenge.fingerprint) {
+        if (preferences[approvalKey(challenge.targetId)] != encodeChallenge(challenge)) {
             throw SyncProtocolUpgradeRequiredException(requiredMessage(), challenge)
         }
     }
 
     suspend fun confirmAllDevicesUpdated(allDevicesUpdated: Boolean, challenge: SyncProtocolUpgradeChallenge) {
         require(allDevicesUpdated) { "All sync devices must be updated before upgrading the sync database" }
+        ensureSupportedChallenge(challenge)
         currentCoroutineContext().ensureActive()
         ensureSupported(verifiedPreferences())
         dataStore.edit { preferences ->
             currentCoroutineContext().ensureActive()
             ensureSupported(preferences)
             val detected = preferences[pendingKey(challenge.targetId)]
-            if (detected != challenge.fingerprint) {
-                val current = detected?.let { SyncProtocolUpgradeChallenge(challenge.targetId, it) }
+            if (detected?.let { decodeChallenge(challenge.targetId, it) } != challenge) {
+                val current = detected?.let { decodeChallenge(challenge.targetId, it) }
                 throw SyncProtocolUpgradeRequiredException(requiredMessage(), current)
             }
-            preferences[approvalKey(challenge.targetId)] = challenge.fingerprint
+            preferences[approvalKey(challenge.targetId)] = encodeChallenge(challenge)
             preferences.remove(pendingKey(challenge.targetId))
             preferences[ApprovedProtocolVersion] = CURRENT_PROTOCOL_VERSION
         }
         val confirmed = verifiedPreferences()
         ensureSupported(confirmed)
-        if (confirmed[approvalKey(challenge.targetId)] != challenge.fingerprint) {
+        if (confirmed[approvalKey(challenge.targetId)] != encodeChallenge(challenge)) {
             throw SyncProtocolUpgradeRequiredException(requiredMessage(), challenge)
         }
     }
@@ -141,16 +147,20 @@ class SyncProtocolUpgradeRepository(
         confirmAllDevicesUpdated(true, challenge)
     }
 
-    suspend fun markCurrent(targetId: String) {
+    suspend fun markCurrent(targetId: String, version: Int = CURRENT_PROTOCOL_VERSION) {
+        require(targetId.matches(TargetHash)) { "Invalid sync target" }
+        require(version == 3 || version == CURRENT_PROTOCOL_VERSION) { "Unsupported observed sync protocol" }
         currentCoroutineContext().ensureActive()
         ensureSupported(verifiedPreferences())
         dataStore.edit { preferences ->
             currentCoroutineContext().ensureActive()
             ensureSupported(preferences)
-            preferences.remove(pendingKey(targetId))
-            preferences.remove(approvalKey(targetId))
-            preferences[StartupLegacyTargets] = startupTargets(preferences) - targetId
-            preferences[ObservedCurrentTargets] = preferences[ObservedCurrentTargets].orEmpty() + targetId
+            preferences[observedKey(targetId)] = version
+            if (version == CURRENT_PROTOCOL_VERSION) {
+                preferences.remove(pendingKey(targetId))
+                preferences.remove(approvalKey(targetId))
+                preferences[StartupLegacyTargets] = startupTargets(preferences) - targetId
+            }
         }
         ensureSupported(verifiedPreferences())
     }
@@ -180,8 +190,56 @@ class SyncProtocolUpgradeRepository(
 
     private fun storedProtocolVersion(preferences: Preferences): Int = maxOf(
         preferences[ApprovedProtocolVersion] ?: CURRENT_PROTOCOL_VERSION,
-        preferences[StartupRegistrationVersion] ?: CURRENT_PROTOCOL_VERSION
+        preferences[StartupRegistrationVersion] ?: CURRENT_PROTOCOL_VERSION,
+        storedMigrationProtocolVersion(preferences),
+        storedObservedProtocolVersion(preferences)
     )
+
+    private fun storedMigrationProtocolVersion(preferences: Preferences): Int =
+        migrationRecords(preferences).maxOfOrNull { it.toVersion } ?: CURRENT_PROTOCOL_VERSION
+
+    private fun storedObservedProtocolVersion(preferences: Preferences): Int = preferences.asMap()
+        .filterKeys { it.name.startsWith(ObservedProtocolPrefix) }.values
+        .map { it as? Int ?: throw IOException("Invalid observed sync protocol") }
+        .maxOrNull() ?: CURRENT_PROTOCOL_VERSION
+
+    private fun ensureSupportedChallenge(challenge: SyncProtocolUpgradeChallenge) {
+        if (challenge.toVersion != CURRENT_PROTOCOL_VERSION || challenge.fromVersion !in listOf(LEGACY_PROTOCOL_VERSION, 3)) {
+            throw SyncProtocolUpgradeRequiredException(requiredMessage(), challenge)
+        }
+    }
+
+    private fun observedVersion(preferences: Preferences, targetId: String): Int? =
+        preferences[observedKey(targetId)] ?: targetId.takeIf { it in preferences[ObservedCurrentTargets].orEmpty() }?.let { 3 }
+
+    private fun migrateObservedTargets(preferences: MutablePreferences) {
+        for (target in preferences[ObservedCurrentTargets].orEmpty()) {
+            require(target.matches(TargetHash)) { "Invalid observed sync target" }
+            if (preferences[observedKey(target)] == null) preferences[observedKey(target)] = 3
+        }
+    }
+
+    private fun migrationForTarget(preferences: Preferences, targetId: String): SyncProtocolUpgradeChallenge? =
+        (preferences[pendingKey(targetId)] ?: preferences[approvalKey(targetId)])?.let { decodeChallenge(targetId, it) }
+
+    private fun migrationRecords(preferences: Preferences): List<SyncProtocolUpgradeChallenge> = preferences.asMap()
+        .filterKeys { it.name.startsWith(PendingPrefix) || it.name.startsWith(ApprovalPrefix) }
+        .map { (key, value) ->
+            val target = key.name.removePrefix(PendingPrefix).removePrefix(ApprovalPrefix)
+            decodeChallenge(target, value as? String ?: throw IOException("Invalid sync upgrade state"))
+        }
+
+    private fun encodeChallenge(challenge: SyncProtocolUpgradeChallenge): String =
+        "${challenge.fromVersion}:${challenge.toVersion}:${challenge.fingerprint}"
+
+    private fun decodeChallenge(targetId: String, value: String): SyncProtocolUpgradeChallenge {
+        if (value.matches(TargetHash)) return SyncProtocolUpgradeChallenge(targetId, value)
+        val parts = value.split(':')
+        if (parts.size != 3) throw IOException("Invalid sync upgrade state")
+        val from = parts[0].toIntOrNull() ?: throw IOException("Invalid sync upgrade source version")
+        val to = parts[1].toIntOrNull() ?: throw IOException("Invalid sync upgrade destination version")
+        return SyncProtocolUpgradeChallenge(targetId, parts[2], from, to)
+    }
 
     private fun startupTargets(preferences: Preferences): Set<String> =
         preferences[StartupLegacyTargets].orEmpty()
@@ -196,15 +254,16 @@ class SyncProtocolUpgradeRepository(
 
     private fun pending(preferences: Preferences): List<SyncProtocolUpgradeChallenge> = preferences.asMap()
         .filterKeys { it.name.startsWith(PendingPrefix) }
-        .map { (key, value) -> SyncProtocolUpgradeChallenge(key.name.removePrefix(PendingPrefix),
+        .map { (key, value) -> decodeChallenge(key.name.removePrefix(PendingPrefix),
             value as? String ?: throw IOException("Invalid sync upgrade state")) }
         .sortedBy { it.targetId }
 
     private fun pendingKey(targetId: String) = stringPreferencesKey("$PendingPrefix$targetId")
     private fun approvalKey(targetId: String) = stringPreferencesKey("$ApprovalPrefix$targetId")
+    private fun observedKey(targetId: String) = intPreferencesKey("$ObservedProtocolPrefix$targetId")
 
     companion object {
-        const val CURRENT_PROTOCOL_VERSION = 3
+        const val CURRENT_PROTOCOL_VERSION = 4
         const val LEGACY_PROTOCOL_VERSION = 0
         private val ApprovedProtocolVersion = intPreferencesKey("approved_protocol_version")
         private val StartupRegistrationVersion = intPreferencesKey("startup_registration_version")
@@ -213,6 +272,7 @@ class SyncProtocolUpgradeRepository(
         private val TargetHash = Regex("[0-9a-f]{64}")
         private const val PendingPrefix = "pending_legacy_"
         private const val ApprovalPrefix = "approved_legacy_"
+        private const val ObservedProtocolPrefix = "observed_protocol_"
 
         fun githubTargetHash(owner: String, repo: String): String = targetHash(
             listOf("github", owner.trim().lowercase(Locale.ROOT), repo.trim().lowercase(Locale.ROOT))

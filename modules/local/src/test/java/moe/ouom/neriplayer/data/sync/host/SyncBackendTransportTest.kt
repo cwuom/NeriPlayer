@@ -39,7 +39,9 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.*
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.Base64
+import java.security.MessageDigest
 
 class SyncBackendTransportTest {
     @get:Rule val temporary = TemporaryFolder()
@@ -109,7 +111,7 @@ class SyncBackendTransportTest {
         val migrated = fixture.backend.fetch().getOrThrow().tracked()
         assertEquals(payload, migrated.dataset?.data)
         fixture.backend.upload(migrated.dataset!!, migrated.version).getOrThrow()
-        fixture.authorizeMigration = { error("v3 must not request legacy upgrade") }
+        fixture.authorizeMigration = { error("current archive must not request legacy upgrade") }
         fixture.backend.fetch().getOrThrow().tracked()
         assertEquals(2, fixture.currentObservations)
     }
@@ -127,7 +129,7 @@ class SyncBackendTransportTest {
         val migrated = fixture.backend.fetch().getOrThrow().tracked()
         assertEquals(payload, migrated.dataset?.data)
         fixture.backend.upload(migrated.dataset!!, migrated.version).getOrThrow()
-        fixture.authorizeMigration = { error("v3 must not request legacy upgrade") }
+        fixture.authorizeMigration = { error("current archive must not request legacy upgrade") }
         fixture.backend.fetch().getOrThrow().tracked()
         assertEquals(2, fixture.currentObservations)
     }
@@ -199,7 +201,7 @@ class SyncBackendTransportTest {
     }
 
     @Test
-    fun `GitHub reuses immutable objects and reads cached archive objects`() = runTest {
+    fun `GitHub reuses immutable uploads and verifies the complete remote archive on every read`() = runTest {
         val fixture = GitHubFixture()
         val empty = fixture.backend.fetch().getOrThrow().tracked()
         assertEquals("head", empty.version.sha)
@@ -213,12 +215,14 @@ class SyncBackendTransportTest {
         assertEquals(1, fixture.writes.count { it.url.encodedPath.endsWith("/git/commits") })
         fixture.reads.clear()
         assertEquals(payload, fixture.backend.fetch().getOrThrow().tracked().dataset?.data)
-        assertEquals(1, fixture.reads.size)
-        assertTrue(fixture.reads.single().url.encodedPath.endsWith(SyncArchiveRepository.MANIFEST_FILE_NAME))
+        assertEquals(uploaded.knownPaths + SyncArchiveRepository.MANIFEST_FILE_NAME,
+            fixture.reads.map { it.url.pathSegments.last() }.toSet())
+        assertEquals(uploaded.knownPaths.size + 1, fixture.reads.size)
+        assertTrue(fixture.reads.all { it.url.queryParameter("ref") == "commit" })
     }
 
     @Test
-    fun `GitHub migrates a v3 manifest discovered at a legacy file name`() = runTest {
+    fun `GitHub migrates an archive manifest discovered at a legacy file name`() = runTest {
         val fixture = GitHubFixture()
         fixture.backend.upload(staged(payload), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
         fixture.files["backup.json"] = fixture.files.remove(SyncArchiveRepository.MANIFEST_FILE_NAME)!!
@@ -308,7 +312,7 @@ class SyncBackendTransportTest {
     }
 
     @Test
-    fun `WebDAV migrates a v3 manifest discovered at the configured legacy file`() = runTest {
+    fun `WebDAV migrates an archive manifest discovered at the configured legacy file`() = runTest {
         val fixture = WebDavFixture()
         fixture.backend.upload(staged(payload), WebDavSyncBackend.Version(null, true)).getOrThrow()
         fixture.body = fixture.files.remove(SyncArchiveRepository.MANIFEST_FILE_NAME)!!
@@ -398,11 +402,51 @@ class SyncBackendTransportTest {
         assertEquals(1, fixture.writes.size)
         fixture.reads.clear()
         assertEquals(payload, fixture.backend.fetch().getOrThrow().tracked().dataset?.data)
-        assertEquals(1, fixture.reads.size)
+        assertEquals(uploaded.knownPaths + SyncArchiveRepository.MANIFEST_FILE_NAME,
+            fixture.reads.map { it.url.pathSegments.last() }.toSet())
+        assertEquals(uploaded.knownPaths.size + 1, fixture.reads.size)
         fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME] = byteArrayOf(1, 2)
         fixture.reads.clear()
         assertTrue(fixture.backend.fetch().isFailure)
         assertEquals(1, fixture.reads.size)
+    }
+
+    @Test
+    fun `GitHub cached objects cannot conceal missing or corrupt remote archive objects`() = runTest {
+        for (remove in listOf(false, true)) {
+            val fixture = GitHubFixture()
+            val uploaded = fixture.backend.upload(staged(payload), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
+            fixture.backend.fetch().getOrThrow().tracked()
+            val path = uploaded.knownPaths.first()
+            if (remove) fixture.files.remove(path) else fixture.files[path] = byteArrayOf(1, 2)
+            fixture.reads.clear()
+            fixture.writes.clear()
+
+            assertTrue(fixture.backend.fetch().isFailure)
+
+            assertTrue(fixture.reads.any { it.url.pathSegments.last() == path })
+            assertTrue(fixture.reads.none { it.url.pathSegments.last() in setOf("backup.json", "backup.bin") })
+            assertTrue(fixture.writes.isEmpty())
+        }
+    }
+
+    @Test
+    fun `WebDAV cached objects cannot conceal missing or corrupt remote archive objects`() = runTest {
+        for (remove in listOf(false, true)) {
+            val fixture = WebDavFixture()
+            val uploaded = fixture.backend.upload(staged(payload), WebDavSyncBackend.Version(null, true)).getOrThrow()
+            fixture.backend.fetch().getOrThrow().tracked()
+            val path = uploaded.knownPaths.first()
+            if (remove) fixture.files.remove(path) else fixture.files[path] = byteArrayOf(1, 2)
+            fixture.reads.clear()
+            fixture.writes.clear()
+
+            assertTrue(fixture.backend.fetch().isFailure)
+
+            assertTrue(fixture.reads.any { it.url.pathSegments.last() == path })
+            assertTrue(fixture.reads.none { it.url.pathSegments.last() == "backup" })
+            assertTrue(fixture.writes.isEmpty())
+        }
     }
 
     @Test
@@ -450,7 +494,7 @@ class SyncBackendTransportTest {
         val fileFailures = mutableMapOf<String, Int>()
         var headBody = """{"object":{"sha":"head"}}"""
         private val blobs = mutableMapOf<String, ByteArray>()
-        private val pending = mutableMapOf<String, ByteArray>()
+        private val pending = mutableMapOf<String, ByteArray?>()
         var failure = 0
         var followUps = 0
         var authorizeMigration: suspend (ByteArray) -> Unit = {}
@@ -468,6 +512,13 @@ class SyncBackendTransportTest {
                 }
                 path.endsWith("/git/ref/heads/main") -> response(request, 200, headBody.toByteArray())
                 path.contains("/git/commits/") -> response(request, 200, """{"tree":{"sha":"tree"}}""".toByteArray())
+                path.endsWith("/git/trees/tree") && request.method == "GET" -> {
+                    val entries = JSONArray()
+                    files.forEach { (name, bytes) -> entries.put(JSONObject().put("path", name)
+                        .put("mode", "100644").put("type", "blob").put("sha", blobSha(bytes))) }
+                    val listing = JSONObject().put("sha", "tree").put("tree", entries).put("truncated", false)
+                    response(request, 200, listing.toString().toByteArray())
+                }
                 path == "/graphql" -> {
                     writes += request
                     val body = Buffer().use { request.body!!.writeTo(it); JSONObject(it.readUtf8()) }
@@ -479,31 +530,30 @@ class SyncBackendTransportTest {
                     if (update.getString("beforeOid") != JSONObject(headBody).getJSONObject("object").getString("sha")) {
                         response(request, 200, """{"data":{"updateRefs":null},"errors":[{"type":"STALE_DATA","message":"Reference has changed"}]}""".toByteArray())
                     } else {
-                        files.putAll(pending)
-                        pending.clear()
+                        publishPending()
                         headBody = JSONObject().put("object", JSONObject().put("sha", update.getString("afterOid"))).toString()
                         val result = JSONObject().put("data", JSONObject().put("updateRefs", JSONObject().put("clientMutationId", input.optString("clientMutationId"))))
                         response(request, 200, result.toString().toByteArray())
                     }
                 }
                 path.endsWith("/git/refs/heads/main") -> {
-                    files.putAll(pending)
-                    pending.clear()
+                    publishPending()
                     response(request, 200, "{}".toByteArray())
                 }
                 request.method == "POST" -> {
                     writes += request
                     val body = Buffer().use { request.body!!.writeTo(it); JSONObject(it.readUtf8()) }
                     val sha = if (path.endsWith("/git/blobs")) {
-                        val blobSha = "blob-${blobs.size}"
-                        blobs[blobSha] = Base64.getDecoder().decode(body.getString("content"))
-                        blobSha
+                        val bytes = Base64.getDecoder().decode(body.getString("content"))
+                        val sha = blobSha(bytes)
+                        blobs[sha] = bytes
+                        sha
                     } else {
                         if (path.endsWith("/git/trees")) {
                             val entries = body.getJSONArray("tree")
                             for (i in 0 until entries.length()) {
                                 val entry = entries.getJSONObject(i)
-                                pending[entry.getString("path")] = blobs.getValue(entry.getString("sha"))
+                                pending[entry.getString("path")] = if (entry.isNull("sha")) null else blobs.getValue(entry.getString("sha"))
                             }
                         }
                         "commit"
@@ -513,6 +563,16 @@ class SyncBackendTransportTest {
                 else -> response(request, 200, """{"default_branch":"main","node_id":"repository-node"}""".toByteArray())
             }
         }.build()
+
+        private fun publishPending() {
+            pending.forEach { (path, bytes) -> if (bytes == null) files.remove(path) else files[path] = bytes }
+            pending.clear()
+        }
+
+        private fun blobSha(bytes: ByteArray): String = MessageDigest.getInstance("SHA-1").run {
+            update("blob ${bytes.size}\u0000".toByteArray(Charsets.US_ASCII))
+            digest(bytes).joinToString("") { "%02x".format(it) }
+        }
         val backend = GitHubSyncBackend(storage, GitHubApiClient("test-token", client, "expired", "https://sync.test"),
             "owner", "repo", SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
             SyncArchiveRepository(temporary.newFolder()),

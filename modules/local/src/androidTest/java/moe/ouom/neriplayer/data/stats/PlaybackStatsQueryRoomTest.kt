@@ -16,9 +16,43 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.Calendar
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsQueryRoomTest {
+    @Test
+    fun mixedPeriodQueriesKeepLegacyOnlyTracksWithoutFallingBackForBucketedTracks() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
+        try {
+            val store = PlaybackStatsRoomStore(database)
+            val now = Calendar.getInstance().apply { clear(); set(2026, Calendar.SEPTEMBER, 16, 12, 0, 0) }.timeInMillis
+            val day = playbackStatsDayStartAt(now)
+            val bucketed = track(0).copy(totalListenMs = 90_000, playCount = 9, firstPlayedAt = now - 100, lastPlayedAt = now)
+            val legacyOnly = track(1).copy(totalListenMs = 40_000, playCount = 4, firstPlayedAt = now - 100, lastPlayedAt = now)
+            val outsidePeriod = track(2).copy(totalListenMs = 80_000, playCount = 8, firstPlayedAt = now - 100, lastPlayedAt = now)
+            store.importLegacyAndPromote(
+                listOf(bucketed, legacyOnly, outsidePeriod),
+                listOf(bucket(bucketed, day).copy(totalListenMs = 20_000, playCount = 2),
+                    bucket(outsidePeriod, day - 400L * 86_400_000)),
+                PlaybackStatsSyncCounterSnapshot(), 0, 0
+            )
+
+            for (period in listOf(PlaybackStatsPeriod.DAY, PlaybackStatsPeriod.WEEK, PlaybackStatsPeriod.MONTH)) {
+                val query = PlaybackStatsQuery(period, nowMillis = now)
+                val first = store.readPage(query, null, 1)
+                assertEquals(legacyOnly.identityKey, first.tracks.single().identityKey)
+                val second = store.readPage(query, first.nextCursor, 1)
+                assertEquals(listOf(legacyOnly.identityKey, bucketed.identityKey), (first.tracks + second.tracks).map { it.identityKey })
+                val summary = store.readSummary(query)
+                assertEquals(2L, summary.trackCount)
+                assertEquals(6L, summary.totalPlayCount)
+                assertEquals(60_000L, summary.totalListenMs)
+                assertTrue(summary.usesLegacyBreakdown)
+            }
+        } finally { database.close() }
+    }
+
     @Test
     fun summarySaturatesLongExactlyAndNeverUsesFloatingPoint() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()

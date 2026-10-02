@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
@@ -34,7 +35,7 @@ internal class GitHubSyncBackend(
     private val archive: SyncArchiveRepository,
     private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets,
     private val authorizeLegacyMigration: suspend (ByteArray) -> Unit = {},
-    private val currentProtocolObserved: suspend () -> Unit = {}
+    private val currentProtocolObserved: suspend (Int) -> Unit = {}
 ) : SyncBackend<GitHubSyncBackend.Version> {
     private val useDataSaver = storage.isDataSaverMode()
     private val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
@@ -92,7 +93,7 @@ internal class GitHubSyncBackend(
         ).getOrElse { return Result.failure(it) }
         if (fetched == null) {
             archive.captureLegacyLyrics(SyncData())
-            return observeCurrentSyncProtocol(SyncDatasetRemoteSnapshot(null, Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch)), currentProtocolObserved)
+            return observeCurrentSyncProtocol(SyncDatasetRemoteSnapshot(null, Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch)), observe = currentProtocolObserved)
         }
         return decodeLegacyContent(fetched.content, head)
     }
@@ -114,13 +115,19 @@ internal class GitHubSyncBackend(
     }
 
     private suspend fun decodeArchive(content: ByteArray, head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
-        val dataset = archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize) { path -> apiClient.getFileContentAtRef(owner, repo, path, head.sha) }
+        val protocol = runCatching { SyncArchiveRepository.protocolVersion(content) }.getOrElse { return Result.failure(it) }
+        if (protocol < 4) {
+            try { authorizeLegacyMigration(content) } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { return Result.failure(error) }
+        }
+        val dataset = archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize, verifyRemoteObjects = true) { path -> apiClient.getFileContentAtRef(owner, repo, path, head.sha) }
             .getOrElse { return Result.failure(it) }
         return observeCurrentSyncProtocol(
             SyncDatasetRemoteSnapshot(
                 dataset = sanitizeDataset(dataset),
-                version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, archive.lastReferencedPaths)
-            ), currentProtocolObserved
+                version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, archive.lastReferencedPaths),
+                requiresMigrationUpload = protocol < 4
+            ), protocol, currentProtocolObserved
         )
     }
 
@@ -139,8 +146,8 @@ internal class GitHubSyncBackend(
         return archive.prepareCancellable(data).use { prepared ->
             val files = prepared.objects(version.knownPaths)
                 .map { it.path to it.content } + sequenceOf(SyncArchiveRepository.MANIFEST_FILE_NAME to prepared.content)
-            apiClient.updateFilesContent(owner, repo, files, head).mapCatching { sha ->
-                currentProtocolObserved()
+            apiClient.updateFilesContent(owner, repo, files, head, retainedArchivePaths = prepared.paths).mapCatching { sha ->
+                currentProtocolObserved(4)
                 Version(sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, prepared.paths)
             }
         }

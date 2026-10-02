@@ -17,7 +17,7 @@ internal object AppPlaybackStatsWritePort : PlaybackStatsWritePort {
             observedClearedAt = snapshot.observedClearedAt
         )
         countedLocalPlaylistId(snapshot)?.let { playlistId ->
-            PlayerDependencies.repositories.localPlaylistPlaybackStatsRepo.recordPlayNow(playlistId)
+            PlayerDependencies.repositories.localPlaylistPlaybackStatsRepo.recordPlayNow(playlistId, snapshot.playedAt, snapshot.eventId)
         }
     }
 

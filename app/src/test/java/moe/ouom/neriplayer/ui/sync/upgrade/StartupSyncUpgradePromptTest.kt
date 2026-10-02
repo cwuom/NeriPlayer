@@ -60,7 +60,7 @@ class StartupSyncUpgradePromptTest {
             fixture.pump()
             assertEquals(challenge.targetId, fixture.visibleState?.startupTargetId)
             assertNull(fixture.visibleState?.challenge)
-            assertFalse(requireNotNull(fixture.visibleState).optimizeData)
+            assertFalse(requireNotNull(fixture.visibleState).allDevicesUpdated)
             assertFalse(requireNotNull(fixture.visibleState).canConfirm)
         } finally {
             fixture.close()

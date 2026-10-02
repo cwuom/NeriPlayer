@@ -16,7 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
-import org.mockito.Mockito.times
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class AndroidSyncSnapshotLegacyLyricsTest {
@@ -44,7 +44,7 @@ class AndroidSyncSnapshotLegacyLyricsTest {
     }
 
     @Test
-    fun `optional optimization preserves Bilibili and explicit edits while omitting unknown remote lyrics`() {
+    fun `old global optimization no longer omits unknown lyrics from new snapshots`() {
         val fixture = Fixture()
         val legacy = SyncSong(id = 7, album = "Netease", matchedLyric = "unknown old lyrics")
         val bilibili = legacy.copy(id = 8, album = "Bilibili", lyricSyncEdited = false)
@@ -53,11 +53,13 @@ class AndroidSyncSnapshotLegacyLyricsTest {
         `when`(fixture.storage.getLegacyLyricCandidates()).thenReturn(listOf(legacy))
         `when`(fixture.storage.getLyricOverrides()).thenReturn(listOf(bilibili, edited))
         val overrides = fixture.builder.build(fixture.context, 0L).lyricOverrides
-        assertEquals(setOf(bilibili.id, edited.id), overrides.map { it.id }.toSet())
+        assertEquals(setOf(legacy.id, bilibili.id, edited.id), overrides.map { it.id }.toSet())
+        assertEquals(legacy.matchedLyric, overrides.single { it.id == legacy.id }.matchedLyric)
+        assertEquals(true, overrides.single { it.id == legacy.id }.lyricSyncEdited)
         assertEquals(bilibili.matchedLyric, overrides.single { it.id == bilibili.id }.matchedLyric)
         assertEquals(1L, overrides.single { it.id == bilibili.id }.lyricSyncRevision)
         assertEquals(edited, overrides.single { it.id == edited.id })
-        verify(fixture.storage, times(1)).isLegacyLyricOptimizationEnabled()
+        verify(fixture.storage, never()).isLegacyLyricOptimizationEnabled()
     }
 
     private class Fixture {

@@ -150,6 +150,10 @@ interface PlaybackStatsDao {
     @Query("SELECT EXISTS(SELECT 1 FROM playback_stat LIMIT 1)")
     suspend fun hasStats(): Boolean
 
+    @Query("SELECT EXISTS(SELECT 1 FROM playback_stat s WHERE NOT EXISTS " +
+        "(SELECT 1 FROM playback_stat_bucket b WHERE b.identity_key = s.identity_key) LIMIT 1)")
+    suspend fun hasLegacyStats(): Boolean
+
     @Query("SELECT value FROM migration_metadata WHERE key = 'playback_stats_revision'")
     fun observeRevision(): Flow<String?>
 

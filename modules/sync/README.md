@@ -11,22 +11,30 @@
 Sources are in `src/main/java/moe/ouom/neriplayer`.
 
 - `api/sync`：GitHub/WebDAV 请求与响应 / GitHub/WebDAV requests and responses
-- `data/sync/archive`：v3 分块记录流、ZSTD、Merkle 校验与块缓存 / v3 chunked records, ZSTD, Merkle validation, and chunk cache
+- `data/sync/archive`：V4 可逆记录压缩、ZSTD、Merkle 校验与块缓存 / V4 reversible record packing, ZSTD, Merkle validation, and chunk cache
 - `data/sync/runtime/SyncSession.kt`：会话入口，通过 `SyncLocalDataStore` 与 `SyncBackend` 读写 / session entry point, accessing data through `SyncLocalDataStore` and `SyncBackend`
 - `data/sync/codec`、`sanitize`、`change`、`merge`：编解码、清洗、变化检测与合并 / codecs, sanitization, change detection, and merging
 - `data/sync/remote`、`retry`、`store`、`schedule`：远端版本、重试、凭据与调度 / remote versions, retries, credentials, and scheduling
 
-v3 的根清单是唯一发布点。GitHub 固定 HEAD 读取，最终通过 GraphQL `updateRefs` 的 `beforeOid` 与 `force=false` 原子更新引用。WebDAV 使用 `If-None-Match: *` 创建内容对象与首次清单，后续清单必须使用强 ETag 的 `If-Match`；缺少强条件时停止发布。普通网络歌词不传全文，用户编辑与重置有独立持久版本；旧来源未知的歌词保守迁移。本地凭据、设备身份与删除状态保留，旧载荷只用于读取迁移。
+V4 使用明确的协议和记录 schema 版本。`neriplayer-sync-v3.manifest` 文件名继续作为唯一发布点，内容标识为 `NPSYNC04`，对象使用 `neriplayer-sync-v4-` 前缀。传统 JSON/GZIP 与 V3 仅供读取迁移，V4 版本字段缺失或出现未知未来版本会中止读取和发布。旧客户端不能写入 V4，升级前必须确认使用该地址的所有设备都已更新。
 
-The v3 root manifest is the publication point. GitHub reads a fixed HEAD and atomically updates the ref through GraphQL `updateRefs` with `beforeOid` and `force=false`. WebDAV creates objects and the initial manifest with `If-None-Match: *`; later manifest writes require `If-Match` with a strong ETag. Publication stops when a strong condition is unavailable. Network lyric caches are omitted; user edits and resets have independent durable versions. Legacy lyrics with unknown provenance are preserved conservatively. Local credentials, device identities, and deletion state are preserved; legacy payloads are read only for migration.
+V4 stores explicit protocol and record schema versions. The existing `neriplayer-sync-v3.manifest` filename remains the only publication point; its envelope is `NPSYNC04`, and object names use `neriplayer-sync-v4-`. Traditional JSON/GZIP and V3 are read only for migration. Missing V4 version fields or unsupported future versions abort reading and publication. All devices using a target must be updated before migration.
 
-新安装默认使用 V3，空远端或已有 V3 数据直接同步。旧安装首次启动新版时，本地登记已有同步地址并直接显示升级弹窗；新增地址读取到合法的传统云端数据后再提示。弹窗默认完整保留旧歌词，可单独勾选有红色风险提示的有损优化；确认所有设备已更新后，先耐久保存优化选择，再立即同步。迁移许可只绑定该地址与实际读取的旧内容指纹，其他地址或内容变化不能沿用；成功还必须确认该地址已使用 V3。失败保留可重试的弹窗，未完成迁移的批准仍会在重启后提示。未确认时不迁移、不应用同步数据，后台任务静默结束。设置顶部警告只显示当前已配置地址的待升级状态，设置显示“同步数据库版本”；忽略后手动同步会重新打开弹窗。新格式不向下兼容，清除配置或导入设置不会批准传统数据迁移。
+压缩将记录元数据按有界块组织，以内容地址复用歌词全文；时间戳、数字和文字编码均可精确还原。歌曲身份相同但内容不同的旧歌词版本、空值、原词基线和历史日桶元数据全部保留。主记录、旧歌词候选和正文池分别建立 Merkle 树，数据块解压预算为 4 MiB，索引为 128 KiB，网络对象最多 2 MiB；不可压缩块会继续拆分。解包后的原始记录流还必须通过完整 SHA-256 校验。准备、读取失败或取消会清理临时工作目录。
 
-New installations default to V3, and empty or existing V3 remotes sync directly. On the first updated launch, existing installations register configured targets locally and show the upgrade dialog immediately. Newly configured targets prompt only after valid traditional data is detected. The dialog preserves legacy lyrics by default and offers an optional lossy optimization with a red warning. After the all-devices declaration, the choice is persisted before immediate synchronization. Migration approval is bound to the target and the actual legacy content fingerprint; changed targets or content require fresh approval. Success also requires V3 to be observed for that target. Failures remain retryable, and approved targets whose migration is incomplete prompt again after restart. Pending migration does not apply local data, and background jobs finish quietly. Settings show the sync database version and warnings for configured targets; manual sync reopens a deferred upgrade dialog. The format is not backward compatible; clearing or importing configuration does not approve traditional data migration.
+Packing uses bounded metadata blocks and content addresses for lyric text. Numeric, timestamp, and text encodings are exactly reversible. Distinct legacy lyric variants, nullable fields, baselines, and historical bucket metadata are preserved. Main records, legacy candidates, and the text pool have separate Merkle trees. Decoded data blocks are limited to 4 MiB, indexes to 128 KiB, and wire objects to 2 MiB; incompressible blocks are split further. Unpacked original streams also require complete SHA-256 verification. Temporary workspaces are released on completion, failure, and cancellation.
 
-分块解决单报文容量限制，变化块复用减少增量流量；初次全库总流量不能保证 3 MB。Android 仓库和合并仍保留全量列表，真实百万、千万规模的全过程有界内存尚未完成。
+GitHub 固定 HEAD 读取，发布通过 GraphQL `updateRefs` 的 `beforeOid` 与 `force=false` 原子更新引用。新清单与引用对象在同一提交中发布；该提交同时移除根目录中不再引用的规范 V3/V4 内容对象，保留无关文件和旧 Git 历史。WebDAV 使用 `If-None-Match: *` 创建内容对象与首次清单，后续清单必须使用强 ETag 的 `If-Match`，缺少强条件时停止发布；WebDAV 暂不删除旧对象。生产读取验证远端完整对象闭包，本地缓存不能证明远端对象仍存在。
 
-Chunking removes the single-payload limit, and chunk reuse reduces incremental traffic. Initial full sync traffic is not guaranteed below 3 MB. Android repositories and merging still retain complete lists; bounded memory throughout real million- and ten-million-record workflows remains unfinished.
+GitHub reads a fixed HEAD and publishes atomically with GraphQL `updateRefs`, `beforeOid`, and `force=false`. The new manifest, its objects, and deletion of unreferenced canonical V3/V4 root objects share one commit. Unrelated files and previous Git history are preserved. WebDAV creates objects and the initial manifest with `If-None-Match: *`, and requires a strong ETag with `If-Match` for later publication. It currently retains old objects. Production reads validate every referenced remote object; a local cache cannot establish remote availability.
+
+新安装和空远端使用 V4。已有同步地址首次升级时显示一次升级确认；新增地址读取到合法传统载荷或 V3 时提示。迁移许可绑定地址、实际内容指纹和来源/目标版本；更换地址、内容或版本后重新确认。只有观察到该地址已使用 V4 才完成升级并移除提示，失败或取消仍可重试。升级完整保留旧歌词，历史有损开关不再参与快照、迁移和投影，不再显示常驻压缩选项。普通网络缓存仍按既有编辑状态语义省略，已编辑歌词和恢复版本独立持久保存。
+
+New installations and empty targets use V4. Existing targets prompt once when updating; newly configured targets prompt after validated traditional or V3 data is found. Approval binds the target, actual content fingerprint, and source/destination versions. Changed content, targets, or versions require renewed approval. Migration completes and its prompt disappears only after V4 is observed for that target. Failures and cancellations remain retryable. Unknown legacy lyrics are preserved completely; the historical lossy preference is no longer consumed, and the permanent compression setting is removed. Ordinary known network caches retain their existing omission semantics, while edits and resets remain independently durable.
+
+分块和内容复用减少增量流量，初次全库总流量没有统一上限或固定压缩比。播放统计使用磁盘暂存和分页处理，歌单、历史与歌词 registry 仍有列表成本；真实百万、千万规模整个业务流程的有界内存尚未验证。
+
+Chunking and content reuse reduce incremental traffic. Initial archive size and compression ratio depend on the data. Playback statistics use disk staging and pages, while playlists, history, and the lyric registry still have list costs. Bounded memory across the complete real million- or ten-million-record workflow has not been established.
 
 歌词同步说明 / Lyric sync details: [歌词 / Lyrics](LYRIC_SYNC.md)。
 

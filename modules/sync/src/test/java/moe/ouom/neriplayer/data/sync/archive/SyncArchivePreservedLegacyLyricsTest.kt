@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.sync.archive
 
+import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Format
+
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import moe.ouom.neriplayer.data.model.sync.SyncData
@@ -7,7 +9,6 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -18,9 +19,12 @@ import org.junit.rules.TemporaryFolder
 class SyncArchivePreservedLegacyLyricsTest {
     @get:Rule val temporary = TemporaryFolder()
     private val legacy = SyncSong(id = 7, album = "Netease", matchedLyric = "old modified text",
-        matchedTranslatedLyric = "old translation", originalLyric = "baseline text", originalTranslatedLyric = "baseline translation")
+        matchedTranslatedLyric = "old translation", matchedRomanizedLyric = "",
+        originalLyric = "baseline text", originalTranslatedLyric = "baseline translation",
+        originalRomanizedLyric = "baseline romanized\r\n")
     private val omitted = legacy.copy(matchedLyric = null, matchedTranslatedLyric = null,
-        originalLyric = null, originalTranslatedLyric = null, lyricSyncEdited = false)
+        matchedRomanizedLyric = null, originalLyric = null, originalTranslatedLyric = null,
+        originalRomanizedLyric = null, lyricSyncEdited = false)
 
     @Test
     fun `first dataset read restores preserved lyrics into song and override before returning`() = runTest {
@@ -36,21 +40,48 @@ class SyncArchivePreservedLegacyLyricsTest {
     }
 
     @Test
-    fun `completed receipt restores lyrics from durable candidates without downloading source again`() = runTest {
-        val published = publishOmitted()
-        val recovery = MemoryRecovery()
-        SyncArchiveRepository(temporary.newFolder(), recovery).read(published.first) {
-            Result.success(published.second.getValue(it))
-        }.getOrThrow()
-        val source = requireNotNull(SyncArchiveCodec.readManifest(published.first).legacyLyrics)
-        val downloaded = mutableListOf<String>()
-        SyncArchiveRepository(temporary.newFolder(), recovery).readDataset(published.first,
-            FileSyncPlaybackDatasetStore(temporary.newFolder()), { it }, { it }) { path ->
-            downloaded += path
-            Result.success(published.second.getValue(path))
-        }.getOrThrow().use { dataset -> assertPreserved(dataset.data) }
-        assertFalse(source.root.path in downloaded)
-        assertEquals(1, recovery.recoveries)
+    fun `completed receipts validate the complete V3 and V4 closure without repeating recovery`() = runTest {
+        for (protocol in listOf(3, 4)) {
+            val published = publishOmitted(protocol = protocol)
+            val recovery = MemoryRecovery()
+            SyncArchiveRepository(temporary.newFolder(), recovery).read(published.first) {
+                Result.success(published.second.getValue(it))
+            }.getOrThrow()
+            val downloaded = mutableSetOf<String>()
+            SyncArchiveRepository(temporary.newFolder(), recovery).readDataset(published.first,
+                FileSyncPlaybackDatasetStore(temporary.newFolder()), { it }, { it }) { path ->
+                downloaded += path
+                Result.success(published.second.getValue(path))
+            }.getOrThrow().use { dataset -> assertPreserved(dataset.data) }
+            assertEquals(published.second.keys, downloaded)
+            assertEquals(1, recovery.recoveries)
+        }
+    }
+
+    @Test
+    fun `completed receipts and warm caches cannot approve a remote with a deleted source object`() = runTest {
+        for (protocol in listOf(3, 4)) {
+            val published = publishOmitted(protocol = protocol)
+            val recovery = MemoryRecovery()
+            val reader = SyncArchiveRepository(temporary.newFolder(), recovery)
+            reader.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow().also(::assertPreserved)
+            val sourcePath = if (protocol == 3) {
+                requireNotNull(SyncArchiveRepository.originalManifest(published.first).legacyLyrics).root.path
+            } else requireNotNull(SyncArchiveV4Format.readManifest(published.first).legacy.root).path
+            val missing = IOException("remote source object deleted")
+            val staging = temporary.newFolder()
+            val requested = mutableSetOf<String>()
+            val result = reader.readDataset(published.first, FileSyncPlaybackDatasetStore(staging), { it }, { it },
+                verifyRemoteObjects = true) { path ->
+                requested += path
+                if (path == sourcePath) Result.failure(missing) else Result.success(published.second.getValue(path))
+            }
+            assertSame(missing, result.exceptionOrNull())
+            assertTrue(sourcePath in requested)
+            assertTrue(staging.listFiles().orEmpty().isEmpty())
+            assertTrue(reader.lastReferencedPaths.isEmpty())
+            assertEquals(1, recovery.recoveries)
+        }
     }
 
     @Test
@@ -67,7 +98,7 @@ class SyncArchivePreservedLegacyLyricsTest {
     fun `baseline only legacy source is retained and restored as complete playback lyrics`() = runTest {
         val originalOnly = legacy.copy(matchedLyric = null, matchedTranslatedLyric = null)
         val published = publishOmitted(originalOnly)
-        assertNotNull(SyncArchiveCodec.readManifest(published.first).legacyLyrics)
+        assertNotNull(SyncArchiveRepository.originalManifest(published.first).legacyLyrics)
         val restored = SyncArchiveRepository(temporary.newFolder(), MemoryRecovery()).read(published.first) {
             Result.success(published.second.getValue(it))
         }.getOrThrow()
@@ -80,54 +111,56 @@ class SyncArchivePreservedLegacyLyricsTest {
     }
 
     @Test
-    fun `completed receipt read failure releases staging and remains retryable without source download`() = runTest {
-        val published = publishOmitted()
-        val recovery = MemoryRecovery()
-        SyncArchiveRepository(temporary.newFolder(), recovery).read(published.first) {
-            Result.success(published.second.getValue(it))
-        }.getOrThrow()
-        val source = requireNotNull(SyncArchiveCodec.readManifest(published.first).legacyLyrics)
-        val failure = IOException("durable candidate read failed")
-        recovery.readFailure = failure
-        val staging = temporary.newFolder()
-        val reader = SyncArchiveRepository(temporary.newFolder(), recovery)
-        val downloaded = mutableListOf<String>()
-        val result = reader.readDataset(published.first, FileSyncPlaybackDatasetStore(staging), { it }, { it }) { path ->
-            downloaded += path
-            Result.success(published.second.getValue(path))
+    fun `completed receipt failures clean staging after validating either protocol and remain retryable`() = runTest {
+        for (protocol in listOf(3, 4)) {
+            val published = publishOmitted(protocol = protocol)
+            val recovery = MemoryRecovery()
+            SyncArchiveRepository(temporary.newFolder(), recovery).read(published.first) {
+                Result.success(published.second.getValue(it))
+            }.getOrThrow()
+            val failure = IOException("durable candidate read failed")
+            recovery.readFailure = failure
+            val staging = temporary.newFolder()
+            val reader = SyncArchiveRepository(temporary.newFolder(), recovery)
+            val downloaded = mutableSetOf<String>()
+            val result = reader.readDataset(published.first, FileSyncPlaybackDatasetStore(staging), { it }, { it }) { path ->
+                downloaded += path
+                Result.success(published.second.getValue(path))
+            }
+            assertSame(failure, result.exceptionOrNull())
+            assertTrue(staging.listFiles().orEmpty().isEmpty())
+            assertEquals(published.second.keys, downloaded)
+            recovery.readFailure = null
+            reader.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow().also(::assertPreserved)
+            assertEquals(1, recovery.recoveries)
         }
-        assertSame(failure, result.exceptionOrNull())
-        assertTrue(staging.listFiles().orEmpty().isEmpty())
-        assertFalse(source.root.path in downloaded)
-        recovery.readFailure = null
-        reader.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow().also(::assertPreserved)
-        assertEquals(1, recovery.recoveries)
     }
 
     @Test
-    fun `optional optimization omits unknown lyrics from projection while preserving immutable source`() = runTest {
+    fun `historical optimization preference cannot remove any preserved lyric field`() = runTest {
         val published = publishOmitted()
         val recovery = MemoryRecovery().apply { optimize = true }
         val reader = SyncArchiveRepository(temporary.newFolder(), recovery)
         val restored = reader.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow()
-        assertTrue(restored.lyricOverrides.isEmpty())
-        assertEquals(omitted, restored.playlists.single().songs.single())
+        assertPreserved(restored)
         assertEquals(listOf(legacy), recovery.preservedLyrics())
         reader.prepare(restored).use { prepared ->
-            assertEquals(SyncArchiveCodec.readManifest(published.first).legacyLyrics,
-                SyncArchiveCodec.readManifest(prepared.content).legacyLyrics)
+            assertEquals(SyncArchiveRepository.originalManifest(published.first).legacyLyrics,
+                SyncArchiveRepository.originalManifest(prepared.content).legacyLyrics)
+            assertPreserved(reader.read(prepared.content) { error("writer cache must be complete") }.getOrThrow())
         }
     }
 
     @Test
-    fun `optimized migration still captures and restores unknown Bilibili lyrics`() = runTest {
+    fun `historical optimization preference retains every source including Netease and YouTube`() = runTest {
         val bilibili = legacy.copy(id = 8, album = "Bilibili")
         val youtube = legacy.copy(id = 9, album = "YouTube", channelId = "youtube")
         val candidates = listOf(legacy, bilibili, youtube)
         val writer = SyncArchiveRepository(temporary.newFolder(), MemoryRecovery().apply { optimize = true })
         writer.captureLegacyLyrics(SyncData(lyricOverrides = candidates))
         val references = candidates.map { it.copy(matchedLyric = null, matchedTranslatedLyric = null,
-            originalLyric = null, originalTranslatedLyric = null, lyricSyncEdited = false) }
+            matchedRomanizedLyric = null, originalLyric = null, originalTranslatedLyric = null,
+            originalRomanizedLyric = null, lyricSyncEdited = false) }
         val published = writer.prepare(SyncData(playlists = listOf(SyncPlaylist(id = 1, songs = references)))).use {
             it.content to it.objects.associate { obj -> obj.path to obj.content }
         }
@@ -135,31 +168,36 @@ class SyncArchivePreservedLegacyLyricsTest {
         val restored = SyncArchiveRepository(temporary.newFolder(), recovery).read(published.first) {
             Result.success(published.second.getValue(it))
         }.getOrThrow()
-        assertEquals(listOf(bilibili), recovery.preservedLyrics())
-        assertEquals(bilibili.matchedLyric, restored.lyricOverrides.single().matchedLyric)
-        assertEquals(bilibili.originalLyric, restored.lyricOverrides.single().originalLyric)
-        assertEquals(bilibili.id, restored.lyricOverrides.single().id)
-        assertEquals(true, restored.lyricOverrides.single().lyricSyncEdited)
-        assertTrue(restored.playlists.single().songs.filter { it.id != bilibili.id }.all { it.matchedLyric == null })
+        assertEquals(candidates.toSet(), recovery.preservedLyrics().toSet())
+        assertEquals(candidates.size, recovery.preservedLyrics().size)
+        assertEquals(candidates.size, restored.lyricOverrides.size)
+        for (candidate in candidates) {
+            val expected = candidate.copy(lyricSyncEdited = true, lyricSyncRevision = 1)
+            assertEquals(expected, restored.lyricOverrides.single { it.id == candidate.id })
+            assertEquals(expected, restored.playlists.single().songs.single { it.id == candidate.id })
+        }
     }
 
     private fun assertPreserved(data: SyncData) {
         val song = data.playlists.single().songs.single()
         assertEquals(legacy.matchedLyric, song.matchedLyric)
         assertEquals(legacy.matchedTranslatedLyric, song.matchedTranslatedLyric)
+        assertEquals(legacy.matchedRomanizedLyric, song.matchedRomanizedLyric)
         assertEquals(legacy.originalLyric, song.originalLyric)
         assertEquals(legacy.originalTranslatedLyric, song.originalTranslatedLyric)
+        assertEquals(legacy.originalRomanizedLyric, song.originalRomanizedLyric)
         assertEquals(true, song.lyricSyncEdited)
         assertEquals(1L, song.lyricSyncRevision)
-        assertEquals(song.matchedLyric, data.lyricOverrides.single().matchedLyric)
-        assertEquals(song.originalLyric, data.lyricOverrides.single().originalLyric)
+        assertEquals(song, data.lyricOverrides.single())
     }
 
-    private fun publishOmitted(candidate: SyncSong = legacy): Pair<ByteArray, Map<String, ByteArray>> {
+    private fun publishOmitted(candidate: SyncSong = legacy, protocol: Int = 4): Pair<ByteArray, Map<String, ByteArray>> {
         val writer = SyncArchiveRepository(temporary.newFolder())
         writer.captureLegacyLyrics(SyncData(lyricOverrides = listOf(candidate)))
         val main = SyncData(playlists = listOf(SyncPlaylist(id = 1, songs = listOf(omitted))))
-        return writer.prepare(main).use { prepared ->
+        val archive = if (protocol == 3) writer.prepareOriginal(main) else writer.prepare(main)
+        return archive.use { prepared ->
+            assertEquals(protocol, SyncArchiveRepository.protocolVersion(prepared.content))
             prepared.content to prepared.objects.associate { it.path to it.content }
         }
     }

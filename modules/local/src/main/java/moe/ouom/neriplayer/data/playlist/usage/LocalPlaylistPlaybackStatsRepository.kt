@@ -21,6 +21,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
+import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackEventConflictException
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
@@ -36,6 +38,13 @@ import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import java.security.MessageDigest
+
+private data class LocalPlaylistPlaybackEvent(val id: String, val playlistId: Long, val playedAt: Long) {
+    val payloadHash: String get() = MessageDigest.getInstance("SHA-256")
+        .digest("$playlistId|$playedAt".toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+}
 
 class LocalPlaylistPlaybackStatsRepository private constructor(
     context: Context,
@@ -75,6 +84,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     @Volatile
     private var baselineTrusted = initialized
     private var pendingUiChanges = false
+    private val recordedEvents = linkedMapOf<String, LocalPlaylistPlaybackEvent>()
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
 
     private fun loadInitialStats(): List<LocalPlaylistPlaybackStat> {
@@ -179,12 +189,22 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
 
     suspend fun recordPlayNow(
         playlistId: Long,
-        playedAt: Long = System.currentTimeMillis()
+        playedAt: Long = System.currentTimeMillis(),
+        eventId: String? = null
     ) {
+        require(eventId == null || eventId.isNotBlank())
         mutex.withLock {
-            if (!ensureInitializedLocked()) return@withLock
+            if (!ensureInitializedLocked()) {
+                if (eventId != null) throw IOException("Cannot record local playlist playback without a trusted baseline", initialLoadFailure)
+                return@withLock
+            }
+            val event = eventId?.let { LocalPlaylistPlaybackEvent(it, playlistId, playedAt) }
+            val previousEvent = eventId?.let(recordedEvents::get)
+            if (previousEvent != null && previousEvent != event) throw IOException("Local playlist event identity reused with different content")
+            if (event != null && previousEvent == null) persistSnapshotChecked(_stats.value)
             val current = _stats.value
-            val updated = recordLocalPlaylistPlay(
+            val previousUiChanges = pendingUiChanges
+            val updated = if (previousEvent != null) current else recordLocalPlaylistPlay(
                 current = current,
                 playlistId = playlistId,
                 playedAt = playedAt,
@@ -192,7 +212,23 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
             )
             pendingUiChanges = true
             _stats.value = updated
-            persistSnapshot(updated)
+            if (event == null) {
+                persistSnapshot(updated)
+            } else {
+                // JSON 回退的重试仍在同一播放器进程内，先记住已加入内存的事件，取消后不能再递增
+                recordedEvents[event.id] = event
+                try {
+                    persistSnapshotChecked(updated, event)
+                } catch (conflict: LocalPlaylistPlaybackEventConflictException) {
+                    _stats.value = current
+                    pendingUiChanges = previousUiChanges
+                    if (previousEvent == null) recordedEvents.remove(event.id)
+                    throw conflict
+                }
+                while (recordedEvents.size > PlaybackStatsRoomStore.RETAINED_EVENT_RECEIPTS) {
+                    recordedEvents.remove(recordedEvents.keys.first())
+                }
+            }
         }
     }
 
@@ -277,14 +313,27 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
         }
     }
 
-    private suspend fun persistSnapshotChecked(next: List<LocalPlaylistPlaybackStat>) {
+    private suspend fun persistSnapshotChecked(next: List<LocalPlaylistPlaybackStat>, event: LocalPlaylistPlaybackEvent? = null) {
         currentCoroutineContext().ensureActive()
         if (!initialized || !baselineTrusted) throw IOException("Cannot persist unknown local playlist playback", initialLoadFailure)
-        if (next == persistedStats) {
+        if (next == persistedStats && event == null) {
             confirmPersistedStats(next)
             return
         }
         baselineTrusted = false
+        if (event != null && roomStorageEnabled && roomStore != null) {
+            val inserted = roomStore.writeIncrementalOnce(persistedStats, next, event.id, event.payloadHash, event.playedAt)
+            val actual = if (inserted) next else {
+                // 已有回执表示本次没有递增，确认主存失败时也不能把尝试值作为待保存的新计数
+                _stats.value = persistedStats
+                pendingUiChanges = false
+                roomStore.readIfRoomPrimary()
+                    ?: throw IOException("Local playlist event committed but primary confirmation is unavailable")
+            }
+            _stats.value = actual
+            confirmPersistedStats(actual)
+            return
+        }
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             try {

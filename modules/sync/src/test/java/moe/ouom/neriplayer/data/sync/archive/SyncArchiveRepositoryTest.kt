@@ -101,7 +101,8 @@ class SyncArchiveRepositoryTest {
             recentPlays = listOf(SyncRecentPlay(songId = 42, song = song))))
         val repository = SyncArchiveRepository(temporary.newFolder())
         repository.prepare(input).use { archive ->
-            assertTrue(SyncArchiveCodec.readManifest(archive.content).chunkCount > 1)
+            assertEquals(4, SyncArchiveRepository.protocolVersion(archive.content))
+            assertTrue(SyncArchiveRepository.originalManifest(archive.content).chunkCount > 1)
             val remote = archive.objects.associate { it.path to it.content }
             val reader = SyncArchiveRepository(temporary.newFolder())
             val restored = reader.read(archive.content) { Result.success(remote.getValue(it)) }.getOrThrow()

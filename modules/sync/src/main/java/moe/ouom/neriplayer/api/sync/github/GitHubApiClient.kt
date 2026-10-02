@@ -204,8 +204,9 @@ class GitHubApiClient(
         repo: String,
         files: Sequence<Pair<String, ByteArray>>,
         expectedHead: GitHubSyncHead,
-        message: String = "Update sync archive"
-    ): Result<String> = syncTransport().updateFilesContent(owner, repo, files, expectedHead, message)
+        message: String = "Update sync archive",
+        retainedArchivePaths: Set<String>? = null
+    ): Result<String> = syncTransport().updateFilesContent(owner, repo, files, expectedHead, message, retainedArchivePaths)
 
     /** 上传同步正文为仓库中的实际二进制或 JSON 文件 */
     suspend fun updateFileContent(

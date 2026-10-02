@@ -2,8 +2,11 @@ package moe.ouom.neriplayer.data.sync.archive
 
 import java.io.OutputStream
 
-internal class SyncContentChunker(private val emit: (ByteArray) -> Unit) : OutputStream() {
-    private val buffer = ByteArray(SyncArchiveLimits.MAX_RAW_BYTES)
+internal class SyncContentChunker(private val maximumBytes: Int, private val emit: (ByteArray) -> Unit) : OutputStream() {
+    constructor(emit: (ByteArray) -> Unit) : this(SyncArchiveLimits.MAX_RAW_BYTES, emit)
+
+    init { require(maximumBytes in 1..SyncArchiveLimits.MAX_COMPACT_RAW_BYTES) { "Invalid sync chunk budget" } }
+    private val buffer = ByteArray(maximumBytes)
     private var size = 0
     private var rolling = 0L
     var totalBytes = 0L
@@ -13,7 +16,7 @@ internal class SyncContentChunker(private val emit: (ByteArray) -> Unit) : Outpu
         buffer[size++] = value.toByte()
         totalBytes++
         rolling = (rolling shl 1) + GEAR[value and 255]
-        if (size >= MIN_BYTES && ((rolling and BOUNDARY_MASK) == 0L || size == SyncArchiveLimits.MAX_RAW_BYTES)) flushChunk()
+        if (size == maximumBytes || size >= MIN_BYTES && (rolling and BOUNDARY_MASK) == 0L) flushChunk()
     }
 
     override fun write(bytes: ByteArray, offset: Int, length: Int) {

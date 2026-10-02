@@ -30,11 +30,10 @@ internal class AndroidSyncSnapshotBuilder(
     private val biliVideoSkipRepo: BiliVideoSkipRepository
 ) {
     fun build(localizedContext: Context, playbackStatsClearedAt: Long): SyncData {
-        val optimizeLegacyLyrics = storage.isLegacyLyricOptimizationEnabled()
-        val syncPlaylists = buildPlaylistSyncSnapshots(playlistRepo.playlists.value, storage.getDeletedPlaylistTimestamps(), localizedContext, optimizeLegacyLyrics)
-        val syncFavoritePlaylists = favoritePlaylists(localizedContext, optimizeLegacyLyrics)
+        val syncPlaylists = buildPlaylistSyncSnapshots(playlistRepo.playlists.value, storage.getDeletedPlaylistTimestamps(), localizedContext)
+        val syncFavoritePlaylists = favoritePlaylists(localizedContext)
 
-        val syncRecentPlays = buildRecentPlaySyncSnapshots(playHistoryRepo.syncSnapshot(), ::getDeviceId, localizedContext, optimizeLegacyLyrics)
+        val syncRecentPlays = buildRecentPlaySyncSnapshots(playHistoryRepo.syncSnapshot(), ::getDeviceId, localizedContext)
         val syncRecentPlayDeletions = recentPlayDeletions()
         val syncPlaylistSongDeletions = playlistSongDeletions()
         val (syncPlaylistUsageStats, syncPlaylistUsageDeletions) = playlistUsageRepo.syncStatsAndDeletions()
@@ -59,7 +58,7 @@ internal class AndroidSyncSnapshotBuilder(
             biliVideoSkipRules = syncBiliVideoSkipRules,
             lyricOverrides = storage.getLyricOverrides() + storage.getLegacyLyricCandidates()
         )
-        return SyncSongLyricMergePolicy.prepareLegacy(data, optimizeLegacyLyrics)
+        return SyncSongLyricMergePolicy.prepareLegacy(data)
     }
 
     private fun recentPlayDeletions(): List<moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion> {
@@ -81,9 +80,9 @@ internal class AndroidSyncSnapshotBuilder(
         return syncPlaylistSongDeletions
     }
 
-    private fun favoritePlaylists(localizedContext: Context, optimizeLegacyLyrics: Boolean): List<SyncFavoritePlaylist> {
+    private fun favoritePlaylists(localizedContext: Context): List<SyncFavoritePlaylist> {
         val syncFavoritePlaylists = favoriteRepo.getSyncSnapshots().map {
-            SyncFavoritePlaylist.fromFavoritePlaylist(it, localizedContext, optimizeLegacyLyrics)
+            SyncFavoritePlaylist.fromFavoritePlaylist(it, localizedContext)
         }
 
         return syncFavoritePlaylists

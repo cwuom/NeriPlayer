@@ -209,6 +209,12 @@ interface PlaybackStatsSnapshotDao {
     @Query("SELECT * FROM playback_stats_event_receipt WHERE id = :id")
     suspend fun receipt(id: String): PlaybackStatsEventReceiptEntity?
 
+    @Query("DELETE FROM playback_stats_event_receipt WHERE id NOT IN " +
+        "(SELECT id FROM playback_stats_event_receipt ORDER BY rowid DESC LIMIT :retainedCount) " +
+        "AND NOT EXISTS (SELECT 1 FROM playback_stats_pending_delta p WHERE p.id = playback_stats_event_receipt.id " +
+        "OR (playback_stats_event_receipt.id LIKE 'local-playlist-play:%' AND p.id = substr(playback_stats_event_receipt.id, 21)))")
+    suspend fun pruneCompletedReceipts(retainedCount: Int)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPendingDelta(delta: PlaybackStatsPendingDeltaEntity)
 

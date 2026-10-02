@@ -39,7 +39,7 @@ class SyncProtocolUpgradeRepositoryTest {
         val repository = SyncProtocolUpgradeRepository(FaultInjectingDataStore())
         assertTrue(repository.approvedFlow.first())
         assertNull(repository.pendingChallengeFlow.first())
-        assertEquals(3, repository.versionFlow(first.targetId).first())
+        assertEquals(4, repository.versionFlow(first.targetId).first())
         assertEquals("synced", repository.executeIfApproved { Result.success("synced") }.getOrThrow())
     }
 
@@ -93,7 +93,7 @@ class SyncProtocolUpgradeRepositoryTest {
         repository.confirmAllDevicesUpdated(true, first)
         repository.markCurrent(first.targetId)
         assertNull(repository.pendingChallengeFlow.first())
-        assertEquals(3, repository.versionFlow(first.targetId).first())
+        assertEquals(4, repository.versionFlow(first.targetId).first())
         detect(repository, first)
     }
 

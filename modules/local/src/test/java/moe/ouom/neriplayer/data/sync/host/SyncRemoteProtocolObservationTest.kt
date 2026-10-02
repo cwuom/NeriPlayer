@@ -12,6 +12,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SyncRemoteProtocolObservationTest {
+    @Test fun `observations retain the actual remote protocol version`() = runTest {
+        for (version in listOf(3, 4)) {
+            val source = Source()
+            val snapshot = SyncDatasetRemoteSnapshot(SyncDataset(SyncData(), source), "version")
+            var observedVersion: Int? = null
+            assertSame(snapshot, observeCurrentSyncProtocol(snapshot, version) { observedVersion = it }.getOrThrow())
+            assertEquals(version, observedVersion)
+            assertFalse(source.closed)
+            snapshot.dataset!!.close()
+        }
+    }
+
     @Test fun `success transfers dataset ownership to the caller`() = runTest {
         val source = Source()
         val snapshot = SyncDatasetRemoteSnapshot(SyncDataset(SyncData(), source), "version")

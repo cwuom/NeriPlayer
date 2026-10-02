@@ -104,7 +104,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeSetting
 import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeWarning
 import moe.ouom.neriplayer.ui.sync.upgrade.rememberSyncProtocolUpgradeViewModel
-import moe.ouom.neriplayer.ui.sync.lyrics.SyncLyricOptimizationSetting
 
 @Composable
 internal fun SettingsBackupRestoreSection(
@@ -588,7 +587,6 @@ internal fun SettingsBackupRestoreSection(
             )
 
             SyncProtocolUpgradeSetting(githubTarget)
-            SyncLyricOptimizationSetting(upgradeSaving = syncUpgradeState.isSaving)
 
             ListItem(
                 leadingContent = {
@@ -758,7 +756,6 @@ internal fun SettingsBackupRestoreSection(
             )
 
             SyncProtocolUpgradeSetting(webDavTarget)
-            SyncLyricOptimizationSetting(upgradeSaving = syncUpgradeState.isSaving)
 
             ListItem(
                 leadingContent = {

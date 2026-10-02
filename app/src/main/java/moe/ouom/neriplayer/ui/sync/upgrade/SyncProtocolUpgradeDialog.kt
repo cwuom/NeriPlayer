@@ -27,7 +27,6 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 internal fun SyncProtocolUpgradeDialog(
     state: SyncProtocolUpgradeUiState,
     onAllDevicesUpdatedChange: (Boolean) -> Unit,
-    onOptimizeDataChange: (Boolean) -> Unit,
     onConfirm: () -> Unit,
     onDefer: () -> Unit
 ) {
@@ -44,21 +43,8 @@ internal fun SyncProtocolUpgradeDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(stringResource(CoreCommonR.string.sync_upgrade_message))
-                SyncUpgradeCheckbox(
-                    checked = state.optimizeData,
-                    title = stringResource(CoreCommonR.string.sync_upgrade_optimization_option),
-                    enabled = !state.isSaving,
-                    onValueChange = onOptimizeDataChange
-                )
-                if (state.optimizeData) {
-                    Text(stringResource(CoreCommonR.string.sync_lyric_optimization_warning),
-                        color = MaterialTheme.colorScheme.error)
-                    Text(stringResource(CoreCommonR.string.sync_lyric_optimization_existing),
-                        style = MaterialTheme.typography.bodySmall)
-                } else {
-                    Text(stringResource(CoreCommonR.string.sync_upgrade_optimization_default_hint),
-                        style = MaterialTheme.typography.bodySmall)
-                }
+                Text(stringResource(CoreCommonR.string.sync_upgrade_lossless_hint),
+                    style = MaterialTheme.typography.bodySmall)
                 SyncUpgradeCheckbox(
                     checked = state.allDevicesUpdated,
                     title = stringResource(CoreCommonR.string.sync_upgrade_all_devices_updated),

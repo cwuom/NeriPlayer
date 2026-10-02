@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRepository
 import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
 import moe.ouom.neriplayer.data.sync.runtime.SyncBackend
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.sync.host.observeCurrentSyncProtocol
@@ -32,7 +33,7 @@ internal class WebDavSyncBackend(
     private val archive: SyncArchiveRepository,
     private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets,
     private val authorizeLegacyMigration: suspend (ByteArray) -> Unit = {},
-    private val currentProtocolObserved: suspend () -> Unit = {}
+    private val currentProtocolObserved: suspend (Int) -> Unit = {}
 ) : SyncBackend<WebDavSyncBackend.Version> {
     private val manifestUrl = WebDavApiClient.buildSiblingFileUrl(remoteUrl, SyncArchiveRepository.MANIFEST_FILE_NAME)
     override val isFirstSync: Boolean get() = webDavStorage.getLastRemoteFingerprint() == null
@@ -83,15 +84,20 @@ internal class WebDavSyncBackend(
         version: Version,
         requiresMigrationUpload: Boolean = false
     ): Result<SyncDatasetRemoteSnapshot<Version>> {
-        val dataset = archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize) { path ->
+        val protocol = runCatching { SyncArchiveRepository.protocolVersion(content) }.getOrElse { return Result.failure(it) }
+        if (protocol < 4) {
+            try { authorizeLegacyMigration(content) } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { return Result.failure(error) }
+        }
+        val dataset = archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize, verifyRemoteObjects = true) { path ->
             apiClient.getFileContentStrict(WebDavApiClient.buildSiblingFileUrl(remoteUrl, path)).map { it.content }
         }.onFailure { NPLogger.e(TAG, "Failed to read remote archive", it) }.getOrElse { return Result.failure(it) }
         return observeCurrentSyncProtocol(
             SyncDatasetRemoteSnapshot(
                 dataset = sanitizeDataset(dataset),
                 version = version.copy(knownPaths = archive.lastReferencedPaths),
-                requiresMigrationUpload = requiresMigrationUpload
-            ), currentProtocolObserved
+                requiresMigrationUpload = requiresMigrationUpload || protocol < 4
+            ), protocol, currentProtocolObserved
         )
     }
 
@@ -114,7 +120,7 @@ internal class WebDavSyncBackend(
     private suspend fun legacyReadFailure(error: Throwable): Result<SyncDatasetRemoteSnapshot<Version>> =
         if (error is WebDavFileNotFoundException) {
             archive.captureLegacyLyrics(SyncData())
-            observeCurrentSyncProtocol(SyncDatasetRemoteSnapshot(null, Version(token = null, createOnly = true)), currentProtocolObserved)
+            observeCurrentSyncProtocol(SyncDatasetRemoteSnapshot(null, Version(token = null, createOnly = true)), observe = currentProtocolObserved)
         } else {
             Result.failure(error)
         }
@@ -148,7 +154,7 @@ internal class WebDavSyncBackend(
                 expectedVersion = version.token,
                 createOnly = version.createOnly
             ).mapCatching { written ->
-                currentProtocolObserved()
+                currentProtocolObserved(4)
                 Version(written.version, false, written.fingerprint, prepared.paths)
             }
         }

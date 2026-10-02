@@ -46,24 +46,33 @@ class SyncArchiveLegacyDeviceMigrationTest {
     }
 
     @Test
-    fun `successful recovery is skipped after reopening with an empty object cache`() = runTest {
-        val published = publish()
-        val recovery = MemoryRecovery()
-        val first = SyncArchiveRepository(temporary.newFolder(), recovery)
-        first.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow()
-        assertEquals(listOf(legacy), recovery.data.single().lyricOverrides)
-        val reopened = SyncArchiveRepository(temporary.newFolder(), recovery)
-        val requested = mutableListOf<String>()
-        reopened.read(published.first) { path ->
-            requested += path
-            Result.success(published.second.getValue(path))
-        }.getOrThrow()
-        val source = requireNotNull(SyncArchiveCodec.readManifest(published.first).legacyLyrics)
-        assertFalse(source.root.path in requested)
-        assertEquals(1, recovery.data.size)
-        reopened.prepare(SyncData()).use { prepared ->
-            assertEquals(source, SyncArchiveCodec.readManifest(prepared.content).legacyLyrics)
-            assertFalse(prepared.objects.any { it.path == source.root.path })
+    fun `completed V3 and V4 recovery still loads the full source for a lossless V4 republication`() = runTest {
+        for (protocol in listOf(3, 4)) {
+            val published = publish(protocol = protocol)
+            val recovery = MemoryRecovery()
+            val first = SyncArchiveRepository(temporary.newFolder(), recovery)
+            first.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow()
+            assertEquals(listOf(legacy), recovery.data.single().lyricOverrides)
+            val reopened = SyncArchiveRepository(temporary.newFolder(), recovery)
+            val requested = mutableSetOf<String>()
+            reopened.read(published.first) { path ->
+                requested += path
+                Result.success(published.second.getValue(path))
+            }.getOrThrow()
+            val source = requireNotNull(SyncArchiveRepository.originalManifest(published.first).legacyLyrics)
+            assertEquals(published.second.keys, requested)
+            assertEquals(1, recovery.data.size)
+            reopened.prepare(SyncData()).use { prepared ->
+                assertEquals(4, SyncArchiveRepository.protocolVersion(prepared.content))
+                assertEquals(source, SyncArchiveRepository.originalManifest(prepared.content).legacyLyrics)
+                val objects = prepared.objects.associate { it.path to it.content }
+                val nextRecovery = MemoryRecovery()
+                val next = SyncArchiveRepository(temporary.newFolder(), nextRecovery).read(prepared.content) {
+                    Result.success(objects.getValue(it))
+                }.getOrThrow()
+                assertEquals(listOf(legacy), nextRecovery.data.single().lyricOverrides)
+                assertEquals(listOf(SyncSongLyricMergePolicy.prepareLegacy(legacy)), next.lyricOverrides)
+            }
         }
     }
 
@@ -73,8 +82,8 @@ class SyncArchiveLegacyDeviceMigrationTest {
         val reader = SyncArchiveRepository(temporary.newFolder(), MemoryRecovery())
         val data = reader.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow()
         reader.prepare(data.copy(lastModified = 100)).use { prepared ->
-            assertEquals(SyncArchiveCodec.readManifest(published.first).legacyLyrics,
-                SyncArchiveCodec.readManifest(prepared.content).legacyLyrics)
+            assertEquals(SyncArchiveRepository.originalManifest(published.first).legacyLyrics,
+                SyncArchiveRepository.originalManifest(prepared.content).legacyLyrics)
             val unchanged = prepared.objects(published.second.keys).toList()
             assertTrue(unchanged.isEmpty())
         }
@@ -112,8 +121,8 @@ class SyncArchiveLegacyDeviceMigrationTest {
 
     @Test
     fun `tampered and truncated source objects never mark recovery complete`() = runTest {
-        val published = publish()
-        val source = requireNotNull(SyncArchiveCodec.readManifest(published.first).legacyLyrics)
+        val published = publish(protocol = 3)
+        val source = requireNotNull(SyncArchiveRepository.originalManifest(published.first).legacyLyrics)
         val original = published.second.getValue(source.root.path)
         for (broken in listOf(original.copyOf(original.size - 1), original.copyOf().also { it[it.lastIndex] = (it.last() + 1).toByte() })) {
             val recovery = MemoryRecovery()
@@ -129,8 +138,8 @@ class SyncArchiveLegacyDeviceMigrationTest {
 
     @Test
     fun `wrong source record counts never reach recovery`() = runTest {
-        val published = publish()
-        val manifest = SyncArchiveCodec.readManifest(published.first)
+        val published = publish(protocol = 3)
+        val manifest = SyncArchiveRepository.originalManifest(published.first)
         val source = requireNotNull(manifest.legacyLyrics)
         val content = SyncArchiveCodec.manifest(manifest.copy(legacyLyrics = source.copy(recordCount = source.recordCount + 1)))
         val recovery = MemoryRecovery()
@@ -162,8 +171,8 @@ class SyncArchiveLegacyDeviceMigrationTest {
 
     @Test
     fun `cancelled source retrieval releases playback staging without a receipt`() = runTest {
-        val published = publish()
-        val source = requireNotNull(SyncArchiveCodec.readManifest(published.first).legacyLyrics)
+        val published = publish(protocol = 3)
+        val source = requireNotNull(SyncArchiveRepository.originalManifest(published.first).legacyLyrics)
         val recovery = MemoryRecovery()
         val staging = temporary.newFolder()
         val reader = SyncArchiveRepository(temporary.newFolder(), recovery)
@@ -203,8 +212,8 @@ class SyncArchiveLegacyDeviceMigrationTest {
 
     @Test
     fun `legacy source totals are rejected before fetching any objects`() {
-        val published = publish()
-        val manifest = SyncArchiveCodec.readManifest(published.first)
+        val published = publish(protocol = 3)
+        val manifest = SyncArchiveRepository.originalManifest(published.first)
         val source = requireNotNull(manifest.legacyLyrics)
         val oversized = listOf(
             source.copy(rawDataBytes = 33L * 1024 * 1024),
@@ -238,14 +247,14 @@ class SyncArchiveLegacyDeviceMigrationTest {
             val repository = SyncArchiveRepository(temporary.newFolder())
             repository.captureLegacyLyrics(oldData)
             val previousPath = repository.prepare(SyncSongLyricMergePolicy.converge(oldData)).use {
-                requireNotNull(SyncArchiveCodec.readManifest(it.content).legacyLyrics).root.path
+                requireNotNull(SyncArchiveRepository.originalManifest(it.content).legacyLyrics).root.path
             }
             repository.captureLegacyLyrics(input)
             repository.prepare(SyncSongLyricMergePolicy.converge(input)).use { prepared ->
                 if (input.lyricOverrides.singleOrNull()?.lyricSyncEdited == null && input.lyricOverrides.isNotEmpty()) {
-                    assertTrue(SyncArchiveCodec.readManifest(prepared.content).legacyLyrics != null)
+                    assertTrue(SyncArchiveRepository.originalManifest(prepared.content).legacyLyrics != null)
                 } else {
-                    assertNull(SyncArchiveCodec.readManifest(prepared.content).legacyLyrics)
+                    assertNull(SyncArchiveRepository.originalManifest(prepared.content).legacyLyrics)
                 }
                 assertFalse(prepared.objects.any { it.path == previousPath })
                 assertFalse(previousPath in prepared.paths)
@@ -289,7 +298,7 @@ class SyncArchiveLegacyDeviceMigrationTest {
         val large = legacy.copy(matchedLyric = "long old text\n".repeat(160_000),
             matchedTranslatedLyric = "translation", matchedRomanizedLyric = "romanized")
         val published = publish(SyncData(lyricOverrides = listOf(large)))
-        val source = requireNotNull(SyncArchiveCodec.readManifest(published.first).legacyLyrics)
+        val source = requireNotNull(SyncArchiveRepository.originalManifest(published.first).legacyLyrics)
         assertTrue(source.chunkCount > 1L)
         assertTrue(source.root.index)
         val recovery = MemoryRecovery()
@@ -300,10 +309,13 @@ class SyncArchiveLegacyDeviceMigrationTest {
         assertTrue(published.second.keys.all { it in reader.lastReferencedPaths })
     }
 
-    private fun publish(data: SyncData = oldData): Pair<ByteArray, Map<String, ByteArray>> {
+    private fun publish(data: SyncData = oldData, protocol: Int = 4): Pair<ByteArray, Map<String, ByteArray>> {
         val repository = SyncArchiveRepository(temporary.newFolder())
         repository.captureLegacyLyrics(data)
-        return repository.prepare(SyncSongLyricMergePolicy.converge(data)).use { prepared ->
+        val main = SyncSongLyricMergePolicy.converge(data)
+        val archive = if (protocol == 3) repository.prepareOriginal(main) else repository.prepare(main)
+        return archive.use { prepared ->
+            assertEquals(protocol, SyncArchiveRepository.protocolVersion(prepared.content))
             prepared.content to prepared.objects.associate { it.path to it.content }
         }
     }

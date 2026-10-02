@@ -8,12 +8,12 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 
-internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasBuckets: Boolean) {
-    val usesLegacyBreakdown = query.period != PlaybackStatsPeriod.ALL && !hasBuckets
+internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasBuckets: Boolean, hasLegacyStats: Boolean = !hasBuckets) {
+    val usesLegacyBreakdown = query.period != PlaybackStatsPeriod.ALL && hasLegacyStats
     private val arguments = mutableListOf<Any>()
     private val source: String = when {
         query.period == PlaybackStatsPeriod.ALL -> "SELECT * FROM playback_stat"
-        hasBuckets -> bucketSource()
+        hasBuckets -> bucketSource() + " UNION ALL " + legacySource(onlyWithoutBuckets = true)
         else -> legacySource()
     }
     private val sortColumn = when (query.sort) {
@@ -67,11 +67,12 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
         }, stat.identityKey, stat.totalListenMs, stat.lastPlayedAt
     )
 
-    private fun legacySource(): String {
+    private fun legacySource(onlyWithoutBuckets: Boolean = false): String {
         val range = query.period.resolvePlaybackStatsTimeRange(query.nowMillis)
         arguments.add(checkNotNull(range.startInclusive))
         arguments.add(range.endExclusive)
-        return "SELECT * FROM playback_stat WHERE (CASE WHEN first_played_at > 0 THEN first_played_at ELSE last_played_at END) >= ? AND last_played_at < ?"
+        val withoutBuckets = if (onlyWithoutBuckets) " AND NOT EXISTS (SELECT 1 FROM playback_stat_bucket b WHERE b.identity_key = playback_stat.identity_key)" else ""
+        return "SELECT * FROM playback_stat WHERE (CASE WHEN first_played_at > 0 THEN first_played_at ELSE last_played_at END) >= ? AND last_played_at < ?$withoutBuckets"
     }
 
     // 两个整数 limb 分开聚合，在千万行和 Long 上限输入下仍保持精度

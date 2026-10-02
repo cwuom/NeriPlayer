@@ -35,7 +35,7 @@ class SyncProtocolUpgradeExperienceTest {
         Dispatchers.resetMain()
     }
 
-    @Test fun `old configured installation can open before any remote challenge and defaults to preserving lyrics`() = runTest {
+    @Test fun `old configured installation can open before any remote challenge and requires a device declaration`() = runTest {
         val startup = MutableStateFlow<Set<String>>(emptySet())
         val model = model(startup = startup, initialize = { startup.value = setOf(target) })
         runCurrent()
@@ -43,17 +43,16 @@ class SyncProtocolUpgradeExperienceTest {
         model.openConfirmation()
         assertEquals(target, model.uiState.value.startupTargetId)
         assertTrue(model.uiState.value.dialogRequested)
-        assertFalse(model.uiState.value.optimizeData)
         assertFalse(model.uiState.value.canConfirm)
         model.setAllDevicesUpdated(true)
         assertTrue(model.uiState.value.canConfirm)
     }
 
-    @Test fun `startup confirmation saves explicit optimization before sync and keeps progress until completion`() = runTest {
+    @Test fun `startup confirmation keeps progress until sync completion`() = runTest {
         val calls = mutableListOf<String>()
         val complete = CompletableDeferred<Unit>()
         val startup = MutableStateFlow(setOf(target))
-        val model = model(startup, optimize = { calls += "optimize:$it" }, sync = { id, mayApprove ->
+        val model = model(startup, sync = { id, mayApprove ->
             assertEquals(target, id)
             assertTrue(mayApprove)
             calls += "sync"
@@ -64,11 +63,10 @@ class SyncProtocolUpgradeExperienceTest {
         runCurrent()
         model.openConfirmation()
         model.setAllDevicesUpdated(true)
-        model.setOptimizeData(true)
         model.confirm()
         model.confirm()
         runCurrent()
-        assertEquals(listOf("optimize:true", "sync"), calls)
+        assertEquals(listOf("sync"), calls)
         assertTrue(model.uiState.value.isSaving)
         assertTrue(model.uiState.value.isSyncing)
         assertTrue(model.uiState.value.dialogRequested)
@@ -83,7 +81,7 @@ class SyncProtocolUpgradeExperienceTest {
 
     @Test fun `version setting confirmation performs sync even without an earlier sync button retry`() = runTest {
         val calls = mutableListOf<String>()
-        val model = model(pending = listOf(challenge), optimize = { calls += "optimize:$it" },
+        val model = model(pending = listOf(challenge),
             save = { _, value -> assertEquals(challenge, value); calls += "confirm" }, sync = { id, mayApprove ->
                 assertEquals(target, id)
                 assertFalse(mayApprove)
@@ -95,45 +93,70 @@ class SyncProtocolUpgradeExperienceTest {
         model.setAllDevicesUpdated(true)
         model.confirm()
         runCurrent()
-        assertEquals(listOf("optimize:false", "confirm", "sync"), calls)
+        assertEquals(listOf("confirm", "sync"), calls)
     }
 
-    @Test fun `an explicit manual retry runs once after optimization and confirmation without a second direct sync`() = runTest {
+    @Test fun `an explicit manual retry runs once after confirmation without a second direct sync`() = runTest {
         val calls = mutableListOf<String>()
-        val model = model(pending = listOf(challenge), optimize = { calls += "optimize:$it" },
+        val model = model(pending = listOf(challenge),
             save = { _, _ -> calls += "confirm" }, sync = { _, _ -> error("duplicate direct sync") })
         runCurrent()
         model.requestUpgrade(challenge) { calls += "retry" }
         model.setAllDevicesUpdated(true)
-        model.setOptimizeData(true)
         model.confirm()
         runCurrent()
-        assertEquals(listOf("optimize:true", "confirm", "retry"), calls)
+        assertEquals(listOf("confirm", "retry"), calls)
     }
 
-    @Test fun `cancel discards optimization without writing or syncing and opening again is safe by default`() = runTest {
-        val model = model(startup = MutableStateFlow(setOf(target)), optimize = { error("cancel wrote") },
+    @Test fun `V3 upgrade confirms the exact source and hides after V4 observation`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val v3 = challenge.copy(fromVersion = 3)
+        val pending = MutableStateFlow(listOf(v3))
+        val startup = MutableStateFlow(setOf(target))
+        val saved = mutableListOf<SyncProtocolUpgradeChallenge>()
+        val model = SyncProtocolUpgradeViewModel(
+            pending, { _, value -> saved += value },
+            startupTargetsFlow = startup,
+            performImmediateSync = { _, _ ->
+                pending.value = emptyList()
+                startup.value = emptySet()
+                Result.success(SyncResult(true, "completed"))
+            }
+        ).also(models::add)
+        runCurrent()
+        model.openConfirmation(target)
+        model.setAllDevicesUpdated(true)
+        model.confirm()
+        runCurrent()
+        assertEquals(listOf(v3), saved)
+        assertEquals(true, model.uiState.value.approved)
+        assertFalse(model.uiState.value.dialogRequested)
+    }
+
+    @Test fun `cancel discards the declaration without writing or syncing`() = runTest {
+        val model = model(startup = MutableStateFlow(setOf(target)), save = { _, _ -> error("cancel wrote") },
             sync = { _, _ -> error("cancel synced") })
         runCurrent()
         model.openConfirmation()
-        model.setOptimizeData(true)
+        model.setAllDevicesUpdated(true)
         assertTrue(model.dismissConfirmation())
         model.openConfirmation()
-        assertFalse(model.uiState.value.optimizeData)
+        assertFalse(model.uiState.value.allDevicesUpdated)
     }
 
-    @Test fun `failed optimization save keeps the dialog and cannot authorize or sync`() = runTest {
+    @Test fun `failed confirmation keeps the dialog and cannot sync`() = runTest {
         var syncs = 0
         var saves = 0
-        val model = model(pending = listOf(challenge), optimize = { throw IOException("write failed") },
-            save = { _, _ -> saves++ }, sync = { _, _ -> syncs++; Result.success(SyncResult(true, "")) })
+        val model = model(pending = listOf(challenge),
+            save = { _, _ -> saves++; throw IOException("write failed") },
+            sync = { _, _ -> syncs++; Result.success(SyncResult(true, "")) })
         runCurrent()
         model.openConfirmation()
         model.setAllDevicesUpdated(true)
         model.confirm()
         runCurrent()
         assertEquals(0, syncs)
-        assertEquals(0, saves)
+        assertEquals(1, saves)
         assertTrue(model.uiState.value.dialogRequested)
         assertTrue(model.uiState.value.hasError)
     }
@@ -161,10 +184,10 @@ class SyncProtocolUpgradeExperienceTest {
         assertFalse(model.uiState.value.dialogRequested)
     }
 
-    @Test fun `retired startup target never writes optimization or starts a request`() = runTest {
+    @Test fun `retired startup target never approves or starts a request`() = runTest {
         var active = setOf(target)
         val model = model(startup = MutableStateFlow(setOf(target)), targets = { active },
-            optimize = { error("retired target wrote") }, sync = { _, _ -> error("retired target synced") })
+            save = { _, _ -> error("retired target wrote") }, sync = { _, _ -> error("retired target synced") })
         runCurrent()
         model.openConfirmation()
         model.setAllDevicesUpdated(true)
@@ -209,12 +232,10 @@ class SyncProtocolUpgradeExperienceTest {
         runCurrent()
         model.openConfirmation()
         model.setAllDevicesUpdated(true)
-        model.setOptimizeData(true)
         model.confirm()
         runCurrent()
         assertEquals(changed, model.uiState.value.challenge)
         assertFalse(model.uiState.value.allDevicesUpdated)
-        assertFalse(model.uiState.value.optimizeData)
         assertFalse(model.uiState.value.canConfirm)
         model.setAllDevicesUpdated(true)
         model.confirm()
@@ -374,12 +395,11 @@ class SyncProtocolUpgradeExperienceTest {
         pending: List<SyncProtocolUpgradeChallenge> = emptyList(),
         initialize: suspend () -> Unit = {},
         targets: suspend () -> Set<String>? = { setOf(target) },
-        optimize: suspend (Boolean) -> Unit = {},
         save: suspend (Boolean, SyncProtocolUpgradeChallenge) -> Unit = { _, _ -> },
         sync: suspend (String, Boolean) -> Result<SyncResult> = { _, _ -> Result.success(SyncResult(true, "")) }
     ): SyncProtocolUpgradeViewModel {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        return SyncProtocolUpgradeViewModel(flowOf(pending), save, targets, startup, initialize, optimize, sync)
+        return SyncProtocolUpgradeViewModel(flowOf(pending), save, targets, startup, initialize, sync)
             .also(models::add)
     }
 }

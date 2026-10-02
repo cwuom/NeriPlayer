@@ -21,6 +21,41 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackStatsOwnerTest {
     @Test
+    fun `more than a receipt window of later snapshots cannot bypass an uncertain first event`() = runTest {
+        var now = 0L
+        var blocked = true
+        val attempts = mutableListOf<PlaybackStatsSnapshot>()
+        val accepted = mutableListOf<PlaybackStatsSnapshot>()
+        val writes = object : PlaybackStatsWritePort {
+            override suspend fun record(snapshot: PlaybackStatsSnapshot) {
+                attempts += snapshot
+                if (blocked) throw IOException("playlist commit acknowledgement unavailable")
+                accepted += snapshot
+            }
+            override fun hasPendingWrites() = false
+            override suspend fun flushPendingWrites() = Unit
+        }
+        val owner = PlaybackStatsOwner(backgroundScope, writes, PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { now }),
+            blockForPersistence = { _, block -> runBlocking { block() } })
+        owner.onSongChanged(song(1), 42, true)
+        owner.onPlayingChanged(true, "start", true)
+        repeat(300) {
+            now += 30_000
+            owner.onTrackEnded(true)
+            runCurrent()
+        }
+        assertEquals(300, attempts.size)
+        assertEquals(1, attempts.map { it.eventId }.toSet().size)
+        assertTrue(accepted.isEmpty())
+
+        blocked = false
+        owner.drainBlocking("recovered", true)
+        assertEquals(300, accepted.size)
+        assertEquals(300, accepted.map { it.eventId }.toSet().size)
+        assertSame(attempts.first(), accepted.first())
+    }
+
+    @Test
     fun `blocking drain retries an unaccepted delta after its asynchronous job completed`() = runTest {
         var now = 0L
         var unavailable = true

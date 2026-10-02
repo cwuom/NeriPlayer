@@ -71,9 +71,6 @@ internal fun rememberSyncProtocolUpgradeViewModel(): SyncProtocolUpgradeViewMode
                             loadActiveTargets = { activeSyncTargets(appContext) },
                             startupTargetsFlow = repository.startupPendingFlow,
                             initializeStartupTargets = { repository.initializeStartupTargets(activeSyncTargets(appContext)) },
-                            saveOptimization = { optimize -> withContext(Dispatchers.IO) {
-                                SecureTokenStorage(appContext).setLegacyLyricOptimizationEnabled(optimize)
-                            } },
                             performImmediateSync = { target, approveDetectedLegacy ->
                                 val result = immediateSync.execute(target, approveDetectedLegacy)
                                 if (result.getOrNull()?.success == true) repository.completeStartupUpgrade(target)
@@ -149,7 +146,6 @@ internal fun StartupSyncUpgradePrompt(
         SyncProtocolUpgradeDialog(
             state = state,
             onAllDevicesUpdatedChange = viewModel::setAllDevicesUpdated,
-            onOptimizeDataChange = viewModel::setOptimizeData,
             onConfirm = viewModel::confirm,
             onDefer = onDefer
         )
@@ -208,7 +204,9 @@ internal fun SyncProtocolUpgradeSetting(
         headlineContent = { Text(stringResource(CoreCommonR.string.sync_database_version_title)) },
         supportingContent = { Text(summary) },
         modifier = Modifier.settingsItemClickable(
-            enabled = version?.getOrNull() == 0 && !state.isSaving,
+            enabled = version?.getOrNull()?.let {
+                it in 0 until SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION
+            } == true && !state.isSaving,
             onClick = { viewModel.openConfirmation(targetId) }
         ),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)

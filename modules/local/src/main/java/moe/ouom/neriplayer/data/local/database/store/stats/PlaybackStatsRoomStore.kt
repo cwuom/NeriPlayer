@@ -493,7 +493,12 @@ internal class PlaybackStatsRoomStore(
         database.playbackStatsSnapshotDao().insertReceipt(PlaybackStatsEventReceiptEntity(eventId, playedAt, payloadHash))
         if (accepted) database.playbackStatsSnapshotDao().insertPendingDelta(delta)
         database.syncMetadataDao().upsertMigrationMetadata(metadata(JOURNAL_SEQUENCE_METADATA_KEY, delta.sequence.toString(), playedAt))
+        pruneEventReceipts()
         true
+    }
+
+    private suspend fun pruneEventReceipts() {
+        database.playbackStatsSnapshotDao().pruneCompletedReceipts(RETAINED_EVENT_RECEIPTS)
     }
 
     suspend fun pendingDeltas(): List<PlaybackStatsPendingDeltaEntity> = database.playbackStatsSnapshotDao().pendingDeltas(32)
@@ -505,6 +510,7 @@ internal class PlaybackStatsRoomStore(
         val state = readState()
         if (delta.epochStartedAt < state.clearedAt) {
             database.playbackStatsSnapshotDao().deletePendingDelta(delta.id)
+            pruneEventReceipts()
             return@withTransaction
         }
         val day = moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt(delta.playedAt)
@@ -519,6 +525,7 @@ internal class PlaybackStatsRoomStore(
         dao.upsertCounterShards(listOf(checkNotNull(rows.counter)))
         dao.upsertDailyCounterShards(listOf(checkNotNull(rows.dailyCounter)))
         database.playbackStatsSnapshotDao().deletePendingDelta(delta.id)
+        pruneEventReceipts()
         advanceRevision(delta.playedAt)
     }
 
@@ -528,6 +535,7 @@ internal class PlaybackStatsRoomStore(
         val barrier = maxOf(now, previous.clearedAt + 1)
         val dao = database.playbackStatsDao()
         database.playbackStatsSnapshotDao().deleteAllPendingDeltas()
+        pruneEventReceipts()
         dao.deleteAllStats()
         markRoomPrimary(barrier, barrier, now)
         readState()
@@ -542,7 +550,7 @@ internal class PlaybackStatsRoomStore(
         return database.withTransaction {
             val hasBuckets = database.playbackStatsDao().hasBuckets()
             val hasStats = database.playbackStatsDao().hasStats()
-            val sql = PlaybackStatsSqlQuery(query, hasBuckets)
+            val sql = PlaybackStatsSqlQuery(query, hasBuckets, database.playbackStatsDao().hasLegacyStats())
             val totals = database.playbackStatsDao().querySummary(sql.summary())
             PlaybackStatsSummary(totals.trackCount, totals.totalPlayCount, totals.totalListenMs, sql.usesLegacyBreakdown && hasStats, hasStats)
         }
@@ -561,6 +569,8 @@ internal class PlaybackStatsRoomStore(
     }
 
     companion object {
+        // 播放器按顺序重试最早未确认事件，后续事件不能越过它；持久待处理增量另外保留全部回执
+        const val RETAINED_EVENT_RECEIPTS = 256
         const val REVISION_METADATA_KEY = "playback_stats_revision"
         const val JOURNAL_SEQUENCE_METADATA_KEY = "playback_stats_journal_sequence"
         const val CUTOVER_STATE_METADATA_KEY = "playback_stats_cutover_state"

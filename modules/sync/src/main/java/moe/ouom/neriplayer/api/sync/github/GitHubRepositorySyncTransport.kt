@@ -61,24 +61,67 @@ internal class GitHubRepositorySyncTransport(
         repo: String,
         files: Sequence<Pair<String, ByteArray>>,
         expectedHead: GitHubSyncHead,
-        message: String
+        message: String,
+        retainedArchivePaths: Set<String>? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         suspendSyncTransportResult {
+            validateRetainedPaths(retainedArchivePaths)
             val publication = ArchivePublication(owner, repo, expectedHead)
-            coroutineContext.ensureActive()
-            val staging = ArchiveTreeStaging(owner, repo, getCommitTree(owner, repo, expectedHead.sha))
-            for ((path, content) in files) {
-                coroutineContext.ensureActive()
-                staging.append(path, content)
-            }
-            coroutineContext.ensureActive()
-            val treeSha = staging.finish()
+            val treeSha = stageArchiveTree(owner, repo, files, expectedHead.sha, retainedArchivePaths)
             coroutineContext.ensureActive()
             val commitSha = createSyncFileCommit(owner, repo, treeSha, expectedHead.sha, message)
             coroutineContext.ensureActive()
             publication.publish(commitSha)
             runCatching { checkpoint(owner, repo)?.published() }
             commitSha
+        }
+    }
+
+    private fun validateRetainedPaths(paths: Set<String>?) {
+        paths?.forEach { require(GitHubArchiveTreeReader.isOwnedObjectPath(it)) { "Invalid retained sync object path" } }
+    }
+
+    private suspend fun stageArchiveTree(
+        owner: String,
+        repo: String,
+        files: Sequence<Pair<String, ByteArray>>,
+        expectedHead: String,
+        retainedPaths: Set<String>?
+    ): String {
+        coroutineContext.ensureActive()
+        val baseTree = getCommitTree(owner, repo, expectedHead)
+        val existingPaths = if (retainedPaths == null) emptySet() else readArchiveTreePaths(owner, repo, baseTree)
+        val closure = ArchiveClosure(retainedPaths, existingPaths)
+        val staging = ArchiveTreeStaging(owner, repo, baseTree)
+        for ((path, content) in files) {
+            coroutineContext.ensureActive()
+            closure.uploaded(path)
+            staging.append(path, content)
+        }
+        coroutineContext.ensureActive()
+        // 删除和新清单只进入尚未发布的树，固定旧 HEAD 的读取仍使用旧提交
+        for (path in closure.obsoletePaths()) {
+            coroutineContext.ensureActive()
+            staging.remove(path)
+        }
+        return staging.finish()
+    }
+
+    private class ArchiveClosure(private val retained: Set<String>?, private val existing: Set<String>) {
+        private val missing = (retained.orEmpty() - existing).toMutableSet()
+        private var hasManifest = false
+
+        fun uploaded(path: String) {
+            if (path == ARCHIVE_MANIFEST_PATH) hasManifest = true else {
+                require(retained == null || path in retained) { "Uploaded sync object is outside the archive closure" }
+            }
+            missing.remove(path)
+        }
+
+        fun obsoletePaths(): Set<String> {
+            val paths = retained ?: return emptySet()
+            require(hasManifest && missing.isEmpty()) { "Refusing to publish an incomplete sync archive closure" }
+            return existing - paths
         }
     }
 
@@ -135,7 +178,7 @@ internal class GitHubRepositorySyncTransport(
         private val repo: String,
         private var treeSha: String
     ) {
-        private val entries = ArrayList<Pair<String, String>>(MAX_TREE_ENTRIES)
+        private val entries = ArrayList<Pair<String, String?>>(MAX_TREE_ENTRIES)
         private val cachedKeys = ArrayList<String>(MAX_TREE_ENTRIES)
         private val checkpoint = checkpoint(owner, repo)
         private var hasFiles = false
@@ -144,6 +187,11 @@ internal class GitHubRepositorySyncTransport(
             GitHubArchiveUploadValidation.validate(path, content)
             entries += path to stageBlob(path, content)
             hasFiles = true
+            if (entries.size == MAX_TREE_ENTRIES) flush()
+        }
+
+        fun remove(path: String) {
+            entries += path to null
             if (entries.size == MAX_TREE_ENTRIES) flush()
         }
 
@@ -353,6 +401,25 @@ internal class GitHubRepositorySyncTransport(
         }
     }
 
+    private suspend fun readArchiveTreePaths(owner: String, repo: String, treeSha: String): Set<String> {
+        val request = authenticatedRequest(endpoint("repos/$owner/$repo/git/trees/$treeSha"))
+            .header("Accept", GITHUB_JSON_MEDIA_TYPE).get().build()
+        val context = coroutineContext
+        val call = client.newCall(request)
+        return call.execute().use { response ->
+            validateArchiveTreeResponse(response, request, call)
+            GitHubArchiveTreeReader.readOwnedObjectPaths(response.body, call, treeSha) { context.ensureActive() }
+        }
+    }
+
+    private fun validateArchiveTreeResponse(response: Response, request: Request, call: Call) {
+        if (response.request.url != request.url || response.request.method != "GET") {
+            call.cancel()
+            throw IOException("GitHub archive tree response came from an unexpected endpoint")
+        }
+        if (!response.isSuccessful) throwForResponse(response, "read archive tree", call = call)
+    }
+
     private fun createBinaryBlob(owner: String, repo: String, content: ByteArray): String {
         val requestBody = JSONObject().apply {
             // 服务端会解码 API 信封，并在 Git blob 中保存原始字节
@@ -385,7 +452,7 @@ internal class GitHubRepositorySyncTransport(
         owner: String,
         repo: String,
         baseTreeSha: String,
-        entries: List<Pair<String, String>>
+        entries: List<Pair<String, String?>>
     ): String {
         val treeEntries = JSONArray()
         for ((path, sha) in entries) {
@@ -393,7 +460,7 @@ internal class GitHubRepositorySyncTransport(
                 put("path", path)
                 put("mode", "100644")
                 put("type", "blob")
-                put("sha", sha)
+                put("sha", sha ?: JSONObject.NULL)
             })
         }
         val requestBody = JSONObject().apply {
@@ -553,6 +620,7 @@ internal class GitHubRepositorySyncTransport(
         const val GITHUB_RAW_MEDIA_TYPE = "application/vnd.github.raw"
         const val MAX_SYNC_FILE_BYTES = 12 * 1024 * 1024
         const val MAX_TREE_ENTRIES = 1000
+        private const val ARCHIVE_MANIFEST_PATH = "neriplayer-sync-v3.manifest"
         const val MAX_ERROR_MESSAGE_LENGTH = 240
     }
 }

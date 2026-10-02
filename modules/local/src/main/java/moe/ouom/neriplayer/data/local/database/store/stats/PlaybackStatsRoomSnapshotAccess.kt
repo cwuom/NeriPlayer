@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatProjection
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackCounterArithmetic
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackSink
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackSource
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SYNC_PLAYBACK_PAGE_RECORDS
 
 internal class PlaybackStatsRoomSnapshotAccess(private val store: PlaybackStatsRoomStore) {
@@ -26,35 +27,73 @@ internal class PlaybackStatsRoomSnapshotAccess(private val store: PlaybackStatsR
     private val dao = database.playbackStatsSnapshotDao()
 
     suspend fun mergeLegacyBackup(id: String, tracks: List<SyncTrackStat>, buckets: List<SyncPlaybackStatBucket>, clearedAt: Long, respectLocalClear: Boolean) {
+        val barrier = beginLegacyMerge(id, clearedAt, respectLocalClear)
+        for (page in tracks.chunked(SYNC_PLAYBACK_PAGE_RECORDS)) mergeTrackPage(id, page, barrier)
+        for (page in buckets.chunked(SYNC_PLAYBACK_PAGE_RECORDS)) mergeBucketPage(id, page, barrier)
+        finishLegacyMerge(id, barrier)
+    }
+
+    suspend fun mergeLegacyBackup(id: String, source: SyncPlaybackSource, clearedAt: Long, respectLocalClear: Boolean, context: Context) {
+        val barrier = beginLegacyMerge(id, clearedAt, respectLocalClear)
+        source.openTracks().use { cursor ->
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val page = cursor.nextPage()
+                if (page.isEmpty()) break
+                require(page.size <= SYNC_PLAYBACK_PAGE_RECORDS) { "Playback backup page exceeds record budget" }
+                mergeTrackPage(id, page.mapNotNull { SyncPlaybackStatMapper.sanitize(it, context) }, barrier)
+            }
+        }
+        source.openBuckets().use { cursor ->
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val page = cursor.nextPage()
+                if (page.isEmpty()) break
+                require(page.size <= SYNC_PLAYBACK_PAGE_RECORDS) { "Playback backup page exceeds record budget" }
+                mergeBucketPage(id, page.mapNotNull { SyncPlaybackStatMapper.sanitize(it, context) }, barrier)
+            }
+        }
+        finishLegacyMerge(id, barrier)
+    }
+
+    private suspend fun beginLegacyMerge(id: String, clearedAt: Long, respectLocalClear: Boolean): Long {
         val previous = checkNotNull(dao.getSnapshot(id))
         val barrier = if (respectLocalClear) maxOf(previous.clearedAt, clearedAt) else clearedAt.coerceAtLeast(0)
         dao.updateSnapshotState(id, sealed = false, clearedAt = barrier)
         if (barrier > previous.clearedAt) normalizeClear(id, barrier)
-        for (page in tracks.chunked(SYNC_PLAYBACK_PAGE_RECORDS)) {
-            val keys = page.map { it.identityKey }
-            val existing = dao.tracksByKeys(id, keys).associateBy { it.stat.identityKey }
-            val counters = dao.trackCounters(id, keys).groupBy { it.shard.identityKey }
-            val merged = page.mapNotNull { incoming ->
-                val local = existing[incoming.identityKey]?.stat?.toEntity()?.toDomain()?.let {
-                    SyncPlaybackStatMapper.fromTrackStat(it, counters[it.identityKey].orEmpty().map { row -> row.shard.toEntity().toDomain() })
-                }
-                SyncPlaybackStatsMergePolicy.mergeTrack(local, incoming, barrier)
+        return barrier
+    }
+
+    private suspend fun mergeTrackPage(id: String, page: List<SyncTrackStat>, barrier: Long) {
+        if (page.isEmpty()) return
+        val keys = page.map { it.identityKey }
+        val existing = dao.tracksByKeys(id, keys).associateBy { it.stat.identityKey }
+        val counters = dao.trackCounters(id, keys).groupBy { it.shard.identityKey }
+        val merged = page.mapNotNull { incoming ->
+            val local = existing[incoming.identityKey]?.stat?.toEntity()?.toDomain()?.let {
+                SyncPlaybackStatMapper.fromTrackStat(it, counters[it.identityKey].orEmpty().map { row -> row.shard.toEntity().toDomain() })
             }
-            writeTracks(id, merged)
+            SyncPlaybackStatsMergePolicy.mergeTrack(local, incoming, barrier)
         }
-        for (page in buckets.chunked(SYNC_PLAYBACK_PAGE_RECORDS)) {
-            val existing = page.groupBy { it.dayStartAt }.flatMap { (day, rows) -> dao.bucketsByKeys(id, day, rows.map { it.identityKey }) }
-                .associateBy { it.bucket.dayStartAt to it.bucket.identityKey }
-            val counters = page.groupBy { it.dayStartAt }.flatMap { (day, rows) -> dao.dailyCounters(id, day, rows.map { it.identityKey }) }
-                .groupBy { it.shard.dayStartAt to it.shard.identityKey }
-            val merged = page.mapNotNull { incoming ->
-                val local = existing[incoming.dayStartAt to incoming.identityKey]?.bucket?.toEntity()?.toDomain()?.let {
-                    SyncPlaybackStatMapper.fromPlaybackStatBucket(it, counters[it.dayStartAt to it.identityKey].orEmpty().map { row -> row.shard.toEntity().toDomain() })
-                }
-                SyncPlaybackStatsMergePolicy.mergeBucket(local, incoming, barrier)
+        writeTracks(id, merged)
+    }
+
+    private suspend fun mergeBucketPage(id: String, page: List<SyncPlaybackStatBucket>, barrier: Long) {
+        if (page.isEmpty()) return
+        val existing = page.groupBy { it.dayStartAt }.flatMap { (day, rows) -> dao.bucketsByKeys(id, day, rows.map { it.identityKey }) }
+            .associateBy { it.bucket.dayStartAt to it.bucket.identityKey }
+        val counters = page.groupBy { it.dayStartAt }.flatMap { (day, rows) -> dao.dailyCounters(id, day, rows.map { it.identityKey }) }
+            .groupBy { it.shard.dayStartAt to it.shard.identityKey }
+        val merged = page.mapNotNull { incoming ->
+            val local = existing[incoming.dayStartAt to incoming.identityKey]?.bucket?.toEntity()?.toDomain()?.let {
+                SyncPlaybackStatMapper.fromPlaybackStatBucket(it, counters[it.dayStartAt to it.identityKey].orEmpty().map { row -> row.shard.toEntity().toDomain() })
             }
-            writeBuckets(id, merged)
+            SyncPlaybackStatsMergePolicy.mergeBucket(local, incoming, barrier)
         }
+        writeBuckets(id, merged)
+    }
+
+    private suspend fun finishLegacyMerge(id: String, barrier: Long) {
         liftBucketTotals(id)
         dao.updateSnapshotState(id, sealed = true, clearedAt = barrier)
     }

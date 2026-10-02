@@ -10,8 +10,10 @@ import java.io.Closeable
 internal object SyncArchiveLimits {
     const val MAX_OBJECT_BYTES = 2 * 1024 * 1024
     const val MAX_RAW_BYTES = 1024 * 1024
+    const val MAX_COMPACT_RAW_BYTES = 4 * 1024 * 1024
     const val MAX_RECORD_BYTES = 64 * 1024 * 1024
     const val INDEX_FANOUT = 512
+    const val MAX_INDEX_RAW_BYTES = 128 * 1024
     const val MAX_TREE_DEPTH = 8
     const val CACHE_BYTES = 256L * 1024 * 1024
     const val MAX_LEGACY_SOURCE_RAW_BYTES = 32L * 1024 * 1024
@@ -48,13 +50,14 @@ class SyncArchiveObject(val path: String, val content: ByteArray)
 class SyncPreparedArchive internal constructor(
     val content: ByteArray,
     val paths: Set<String>,
-    private val cache: SyncArchiveCache,
-    private val refs: List<SyncArchiveRef>
+    private val readObjects: (Set<String>) -> Sequence<SyncArchiveObject>,
+    private val release: (Set<String>) -> Unit
 ) : Closeable {
+    internal constructor(content: ByteArray, paths: Set<String>, cache: SyncArchiveCache, refs: List<SyncArchiveRef>) :
+        this(content, paths, { excluded -> refs.asSequence().filter { it.path !in excluded }
+            .map { SyncArchiveObject(it.path, cache.readCompressed(it)) } }, cache::trim)
+
     val objects: Sequence<SyncArchiveObject> get() = objects(emptySet())
-    fun objects(excludingPaths: Set<String>): Sequence<SyncArchiveObject> = refs.asSequence()
-        .filter { it.path !in excludingPaths }.map {
-        SyncArchiveObject(it.path, cache.readCompressed(it))
-    }
-    override fun close() { cache.trim(paths) }
+    fun objects(excludingPaths: Set<String>): Sequence<SyncArchiveObject> = readObjects(excludingPaths)
+    override fun close() { release(paths) }
 }

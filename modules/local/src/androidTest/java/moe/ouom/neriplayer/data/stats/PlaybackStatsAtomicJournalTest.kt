@@ -27,6 +27,42 @@ import java.util.Calendar
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsAtomicJournalTest {
     @Test
+    fun completedReceiptRetentionIsBoundedWithoutUsingPlaybackWallClockOrder() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
+        try {
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(emptyList(), emptyList(), PlaybackStatsSyncCounterSnapshot(), 1_000, 1_000)
+            val json = Gson().toJson(song().toStatisticsMetadata())
+            repeat(600) { index ->
+                assertTrue(store.enqueueDelta("expired-$index", json, 30_000, 1, 600L - index, "device", observedClearedAt = 0))
+            }
+            assertEquals(0L, store.pendingDeltaCount())
+            database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM playback_stats_event_receipt").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue("Completed receipts must remain bounded", cursor.getLong(0) <= 256)
+            }
+            assertTrue(database.playbackStatsSnapshotDao().receipt("expired-599") != null)
+            assertFalse(store.enqueueDelta("expired-599", json, 30_000, 1, 1, "device", observedClearedAt = 0))
+        } finally { database.close() }
+    }
+
+    @Test
+    fun receiptCleanupPreservesEveryDurablePendingDelta() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
+        try {
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(emptyList(), emptyList(), PlaybackStatsSyncCounterSnapshot(), 0, 0)
+            val json = Gson().toJson(song().toStatisticsMetadata())
+            repeat(300) { index -> assertTrue(store.enqueueDelta("pending-$index", json, 30_000, 1, 300L - index, "device")) }
+            assertEquals(300L, store.pendingDeltaCount())
+            repeat(300) { index -> assertFalse(store.enqueueDelta("pending-$index", json, 30_000, 1, 300L - index, "device")) }
+            assertTrue(database.playbackStatsSnapshotDao().receipt("pending-0") != null)
+        } finally { database.close() }
+    }
+
+    @Test
     fun committedEventReceiptsPreventDuplicatePlaybackAcrossRoomReopenAndClear() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "playback-journal-${UUID.randomUUID()}.db"

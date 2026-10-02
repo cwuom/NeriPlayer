@@ -426,7 +426,20 @@ class PlaybackStatsRepository internal constructor(
     }
 
     suspend fun applyMergedStats(syncStats: List<SyncTrackStat>, playbackStatsClearedAt: Long, respectLocalClear: Boolean = true, syncDailyStats: List<SyncPlaybackStatBucket> = emptyList()) {
-        // 手动旧备份仍接受列表输入，主存应用使用同一个分页事务路径
+        mergeBackupStatistics(playbackStatsClearedAt, respectLocalClear) { access, id, barrier ->
+            access.mergeLegacyBackup(id, syncStats, syncDailyStats, barrier, respectLocalClear)
+        }
+    }
+
+    suspend fun applyMergedStats(source: SyncPlaybackSource, playbackStatsClearedAt: Long, respectLocalClear: Boolean = true) {
+        mergeBackupStatistics(playbackStatsClearedAt, respectLocalClear) { access, id, barrier ->
+            access.mergeLegacyBackup(id, source, barrier, respectLocalClear, app)
+        }
+    }
+
+    private suspend fun mergeBackupStatistics(playbackStatsClearedAt: Long, respectLocalClear: Boolean,
+        merge: suspend (PlaybackStatsRoomSnapshotAccess, String, Long) -> Unit) {
+        val clearedAt = playbackStatsClearedAt.coerceAtLeast(0L)
         initialLoad.await()
         val frozen = mutex.withLock {
             requireInitializedLocked()
@@ -435,11 +448,11 @@ class PlaybackStatsRepository internal constructor(
         }
         try {
             val access = PlaybackStatsRoomSnapshotAccess(roomStore)
-            access.mergeLegacyBackup(frozen.id, syncStats, syncDailyStats,
-                if (respectLocalClear) maxOf(frozen.clearedAt, playbackStatsClearedAt) else playbackStatsClearedAt, respectLocalClear)
+            val barrier = if (respectLocalClear) maxOf(frozen.clearedAt, clearedAt) else clearedAt
+            merge(access, frozen.id, barrier)
             mutex.withLock {
                 if (!roomStore.commitFrozenSnapshot(frozen.id, frozen.revision)) throw IOException("Playback statistics changed during backup import")
-                _clearedAt.value = if (respectLocalClear) maxOf(frozen.clearedAt, playbackStatsClearedAt) else playbackStatsClearedAt
+                _clearedAt.value = barrier
             }
         } finally { withContext(NonCancellable) { roomStore.releaseSnapshot(frozen.id) } }
     }

@@ -68,7 +68,12 @@ class SyncArchiveBackupBenchmarkTest {
         assertTrue("canonical snapshot differs after archive round trip", canonical == restored)
         assertTrue("source lost an original lyric variant or nullable field", expectedCandidates.toSet() == recovery.retained.toSet())
         assertEquals(if (expectedCandidates.isEmpty()) 0 else 1, recovery.calls)
-        assertEquals(expectedCandidates.size.toLong(), SyncArchiveCodec.readManifest(first.manifest).legacyLyrics?.recordCount ?: 0L)
+        assertEquals(expectedCandidates.size.toLong(), SyncArchiveRepository.originalManifest(first.manifest).legacyLyrics?.recordCount ?: 0L)
+        if (samplePath != null) {
+            val completeWireBytes = first.objects.values.sumOf { it.size.toLong() } + first.manifest.size
+            assertTrue("complete lossless archive used $completeWireBytes bytes for a ${content.size} byte gzip backup",
+                completeWireBytes <= content.size.toLong() * 2 / 5)
+        }
         if (samplePath == null) {
             assertTrue("synthetic fixture must exercise multiple legacy lyric versions", versionCount(expectedCandidates) > 0)
             assertTrue("synthetic fixture must exercise all six nonempty lyric fields", (0..5).all { index ->
@@ -85,7 +90,7 @@ class SyncArchiveBackupBenchmarkTest {
         assertEquals(if (expectedCandidates.isEmpty()) 0 else 1, recovery.calls)
         val mainOnlyWriter = SyncArchiveRepository(temporary.newFolder())
         val mainOnly = publish(mainOnlyWriter, canonical, emptySet(), "main-only-first")
-        assertTrue("main-only archive contains a legacy source", SyncArchiveCodec.readManifest(mainOnly.manifest).legacyLyrics == null)
+        assertTrue("main-only archive contains a legacy source", SyncArchiveRepository.originalManifest(mainOnly.manifest).legacyLyrics == null)
         val mainOnlyRestored = SyncArchiveRepository(temporary.newFolder()).read(mainOnly.manifest) { path ->
             Result.success(mainOnly.objects.getValue(path))
         }.getOrThrow()
@@ -112,7 +117,8 @@ class SyncArchiveBackupBenchmarkTest {
         val started = System.nanoTime()
         return repository.prepare(data).use { prepared ->
             val objects = prepared.objects(known).associate { it.path to it.content }
-            val manifest = SyncArchiveCodec.readManifest(prepared.content)
+            assertEquals(4, SyncArchiveRepository.protocolVersion(prepared.content))
+            val manifest = SyncArchiveRepository.originalManifest(prepared.content)
             assertTrue("archive emitted an oversized object", objects.values.all { it.size <= SyncArchiveLimits.MAX_OBJECT_BYTES })
             assertTrue("manifest exceeded its object budget", prepared.content.size <= SyncArchiveLimits.MAX_OBJECT_BYTES)
             val row = Measurement(name, objects.size, objects.values.sumOf { it.size.toLong() }, prepared.content.size,

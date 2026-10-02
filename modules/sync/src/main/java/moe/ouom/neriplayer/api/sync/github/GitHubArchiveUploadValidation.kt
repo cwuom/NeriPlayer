@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.api.sync.http.SyncFileTransferLimits
 
 internal object GitHubArchiveUploadValidation {
     private const val MANIFEST_PATH = "neriplayer-sync-v3.manifest"
-    private val objectPath = Regex("neriplayer-sync-v3-([0-9a-f]{64})\\.zst")
+    private val objectPath = Regex("neriplayer-sync-v[34]-([0-9a-f]{64})\\.zst")
 
     fun validate(path: String, content: ByteArray) {
         validateSize(content.size)

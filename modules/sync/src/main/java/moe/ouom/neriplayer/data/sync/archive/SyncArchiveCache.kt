@@ -8,6 +8,8 @@ import kotlinx.serialization.protobuf.ProtoBuf
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Format
+import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Ref
 
 internal class SyncArchiveCache(private val directory: File) {
     init { require(directory.isDirectory || directory.mkdirs()) { "Unable to create sync cache" } }
@@ -82,6 +84,13 @@ internal class SyncArchiveCache(private val directory: File) {
         directory.listFiles { file -> file.name.endsWith(".ref") }.orEmpty().forEach { pointer ->
             val ref = runCatching { readPointer(pointer) }.getOrNull()
             if (ref == null || !File(directory, ref.path).exists()) pointer.delete()
+        }
+        directory.listFiles { file -> file.name.endsWith(".v4ref") }.orEmpty().forEach { pointer ->
+            val ref = runCatching {
+                require(pointer.length() in 1..512) { "Invalid sync v4 cache pointer size" }
+                ProtoBuf.decodeFromByteArray<SyncArchiveV4Ref>(pointer.readBytes()).also(SyncArchiveV4Format::validateRef)
+            }.getOrNull()
+            if (ref == null || !File(directory, ref.path).isFile) pointer.delete()
         }
     }
 }

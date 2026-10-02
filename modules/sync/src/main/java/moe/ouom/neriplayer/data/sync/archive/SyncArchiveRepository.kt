@@ -17,6 +17,8 @@ import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
+import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Bridge
+import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Format
 
 class SyncArchiveRepository private constructor(
     cacheDirectory: File,
@@ -30,7 +32,9 @@ class SyncArchiveRepository private constructor(
         this(cacheDirectory, beforeNormalization, legacyRecovery)
 
     private val cache = SyncArchiveCache(cacheDirectory)
+    private val bridge = SyncArchiveV4Bridge(cacheDirectory, cache)
     private val legacyArchive = SyncLegacyLyricArchive(cache)
+    private val retainedSource = SyncRetainedLegacySource(cacheDirectory)
     private var legacySource: SyncLegacyLyricSource? = null
     private var capturedLegacyObjects = emptyList<SyncArchiveRef>()
     val playbackDatasets by lazy { FileSyncPlaybackDatasetStore(File(cacheDirectory, "playback-staging")) }
@@ -38,7 +42,8 @@ class SyncArchiveRepository private constructor(
         private set
 
     fun captureLegacyLyrics(data: SyncData) {
-        val captured = legacyArchive.capture(data, legacyRecovery?.optimizeLegacyLyrics() == true)
+        val captured = legacyArchive.capture(data)
+        retainedSource.invalidate()
         legacySource = captured?.source
         capturedLegacyObjects = captured?.objects.orEmpty()
     }
@@ -48,26 +53,35 @@ class SyncArchiveRepository private constructor(
         return prepare(data) { context.ensureActive() }
     }
 
-    suspend fun prepareCancellable(dataset: SyncDataset): SyncPreparedArchive {
+    suspend fun prepareCancellable(dataset: SyncDataset): SyncPreparedArchive = prepareSafely {
         val context = coroutineContext
+        val original = prepareOriginal(dataset) { context.ensureActive() }
+        bridge.prepare(original, retainedSource.resolve(legacySource), retainedSource.checksum, lastReferencedPaths) { context.ensureActive() }
+    }
+
+    private suspend fun prepareOriginal(dataset: SyncDataset, checkActive: () -> Unit): SyncPreparedArchive {
         val chunks = ArrayList<SyncArchiveRef>()
         val objects = LinkedHashMap<String, SyncArchiveRef>()
         val chunker = SyncContentChunker { raw ->
-            context.ensureActive()
+            checkActive()
             val ref = cache.store(raw, index = false)
             chunks.add(ref)
             objects[ref.path] = ref
         }
-        val records = chunker.use { SyncArchiveRecords.writeDataset(dataset, it) { context.ensureActive() } }
-        context.ensureActive()
-        val root = buildTree(chunks, objects) { context.ensureActive() }
+        val records = chunker.use { SyncArchiveRecords.writeDataset(dataset, it, checkActive) }
+        checkActive()
+        val root = buildTree(chunks, objects, checkActive)
         addLegacyObjects(objects)
         val manifest = SyncArchiveManifest(3, SyncArchiveRecords.header(dataset.data), root,
             records, chunker.totalBytes, chunks.size.toLong(), legacySource)
         return SyncPreparedArchive(SyncArchiveCodec.manifest(manifest), protectedPaths(objects.keys), cache, objects.values.toList())
     }
 
-    fun prepare(data: SyncData, checkActive: () -> Unit = {}): SyncPreparedArchive {
+    fun prepare(data: SyncData, checkActive: () -> Unit = {}): SyncPreparedArchive = prepareSafely {
+        bridge.prepare(prepareOriginal(data, checkActive), retainedSource.resolve(legacySource), retainedSource.checksum, lastReferencedPaths, checkActive)
+    }
+
+    internal fun prepareOriginal(data: SyncData, checkActive: () -> Unit = {}): SyncPreparedArchive {
         val chunks = ArrayList<SyncArchiveRef>()
         val objects = LinkedHashMap<String, SyncArchiveRef>()
         val chunker = SyncContentChunker { raw ->
@@ -83,6 +97,21 @@ class SyncArchiveRepository private constructor(
         val manifest = SyncArchiveManifest(3, SyncArchiveRecords.header(data), root,
             records, chunker.totalBytes, chunks.size.toLong(), legacySource)
         return SyncPreparedArchive(SyncArchiveCodec.manifest(manifest), protectedPaths(objects.keys), cache, objects.values.toList())
+    }
+
+    private inline fun prepareSafely(block: () -> SyncPreparedArchive): SyncPreparedArchive = try {
+        block()
+    } catch (failure: Throwable) {
+        cleanFailedOperation(failure, lastReferencedPaths)
+        throw failure
+    }
+
+    private fun cleanFailedOperation(failure: Throwable, rollbackPaths: Set<String>) {
+        try {
+            cache.trim(rollbackPaths + capturedLegacyObjects.map { it.path } + listOfNotNull(legacySource?.root?.path))
+        } catch (cleanup: Throwable) {
+            failure.addSuppressed(cleanup)
+        }
     }
 
     private fun addLegacyObjects(objects: MutableMap<String, SyncArchiveRef>) {
@@ -102,25 +131,28 @@ class SyncArchiveRepository private constructor(
         return level.firstOrNull()
     }
 
-    suspend fun read(content: ByteArray, fetch: suspend (String) -> Result<ByteArray>): Result<SyncData> {
+    suspend fun read(content: ByteArray, verifyRemoteObjects: Boolean = false,
+        fetch: suspend (String) -> Result<ByteArray>): Result<SyncData> {
+        val rollbackPaths = lastReferencedPaths
         lastReferencedPaths = emptySet()
         return try {
-            val manifest = SyncArchiveCodec.readManifest(content)
-            val refs = resolve(manifest, fetch)
-            val context = coroutineContext
-            val data = SyncArchiveInputStream(refs.data, cache).use {
-                SyncArchiveRecords.read(manifest.header, it, manifest.recordCount, manifest.rawDataBytes, beforeNormalization) { context.ensureActive() }
+            load(content, verifyRemoteObjects, fetch).use { loaded ->
+                val context = coroutineContext
+                val data = loaded.main().use {
+                    SyncArchiveRecords.read(loaded.manifest.header, it, loaded.manifest.recordCount,
+                        loaded.manifest.rawDataBytes, beforeNormalization) { context.ensureActive() }
+                }
+                val restored = restorePreservedLyrics(data, recoverLegacyLyrics(loaded))
+                retainLegacy(loaded)
+                cache.trim(loaded.paths)
+                lastReferencedPaths = loaded.paths
+                Result.success(restored)
             }
-            val recovered = recoverLegacyLyrics(manifest.legacyLyrics, fetch)
-            val restored = restorePreservedLyrics(data, recovered.lyrics)
-            legacySource = manifest.legacyLyrics
-            capturedLegacyObjects = emptyList()
-            lastReferencedPaths = refs.paths + recovered.paths
-            cache.trim(lastReferencedPaths)
-            Result.success(restored)
         } catch (cancelled: CancellationException) {
+            cleanFailedOperation(cancelled, rollbackPaths)
             throw cancelled
         } catch (error: Exception) {
+            cleanFailedOperation(error, rollbackPaths)
             Result.failure(error)
         }
     }
@@ -130,82 +162,110 @@ class SyncArchiveRepository private constructor(
         store: SyncPlaybackDatasetStore,
         sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?,
         sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?,
+        verifyRemoteObjects: Boolean = false,
         fetch: suspend (String) -> Result<ByteArray>
     ): Result<SyncDataset> {
+        val rollbackPaths = lastReferencedPaths
         lastReferencedPaths = emptySet()
         return try {
-            val manifest = SyncArchiveCodec.readManifest(content)
-            val refs = resolve(manifest, fetch)
-            val dataset = decodeDataset(manifest, refs, store, sanitizeTrack, sanitizeBucket)
-            Result.success(approveRecoveredDataset(dataset, manifest, refs.paths, fetch))
+            load(content, verifyRemoteObjects, fetch).use { loaded ->
+                val dataset = decodeDataset(loaded, store, sanitizeTrack, sanitizeBucket)
+                try {
+                    val data = restorePreservedLyrics(dataset.data, recoverLegacyLyrics(loaded))
+                    retainLegacy(loaded)
+                    val restored = if (data === dataset.data) dataset else SyncDataset(data, dataset.playback,
+                        dataset.capturedPlaybackRevision, dataset.playbackMatchesCaptured)
+                    Result.success(approveDataset(restored, loaded.paths))
+                } catch (failure: Throwable) {
+                    try { dataset.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+                    throw failure
+                }
+            }
         } catch (cancelled: CancellationException) {
+            cleanFailedOperation(cancelled, rollbackPaths)
             throw cancelled
         } catch (error: Exception) {
+            cleanFailedOperation(error, rollbackPaths)
             Result.failure(error)
         }
     }
 
-    private suspend fun approveRecoveredDataset(
-        dataset: SyncDataset,
-        manifest: SyncArchiveManifest,
-        paths: Set<String>,
-        fetch: suspend (String) -> Result<ByteArray>
-    ): SyncDataset {
-        val (restored, legacyPaths) = try {
-            val recovered = recoverLegacyLyrics(manifest.legacyLyrics, fetch)
-            val data = restorePreservedLyrics(dataset.data, recovered.lyrics)
-            val restored = if (data === dataset.data) dataset else SyncDataset(data, dataset.playback,
-                dataset.capturedPlaybackRevision, dataset.playbackMatchesCaptured)
-            restored to recovered.paths
-        } catch (error: Exception) {
-            try { dataset.close() } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
-            throw error
+    private suspend fun load(content: ByteArray, verifyRemote: Boolean,
+        fetch: suspend (String) -> Result<ByteArray>): SyncArchiveV4Bridge.Loaded {
+        val context = coroutineContext
+        if (SyncArchiveV4Format.isManifest(content)) {
+            return bridge.load(content, verifyRemote, fetch) { context.ensureActive() }
         }
-        legacySource = manifest.legacyLyrics
-        capturedLegacyObjects = emptyList()
-        return approveDataset(restored, paths + legacyPaths)
+        val manifest = SyncArchiveCodec.readManifest(content)
+        val main = resolve(manifest, verifyRemote, fetch)
+        val workspace = bridge.newWorkspace()
+        try {
+            val legacy = manifest.legacyLyrics?.let { materializeLegacy(it, workspace, verifyRemote, fetch) }
+            return SyncArchiveV4Bridge.Loaded(manifest, main.paths + legacy?.second.orEmpty(),
+                { SyncArchiveInputStream(main.data, cache) }, legacy?.first, workspace)
+        } catch (failure: Throwable) {
+            workspace.deleteRecursively()
+            throw failure
+        }
     }
 
-    private suspend fun recoverLegacyLyrics(
-        source: SyncLegacyLyricSource?,
-        fetch: suspend (String) -> Result<ByteArray>
-    ): RecoveredLegacyLyrics {
-        if (source == null) return RecoveredLegacyLyrics(emptySet(), emptyList())
+    private suspend fun materializeLegacy(source: SyncLegacyLyricSource, workspace: File, verifyRemote: Boolean,
+        fetch: suspend (String) -> Result<ByteArray>): Pair<File, Set<String>> {
+        val refs = resolve(source.manifest(), verifyRemote, fetch)
+        val file = File(workspace, "legacy.records")
+        SyncArchiveInputStream(refs.data, cache).use { input ->
+            file.outputStream().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    coroutineContext.ensureActive()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                }
+            }
+        }
+        return file to refs.paths
+    }
+
+    private suspend fun recoverLegacyLyrics(loaded: SyncArchiveV4Bridge.Loaded): List<SyncSong> {
+        val source = loaded.manifest.legacyLyrics ?: return emptyList()
         coroutineContext.ensureActive()
         val recovery = legacyRecovery
-        if (recovery?.isCompleted(source.hash) == true) {
-            val preserved = recovery.preservedLyrics()
-            coroutineContext.ensureActive()
-            return RecoveredLegacyLyrics(setOf(source.root.path), preserved)
+        if (recovery != null && recovery.isCompleted(source.hash)) {
+            return recovery.preservedLyrics().also { coroutineContext.ensureActive() }
         }
-        val refs = resolve(source.manifest(), fetch)
         val context = coroutineContext
-        val data = SyncArchiveInputStream(refs.data, cache).use {
+        val data = requireNotNull(loaded.legacy).inputStream().use {
             legacyArchive.read(source, it) { context.ensureActive() }
         }
         context.ensureActive()
         if (recovery == null) beforeNormalization(data) else recovery.recover(source.hash, data)
         val preserved = recovery?.preservedLyrics().orEmpty()
         context.ensureActive()
-        return RecoveredLegacyLyrics(refs.paths, data.lyricOverrides + preserved)
+        return data.lyricOverrides + preserved
+    }
+
+    private fun retainLegacy(loaded: SyncArchiveV4Bridge.Loaded) {
+        val source = loaded.manifest.legacyLyrics
+        retainedSource.retain(source, loaded.legacy)
+        legacySource = source
+        capturedLegacyObjects = emptyList()
     }
 
     private fun restorePreservedLyrics(data: SyncData, candidates: List<SyncSong>): SyncData {
         if (candidates.isEmpty()) return data
-        val optimize = legacyRecovery?.optimizeLegacyLyrics() == true
-        val preserved = candidates.map { SyncSongLyricMergePolicy.prepareLegacy(it, optimize) }
+        val preserved = candidates.map { SyncSongLyricMergePolicy.prepareLegacy(it) }
         return SyncSongLyricMergePolicy.converge(data.copy(lyricOverrides = data.lyricOverrides + preserved))
     }
 
-    private data class RecoveredLegacyLyrics(val paths: Set<String>, val lyrics: List<SyncSong>)
-
     private suspend fun decodeDataset(
-        manifest: SyncArchiveManifest, refs: Resolved, store: SyncPlaybackDatasetStore,
+        loaded: SyncArchiveV4Bridge.Loaded, store: SyncPlaybackDatasetStore,
         sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?, sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?
     ): SyncDataset {
         val context = coroutineContext
+        val manifest = loaded.manifest
         return store.newSink().use { sink ->
-            SyncArchiveInputStream(refs.data, cache).use {
+            loaded.main().use {
                 SyncArchiveRecords.readDataset(manifest.header, it, manifest.recordCount,
                     manifest.rawDataBytes, sink, sanitizeTrack, sanitizeBucket, beforeNormalization) { context.ensureActive() }
             }
@@ -213,27 +273,23 @@ class SyncArchiveRepository private constructor(
     }
 
     private fun approveDataset(dataset: SyncDataset, paths: Set<String>): SyncDataset {
-        try {
-            cache.trim(paths)
-            lastReferencedPaths = paths
-            return dataset
-        } catch (error: Exception) {
-            try { dataset.close() } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
-            throw error
-        }
+        cache.trim(paths)
+        lastReferencedPaths = paths
+        return dataset
     }
 
     internal suspend fun visit(content: ByteArray, fetch: suspend (String) -> Result<ByteArray>, visitor: (Int, ByteArray) -> Unit) {
-        val manifest = SyncArchiveCodec.readManifest(content)
-        val refs = resolve(manifest, fetch)
-        val context = coroutineContext
-        SyncArchiveInputStream(refs.data, cache).use {
-            SyncArchiveRecords.visit(it, manifest.recordCount, manifest.rawDataBytes, { context.ensureActive() }, visitor)
+        load(content, false, fetch).use { loaded ->
+            val context = coroutineContext
+            loaded.main().use {
+                SyncArchiveRecords.visit(it, loaded.manifest.recordCount, loaded.manifest.rawDataBytes, { context.ensureActive() }, visitor)
+            }
         }
     }
 
-    private suspend fun resolve(manifest: SyncArchiveManifest, fetch: suspend (String) -> Result<ByteArray>): Resolved {
-        val resolver = SyncArchiveTreeReader(cache, fetch, manifest.chunkCount)
+    private suspend fun resolve(manifest: SyncArchiveManifest, verifyRemote: Boolean,
+        fetch: suspend (String) -> Result<ByteArray>): Resolved {
+        val resolver = SyncArchiveTreeReader(cache, fetch, manifest.chunkCount, manifest.rawDataBytes, verifyRemote)
         manifest.root?.let { resolver.walk(it, 0) }
         require(resolver.data.size.toLong() == manifest.chunkCount) { "Sync chunk count mismatch" }
         require(resolver.data.sumOf { it.rawBytes.toLong() } == manifest.rawDataBytes) { "Sync raw byte count mismatch" }
@@ -244,14 +300,20 @@ class SyncArchiveRepository private constructor(
 
     companion object {
         const val MANIFEST_FILE_NAME = "neriplayer-sync-v3.manifest"
-        fun isManifest(content: ByteArray): Boolean = SyncArchiveCodec.isManifest(content)
+        fun isManifest(content: ByteArray): Boolean = content.size >= 8 && String(content, 0, 6, Charsets.US_ASCII) == "NPSYNC"
+        fun protocolVersion(content: ByteArray): Int = if (SyncArchiveV4Format.isManifest(content))
+            SyncArchiveV4Format.readManifest(content).protocol else SyncArchiveCodec.readManifest(content).protocol
+        internal fun originalManifest(content: ByteArray): SyncArchiveManifest = if (SyncArchiveV4Format.isManifest(content))
+            SyncArchiveV4Format.readManifest(content).original else SyncArchiveCodec.readManifest(content)
     }
 }
 
 private class SyncArchiveTreeReader(
     private val cache: SyncArchiveCache,
     private val fetch: suspend (String) -> Result<ByteArray>,
-    private val expectedChunks: Long
+    private val expectedChunks: Long,
+    private var remainingBytes: Long,
+    private val verifyRemote: Boolean
 ) {
     val data = ArrayList<SyncArchiveRef>()
     val paths = LinkedHashSet<String>()
@@ -261,9 +323,20 @@ private class SyncArchiveTreeReader(
         coroutineContext.ensureActive()
         validateTraversal(depth)
         SyncArchiveCodec.validate(ref)
-        val content = cache.cachedCompressed(ref) ?: fetch(ref.path).getOrThrow().also { cache.save(ref, it) }
+        if (ref.index) {
+            readChildren(ref, readObject(ref), depth)
+        } else {
+            validateLeaf(ref)
+            readObject(ref)
+            data.add(ref)
+        }
+    }
+
+    private suspend fun readObject(ref: SyncArchiveRef): ByteArray {
+        val cached = if (verifyRemote && ref.path !in paths) null else cache.cachedCompressed(ref)
+        val content = cached ?: fetch(ref.path).getOrThrow().also { cache.save(ref, it) }
         paths.add(ref.path)
-        if (ref.index) readChildren(ref, content, depth) else addData(ref)
+        return content
     }
 
     private fun validateTraversal(depth: Int) {
@@ -278,8 +351,9 @@ private class SyncArchiveTreeReader(
         node.children.forEach { walk(it, depth + 1) }
     }
 
-    private fun addData(ref: SyncArchiveRef) {
+    private fun validateLeaf(ref: SyncArchiveRef) {
         require(data.size.toLong() < expectedChunks) { "Unexpected sync data chunk" }
-        data.add(ref)
+        require(ref.rawBytes.toLong() <= remainingBytes) { "Sync stream exceeds declared byte budget" }
+        remainingBytes -= ref.rawBytes
     }
 }

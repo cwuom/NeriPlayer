@@ -61,7 +61,7 @@ class SyncProtocolStartupUpgradeRepositoryTest {
 
         assertTrue(repository.startupPendingFlow.first().isEmpty())
         assertTrue(repository.approvedFlow.first())
-        assertEquals(3, repository.versionFlow(first).first())
+        assertEquals(4, repository.versionFlow(first).first())
         assertTrue(repository.canSyncTarget(first))
         assertTrue(runCatching { repository.requireLegacyMigration(challenge(first)) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
     }
@@ -97,7 +97,7 @@ class SyncProtocolStartupUpgradeRepositoryTest {
         repository.requireLegacyMigration(challenge(first))
         repository.markCurrent(first)
         assertTrue(repository.startupPendingFlow.first().isEmpty())
-        assertEquals(3, repository.versionFlow(first).first())
+        assertEquals(4, repository.versionFlow(first).first())
     }
 
     @Test
@@ -134,7 +134,7 @@ class SyncProtocolStartupUpgradeRepositoryTest {
         assertFalse(repository.canSyncTarget(first))
         assertTrue(repository.canSyncTarget(second))
         assertEquals(0, repository.versionFlow(first).first())
-        assertEquals(3, repository.versionFlow(second).first())
+        assertEquals(4, repository.versionFlow(second).first())
         assertEquals("probe", repository.executeIfApproved { Result.success("probe") }.getOrThrow())
     }
 
@@ -146,20 +146,20 @@ class SyncProtocolStartupUpgradeRepositoryTest {
         repository.markCurrent(first)
 
         assertEquals(setOf(second), store.data.first()[StartupTargets])
-        assertEquals(setOf(first), store.data.first()[CurrentTargets])
+        assertEquals(4, store.data.first()[intPreferencesKey("observed_protocol_$first")])
         assertTrue(repository.canSyncTarget(first))
         assertFalse(repository.canSyncTarget(second))
     }
 
     @Test
     fun `future startup registration cannot sync or downgrade upgrade state`() = runTest {
-        val initial = preferencesOf(StartupVersion to 4, StartupTargets to setOf(first))
+        val initial = preferencesOf(StartupVersion to 5, StartupTargets to setOf(first))
         val store = StartupDataStore(initial)
         val repository = SyncProtocolUpgradeRepository(store)
 
         assertFalse(repository.approvedFlow.first())
         assertFalse(repository.canSyncTarget(first))
-        assertEquals(4, repository.versionFlow(first).first())
+        assertEquals(5, repository.versionFlow(first).first())
         assertTrue(repository.executeIfApproved<String> { error("must not sync") }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
         assertTrue(runCatching { repository.markCurrent(first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
         assertTrue(runCatching { repository.initializeStartupTargets(setOf(first)) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
@@ -282,6 +282,5 @@ class SyncProtocolStartupUpgradeRepositoryTest {
     private companion object {
         val StartupVersion = intPreferencesKey("startup_registration_version")
         val StartupTargets = stringSetPreferencesKey("startup_legacy_targets")
-        val CurrentTargets = stringSetPreferencesKey("observed_current_targets")
     }
 }

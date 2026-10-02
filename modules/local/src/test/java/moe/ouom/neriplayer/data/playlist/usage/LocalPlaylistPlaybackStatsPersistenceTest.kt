@@ -15,10 +15,93 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.*
 
 class LocalPlaylistPlaybackStatsPersistenceTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun `same playback event retries a cancelled Room transaction without dropping its increment`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        var primary = listOf(original())
+        var attempts = 0
+        val cancelled = CancellationException("cancelled before playlist commit")
+        `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+        doAnswer {
+            if (++attempts == 1) throw cancelled
+            primary = it.getArgument(1)
+            true
+        }.`when`(room).writeIncrementalOnce(anyList(), anyList(), anyString(), anyString(), anyLong())
+        val repository = repository(room)
+        assertCancellation(cancelled, runCatching { repository.recordPlayNow(1, 200, "event") }.exceptionOrNull())
+        assertEquals(1L, primary.single().totalPlayCount)
+        repository.recordPlayNow(1, 200, "event")
+        assertEquals(2L, primary.single().totalPlayCount)
+        assertEquals(2L, repository.syncSnapshot().stats.single().totalPlayCount)
+    }
+
+    @Test
+    fun `JSON marker cancellation retries the same play without incrementing again`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        File(temporary.root, "local_playlist_playback_stats.json").writeText(Gson().toJson(listOf(original())))
+        doAnswer { throw IOException("Room promotion unavailable") }.`when`(room).importLegacyAndPromote(anyList(), anyLong())
+        var markers = 0
+        val cancelled = CancellationException("JSON marker committed before cancellation")
+        doAnswer {
+            if (++markers == 1) throw cancelled
+            Unit
+        }.`when`(room).markLegacyJsonPrimary(anyLong())
+        val repository = repository(room)
+        assertCancellation(cancelled, runCatching { repository.recordPlayNow(1, 200, "event") }.exceptionOrNull())
+        repository.recordPlayNow(1, 200, "event")
+        assertEquals(2L, repository.syncSnapshot().stats.single().totalPlayCount)
+        assertEquals(2L, repository(room).statsFlow.value.single().totalPlayCount)
+    }
+
+    @Test
+    fun `failed duplicate confirmation cannot persist an unaccepted second increment`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val actual = listOf(original().copy(totalPlayCount = 2))
+        var reads = 0
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            if (++reads == 2) throw IOException("duplicate confirmation unavailable")
+            actual
+        }
+        `when`(room.writeIncrementalOnce(anyList(), anyList(), anyString(), anyString(), anyLong())).thenReturn(false)
+        val repository = repository(room)
+        assertTrue(runCatching { repository.recordPlayNow(1, 200, "already-recorded") }.exceptionOrNull() is IOException)
+        assertTrue(repository.awaitInitialized())
+        assertEquals(2L, repository.syncSnapshot().stats.single().totalPlayCount)
+        verify(room, never()).writeIncremental(anyList(), anyList(), anyLong())
+        verify(room, never()).markLegacyJsonPrimary(anyLong())
+    }
+
+    @Test
+    fun `same playback event is not counted again after a committed Room cancellation`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        var primary = listOf(original())
+        var writes = 0
+        val cancelled = CancellationException("play event committed before cancellation")
+        `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+        doAnswer {
+            primary = it.getArgument(1)
+            if (++writes == 1) throw cancelled
+            Unit
+        }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+        doAnswer {
+            primary = it.getArgument(1)
+            if (++writes == 1) throw cancelled
+            true
+        }.`when`(room).writeIncrementalOnce(anyList(), anyList(), anyString(), anyString(), anyLong())
+        val repository = repository(room)
+
+        assertCancellation(cancelled, runCatching { repository.recordPlayNow(1, 200, "event") }.exceptionOrNull())
+        repository.recordPlayNow(1, 200, "event")
+
+        assertEquals(2L, primary.single().totalPlayCount)
+        assertEquals(2L, repository.syncSnapshot().stats.single().totalPlayCount)
+    }
 
     @Test
     fun `unreadable Room primary cannot replace playback from a stale JSON snapshot`() = runTest {
