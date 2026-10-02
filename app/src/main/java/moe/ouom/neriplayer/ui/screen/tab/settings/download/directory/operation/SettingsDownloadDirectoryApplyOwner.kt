@@ -6,6 +6,7 @@ import androidx.compose.runtime.MutableState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -14,12 +15,15 @@ import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoor
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import kotlin.time.Duration.Companion.milliseconds
+
+private const val DOWNLOAD_DIRECTORY_REFRESH_TIMEOUT_MS = 30_000L
 
 internal interface DownloadDirectoryApplyGateway {
     suspend fun tryBeginExclusive(): String?
     fun currentBusyReason(): ManagedLibraryProcessingReason?
     fun configure(uri: String?, label: String?)
-    suspend fun refresh(): ManagedLibraryRefreshOutcome
+    suspend fun refresh(operationId: String): ManagedLibraryRefreshOutcome
     suspend fun complete(operationId: String)
     suspend fun waitingForRetry(operationId: String)
     fun releasePreviousPermission(uri: String?)
@@ -41,8 +45,12 @@ internal class AndroidDownloadDirectoryApplyGateway(private val context: Context
         ManagedDownloadStorage.updateCustomDirectoryLabel(label)
     }
 
-    override suspend fun refresh(): ManagedLibraryRefreshOutcome =
-        GlobalDownloadManager.scanLocalFilesAwait(context = context, forceRefresh = true)
+    override suspend fun refresh(operationId: String): ManagedLibraryRefreshOutcome =
+        GlobalDownloadManager.scanLocalFilesAwait(
+            context = context,
+            forceRefresh = true,
+            directoryChangeOperationId = operationId
+        )
 
     override suspend fun complete(operationId: String) {
         ManagedLibraryProcessingCoordinator.complete(context, operationId)
@@ -83,9 +91,13 @@ internal class DownloadDirectoryApplyOwner(
             gateway.configure(targetUri, targetLabel)
             onDirectoryUriChange(targetUri, targetLabel)
             permissionLostState.value = false
+            // 扫描由下载管理器继续持有，设置页超时后交给已有的后台重试状态收敛
+            val outcome = withTimeoutOrNull(DOWNLOAD_DIRECTORY_REFRESH_TIMEOUT_MS.milliseconds) {
+                gateway.refresh(operationId)
+            } ?: ManagedLibraryRefreshOutcome.Failed("download directory refresh timed out")
             finishRefresh(
                 operationId = operationId,
-                outcome = gateway.refresh(),
+                outcome = outcome,
                 targetUri = targetUri,
                 previousUri = previousUri,
                 shouldReleasePreviousPermission = shouldReleasePreviousPermission

@@ -31,8 +31,12 @@ internal class ManagedDownloadStorageSettings(
         downloadFileNameTemplate = normalizeDownloadFileNameTemplate(fileNameTemplate)
     }
 
-    fun updateDirectoryUri(uri: String?) {
-        customDirectoryUri = uri?.takeIf { it.isNotBlank() }
+    @Synchronized
+    fun updateDirectoryUri(uri: String?): Boolean {
+        val normalizedUri = uri?.takeIf { it.isNotBlank() }
+        if (customDirectoryUri == normalizedUri) return false
+        customDirectoryUri = normalizedUri
+        return true
     }
 
     fun updateDirectoryLabel(label: String?) {

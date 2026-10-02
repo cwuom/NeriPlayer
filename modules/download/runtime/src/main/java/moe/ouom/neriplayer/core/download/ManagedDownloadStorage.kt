@@ -700,7 +700,8 @@ object ManagedDownloadStorage {
         return this.primeSettingsImpl(directoryUri, directoryLabel, fileNameTemplate)
     }
     fun updateCustomDirectoryUri(uri: String?) {
-        settings.updateDirectoryUri(uri)
+        // 设置保存回调和偏好观察者会重复通知同一目录，不能打断正在重建的快照
+        if (!settings.updateDirectoryUri(uri)) return
         val generation = LocalStorageRootGeneration.update(uri)
         LocalAssetInvalidationBus.publishRootChanged(generation)
         clearTreeDirectoryCache()

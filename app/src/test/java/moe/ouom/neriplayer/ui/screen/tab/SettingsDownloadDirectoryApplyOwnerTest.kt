@@ -3,7 +3,9 @@ package moe.ouom.neriplayer.ui.screen.tab
 import android.content.res.Resources
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
@@ -17,6 +19,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import kotlin.time.Duration.Companion.milliseconds
 
 class SettingsDownloadDirectoryApplyOwnerTest {
     @Test
@@ -56,6 +59,40 @@ class SettingsDownloadDirectoryApplyOwnerTest {
         assertEquals(
             listOf("lease", "configure:null:null", "callback:null:null", "refresh",
                 "complete:operation", "message:reset"),
+            fixture.gateway.events
+        )
+    }
+
+    @Test
+    fun `private to public switch stops checking when the directory scan stalls`() = runTest {
+        val fixture = Fixture().apply { gateway.refreshDelayMs = 60_000L }
+
+        val completed = withTimeoutOrNull(31_000L.milliseconds) {
+            fixture.owner.apply("content://new", "New", null, false)
+            true
+        }
+
+        assertEquals(true, completed)
+        assertEquals(
+            listOf("lease", "configure:content://new:New", "callback:content://new:New", "refresh",
+                "waiting:operation", "message:retry"),
+            fixture.gateway.events
+        )
+        assertFalse(fixture.preparing.value)
+        assertFalse(fixture.permissionLost.value)
+    }
+
+    @Test
+    fun `empty public directory completes a private directory switch without releasing a grant`() = runTest {
+        val fixture = Fixture().apply {
+            gateway.outcome = ManagedLibraryRefreshOutcome.Published("tree:new", 0)
+        }
+
+        fixture.owner.apply("content://new", "New", null, false)
+
+        assertEquals(
+            listOf("lease", "configure:content://new:New", "callback:content://new:New", "refresh",
+                "complete:operation", "message:selected"),
             fixture.gateway.events
         )
     }
@@ -128,6 +165,7 @@ class SettingsDownloadDirectoryApplyOwnerTest {
         var operationId: String? = "operation"
         var outcome: ManagedLibraryRefreshOutcome = ManagedLibraryRefreshOutcome.Published(null, 1)
         var refreshError: Exception? = null
+        var refreshDelayMs = 0L
 
         override suspend fun tryBeginExclusive(): String? {
             events += "lease"
@@ -141,8 +179,9 @@ class SettingsDownloadDirectoryApplyOwnerTest {
             events += "configure:$uri:$label"
         }
 
-        override suspend fun refresh(): ManagedLibraryRefreshOutcome {
+        override suspend fun refresh(operationId: String): ManagedLibraryRefreshOutcome {
             events += "refresh"
+            delay(refreshDelayMs.milliseconds)
             refreshError?.let { throw it }
             return outcome
         }

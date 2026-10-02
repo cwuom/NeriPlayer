@@ -916,9 +916,10 @@ object GlobalDownloadManager {
      */
     suspend fun scanLocalFilesAwait(
         context: Context,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        directoryChangeOperationId: String? = null
     ): ManagedLibraryRefreshOutcome {
-        return this.scanLocalFilesAwaitImpl(context, forceRefresh)
+        return this.scanLocalFilesAwaitImpl(context, forceRefresh, directoryChangeOperationId)
     }
 
     internal fun shouldCompleteProcessingAfterCatalogPublish(

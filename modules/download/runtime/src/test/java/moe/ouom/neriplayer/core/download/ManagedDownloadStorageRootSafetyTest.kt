@@ -1,15 +1,45 @@
 package moe.ouom.neriplayer.core.download
 
+import android.content.Context
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class ManagedDownloadStorageRootSafetyTest {
+
+    @Test
+    fun `persisting the selected directory again preserves its rebuilt snapshot`() {
+        val previousUri = ManagedDownloadStorage.configuredDirectoryUri()
+        val context = mock(Context::class.java).apply {
+            `when`(applicationContext).thenReturn(this)
+        }
+        val selectedUri = "content://provider/tree/selected"
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+
+        try {
+            ManagedDownloadStorage.updateConfiguredTreeUri(selectedUri)
+            ManagedDownloadStorage.snapshotCacheStore.putSnapshot(context, "tree:selected", snapshot)
+
+            ManagedDownloadStorage.updateConfiguredTreeUri(selectedUri)
+            ManagedDownloadStorage.updateCustomDirectoryUri(selectedUri)
+
+            assertSame(snapshot, ManagedDownloadStorage.snapshotCacheStore.peekSnapshot())
+
+            ManagedDownloadStorage.updateCustomDirectoryUri("content://provider/tree/other")
+            assertNull(ManagedDownloadStorage.snapshotCacheStore.peekSnapshot())
+        } finally {
+            ManagedDownloadStorage.updateConfiguredTreeUri(previousUri)
+            ManagedDownloadStorage.snapshotCacheStore.invalidate()
+        }
+    }
 
     @Test
     fun `unconfigured root does not probe and stays on private root`() {

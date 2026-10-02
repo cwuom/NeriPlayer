@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
+import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -65,7 +66,8 @@ import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     context: Context,
-    forceRefresh: Boolean = false
+    forceRefresh: Boolean = false,
+    directoryChangeOperationId: String? = null
 ): ManagedLibraryRefreshOutcome {
     val waiter = CompletableDeferred<ManagedLibraryRefreshOutcome>()
     val appContext = context.applicationContext
@@ -73,11 +75,31 @@ internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
         refreshWaiters += waiter
         requestLocalScanLocked(appContext, forceRefresh)
     }
+    if (directoryChangeOperationId != null) {
+        // 设置页超时或离开后仍由后台扫描收尾，避免完成通知落在等待态写入之前
+        scope.launch {
+            try {
+                if (waiter.await() is ManagedLibraryRefreshOutcome.Published) {
+                    ManagedLibraryProcessingCoordinator.complete(appContext, directoryChangeOperationId)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "下载目录后台扫描收尾失败，保留处理状态: ${error.message}", error)
+            } finally {
+                synchronized(this@scanLocalFilesAwaitImpl) {
+                    refreshWaiters.remove(waiter)
+                }
+            }
+        }
+    }
     try {
         return waiter.await()
     } finally {
-        synchronized(this) {
-            refreshWaiters.remove(waiter)
+        if (directoryChangeOperationId == null) {
+            synchronized(this) {
+                refreshWaiters.remove(waiter)
+            }
         }
     }
 }
