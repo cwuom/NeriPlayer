@@ -24,12 +24,19 @@ internal class FilePlaybackStatsPendingStore(
     private val writeFrame: (File, ByteArray) -> Unit = { file, bytes ->
         Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
             LinkOption.NOFOLLOW_LINKS).use { it.write(bytes) }
-    }
+    },
+    private val maxJournalBytes: Long = 64L * 1024 * 1024,
+    private val maxJournalFrames: Int = 8192
 ) : PlaybackStatsPendingStore, Closeable {
     private val lock = Any()
     private var ownerChannel: FileChannel? = null
     private var ownerLock: FileLock? = null
     private var ownerKey: String? = null
+
+    init {
+        require(maxJournalBytes > 0) { "Playback journal byte budget must be positive" }
+        require(maxJournalFrames > 0) { "Playback journal frame budget must be positive" }
+    }
 
     override fun append(snapshot: PlaybackStatsSnapshot) = synchronized(lock) {
         val payload = PlaybackStatsJournalCodec.payload(snapshot)
@@ -45,9 +52,13 @@ internal class FilePlaybackStatsPendingStore(
             return@synchronized
         }
         if (cursor.tail == Long.MAX_VALUE) throw IOException("Playback journal sequence exhausted")
+        // 确认但尚未删除的帧不能被当作已腾出的磁盘空间
+        cursor = cleanup(cursor)
+        val frame = PlaybackStatsJournalCodec.frame(payload)
+        requireCapacity(cursor, frame.size)
         val target = frameFile(cursor.tail)
         rejectSymlink(target)
-        publishFrame(target, payload)
+        publishFrame(target, frame)
         cursor = cursor.copy(tail = cursor.tail + 1, lastEventId = snapshot.eventId, lastHash = hash)
         saveCursor(cursor)
     }
@@ -59,20 +70,41 @@ internal class FilePlaybackStatsPendingStore(
         if (cursor.head == cursor.tail) null else readFrame(frameFile(cursor.head))
     }
 
-    override fun acknowledge(eventId: String) = synchronized(lock) {
-        openOwner()
-        val cursor = readCursor()
-        if (cursor.head == cursor.tail) throw IOException("Playback journal has no event to acknowledge")
-        if (readFrame(frameFile(cursor.head)).eventId != eventId) throw IOException("Playback journal acknowledgement is out of order")
-        val advanced = cursor.copy(head = cursor.head + 1)
-        saveCursor(advanced)
-        cleanup(advanced)
+    override fun acknowledge(eventId: String) {
+        synchronized(lock) {
+            openOwner()
+            val cursor = readCursor()
+            if (cursor.head == cursor.tail) throw IOException("Playback journal has no event to acknowledge")
+            if (readFrame(frameFile(cursor.head)).eventId != eventId) throw IOException("Playback journal acknowledgement is out of order")
+            val advanced = cursor.copy(head = cursor.head + 1)
+            saveCursor(advanced)
+            cleanup(advanced)
+        }
     }
 
-    private fun publishFrame(target: File, payload: ByteArray) {
+    private fun requireCapacity(cursor: Cursor, incomingBytes: Int) {
+        if (cursor.tail - cursor.head >= maxJournalFrames) throw IOException("Playback journal frame budget exhausted")
+        var remaining = maxJournalBytes - incomingBytes
+        if (remaining < 0) throw IOException("Playback journal byte budget exhausted")
+        var sequence = cursor.head
+        // 先检查帧数，旧的超额队列仍可重放，预算检查不会无限遍历
+        while (sequence < cursor.tail) {
+            val file = frameFile(sequence)
+            rejectSymlink(file)
+            if (!Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                throw IOException("Playback journal frame is unavailable")
+            }
+            val size = Files.size(file.toPath())
+            if (size > remaining) throw IOException("Playback journal byte budget exhausted")
+            remaining -= size
+            sequence++
+        }
+    }
+
+    private fun publishFrame(target: File, frame: ByteArray) {
         val temporary = File(directory, ".npst-v1-frame-${UUID.randomUUID()}.tmp")
         try {
-            writeFrame(temporary, PlaybackStatsJournalCodec.frame(payload))
+            writeFrame(temporary, frame)
             syncFrame(temporary)
             // 未完成的写入不能占据正式尾帧，否则进程退出后会堵住已确认的前缀
             Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -96,7 +128,7 @@ internal class FilePlaybackStatsPendingStore(
         return cursor
     }
 
-    private fun cleanup(initial: Cursor) {
+    private fun cleanup(initial: Cursor): Cursor {
         var cleaned = initial.cleaned
         while (cleaned < initial.head) {
             val file = frameFile(cleaned)
@@ -104,7 +136,9 @@ internal class FilePlaybackStatsPendingStore(
             if (file.exists() && !file.delete()) throw IOException("Cannot remove an acknowledged playback journal frame")
             cleaned++
         }
-        if (cleaned != initial.cleaned) saveCursor(initial.copy(cleaned = cleaned))
+        return initial.copy(cleaned = cleaned).also {
+            if (cleaned != initial.cleaned) saveCursor(it)
+        }
     }
 
     private fun readFrame(file: File): PlaybackStatsSnapshot {

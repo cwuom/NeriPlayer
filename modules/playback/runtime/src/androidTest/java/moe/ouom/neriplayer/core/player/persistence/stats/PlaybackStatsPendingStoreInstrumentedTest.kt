@@ -20,6 +20,38 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsPendingStoreInstrumentedTest {
     @Test
+    fun fullFrameAndByteBudgetsSurviveReopenAndAcknowledgementMakesRoom() {
+        for (limitByBytes in listOf(false, true)) {
+            withOwnedJournalDirectory { directory ->
+                val events = (1..3).map { snapshot("event-$it", 1_700_000_000_000L + it * 15_000L, 42L) }
+                val byteBudget = if (limitByBytes) events.take(2).sumOf {
+                    PlaybackStatsJournalCodec.frame(PlaybackStatsJournalCodec.payload(it)).size.toLong()
+                } else Long.MAX_VALUE
+                val frameBudget = if (limitByBytes) 10 else 2
+                FilePlaybackStatsPendingStore(directory, maxJournalBytes = byteBudget, maxJournalFrames = frameBudget).use { store ->
+                    store.append(events[0])
+                    store.append(events[1])
+                    assertThrows(IOException::class.java) { store.append(events[2]) }
+                    store.append(events[1])
+                    assertEquals(2, directory.listFiles().orEmpty().count { it.extension == "delta" })
+                }
+                FilePlaybackStatsPendingStore(directory, maxJournalBytes = byteBudget, maxJournalFrames = frameBudget).use { store ->
+                    assertThrows(IOException::class.java) { store.append(events[2]) }
+                    assertEquals(events[0], store.first())
+                    store.acknowledge(events[0].eventId)
+                    store.append(events[2])
+                    for (event in events.drop(1)) {
+                        assertEquals(event, store.first())
+                        store.acknowledge(event.eventId)
+                    }
+                }
+                FilePlaybackStatsPendingStore(directory).use { assertNull(it.first()) }
+                assertFalse(directory.listFiles().orEmpty().any { it.extension == "delta" })
+            }
+        }
+    }
+
+    @Test
     fun appendReopenAndDurableAcknowledgementPreserveFifoMetadata() = withOwnedJournalDirectory { directory ->
         val first = snapshot("first", 1_700_000_000_000L, 42L)
         val second = snapshot("second", 1_700_086_400_000L, null).copy(

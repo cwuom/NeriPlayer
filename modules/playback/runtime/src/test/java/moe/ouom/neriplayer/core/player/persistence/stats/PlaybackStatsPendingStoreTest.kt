@@ -72,6 +72,192 @@ class PlaybackStatsPendingStoreTest {
     }
 
     @Test
+    fun `the frame budget retains a full fifo and acknowledgements make room for the next event`() {
+        val directory = temporaryFolder.newFolder()
+        val events = (1..3).map { sample("event-$it", 1_700_000_000_000L + it * 86_400_000L) }
+        FilePlaybackStatsPendingStore(directory, maxJournalFrames = 2).use { store ->
+            store.append(events[0])
+            store.append(events[1])
+            assertThrows(IOException::class.java) { store.append(events[2]) }
+            assertEquals(2, directory.listFiles().orEmpty().count { it.extension == "delta" })
+            assertEquivalent(events[0], requireNotNull(store.first()))
+            store.acknowledge(events[0].eventId)
+            store.append(events[2])
+            for (event in events.drop(1)) {
+                assertEquivalent(event, requireNotNull(store.first()))
+                store.acknowledge(event.eventId)
+            }
+            assertNull(store.first())
+        }
+    }
+
+    @Test
+    fun `the byte budget counts complete frame bytes and permits its exact boundary`() {
+        val directory = temporaryFolder.newFolder()
+        val events = (1..3).map { sample("event-$it", song = song().copy(name = "metadata".repeat(1024))) }
+        val limit = events.take(2).sumOf { PlaybackStatsJournalCodec.frame(PlaybackStatsJournalCodec.payload(it)).size.toLong() }
+        FilePlaybackStatsPendingStore(directory, maxJournalBytes = limit, maxJournalFrames = 10).use { store ->
+            store.append(events[0])
+            store.append(events[1])
+            assertEquals(limit, directory.listFiles().orEmpty().filter { it.extension == "delta" }.sumOf { it.length() })
+            assertThrows(IOException::class.java) { store.append(events[2]) }
+            assertEquivalent(events[0], requireNotNull(store.first()))
+            store.acknowledge(events[0].eventId)
+            store.append(events[2])
+            for (event in events.drop(1)) {
+                assertEquivalent(event, requireNotNull(store.first()))
+                store.acknowledge(event.eventId)
+            }
+        }
+    }
+
+    @Test
+    fun `a full journal still confirms the same uncertain event before applying the budget`() {
+        for (commitBeforeFailure in listOf(false, true)) {
+            val directory = temporaryFolder.newFolder()
+            val event = sample("one")
+            val limit = PlaybackStatsJournalCodec.frame(PlaybackStatsJournalCodec.payload(event)).size.toLong()
+            var fail = true
+            FilePlaybackStatsPendingStore(directory, writeCursor = { file, text ->
+                if (fail && text.contains("\"tail\":1")) {
+                    fail = false
+                    if (commitBeforeFailure) file.writeTextAtomically(text)
+                    throw IOException("uncertain append")
+                }
+                file.writeTextAtomically(text)
+            }, maxJournalBytes = limit, maxJournalFrames = 1).use { store ->
+                assertThrows(IOException::class.java) { store.append(event) }
+                store.append(event)
+                assertEquals(1, directory.listFiles().orEmpty().count { it.extension == "delta" })
+                assertEquivalent(event, requireNotNull(store.first()))
+                assertThrows(IOException::class.java) { store.append(sample("two")) }
+                store.acknowledge(event.eventId)
+                store.append(sample("two"))
+                assertEquals("two", store.first()?.eventId)
+            }
+        }
+    }
+
+    @Test
+    fun `reopening preserves a full budget and an older oversized journal can drain without truncation`() {
+        for (originalCount in listOf(2, 3)) {
+            val directory = temporaryFolder.newFolder()
+            val events = (1..originalCount).map { sample("event-$it") }
+            FilePlaybackStatsPendingStore(directory).use { store -> events.forEach(store::append) }
+            val limit = events.take(2).sumOf { PlaybackStatsJournalCodec.frame(PlaybackStatsJournalCodec.payload(it)).size.toLong() }
+            FilePlaybackStatsPendingStore(directory, maxJournalBytes = limit, maxJournalFrames = 2).use { store ->
+                assertThrows(IOException::class.java) { store.append(sample("event-4")) }
+                assertEquals(originalCount, directory.listFiles().orEmpty().count { it.extension == "delta" })
+                for (event in events) {
+                    assertEquivalent(event, requireNotNull(store.first()))
+                    store.acknowledge(event.eventId)
+                }
+                assertNull(store.first())
+                store.append(sample("event-4"))
+                assertEquals("event-4", store.first()?.eventId)
+            }
+        }
+    }
+
+    @Test
+    fun `an acknowledged frame that cannot be removed cannot admit more journal data`() {
+        val directory = temporaryFolder.newFolder()
+        val acknowledged = File(directory, "00000000000000000000.delta")
+        val preserved = temporaryFolder.newFile()
+        var obstructRemoval = false
+        FilePlaybackStatsPendingStore(directory, writeCursor = { file, text ->
+            file.writeTextAtomically(text)
+            if (obstructRemoval && text.contains("\"head\":1")) {
+                obstructRemoval = false
+                Files.move(acknowledged.toPath(), preserved.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                check(acknowledged.mkdir())
+                File(acknowledged, "deletion-obstacle").writeText("synthetic")
+            }
+        }, maxJournalFrames = 2).use { store ->
+            store.append(sample("first"))
+            store.append(sample("second"))
+            obstructRemoval = true
+            assertThrows(IOException::class.java) { store.acknowledge("first") }
+            assertThrows(IOException::class.java) { store.append(sample("third")) }
+            assertEquals(2, directory.listFiles().orEmpty().count { it.extension == "delta" })
+            assertTrue(preserved.length() > 0)
+            check(File(acknowledged, "deletion-obstacle").delete())
+            check(acknowledged.delete())
+            Files.move(preserved.toPath(), acknowledged.toPath())
+            assertEquals("second", store.first()?.eventId)
+            store.append(sample("third"))
+            store.acknowledge("second")
+            assertEquals("third", store.first()?.eventId)
+        }
+    }
+
+    @Test
+    fun `invalid journal budgets are rejected before touching existing files`() {
+        val directory = temporaryFolder.newFolder()
+        val retained = File(directory, "future-format").apply { writeText("preserved") }
+        for (limit in listOf(0L, -1L)) {
+            assertThrows(IllegalArgumentException::class.java) { FilePlaybackStatsPendingStore(directory, maxJournalBytes = limit) }
+        }
+        for (limit in listOf(0, -1)) {
+            assertThrows(IllegalArgumentException::class.java) { FilePlaybackStatsPendingStore(directory, maxJournalFrames = limit) }
+        }
+        assertEquals(listOf(retained), directory.listFiles().orEmpty().toList())
+        assertEquals("preserved", retained.readText())
+    }
+
+    @Test
+    fun `a full durable journal pauses collection and resumes without attributing its unavailable interval`() = runTest {
+        val directory = temporaryFolder.newFolder()
+        val store = FilePlaybackStatsPendingStore(directory, maxJournalFrames = 2)
+        val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val gate = CompletableDeferred<Unit>()
+        val accepted = mutableListOf<PlaybackStatsSnapshot>()
+        val port = port { snapshot -> gate.await(); accepted += snapshot }
+        val pending = PlaybackStatsPendingWrites(store, scope)
+        var now = 0L
+        var clearedAt = 11L
+        val owner = PlaybackStatsOwner(backgroundScope, port,
+            PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { now }, readClearedAt = { clearedAt }), pending)
+        try {
+            owner.onSongChanged(song(), 42, true)
+            owner.onPlayingChanged(true, "start", true)
+            repeat(3) {
+                now += 15_000
+                owner.flushPeriodic(true)
+                runCurrent()
+            }
+            assertFalse(pending.canCollect)
+            val originalPrefix = directory.listFiles().orEmpty().filter { it.extension == "delta" }
+                .sortedBy { it.name }.map(PlaybackStatsJournalCodec::read)
+            assertEquals(2, originalPrefix.size)
+            now = 50_000
+            owner.onSongChanged(song().copy(id = 8), 99, true)
+            runCurrent()
+            clearedAt = 22L
+            repeat(100) { now += 15_000; owner.flushPeriodic(true); runCurrent() }
+            assertEquals(2, directory.listFiles().orEmpty().count { it.extension == "delta" })
+            assertTrue(accepted.isEmpty())
+
+            gate.complete(Unit)
+            runCurrent()
+            owner.onProgress(0, true)
+            runCurrent()
+            owner.onProgress(0, true)
+            now += 15_000
+            owner.flushPeriodic(true)
+            runCurrent()
+            assertEquals(listOf(15_000L, 15_000L, 15_000L, 5_000L, 15_000L), accepted.map { it.listenedMs })
+            assertEquals(originalPrefix.map { it.eventId }, accepted.take(2).map { it.eventId })
+            assertEquals(originalPrefix.map { it.playedAt }, accepted.take(2).map { it.playedAt })
+            assertEquals(listOf(11L, 11L, 11L, 11L, 22L), accepted.map { it.observedClearedAt })
+            assertEquals(listOf(7L, 7L, 7L, 7L, 8L), accepted.map { it.song.id })
+            assertEquals(listOf(42L, 42L, 42L, 42L, 99L), accepted.map { it.localPlaylistId })
+            assertEquals(5, accepted.map { it.eventId }.toSet().size)
+            assertFalse(pending.hasPendingWork())
+        } finally { scope.cancel(); runCurrent(); store.close() }
+    }
+
+    @Test
     fun `reopening preserves fifo timestamps clear fence nullable fields and statistics identity`() {
         val directory = temporaryFolder.newFolder()
         val first = sample("old", 1_700_000_000_000L, song().copy(customName = "", mediaUri = null))
