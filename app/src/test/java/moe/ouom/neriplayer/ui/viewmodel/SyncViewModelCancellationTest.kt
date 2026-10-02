@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +55,38 @@ class SyncViewModelCancellationTest {
             assertNull(fixture.errorMessage())
             assertNull(fixture.successMessage())
         }
+    }
+
+    @Test
+    fun `GitHub legacy remote without a confirmation handler reports a visible failure`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val fixture = startWithoutConfirmationHandler(fixtures().first())
+        testScheduler.runCurrent()
+        assertEquals("Sync failed: upgrade required", fixture.errorMessage())
+        assertFalse(fixture.isSyncing())
+        assertNull(fixture.successMessage())
+    }
+
+    @Test
+    fun `WebDAV legacy remote without a confirmation handler reports a visible failure`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val fixture = startWithoutConfirmationHandler(fixtures().last())
+        testScheduler.runCurrent()
+        assertEquals("Sync failed: upgrade required", fixture.errorMessage())
+        assertFalse(fixture.isSyncing())
+        assertNull(fixture.successMessage())
+    }
+
+    private fun startWithoutConfirmationHandler(fixture: Fixture): Fixture {
+        val challenge = SyncProtocolUpgradeChallenge("a".repeat(64), "1".repeat(64))
+        fixture.setOperation { Result.failure(SyncProtocolUpgradeRequiredException("upgrade required", challenge)) }
+        val context = mockContext()
+        `when`(context.getString(CoreCommonR.string.github_sync_failed, "upgrade required"))
+            .thenReturn("Sync failed: upgrade required")
+        `when`(context.getString(CoreCommonR.string.webdav_sync_failed, "upgrade required"))
+            .thenReturn("Sync failed: upgrade required")
+        fixture.perform(context)
+        return fixture
     }
 
     @Test

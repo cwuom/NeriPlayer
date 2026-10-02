@@ -76,7 +76,10 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylistPreview
+import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.stats.hotPlaybackStatsQuery
+import moe.ouom.neriplayer.ui.screen.history.stats.StatsQueryDay
+import moe.ouom.neriplayer.ui.screen.history.stats.rememberStatsQueryDay
 import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -151,18 +154,24 @@ internal fun persistLocalArtistSortMode(context: Context, sortMode: LocalArtistS
 }
 
 @Composable
-internal fun rememberHotPlaylists(retry: Int = 0): Result<List<PlaybackStatsHotPlaylistPreview>>? {
-    val hotPlaylists by produceState<Result<List<PlaybackStatsHotPlaylistPreview>>?>(initialValue = null, key1 = retry) {
+internal fun rememberHotPlaylists(
+    retry: Int = 0,
+    queryDay: StatsQueryDay = rememberStatsQueryDay().value,
+    repository: PlaybackStatsRepository? = null
+): Result<List<PlaybackStatsHotPlaylistPreview>>? {
+    val hotPlaylists by produceState<Result<List<PlaybackStatsHotPlaylistPreview>>?>(
+        initialValue = null, key1 = retry, key2 = queryDay.key, key3 = repository
+    ) {
         value = null
-        val repository = withContext(Dispatchers.IO) { AppContainer.playbackStatsRepo }
-        repository.revisionFlow.catch { error ->
+        val statsRepository = repository ?: withContext(Dispatchers.IO) { AppContainer.playbackStatsRepo }
+        statsRepository.revisionFlow.catch { error ->
             if (error is CancellationException) throw error
             value = Result.failure(error)
         }.collectLatest {
             value = try {
                 Result.success(HotPlaylistPeriods.map { period ->
-                    val query = hotPlaybackStatsQuery(period)
-                    PlaybackStatsHotPlaylistPreview(period, repository.readPage(query, pageSize = 4).tracks, repository.readSummary(query))
+                    val query = hotPlaybackStatsQuery(period, queryDay.nowMillis)
+                    PlaybackStatsHotPlaylistPreview(period, statsRepository.readPage(query, pageSize = 4).tracks, statsRepository.readSummary(query))
                 })
             } catch (error: Exception) {
                 if (error is CancellationException) throw error

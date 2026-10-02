@@ -95,6 +95,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
+import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
@@ -118,6 +119,8 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
+import moe.ouom.neriplayer.ui.sync.upgrade.StartupSyncUpgradePrompt
+import moe.ouom.neriplayer.ui.sync.upgrade.rememberSyncProtocolUpgradeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
@@ -409,6 +412,19 @@ fun StartupOnboardingScreen(
     val githubState by githubVm.uiState.collectAsStateWithLifecycle()
     val webDavVm: WebDavSyncViewModel = viewModel()
     val webDavState by webDavVm.uiState.collectAsStateWithLifecycle()
+    val syncUpgradeVm = rememberSyncProtocolUpgradeViewModel()
+    val syncUpgradeState by syncUpgradeVm.uiState.collectAsStateWithLifecycle()
+    val githubTarget = if (githubState.isConfigured) {
+        SyncProtocolUpgradeRepository.githubTargetHash(githubState.repoOwner, githubState.repoName)
+    } else null
+    val webDavTarget = if (webDavState.isConfigured) {
+        SyncProtocolUpgradeRepository.webDavTargetHash(
+            webDavState.serverUrl, webDavState.basePath, webDavState.username
+        )
+    } else null
+    LaunchedEffect(githubTarget, webDavTarget) {
+        syncUpgradeVm.refreshTargets()
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -869,40 +885,53 @@ fun StartupOnboardingScreen(
                         }
                     }
                 )
-                StartupStep.BackupRestore -> BackupRestoreContent(
-                    gitHubState = githubState,
-                    webDavState = webDavState,
-                    onDismissGitHubMessage = githubVm::clearMessages,
-                    onDismissWebDavMessage = webDavVm::clearMessages,
-                    onOpenGitHubConfig = {
-                        githubVm.clearMessages()
-                        showGitHubConfigDialog = true
-                    },
-                    onOpenClearGitHubConfig = {
-                        githubVm.clearMessages()
-                        showClearGitHubConfigDialog = true
-                    },
-                    onToggleGitHubAutoSync = { enabled ->
-                        githubVm.toggleAutoSync(context, enabled)
-                    },
-                    onGitHubSyncNow = {
-                        githubVm.performSync(context)
-                    },
-                    onOpenWebDavConfig = {
-                        webDavVm.clearMessages()
-                        showWebDavConfigDialog = true
-                    },
-                    onOpenClearWebDavConfig = {
-                        webDavVm.clearMessages()
-                        showClearWebDavConfigDialog = true
-                    },
-                    onToggleWebDavAutoSync = { enabled ->
-                        webDavVm.toggleAutoSync(context, enabled)
-                    },
-                    onWebDavSyncNow = {
-                        webDavVm.performSync(context)
-                    }
-                )
+                StartupStep.BackupRestore -> StartupBackupRestoreSyncGate(
+                    state = syncUpgradeState,
+                    onRetry = syncUpgradeVm::refreshTargets
+                ) {
+                    BackupRestoreContent(
+                        gitHubState = githubState,
+                        webDavState = webDavState,
+                        onDismissGitHubMessage = githubVm::clearMessages,
+                        onDismissWebDavMessage = webDavVm::clearMessages,
+                        onOpenGitHubConfig = {
+                            githubVm.clearMessages()
+                            showGitHubConfigDialog = true
+                        },
+                        onOpenClearGitHubConfig = {
+                            githubVm.clearMessages()
+                            showClearGitHubConfigDialog = true
+                        },
+                        onToggleGitHubAutoSync = { enabled ->
+                            githubVm.toggleAutoSync(context, enabled)
+                        },
+                        onGitHubSyncNow = {
+                            githubTarget?.let { target ->
+                                requestStartupBackupSync(target, syncUpgradeVm) { targetId, finished, upgradeRequired ->
+                                    githubVm.performSyncForTarget(context, targetId, finished, upgradeRequired)
+                                }
+                            }
+                        },
+                        onOpenWebDavConfig = {
+                            webDavVm.clearMessages()
+                            showWebDavConfigDialog = true
+                        },
+                        onOpenClearWebDavConfig = {
+                            webDavVm.clearMessages()
+                            showClearWebDavConfigDialog = true
+                        },
+                        onToggleWebDavAutoSync = { enabled ->
+                            webDavVm.toggleAutoSync(context, enabled)
+                        },
+                        onWebDavSyncNow = {
+                            webDavTarget?.let { target ->
+                                requestStartupBackupSync(target, syncUpgradeVm) { targetId, finished, upgradeRequired ->
+                                    webDavVm.performSyncForTarget(context, targetId, finished, upgradeRequired)
+                                }
+                            }
+                        }
+                    )
+                }
                 StartupStep.Personalize -> PersonalizeContent(
                     pendingUiScale = pendingUiScale,
                     onUiScaleChange = { pendingUiScale = it },
@@ -1198,17 +1227,27 @@ fun StartupOnboardingScreen(
                     youTubeVm.clearAuth()
                 }
             )
-            SettingsGitHubDialogs(
-                showGitHubConfigDialog = showGitHubConfigDialog,
-                onShowGitHubConfigDialogChange = { showGitHubConfigDialog = it },
-                showClearGitHubConfigDialog = showClearGitHubConfigDialog,
-                onShowClearGitHubConfigDialogChange = { showClearGitHubConfigDialog = it }
-            )
-            SettingsWebDavDialogs(
-                showWebDavConfigDialog = showWebDavConfigDialog,
-                onShowWebDavConfigDialogChange = { showWebDavConfigDialog = it },
-                showClearWebDavConfigDialog = showClearWebDavConfigDialog,
-                onShowClearWebDavConfigDialogChange = { showClearWebDavConfigDialog = it }
+            if (syncUpgradeState.startupRegistrationComplete) {
+                SettingsGitHubDialogs(
+                    showGitHubConfigDialog = showGitHubConfigDialog,
+                    onShowGitHubConfigDialogChange = { showGitHubConfigDialog = it },
+                    showClearGitHubConfigDialog = showClearGitHubConfigDialog,
+                    onShowClearGitHubConfigDialogChange = { showClearGitHubConfigDialog = it }
+                )
+                SettingsWebDavDialogs(
+                    showWebDavConfigDialog = showWebDavConfigDialog,
+                    onShowWebDavConfigDialogChange = { showWebDavConfigDialog = it },
+                    showClearWebDavConfigDialog = showClearWebDavConfigDialog,
+                    onShowClearWebDavConfigDialogChange = { showClearWebDavConfigDialog = it }
+                )
+            }
+            StartupSyncUpgradePrompt(
+                canShowDialog = syncUpgradeState.startupRegistrationComplete &&
+                    steps[stepIndex] == StartupStep.BackupRestore && !finishing &&
+                    !githubState.isSyncing && !webDavState.isSyncing &&
+                    !showGitHubConfigDialog && !showClearGitHubConfigDialog &&
+                    !showWebDavConfigDialog && !showClearWebDavConfigDialog,
+                viewModel = syncUpgradeVm
             )
             if (notificationPermissionWarningVisible) {
                 StartupNotificationPermissionWarningDialog(

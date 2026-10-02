@@ -1,9 +1,13 @@
 package moe.ouom.neriplayer.ui.sync.upgrade
 
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -18,9 +22,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
@@ -46,6 +52,8 @@ import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
 internal fun rememberSyncProtocolUpgradeViewModel(): SyncProtocolUpgradeViewModel {
@@ -102,20 +110,7 @@ private suspend fun performConfiguredSync(context: Context, targetId: String): R
 }
 
 private suspend fun activeSyncTargets(context: Context): Set<String> = withContext(Dispatchers.IO) {
-    buildSet {
-        val github = SecureTokenStorage(context)
-        if (github.isConfigured()) {
-            add(SyncProtocolUpgradeRepository.githubTargetHash(
-                github.getRepoOwner().orEmpty(), github.getRepoName().orEmpty()
-            ))
-        }
-        val webDav = WebDavStorage(context)
-        if (webDav.isConfigured()) {
-            add(SyncProtocolUpgradeRepository.webDavTargetHash(
-                webDav.getServerUrl().orEmpty(), webDav.getBasePath(), webDav.getUsername().orEmpty()
-            ))
-        }
-    }
+    SyncProtocolUpgradeRepository.configuredTargetIds(context)
 }
 
 @Composable
@@ -153,12 +148,12 @@ internal fun StartupSyncUpgradePrompt(
 ) {
     val state by viewModel.uiState.collectAsState()
     var deferred by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(canShowDialog, isResumed, state.approved, state.challenge, state.startupTargetId, deferred) {
-        if (canShowDialog && isResumed && state.approved == false && !deferred) {
+    LaunchedEffect(canShowDialog, isResumed, state.startupRegistrationComplete, state.approved, state.challenge, state.startupTargetId, deferred) {
+        if (canShowDialog && isResumed && state.startupRegistrationComplete && state.approved == false && !deferred) {
             viewModel.openConfirmation()
         }
     }
-    if (canShowDialog && isResumed && state.dialogRequested && state.approved == false) {
+    if (canShowDialog && isResumed && state.startupRegistrationComplete && state.dialogRequested && state.approved == false) {
         dialogContent(state) {
             if (viewModel.dismissConfirmation()) deferred = true
         }
@@ -166,6 +161,38 @@ internal fun StartupSyncUpgradePrompt(
     state.syncResult?.takeIf { it.message.isNotBlank() }?.let { result ->
         resultContent(result, viewModel::clearSyncResult)
     }
+}
+
+@Composable
+internal fun syncProtocolStartupConfigurationGate(
+    dialogRequested: Boolean,
+    onDismiss: () -> Unit,
+    viewModel: SyncProtocolUpgradeViewModel = rememberSyncProtocolUpgradeViewModel()
+): Boolean {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    if (!dialogRequested || state.startupRegistrationComplete) return false
+    MiuixSettingsDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(CoreCommonR.string.sync_database_version_title)) },
+        text = {
+            if (state.hasError) Text(stringResource(CoreCommonR.string.sync_upgrade_failed))
+            else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text(stringResource(CoreCommonR.string.sync_upgrade_status_loading))
+            }
+        },
+        confirmButton = {
+            if (state.hasError) MiuixSettingsTextButton(onClick = viewModel::refreshTargets) {
+                Text(stringResource(CoreCommonR.string.action_retry))
+            }
+        },
+        dismissButton = {
+            MiuixSettingsTextButton(onClick = onDismiss) {
+                Text(stringResource(CoreCommonR.string.action_cancel))
+            }
+        }
+    )
+    return true
 }
 
 @Composable

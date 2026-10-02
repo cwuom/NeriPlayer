@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
+import moe.ouom.neriplayer.ui.sync.upgrade.syncProtocolStartupConfigurationGate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 
@@ -44,6 +45,14 @@ internal fun SettingsWebDavDialogs(
     LaunchedEffect(webDavVm, context) {
         webDavVm.initialize(context)
     }
+
+    if (syncProtocolStartupConfigurationGate(
+            dialogRequested = showWebDavConfigDialog || showClearWebDavConfigDialog,
+            onDismiss = {
+                onShowWebDavConfigDialogChange(false)
+                onShowClearWebDavConfigDialogChange(false)
+            }
+        )) return
 
     if (showWebDavConfigDialog) {
         val webDavState by webDavVm.uiState.collectAsStateWithLifecycleCompat()

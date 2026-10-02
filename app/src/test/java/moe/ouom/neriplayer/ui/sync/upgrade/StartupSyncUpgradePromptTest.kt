@@ -16,6 +16,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -47,6 +48,35 @@ class StartupSyncUpgradePromptTest {
     fun cleanUp() {
         viewModels.forEach { it.viewModelScope.cancel() }
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `startup prompt waits for registration even when an upgrade request is already queued`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val persisted = CompletableDeferred<Unit>()
+        val model = SyncProtocolUpgradeViewModel(
+            flowOf(listOf(challenge)), { _, _ -> error("registration must finish before confirmation") },
+            initializeStartupTargets = { persisted.await() }
+        ).also(viewModels::add)
+        val fixture = PromptCompositionFixture(this, model)
+        try {
+            fixture.start()
+            fixture.pump()
+            model.requestUpgrade(challenge) { error("upgrade must not retry before confirmation") }
+            fixture.pump()
+            assertTrue(model.uiState.value.dialogRequested)
+            assertFalse(model.uiState.value.startupRegistrationComplete)
+            assertNull(fixture.visibleState)
+
+            persisted.complete(Unit)
+            fixture.pump()
+
+            assertTrue(model.uiState.value.startupRegistrationComplete)
+            assertEquals(challenge, fixture.visibleState?.challenge)
+            assertFalse(requireNotNull(fixture.visibleState).canConfirm)
+        } finally {
+            fixture.close()
+        }
     }
 
     @Test

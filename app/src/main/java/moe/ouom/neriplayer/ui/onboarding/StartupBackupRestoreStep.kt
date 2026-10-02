@@ -34,6 +34,51 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncUiState
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
+import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeUiState
+import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeViewModel
+
+@Composable
+internal fun StartupBackupRestoreSyncGate(
+    state: SyncProtocolUpgradeUiState,
+    onRetry: () -> Unit,
+    waitingContent: @Composable (Boolean, () -> Unit) -> Unit = { failed, retry ->
+        BackupSyncRegistrationStatus(failed, retry)
+    },
+    content: @Composable () -> Unit
+) {
+    if (state.startupRegistrationComplete) content()
+    else waitingContent(state.hasError, onRetry)
+}
+
+@Composable
+private fun BackupSyncRegistrationStatus(failed: Boolean, onRetry: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        if (failed) {
+            Text(stringResource(CoreCommonR.string.sync_upgrade_failed))
+            HapticOutlinedButton(onClick = onRetry) {
+                Text(stringResource(CoreCommonR.string.action_retry))
+            }
+        } else {
+            CircularProgressIndicator()
+            Text(stringResource(CoreCommonR.string.sync_upgrade_status_loading))
+        }
+    }
+}
+
+internal fun requestStartupBackupSync(
+    targetId: String,
+    upgradeViewModel: SyncProtocolUpgradeViewModel,
+    performSyncForTarget: (String, () -> Unit, (SyncProtocolUpgradeChallenge) -> Unit) -> Unit
+) {
+    if (!upgradeViewModel.uiState.value.startupRegistrationComplete) return
+    fun perform(target: String) {
+        performSyncForTarget(target, upgradeViewModel::refreshTargets) { challenge ->
+            upgradeViewModel.requestUpgrade(challenge) { perform(challenge.targetId) }
+        }
+    }
+    upgradeViewModel.requestSync(targetId) { perform(targetId) }
+}
 
 @Composable
 internal fun BackupRestoreContent(

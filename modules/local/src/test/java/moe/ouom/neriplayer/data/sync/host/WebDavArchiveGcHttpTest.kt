@@ -1,9 +1,17 @@
 package moe.ouom.neriplayer.data.sync.host
 
 import java.io.IOException
+import java.io.Closeable
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
+import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavArchiveLeaseLostException
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncSong
@@ -11,6 +19,11 @@ import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRepository
 import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncBackend
+import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
+import moe.ouom.neriplayer.data.sync.merge.host.SyncMergeHost
+import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataStore
+import moe.ouom.neriplayer.data.sync.runtime.SyncSession
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -32,6 +45,10 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
 import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcState
+import mockwebserver3.Dispatcher
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 
 class WebDavArchiveGcHttpTest {
     @get:Rule val temporary = TemporaryFolder()
@@ -297,8 +314,236 @@ class WebDavArchiveGcHttpTest {
         }
         assertTrue(result.isFailure)
         assertNotNull(fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME])
-        assertEquals("UNLOCK", fixture.requests.last().method)
+        assertEquals(listOf("UNLOCK", "LOCK"), fixture.requests.takeLast(2).map { it.method })
         assertEquals(500, (result.exceptionOrNull() as moe.ouom.neriplayer.api.sync.webdav.WebDavApiException).statusCode)
+        assertEquals(423, (result.exceptionOrNull()!!.suppressed.single() as moe.ouom.neriplayer.api.sync.webdav.WebDavApiException).statusCode)
+    }
+
+    @Test
+    fun `an uncertain released lease reconciles the publication under a fresh finite lock`() = runTest {
+        RecoveryHttpFixture().use { fixture ->
+            val published = fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            }
+            val requests = fixture.requests.toList()
+            assertEquals(2, requests.count { it.method == "LOCK" })
+            assertEquals(2, requests.count { it.method == "UNLOCK" })
+            assertEquals(1, requests.count { it.method == "PUT" && it.url.encodedPath.endsWith(SyncArchiveRepository.MANIFEST_FILE_NAME) })
+            val recovery = requests.drop(requests.indexOfFirst { it.method == "UNLOCK" } + 1)
+            assertEquals("LOCK", recovery.first().method)
+            assertEquals("UNLOCK", recovery.last().method)
+            assertTrue(recovery.any { it.method == "GET" && it.url.encodedPath.endsWith(SyncArchiveRepository.MANIFEST_FILE_NAME) })
+            assertTrue(recovery.any { it.method == "GET" && it.url.encodedPath.endsWith(".zst") })
+            assertTrue(recovery.filter { it.method == "GET" }.all { it.headers["If"]?.contains("recovery-2") == true })
+            assertTrue(recovery.none { it.method in setOf("PUT", "DELETE", "PROPFIND") })
+            assertFalse(fixture.locked)
+            assertEquals(fixture.manifestFingerprint(), published.lastKnownFingerprint)
+        }
+    }
+
+    @Test
+    fun `reconciled publication applies the local snapshot and saves the remote version`() = runTest {
+        RecoveryHttpFixture().use { fixture ->
+            var applied: SyncData? = null
+            val local = object : SyncLocalDataStore {
+                override suspend fun awaitInitialized() = true
+                override fun mutationVersion() = 1L
+                override suspend fun snapshot() = fixture.archive.playbackDatasets.fromLegacy(payload)
+                override suspend fun apply(dataset: SyncDataset, remoteChanged: Boolean, expectedMutationVersion: Long): Boolean {
+                    assertTrue(remoteChanged)
+                    assertEquals(1L, expectedMutationVersion)
+                    assertNull(applied)
+                    applied = dataset.data
+                    return true
+                }
+            }
+            val host = mock(SyncMergeHost::class.java) { call ->
+                when (call.method.name) {
+                    "getInitialUploadMessage" -> "uploaded"
+                    else -> null
+                }
+            }
+            val session = SyncSession(local, SyncDataMerger(host) { 10L }, fixture.archive.playbackDatasets,
+                "unchanged", "uploaded", { IOException("busy") }, nowMs = { 20L })
+
+            assertTrue(session.execute { fixture.backend }.getOrThrow().success)
+
+            assertEquals(payload.playlists, applied!!.playlists)
+            assertEquals(fixture.manifestFingerprint(), fixture.savedFingerprint.get())
+            assertEquals(20L, fixture.savedSyncTime.get())
+            assertFalse(fixture.locked)
+            assertEquals(1, fixture.requests.count { it.method == "PUT" && it.url.encodedPath.endsWith(SyncArchiveRepository.MANIFEST_FILE_NAME) })
+        }
+    }
+
+    @Test
+    fun `a lost unlock response is reconciled without uploading the publication twice`() = runTest {
+        RecoveryHttpFixture().use { fixture ->
+            fixture.firstUnlockStatus = 204
+            fixture.afterResponse = { response ->
+                if (response.request.method == "UNLOCK" && response.request.header("Lock-Token")?.contains("recovery-1") == true) {
+                    throw IOException("lost release response")
+                }
+            }
+            fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            }
+            assertEquals(2, fixture.requests.count { it.method == "LOCK" })
+            assertEquals(2, fixture.requests.count { it.method == "UNLOCK" })
+            assertEquals(1, fixture.requests.count { it.method == "PUT" && it.url.encodedPath.endsWith(SyncArchiveRepository.MANIFEST_FILE_NAME) })
+            assertFalse(fixture.locked)
+        }
+    }
+
+    @Test
+    fun `publication recovery requires the original strong ETag`() = runTest {
+        for (etag in listOf(null, "W/\"weak\"", "invalid")) {
+            RecoveryHttpFixture().use { fixture ->
+                fixture.manifestWriteETag = { etag }
+                assertReleaseFailure(fixture)
+                assertEquals(2, fixture.requests.count { it.method == "LOCK" })
+                val recovery = fixture.requests.toList().dropWhile { it.method != "UNLOCK" }.drop(1)
+                assertEquals(listOf("LOCK", "UNLOCK"), recovery.map { it.method })
+                assertFalse(fixture.locked)
+            }
+        }
+    }
+
+    @Test
+    fun `recovery rejects a changed manifest even if the server repeats its ETag`() = runTest {
+        for (repeatETag in listOf(false, true)) {
+            RecoveryHttpFixture().use { fixture ->
+                fixture.afterFirstRelease = {
+                    val original = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)
+                    if (repeatETag) fixture.manifestReadETag = { "\"${WebDavApiClient.calculateFingerprint(original)}\"" }
+                    fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME] = original.copyOf().also {
+                        it[it.lastIndex] = (it.last().toInt() xor 1).toByte()
+                    }
+                }
+                assertReleaseFailure(fixture)
+                assertEquals(2, fixture.requests.count { it.method == "LOCK" })
+                assertEquals("UNLOCK", fixture.requests.last().method)
+                assertFalse(fixture.locked)
+            }
+        }
+    }
+
+    @Test
+    fun `recovery reads remote objects again and rejects missing or corrupt warm cached closure`() = runTest {
+        for (remove in listOf(false, true)) {
+            RecoveryHttpFixture().use { fixture ->
+                var path: String? = null
+                fixture.afterFirstRelease = {
+                    val objectPath = fixture.files.keys.first { it.endsWith(".zst") }
+                    path = objectPath
+                    if (remove) fixture.files.remove(objectPath) else fixture.files[objectPath] = byteArrayOf(1, 2, 3)
+                }
+                assertReleaseFailure(fixture)
+                val recovery = fixture.requests.toList().dropWhile { it.method != "UNLOCK" }.drop(1)
+                assertTrue(recovery.any { it.method == "GET" && it.url.pathSegments.last() == path })
+                assertEquals("UNLOCK", fixture.requests.last().method)
+                assertFalse(fixture.locked)
+            }
+        }
+    }
+
+    @Test
+    fun `recovery requires a fresh finite supported lock and its successful release`() = runTest {
+        for (lockStatus in listOf(405, 423)) {
+            RecoveryHttpFixture().use { fixture ->
+                fixture.recoveryLockStatus = lockStatus
+                assertReleaseFailure(fixture)
+                assertEquals("LOCK", fixture.requests.last().method)
+            }
+        }
+        RecoveryHttpFixture().use { fixture ->
+            fixture.recoveryLockTimeout = "Infinite"
+            assertReleaseFailure(fixture)
+            assertEquals("UNLOCK", fixture.requests.last().method)
+            assertFalse(fixture.locked)
+        }
+        RecoveryHttpFixture().use { fixture ->
+            fixture.recoveryUnlockStatus = 500
+            assertReleaseFailure(fixture)
+            assertEquals(2, fixture.requests.count { it.method == "UNLOCK" })
+        }
+    }
+
+    @Test
+    fun `release authentication and condition errors never trigger publication recovery`() = runTest {
+        for (status in listOf(401, 403, 412, 423)) {
+            RecoveryHttpFixture().use { fixture ->
+                fixture.firstUnlockStatus = status
+                val result = fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                    fixture.backend.upload(data, WebDavSyncBackend.Version(null, true))
+                }
+                assertEquals(status, (result.exceptionOrNull() as moe.ouom.neriplayer.api.sync.webdav.WebDavApiException).statusCode)
+                assertEquals(1, fixture.requests.count { it.method == "LOCK" })
+                assertEquals("UNLOCK", fixture.requests.last().method)
+            }
+        }
+    }
+
+    @Test
+    fun `nontransport release errors and lost leases cannot trigger publication recovery`() = runTest {
+        for (error in listOf(WebDavAuthException("auth"), WebDavArchiveLeaseLostException("lost"), IllegalStateException("invalid"))) {
+            RecoveryHttpFixture().use { fixture ->
+                fixture.beforeRequest = { if (it.method == "UNLOCK") throw error }
+                val result = fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                    fixture.backend.upload(data, WebDavSyncBackend.Version(null, true))
+                }
+                assertSame(error, result.exceptionOrNull())
+                assertEquals(1, fixture.requests.count { it.method == "LOCK" })
+                assertNotNull(fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME])
+            }
+        }
+    }
+
+    @Test
+    fun `a failed publication operation cannot be recovered through its unlock error`() = runTest {
+        RecoveryHttpFixture().use { fixture ->
+            fixture.onObserved = { throw IOException("observation failed") }
+            val result = fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                fixture.backend.upload(data, WebDavSyncBackend.Version(null, true))
+            }
+            assertEquals("observation failed", result.exceptionOrNull()!!.message)
+            assertEquals(1, fixture.requests.count { it.method == "LOCK" })
+            assertEquals(500, (result.exceptionOrNull()!!.suppressed.single() as moe.ouom.neriplayer.api.sync.webdav.WebDavApiException).statusCode)
+            assertNotNull(fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME])
+        }
+    }
+
+    @Test
+    fun `cancellation after publication and during recovery preserves the same error without acknowledgement`() = runTest {
+        for (duringRecovery in listOf(false, true)) {
+            RecoveryHttpFixture().use { fixture ->
+                val cancelled = CancellationException("cancelled")
+                if (duringRecovery) fixture.beforeRequest = { request ->
+                    if (request.method == "GET" && request.header("If")?.contains("recovery-2") == true) throw cancelled
+                } else fixture.onObserved = { throw cancelled }
+                fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                    assertSame(cancelled, assertThrows(CancellationException::class.java) {
+                        kotlinx.coroutines.runBlocking { fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)) }
+                    })
+                }
+                assertNotNull(fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME])
+                assertEquals(if (duringRecovery) 2 else 1, fixture.requests.count { it.method == "LOCK" })
+                assertEquals("UNLOCK", fixture.requests.last().method)
+                assertFalse(fixture.locked)
+                assertNull(fixture.savedFingerprint.get())
+            }
+        }
+    }
+
+    private suspend fun assertReleaseFailure(fixture: RecoveryHttpFixture) {
+        val result = fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            fixture.backend.upload(data, WebDavSyncBackend.Version(null, true))
+        }
+        assertEquals(500, (result.exceptionOrNull() as moe.ouom.neriplayer.api.sync.webdav.WebDavApiException).statusCode)
+        assertTrue(result.exceptionOrNull()!!.suppressed.isNotEmpty())
+        assertNull(fixture.savedFingerprint.get())
+        assertEquals(1, fixture.requests.count { it.method == "PUT" && it.url.encodedPath.endsWith(SyncArchiveRepository.MANIFEST_FILE_NAME) })
+        assertTrue(fixture.requests.none { it.method == "DELETE" })
     }
 
     @Test
@@ -331,6 +576,137 @@ class WebDavArchiveGcHttpTest {
         assertEquals("UNLOCK", fixture.requests.last().method)
         assertFalse(fixture.locked)
         assertNull(fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME])
+    }
+
+    private inner class RecoveryHttpFixture : Closeable {
+        val server = MockWebServer()
+        val files = ConcurrentHashMap<String, ByteArray>()
+        val requests = ConcurrentLinkedQueue<RecordedRequest>()
+        private val lockToken = AtomicReference<String?>(null)
+        private val grants = AtomicInteger()
+        private val publicationUnlocks = AtomicInteger()
+        private val supported = AtomicBoolean()
+        private val gcState = AtomicReference(WebDavArchiveGcState())
+        val savedFingerprint = AtomicReference<String?>(null)
+        val savedSyncTime = java.util.concurrent.atomic.AtomicLong()
+        @Volatile var firstUnlockStatus = 500
+        @Volatile var recoveryUnlockStatus = 204
+        @Volatile var recoveryLockStatus = 200
+        @Volatile var recoveryLockTimeout = "Second-300"
+        @Volatile var afterFirstRelease: () -> Unit = {}
+        @Volatile var beforeRequest: (Request) -> Unit = {}
+        @Volatile var afterResponse: (Response) -> Unit = {}
+        @Volatile var onObserved: suspend (Int) -> Unit = {}
+        @Volatile var manifestReadETag: (String) -> String? = { it }
+        @Volatile var manifestWriteETag: (String) -> String? = { it }
+        val locked: Boolean get() = lockToken.get() != null
+        val archive = SyncArchiveRepository(temporary.newFolder())
+        private val client = OkHttpClient.Builder().addInterceptor { chain ->
+            beforeRequest(chain.request())
+            val response = chain.proceed(chain.request())
+            try { afterResponse(response); response }
+            catch (error: Exception) { response.close(); throw error }
+        }.build()
+        val backend: WebDavSyncBackend
+
+        init {
+            server.start()
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requests += request
+                    return dispatchRequest(request)
+                }
+            }
+            val storage = mock(WebDavStorage::class.java) { call ->
+                when (call.method.name) {
+                    "archiveLockSupported" -> supported.get()
+                    "rememberArchiveLock" -> { supported.set(true); null }
+                    "archiveGcState" -> gcState.get()
+                    "saveArchiveGcState" -> { gcState.set(call.arguments[1] as WebDavArchiveGcState); null }
+                    "getLastRemoteFingerprint" -> savedFingerprint.get()
+                    "saveLastRemoteFingerprint" -> { savedFingerprint.set(call.arguments[0] as String); null }
+                    "getLastSyncTime" -> savedSyncTime.get()
+                    "saveLastSyncTime" -> { savedSyncTime.set(call.arguments[0] as Long); null }
+                    else -> null
+                }
+            }
+            val api = WebDavApiClient("fixture-user", "fixture-password", client, "auth")
+            backend = WebDavSyncBackend(storage, api, server.url("/dav/backup").toString(),
+                SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, {}, archive,
+                currentProtocolObserved = { onObserved(it) },
+                wallMs = { 1_800_000_000_000L }, uptimeMs = { 1_000L })
+        }
+
+        private fun dispatchRequest(request: RecordedRequest): MockResponse {
+            if (request.method == "LOCK") return grantLock()
+            if (request.method == "UNLOCK") return releaseLock(request)
+            val token = lockToken.get()
+            if (token != null && request.headers["If"] != "<${server.url("/dav/")}> (<$token>)") {
+                return MockResponse(code = 423)
+            }
+            val name = request.url.pathSegments.last()
+            return when (request.method) {
+                "PUT" -> {
+                    val previous = files[name]
+                    if (request.headers["If-None-Match"] == "*" && previous != null) MockResponse(code = 412)
+                    else {
+                        val bytes = request.body!!.toByteArray()
+                        files[name] = bytes
+                        val response = MockResponse.Builder().code(201)
+                        val tag = if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestWriteETag(etag(bytes)) else etag(bytes)
+                        if (tag != null) response.addHeader("ETag", tag)
+                        response.build()
+                    }
+                }
+                "GET" -> files[name]?.let {
+                    val response = MockResponse.Builder().body(Buffer().write(it))
+                    val tag = if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestReadETag(etag(it)) else etag(it)
+                    if (tag != null) response.addHeader("ETag", tag)
+                    response.build()
+                }
+                    ?: MockResponse(code = 404)
+                "PROPFIND" -> MockResponse.Builder().code(207).body("""
+                    <d:multistatus xmlns:d="DAV:"><d:response><d:href>${server.url("/dav/")}</d:href>
+                    <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>
+                    <d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>
+                """.trimIndent()).build()
+                else -> MockResponse(code = 405)
+            }
+        }
+
+        private fun grantLock(): MockResponse {
+            if (publicationUnlocks.get() > 0 && recoveryLockStatus != 200) return MockResponse(code = recoveryLockStatus)
+            val token = "opaquelocktoken:recovery-${grants.incrementAndGet()}"
+            if (!lockToken.compareAndSet(null, token)) return MockResponse(code = 423)
+            return MockResponse.Builder().addHeader("Lock-Token", "<$token>").body("""
+                <d:prop xmlns:d="DAV:"><d:lockdiscovery><d:activelock>
+                <d:lockscope><d:exclusive/></d:lockscope><d:locktype><d:write/></d:locktype>
+                <d:depth>infinity</d:depth><d:timeout>${if (publicationUnlocks.get() > 0) recoveryLockTimeout else "Second-300"}</d:timeout>
+                <d:locktoken><d:href>$token</d:href></d:locktoken>
+                <d:lockroot><d:href>${server.url("/dav/")}</d:href></d:lockroot>
+                </d:activelock></d:lockdiscovery></d:prop>
+            """.trimIndent()).build()
+        }
+
+        private fun releaseLock(request: RecordedRequest): MockResponse {
+            val token = lockToken.get() ?: return MockResponse(code = 409)
+            if (request.headers["Lock-Token"] != "<$token>") return MockResponse(code = 409)
+            lockToken.set(null)
+            if (!files.containsKey(SyncArchiveRepository.MANIFEST_FILE_NAME)) return MockResponse(code = 204)
+            if (publicationUnlocks.getAndIncrement() == 0) {
+                afterFirstRelease()
+                return MockResponse(code = firstUnlockStatus)
+            }
+            return MockResponse(code = recoveryUnlockStatus)
+        }
+
+        private fun etag(bytes: ByteArray) = "\"${WebDavApiClient.calculateFingerprint(bytes)}\""
+        fun manifestFingerprint(): String = WebDavApiClient.calculateFingerprint(files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME))
+        override fun close() {
+            server.close()
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdown()
+        }
     }
 
     private inner class Fixture(remoteSuffix: String = "") {

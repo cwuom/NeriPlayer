@@ -13,7 +13,11 @@ import android.net.Uri
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -35,6 +39,7 @@ import moe.ouom.neriplayer.data.sync.store.preferences.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
+import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.common.locale.LanguageManager
@@ -45,7 +50,9 @@ class ConfigFileManager(
     listenTogetherPreferences: ListenTogetherPreferences? = null,
     neteaseCookieRepo: NeteaseCookieRepository? = null,
     biliCookieRepo: BiliCookieRepository? = null,
-    youTubeAuthRepo: YouTubeAuthRepository? = null
+    youTubeAuthRepo: YouTubeAuthRepository? = null,
+    upgradeRepository: SyncProtocolUpgradeRepository? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val listenTogetherRepository by lazy {
         listenTogetherPreferences ?: ListenTogetherPreferences(context)
@@ -53,6 +60,7 @@ class ConfigFileManager(
     private val neteaseRepository by lazy { neteaseCookieRepo ?: NeteaseCookieRepository(context) }
     private val biliRepository by lazy { biliCookieRepo ?: BiliCookieRepository(context) }
     private val youTubeRepository by lazy { youTubeAuthRepo ?: YouTubeAuthRepository(context) }
+    private val syncUpgradeRepository by lazy { upgradeRepository ?: SyncProtocolUpgradeRepository(context) }
 
     companion object {
         private const val TAG = "ConfigFileManager"
@@ -105,13 +113,20 @@ class ConfigFileManager(
         }
     }
 
-    suspend fun importConfig(uri: Uri): Result<AppConfigImportResult> = withContext(Dispatchers.IO) {
+    suspend fun importConfig(uri: Uri): Result<AppConfigImportResult> = withContext(ioDispatcher) {
         try {
             val raw = LimitedTextReader.readUtf8(context, uri, MAX_CONFIG_IMPORT_BYTES)
             val decoded = AppConfigBackupCodec.decodeForImport(raw)
             val payload = decoded.payload
             val sections = decoded.sections
             SyncCoordinator.withExclusive {
+                if (sections.gitHubSync || sections.webDavSync) {
+                    // 先登记导入前的地址，不能把新配置误认成旧安装已有的同步目标
+                    syncUpgradeRepository.initializeStartupTargets(
+                        SyncProtocolUpgradeRepository.configuredTargetIds(context)
+                    )
+                    currentCoroutineContext().ensureActive()
+                }
                 val warnings = mutableListOf<String>()
 
                 val sanitizedSettings = if (sections.settings) {
@@ -176,6 +191,8 @@ class ConfigFileManager(
                     )
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             NPLogger.e(TAG, "Failed to import config file", e)
             Result.failure(e)

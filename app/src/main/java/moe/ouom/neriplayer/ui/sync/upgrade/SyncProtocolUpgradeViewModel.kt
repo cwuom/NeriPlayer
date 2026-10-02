@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredExceptio
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 
 internal data class SyncProtocolUpgradeUiState(
+    val startupRegistrationComplete: Boolean = false,
     val approved: Boolean? = null,
     val challenge: SyncProtocolUpgradeChallenge? = null,
     val startupTargetId: String? = null,
@@ -79,6 +80,7 @@ internal class SyncProtocolUpgradeViewModel(
                             pendingChallenges = pending
                             startupTargets = startup
                             updatePendingState()
+                            mutableUiState.update { it.copy(startupRegistrationComplete = true) }
                         }
                 } catch (error: CancellationException) {
                     throw error
@@ -94,6 +96,9 @@ internal class SyncProtocolUpgradeViewModel(
     }
 
     fun refreshTargets() {
+        mutableUiState.update { state ->
+            if (state.startupRegistrationComplete) state else state.copy(hasError = false)
+        }
         reloads.update { it + 1L }
     }
 

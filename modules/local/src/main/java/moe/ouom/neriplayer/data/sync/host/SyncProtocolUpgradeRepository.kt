@@ -23,6 +23,8 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 
 private val Context.syncProtocolUpgradeDataStore by preferencesDataStore("sync_protocol_upgrade")
 
@@ -273,6 +275,19 @@ class SyncProtocolUpgradeRepository(
         private const val PendingPrefix = "pending_legacy_"
         private const val ApprovalPrefix = "approved_legacy_"
         private const val ObservedProtocolPrefix = "observed_protocol_"
+
+        fun configuredTargetIds(context: Context): Set<String> = buildSet {
+            val github = SecureTokenStorage(context)
+            if (github.isConfigured()) {
+                val configuration = github.snapshot()
+                add(githubTargetHash(configuration.repoOwner, configuration.repoName))
+            }
+            val webDav = WebDavStorage(context)
+            if (webDav.isConfigured()) {
+                val configuration = webDav.snapshot()
+                add(webDavTargetHash(configuration.serverUrl, configuration.basePath, configuration.username))
+            }
+        }
 
         fun githubTargetHash(owner: String, repo: String): String = targetHash(
             listOf("github", owner.trim().lowercase(Locale.ROOT), repo.trim().lowercase(Locale.ROOT))

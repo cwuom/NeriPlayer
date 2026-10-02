@@ -7,6 +7,8 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
 import moe.ouom.neriplayer.api.sync.webdav.WebDavFileNotFoundException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavApiException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavConcurrencyToken
@@ -153,8 +155,57 @@ internal class WebDavSyncBackend(
             ))
         }
         return archive.prepareCancellable(data).use { prepared ->
-            withArchiveLease({}) { lease -> uploadPrepared(prepared, version, lease) }
+            uploadWithLease(prepared, version)
         }
+    }
+
+    private suspend fun uploadWithLease(prepared: SyncPreparedArchive, version: Version): Result<Version> {
+        var published: Version? = null
+        val result = withArchiveLease({}) { lease ->
+            uploadPrepared(prepared, version, lease).onSuccess { published = it }
+        }
+        val completed = published ?: return result
+        val releaseFailure = result.exceptionOrNull() ?: return result
+        return reconcilePublication(completed, releaseFailure)
+    }
+
+    private suspend fun reconcilePublication(published: Version, releaseFailure: Throwable): Result<Version> {
+        val context = currentCoroutineContext()
+        context.ensureActive()
+        if (!canReconcileReleaseFailure(releaseFailure)) return Result.failure(releaseFailure)
+        return try {
+            // 上传已完成但释放结果不确定时，只核对原发布，不再次上传或清理
+            val lease = apiClient.acquireArchiveLease(manifestUrl, knownSupported = true) { context.ensureActive() }
+                .getOrThrow() ?: throw IOException("WebDAV publication recovery requires a finite archive lease")
+            lease.use { verifyPublication(published, it) }
+            context.ensureActive()
+            Result.success(published)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (error !== releaseFailure) releaseFailure.addSuppressed(error)
+            Result.failure(releaseFailure)
+        }
+    }
+
+    private fun canReconcileReleaseFailure(error: Throwable): Boolean = when (error) {
+        is WebDavApiException -> error.statusCode == 408 || error.statusCode in 500..599
+        is WebDavAuthException, is WebDavArchiveLeaseLostException -> false
+        else -> error is IOException
+    }
+
+    private suspend fun verifyPublication(published: Version, lease: WebDavArchiveLease) {
+        val expectedETag = published.token?.etag ?: throw WebDavMissingConcurrencyTokenException(
+            "WebDAV publication recovery requires a strong ETag")
+        require(WebDavArchiveListing.isStrongETag(expectedETag)) { "WebDAV publication recovery requires a strong ETag" }
+        val current = readFile(manifestUrl, lease).getOrThrow()
+        require(current.version.etag == expectedETag && current.fingerprint == published.lastKnownFingerprint) {
+            "WebDAV publication changed before recovery"
+        }
+        val paths = archive.verifyRemoteClosure(current.content) { path ->
+            readFile(WebDavApiClient.buildSiblingFileUrl(remoteUrl, path), lease).map { it.content }
+        }.getOrThrow()
+        require(paths == published.knownPaths) { "WebDAV publication recovery closure does not match the prepared archive" }
     }
 
     private suspend fun uploadPrepared(prepared: SyncPreparedArchive, version: Version, lease: WebDavArchiveLease?): Result<Version> {

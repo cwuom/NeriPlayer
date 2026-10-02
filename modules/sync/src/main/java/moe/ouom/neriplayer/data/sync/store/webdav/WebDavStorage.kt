@@ -105,9 +105,14 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
     private fun maintenanceKey(scope: String, kind: String): String = KEY_ARCHIVE_MAINTENANCE + scope + "_" + kind
 
     fun isConfigured(): Boolean {
-        return hasNonBlankSyncCredential(getServerUrl()) &&
-            hasNonBlankSyncCredential(getUsername()) &&
-            hasNonBlankSyncCredential(getPassword())
+        if (!hasNonBlankSyncCredential(getServerUrl()) ||
+            !hasNonBlankSyncCredential(getUsername()) ||
+            !hasNonBlankSyncCredential(getPassword())) return false
+        return try {
+            getRemoteFileUrl() != null
+        } catch (_: IllegalArgumentException) {
+            false
+        }
     }
 
     fun clearAll() {

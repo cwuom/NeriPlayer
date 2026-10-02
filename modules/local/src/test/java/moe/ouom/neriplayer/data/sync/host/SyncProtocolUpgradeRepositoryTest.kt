@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.sync.host
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
@@ -25,10 +27,15 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockConstruction
+import org.mockito.Mockito.withSettings
 
 class SyncProtocolUpgradeRepositoryTest {
     @get:Rule val temporary = TemporaryFolder()
@@ -244,6 +251,100 @@ class SyncProtocolUpgradeRepositoryTest {
         assertEquals(SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav/", "/music/", "user"), SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav", "music", "user"))
         assertFalse(SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav", "music", "user") == SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav", "music", "other"))
         assertFalse(SyncProtocolUpgradeRepository.githubTargetHash("a/b", "c") == SyncProtocolUpgradeRepository.githubTargetHash("a", "b/c"))
+    }
+
+    @Test fun `configured target reader returns exactly the persisted configured providers`() {
+        val github = githubConfiguration()
+        val webDav = webDavConfiguration()
+        val githubId = SyncProtocolUpgradeRepository.githubTargetHash("owner", "repo")
+        val webDavId = SyncProtocolUpgradeRepository.webDavTargetHash("https://example.test/dav", "music", "user")
+        for ((hasGithub, hasWebDav) in listOf(false to false, true to false, false to true, true to true)) {
+            val expected = buildSet {
+                if (hasGithub) add(githubId)
+                if (hasWebDav) add(webDavId)
+            }
+
+            assertEquals(expected, readConfiguredTargets(
+                if (hasGithub) github else emptyMap(), if (hasWebDav) webDav else emptyMap()
+            ))
+        }
+    }
+
+    @Test fun `configured target reader keeps canonical paths and case sensitive account identities`() {
+        val github = githubConfiguration() + mapOf("repo_owner" to " Owner ", "repo_name" to " Repo ")
+        val webDav = webDavConfiguration() + mapOf("server_url" to " https://example.test/dav/ ", "base_path" to "/music/")
+        val canonical = readConfiguredTargets(githubConfiguration(), webDavConfiguration())
+
+        assertEquals(canonical, readConfiguredTargets(github, webDav))
+        val otherAccount = readConfiguredTargets(github, webDav + ("username" to "User"))
+        assertFalse(canonical == otherAccount)
+        assertEquals(2, otherAccount.size)
+        assertTrue(otherAccount.contains(SyncProtocolUpgradeRepository.githubTargetHash("owner", "repo")))
+    }
+
+    @Test fun `incomplete credentials are excluded from startup target registration`() {
+        for (missing in listOf("github_token", "repo_owner", "repo_name")) {
+            assertTrue(readConfiguredTargets(githubConfiguration() - missing, emptyMap()).isEmpty())
+        }
+        for (missing in listOf("server_url", "username", "password")) {
+            assertTrue(readConfiguredTargets(emptyMap(), webDavConfiguration() - missing).isEmpty())
+        }
+    }
+
+    @Test fun `invalid persisted webdav targets are skipped without erasing repairable fields`() {
+        val githubId = SyncProtocolUpgradeRepository.githubTargetHash("owner", "repo")
+        for (server in listOf("not-a-url", "https://", "https://[::1", "ftp://example.test/dav")) {
+            val webDav = webDavConfiguration() + mapOf(
+                "server_url" to server, "auto_sync_enabled" to false,
+                "last_sync_time" to 77L, "last_remote_fingerprint" to "previous"
+            )
+
+            assertEquals(setOf(githubId), readConfiguredTargets(githubConfiguration(), webDav))
+        }
+    }
+
+    private fun githubConfiguration(): Map<String, Any> = mapOf(
+        "github_token" to "fixture", "repo_owner" to "owner", "repo_name" to "repo"
+    )
+
+    private fun webDavConfiguration(): Map<String, Any> = mapOf(
+        "server_url" to "https://example.test/dav", "base_path" to "music", "username" to "user", "password" to "fixture"
+    )
+
+    private fun readConfiguredTargets(githubValues: Map<String, Any>, webDavValues: Map<String, Any>): Set<String> {
+        val githubPreferences = readOnlyPreferences(githubValues)
+        val webDavPreferences = readOnlyPreferences(webDavValues)
+        // local 测试不能直接引用 sync 的 internal 构造器，只绕过平台加密入口，配置判断仍调用真实存储
+        val github = SecureTokenStorage::class.java.getConstructor(
+            SharedPreferences::class.java, File::class.java, Function1::class.java
+        ).newInstance(githubPreferences, null, null)
+        val webDav = WebDavStorage::class.java.getConstructor(SharedPreferences::class.java).newInstance(webDavPreferences)
+        val originalGithub = github.snapshot()
+        val originalWebDav = webDav.snapshot()
+        val result = mockConstruction(SecureTokenStorage::class.java, withSettings().defaultAnswer { call ->
+            call.method.invoke(github, *call.arguments)
+        }).use {
+            mockConstruction(WebDavStorage::class.java, withSettings().defaultAnswer { call ->
+                call.method.invoke(webDav, *call.arguments)
+            }).use {
+                SyncProtocolUpgradeRepository.configuredTargetIds(mock(Context::class.java))
+            }
+        }
+        assertEquals(originalGithub, github.snapshot())
+        assertEquals(originalWebDav, webDav.snapshot())
+        assertEquals(githubValues, githubPreferences.all)
+        assertEquals(webDavValues, webDavPreferences.all)
+        return result
+    }
+
+    private fun readOnlyPreferences(values: Map<String, Any>): SharedPreferences = mock(SharedPreferences::class.java) { call ->
+        when (call.method.name) {
+            "getString", "getLong", "getBoolean" -> values[call.arguments[0] as String] ?: call.arguments[1]
+            "getAll" -> values.toMap()
+            "contains" -> values.containsKey(call.arguments[0] as String)
+            "edit" -> error("Reading configured targets must not modify stored configuration")
+            else -> null
+        }
     }
 
     private suspend fun detect(repository: SyncProtocolUpgradeRepository, challenge: SyncProtocolUpgradeChallenge) {

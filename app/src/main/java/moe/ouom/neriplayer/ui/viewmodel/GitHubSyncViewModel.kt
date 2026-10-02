@@ -222,14 +222,14 @@ class GitHubSyncViewModel : ViewModel() {
         context: Context,
         targetId: String,
         onFinished: () -> Unit = {},
-        onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}
+        onUpgradeRequired: ((SyncProtocolUpgradeChallenge) -> Unit)? = null
     ) {
         val operation = targetSyncOperation ?: return
         if (targetId.isBlank()) return
         startSync(context, { operation(targetId) }, onUpgradeRequired, onFinished)
     }
 
-    fun performSync(context: Context, onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit = {}) {
+    fun performSync(context: Context, onUpgradeRequired: ((SyncProtocolUpgradeChallenge) -> Unit)? = null) {
         val operation = syncOperation ?: return
         startSync(context, operation, onUpgradeRequired)
     }
@@ -237,7 +237,7 @@ class GitHubSyncViewModel : ViewModel() {
     private fun startSync(
         context: Context,
         operation: suspend () -> Result<SyncResult>,
-        onUpgradeRequired: (SyncProtocolUpgradeChallenge) -> Unit,
+        onUpgradeRequired: ((SyncProtocolUpgradeChallenge) -> Unit)?,
         onFinished: () -> Unit = {}
     ) {
         if (syncJob?.isActive == true) return
@@ -272,7 +272,7 @@ class GitHubSyncViewModel : ViewModel() {
             } else {
                 val error = result.exceptionOrNull()
                 val challenge = (error as? SyncProtocolUpgradeRequiredException)?.challenge
-                if (challenge != null) {
+                if (challenge != null && onUpgradeRequired != null) {
                     _uiState.value = _uiState.value.copy(isSyncing = false)
                     onUpgradeRequired(challenge)
                     return@launch
