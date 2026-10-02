@@ -47,6 +47,9 @@ internal class PlaybackStatsLegacyImporter(private val context: Context, private
                 if (counters.exists()) read(counters) { parseCounters(it, isSnapshot = false) }
             }
             PlaybackStatsRoomSnapshotAccess(store).liftBucketTotals(snapshotId)
+            // 旧文件会保留已裁剪日桶的分片，等全部父行读完后再清理
+            dao.deleteLegacyOrphanCounters(snapshotId)
+            dao.deleteLegacyOrphanDailyCounters(snapshotId)
             dao.upsertSnapshot(snapshot.copy(clearedAt = clearedAt.coerceAtLeast(0), counterEpochStartedAt = epoch.coerceAtLeast(clearedAt), sealed = true))
             if (!store.commitFrozenSnapshot(snapshotId, snapshot.revision)) throw IOException("Playback legacy import changed before commit")
         } finally {

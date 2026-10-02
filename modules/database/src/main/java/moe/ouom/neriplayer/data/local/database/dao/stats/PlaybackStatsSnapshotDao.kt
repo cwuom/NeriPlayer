@@ -119,6 +119,12 @@ interface PlaybackStatsSnapshotDao {
     @Query("DELETE FROM playback_stat_snapshot_counter WHERE snapshot_id = :id")
     suspend fun deleteCounter(id: String)
 
+    // 仅供完整读取后的旧 JSON 导入清理孤立分片
+    @Query("DELETE FROM playback_stat_snapshot_counter WHERE snapshot_id = :id AND NOT EXISTS " +
+        "(SELECT 1 FROM playback_stat_snapshot_track parent WHERE parent.snapshot_id = :id " +
+        "AND parent.identity_key = playback_stat_snapshot_counter.identity_key)")
+    suspend fun deleteLegacyOrphanCounters(id: String)
+
     @Query("INSERT INTO playback_stat_snapshot_daily_counter (snapshot_id, day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at) SELECT :id, day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at FROM playback_stat_daily_counter_shard")
     suspend fun freezeDailyCounter(id: String)
 
@@ -127,6 +133,13 @@ interface PlaybackStatsSnapshotDao {
 
     @Query("DELETE FROM playback_stat_snapshot_daily_counter WHERE snapshot_id = :id")
     suspend fun deleteDailyCounter(id: String)
+
+    @Query("DELETE FROM playback_stat_snapshot_daily_counter WHERE snapshot_id = :id AND NOT EXISTS " +
+        "(SELECT 1 FROM playback_stat_snapshot_bucket parent WHERE parent.snapshot_id = :id " +
+        "AND parent.day_start_at = playback_stat_snapshot_daily_counter.day_start_at " +
+        "AND parent.identity_key = playback_stat_snapshot_daily_counter.identity_key)")
+    suspend fun deleteLegacyOrphanDailyCounters(id: String)
+
     @Query("SELECT * FROM playback_stat_snapshot_track WHERE snapshot_id = :id ORDER BY identity_key LIMIT :limit")
     suspend fun firstTrackPage(id: String, limit: Int): List<PlaybackStatsSnapshotTrackEntity>
 

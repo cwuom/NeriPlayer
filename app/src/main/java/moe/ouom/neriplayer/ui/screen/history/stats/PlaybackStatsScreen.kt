@@ -38,7 +38,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
@@ -63,9 +62,12 @@ fun PlaybackStatsScreen(
     var sortMode by remember { mutableStateOf(StatsSortMode.PLAY_COUNT) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
-    val query = remember(selectedPeriod, sortMode) { PlaybackStatsQuery(selectedPeriod, PlaybackStatsSort.valueOf(sortMode.name)) }
-    var pageRequest by remember(query) { mutableStateOf(StatsPageRequest()) }
-    val pageState by rememberStatsPage(query, pageRequest)
+    val queryDay by rememberStatsQueryDay()
+    val query = rememberPlaybackStatsQuery(selectedPeriod, PlaybackStatsSort.valueOf(sortMode.name), queryDay.nowMillis)
+    val queryDayKey = queryDay.key.takeUnless { selectedPeriod == PlaybackStatsPeriod.ALL }
+    val pageRequestState = remember(query, queryDayKey) { mutableStateOf(StatsPageRequest()) }
+    var pageRequest by pageRequestState
+    val pageState by rememberStatsPage(query, pageRequestState)
     val periodStats = pageState.page.tracks
     val sortedStats = periodStats
     val periodNeedsCompatBreakdown = pageState.summary.usesLegacyBreakdown
@@ -245,9 +247,9 @@ fun PlaybackStatsScreen(
                                 }
                             )
                         }
-                        item(key = "stats_page_navigation") {
-                            StatsPageNavigation(pageState, pageRequest) { pageRequest = it }
-                        }
+                    }
+                    item(key = "stats_page_navigation") {
+                        StatsPageNavigation(pageState, pageRequest) { pageRequest = it }
                     }
                 }
             }

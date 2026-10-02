@@ -39,7 +39,8 @@ import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.stats.hotPlaybackStatsQuery
+import moe.ouom.neriplayer.ui.screen.history.stats.rememberHotPlaybackStatsQuery
+import moe.ouom.neriplayer.ui.screen.history.stats.rememberStatsQueryDay
 import moe.ouom.neriplayer.ui.screen.history.stats.StatsPageRequest
 import moe.ouom.neriplayer.ui.screen.history.stats.StatsPageNavigation
 import moe.ouom.neriplayer.ui.screen.history.stats.rememberStatsPage
@@ -57,9 +58,12 @@ fun HotPlaylistDetailScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     offlineMode: Boolean = false
 ) {
-    val query = remember(period) { hotPlaybackStatsQuery(period) }
-    var pageRequest by remember(query) { mutableStateOf(StatsPageRequest()) }
-    val state by rememberStatsPage(query, pageRequest)
+    val queryDay by rememberStatsQueryDay()
+    val query = rememberHotPlaybackStatsQuery(period, queryDay.nowMillis)
+    val queryDayKey = queryDay.key.takeUnless { period == PlaybackStatsPeriod.ALL }
+    val pageRequestState = remember(query, queryDayKey) { mutableStateOf(StatsPageRequest()) }
+    var pageRequest by pageRequestState
+    val state by rememberStatsPage(query, pageRequestState)
     val tracks = state.page.tracks
     val songs = remember(tracks) { tracks.map { it.toPlaybackStatsSongItem() } }
     val context = LocalContext.current
@@ -175,9 +179,9 @@ fun HotPlaylistDetailScreen(
                             onClick = { onSongClick(songs, index) }
                         )
                     }
-                    item(key = "hot_playlist_page_navigation") {
-                        StatsPageNavigation(state, pageRequest) { pageRequest = it }
-                    }
+                }
+                item(key = "hot_playlist_page_navigation") {
+                    StatsPageNavigation(state, pageRequest) { pageRequest = it }
                 }
             }
         }

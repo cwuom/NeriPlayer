@@ -6,15 +6,19 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.Gson
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.data.model.playback.PersistedSongItem
 import moe.ouom.neriplayer.data.model.playback.PersistedState
+import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.persistence.withPlaybackState
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -179,7 +183,7 @@ class PlaybackQueueRoomStoreTest {
     }
 
     @Test
-    fun legacyJsonRemainsUsableWhenRoomMarkerWriteFails() = runTest {
+    fun markerFailureLeavesJsonReadableAndIdenticalSnapshotRetriesUntilRoomRecovers() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,
@@ -193,22 +197,67 @@ class PlaybackQueueRoomStoreTest {
         )
 
         try {
-            val state = PersistedState(
-                playlist = listOf(song(3L, "marker-failure")),
-                index = 0,
-                positionMs = 3_000L
+            val roomStore = PlaybackQueueRoomStore(database)
+            val oldState = PersistedState(
+                playlist = listOf(song(1L, "old-room")),
+                index = 0
             )
-            val target = persistPlaybackQueueWithRoomFallback(
-                roomStore = MarkerFailingPlaybackQueueStateStore(),
-                legacyStore = legacyStore,
-                queueState = state,
-                playbackState = PersistedPlaybackState(index = 0, positionMs = 3_000L),
-                shouldWriteQueueState = true,
-                shouldWritePlaybackState = true
+            roomStore.replaceSnapshot(oldState, now = 10L)
+            val snapshot = PlaybackStatePersistenceSnapshot(
+                queue = PlayerQueueSnapshot.from(
+                    listOf(SongItem(3L, "marker-failure", "artist", "album", 10L, 180_000L, null)),
+                    currentIndex = 0
+                ),
+                playback = PersistedPlaybackState(index = 0, positionMs = 3_000L),
+                shuffleRestorePlaylist = null,
+                shuffleRestoreIndex = -1
+            )
+            val state = snapshot.toPersistedState()
+            val failingStore = RecoverablePlaybackQueueStateStore(roomStore)
+            val writer = PlaybackStateWriter()
+
+            val failure = runCatching { writer.write(snapshot, failingStore, legacyStore) }
+                .exceptionOrNull()
+
+            assertSame(failingStore.markerFailure, failure)
+            assertEquals(state, legacyStore.read())
+            assertTrue(roomStore.isRoomPrimary())
+            assertEquals(oldState, roomStore.readIfRoomPrimary())
+            assertEquals(
+                state,
+                selectRestoredPlaybackState(
+                    roomPrimary = roomStore.isRoomPrimary(),
+                    roomSnapshot = roomStore.readSnapshotIfRoomPrimary(),
+                    legacySnapshot = PlaybackQueueLegacySnapshot(state, legacyStore.lastModified())
+                )
             )
 
-            assertEquals(PlaybackQueuePersistTarget.LEGACY_JSON, target)
+            failingStore.failMarker = false
+            assertEquals(
+                PlaybackQueuePersistTarget.LEGACY_JSON,
+                writer.write(snapshot, failingStore, legacyStore)
+            )
             assertEquals(state, legacyStore.read())
+            assertEquals(
+                PlaybackQueueRoomStore.LEGACY_JSON_STATE,
+                database.syncMetadataDao().getMigrationMetadata(
+                    PlaybackQueueRoomStore.CUTOVER_STATE_METADATA_KEY
+                )?.value
+            )
+
+            failingStore.failRoomWrites = false
+            assertEquals(
+                PlaybackQueuePersistTarget.ROOM,
+                writer.write(snapshot, failingStore, legacyStore)
+            )
+            assertEquals(state, roomStore.readIfRoomPrimary())
+            assertNull(legacyStore.read())
+            assertEquals(3, failingStore.replaceCalls)
+            assertEquals(
+                PlaybackQueuePersistTarget.NONE,
+                writer.write(snapshot, failingStore, legacyStore)
+            )
+            assertEquals(3, failingStore.replaceCalls)
         } finally {
             database.close()
             dir.deleteRecursively()
@@ -216,7 +265,7 @@ class PlaybackQueueRoomStoreTest {
     }
 
     @Test
-    fun restoredPlaybackStatePrefersNewerLegacyJsonWhenRoomMarkerStayedPrimary() {
+    fun restoredPlaybackStatePrefersLegacyJsonAtOrAfterRoomTimestampWhenMarkerStayedPrimary() {
         val oldRoomState = PersistedState(
             playlist = listOf(song(1L, "old-room")),
             index = 0,
@@ -228,19 +277,93 @@ class PlaybackQueueRoomStoreTest {
             positionMs = 2_000L
         )
 
-        val restored = selectRestoredPlaybackState(
-            roomPrimary = true,
-            roomSnapshot = PlaybackQueueRoomSnapshot(
-                state = oldRoomState,
-                updatedAt = 100L
-            ),
-            legacySnapshot = PlaybackQueueLegacySnapshot(
-                state = newerLegacyState,
-                updatedAt = 200L
+        for (legacyUpdatedAt in listOf(100L, 200L)) {
+            val restored = selectRestoredPlaybackState(
+                roomPrimary = true,
+                roomSnapshot = PlaybackQueueRoomSnapshot(
+                    state = oldRoomState,
+                    updatedAt = 100L
+                ),
+                legacySnapshot = PlaybackQueueLegacySnapshot(
+                    state = newerLegacyState,
+                    updatedAt = legacyUpdatedAt
+                )
             )
-        )
 
-        assertEquals(newerLegacyState, restored)
+            assertEquals("legacy timestamp $legacyUpdatedAt", newerLegacyState, restored)
+        }
+    }
+
+    @Test
+    fun successfulRoomRewriteClearsLegacyJsonAtEqualTimestampAndAfterClockRollback() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val dir = File(context.cacheDir, "playback-queue-timestamp-recovery-${System.nanoTime()}")
+        val stateFile = File(dir, "last_playlist.json")
+        val playbackStateFile = File(dir, "last_playback_state.json")
+        val legacyStore = PlaybackQueueLegacyStore(stateFile, playbackStateFile, Gson())
+
+        try {
+            val roomStore = PlaybackQueueRoomStore(database)
+            val legacyState = PersistedState(
+                playlist = listOf(song(1L, "old-legacy")),
+                index = 0,
+                positionMs = 1_000L
+            )
+            val rewrittenState = PersistedState(
+                playlist = listOf(song(2L, "rewritten-room")),
+                index = 0,
+                positionMs = 2_000L
+            )
+            val legacyUpdatedAt = 100_000L
+
+            for (roomUpdatedAt in listOf(legacyUpdatedAt, 50_000L)) {
+                legacyStore.write(
+                    legacyState,
+                    PersistedPlaybackState(index = 0, positionMs = 1_000L)
+                )
+                assertTrue(stateFile.setLastModified(legacyUpdatedAt))
+                assertTrue(playbackStateFile.setLastModified(legacyUpdatedAt))
+                assertEquals(legacyUpdatedAt, legacyStore.lastModified())
+                val fixedTimestampStore = object : PlaybackQueueStateStore by roomStore {
+                    override suspend fun replaceSnapshot(state: PersistedState, now: Long) {
+                        roomStore.replaceSnapshot(state, roomUpdatedAt)
+                    }
+                }
+
+                assertEquals(
+                    PlaybackQueuePersistTarget.ROOM,
+                    persistPlaybackQueueWithRoomFallback(
+                        roomStore = fixedTimestampStore,
+                        legacyStore = legacyStore,
+                        queueState = rewrittenState,
+                        playbackState = PersistedPlaybackState(index = 0, positionMs = 2_000L),
+                        shouldWriteQueueState = true,
+                        shouldWritePlaybackState = true
+                    )
+                )
+
+                val roomSnapshot = roomStore.readSnapshotIfRoomPrimary()
+                assertEquals(roomUpdatedAt, roomSnapshot?.updatedAt)
+                val legacySnapshot = legacyStore.read()?.let {
+                    PlaybackQueueLegacySnapshot(it, legacyStore.lastModified())
+                }
+                assertNull(legacySnapshot)
+                assertFalse(stateFile.exists())
+                assertFalse(playbackStateFile.exists())
+                assertEquals(
+                    "Room timestamp $roomUpdatedAt",
+                    rewrittenState,
+                    selectRestoredPlaybackState(roomStore.isRoomPrimary(), roomSnapshot, legacySnapshot)
+                )
+            }
+        } finally {
+            database.close()
+            dir.deleteRecursively()
+        }
     }
 
     @Test
@@ -340,21 +463,33 @@ class PlaybackQueueRoomStoreTest {
         override suspend fun markLegacyJsonPrimary(now: Long) = Unit
     }
 
-    private class MarkerFailingPlaybackQueueStateStore : PlaybackQueueStateStore {
+    private class RecoverablePlaybackQueueStateStore(
+        private val store: PlaybackQueueRoomStore
+    ) : PlaybackQueueStateStore {
+        val markerFailure = IOException("forced Room marker failure")
+        var failRoomWrites = true
+        var failMarker = true
+        var replaceCalls = 0
+
         override suspend fun replaceSnapshot(state: PersistedState, now: Long) {
-            throw IOException("forced Room snapshot failure")
+            replaceCalls += 1
+            if (failRoomWrites) throw IOException("forced Room snapshot failure")
+            store.replaceSnapshot(state, now)
         }
 
         override suspend fun updatePlaybackState(state: PersistedPlaybackState, now: Long) {
-            throw IOException("forced Room playback failure")
+            if (failRoomWrites) throw IOException("forced Room playback failure")
+            store.updatePlaybackState(state, now)
         }
 
         override suspend fun clear(now: Long) {
-            throw IOException("forced Room clear failure")
+            if (failRoomWrites) throw IOException("forced Room clear failure")
+            store.clear(now)
         }
 
         override suspend fun markLegacyJsonPrimary(now: Long) {
-            throw IOException("forced Room marker failure")
+            if (failMarker) throw markerFailure
+            store.markLegacyJsonPrimary(now)
         }
     }
 }

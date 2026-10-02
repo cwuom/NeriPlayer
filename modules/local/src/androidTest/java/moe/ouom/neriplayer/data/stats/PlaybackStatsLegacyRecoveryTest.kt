@@ -128,6 +128,86 @@ class PlaybackStatsLegacyRecoveryTest {
     }
 
     @Test
+    fun legacyProjectionWithTrimmedDailyCountersPromotesWithoutChangingSourceFiles() = runTest {
+        verifyLegacyCounterParents(committed = false, keepBuckets = false)
+    }
+
+    @Test
+    fun committedSnapshotWithTrimmedDailyCountersPromotesWithoutChangingSourceFiles() = runTest {
+        verifyLegacyCounterParents(committed = true, keepBuckets = false)
+    }
+
+    @Test
+    fun counterFirstCommittedSnapshotKeepsLateParentsAndCountersAcrossPages() = runTest {
+        verifyLegacyCounterParents(committed = true, keepBuckets = true, rowCount = 600)
+    }
+
+    private suspend fun verifyLegacyCounterParents(committed: Boolean, keepBuckets: Boolean, rowCount: Int = 1) {
+        val base = ApplicationProvider.getApplicationContext<Context>()
+        val directory = File(base.cacheDir, "stats-legacy-parents-${UUID.randomUUID()}").apply { check(mkdirs()) }
+        val database = Room.inMemoryDatabaseBuilder(base, NeriUserDataDatabase::class.java).build()
+        try {
+            val rows = (0 until rowCount).map { index ->
+                track().copy(id = index.toLong(), identityKey = "track|${index.toString().padStart(4, '0')}",
+                    localFilePath = "/audio-$index.flac", customName = "kept title $index")
+            }
+            val buckets = if (keepBuckets) rows.map { row ->
+                PlaybackStatBucket(0, row.id, row.name, row.artist, row.album, row.albumId, row.coverUrl,
+                    row.durationMs, row.totalListenMs, row.playCount, row.lastPlayedAt, row.firstPlayedAt,
+                    row.mediaUri, row.localFilePath, row.localFileName, row.customName, row.customArtist,
+                    row.customCoverUrl, row.identityKey)
+            } else emptyList()
+            val shard = SyncPlaybackCounterShard("device", 0, 30_000, 1, 100, 200)
+            val trackCounters = linkedMapOf<String, List<SyncPlaybackCounterShard>>()
+            val dailyCounters = linkedMapOf<String, List<SyncPlaybackCounterShard>>()
+            rows.forEachIndexed { index, row ->
+                trackCounters[row.identityKey] = listOf(shard)
+                if (keepBuckets) trackCounters["removed|$index"] = listOf(shard)
+                dailyCounters["0|${row.identityKey}"] = listOf(shard)
+                dailyCounters["-86400000|${row.identityKey}"] = listOf(shard)
+                dailyCounters["0|removed|$index"] = listOf(shard)
+            }
+            val counters = linkedMapOf<String, Any>(
+                "dailyShardsByBucketKey" to dailyCounters,
+                "trackShardsByIdentity" to trackCounters,
+                "epochStartedAt" to 0
+            )
+            val gson = Gson()
+            val sources = if (committed) {
+                mapOf("playback_stats_meta.json" to gson.toJson(linkedMapOf(
+                    "snapshot" to linkedMapOf(
+                        "counterSnapshot" to counters,
+                        "counterEpochStartedAt" to 0,
+                        "dailyStats" to buckets,
+                        "clearedAt" to 0,
+                        "stats" to rows
+                    ),
+                    "clearedAt" to 0
+                )))
+            } else {
+                mapOf("playback_stats.json" to gson.toJson(rows),
+                    "playback_stats_daily.json" to gson.toJson(buckets),
+                    "playback_stats_counters.json" to gson.toJson(counters))
+            }
+            sources.forEach { (name, content) -> File(directory, name).writeText(content) }
+            val store = PlaybackStatsRoomStore(database)
+            PlaybackStatsLegacyImporter(isolatedContext(base, directory), gson, store).migrate()
+            assertTrue(store.readPrimaryState() != null)
+            val dao = database.playbackStatsDao()
+            assertEquals(rows.sortedBy { it.identityKey }, dao.getStats().map { it.toDomain() }.sortedBy { it.identityKey })
+            assertEquals(buckets, dao.getBuckets().map { it.toDomain() })
+            assertEquals(rowCount, dao.getCounterShards().size)
+            val expectedDailyCounterCount = if (keepBuckets) rowCount else 0
+            assertEquals(expectedDailyCounterCount, dao.getDailyCounterShards().size)
+            for (row in rows) {
+                assertEquals(shard, dao.getOwnedCounter(row.identityKey, "device", 0)?.toDomain())
+                if (keepBuckets) assertEquals(shard, dao.getOwnedDailyCounter(0, row.identityKey, "device", 0)?.toDomain())
+            }
+            sources.forEach { (name, content) -> assertEquals(content, File(directory, name).readText()) }
+        } finally { database.close(); directory.deleteRecursively() }
+    }
+
+    @Test
     fun streamedCounterWritesUseBoundedPageTransactionsInsteadOfOneTransactionPerShard() = runTest {
         val base = ApplicationProvider.getApplicationContext<Context>()
         val directory = File(base.cacheDir, "stats-legacy-${UUID.randomUUID()}").apply { check(mkdirs()) }
