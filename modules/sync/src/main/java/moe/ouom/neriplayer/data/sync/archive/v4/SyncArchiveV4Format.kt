@@ -49,7 +49,8 @@ internal data class SyncArchiveV4Manifest(
     @ProtoNumber(5) val legacy: SyncArchiveV4Stream,
     @ProtoNumber(6) val pool: SyncArchiveV4Stream,
     @ProtoNumber(7) val mainRawHash: String,
-    @ProtoNumber(8) val legacyRawHash: String
+    @ProtoNumber(8) val legacyRawHash: String,
+    @ProtoNumber(9) val publicationId: String? = null
 )
 
 internal object SyncArchiveV4Format {

@@ -131,6 +131,129 @@ class LocalPlaylistRepositoryRoomStoreTest {
     }
 
     @Test
+    fun uncommittedLyricOnlyRestoreKeepsDeletionOnRepositoryStartup() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val original = digestPlaylist()
+        val song = original.songs.single()
+        val uncommittedSongs = listOf(
+            song.copy(lyricSyncRevision = 7L),
+            song.copy(lyricSyncEdited = false),
+            song.copy(lyricSyncEdited = true)
+        )
+        for (uncommittedSong in uncommittedSongs) {
+            val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+                .allowMainThreadQueries().build()
+            try {
+                val uncommitted = original.copy(songs = mutableListOf(uncommittedSong))
+                val roomStore = LocalPlaylistRoomStore(database)
+                roomStore.replacePlaylists(
+                    listOf(original), LocalPlaylistRoomStore.domainDigest(listOf(original))
+                )
+                // 模拟 outbox 已落盘、歌单事务尚未提交时退出进程
+                roomStore.writePendingSyncMutationOutbox(
+                    LocalPlaylistSyncMutationOutbox(
+                        mutations = listOf(
+                            LocalPlaylistSyncMutation(
+                                expectedPrimaryDigest = LocalPlaylistRoomStore.domainDigest(listOf(uncommitted)),
+                                restoredPlaylistIds = listOf(original.id)
+                            )
+                        )
+                    )
+                )
+                val syncStore = RecordingSyncMutationStore(setOf(original.id))
+                val storage = EmptyStorage()
+
+                val repository = LocalPlaylistRepository.createForTest(
+                    context = context,
+                    file = File(context.cacheDir, "uncommitted_lyric_restore_unused.json"),
+                    normalizePlaylists = { it }, autoSyncEnabled = false,
+                    storage = storage, syncMutationStore = syncStore, roomStore = roomStore
+                )
+
+                assertEquals(listOf(original), repository.playlists.value)
+                assertEquals(listOf(original), roomStore.readPlaylists())
+                assertTrue(syncStore.applied.isEmpty())
+                assertEquals(0L, syncStore.mutationVersion)
+                assertEquals(setOf(original.id), syncStore.deletedPlaylistIds)
+                assertNull(roomStore.readPendingSyncMutationOutbox())
+                assertTrue(storage.pendingCleared)
+            } finally {
+                database.close()
+            }
+        }
+    }
+
+    @Test
+    fun committedLyricRestoreReplaysAndKeepsPersistedSyncFields() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val original = digestPlaylist()
+            val committed = original.copy(
+                songs = mutableListOf(original.songs.single().copy(lyricSyncRevision = 7L, lyricSyncEdited = true))
+            )
+            val digest = LocalPlaylistRoomStore.domainDigest(listOf(committed))
+            val roomStore = LocalPlaylistRoomStore(database)
+            roomStore.replacePlaylists(listOf(committed), digest)
+            val mutation = LocalPlaylistSyncMutation(
+                expectedPrimaryDigest = digest, restoredPlaylistIds = listOf(committed.id)
+            )
+            roomStore.writePendingSyncMutationOutbox(LocalPlaylistSyncMutationOutbox(listOf(mutation)))
+            val syncStore = RecordingSyncMutationStore(setOf(committed.id))
+
+            val repository = LocalPlaylistRepository.createForTest(
+                context = context,
+                file = File(context.cacheDir, "committed_lyric_restore_unused.json"),
+                normalizePlaylists = { it }, autoSyncEnabled = false,
+                storage = EmptyStorage(), syncMutationStore = syncStore, roomStore = roomStore
+            )
+
+            assertEquals(listOf(committed), repository.playlists.value)
+            assertEquals(listOf(committed), roomStore.readPlaylists())
+            assertEquals(listOf(mutation), syncStore.applied)
+            assertEquals(1L, syncStore.mutationVersion)
+            assertTrue(syncStore.deletedPlaylistIds.isEmpty())
+            assertNull(roomStore.readPendingSyncMutationOutbox())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun committedLegacyDefaultDigestStillReplaysRestore() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val committed = digestPlaylist()
+            val legacyDigest = "aeb25c7c366ccec9db03a8b2f4aa2d66b0fa3e1ea60245ab5eac33a77c9d20d0"
+            val roomStore = LocalPlaylistRoomStore(database)
+            roomStore.replacePlaylists(listOf(committed), legacyDigest)
+            val mutation = LocalPlaylistSyncMutation(
+                expectedPrimaryDigest = legacyDigest, restoredPlaylistIds = listOf(committed.id)
+            )
+            roomStore.writePendingSyncMutationOutbox(LocalPlaylistSyncMutationOutbox(listOf(mutation)))
+            val syncStore = RecordingSyncMutationStore(setOf(committed.id))
+
+            val repository = LocalPlaylistRepository.createForTest(
+                context = context,
+                file = File(context.cacheDir, "legacy_digest_restore_unused.json"),
+                normalizePlaylists = { it }, autoSyncEnabled = false,
+                storage = EmptyStorage(), syncMutationStore = syncStore, roomStore = roomStore
+            )
+
+            assertEquals(listOf(committed), repository.playlists.value)
+            assertEquals(listOf(mutation), syncStore.applied)
+            assertEquals(1L, syncStore.mutationVersion)
+            assertTrue(syncStore.deletedPlaylistIds.isEmpty())
+            assertNull(roomStore.readPendingSyncMutationOutbox())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun roomPrimaryNormalizesLegacyLocalFilesCoverBeforePublishing() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
@@ -184,6 +307,12 @@ class LocalPlaylistRepositoryRoomStoreTest {
         }
     }
 
+    private fun digestPlaylist() = LocalPlaylist(
+        701L, "restore",
+        mutableListOf(SongItem(17L, "song", "artist", "netease", 0L, 180_000L, null)),
+        modifiedAt = 4_000L
+    )
+
     private class EmptyStorage : LocalPlaylistStorage {
         var pendingCleared = false
 
@@ -220,8 +349,11 @@ class LocalPlaylistRepositoryRoomStoreTest {
         override fun quarantinePrimary(): File? = null
     }
 
-    private class RecordingSyncMutationStore : LocalPlaylistSyncMutationStore {
+    private class RecordingSyncMutationStore(
+        initialDeletedPlaylistIds: Set<Long> = emptySet()
+    ) : LocalPlaylistSyncMutationStore {
         val applied = mutableListOf<LocalPlaylistSyncMutation>()
+        val deletedPlaylistIds = initialDeletedPlaylistIds.toMutableSet()
         var mutationVersion = 0L
             private set
         private var nextCounter = 1L
@@ -244,6 +376,7 @@ class LocalPlaylistRepositoryRoomStoreTest {
 
         override fun apply(mutation: LocalPlaylistSyncMutation) {
             applied += mutation
+            deletedPlaylistIds.removeAll(mutation.restoredPlaylistIds.orEmpty().toSet())
         }
     }
 }

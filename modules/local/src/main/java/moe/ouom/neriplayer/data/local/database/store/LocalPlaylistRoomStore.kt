@@ -379,6 +379,15 @@ internal class LocalPlaylistRoomStore(
                             append(token.deviceId)
                             append(token.counter)
                         }
+                    // 默认值保留旧摘要，避免升级后丢失已提交的旧 outbox
+                    if (song.lyricSyncRevision != 0L) {
+                        append("lyricSyncRevision")
+                        append(song.lyricSyncRevision)
+                    }
+                    if (song.lyricSyncEdited != null) {
+                        append("lyricSyncEdited")
+                        append(song.lyricSyncEdited)
+                    }
                 }
             }
             return digest.digest()

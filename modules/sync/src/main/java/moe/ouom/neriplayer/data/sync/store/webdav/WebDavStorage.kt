@@ -9,6 +9,10 @@ import androidx.core.content.edit
 import moe.ouom.neriplayer.data.model.config.WebDavSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.store.state.hasNonBlankSyncCredential
+import com.google.gson.Gson
+import java.io.IOException
+import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcJournal
+import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcState
 
 class WebDavStorage internal constructor(private val encryptedPrefs: SharedPreferences) {
     constructor(context: Context) : this(EncryptedSyncPreferences.open(context, PREFS_NAME, "NERI-WebDavStorage"))
@@ -22,6 +26,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         private const val KEY_LAST_SYNC_TIME = "last_sync_time"
         private const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
         private const val KEY_LAST_REMOTE_FINGERPRINT = "last_remote_fingerprint"
+        private const val KEY_ARCHIVE_MAINTENANCE = "archive_maintenance_"
     }
 
     fun saveConfiguration(
@@ -70,6 +75,34 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
 
     fun getLastRemoteFingerprint(): String? =
         encryptedPrefs.getString(KEY_LAST_REMOTE_FINGERPRINT, null)
+
+    fun archiveLockSupported(scope: String): Boolean = encryptedPrefs.getBoolean(maintenanceKey(scope, "lock"), false)
+
+    fun rememberArchiveLock(scope: String) {
+        val editor = encryptedPrefs.edit()
+        editor.putBoolean(maintenanceKey(scope, "lock"), true)
+        if (!editor.commit()) {
+            throw IOException("Failed to persist WebDAV archive lock capability")
+        }
+    }
+
+    fun archiveGcState(scope: String): WebDavArchiveGcState {
+        val raw = encryptedPrefs.getString(maintenanceKey(scope, "gc"), null) ?: return WebDavArchiveGcState()
+        if (raw.length > 512 * 1024) return WebDavArchiveGcState()
+        return runCatching { Gson().fromJson(raw, WebDavArchiveGcState::class.java) }
+            .getOrNull()?.takeIf { runCatching { WebDavArchiveGcJournal.valid(it) }.getOrDefault(false) } ?: WebDavArchiveGcState()
+    }
+
+    fun saveArchiveGcState(scope: String, state: WebDavArchiveGcState) {
+        require(WebDavArchiveGcJournal.valid(state)) { "Invalid WebDAV archive maintenance state" }
+        val editor = encryptedPrefs.edit()
+        editor.putString(maintenanceKey(scope, "gc"), Gson().toJson(state))
+        if (!editor.commit()) {
+            throw IOException("Failed to persist WebDAV archive maintenance state")
+        }
+    }
+
+    private fun maintenanceKey(scope: String, kind: String): String = KEY_ARCHIVE_MAINTENANCE + scope + "_" + kind
 
     fun isConfigured(): Boolean {
         return hasNonBlankSyncCredential(getServerUrl()) &&

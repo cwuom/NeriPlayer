@@ -41,6 +41,7 @@ class WebDavCancellationHttpTest {
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests += request
+                    if (request.method == "LOCK") return MockResponse(code = 405)
                     if (request.method == "PUT") {
                         entered.countDown()
                         check(release.await(10, TimeUnit.SECONDS)) { "Timed out waiting for cancellation test" }

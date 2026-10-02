@@ -43,6 +43,22 @@ class SyncArchiveV4FormatTest {
         }
     }
 
+    @Test fun webDavPublicationChangesOnlyTheOptionalPublicationIdentity() {
+        val original = SyncArchiveV4Format.manifest(manifest)
+        val first = SyncArchiveRepository.webDavPublicationContent(original)
+        val second = SyncArchiveRepository.webDavPublicationContent(original)
+        assertFalse(first.contentEquals(second))
+        val decodedFirst = SyncArchiveV4Format.readManifest(first)
+        val decodedSecond = SyncArchiveV4Format.readManifest(second)
+        assertNotNull(decodedFirst.publicationId)
+        assertNotEquals(decodedFirst.publicationId, decodedSecond.publicationId)
+        assertEquals(manifest, decodedFirst.copy(publicationId = null))
+        assertEquals(manifest, decodedSecond.copy(publicationId = null))
+        assertNull(SyncArchiveV4Format.readManifest(original).publicationId)
+        assertEquals(4, SyncArchiveRepository.protocolVersion(first))
+        assertThrows(IllegalArgumentException::class.java) { SyncArchiveRepository.webDavPublicationContent(byteArrayOf(1, 2)) }
+    }
+
     @Test fun corruptEnvelopeAndImpossibleTotalsAreRejected() {
         val wire = SyncArchiveV4Format.manifest(manifest)
         assertTrue(runCatching { SyncArchiveV4Format.readManifest(wire.copyOf(12)) }.isFailure)

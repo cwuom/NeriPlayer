@@ -221,6 +221,14 @@ class SyncArchiveRepository private constructor(
         }
     }
 
+    suspend fun verifyRemoteClosure(content: ByteArray, fetch: suspend (String) -> Result<ByteArray>): Result<Set<String>> = try {
+        load(content, true, fetch).use { Result.success(it.paths) }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
     private suspend fun materializeLegacy(source: SyncLegacyLyricSource, workspace: File, verifyRemote: Boolean,
         fetch: suspend (String) -> Result<ByteArray>): Pair<File, Set<String>> {
         val refs = resolve(source.manifest(), verifyRemote, fetch)
@@ -315,6 +323,9 @@ class SyncArchiveRepository private constructor(
         fun isManifest(content: ByteArray): Boolean = content.size >= 8 && String(content, 0, 6, Charsets.US_ASCII) == "NPSYNC"
         fun protocolVersion(content: ByteArray): Int = if (SyncArchiveV4Format.isManifest(content))
             SyncArchiveV4Format.readManifest(content).protocol else SyncArchiveCodec.readManifest(content).protocol
+        fun webDavPublicationContent(content: ByteArray): ByteArray = SyncArchiveV4Format.manifest(
+            SyncArchiveV4Format.readManifest(content).copy(publicationId = java.util.UUID.randomUUID().toString())
+        )
         internal fun originalManifest(content: ByteArray): SyncArchiveManifest = if (SyncArchiveV4Format.isManifest(content))
             SyncArchiveV4Format.readManifest(content).original else SyncArchiveCodec.readManifest(content)
     }

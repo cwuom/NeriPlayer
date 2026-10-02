@@ -595,6 +595,7 @@ class SyncBackendTransportTest {
         private val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
             when (request.method) {
+                "LOCK" -> response(request, 405, byteArrayOf())
                 "PUT" -> {
                     writes += request
                     val name = request.url.pathSegments.last()
