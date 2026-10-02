@@ -17,12 +17,13 @@ import moe.ouom.neriplayer.data.sync.archive.SyncArchiveLimits
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveManifest
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveObject
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRef
-import moe.ouom.neriplayer.data.sync.archive.SyncArchiveStaging
+import moe.ouom.neriplayer.data.sync.archive.SyncArchiveWorkspace
 import moe.ouom.neriplayer.data.sync.archive.SyncPreparedArchive
 import moe.ouom.neriplayer.data.sync.archive.compact.SyncArchiveCompactRecords
 
 internal class SyncArchiveV4Bridge(private val directory: File, private val originalCache: SyncArchiveCache) {
     private val objects = SyncArchiveV4Objects(directory)
+    init { SyncArchiveWorkspace.recoverAbandoned(directory) }
 
     fun prepare(original: SyncPreparedArchive, retainedLegacy: File?, retainedChecksum: String?, rollbackPaths: Set<String>, checkActive: () -> Unit): SyncPreparedArchive {
         val manifest = SyncArchiveCodec.readManifest(original.content)
@@ -31,7 +32,7 @@ internal class SyncArchiveV4Bridge(private val directory: File, private val orig
         var publishedPaths = emptySet<String>()
         var failure: Throwable? = null
         try {
-            val prepared = encode(manifest, retainedLegacy, retainedChecksum, workspace, legacyProtection, checkActive)
+            val prepared = encode(manifest, retainedLegacy, retainedChecksum, workspace.directory, legacyProtection, checkActive)
             publishedPaths = prepared.paths
             return prepared
         } catch (error: Throwable) {
@@ -39,7 +40,7 @@ internal class SyncArchiveV4Bridge(private val directory: File, private val orig
             throw error
         } finally {
             try {
-                workspace.deleteRecursively()
+                workspace.close()
                 originalCache.trim(legacyProtection + if (failure == null) publishedPaths else rollbackPaths)
             } catch (cleanup: Throwable) {
                 val primary = failure
@@ -92,15 +93,15 @@ internal class SyncArchiveV4Bridge(private val directory: File, private val orig
         val pool = reader.read(manifest.pool)
         val workspace = newWorkspace()
         try {
-            val mainFile = File(workspace, "main.records")
-            val legacyFile = File(workspace, "legacy.records")
+            val mainFile = File(workspace.directory, "main.records")
+            val legacyFile = File(workspace.directory, "legacy.records")
             SyncArchiveV4InputStream(main, objects).use { mainInput ->
                 SyncArchiveV4InputStream(legacy, objects).use { legacyInput ->
                     SyncArchiveV4InputStream(pool, objects).use { poolInput ->
                         mainFile.outputStream().use { mainOutput -> legacyFile.outputStream().use { legacyOutput ->
                             SyncArchiveCompactRecords.unpack(mainInput, legacyInput, poolInput, mainOutput, legacyOutput,
                                 manifest.original.rawDataBytes, manifest.original.legacyLyrics?.rawDataBytes ?: 0L,
-                                workspace, checkActive)
+                                workspace.directory, checkActive)
                         } }
                     }
                 }
@@ -110,7 +111,7 @@ internal class SyncArchiveV4Bridge(private val directory: File, private val orig
             return Loaded(manifest.original, reader.paths.toSet(), mainFile::inputStream,
                 legacyFile.takeIf { manifest.original.legacyLyrics != null }, workspace)
         } catch (failure: Throwable) {
-            workspace.deleteRecursively()
+            try { workspace.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
             throw failure
         }
     }
@@ -154,15 +155,15 @@ internal class SyncArchiveV4Bridge(private val directory: File, private val orig
         return index.children
     }
 
-    internal fun newWorkspace(): File = SyncArchiveStaging.createDirectory(directory, "sync-stage-")
+    internal fun newWorkspace(): SyncArchiveWorkspace = SyncArchiveWorkspace.create(directory)
 
     internal class Loaded(
         val manifest: SyncArchiveManifest,
         val paths: Set<String>,
         val main: () -> InputStream,
         val legacy: File?,
-        private val workspace: File
+        private val workspace: SyncArchiveWorkspace
     ) : Closeable {
-        override fun close() { workspace.deleteRecursively() }
+        override fun close() { workspace.close() }
     }
 }

@@ -212,11 +212,11 @@ class SyncArchiveRepository private constructor(
         val main = resolve(manifest, verifyRemote, fetch)
         val workspace = bridge.newWorkspace()
         try {
-            val legacy = manifest.legacyLyrics?.let { materializeLegacy(it, workspace, verifyRemote, fetch) }
+            val legacy = manifest.legacyLyrics?.let { materializeLegacy(it, workspace.directory, verifyRemote, fetch) }
             return SyncArchiveV4Bridge.Loaded(manifest, main.paths + legacy?.second.orEmpty(),
                 { SyncArchiveInputStream(main.data, cache) }, legacy?.first, workspace)
         } catch (failure: Throwable) {
-            workspace.deleteRecursively()
+            try { workspace.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
             throw failure
         }
     }
