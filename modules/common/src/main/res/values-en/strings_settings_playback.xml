@@ -79,7 +79,7 @@
     <string name="settings_lyrics_offset_reset_all">Reset all</string>
     <string name="settings_lyrics_offset_value">Current offset: %1$s ms</string>
     <string name="settings_status_bar_lyrics_title">Status Bar Lyrics</string>
-    <string name="settings_status_bar_lyrics_summary">Enable Meizu status bar lyrics (for select devices only)</string>
+    <string name="settings_status_bar_lyrics_summary">Enable Meizu status bar lyrics</string>
     <string name="settings_floating_lyrics_title">Floating Lyrics</string>
     <string name="settings_floating_lyrics_desc">Show lightweight floating lyrics on screen with custom style and position</string>
     <string name="settings_floating_lyrics_preview_title">Floating preview</string>

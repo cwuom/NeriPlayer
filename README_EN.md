@@ -604,8 +604,8 @@ For release build and signing details, see
   feedback instead of failing silently.
 - 🪟 **Floating and status-bar lyrics**:
   system overlay lyrics with customizable color, outline, font size, position,
-  alignment, and translation display, plus Meizu status-bar lyrics for select
-  devices, SuperLyric output, and auto-hide while the app is foregrounded.
+  alignment, and translation display, plus Meizu status-bar lyrics, SuperLyric
+  output, and auto-hide while the app is foregrounded.
 - 🔌 **External lyrics/device integration**:
   Lyricon integration, SuperLyric, external Bluetooth lyrics, pause on Bluetooth
   disconnect, and USB exclusive playback toggles. The external lyrics path

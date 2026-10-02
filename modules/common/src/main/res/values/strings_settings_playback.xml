@@ -79,7 +79,7 @@
     <string name="settings_lyrics_offset_reset_all">全部重置</string>
     <string name="settings_lyrics_offset_value">当前偏移：%1$s ms</string>
     <string name="settings_status_bar_lyrics_title">状态栏歌词</string>
-    <string name="settings_status_bar_lyrics_summary">启用魅族状态栏歌词（仅适用于部分设备）</string>
+    <string name="settings_status_bar_lyrics_summary">启用魅族状态栏歌词</string>
     <string name="settings_floating_lyrics_title">悬浮歌词</string>
     <string name="settings_floating_lyrics_desc">在屏幕上显示轻量悬浮歌词，样式和位置可自定义</string>
     <string name="settings_floating_lyrics_preview_title">悬浮效果预览</string>
