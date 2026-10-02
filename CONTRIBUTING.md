@@ -455,9 +455,10 @@
 - 同步快照可能来自旧版 JSON/ProtoBuf 或异常远端文件；读取时要用安全默认值，
   过滤缺少可解析歌曲身份、无有效删除时间或无效歌单 ID 的记录，
   缺失 `addedAt` 的歌曲不能排到已有时间歌曲之前。
-- V3 写入 Protobuf 记录流、ZSTD 内容分块和根清单，每个压缩对象不超过 2 MiB。
+- V4 写入 Protobuf 记录流、ZSTD 内容分块和根清单，每个压缩对象不超过 2 MiB。
   清单不存在时才读取旧 `backup.json`、`backup-raw.bin` GZIP 与 `backup.bin` Base64；
-  8/12/16 MiB 安全限制仅适用于旧格式读取。所有同步设备须支持 V3，传统数据迁移须先确认升级。
+  8/12/16 MiB 安全限制仅适用于旧格式读取。V3 仅供读取迁移，未知未来版本须明确拒绝；
+  所有同步设备须支持 V4，传统数据或 V3 迁移须先确认升级。
 - GitHub 通过 Git Data API 的 blob/tree/commit 写入仓库，以 GraphQL `updateRefs`
   的 `beforeOid` 和 `force=false` 原子发布清单。blob 请求的 Base64 只是传输封装，
   仓库正文仍为原始二进制；读取固定分支头并使用 raw 内容。
@@ -603,9 +604,9 @@
    `:sync` 中 `data/sync/codec/SyncDataSerializer.kt` 的兼容策略；共享载荷模型不得
    重新放回 GitHub provider 包。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录、播放统计和独立歌词修改记录。
-   V3 使用 Protobuf 记录流、ZSTD 内容分块与根清单；仅清单不存在时读取旧 JSON、
-   原始 GZIP 与 Base64。GitHub Git Data API 的 blob 请求使用 Base64 传输封装，
-   仓库内仍保存原始正文。歌词迁移保留与优化选择见 `modules/sync/LYRIC_SYNC.md`。
+   V4 使用 Protobuf 记录流、ZSTD 内容分块与根清单，发布点保留 `neriplayer-sync-v3.manifest` 文件名。
+   V3 仅供读取迁移；仅清单不存在时读取旧 JSON、原始 GZIP 与 Base64。GitHub Git Data API 的 blob 请求使用 Base64 传输封装，
+   仓库内仍保存原始正文。歌词迁移完整保留旧数据，不再提供有损选择，详见 `modules/sync/LYRIC_SYNC.md`。
 3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
    序列化、合并和落回本地歌单时必须保留旧数据迁移。
 4. 歌单成员使用 `syncMembershipTokens` / `removedMembershipTokens` 表达

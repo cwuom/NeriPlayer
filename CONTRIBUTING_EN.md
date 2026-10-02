@@ -529,10 +529,11 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   files. Use safe defaults, filter records without resolvable track identity,
   valid deletion time, or valid playlist id, and never let songs with missing
   `addedAt` sort ahead of songs that already have timestamps.
-- V3 writes a Protobuf record stream, ZSTD content chunks, and a root manifest;
+- V4 writes a Protobuf record stream, ZSTD content chunks, and a root manifest;
   compressed objects are capped at 2 MiB. Legacy JSON, raw GZIP, and Base64 files are
   read only when the manifest is absent. The 8/12/16 MiB safety limits apply only to
-  legacy reads. Every syncing device must support V3, and legacy migration requires confirmation.
+  legacy reads. V3 archives are read only for migration, and unsupported future versions must be rejected.
+  Every syncing device must support V4; traditional and V3 migration require confirmation.
 - GitHub writes through Git Data API blob/tree/commit calls and atomically publishes
   the manifest through GraphQL `updateRefs` with `beforeOid` and `force=false`.
   Base64 in blob requests is only the transport envelope; repository bodies remain
@@ -709,11 +710,12 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `data/sync/codec/SyncDataSerializer.kt` in `:sync` compatibility first. Shared payload
    models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
-   playback stats, and independent lyric overrides. V3 uses a Protobuf record stream,
-   ZSTD content chunks, and a root manifest. Legacy JSON, raw GZIP, and Base64 are read
+   playback stats, and independent lyric overrides. V4 uses a Protobuf record stream,
+   ZSTD content chunks, and a root manifest, keeping the `neriplayer-sync-v3.manifest` filename.
+   V3 archives are read only for migration. Legacy JSON, raw GZIP, and Base64 are read
    only when the manifest is absent. GitHub Git Data API blob requests use Base64 only
-   as a transport envelope; repository bodies remain raw binary. Lyric preservation
-   and optimization choices are described in `modules/sync/LYRIC_SYNC.md`.
+   as a transport envelope; repository bodies remain raw binary. Migration preserves all legacy lyrics without a lossy option;
+   see `modules/sync/LYRIC_SYNC.md`.
 3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
    represents current display order. Serialization, merging, and local restoration
    must preserve the migration path for older data.

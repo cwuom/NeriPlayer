@@ -873,10 +873,11 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   transport envelope and does not change the stored body. New sync uses a Protobuf
   record stream with ZSTD content chunks capped at 2 MiB each. A manifest commits
   the complete snapshot; unchanged chunks are reused.
-- New installations default to V3. Existing installations show the upgrade dialog on their first updated launch;
-  newly configured targets prompt when traditional cloud data is detected. The format is not backward compatible:
+- New installations default to V4. Existing installations with configured sync targets show the upgrade dialog on their first updated launch;
+  newly configured targets prompt when traditional cloud data or V3 is detected. The format is not backward compatible:
   update every participating device before confirming. Confirmation immediately syncs and migrates that target.
-  Legacy lyrics are fully preserved by default, with an optional lossy optimization and a red warning in the dialog.
+  Migration preserves all legacy lyrics; the permanent lossy compression option has been removed.
+  The upgrade prompt disappears after that target reaches V4; failures and cancellations remain retryable.
   Deferring keeps the app usable while sync for targets awaiting upgrade stays paused. Offline device versions
   cannot be verified automatically.
 
@@ -997,8 +998,8 @@ Current sync targets:
   fields, filter malformed records without resolvable track identity or valid
   deletion time, and keep songs with missing `addedAt` behind dated songs so bad
   snapshots cannot jump ahead in playlists.
-- 🪶 **Incremental traffic**: sync uses ZSTD chunks and only uploads changed content plus
-  `neriplayer-sync-v3.manifest`. Full lyrics are stored only for user edits; online lyric caches
+- 🪶 **Incremental traffic**: V4 sync uses ZSTD chunks and only uploads changed content;
+  the publication point keeps the `neriplayer-sync-v3.manifest` filename. Full lyrics are stored only for user edits; online lyric caches
   remain local. Edits and resets have their own durable registry.
   Legacy lyrics with uncertain provenance are conservatively retained during initial migration;
   see [lyric synchronization](modules/sync/LYRIC_SYNC.md).
@@ -1007,11 +1008,12 @@ Current sync targets:
 - GitHub reads at a fixed branch head and publishes the complete manifest with one commit
   and an atomic GraphQL `beforeOid` ref update. WebDAV uploads immutable objects before conditionally publishing the manifest with
   a strong ETag; subsequent writes fail if the server cannot provide that guarantee.
-- Legacy JSON, raw GZIP, and Base64 snapshots are read only when the v3 manifest is absent.
+- Legacy JSON, raw GZIP, and Base64 snapshots are read only when the manifest is absent.
   The old 8/12/16 MiB limits apply to legacy reads, and Data Saver only affects legacy read
-  priority. A corrupt v3 manifest fails explicitly. Every syncing client must support v3;
-  older Android/Desktop clients keep using legacy files and cannot automatically converge with v3.
-- GitHub v3 publication requires a working GraphQL `updateRefs` endpoint; unsupported
+  priority. A corrupt manifest fails explicitly. V3 archives are read only for migration;
+  unsupported future versions are rejected. Every syncing client must support V4;
+  older Android/Desktop clients keep using legacy files and cannot automatically converge with V4.
+- GitHub V4 publication requires a working GraphQL `updateRefs` endpoint; unsupported
   servers fail explicitly while preserving the previous manifest.
 - 📦 **Remote format**: a GitHub repository is not end-to-end encryption.
   You are responsible for protecting remote files.
@@ -1023,7 +1025,7 @@ Current sync targets:
 1. Open Backup & Sync in Settings.
 2. Create a GitHub Personal Access Token with `repo` permission.
 3. Validate the token, then either create the default private repository or use an existing one.
-4. New installations use V3 directly. If an upgrade dialog appears, update every participating device before confirming; confirmation immediately syncs and migrates the target.
+4. New installations use V4 directly. If an upgrade dialog appears, update every participating device before confirming; confirmation immediately syncs and migrates the target.
 5. Enable automatic sync, or run a manual sync.
 
 ---
@@ -1036,7 +1038,7 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 - Automatic sync and manual sync are supported.
 - `WorkManager` handles delayed sync, periodic sync, network checks, and retries.
 - WebDAV URL, username, and password are stored in local encrypted storage.
-- WebDAV stores the v3 manifest and content objects beside the configured file.
+- WebDAV stores the V4 manifest and content objects beside the configured file, keeping the `neriplayer-sync-v3.manifest` filename.
   Subsequent manifest writes require a strong ETag; servers without safe conditional
   writes fail explicitly to prevent overwriting another device's changes.
 - The remote WebDAV file is not an end-to-end encrypted backup.
@@ -1190,7 +1192,7 @@ We will keep improving the project over time.
 - QQ Music is only a playback metadata/lyrics completion source.
 - GitHub/WebDAV sync is not end-to-end encrypted. Full config export files may
   contain auth data and must be protected by the user.
-- v3 uses verified ZSTD chunks and a manifest. Legacy GZIP, JSON, and Base64 are read
+- V4 uses verified ZSTD chunks and a manifest; V3 archives are read only for migration. Legacy GZIP, JSON, and Base64 are read
   only when the manifest is absent. Synthetic encoding of ten million records does
   not establish memory safety of full merging, restoration, or UI repositories on Android.
 - Long-form progress memory does not override an explicitly requested position or replace
