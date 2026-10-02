@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.stats.PlaybackStatsCaptureBarrier
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataApplier
 import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataStore
@@ -49,6 +50,7 @@ internal class AndroidSyncLocalDataStore(
             !playbackStatsRepo.awaitInitialized() || !playHistoryRepo.awaitInitialized() ||
             !playlistUsageRepo.awaitInitialized() || !localPlaylistPlaybackStatsRepo.awaitInitialized()
         ) return false
+        PlaybackStatsCaptureBarrier.await(appContext)
         playbackStatsRepo.flushPendingWrites()
         return !playbackStatsRepo.hasPendingWrites()
     }

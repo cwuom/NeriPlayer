@@ -184,7 +184,7 @@ internal fun rememberNowPlayingLyricsLoadOwner(
         resolveNowPlayingLyricsMediaReloadKey(request.song, request.currentMediaUrl),
         request.preferWordTimedLyrics, request.defaultLyricSource, versions
     )
-    LaunchedEffect(reloadKey, stages) {
+    LaunchedEffect(owner, reloadKey, stages) {
         owner.reload(request.copy(cachedPreferredLyrics = initial.cachedPreferredLyrics))
     }
     return owner

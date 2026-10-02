@@ -121,6 +121,7 @@ import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsOwner
 import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
+import moe.ouom.neriplayer.core.player.persistence.stats.AppPlaybackStatsPendingWrites
 import moe.ouom.neriplayer.core.player.runtime.progress.PlaybackProgressOwner
 import moe.ouom.neriplayer.core.player.playback.PlayerManagerPlaybackProgressPort
 import moe.ouom.neriplayer.core.player.playback.playBiliVideoPartsImpl
@@ -300,7 +301,8 @@ object PlayerManager {
     internal var ioScope = newIoScope()
     internal var mainScope = newMainScope()
     internal var playbackStatsOwner = PlaybackStatsOwner(
-        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey, readClearedAt = AppPlaybackStatsWritePort::clearedAt)
+        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey, readClearedAt = AppPlaybackStatsWritePort::clearedAt),
+        AppPlaybackStatsPendingWrites.queue
     )
     @Volatile
     internal var usbExclusiveLivenessOwner = UsbExclusiveLivenessOwner(mainScope, PlayerManagerUsbExclusiveLivenessPort)

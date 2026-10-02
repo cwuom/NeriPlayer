@@ -34,6 +34,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.time.Duration.Companion.milliseconds
 
 
@@ -1148,7 +1149,7 @@ class DownloadExecutionHostTest : DownloadExecutionHostTestSupport() {
             )
         }
         requests.forEach { request -> store.save(context, request) }
-        val executed = mutableListOf<String>()
+        val executed = ConcurrentLinkedQueue<String>()
         val host = DefaultDownloadExecutionHost(
             operationStore = store,
             entryPoint = { _, request ->

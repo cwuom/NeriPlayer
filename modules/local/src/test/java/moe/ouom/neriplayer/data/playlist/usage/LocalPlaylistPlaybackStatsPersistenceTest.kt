@@ -22,6 +22,83 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
+    fun `durable playback event cannot acknowledge JSON fallback across process reopen`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val file = File(temporary.root, "local_playlist_playback_stats.json")
+        file.writeText(Gson().toJson(listOf(original())))
+        val originalBytes = file.readBytes()
+        doAnswer { throw IOException("Room promotion unavailable") }.`when`(room).importLegacyAndPromote(anyList(), anyLong())
+
+        repeat(2) {
+            val reopened = repository(room)
+            val failure = runCatching { reopened.recordPlayNow(1, 200, "durable-event") }.exceptionOrNull()
+            assertTrue("durable event requires a persisted receipt", failure is IOException)
+            assertEquals(1L, reopened.statsFlow.value.single().totalPlayCount)
+            assertArrayEquals(originalBytes, file.readBytes())
+        }
+        verify(room, never()).writeIncrementalOnce(anyList(), anyList(), anyString(), anyString(), anyLong())
+        verify(room, never()).markLegacyJsonPrimary(anyLong())
+    }
+
+    @Test
+    fun `durable playback retries promotion and reopens without counting the same event twice`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val file = File(temporary.root, "local_playlist_playback_stats.json")
+        file.writeText(Gson().toJson(listOf(original())))
+        var primary: List<LocalPlaylistPlaybackStat>? = null
+        var unavailable = true
+        val receipts = mutableSetOf<String>()
+        `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+        doAnswer {
+            if (unavailable) throw IOException("promotion unavailable")
+            primary = it.getArgument(0)
+            Unit
+        }.`when`(room).importLegacyAndPromote(anyList(), anyLong())
+        doAnswer {
+            if (!receipts.add(it.getArgument(2))) false else {
+                primary = it.getArgument(1)
+                true
+            }
+        }.`when`(room).writeIncrementalOnce(anyList(), anyList(), anyString(), anyString(), anyLong())
+        val repository = repository(room)
+        assertTrue(runCatching { repository.recordPlayNow(1, 200, "durable-event") }.exceptionOrNull() is IOException)
+        unavailable = false
+        repository.recordPlayNow(1, 200, "durable-event")
+        assertEquals(2L, repository.syncSnapshot().stats.single().totalPlayCount)
+        repository(room).recordPlayNow(1, 200, "durable-event")
+        assertEquals(2L, primary!!.single().totalPlayCount)
+        assertEquals(setOf("durable-event"), receipts)
+        assertEquals(1L, Gson().fromJson(file.readText(), Array<LocalPlaylistPlaybackStat>::class.java).single().totalPlayCount)
+        verify(room, never()).markLegacyJsonPrimary(anyLong())
+    }
+
+    @Test
+    fun `cancelled promotion confirmation retries the real Room primary before event mutation`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        File(temporary.root, "local_playlist_playback_stats.json").writeText(Gson().toJson(listOf(original())))
+        var primary: List<LocalPlaylistPlaybackStat>? = null
+        var initialPromotion = true
+        var promotions = 0
+        val cancelled = CancellationException("promotion committed before cancellation")
+        `when`(room.readIfRoomPrimary()).thenAnswer { primary }
+        doAnswer {
+            promotions++
+            if (initialPromotion) throw IOException("initial promotion unavailable")
+            primary = it.getArgument(0)
+            throw cancelled
+        }.`when`(room).importLegacyAndPromote(anyList(), anyLong())
+        doAnswer { primary = it.getArgument(1); true }.`when`(room).writeIncrementalOnce(anyList(), anyList(), anyString(), anyString(), anyLong())
+        val repository = repository(room)
+        initialPromotion = false
+        assertCancellation(cancelled, runCatching { repository.recordPlayNow(1, 200, "durable-event") }.exceptionOrNull())
+        assertEquals(1L, repository.statsFlow.value.single().totalPlayCount)
+        repository.recordPlayNow(1, 200, "durable-event")
+        assertEquals(2, promotions)
+        assertEquals(2L, primary!!.single().totalPlayCount)
+        verify(room, times(1)).writeIncrementalOnce(anyList(), anyList(), anyString(), anyString(), anyLong())
+    }
+
+    @Test
     fun `same playback event retries a cancelled Room transaction without dropping its increment`() = runTest {
         val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
         var primary = listOf(original())
@@ -42,7 +119,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
     }
 
     @Test
-    fun `JSON marker cancellation retries the same play without incrementing again`() = runTest {
+    fun `ordinary JSON marker cancellation flushes the pending play without incrementing again`() = runTest {
         val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
         File(temporary.root, "local_playlist_playback_stats.json").writeText(Gson().toJson(listOf(original())))
         doAnswer { throw IOException("Room promotion unavailable") }.`when`(room).importLegacyAndPromote(anyList(), anyLong())
@@ -53,8 +130,8 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
             Unit
         }.`when`(room).markLegacyJsonPrimary(anyLong())
         val repository = repository(room)
-        assertCancellation(cancelled, runCatching { repository.recordPlayNow(1, 200, "event") }.exceptionOrNull())
-        repository.recordPlayNow(1, 200, "event")
+        assertCancellation(cancelled, runCatching { repository.recordPlayNow(1, 200) }.exceptionOrNull())
+        assertTrue(repository.awaitInitialized())
         assertEquals(2L, repository.syncSnapshot().stats.single().totalPlayCount)
         assertEquals(2L, repository(room).statsFlow.value.single().totalPlayCount)
     }

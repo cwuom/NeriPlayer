@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.StandardTestDispatcher
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
@@ -281,6 +282,78 @@ class NowPlayingLyricsLoadOwnerTest {
             assertNull(received.last().song)
             assertTrue(empty.state.lyrics.isEmpty())
         } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `production composition loads a new source identity even when lyric and media inputs are unchanged`() = runTest {
+        val remote = song.copy(channelId = "bilibili", audioId = "BV1", subAudioId = "1")
+        val pairs = listOf(
+            song.copy(sourceStableKey = "41|netease|") to song.copy(sourceStableKey = "42|netease|"),
+            remote to remote.copy(channelId = "netease"),
+            remote to remote.copy(audioId = "BV2"),
+            remote to remote.copy(subAudioId = "2")
+        )
+        for ((first, second) in pairs) {
+            assertNotEquals(first.stableKey(), second.stableKey())
+            assertEquals(nowPlayingLyricsReloadKey(first), nowPlayingLyricsReloadKey(second))
+            val received = mutableListOf<SongItem?>()
+            val stages = object : NowPlayingLyricsStages {
+                override suspend fun readFast(request: NowPlayingLyricsLoadRequest): NowPlayingFastLyricsResult {
+                    received += request.song
+                    return fastState(request.song?.stableKey().orEmpty())
+                }
+                override suspend fun readBackground(request: NowPlayingLyricsLoadRequest,
+                    fast: NowPlayingFastLyricsResult) = fast.state
+            }
+            val fixture = LyricsCompositionFixture(this)
+            try {
+                val versions = NowPlayingLyricsRefreshVersions(0, 0, 0)
+                val previous = fixture.compose(request(first), versions, stages)
+                runCurrent()
+                assertEquals(first.stableKey(), previous.state.rawLyrics)
+                val current = fixture.compose(request(second), versions, stages)
+                assertNotSame(previous, current)
+                runCurrent()
+                assertEquals(listOf(first, second), received)
+                assertEquals(second.stableKey(), current.state.rawLyrics)
+                assertTrue(current.secondaryResolved)
+            } finally {
+                fixture.close()
+            }
+        }
+    }
+
+    @Test
+    fun `new source identity loads while a disposed owner cannot publish late lyrics`() = runTest {
+        val first = song.copy(sourceStableKey = "41|netease|")
+        val second = song.copy(sourceStableKey = "42|netease|")
+        val pending = CompletableDeferred<LoadedLyricsState>()
+        val stages = object : NowPlayingLyricsStages {
+            override suspend fun readFast(request: NowPlayingLyricsLoadRequest) = fastState("fast")
+            override suspend fun readBackground(request: NowPlayingLyricsLoadRequest,
+                fast: NowPlayingFastLyricsResult): LoadedLyricsState =
+                if (request.song?.sourceStableKey == first.sourceStableKey) {
+                    withContext(NonCancellable) { pending.await() }
+                } else lyricState("new source")
+        }
+        val fixture = LyricsCompositionFixture(this)
+        try {
+            val versions = NowPlayingLyricsRefreshVersions(0, 0, 0)
+            val previous = fixture.compose(request(first), versions, stages)
+            runCurrent()
+            assertEquals("fast", previous.state.rawLyrics)
+            val current = fixture.compose(request(second), versions, stages)
+            assertNotSame(previous, current)
+            runCurrent()
+            assertEquals("new source", current.state.rawLyrics)
+            pending.complete(lyricState("stale source"))
+            runCurrent()
+            assertEquals("new source", current.state.rawLyrics)
+            assertEquals("fast", previous.state.rawLyrics)
+        } finally {
+            pending.complete(lyricState("cleanup"))
             fixture.close()
         }
     }

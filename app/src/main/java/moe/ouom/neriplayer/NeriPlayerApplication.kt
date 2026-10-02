@@ -31,6 +31,7 @@ import androidx.work.Configuration as WorkConfiguration
 import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.player.installPlayerDependencies
+import moe.ouom.neriplayer.core.di.player.installPlaybackStatsCaptureBarrier
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.scheduling.ids.newDownloadWorkManagerConfigurationBuilder
@@ -86,6 +87,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
             configuredMainProcessName = applicationInfo.processName,
             packageName = packageName
         )
+        installPlaybackStatsCaptureBarrier(runningInMainProcess)
         configureWebViewDataDirectoryIfNeeded(runningInMainProcess)
 
         // 初始化语言设置

@@ -201,7 +201,10 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
             val event = eventId?.let { LocalPlaylistPlaybackEvent(it, playlistId, playedAt) }
             val previousEvent = eventId?.let(recordedEvents::get)
             if (previousEvent != null && previousEvent != event) throw IOException("Local playlist event identity reused with different content")
-            if (event != null && previousEvent == null) persistSnapshotChecked(_stats.value)
+            if (event != null) {
+                if (previousEvent == null) persistSnapshotChecked(_stats.value)
+                ensureEventReceiptStorageLocked()
+            }
             val current = _stats.value
             val previousUiChanges = pendingUiChanges
             val updated = if (previousEvent != null) current else recordLocalPlaylistPlay(
@@ -215,7 +218,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
             if (event == null) {
                 persistSnapshot(updated)
             } else {
-                // JSON 回退的重试仍在同一播放器进程内，先记住已加入内存的事件，取消后不能再递增
+                // 已加入内存的事件在事务取消后继续重试原值，进程重启则由持久回执去重
                 recordedEvents[event.id] = event
                 try {
                     persistSnapshotChecked(updated, event)
@@ -313,9 +316,31 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
         }
     }
 
+    private suspend fun ensureEventReceiptStorageLocked() {
+        if (roomStorageEnabled && roomStore != null) return
+        val activeRoomStore = roomStore
+            ?: throw IOException("Durable playlist playback requires event receipt storage")
+        val actual = activeRoomStore.readIfRoomPrimary()
+        if (actual != null) {
+            val normalized = normalizeLocalPlaylistPlaybackStats(actual)
+            _stats.value = normalized
+            pendingUiChanges = false
+            confirmPersistedStats(normalized)
+        } else {
+            // 导入可能已提交后才取消，重试前必须重新确认实际主存
+            baselineTrusted = false
+            activeRoomStore.importLegacyAndPromote(persistedStats)
+            confirmPersistedStats(persistedStats)
+        }
+        roomStorageEnabled = true
+    }
+
     private suspend fun persistSnapshotChecked(next: List<LocalPlaylistPlaybackStat>, event: LocalPlaylistPlaybackEvent? = null) {
         currentCoroutineContext().ensureActive()
         if (!initialized || !baselineTrusted) throw IOException("Cannot persist unknown local playlist playback", initialLoadFailure)
+        if (event != null && (!roomStorageEnabled || roomStore == null)) {
+            throw IOException("Cannot acknowledge playlist playback without a durable event receipt")
+        }
         if (next == persistedStats && event == null) {
             confirmPersistedStats(next)
             return

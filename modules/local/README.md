@@ -33,6 +33,10 @@ Favorites, history, and playlist usage load on an IO coroutine. A failed Room re
 
 Track playback statistics use Room as their primary store, without loading all tracks and daily buckets at startup or writing complete JSON projections after every change. Legacy data is imported as a stream. Stable event IDs, durable receipts, and pending deltas are enqueued in one transaction so retries do not count twice. Sync captures fixed-size pages and a durable revision, validates the complete remote dataset before applying it, and rejects stale revisions. Summaries and rankings use SQL aggregation and paginated queries; manual JSON backup imports and exports statistics in pages and retains complete history without the former 1,000-entry truncation. Import validates the entire JSON document and version before application, rejecting future versions. Playlist, history, and lyric metadata still use lists; the overall backup is not a transaction spanning all repositories. Configuration import and full playback queues retain their existing capacity limits.
 
+带事件 ID 的歌单播放增量只有在 Room 计数和回执共用事务时才能确认。旧 JSON 导入失败时保留该事件，恢复后先确认实际主存再重试迁移，避免进程重启后重复计数。没有事件 ID 的既有歌单写入仍支持 JSON 回退。
+
+Playlist play increments carrying event IDs are acknowledged only when Room persists the count and receipt in one transaction. Failed legacy JSON promotion leaves the event pending; recovery confirms the actual primary store before retrying promotion, preventing duplicate counts after process restart. Existing playlist writes without event IDs retain JSON fallback.
+
 ## 测试 / Tests
 
 ```bash

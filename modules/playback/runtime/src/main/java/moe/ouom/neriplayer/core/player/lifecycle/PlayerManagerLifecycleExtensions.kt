@@ -70,6 +70,7 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.player.persistence.restoreState
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
+import moe.ouom.neriplayer.core.player.persistence.stats.AppPlaybackStatsPendingWrites
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsOwner
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.playback.clearAudioRouteMuteSuppression
@@ -341,8 +342,11 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
     queueSessionBindings.prepareForNewEngine()
     lastStatePersistAtMs = 0L
     playbackProgressOwner.resetPersistenceClock()
+    AppPlaybackStatsPendingWrites.bind(app)
+    AppPlaybackStatsPendingWrites.queue.activate(AppPlaybackStatsWritePort)
     playbackStatsOwner = PlaybackStatsOwner(
-        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey, readClearedAt = AppPlaybackStatsWritePort::clearedAt)
+        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey, readClearedAt = AppPlaybackStatsWritePort::clearedAt),
+        AppPlaybackStatsPendingWrites.queue
     )
     val appWasInForeground = usbExclusiveLivenessOwner.appInForeground
     usbExclusiveLivenessOwner.cancelJobs()

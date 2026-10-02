@@ -17,9 +17,12 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.stats.PlaybackStatsCaptureBarrier
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.platform.bilibili.skip.BiliVideoSkipRepository
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -28,8 +31,45 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.mockito.Mockito.doAnswer
 
 class AndroidSyncLocalDataStoreRecoveryTest {
+    @Test
+    fun `runtime spool drains after repository recovery before the session mutation ticket is read`() = runTest {
+        val fixture = Fixture().also { it.configureReady() }
+        val events = mutableListOf<String>()
+        var mutationVersion = 7L
+        doAnswer { events += "initialized"; true }.`when`(fixture.stats).awaitInitialized()
+        doAnswer { events += "room-flushed"; Unit }.`when`(fixture.stats).flushPendingWrites()
+        `when`(fixture.storage.getSyncMutationVersion()).thenAnswer { mutationVersion }
+        try {
+            PlaybackStatsCaptureBarrier.install { context ->
+                assertSame(fixture.context, context)
+                events += "spool-flushed"
+                mutationVersion++
+            }
+            assertTrue(fixture.store.awaitInitialized())
+            assertEquals(listOf("initialized", "spool-flushed", "room-flushed"), events)
+            assertEquals(8L, fixture.store.mutationVersion())
+        } finally { PlaybackStatsCaptureBarrier.install {} }
+    }
+
+    @Test
+    fun `unavailable repository never drains runtime spool and failed spool stops readiness`() = runTest {
+        val fixture = Fixture().also { it.configureReady() }
+        var calls = 0
+        try {
+            PlaybackStatsCaptureBarrier.install { calls++; throw java.io.IOException("spool unavailable") }
+            `when`(fixture.stats.awaitInitialized()).thenReturn(false)
+            assertFalse(fixture.store.awaitInitialized())
+            assertEquals(0, calls)
+            `when`(fixture.stats.awaitInitialized()).thenReturn(true)
+            assertTrue(runCatching { fixture.store.awaitInitialized() }.exceptionOrNull() is java.io.IOException)
+            assertEquals(1, calls)
+            verify(fixture.stats, never()).flushPendingWrites()
+        } finally { PlaybackStatsCaptureBarrier.install {} }
+    }
+
     @Test
     fun `unavailable playlists stop sync before other repositories are read`() = runTest {
         val fixture = Fixture().also { it.configureReady() }

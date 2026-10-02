@@ -28,6 +28,8 @@ import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStor
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
 import moe.ouom.neriplayer.data.model.stats.TrackStat
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
@@ -45,6 +47,50 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackStatsRepositoryReadCaptureTest {
+    @Test
+    fun runtimeCaptureBarrierCommitsIntoThePrimaryStoreBeforeBackupIsFrozen() = runTest {
+        val fixture = open(RoomDatabase.JournalMode.AUTOMATIC, inMemory = true)
+        val original = fixture.tracks.first()
+        val song = SongItem(original.id, original.name, original.artist, original.album, original.albumId,
+            original.durationMs, original.coverUrl)
+        val track = original.copy(identityKey = song.stableKey())
+        val eventId = UUID.randomUUID().toString()
+        var calls = 0
+        try {
+            fixture.store.replaceAll(listOf(track), listOf(bucket(track)), counters(listOf(track), fixture.shard), 0, 0)
+            PlaybackStatsCaptureBarrier.install {
+                calls++
+                fixture.repository.recordListenDeltaNow(
+                    song = song,
+                    listenedMs = 1_000, playCountIncrement = 1, scheduleSync = false,
+                    eventId = eventId, playedAt = 300, observedClearedAt = 0
+                )
+                fixture.repository.flushPendingWrites()
+            }
+            repeat(2) {
+                val output = StringWriter()
+                withContext(Dispatchers.IO) {
+                    withTimeout(10_000) {
+                        JsonWriter(output).use { writer ->
+                            writer.beginObject()
+                            fixture.repository.writeBackupStatistics(writer)
+                            writer.endObject()
+                        }
+                    }
+                }
+                val exported = Gson().fromJson(output.toString(), JsonObject::class.java)
+                    .getAsJsonArray("playbackStats").single { row ->
+                        row.asJsonObject.get("identityKey").asString == track.identityKey
+                    }.asJsonObject
+                assertEquals(2_000L, exported.get("totalListenMs").asLong)
+                assertEquals(2, exported.get("playCount").asInt)
+                assertEquals(2_000L, fixture.store.readTrack(track.identityKey)?.totalListenMs)
+                fixture.assertNoFrozenRows()
+            }
+            assertEquals(2, calls)
+        } finally { PlaybackStatsCaptureBarrier.install {}; fixture.close() }
+    }
+
     @Test
     fun walCaptureAvoidsFullCopiesAndKeepsFourFamiliesWhileWriterCommits() = runTest {
         assumeTrue(Build.VERSION.SDK_INT >= 35)

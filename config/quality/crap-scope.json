@@ -183,6 +183,7 @@
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsResolution.kt",
     "moe/ouom/neriplayer/data/ltw/session/link/ListenTogetherControllerLinkOwner.kt",
     "moe/ouom/neriplayer/core/player/runtime/stats/PlaybackStatsOwner.kt",
+    "moe/ouom/neriplayer/core/player/runtime/stats/PlaybackStatsPendingWrites.kt",
     "moe/ouom/neriplayer/core/player/playback/PlaybackStatsWritePort.kt",
     "moe/ouom/neriplayer/data/ltw/session/state/ListenTogetherRoomStateOwner.kt",
     "moe/ouom/neriplayer/data/ltw/session/state/ListenTogetherSessionProjection.kt",

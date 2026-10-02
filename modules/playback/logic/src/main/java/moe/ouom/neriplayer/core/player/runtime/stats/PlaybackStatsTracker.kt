@@ -126,6 +126,38 @@ class PlaybackStatsTracker(
         return flushLocked(countPlay = shouldCountCurrentPlay(), scheduleSync = true)
     }
 
+    fun suspendForPersistence(): PlaybackStatsSnapshot? {
+        return onPlayingChanged(false) ?: flushFinal()
+    }
+
+    fun matchesTrackedSong(song: SongItem?, localPlaylistId: Long?): Boolean =
+        song?.let(songKey) == trackingSongKey && localPlaylistId == trackingLocalPlaylistId
+
+    fun resetUntrackedPlayCycle() {
+        hasCountedCurrentPlay = false
+        currentPlayListenedMs = 0L
+        lastPlaybackPositionMs = null
+        suppressNextPositionWrap = false
+    }
+
+    fun rebaseAfterStatisticsRestore() {
+        val epoch = readClearedAt().coerceAtLeast(0L)
+        // 手动恢复允许降低栅栏，队列已冻结并排空旧事件，真实播放周期的计数状态继续保留
+        if (epoch < observedClearedAt) observedClearedAt = epoch else observeClearEpoch()
+    }
+
+    fun onUntrackedPlaybackProgress(positionMs: Long) {
+        val song = trackingSong ?: return
+        val resolved = positionMs.coerceAtLeast(0L)
+        val previous = lastPlaybackPositionMs
+        lastPlaybackPositionMs = resolved
+        if (suppressNextPositionWrap) {
+            suppressNextPositionWrap = false
+        } else if (hasPlaybackPositionWrapped(previous, resolved, song.durationMs)) {
+            resetUntrackedPlayCycle()
+        }
+    }
+
     fun shouldFlushPeriodically(): Boolean {
         observeClearEpoch()
         if (!isPlaying || trackingSong == null || periodicFlushMs <= 0L) return false

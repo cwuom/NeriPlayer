@@ -2,8 +2,11 @@ package moe.ouom.neriplayer.data.stats
 
 import android.content.Context
 import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.stream.JsonWriter
 import java.io.File
 import java.io.IOException
+import java.io.StringWriter
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
@@ -13,7 +16,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -31,6 +37,7 @@ import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStor
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsDeltaRows
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SYNC_PLAYBACK_PAGE_RECORDS
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackSource
@@ -42,6 +49,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.After
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
@@ -51,6 +59,155 @@ import org.mockito.ArgumentMatchers.anyString
 
 class PlaybackStatsWarmCaptureTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @After fun resetCaptureBarrier() {
+        PlaybackStatsCaptureBarrier.install {}
+    }
+
+    @Test fun runtimeCaptureBarrierDrainsBeforeAllThreeSnapshotEntrypoints() = runTest {
+        for (destination in CaptureDestination.entries) {
+            val fixture = open(backgroundScope)
+            var calls = 0
+            try {
+                PlaybackStatsCaptureBarrier.install { context ->
+                    assertSame(fixture.context, context)
+                    calls++
+                    fixture.recordSpoolEvent()
+                    fixture.repository.flushPendingWrites()
+                }
+                val listenedMs = withContext(Dispatchers.IO) {
+                    withTimeout(10_000) { capture(fixture, destination) }
+                }
+                assertEquals(destination.name, 3_000L, listenedMs)
+                assertEquals(1, calls)
+                assertTrue(fixture.pending.isEmpty())
+            } finally { PlaybackStatsCaptureBarrier.install {}; fixture.close() }
+        }
+    }
+
+    @Test fun runtimeCaptureBarrierInvalidatesAWarmSnapshotBeforeItsStampIsChecked() = runTest {
+        val fixture = open(backgroundScope)
+        var calls = 0
+        try {
+            fixture.borrow().playback.use { assertEquals(1_000L, read(it).single().totalListenMs) }
+            PlaybackStatsCaptureBarrier.install {
+                if (++calls == 1) fixture.recordSpoolEvent()
+            }
+            fixture.borrow().playback.use { assertEquals(3_000L, read(it).single().totalListenMs) }
+            assertEquals(2, fixture.captures)
+            fixture.borrow().playback.use { assertEquals(3_000L, read(it).single().totalListenMs) }
+            assertEquals(2, calls)
+            assertEquals(2, fixture.captures)
+        } finally { PlaybackStatsCaptureBarrier.install {}; fixture.close() }
+    }
+
+    @Test fun failedRuntimeCaptureBarrierRejectsEverySnapshotBeforeFreezingAndAllowsRetry() = runTest {
+        for (destination in CaptureDestination.entries) {
+            val fixture = open(backgroundScope)
+            val failure = IOException("runtime spool unavailable")
+            try {
+                PlaybackStatsCaptureBarrier.install { throw failure }
+                assertPropagatedSame(failure, runCatching { capture(fixture, destination) }.exceptionOrNull())
+                assertEquals(0, fixture.captures)
+                assertTrue(fixture.sessions().isEmpty())
+                PlaybackStatsCaptureBarrier.install {}
+                assertEquals(1_000L, capture(fixture, destination))
+            } finally { PlaybackStatsCaptureBarrier.install {}; fixture.close() }
+        }
+    }
+
+    @Test fun cancellationWhileAwaitingRuntimeCaptureBarrierNeverFreezesOrKeepsACacheOwner() = runTest {
+        val fixture = open(backgroundScope)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        PlaybackStatsCaptureBarrier.install { entered.complete(Unit); release.await() }
+        val capture = async(Dispatchers.IO) { fixture.borrow() }
+        try {
+            withContext(Dispatchers.IO) { withTimeout(10_000) { entered.await() } }
+            assertEquals(0, fixture.captures)
+            withContext(Dispatchers.IO) { withTimeout(10_000) { capture.cancelAndJoin() } }
+            assertTrue(fixture.sessions().isEmpty())
+            PlaybackStatsCaptureBarrier.install {}
+            fixture.borrow().playback.close()
+            assertEquals(1, fixture.captures)
+        } finally {
+            capture.cancelAndJoin()
+            PlaybackStatsCaptureBarrier.install {}
+            fixture.close()
+        }
+    }
+
+    @Test fun failedManualRestoreBarrierStopsBeforeFreezingTheExistingStatistics() = runTest {
+        val fixture = open(backgroundScope)
+        val failure = IOException("runtime spool cannot drain before restore")
+        try {
+            PlaybackStatsCaptureBarrier.install { throw failure }
+            assertPropagatedSame(failure, runCatching {
+                fixture.repository.applyMergedStats(emptyList(), 0, respectLocalClear = false)
+            }.exceptionOrNull())
+            assertEquals(0, fixture.captures)
+            assertEquals(50L, fixture.stamp.state.clearedAt)
+        } finally { PlaybackStatsCaptureBarrier.install {}; fixture.close() }
+    }
+
+    @Test fun forceRestoreGuardIsEnteredBeforeAnyRoomFreeze() = runTest {
+        val fixture = open(backgroundScope)
+        val failure = IOException("runtime restore guard cannot suspend sampling")
+        try {
+            PlaybackStatsCaptureBarrier.install({}, { context, _ ->
+                assertSame(fixture.context, context)
+                throw failure
+            })
+            assertPropagatedSame(failure, runCatching {
+                fixture.repository.applyMergedStats(emptyList(), 0, respectLocalClear = false)
+            }.exceptionOrNull())
+            assertEquals(0, fixture.captures)
+            assertEquals(50L, fixture.stamp.state.clearedAt)
+        } finally { PlaybackStatsCaptureBarrier.install {}; fixture.close() }
+    }
+
+    @Test fun delayedOldClearNotificationReadsTheCommittedRestoreFence() = runTest {
+        val releaseOldNotification = CompletableDeferred<Unit>()
+        val delivered = CompletableDeferred<Unit>()
+        val changes = flow {
+            releaseOldNotification.await()
+            emit(50L)
+            delivered.complete(Unit)
+        }
+        val fixture = open(backgroundScope, changes)
+        try {
+            fixture.configureEmptyBackupCommit(0)
+            fixture.repository.applyMergedStats(emptyList(), 0, respectLocalClear = false)
+            assertEquals(0L, fixture.repository.statsClearedAtFlow.value)
+            assertEquals(0L, fixture.stamp.state.clearedAt)
+            releaseOldNotification.complete(Unit)
+            withTimeout(10_000) { delivered.await() }
+            assertEquals(0L, fixture.repository.statsClearedAtFlow.value)
+        } finally { releaseOldNotification.complete(Unit); fixture.close() }
+    }
+
+    @Test fun unavailablePrimaryDuringClearObservationKeepsThePublishedRestoreFence() = runTest {
+        for (failure in listOf(null, IOException("primary state read failed"))) {
+            val releaseOldNotification = CompletableDeferred<Unit>()
+            val delivered = CompletableDeferred<Unit>()
+            val changes = flow {
+                releaseOldNotification.await()
+                try { emit(50L) } finally { delivered.complete(Unit) }
+            }
+            val fixture = open(backgroundScope, changes)
+            try {
+                fixture.configureEmptyBackupCommit(0)
+                fixture.repository.applyMergedStats(emptyList(), 0, respectLocalClear = false)
+                doAnswer {
+                    failure?.let { throw it }
+                    null
+                }.`when`(fixture.room).readPrimaryState()
+                releaseOldNotification.complete(Unit)
+                withTimeout(10_000) { delivered.await() }
+                assertEquals(0L, fixture.repository.statsClearedAtFlow.value)
+            } finally { releaseOldNotification.complete(Unit); fixture.close() }
+        }
+    }
 
     @Test fun unchangedCaptureAndOpenCursorSurviveSessionAndCacheOwnerClose() = runTest {
         val fixture = open(backgroundScope)
@@ -305,18 +462,18 @@ class PlaybackStatsWarmCaptureTest {
         } finally { task.cancel(); fixture.close() }
     }
 
-    private suspend fun open(scope: CoroutineScope): Fixture {
-        val fixture = Fixture(scope, temporary.newFolder())
+    private suspend fun open(scope: CoroutineScope, clearChanges: Flow<Long> = flowOf(50L)): Fixture {
+        val fixture = Fixture(scope, temporary.newFolder(), clearChanges)
         fixture.configure()
         assertTrue(fixture.repository.awaitInitialized())
         return fixture
     }
 
-    private class Fixture(scope: CoroutineScope, val directory: File) {
+    private class Fixture(scope: CoroutineScope, val directory: File, private val clearChanges: Flow<Long>) {
         val room = mock(PlaybackStatsRoomStore::class.java)
         private val database = mock(NeriUserDataDatabase::class.java)
         private val dao = mock(PlaybackStatsSnapshotDao::class.java)
-        private val context = mock(Context::class.java)
+        val context = mock(Context::class.java)
         val store = FileSyncPlaybackDatasetStore(directory)
         var stamp = PlaybackStatsCaptureStamp(PlaybackStatsRoomState(1, 50, 50), 0, "database")
         var projection = PlaybackStatsCaptureProjection("en", emptySet())
@@ -338,7 +495,7 @@ class PlaybackStatsWarmCaptureTest {
             `when`(room.database).thenReturn(database)
             `when`(database.playbackStatsSnapshotDao()).thenReturn(dao)
             `when`(room.readPrimaryState()).thenAnswer { stamp.state }
-            `when`(room.clearedAtFlow).thenReturn(flowOf(50L))
+            `when`(room.clearedAtFlow).thenReturn(clearChanges)
             doAnswer { pendingFailure?.let { throw it }; pending.toList() }.`when`(room).pendingDeltas()
             doAnswer {
                 pending.clear()
@@ -373,6 +530,29 @@ class PlaybackStatsWarmCaptureTest {
 
         suspend fun borrow() = repository.borrowSyncCapture(store) { projection }
 
+        suspend fun configureEmptyBackupCommit(clearedAt: Long) {
+            `when`(dao.getSnapshot("frozen")).thenReturn(PlaybackStatsSnapshotEntity(
+                "frozen", stamp.state.revision, stamp.state.clearedAt, stamp.state.counterEpochStartedAt,
+                100, true, "process"
+            ))
+            `when`(dao.bucketIdentityPage("frozen", null, null, SYNC_PLAYBACK_PAGE_RECORDS)).thenReturn(emptyList())
+            doAnswer {
+                stamp = stamp.copy(state = stamp.state.copy(revision = stamp.state.revision + 1, clearedAt = clearedAt))
+                true
+            }.`when`(room).commitFrozenSnapshot("frozen", stamp.state.revision)
+        }
+
+        suspend fun recordSpoolEvent() {
+            val song = SongItem(7, "song", "artist", "netease", 0, 180_000, null, sourceStableKey = "track|7")
+            val trackJson = Gson().toJson(song.toStatisticsMetadata())
+            doAnswer {
+                pending.add(PlaybackStatsPendingDeltaEntity("spool", 1, trackJson, 2_000, 0, 300, 50, "device"))
+                true
+            }.`when`(room).enqueueDelta("spool", trackJson, 2_000, 0, 300, "device", 50, true)
+            repository.recordListenDeltaNow(song, 2_000, 0, scheduleSync = false,
+                eventId = "spool", playedAt = 300, observedClearedAt = 50)
+        }
+
         suspend fun configureBucket(bucket: PlaybackStatBucket) {
             `when`(dao.bucketPage("frozen", null, null, SYNC_PLAYBACK_PAGE_RECORDS))
                 .thenReturn(listOf(PlaybackStatsSnapshotBucketEntity("frozen", bucket.toEntity().toSnapshotData())))
@@ -395,6 +575,26 @@ class PlaybackStatsWarmCaptureTest {
 
     private suspend fun read(source: SyncPlaybackSource) = source.openTracks().use { cursor ->
         buildList { while (true) { val page = cursor.nextPage(); if (page.isEmpty()) break; addAll(page) } }
+    }
+
+    private enum class CaptureDestination { DIRECT, CACHED, BACKUP }
+
+    private suspend fun capture(fixture: Fixture, destination: CaptureDestination): Long = when (destination) {
+        CaptureDestination.DIRECT -> fixture.store.newOrderedSink().use { sink ->
+            fixture.repository.captureSyncSnapshot(sink)
+            sink.seal().use { read(it).single().totalListenMs }
+        }
+        CaptureDestination.CACHED -> fixture.borrow().playback.use { read(it).single().totalListenMs }
+        CaptureDestination.BACKUP -> {
+            val output = StringWriter()
+            JsonWriter(output).use { writer ->
+                writer.beginObject()
+                fixture.repository.writeBackupStatistics(writer)
+                writer.endObject()
+            }
+            Gson().fromJson(output.toString(), JsonObject::class.java).getAsJsonArray("playbackStats")
+                .single().asJsonObject.get("totalListenMs").asLong
+        }
     }
 
     private fun assertPropagatedSame(expected: Throwable, actual: Throwable?) {

@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -122,7 +124,13 @@ class PlaybackStatsRepository internal constructor(
         clearObservationJob = scope.launch {
             try {
                 // 即使写入在提交后的返回阶段取消，也从已提交元数据观察清除代次
-                roomStore.clearedAtFlow.collect { _clearedAt.value = it }
+                roomStore.clearedAtFlow.collect {
+                    mutex.withLock {
+                        val state = roomStore.readPrimaryState()
+                            ?: throw IOException("Playback statistics primary state is unavailable")
+                        _clearedAt.value = state.clearedAt
+                    }
+                }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 NPLogger.e("PlaybackStatsRepo", "Playback clear observation failed; preserving the observed epoch", error)
@@ -205,7 +213,10 @@ class PlaybackStatsRepository internal constructor(
         }
     }
 
-    suspend fun captureSyncSnapshot(sink: SyncPlaybackSink): PlaybackStatsCapturedState = captureSyncSnapshot(sink, null)
+    suspend fun captureSyncSnapshot(sink: SyncPlaybackSink): PlaybackStatsCapturedState {
+        PlaybackStatsCaptureBarrier.await(app)
+        return captureSyncSnapshot(sink, null)
+    }
 
     private suspend fun captureSyncSnapshot(sink: SyncPlaybackSink, projection: SyncPlaybackStatProjection?): PlaybackStatsCapturedState = withContext(Dispatchers.IO) {
         initialLoad.await()
@@ -227,6 +238,7 @@ class PlaybackStatsRepository internal constructor(
 
     internal suspend fun borrowSyncCapture(store: FileSyncPlaybackDatasetStore,
         readProjection: () -> PlaybackStatsCaptureProjection): PlaybackStatsSyncCapture {
+        PlaybackStatsCaptureBarrier.await(app)
         var owned: SyncPlaybackSource? = null
         try {
             return withContext(Dispatchers.IO) {
@@ -332,6 +344,7 @@ class PlaybackStatsRepository internal constructor(
     }
 
     suspend fun writeBackupStatistics(writer: JsonWriter): PlaybackStatsCapturedState = withContext(Dispatchers.IO) {
+        PlaybackStatsCaptureBarrier.await(app)
         initialLoad.await()
         val capture = mutex.withLock {
             requireInitializedLocked()
@@ -439,6 +452,14 @@ class PlaybackStatsRepository internal constructor(
 
     private suspend fun mergeBackupStatistics(playbackStatsClearedAt: Long, respectLocalClear: Boolean,
         merge: suspend (PlaybackStatsRoomSnapshotAccess, String, Long) -> Unit) {
+        if (respectLocalClear) mergePreparedBackup(playbackStatsClearedAt, true, merge)
+        else PlaybackStatsCaptureBarrier.withRestore(app) {
+            mergePreparedBackup(playbackStatsClearedAt, false, merge)
+        }
+    }
+
+    private suspend fun mergePreparedBackup(playbackStatsClearedAt: Long, respectLocalClear: Boolean,
+        merge: suspend (PlaybackStatsRoomSnapshotAccess, String, Long) -> Unit) {
         val clearedAt = playbackStatsClearedAt.coerceAtLeast(0L)
         initialLoad.await()
         val frozen = mutex.withLock {
@@ -451,8 +472,12 @@ class PlaybackStatsRepository internal constructor(
             val barrier = if (respectLocalClear) maxOf(frozen.clearedAt, clearedAt) else clearedAt
             merge(access, frozen.id, barrier)
             mutex.withLock {
-                if (!roomStore.commitFrozenSnapshot(frozen.id, frozen.revision)) throw IOException("Playback statistics changed during backup import")
-                _clearedAt.value = barrier
+                currentCoroutineContext().ensureActive()
+                // 提交和发布清除时间必须一起完成，恢复采样才能读取真实的删除栅栏
+                withContext(NonCancellable) {
+                    if (!roomStore.commitFrozenSnapshot(frozen.id, frozen.revision)) throw IOException("Playback statistics changed during backup import")
+                    _clearedAt.value = barrier
+                }
             }
         } finally { withContext(NonCancellable) { roomStore.releaseSnapshot(frozen.id) } }
     }
