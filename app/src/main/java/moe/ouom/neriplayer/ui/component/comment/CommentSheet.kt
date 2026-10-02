@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.ui.component.comment
 
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,8 +25,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -40,9 +50,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -53,6 +68,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlin.math.absoluteValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentSource
@@ -85,6 +103,14 @@ internal fun CommentSheet(
     val viewModel: CommentViewModel = viewModel()
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    // 关闭是三态手势的最后一档: 先播放下滑动画, 收起后再通知外层 (与 M3 自己处理遮罩点击的方式一致)
+    val hideSheet: () -> Unit = {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            if (!sheetState.isVisible) onDismissRequest()
+        }
+    }
 
     // 身份线索变化时重新解析，普通重组不会重复请求
     LaunchedEffect(source) {
@@ -98,12 +124,16 @@ internal fun CommentSheet(
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = sheetState
+        onDismissRequest = hideSheet,
+        sheetState = sheetState,
+        // 勾柄改由 CommentSheetContent 自己渲染在内容最顶部: 包装组件原本把勾柄放在内容之外,
+        // 在勾柄上拖动进不了面板的手势, 所以表现为「按住上方往上拖, 拖不动」(真机反馈 #7)
+        dragHandle = null
     ) {
         CommentSheetContent(
             ui = ui,
             offlineMode = offlineMode,
+            onDismiss = hideSheet,
             onRefresh = viewModel::refresh,
             onRetry = viewModel::retry,
             onLoadMore = viewModel::loadMore,
@@ -120,6 +150,30 @@ internal fun CommentSheet(
     }
 }
 
+/**
+ * 评论面板的完整内容: 可拖拽的勾柄与标题条 (总数 / 排序入口 / 全屏按钮)、排序加载进度条、
+ * 评论列表 (含展开的楼中楼与底部状态行)、底部错误提示条、底部输入框。
+ *
+ * 面板高度由内部手势维护, 在半屏 (72% / 上限 620dp) 与全屏之间连续变化: 横条上滑进全屏、
+ * 下滑回半屏、比半屏再低 96dp 触发 [onDismiss]; 列表触底且没有任何在途请求时自动调 [onLoadMore]。
+ * 所有数据与状态都来自 [ui], 本组件不直接发起请求。
+ *
+ * @param ui 面板的完整 UI 状态
+ * @param offlineMode 离线模式: 禁用回复 / 发送 / 点赞
+ * @param onRefresh 下拉刷新第 1 页
+ * @param onRetry 首屏失败后重试
+ * @param onLoadMore 触底加载下一页
+ * @param onSort 切换排序
+ * @param onLike 点赞 / 取消点赞, 参数为评论 id (一级评论与楼中楼共用)
+ * @param onDismissLikeError 关闭点赞失败提示
+ * @param onDismissLoadError 关闭列表加载失败提示
+ * @param onDraft 输入框内容变化
+ * @param onReply 选择 / 取消回复目标
+ * @param onSend 发送评论
+ * @param onToggleReplies 展开 / 收起某条评论的楼中楼
+ * @param onLoadReplies 加载某条评论楼中楼的下一批回复
+ * @param onDismiss 关闭面板
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CommentSheetContent(
@@ -136,7 +190,8 @@ internal fun CommentSheetContent(
     onReply: (CommentReplyTarget?) -> Unit = {},
     onSend: () -> Unit = {},
     onToggleReplies: (String) -> Unit = {},
-    onLoadReplies: (String) -> Unit = {}
+    onLoadReplies: (String) -> Unit = {},
+    onDismiss: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val sortLoadingDescription = stringResource(CoreCommonR.string.comment_sort_loading)
@@ -147,7 +202,45 @@ internal fun CommentSheetContent(
         if (target != null) replyFocusRequest++
     }
     val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
-    val panelHeight = (windowHeight * 0.72f).coerceAtMost(620.dp)
+    // 面板三态档位: 半屏 (默认 72% / 620dp) <-> 全屏 <-> 关闭 (真机反馈 #1)。
+    // 高度是连续值: 拖横条时直接跟手改值, 松手 / 点标题栏按钮时再吸附到某一档。
+    // 档位切换只由「横条拖拽」与「全屏-退出全屏按钮」负责; 评论列表的下拉手势一律让给刷新,
+    // 否则全屏档位下列表下拉会被降档吃掉, 刷新永远触发不了 (真机反馈 #1)。
+    // 关闭档由 [onDismiss] (sheet 自身的收起动画) 承担, 这里只维护「半屏 / 全屏」两档之间的连续高度。
+    val density = LocalDensity.current
+    val halfHeightPx = with(density) { (windowHeight * 0.72f).coerceAtMost(620.dp).toPx() }
+    val fullHeightPx = with(density) { windowHeight.toPx() }
+    // 半屏档位再下拉这么多才进入「关闭」档: 48dp 太容易误关, 按真机反馈加大到 96dp
+    val dismissDistancePx = with(density) { 96.dp.toPx() }
+    // 不能用 Animatable: awaitEachGesture 的 block 是受限挂起作用域, 里面调不了 snapTo / animateTo。
+    // 所以跟手直接写状态值, 吸附用 animate() 在普通协程里逐帧回写同一个状态。
+    var panelHeightPx by remember { mutableFloatStateOf(halfHeightPx) }
+    var panelAnimJob by remember { mutableStateOf<Job?>(null) }
+    // 记录「吸附目标档位」而不是只看瞬间像素高度: 窗口尺寸变化 (旋转 / 分屏) 后,
+    // 旧的全屏像素高度可能低于新中线, 用 isFullScreen 判断会把全屏错误降成半屏 (CodeRabbit #476)
+    var targetFull by remember { mutableStateOf(false) }
+    // 档位判定必须用 derivedStateOf: 面板高度每帧都在变, 直接读普通变量在组合期之外拿不到新值
+    val isFullScreen by remember(halfHeightPx, fullHeightPx) {
+        derivedStateOf { panelHeightPx >= (halfHeightPx + fullHeightPx) / 2f }
+    }
+    val scope = rememberCoroutineScope()
+    // 档位吸附复用项目既有规格 (tween + LinearOutSlowInEasing, 参考 MiuixSettingsControls.kt / SettingsFloatingLyricsPreview.kt),
+    // 不新增独立动画体系; 上滑进全屏与下滑回半屏走同一条吸附动画, 保证两个方向的动作一致
+    val panelSnapAnimation = tween<Float>(durationMillis = 800, easing = LinearOutSlowInEasing)
+    val settlePanel: (Float) -> Unit = { target ->
+        targetFull = target == fullHeightPx
+        panelAnimJob?.cancel()
+        panelAnimJob = scope.launch {
+            animate(panelHeightPx, target, animationSpec = panelSnapAnimation) { value, _ ->
+                panelHeightPx = value
+            }
+        }
+    }
+    // 屏幕尺寸变化 (旋转 / 分屏) 时把面板重新落到「用户选定档位」对应的新高度
+    LaunchedEffect(halfHeightPx, fullHeightPx) {
+        panelAnimJob?.cancel()
+        panelHeightPx = if (targetFull) fullHeightPx else halfHeightPx
+    }
 
     // 切换评论来源（换歌 / 自动切歌）时把列表位置重置到顶部: 数据已整体替换, 旧的滚动位置会让新来源停在中间 (§23/§24)
     LaunchedEffect(ui.source, ui.sort) {
@@ -182,29 +275,93 @@ internal fun CommentSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(panelHeight)
+            .height(with(density) { panelHeightPx.toDp() })
             .testTag("comment-sheet-content")
-            .bottomSheetScrollGuard()
+            .bottomSheetScrollGuard { false }
     ) {
-        Row(
+        // 勾柄 + 标题条整条都支持上下拖拽: 拖动时面板高度跟手变化, 松手吸附到 全屏 / 半屏 / 关闭 三档之一。
+        // 手势在 Initial pass 抢下纵向位移: 外层 ModalBottomSheet 的拖拽走 Main pass,
+        // 若留到 Main pass 竞争会先被 sheet 消费, 表现为「按住上方拖不动」(真机反馈 #7)
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .pointerInput(fullHeightPx, halfHeightPx) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startHeight = panelHeightPx
+                        var totalDy = 0f
+                        var dragging = false
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            val delta = change.positionChange()
+                            // 只接管纵向拖动, 横向位移留给其它手势
+                            if (delta.y == 0f || delta.y.absoluteValue < delta.x.absoluteValue) continue
+                            if (!dragging) {
+                                // 起手拖动时先打断上一次吸附动画, 否则动画会继续覆盖手指位置
+                                dragging = true
+                                panelAnimJob?.cancel()
+                            }
+                            totalDy += delta.y
+                            change.consume()
+                            // 跟手: 往上拖面板变高, 往下拖面板变矮 (手指位移 1:1 映射到高度)
+                            panelHeightPx = (startHeight - totalDy).coerceIn(0f, fullHeightPx)
+                        }
+                        if (!dragging) return@awaitEachGesture
+                        // 松手吸附: 比半屏再低 96dp 就是「关闭」档; 越过半屏与全屏的中线就是「全屏」档; 其余回半屏。
+                        // 一次手势只结算一次, 所以不会出现「下拉横条直接从全屏关掉」(真机反馈: 下滑应有与上滑一致的动画)
+                        when {
+                            panelHeightPx <= halfHeightPx - dismissDistancePx -> onDismiss()
+                            panelHeightPx >= (halfHeightPx + fullHeightPx) / 2f -> settlePanel(fullHeightPx)
+                            else -> settlePanel(halfHeightPx)
+                        }
+                    }
+                }
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(CoreCommonR.string.comment_title),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Text(
-                    text = ui.total?.let { stringResource(CoreCommonR.string.comment_total_format, formatPlayCount(context, it)) }
-                        ?: stringResource(CoreCommonR.string.comment_loading),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            // 勾柄: 外观与原来一致 (BottomSheetDefaults.DragHandle), 点击仍然关闭面板
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                BottomSheetDefaults.DragHandle()
             }
-            CommentSortMenu(ui, onSort)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(CoreCommonR.string.comment_title),
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                    Text(
+                        text = ui.total?.let { stringResource(CoreCommonR.string.comment_total_format, formatPlayCount(context, it)) }
+                            ?: stringResource(CoreCommonR.string.comment_loading),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                CommentSortMenu(ui, onSort)
+                HapticIconButton(onClick = {
+                    settlePanel(if (isFullScreen) halfHeightPx else fullHeightPx)
+                }) {
+                    Icon(
+                        imageVector = if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                        contentDescription = stringResource(
+                            if (isFullScreen) CoreCommonR.string.comment_action_collapse else CoreCommonR.string.comment_action_expand
+                        )
+                    )
+                }
+            }
         }
 
         Box(Modifier.fillMaxWidth().height(4.dp)) {
@@ -223,6 +380,8 @@ internal fun CommentSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+            // 这里不再挂「列表下拉降档」手势: 全屏 / 半屏档位下列表下拉都要能刷新评论 (真机反馈 #1),
+            // 档位切换交给横条拖拽与标题栏的全屏按钮
         ) {
             when (ui.status) {
                 CommentListStatus.IDLE -> Unit
@@ -239,31 +398,48 @@ internal fun CommentSheetContent(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .bottomSheetScrollGuard { !listState.canScrollBackward },
+                        // 半屏 / 全屏都放行「列表滑到顶继续下拉」→ PullToRefreshBox 刷新 (真机反馈 #1)。
+                        // 显式传 lambda 而不是默认值: 启用玻璃过滚动时默认的 null 会让 guard 整个不安装,
+                        // 下拉会继续上传给 sheet → 直接关闭面板; 传 lambda 保证拦截一定装上
+                        .bottomSheetScrollGuard { true },
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     ui.comments.forEachIndexed { index, comment ->
                         val thread = ui.replyThreads[comment.id]
                         val replyEnabled = !offlineMode && !ui.isSending
+                        // 一级评论与楼中楼共用同一个点赞可用性判断 (真机反馈 #3)
+                        val likeEnabled = !ui.isRefreshing && !ui.isCheckingCache && !ui.isLoadingMore && !ui.isSending && ui.pendingSort == null
                         item(key = "${comment.platform.name}:${comment.id}", contentType = "comment") {
                             CommentItem(
                                 comment = comment,
                                 floor = index + 1,
                                 offlineMode = offlineMode,
                                 isLiking = comment.id in ui.likingIds,
-                                likeEnabled = !ui.isRefreshing && !ui.isCheckingCache && !ui.isLoadingMore && !ui.isSending && ui.pendingSort == null,
+                                likeEnabled = likeEnabled,
                                 onLike = { onLike(comment.id) },
                                 onReply = requestReply,
                                 onToggleReplies = { onToggleReplies(comment.id) },
                                 repliesExpanded = thread?.expanded == true,
                                 hasReplyThread = thread != null,
-                                replyEnabled = replyEnabled
+                                replyEnabled = replyEnabled,
+                                likingIds = ui.likingIds,
+                                onLikeReply = onLike
                             )
                         }
                         if (thread?.expanded == true) {
                             items(thread.comments, key = { "reply:${comment.id}:${it.id}" }, contentType = { "reply" }) { reply ->
-                                CommentReplyItem(reply, comment.id, replyEnabled, requestReply, Modifier.padding(start = 24.dp))
+                                CommentReplyItem(
+                                    comment = reply,
+                                    rootId = comment.id,
+                                    replyEnabled = replyEnabled,
+                                    onReply = requestReply,
+                                    modifier = Modifier.padding(start = 24.dp),
+                                    offlineMode = offlineMode,
+                                    isLiking = reply.id in ui.likingIds,
+                                    likeEnabled = likeEnabled,
+                                    onLike = { onLike(reply.id) }
+                                )
                             }
                             item(key = "reply-footer:${comment.id}", contentType = "reply-footer") {
                                 when {
@@ -347,6 +523,15 @@ internal fun CommentSheetContent(
     }
 }
 
+/**
+ * 标题栏右侧的排序入口: 按钮显示当前排序 (有正在切换的目标排序时优先显示目标), 切换期间图标换成进度圈。
+ *
+ * 下拉列表只列出当前平台 [CommentSort.supportedBy] 支持的排序, 当前生效项带勾;
+ * 来源为空、有评论正在点赞或正在发送时按钮不可点。
+ *
+ * @param ui 面板状态, 提供来源平台、当前 / 目标排序与忙碌标志
+ * @param onSort 选中某个排序时回调
+ */
 @Composable
 private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
     var expanded by remember(ui.source) { mutableStateOf(false) }
@@ -389,6 +574,7 @@ private fun CommentSortMenu(ui: CommentUiState, onSort: (CommentSort) -> Unit) {
     }
 }
 
+/** 评论排序 [sort] 对应的文案资源 id (排序按钮与下拉菜单共用)。 */
 private fun commentSortTextRes(sort: CommentSort): Int = when (sort) {
     CommentSort.HOT -> CoreCommonR.string.comment_sort_hot
     CommentSort.NEWEST -> CoreCommonR.string.comment_sort_newest

@@ -182,6 +182,12 @@ internal class CommentViewModel : ViewModel() {
         startLoad(source = source, page = 1, forceRefresh = false, cacheFirst = true)
     }
 
+    /**
+     * 切换评论排序。
+     *
+     * 与当前排序 (含切换中的目标排序) 相同、平台不支持该排序, 或有评论正在点赞 / 发送时直接忽略;
+     * 新排序出结果前保留旧列表与游标 (只置 pendingSort), 失败时仍可继续浏览原列表。
+     */
     fun selectSort(sort: CommentSort) {
         val source = activeSource ?: return
         val current = _uiState.value
@@ -204,13 +210,20 @@ internal class CommentViewModel : ViewModel() {
         startLoad(source, 1, forceRefresh = true)
     }
 
+    /**
+     * 点赞 / 取消点赞一条评论, 一级评论与楼中楼共用同一入口。
+     *
+     * 只在成功态且没有其它在途请求时执行; 立刻把 id 加进 [CommentUiState.likingIds] 显示加载态,
+     * 成功后把结果写回这条评论所有可能出现的位置, 失败只记录 [CommentUiState.likeError] 与错误码
+     * (不清空列表); 来源切换后返回的过期结果整体丢弃。
+     */
     fun toggleLike(commentId: String) {
         val source = activeSource ?: return
         val current = _uiState.value
         if (current.status != CommentListStatus.SUCCESS || current.isRefreshing || current.isCheckingCache || current.isSending ||
             current.isLoadingMore || current.pendingSort != null) return
         if (commentId in current.likingIds) return
-        val comment = current.comments.find { it.id == commentId } ?: return
+        val comment = findComment(current, commentId) ?: return
         val request = commentRequests.capture()
         val liked = !comment.isLiked
         _uiState.update { it.copy(likingIds = it.likingIds + commentId, likeError = null, likeErrorCode = null) }
@@ -218,14 +231,7 @@ internal class CommentViewModel : ViewModel() {
             try {
                 repositoryFactory(source.platform).setLiked(source, commentId, liked)
                 if (!isActive || !request.isCurrent) return@launch
-                _uiState.update { state ->
-                    state.copy(comments = state.comments.map { item ->
-                        if (item.id != commentId) item else item.copy(
-                            isLiked = liked,
-                            likeCount = (item.likeCount + if (liked) 1L else -1L).coerceAtLeast(0L)
-                        )
-                    })
-                }
+                _uiState.update { state -> state.applyLikeResult(commentId, liked) }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -245,15 +251,57 @@ internal class CommentViewModel : ViewModel() {
         job.start()
     }
 
+    /**
+     * 点赞目标可能是一级评论, 也可能是楼中楼 (一级评论自带的预览回复, 或展开后的回复列表),
+     * 三者共用同一个 id 空间, 因此按「一级 -> 预览 -> 展开」顺序查找。
+     */
+    private fun findComment(state: CommentUiState, commentId: String): SongComment? =
+        state.comments.find { it.id == commentId }
+            ?: state.comments.asSequence().flatMap { it.previewReplies.asSequence() }
+                .firstOrNull { it.id == commentId }
+            ?: state.replyThreads.values.asSequence().flatMap { it.comments.asSequence() }
+                .firstOrNull { it.id == commentId }
+
+    /**
+     * 把点赞结果写回所有可能出现这条评论的位置: 一级列表 / 预览回复 / 展开的楼中楼。
+     */
+    private fun CommentUiState.applyLikeResult(commentId: String, liked: Boolean): CommentUiState {
+        val delta = if (liked) 1L else -1L
+
+        /** 把点赞结果套用到本条评论: id 不匹配时原样返回, 匹配时翻转 [SongComment.isLiked] 并按 [liked] 增减点赞数 (不降到负数)。 */
+        fun SongComment.applied(): SongComment = if (id != commentId) this else copy(
+            isLiked = liked,
+            likeCount = (likeCount + delta).coerceAtLeast(0L)
+        )
+
+        return copy(
+            comments = comments.map { item ->
+                when {
+                    item.id == commentId -> item.applied()
+                    item.previewReplies.any { it.id == commentId } ->
+                        item.copy(previewReplies = item.previewReplies.map { it.applied() })
+                    else -> item
+                }
+            },
+            replyThreads = replyThreads.mapValues { (_, thread) ->
+                if (thread.comments.none { it.id == commentId }) thread
+                else thread.copy(comments = thread.comments.map { it.applied() })
+            }
+        )
+    }
+
+    /** 取消所有在途的点赞请求并清空记录 (切换来源 / 排序 / 关闭面板时调用)。 */
     private fun cancelLikes() {
         likeJobs.values.forEach { it.cancel() }
         likeJobs.clear()
     }
 
+    /** 关闭点赞失败的提示, 只清错误状态, 已有的点赞结果与列表数据都不受影响。 */
     fun dismissLikeError() {
         _uiState.update { it.copy(likeError = null, likeErrorCode = null) }
     }
 
+    /** 关闭列表加载失败的提示条: 只清 error, 已展示的旧数据继续留在界面上。 */
     fun dismissLoadError() {
         _uiState.update { it.copy(error = null) }
     }
@@ -296,6 +344,12 @@ internal class CommentViewModel : ViewModel() {
         )
     }
 
+    /**
+     * 评论面板离开组合 / 关闭时调用: 取消所有在途请求 (首屏 / 翻页 / 点赞 / 楼中楼 / 发送) 并把状态复位。
+     *
+     * 列表回到 IDLE 并清空点赞记录与楼中楼展开状态, 使下次打开时重新读取当前账号的点赞状态;
+     * 若关闭时正在发送, 把发送错误降级成网络错误提示, 避免把「发送中」留在界面上。
+     */
     fun onSheetHidden() {
         commentRequests.advance()
         loadJob?.cancel()
@@ -322,16 +376,26 @@ internal class CommentViewModel : ViewModel() {
         }
     }
 
+    /** 更新评论输入框内容, 同时清掉上一次的发送错误; 发送进行中忽略输入, 避免与提交的内容竞争。 */
     fun updateDraft(content: String) {
         if (_uiState.value.isSending) return
         _uiState.update { it.copy(draft = content, sendError = null, sendErrorCode = null, sendSucceeded = false) }
     }
 
+    /** 选择 / 取消回复目标 (传 null 表示发表一级评论), 同时清掉上一次的发送错误; 发送进行中忽略。 */
     fun replyTo(target: CommentReplyTarget?) {
         if (_uiState.value.isSending) return
         _uiState.update { it.copy(replyTarget = target, sendError = null, sendErrorCode = null, sendSucceeded = false) }
     }
 
+    /**
+     * 发送评论: 回复目标为 null 时发表一级评论, 否则作为楼中楼回复发出。
+     *
+     * 任一前置条件不满足就忽略: 已有在途请求、列表不在成功 / 空态、正文 trim 后为空, 或草稿长度
+     * 超过平台上限。成功后清空草稿与回复目标, 一级评论按当前排序刷新 (不是最新排序时先切到
+     * [CommentSort.NEWEST]), 回复则丢掉该楼缓存后重新加载第 1 页; 失败写入 [CommentUiState.sendError]
+     * 与错误码并保留草稿。
+     */
     fun sendComment() {
         val source = activeSource ?: return
         val current = _uiState.value
@@ -370,6 +434,7 @@ internal class CommentViewModel : ViewModel() {
         }
     }
 
+    /** 展开 / 收起某条评论的楼中楼: 首次展开会先按 [rootId] 拉取第一页回复 (见 [loadReplies]), 已有数据则只切换展开状态。 */
     fun toggleReplies(rootId: String) {
         val thread = _uiState.value.replyThreads[rootId]
         if (thread == null) {
@@ -379,6 +444,13 @@ internal class CommentViewModel : ViewModel() {
         }
     }
 
+    /**
+     * 加载 [rootId] 这条一级评论楼中楼的下一页 (首次展开时即第 1 页)。
+     *
+     * 正在刷新 / 读缓存 / 切排序、列表不在成功态、[rootId] 不在当前列表中, 或该楼正在加载、已无下一页时
+     * 直接忽略; 结果按 id 去重合并进对应楼层, 并用返回的 total 回写楼层的回复数; 失败只记录该楼的
+     * 错误, 不影响主列表; 来源切换后返回的过期结果整体丢弃。
+     */
     fun loadReplies(rootId: String) {
         val source = activeSource ?: return
         val current = _uiState.value
@@ -433,6 +505,7 @@ internal class CommentViewModel : ViewModel() {
         job.start()
     }
 
+    /** 取消所有在途的楼中楼请求并清空记录 (切换来源 / 排序 / 刷新时调用)。 */
     private fun cancelReplies() {
         val jobs = replyJobs.values.toList()
         replyJobs.clear()

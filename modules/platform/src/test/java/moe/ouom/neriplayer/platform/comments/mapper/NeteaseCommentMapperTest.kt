@@ -295,4 +295,78 @@ class NeteaseCommentMapperTest {
         assertEquals(CommentError.API, neteaseCommentError(0))
         assertEquals(CommentError.API, neteaseCommentError(-1))
     }
+
+    /**
+     * 正文里的 `[大笑]` 命中内置表情表：placeholder 保留方括号，url 指向官方 CDN，正文原文不变。
+     */
+    @Test
+    fun `known emote markers are expanded from the built in catalog`() {
+        val page = parseNeteaseCommentPage(
+            """{"code":200,"comments":[{"commentId":1,"content":"太搞笑了[大笑]"}]}""",
+            page = 1,
+            pageSize = 20
+        )
+
+        val comment = page.comments.single()
+        val emote = comment.emotes.single()
+        assertEquals("[大笑]", emote.placeholder)
+        assertEquals("https://s1.music.126.net/style/web2/emt/emoji_86.png", emote.url)
+        // 正文保持原文，切分渲染交给 UI
+        assertEquals("太搞笑了[大笑]", comment.content)
+    }
+
+    /**
+     * 表情表里没有的 `[xxx]` 不产生表情，正文（含未知标记）原样保留。
+     */
+    @Test
+    fun `unknown markers stay plain text`() {
+        val page = parseNeteaseCommentPage(
+            """{"code":200,"comments":[{"commentId":1,"content":"[xxx]不是表情[大笑2]"}]}""",
+            page = 1,
+            pageSize = 20
+        )
+
+        val comment = page.comments.single()
+        assertTrue(comment.emotes.isEmpty())
+        assertEquals("[xxx]不是表情[大笑2]", comment.content)
+    }
+
+    /**
+     * 多个表情按正文出现顺序产出，重复标记只产出一条。
+     */
+    @Test
+    fun `repeated markers are deduplicated in content order`() {
+        val page = parseNeteaseCommentPage(
+            """{"code":200,"comments":[{"commentId":1,"content":"[大笑]好听[可爱]再来[大笑]"}]}""",
+            page = 1,
+            pageSize = 20
+        )
+
+        val emotes = page.comments.single().emotes
+        assertEquals(listOf("[大笑]", "[可爱]"), emotes.map { it.placeholder })
+        assertEquals(
+            listOf(
+                "https://s1.music.126.net/style/web2/emt/emoji_86.png",
+                "https://s1.music.126.net/style/web2/emt/emoji_85.png"
+            ),
+            emotes.map { it.url }
+        )
+    }
+
+    /**
+     * 楼中楼预览（showFloorComment.comments）里的表情同样展开。
+     */
+    @Test
+    fun `preview replies expand their own markers`() {
+        val page = parseNeteaseCommentPage(
+            """{"code":200,"comments":[{"commentId":1,"content":"正文",
+                "showFloorComment":{"comments":[{"commentId":2,"content":"哈哈[可爱]"}]}}]}""",
+            page = 1,
+            pageSize = 20
+        )
+
+        val reply = page.comments.single().previewReplies.single()
+        assertEquals("[可爱]", reply.emotes.single().placeholder)
+        assertEquals("https://s1.music.126.net/style/web2/emt/emoji_85.png", reply.emotes.single().url)
+    }
 }

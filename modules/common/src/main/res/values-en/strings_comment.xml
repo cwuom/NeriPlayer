@@ -50,4 +50,8 @@
     <string name="comment_send_uncertain">Network error. Delivery is uncertain and your draft is saved. Refresh to check whether it was posted before retrying.</string>
     <string name="comment_send_failed">Could not send. Your draft is saved. Check the content or platform restrictions before retrying.</string>
     <string name="comment_send_success">Sent. Your comment may appear after moderation.</string>
+    <string name="comment_action_expand">Full screen</string>
+    <string name="comment_action_collapse">Exit full screen</string>
+    <string name="comment_image_content_description">Comment image</string>
+    <string name="comment_image_preview_close">Close</string>
 </resources>
