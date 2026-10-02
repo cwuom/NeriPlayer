@@ -31,7 +31,7 @@ class SyncArchiveDatasetTest {
         writer.prepare(input).use { legacy ->
             val objects = legacy.objects.associate { it.path to it.content }
             val reader = SyncArchiveRepository(temporary.newFolder())
-            reader.readDataset(legacy.content, reader.playbackDatasets, { it }, { it }) { Result.success(objects.getValue(it)) }
+            reader.readDataset(legacy.content, reader.playbackDatasets, { it }, { it }, { Result.success(objects.getValue(it)) })
                 .getOrThrow().use { dataset ->
                     assertTrue(dataset.data.playbackStats.isEmpty())
                     assertTrue(dataset.data.playbackStatBuckets.isEmpty())

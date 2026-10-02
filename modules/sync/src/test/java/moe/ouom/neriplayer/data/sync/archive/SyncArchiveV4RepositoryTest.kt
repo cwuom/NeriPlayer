@@ -82,7 +82,7 @@ class SyncArchiveV4RepositoryTest {
             val remote = prepared.objects.associate { it.path to it.content }
             val directory = temporary.newFolder()
             val reader = SyncArchiveRepository(directory)
-            val data = reader.read(prepared.content) { Result.success(remote.getValue(it)) }.getOrThrow()
+            val data = reader.read(prepared.content, { Result.success(remote.getValue(it)) }).getOrThrow()
             val file = File(directory, "legacy-source.raw")
             file.writeBytes(file.readBytes().also { bytes ->
                 val character = bytes.indexOf('s'.code.toByte())

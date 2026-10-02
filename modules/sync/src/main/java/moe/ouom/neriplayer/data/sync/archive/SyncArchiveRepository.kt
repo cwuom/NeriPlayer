@@ -131,7 +131,10 @@ class SyncArchiveRepository private constructor(
         return level.firstOrNull()
     }
 
-    suspend fun read(content: ByteArray, verifyRemoteObjects: Boolean = false,
+    suspend fun read(content: ByteArray, fetch: suspend (String) -> Result<ByteArray>): Result<SyncData> =
+        read(content, verifyRemoteObjects = false, fetch = fetch)
+
+    suspend fun read(content: ByteArray, verifyRemoteObjects: Boolean,
         fetch: suspend (String) -> Result<ByteArray>): Result<SyncData> {
         val rollbackPaths = lastReferencedPaths
         lastReferencedPaths = emptySet()
@@ -162,7 +165,16 @@ class SyncArchiveRepository private constructor(
         store: SyncPlaybackDatasetStore,
         sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?,
         sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?,
-        verifyRemoteObjects: Boolean = false,
+        fetch: suspend (String) -> Result<ByteArray>
+    ): Result<SyncDataset> = readDataset(content, store, sanitizeTrack, sanitizeBucket,
+        verifyRemoteObjects = false, fetch = fetch)
+
+    suspend fun readDataset(
+        content: ByteArray,
+        store: SyncPlaybackDatasetStore,
+        sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?,
+        sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?,
+        verifyRemoteObjects: Boolean,
         fetch: suspend (String) -> Result<ByteArray>
     ): Result<SyncDataset> {
         val rollbackPaths = lastReferencedPaths
