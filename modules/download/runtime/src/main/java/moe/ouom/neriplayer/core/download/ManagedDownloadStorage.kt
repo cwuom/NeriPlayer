@@ -718,6 +718,7 @@ object ManagedDownloadStorage {
     }
     internal fun currentDownloadFileNameTemplate(): String? = settings.fileNameTemplate
     internal fun configuredDirectoryUri(): String? = settings.configuredDirectoryUri
+    fun isConfiguredDirectoryUri(uri: String): Boolean = settings.configuredDirectoryUri == uri
     fun currentSnapshotCacheKey(context: Context): String {
         return snapshotCacheStore.currentKey(context)
     }

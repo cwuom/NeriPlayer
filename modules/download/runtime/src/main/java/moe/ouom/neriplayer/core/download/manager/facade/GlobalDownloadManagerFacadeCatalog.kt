@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.DownloadedSongMet
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -66,8 +67,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 
 internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
     context: Context,
-    forceRefresh: Boolean = false,
-    directoryChangeOperationId: String? = null
+    forceRefresh: Boolean = false
 ): ManagedLibraryRefreshOutcome {
     val waiter = CompletableDeferred<ManagedLibraryRefreshOutcome>()
     val appContext = context.applicationContext
@@ -75,30 +75,36 @@ internal suspend fun GlobalDownloadManager.scanLocalFilesAwaitImpl(
         refreshWaiters += waiter
         requestLocalScanLocked(appContext, forceRefresh)
     }
-    if (directoryChangeOperationId != null) {
-        // 设置页超时或离开后仍由后台扫描收尾，避免完成通知落在等待态写入之前
-        scope.launch {
-            try {
-                if (waiter.await() is ManagedLibraryRefreshOutcome.Published) {
-                    ManagedLibraryProcessingCoordinator.complete(appContext, directoryChangeOperationId)
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                NPLogger.w(TAG, "下载目录后台扫描收尾失败，保留处理状态: ${error.message}", error)
-            } finally {
-                synchronized(this@scanLocalFilesAwaitImpl) {
-                    refreshWaiters.remove(waiter)
-                }
-            }
-        }
-    }
     try {
         return waiter.await()
     } finally {
-        if (directoryChangeOperationId == null) {
-            synchronized(this) {
-                refreshWaiters.remove(waiter)
+        synchronized(this) {
+            refreshWaiters.remove(waiter)
+        }
+    }
+}
+
+internal fun GlobalDownloadManager.refreshDownloadDirectoryImpl(
+    context: Context,
+    operationId: String,
+    onResult: suspend (ManagedLibraryRefreshOutcome) -> Unit
+): Deferred<Unit> {
+    val appContext = context.applicationContext
+    synchronized(this) { directoryRefreshOperations += operationId }
+    return scope.async {
+        try {
+            onResult(scanLocalFilesAwait(appContext, forceRefresh = true))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            runCatching { ManagedLibraryProcessingCoordinator.waitingForRetry(appContext, operationId) }
+            NPLogger.w(TAG, "下载目录扫描收尾失败，保留处理状态: ${error.message}", error)
+            throw error
+        }
+    }.also { task ->
+        task.invokeOnCompletion {
+            synchronized(this@refreshDownloadDirectoryImpl) {
+                directoryRefreshOperations.remove(operationId)
             }
         }
     }
@@ -108,6 +114,8 @@ internal fun GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublishIm
     state: ManagedLibraryProcessingState,
     migrationRequestActive: Boolean
 ): Boolean {
+    val operationId = state.operationId
+    if (operationId != null && synchronized(this) { operationId in directoryRefreshOperations }) return false
     // 迁移由 Worker 校验目标后结束，直接切换目录的等待态可由后续扫描收敛
     return when (state) {
         is ManagedLibraryProcessingState.Running ->

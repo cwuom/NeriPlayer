@@ -26,6 +26,8 @@ class ManagedDownloadStorageRootSafetyTest {
 
         try {
             ManagedDownloadStorage.updateConfiguredTreeUri(selectedUri)
+            assertTrue(ManagedDownloadStorage.isConfiguredDirectoryUri(selectedUri))
+            assertFalse(ManagedDownloadStorage.isConfiguredDirectoryUri("content://provider/tree/other"))
             ManagedDownloadStorage.snapshotCacheStore.putSnapshot(context, "tree:selected", snapshot)
 
             ManagedDownloadStorage.updateConfiguredTreeUri(selectedUri)
