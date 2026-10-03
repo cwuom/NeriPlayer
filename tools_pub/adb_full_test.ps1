@@ -10,11 +10,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$packageName = "moe.ouom.neriplayer"
+$packageName = if ($BuildVariant -eq "debug") { "moe.ouom.neriplayer.debug" } else { "moe.ouom.neriplayer" }
 $mainActivity = "moe.ouom.neriplayer.activity.MainActivity"
-$receiverComponent = "$packageName/.testing.DebugCookieImportReceiver"
-$instrumentationRunner = "$packageName.test/androidx.test.runner.AndroidJUnitRunner"
-$permissionBootstrapClass = "moe.ouom.neriplayer.testing.PermissionBootstrapTest"
+$receiverComponent = "$packageName/moe.ouom.neriplayer.testing.DebugCookieImportReceiver"
+$instrumentationRunner = "$packageName.test/moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner"
+$startupBootstrapClass = "moe.ouom.neriplayer.testing.PerformanceStartupBootstrapTest"
 $reportDir = Join-Path $repoRoot ".report"
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $reportPath = Join-Path $reportDir "adb-$BuildVariant-perf-$timestamp.json"
@@ -34,6 +34,9 @@ function Invoke-Adb {
         & adb -s $DeviceId @Args
     } else {
         & adb @Args
+    }
+    if (-not $?) {
+        throw "adb command failed"
     }
 }
 
@@ -192,15 +195,26 @@ function Measure-ExternalAudioPlayback {
     for ($i = 0; $i -lt $pollCount; $i++) {
         Start-Sleep -Milliseconds 250
         $sessionDump = (Invoke-Adb -Args @("shell", "dumpsys", "media_session")) -join "`n"
-        $stateMatch = [regex]::Match($sessionDump, "state=PlaybackState \{state=([A-Z_]+)\((\d+)\)")
-        if ($stateMatch.Success) {
+        $currentSessionPackage = $null
+        foreach ($line in ($sessionDump -split "\r?\n")) {
+            if ($line -match "^\s*package=(\S+)\s*$") {
+                $currentSessionPackage = $Matches[1]
+                continue
+            }
+            if ($currentSessionPackage -ne $packageName) {
+                continue
+            }
+            $stateMatch = [regex]::Match($line, "state=PlaybackState \{state=([A-Z_]+)\((\d+)\)")
+            if (-not $stateMatch.Success) {
+                continue
+            }
             $lastState = $stateMatch.Value
+            if ($stateMatch.Groups[1].Value -eq "PLAYING") {
+                $playingAtMs = [int]((Get-Date) - $launchStart).TotalMilliseconds
+                break
+            }
         }
-        if (
-            $sessionDump.Contains("package=$packageName") -and
-            $sessionDump.Contains("state=PlaybackState {state=PLAYING(3)")
-        ) {
-            $playingAtMs = [int]((Get-Date) - $launchStart).TotalMilliseconds
+        if ($playingAtMs -ne $null) {
             break
         }
     }
@@ -221,27 +235,30 @@ function Measure-ExternalAudioPlayback {
     }
 }
 
-function Invoke-PermissionBootstrap {
+function Invoke-StartupBootstrap {
     if ($BuildVariant -ne "debug") {
         return
     }
 
     $instrumentations = (Invoke-Adb -Args @("shell", "pm", "list", "instrumentation")) -join "`n"
-    if ($instrumentations -notmatch [regex]::Escape($instrumentationRunner)) {
-        Write-Warning "permission bootstrap skipped because instrumentation is not installed: $instrumentationRunner"
-        return
+    if ($instrumentations -notmatch "(?m)^instrumentation:$([regex]::Escape($instrumentationRunner))(?:\s|$)") {
+        throw "startup bootstrap instrumentation is not installed: $instrumentationRunner"
     }
 
     Ensure-InteractiveDeviceState
     $bootstrapOutput = Invoke-Adb -Args @(
         "shell", "am", "instrument",
         "-w", "-r",
-        "-e", "class", $permissionBootstrapClass,
+        "-e", "class", $startupBootstrapClass,
+        "-e", "preparePerformanceStartup", "true",
         $instrumentationRunner
     )
     $bootstrapText = ($bootstrapOutput -join "`n")
-    if ($bootstrapText -notmatch "OK \(") {
-        throw "permission bootstrap failed: $bootstrapText"
+    if (
+        $bootstrapText -notmatch "(?m)^OK \([1-9]\d* tests?\)\s*$" -or
+        $bootstrapText -notmatch "(?m)^INSTRUMENTATION_STATUS: performance_startup_ready=$([regex]::Escape($packageName))\r?$"
+    ) {
+        throw "startup bootstrap failed: $bootstrapText"
     }
 }
 
@@ -274,12 +291,12 @@ if ($BuildVariant -eq "release") {
     if ($null -ne $debugAndroidTestApk) {
         Install-ApkToTarget -ApkPath $debugAndroidTestApk.FullName
     } else {
-        Write-Warning "debug androidTest apk was not found under app/build/outputs/apk/androidTest/debug"
+        throw "debug androidTest apk is required for startup bootstrap under app/build/outputs/apk/androidTest/debug"
     }
 }
 
-$installState = (Invoke-Adb -Args @("shell", "pm", "list", "packages", $packageName)) -join "`n"
-if ($installState -notmatch $packageName) {
+$installedPackages = @(Invoke-Adb -Args @("shell", "pm", "list", "packages", $packageName))
+if ($installedPackages -notcontains "package:$packageName") {
     throw "$BuildVariant app is not installed: $packageName"
 }
 
@@ -314,7 +331,7 @@ try {
 }
 
 Ensure-InteractiveDeviceState
-Invoke-PermissionBootstrap
+Invoke-StartupBootstrap
 
 $imports = @()
 if ($BuildVariant -eq "debug") {

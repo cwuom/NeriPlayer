@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="debug_build_warning_title">DEBUG build</string>
+    <string name="debug_build_warning_message">This is a DEBUG build. It may have performance issues and unverified problems. Use it for testing only.</string>
+    <string name="debug_build_warning_save_failed">Could not save your confirmation. Please try again.</string>
+</resources>

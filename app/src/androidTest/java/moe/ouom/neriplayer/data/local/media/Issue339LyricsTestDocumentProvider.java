@@ -11,6 +11,7 @@ import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import androidx.annotation.NonNull;
+import moe.ouom.neriplayer.test.BuildConfig;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -29,7 +30,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
-    public static final String AUTHORITY = "moe.ouom.neriplayer.test.issue339lyrics";
+    public static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".issue339lyrics";
     public static final String ROOT_ID = "root-issue339";
     public static final String MUSIC_ID = "opaque/folder-issue339";
     // document IDs are opaque provider values and may contain slash characters

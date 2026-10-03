@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.LocaleList
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -24,7 +25,8 @@ class LauncherLocaleResourceTest {
         }
         val resources = baseContext.createConfigurationContext(configuration).resources
 
-        assertEquals("音理音理!", resources.getString(CoreCommonR.string.app_name))
+        val expectedAppName = if (BuildConfig.DEBUG) "音理音理! DEBUG" else "音理音理!"
+        assertEquals(expectedAppName, resources.getString(CoreCommonR.string.app_name))
         assertEquals(
             "继续播放",
             resources.getString(CoreCommonR.string.launcher_shortcut_continue_short)
@@ -37,6 +39,29 @@ class LauncherLocaleResourceTest {
             "媒体库",
             resources.getString(CoreCommonR.string.launcher_shortcut_library_short)
         )
+    }
+
+    @Test
+    fun englishPrimaryLocaleUsesTheBuildVariantLauncherName() {
+        val baseContext = InstrumentationRegistry.getInstrumentation().targetContext
+        val configuration = Configuration(baseContext.resources.configuration).apply {
+            setLocales(LocaleList(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE))
+        }
+        val resources = baseContext.createConfigurationContext(configuration).resources
+
+        val expectedAppName = if (BuildConfig.DEBUG) "NeriPlayer DEBUG" else "NeriPlayer"
+        assertEquals(expectedAppName, resources.getString(CoreCommonR.string.app_name))
+    }
+
+    @Test
+    fun unsupportedLocaleKeepsTheBuildVariantLauncherMarker() {
+        val baseContext = InstrumentationRegistry.getInstrumentation().targetContext
+        val configuration = Configuration(baseContext.resources.configuration).apply {
+            setLocales(LocaleList(Locale.GERMAN))
+        }
+        val resources = baseContext.createConfigurationContext(configuration).resources
+
+        assertEquals(BuildConfig.DEBUG, resources.getString(CoreCommonR.string.app_name).endsWith(" DEBUG"))
     }
 
     @Test

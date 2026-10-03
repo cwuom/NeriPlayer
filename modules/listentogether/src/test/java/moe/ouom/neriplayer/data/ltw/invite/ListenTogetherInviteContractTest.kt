@@ -10,6 +10,7 @@ class ListenTogetherInviteContractTest {
     fun `invite parser rejects other schemes hosts routes and missing required query`() {
         for (url in listOf(
             "https://listen-together/join?roomId=ABC234&secret=secret",
+            "neriplayer-unknown://listen-together/join?roomId=ABC234&secret=secret",
             "neriplayer://other/join?roomId=ABC234&secret=secret",
             "neriplayer://listen-together/leave?roomId=ABC234&secret=secret",
             "neriplayer://listen-together?roomId=ABC234&secret=secret",
@@ -20,6 +21,27 @@ class ListenTogetherInviteContractTest {
         val uri = mock(Uri::class.java)
         `when`(uri.toString()).thenReturn("neriplayer://listen-together/join?roomId=ABC234&secret=secret")
         assertEquals("ABC234", parseListenTogetherInvite(uri)?.roomId)
+    }
+
+    @Test
+    fun `debug invitation scheme parses both direct links and shared text`() {
+        val direct = "neriplayer-debug://listen-together/join?roomId=ABC234&secret=secret"
+        assertEquals("ABC234", parseListenTogetherInvite(direct)?.roomId)
+        assertEquals("secret", parseListenTogetherInvite("Join my room\n$direct")?.joinSecret)
+        val uppercaseRoute = "NERIPLAYER-DEBUG://LISTEN-TOGETHER/join?roomId=ABC234&secret=secret"
+        assertEquals("ABC234", parseListenTogetherInvite(uppercaseRoute)?.roomId)
+        val uri = mock(Uri::class.java)
+        `when`(uri.toString()).thenReturn(direct)
+        assertEquals("ABC234", parseListenTogetherInvite(uri)?.roomId)
+    }
+
+    @Test
+    fun `invite parser rejects unknown schemes containing recognized names`() {
+        for (scheme in listOf("other-neriplayer", "other-neriplayer-debug", "neriplayer-debug-extra")) {
+            val direct = "$scheme://listen-together/join?roomId=ABC234&secret=secret"
+            assertNull(parseListenTogetherInvite(direct))
+            assertNull(parseListenTogetherInvite("Join my room\n$direct"))
+        }
     }
 
     @Test
@@ -51,6 +73,20 @@ class ListenTogetherInviteContractTest {
     }
 
     @Test
+    fun `invite builder keeps release scheme by default and uses explicit debug scheme`() {
+        val schemes = mutableListOf<String>()
+        mockBuilders(mutableMapOf(), schemes).use {
+            buildListenTogetherInviteUri("ABC234", joinSecret = "secret") { "invalid:${it.messageResId}" }
+            buildListenTogetherInviteUri(
+                "ABC234",
+                joinSecret = "secret",
+                inviteScheme = "neriplayer-debug"
+            ) { "invalid:${it.messageResId}" }
+        }
+        assertEquals(listOf("neriplayer", "neriplayer-debug"), schemes)
+    }
+
+    @Test
     fun `invite builder exposes validation failure through explicit host formatter`() {
         mockBuilders(mutableMapOf()).use {
             for (args in listOf(Triple("INVALID", "Tester", "secret"), Triple("ABC234", "Bad_Name", "secret"), Triple("ABC234", "Tester", " "))) {
@@ -62,11 +98,17 @@ class ListenTogetherInviteContractTest {
         }
     }
 
-    private fun mockBuilders(parameters: MutableMap<String, String>): org.mockito.MockedConstruction<Uri.Builder> {
+    private fun mockBuilders(
+        parameters: MutableMap<String, String>,
+        schemes: MutableList<String> = mutableListOf()
+    ): org.mockito.MockedConstruction<Uri.Builder> {
         val uri = mock(Uri::class.java)
         `when`(uri.toString()).thenReturn("built")
         return mockConstruction(Uri.Builder::class.java) { builder, _ ->
-            `when`(builder.scheme(anyString())).thenReturn(builder)
+            `when`(builder.scheme(anyString())).thenAnswer {
+                schemes += it.getArgument<String>(0)
+                builder
+            }
             `when`(builder.authority(anyString())).thenReturn(builder)
             `when`(builder.appendPath(anyString())).thenReturn(builder)
             `when`(builder.appendQueryParameter(anyString(), anyString())).thenAnswer {

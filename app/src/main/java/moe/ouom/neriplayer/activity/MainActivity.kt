@@ -35,6 +35,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -148,6 +149,7 @@ import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherInviteJoinBaseUr
 import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutRequest
 import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.dialog.MobileDataDownloadInterruptionDialog
+import moe.ouom.neriplayer.ui.dialog.startupDebugBuildWarningPrompt
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
@@ -276,6 +278,7 @@ private fun MainActivity.setNeriContent(
 ) {
     setContent {
         CompositionLocalProvider(
+            LocalActivity provides this@setNeriContent,
             LocalActivityResultRegistryOwner provides this@setNeriContent,
             LocalOverscrollFactory provides AdvancedGlassOverscrollFactory,
             content = content
@@ -1094,14 +1097,18 @@ class MainActivity : ComponentActivity() {
                                                 selectedAppLanguage = language
                                             }
                                         )
+                                        val startupDialogsAvailable = startupCrashReportReadCompleted &&
+                                            startupTokenWarningCheckCompleted &&
+                                            pendingStartupCrashReport == null &&
+                                            !showTokenWarningDialog &&
+                                            pendingMobileDataDownloadInterruptionRequest == null &&
+                                            !showDialog && !showErrorDialog &&
+                                            pendingInvite == null && loudPlaybackConfirmation == null
+                                        val debugBuildWarningPending = startupDebugBuildWarningPrompt(
+                                            canShowDialog = startupDialogsAvailable
+                                        )
                                         StartupSyncUpgradePrompt(
-                                            canShowDialog = startupCrashReportReadCompleted &&
-                                                startupTokenWarningCheckCompleted &&
-                                                pendingStartupCrashReport == null &&
-                                                !showTokenWarningDialog &&
-                                                pendingMobileDataDownloadInterruptionRequest == null &&
-                                                !showDialog && !showErrorDialog &&
-                                                pendingInvite == null && loudPlaybackConfirmation == null
+                                            canShowDialog = startupDialogsAvailable && !debugBuildWarningPending
                                         )
                                     }
                                 }

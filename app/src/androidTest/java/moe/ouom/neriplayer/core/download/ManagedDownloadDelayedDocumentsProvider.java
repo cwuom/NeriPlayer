@@ -14,6 +14,7 @@ import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsProvider;
 import androidx.annotation.NonNull;
+import moe.ouom.neriplayer.test.BuildConfig;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -29,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /** 使用平台 DocumentsProvider 的权限、tree 和 call 分发，独立测试进程不依赖 Kotlin runtime */
 public final class ManagedDownloadDelayedDocumentsProvider extends DocumentsProvider {
-    public static final String AUTHORITY = "moe.ouom.neriplayer.test.delayeddocuments";
+    public static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".delayeddocuments";
     public static final String SETUP = "test:setupDelayedDocuments";
     public static final String COUNTERS = "test:delayedDocumentsCounters";
     public static final String CLEANUP = "test:cleanupDelayedDocuments";

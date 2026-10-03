@@ -276,6 +276,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
    底栏会出现独立 `Debug` 页面。
 
 > DEBUG 构建仅用于测试，性能和体积不代表发布版。
+> DEBUG 包使用 `moe.ouom.neriplayer.debug` 和橙色启动图标，应用名称带有 `DEBUG` 标记，启用系统主题图标时也能区分；可与 Release 共存，应用数据各自独立。
+> DEBUG 分享的一起听邀请使用 `neriplayer-debug://`，避免打开正式版；仍可在应用内粘贴普通邀请链接加入。
+> 完成启动引导后会提示 DEBUG 构建风险；确认后不再提醒，更新保留该状态，清除数据或重新安装后会再次提示。
 
 发布版构建与签名流程请参阅
 [CONTRIBUTING.md](./CONTRIBUTING.md#构建发布版--release-build)。

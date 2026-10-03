@@ -65,7 +65,7 @@ class LocalAudioImportSafLyricsTest {
     @Test
     fun importExternalDocumentCopiesLyricsDirectorySidecars() = runBlocking {
         val audioUri = DocumentsContract.buildDocumentUri(
-            "moe.ouom.neriplayer.test.issue339lyrics",
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
             "opaque/audio-issue339"
         )
 
@@ -365,7 +365,7 @@ class LocalAudioImportSafLyricsTest {
     @Test
     fun importExternalDocumentCopiesLocalMetadataSidecar() = runBlocking {
         val audioUri = DocumentsContract.buildDocumentUri(
-            "moe.ouom.neriplayer.test.issue339lyrics",
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
             "opaque/audio-issue339"
         )
         val sourceSong = SongItem(
@@ -412,7 +412,7 @@ class LocalAudioImportSafLyricsTest {
             DocumentsContract.deleteDocument(
                 targetContext.contentResolver,
                 DocumentsContract.buildDocumentUri(
-                    "moe.ouom.neriplayer.test.issue339lyrics",
+                    Issue339LyricsTestDocumentProvider.AUTHORITY,
                     "opaque/metadata-issue339"
                 )
             )

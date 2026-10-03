@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="debug_build_warning_title">DEBUG 构建版本</string>
+    <string name="debug_build_warning_message">这是 DEBUG 构建版本，可能存在性能问题和未经验证的问题，请仅用于测试。</string>
+    <string name="debug_build_warning_save_failed">无法保存确认状态，请重试。</string>
+</resources>

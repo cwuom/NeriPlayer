@@ -16,13 +16,14 @@ fun buildListenTogetherInviteUri(
     inviterNickname: String? = null,
     baseUrl: String? = null,
     joinSecret: String,
+    inviteScheme: String = LISTEN_TOGETHER_INVITE_SCHEME,
     formatValidationError: (ListenTogetherValidationError) -> String
 ): String {
     val normalizedRoomId = requireValidListenTogetherRoomId(roomId, formatValidationError)
     val normalizedJoinSecret = requireValidListenTogetherJoinSecret(joinSecret, formatValidationError)
     val normalizedBaseUrl = sharedBaseUrl(baseUrl)
     return Uri.Builder()
-        .scheme(LISTEN_TOGETHER_INVITE_SCHEME)
+        .scheme(inviteScheme)
         .authority(LISTEN_TOGETHER_INVITE_HOST)
         .appendPath(LISTEN_TOGETHER_INVITE_JOIN_PATH)
         .appendQueryParameter("roomId", normalizedRoomId)
