@@ -182,8 +182,10 @@ Current positioning:
   `Library` is no longer just a playlist list. Local content can switch between
   playlists and artists, while `LocalArtistSummary` groups songs by display
   artist, splits common collaboration artist text, and keeps stable identity
-  and cover selection. NetEase songs can open an artist page with songs, albums,
-  and follow state.
+  and cover selection. NetEase songs can open an artist page with songs and albums.
+  NetEase artists, Bilibili uploaders, and YouTube creators can be followed locally
+  and browsed in separate Favorites categories. NetEase and YouTube Music support
+  importing followed artists from a signed-in account while preserving local follows.
 - **Large screens and daily controls are getting real polish**:
   tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
   width constraints and bottom control layouts. The `Mini Player` supports

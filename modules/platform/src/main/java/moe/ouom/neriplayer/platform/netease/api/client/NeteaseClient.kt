@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.platform.netease.api.client
 import moe.ouom.neriplayer.platform.netease.api.crypto.NeteaseCrypto
 import moe.ouom.neriplayer.data.model.netease.crypto.CryptoMode
 import moe.ouom.neriplayer.platform.netease.api.request.buildNeteasePlaylistAddTracksParams
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseFollowedArtistsParams
 import moe.ouom.neriplayer.common.json.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.network.http.awaitResponse
@@ -954,6 +955,18 @@ class NeteaseClient(
             method = "POST",
             usePersistedCookies = true,
             retryHttp1OnStreamReset = true
+        )
+    }
+
+    @Throws(IOException::class)
+    fun getFollowedArtists(offset: Int = 0, limit: Int = 50): String {
+        val params = buildNeteaseFollowedArtistsParams(offset, limit)
+        return request(
+            "https://music.163.com/weapi/artist/sublist",
+            params,
+            CryptoMode.WEAPI,
+            "POST",
+            usePersistedCookies = true
         )
     }
 

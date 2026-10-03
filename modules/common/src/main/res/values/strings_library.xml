@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="library_artist_platform_bili">B 站</string>
+    <string name="library_artist_platform_youtube">YouTube</string>
+    <string name="library_artist_following">关注的歌手</string>
+    <plurals name="library_artist_count">
+        <item quantity="other">%1$d 位</item>
+    </plurals>
+    <string name="library_artist_import">拉取远端关注</string>
+    <string name="library_artist_import_loading">正在拉取…</string>
+    <string name="library_artist_import_login">请先登录对应平台账号</string>
+    <string name="library_artist_import_account_changed">账号已改变，请重新拉取</string>
+    <string name="library_artist_import_failed">拉取失败，请稍后重试</string>
+    <string name="library_artist_import_no_new">没有新的关注歌手</string>
+    <plurals name="library_artist_import_success">
+        <item quantity="other">已添加 %1$d 位歌手</item>
+    </plurals>
     <!-- Library -->
     <string name="library_favorite_tab_playlists">歌单</string>
     <string name="library_favorite_tab_artists">歌手</string>
@@ -10,7 +25,7 @@
     <string name="library_hot_empty">暂无符合条件的热点歌曲</string>
     <string name="library_hot_empty_hint">开始收听后，热点歌曲会显示在这里</string>
     <string name="library_no_favorite_artist">暂无关注的歌手</string>
-    <string name="library_favorite_artist_hint">在歌手详情页点击关注，歌手会保存在这里</string>
+    <string name="library_favorite_artist_hint">在歌手或创作者详情页点击关注，就能在这里找到</string>
     <string name="library_favorite_source_artist">歌手</string>
     <string name="library_local_artist_empty">暂无本地歌手</string>
     <string name="library_local_artist_hint">导入本地音频后，会按歌曲艺术家自动分类</string>

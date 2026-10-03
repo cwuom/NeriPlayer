@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AccountCircle
@@ -81,11 +82,15 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
+import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_BILI_ARTIST
+import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_YOUTUBE_ARTIST
+import moe.ouom.neriplayer.data.playlist.favorite.isArtistFavoriteSource
 import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.tab.toBiliPlaylist
@@ -93,6 +98,11 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.FollowedArtistImportViewModel
+import moe.ouom.neriplayer.ui.viewmodel.tab.FollowedArtistImportError
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -116,13 +126,33 @@ internal fun FavoritePlaylistList(
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
-    offlineMode: Boolean
+    onBiliUploaderClick: (BiliUploaderSummary) -> Unit,
+    onYouTubeMusicCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
+    offlineMode: Boolean,
+    importViewModel: FollowedArtistImportViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scope = rememberCoroutineScope()
+    val importState by importViewModel.uiState.collectAsStateWithLifecycle()
+    val importFeedback = when (importState.error) {
+        FollowedArtistImportError.LOGIN_REQUIRED -> stringResource(CoreCommonR.string.library_artist_import_login)
+        FollowedArtistImportError.ACCOUNT_CHANGED -> stringResource(CoreCommonR.string.library_artist_import_account_changed)
+        FollowedArtistImportError.FAILED -> stringResource(CoreCommonR.string.library_artist_import_failed)
+        null -> importState.importedCount?.let { count ->
+            if (count == 0) stringResource(CoreCommonR.string.library_artist_import_no_new)
+            else pluralStringResource(CoreCommonR.plurals.library_artist_import_success, count, count)
+        }
+    }
+    LaunchedEffect(importState, importFeedback) {
+        if (importFeedback != null) {
+            AppFeedback.show(context, message = importFeedback)
+            importViewModel.consumeFeedback(importState)
+        }
+    }
+    var selectedArtistPlatform by rememberSaveable { mutableStateOf(FavoriteArtistPlatform.NETEASE) }
     var sortMode by rememberSaveable { mutableStateOf(false) }
     var selectedFavoriteCategory by rememberSaveable {
         mutableIntStateOf(FAVORITE_CATEGORY_PLAYLIST)
@@ -132,10 +162,10 @@ internal fun FavoritePlaylistList(
     var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
     val reorderableFavorites = remember { mutableStateListOf<FavoritePlaylist>() }
     val playlistFavorites = remember(favorites) {
-        favorites.filterNot { it.source == FAVORITE_SOURCE_NETEASE_ARTIST }
+        favorites.filterNot { isArtistFavoriteSource(it.source) }
     }
-    val artistFavorites = remember(favorites) {
-        favorites.filter { it.source == FAVORITE_SOURCE_NETEASE_ARTIST }
+    val artistFavorites = remember(favorites, selectedArtistPlatform) {
+        favorites.filter { it.source == selectedArtistPlatform.source }
     }
     val isHotCategory = selectedFavoriteCategory == FAVORITE_CATEGORY_HOT
     val visibleFavorites = remember(playlistFavorites, artistFavorites, selectedFavoriteCategory) {
@@ -292,6 +322,24 @@ internal fun FavoritePlaylistList(
                         )
                     }
                 }
+            }
+        }
+        if (selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST) {
+            item(key = "favorite_artist_platforms") {
+                FavoriteArtistPlatformHeader(
+                    selected = selectedArtistPlatform,
+                    count = artistFavorites.size,
+                    onSelect = {
+                        if (selectedArtistPlatform != it) {
+                            selectedArtistPlatform = it
+                            exitEditMode()
+                        }
+                    },
+                    importState = importState,
+                    onImport = { importViewModel.importArtists(selectedArtistPlatform.source) },
+                    offlineMode = offlineMode,
+                    editMode = sortMode
+                )
             }
         }
         if (!sortMode && !isHotCategory) {
@@ -558,6 +606,12 @@ internal fun FavoritePlaylistList(
                                                 )
                                             )
                                         }
+                                        FAVORITE_SOURCE_BILI_ARTIST -> {
+                                            favorite.toFavoriteBiliUploader()?.let(onBiliUploaderClick)
+                                        }
+                                        FAVORITE_SOURCE_YOUTUBE_ARTIST -> {
+                                            favorite.toFavoriteYouTubeCreator()?.let(onYouTubeMusicCreatorClick)
+                                        }
                                         "youtubeMusic" -> {
                                             val resolvedBrowseId = favorite.browseId
                                                 ?.takeIf { it.isNotBlank() }
@@ -598,7 +652,10 @@ internal fun FavoritePlaylistList(
                             headlineContent = { Text(favorite.name) },
                             supportingContent = {
                                 Text(
-                                    stringResource(
+                                    if (isArtistFavoriteSource(favorite.source)) {
+                                        favorite.subtitle?.takeIf { it.isNotBlank() }
+                                            ?: favoriteSourceLabel(favorite.source)
+                                    } else stringResource(
                                         CoreCommonR.string.library_favorite_source_format,
                                         favorite.trackCount,
                                         favoriteSourceLabel(favorite.source)
@@ -623,12 +680,17 @@ internal fun FavoritePlaylistList(
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .size(56.dp)
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(
+                                                if (isArtistFavoriteSource(favorite.source)) CircleShape
+                                                else RoundedCornerShape(8.dp)
+                                            )
                                     )
                                 } else {
                                     Icon(
                                         imageVector = when (favorite.source) {
-                                            FAVORITE_SOURCE_NETEASE_ARTIST -> Icons.Filled.AccountCircle
+                                            FAVORITE_SOURCE_NETEASE_ARTIST,
+                                            FAVORITE_SOURCE_BILI_ARTIST,
+                                            FAVORITE_SOURCE_YOUTUBE_ARTIST -> Icons.Filled.AccountCircle
                                             "neteaseAlbum" -> Icons.Filled.Album
                                             else -> Icons.AutoMirrored.Filled.QueueMusic
                                         },
@@ -709,6 +771,8 @@ internal fun favoriteSourceLabel(source: String): String {
         "netease" -> "Netease"
         "bili" -> "Bilibili"
         FAVORITE_SOURCE_NETEASE_ARTIST -> stringResource(CoreCommonR.string.library_favorite_source_artist)
+        FAVORITE_SOURCE_BILI_ARTIST -> stringResource(CoreCommonR.string.library_artist_platform_bili)
+        FAVORITE_SOURCE_YOUTUBE_ARTIST -> "YouTube"
         else -> source
     }
 }

@@ -86,6 +86,8 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
@@ -240,6 +242,8 @@ fun LibraryScreen(
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit = {},
     onNeteaseAlbumClick: (AlbumSummary) -> Unit = {},
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
+    onBiliUploaderClick: (BiliUploaderSummary) -> Unit = {},
+    onYouTubeMusicCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {},
@@ -449,6 +453,8 @@ fun LibraryScreen(
                             onNeteaseArtistClick = onNeteaseArtistClick,
                             onBiliPlaylistClick = onBiliPlaylistClick,
                             onYouTubeMusicPlaylistClick = onYouTubeMusicPlaylistClick,
+                            onYouTubeMusicCreatorClick = onYouTubeMusicCreatorClick,
+                            onBiliUploaderClick = onBiliUploaderClick,
                             offlineMode = offlineMode
                         )
 

@@ -458,7 +458,10 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
 - Local artist categories are aggregated from imported/saved local songs by
   display artist. They are not an online artist directory.
 - NetEase artist detail pages depend on NetEase artist metadata and endpoints;
-  follow state is saved into the local Favorites category.
+  NetEase, Bilibili, and YouTube creator follows are stored locally and categorized by platform.
+  Remote follows from NetEase and YouTube Music are imported manually after every page succeeds
+  and the account remains unchanged. Import preserves existing entries and their order, respects
+  unfollows during loading, and does not write follows back to the platform.
 - `Bilibili` supports search, favorites, audio playback, downloads, comment reading,
   nested replies, and copying. Signing in also enables likes, posting, and replying.
   Link recognition supports selected parts, collection shares, and `season_id`

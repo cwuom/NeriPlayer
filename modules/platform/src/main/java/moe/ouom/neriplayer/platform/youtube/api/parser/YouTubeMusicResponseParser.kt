@@ -54,6 +54,11 @@ private data class ParsedYouTubeMusicSearchMetadata(
     val durationText: String = ""
 )
 
+internal data class YouTubeMusicFollowedArtistsPage(
+    val artists: List<YouTubeMusicCreatorSummary>,
+    val continuation: String?
+)
+
 object YouTubeMusicParser {
     internal fun parseBootstrapConfig(
         html: String,
@@ -605,6 +610,75 @@ object YouTubeMusicParser {
             .flatMap(::parseCreatorSearchItems)
             .distinctBy { it.browseId }
             .take(limit.coerceAtLeast(1))
+    }
+
+    internal fun parseFollowedArtistsPage(root: JSONObject): YouTubeMusicFollowedArtistsPage? {
+        val source = findFollowedArtistsContinuationSource(root)
+            ?: findFollowedArtistsPageSource(root)
+            ?: return null
+        val contents = source.contents ?: return null
+        return YouTubeMusicFollowedArtistsPage(
+            artists = contents.asObjectSequence()
+                .mapNotNull(::parseFollowedArtistItem)
+                .distinctBy { it.browseId }
+                .toList(),
+            continuation = source.continuation
+        )
+    }
+
+    private fun findFollowedArtistsContinuationSource(root: JSONObject): CreatorItemsSource? {
+        if (root.objectPath("continuationContents", "musicCarouselShelfContinuation") != null) {
+            return null
+        }
+        return findCreatorItemsContinuationSource(root)
+    }
+
+    private fun findFollowedArtistsPageSource(root: JSONObject): CreatorItemsSource? {
+        val contents = root.optJSONObject("contents")
+        val directSections = contents.objectPath("sectionListRenderer")?.optJSONArray("contents")
+        val tabSections = sequenceOf("singleColumnBrowseResultsRenderer", "twoColumnBrowseResultsRenderer")
+            .flatMap { columnKey -> followedArtistsTabSections(contents?.optJSONObject(columnKey)) }
+        return (directSections.asObjectSequence() + tabSections)
+            .mapNotNull(::findFollowedArtistsSourceInSection)
+            .firstOrNull()
+    }
+
+    private fun followedArtistsTabSections(column: JSONObject?): Sequence<JSONObject> {
+        val tabs = column?.optJSONArray("tabs") ?: return emptySequence()
+        val legacyLibraryTab = if (tabs.length() < 3) 1 else 2
+        return sequenceOf(0, legacyLibraryTab)
+            .mapNotNull { index ->
+                tabs.optJSONObject(index)
+                    .objectPath("tabRenderer", "content", "sectionListRenderer")
+                    ?.optJSONArray("contents")
+            }
+            .flatMap { it.asObjectSequence() }
+    }
+
+    private fun findFollowedArtistsSourceInSection(section: JSONObject): CreatorItemsSource? {
+        val nested = section.objectPath("itemSectionRenderer")?.optJSONArray("contents")
+        return (sequenceOf(section) + nested.asObjectSequence())
+            .mapNotNull(::findFollowedArtistsSource)
+            .firstOrNull()
+    }
+
+    private fun findFollowedArtistsSource(section: JSONObject): CreatorItemsSource? {
+        return section.optJSONObject("gridRenderer")?.let(::creatorGridSource)
+            ?: section.optJSONObject("musicPlaylistShelfRenderer")?.let(::creatorShelfSource)
+            ?: section.optJSONObject("musicShelfRenderer")?.let(::creatorShelfSource)
+    }
+
+    private fun parseFollowedArtistItem(item: JSONObject): YouTubeMusicCreatorSummary? {
+        val row = creatorSearchRow(item) ?: return null
+        val endpoint = extractBrowseEndpoint(row.renderer) ?: return null
+        val browseId = endpoint.optString("browseId").trim()
+        if (resolveCreatorBrowseItemType(endpoint, browseId) != YouTubeMusicCreatorItemType.Creator ||
+            row.renderer.objectPath("navigationEndpoint", "watchEndpoint") != null ||
+            extractTrackVideoId(row.renderer).isNotBlank()
+        ) {
+            return null
+        }
+        return creatorSearchSummary(row)
     }
 
     internal fun parseCreatorDetail(

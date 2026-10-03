@@ -90,6 +90,7 @@ fun NeteaseArtistDetailScreen(
 ) {
     val context = LocalContext.current
     val viewModel: NeteaseArtistDetailViewModel = viewModel(
+        key = "netease_artist_detail_view_model_${artist.id}",
         factory = viewModelFactory {
             initializer {
                 NeteaseArtistDetailViewModel(context.applicationContext as Application)
@@ -99,9 +100,13 @@ fun NeteaseArtistDetailScreen(
     val ui by viewModel.uiState.collectAsState()
     var selectedTab by rememberSaveable(artist.id) { mutableIntStateOf(0) }
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
-    val listState = rememberSaveable(artist.id, saver = LazyListState.Saver) {
+    val songsListState = rememberSaveable(artist.id, saver = LazyListState.Saver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val albumsListState = rememberSaveable(artist.id, saver = LazyListState.Saver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val listState = if (selectedTab == 0) songsListState else albumsListState
 
     LaunchedEffect(artist.id) {
         viewModel.start(artist)

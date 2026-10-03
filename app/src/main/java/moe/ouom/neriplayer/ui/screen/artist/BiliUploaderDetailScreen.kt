@@ -95,6 +95,8 @@ import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
+import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_BILI_ARTIST
 import moe.ouom.neriplayer.ui.theme.background.BlurTransformation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
@@ -131,6 +133,23 @@ internal fun resolveBiliUploaderBackdropSources(
     )
 }
 
+internal fun createBiliUploaderFavorite(
+    uploader: BiliUploaderSummary,
+    header: BiliUploaderHeader?
+): FavoritePlaylist {
+    val currentHeader = header?.takeIf { it.mid == uploader.mid }
+    return FavoritePlaylist(
+        id = uploader.mid,
+        name = currentHeader?.name?.ifBlank { uploader.name } ?: uploader.name,
+        coverUrl = (currentHeader?.avatarUrl?.ifBlank { uploader.avatarUrl }
+            ?: uploader.avatarUrl).takeIf { it.isNotBlank() },
+        trackCount = 0,
+        source = FAVORITE_SOURCE_BILI_ARTIST,
+        subtitle = currentHeader?.sign?.takeIf { it.isNotBlank() },
+        songs = emptyList()
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BiliUploaderDetailScreen(
@@ -143,6 +162,7 @@ fun BiliUploaderDetailScreen(
 ) {
     val context = LocalContext.current
     val viewModel: BiliUploaderDetailViewModel = viewModel(
+        key = "bili_uploader_detail_view_model_${uploader.mid}",
         factory = viewModelFactory {
             initializer {
                 BiliUploaderDetailViewModel(context.applicationContext as Application)
@@ -153,8 +173,19 @@ fun BiliUploaderDetailScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var selectedTab by rememberSaveable(uploader.mid) { mutableIntStateOf(0) }
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
-    val listState = rememberSaveable(uploader.mid, saver = LazyListState.Saver) {
+    val videosListState = rememberSaveable(uploader.mid, saver = LazyListState.Saver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val collectionsListState = rememberSaveable(uploader.mid, saver = LazyListState.Saver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val seriesListState = rememberSaveable(uploader.mid, saver = LazyListState.Saver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val listState = when (selectedTab) {
+        0 -> videosListState
+        1 -> collectionsListState
+        else -> seriesListState
     }
 
     LaunchedEffect(uploader.mid) {
@@ -184,6 +215,7 @@ fun BiliUploaderDetailScreen(
             )
             BiliUploaderContent(
                 ui = ui,
+                followFavorite = createBiliUploaderFavorite(uploader, ui.header),
                 listState = listState,
                 selectedTab = selectedTab,
                 onTabSelected = { selectedTab = it },
@@ -223,6 +255,7 @@ fun BiliUploaderDetailScreen(
 @Composable
 private fun BiliUploaderContent(
     ui: BiliUploaderDetailUiState,
+    followFavorite: FavoritePlaylist,
     listState: LazyListState,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
@@ -259,6 +292,7 @@ private fun BiliUploaderContent(
             item {
                 BiliUploaderHeaderCard(
                     header = ui.header,
+                    followFavorite = followFavorite,
                     videoCount = ui.videos.size,
                     collectionCount = ui.collections.size,
                     seriesCount = ui.series.size,
@@ -378,6 +412,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.BiliUploaderContentRo
 @Composable
 private fun BiliUploaderHeaderCard(
     header: BiliUploaderHeader?,
+    followFavorite: FavoritePlaylist,
     videoCount: Int,
     collectionCount: Int,
     seriesCount: Int,
@@ -544,6 +579,8 @@ private fun BiliUploaderHeaderCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            Spacer(Modifier.height(14.dp))
+            CreatorFollowButton(favorite = followFavorite)
         }
     }
 }
