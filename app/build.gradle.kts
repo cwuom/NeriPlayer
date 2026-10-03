@@ -102,6 +102,7 @@ android {
         val releaseSigningConfig = signingConfigs.getByName("release")
 
         debug {
+            applicationIdSuffix = ".debug"
             enableUnitTestCoverage = true
         }
 

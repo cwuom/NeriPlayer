@@ -347,6 +347,8 @@ Current positioning:
    standalone `Debug` tab will appear in the bottom bar.
 
 > Debug builds are for testing only. Their performance and size do not represent Release builds.
+> Debug builds use `moe.ouom.neriplayer.debug` and an orange launcher icon. They can coexist with Release builds and keep separate app data.
+> A Debug build warning appears after onboarding. Once confirmed, it stays dismissed across updates; clearing app data or reinstalling resets it.
 
 For release build and signing details, see
 [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md#release-build).
