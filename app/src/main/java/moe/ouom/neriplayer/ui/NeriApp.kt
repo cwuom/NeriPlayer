@@ -60,6 +60,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -71,6 +72,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -79,6 +81,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.Coil
@@ -91,6 +94,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,6 +115,7 @@ import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupBootstrapper
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupAudioFocusRefresher
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupHistoryRecorder
+import moe.ouom.neriplayer.core.startup.player.PlayerStartupServicePlanner
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupServiceSyncCoordinator
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
 import moe.ouom.neriplayer.data.identity.playbackVisualKey
@@ -600,9 +605,16 @@ private fun NeriAppContent(
         }
     }
 
-    val serviceSyncCoordinator = remember(context) {
+    val currentBootstrapServiceStart by rememberUpdatedState {
+        PlayerStartupServicePlanner.plan(
+            hasItems = PlayerManager.hasItems(),
+            shouldBootstrapPlaybackService = PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch(),
+            preemptAudioFocus = preemptAudioFocus,
+            allowMixedPlayback = allowMixedPlayback
+        )
+    }
+    val serviceSyncCoordinator = remember(application) {
         PlayerStartupServiceSyncCoordinator(
-            awaitUiFrame = { withFrameNanos { } },
             isServiceReadyForPassiveLocalPlaybackSync = AudioPlayerService::isReadyForPassiveLocalPlaybackSync,
             hasItems = PlayerManager::hasItems,
             hasLocalCurrentSong = {
@@ -613,6 +625,7 @@ private fun NeriAppContent(
             isUsbExclusivePlaybackActiveForForegroundService =
                 PlayerManager::isUsbExclusivePlaybackActiveForForegroundService,
             shouldRunPlaybackServiceInForeground = PlayerManager::shouldRunPlaybackServiceInForeground,
+            currentBootstrapServiceStart = { currentBootstrapServiceStart() },
             isServiceInstanceActiveForDiagnostics = AudioPlayerService::isInstanceActiveForDiagnostics,
             isServiceForegroundActiveForDiagnostics = AudioPlayerService::isForegroundActiveForDiagnostics,
             startService = { source, forceForeground ->
@@ -625,9 +638,23 @@ private fun NeriAppContent(
             playbackCommandFlow = PlayerManager.playbackCommandFlow
         )
     }
+    val windowInfo = LocalWindowInfo.current
+    LaunchedEffect(serviceSyncCoordinator, lifecycleOwner, windowInfo) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            snapshotFlow { windowInfo.isWindowFocused }.collectLatest { windowFocused ->
+                if (windowFocused) {
+                    serviceSyncCoordinator.pendingServiceStartFlow.collect { pendingStart ->
+                        if (pendingStart != null) {
+                            serviceSyncCoordinator.retryPendingServiceStart()
+                        }
+                    }
+                }
+            }
+        }
+    }
     val scheduleAudioServiceStart: (String, Boolean) -> Unit = { source, forceForeground ->
         scope.launch {
-            serviceSyncCoordinator.startServiceAfterUiFrame(
+            serviceSyncCoordinator.requestServiceStart(
                 source = source,
                 forceForeground = forceForeground
             )

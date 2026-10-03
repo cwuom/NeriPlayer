@@ -103,19 +103,62 @@ class PlaybackAudioOffloadPolicyTest {
         assertFalse(
             shouldUpdateAudioOffloadForReactiveChange(
                 audioReactiveEnabled = false,
-                playbackActive = true
+                playbackActive = true,
+                currentAudioReactiveEnabled = false
             )
         )
         assertTrue(
             shouldUpdateAudioOffloadForReactiveChange(
                 audioReactiveEnabled = true,
-                playbackActive = true
+                playbackActive = true,
+                currentAudioReactiveEnabled = true
             )
         )
         assertTrue(
             shouldUpdateAudioOffloadForReactiveChange(
                 audioReactiveEnabled = false,
-                playbackActive = false
+                playbackActive = false,
+                currentAudioReactiveEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun `stale enabling reactive callback cannot update offload during playback`() {
+        assertFalse(
+            shouldUpdateAudioOffloadForReactiveChange(
+                audioReactiveEnabled = true,
+                playbackActive = true,
+                currentAudioReactiveEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun `stale reactive callbacks cannot update offload while idle`() {
+        assertFalse(
+            shouldUpdateAudioOffloadForReactiveChange(
+                audioReactiveEnabled = true,
+                playbackActive = false,
+                currentAudioReactiveEnabled = false
+            )
+        )
+        assertFalse(
+            shouldUpdateAudioOffloadForReactiveChange(
+                audioReactiveEnabled = false,
+                playbackActive = false,
+                currentAudioReactiveEnabled = true
+            )
+        )
+    }
+
+    @Test
+    fun `current enabling reactive callback updates offload while idle`() {
+        assertTrue(
+            shouldUpdateAudioOffloadForReactiveChange(
+                audioReactiveEnabled = true,
+                playbackActive = false,
+                currentAudioReactiveEnabled = true
             )
         )
     }
