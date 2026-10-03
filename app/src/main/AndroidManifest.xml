@@ -84,7 +84,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="neriplayer"
+                    android:scheme="${listenTogetherInviteScheme}"
                     android:host="listen-together"
                     android:pathPrefix="/join" />
             </intent-filter>

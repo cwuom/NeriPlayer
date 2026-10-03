@@ -12,9 +12,10 @@ import java.net.URLDecoder
 
 private const val UTF_8_CHARSET_NAME = "UTF-8"
 private const val LISTEN_TOGETHER_INVITE_SCHEME = "neriplayer"
+private const val LISTEN_TOGETHER_DEBUG_INVITE_SCHEME = "neriplayer-debug"
 private const val LISTEN_TOGETHER_INVITE_HOST = "listen-together"
 private val LISTEN_TOGETHER_INVITE_REGEX = Regex(
-    pattern = """neriplayer://listen-together/join\?[^\s]+""",
+    pattern = """(?<![a-z0-9+.-])neriplayer(?:-debug)?://listen-together/join\?[^\s]+""",
     option = RegexOption.IGNORE_CASE
 )
 
@@ -37,7 +38,10 @@ private fun parseListenTogetherInviteInternal(rawText: String): ListenTogetherIn
 }
 
 private fun hasInviteRoute(uri: URI): Boolean {
-    if (!uri.scheme.equals(LISTEN_TOGETHER_INVITE_SCHEME, ignoreCase = true)) return false
+    if (
+        !uri.scheme.equals(LISTEN_TOGETHER_INVITE_SCHEME, ignoreCase = true) &&
+        !uri.scheme.equals(LISTEN_TOGETHER_DEBUG_INVITE_SCHEME, ignoreCase = true)
+    ) return false
     if (!uri.host.equals(LISTEN_TOGETHER_INVITE_HOST, ignoreCase = true)) return false
     return hasJoinPath(uri.path ?: return false)
 }

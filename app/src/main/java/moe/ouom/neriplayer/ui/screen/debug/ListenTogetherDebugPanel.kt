@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -205,6 +206,7 @@ fun ListenTogetherRoomPanel(
                     inviterNickname = sessionState.nickname,
                     baseUrl = effectiveBaseUrl,
                     joinSecret = joinSecret,
+                    inviteScheme = BuildConfig.LISTEN_TOGETHER_INVITE_SCHEME,
                     formatValidationError = { it.format(context) }
                 )
             }

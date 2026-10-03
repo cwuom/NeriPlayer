@@ -85,6 +85,9 @@ android {
 
     defaultConfig {
         applicationId = "moe.ouom.neriplayer"
+        val inviteScheme = "neriplayer"
+        manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
+        buildConfigField("String", "LISTEN_TOGETHER_INVITE_SCHEME", "\"$inviteScheme\"")
 
         buildConfigField("String", "BUILD_UUID", "\"${buildUUID}\"")
         buildConfigField("String", "TAG", "\"[NeriPlayer]\"")
@@ -103,6 +106,9 @@ android {
 
         debug {
             applicationIdSuffix = ".debug"
+            val inviteScheme = "neriplayer-debug"
+            manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
+            buildConfigField("String", "LISTEN_TOGETHER_INVITE_SCHEME", "\"$inviteScheme\"")
             enableUnitTestCoverage = true
         }
 
