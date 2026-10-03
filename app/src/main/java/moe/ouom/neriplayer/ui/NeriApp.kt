@@ -60,6 +60,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -71,6 +72,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -79,6 +81,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.Coil
@@ -91,6 +94,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -600,7 +604,7 @@ private fun NeriAppContent(
         }
     }
 
-    val serviceSyncCoordinator = remember(context) {
+    val serviceSyncCoordinator = remember(application) {
         PlayerStartupServiceSyncCoordinator(
             isServiceReadyForPassiveLocalPlaybackSync = AudioPlayerService::isReadyForPassiveLocalPlaybackSync,
             hasItems = PlayerManager::hasItems,
@@ -623,6 +627,20 @@ private fun NeriAppContent(
             },
             playbackCommandFlow = PlayerManager.playbackCommandFlow
         )
+    }
+    val windowInfo = LocalWindowInfo.current
+    LaunchedEffect(serviceSyncCoordinator, lifecycleOwner, windowInfo) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            snapshotFlow { windowInfo.isWindowFocused }.collectLatest { windowFocused ->
+                if (windowFocused) {
+                    serviceSyncCoordinator.pendingServiceStartFlow.collect { pendingStart ->
+                        if (pendingStart != null) {
+                            serviceSyncCoordinator.retryPendingServiceStart()
+                        }
+                    }
+                }
+            }
+        }
     }
     val scheduleAudioServiceStart: (String, Boolean) -> Unit = { source, forceForeground ->
         scope.launch {

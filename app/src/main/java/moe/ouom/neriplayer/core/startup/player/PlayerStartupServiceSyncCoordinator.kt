@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.startup.player
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommand
@@ -16,22 +18,38 @@ internal class PlayerStartupServiceSyncCoordinator(
     private val shouldRunPlaybackServiceInForeground: () -> Boolean,
     private val isServiceInstanceActiveForDiagnostics: () -> Boolean = { false },
     private val isServiceForegroundActiveForDiagnostics: () -> Boolean = { false },
-    private val startService: (source: String, forceForeground: Boolean) -> Unit,
+    private val startService: (source: String, forceForeground: Boolean) -> Boolean,
     private val playbackCommandFlow: Flow<PlaybackCommand>? = null
 ) {
+    private val pendingServiceStart = MutableStateFlow<PlayerStartupServiceStart?>(null)
+    val pendingServiceStartFlow = pendingServiceStart.asStateFlow()
+
     suspend fun requestServiceStart(
         source: String,
         forceForeground: Boolean
-    ) {
+    ): Boolean {
         if (
             !forceForeground &&
             PlayerStartupServiceSyncPlanner.isLocalPlaybackCommandSource(source)
         ) {
             delay(PlayerStartupServiceSyncPlanner.LOCAL_PLAYBACK_COMMAND_DELAY_MS.milliseconds)
         }
+        return startServiceOrDefer(PlayerStartupServiceStart(source, forceForeground))
+    }
+
+    fun retryPendingServiceStart() {
+        val request = pendingServiceStart.value ?: return
+        if (!hasItems() || !shouldRunPlaybackServiceInForeground()) {
+            pendingServiceStart.value = null
+            return
+        }
+        startServiceOrDefer(request)
+    }
+
+    private fun startServiceOrDefer(request: PlayerStartupServiceStart): Boolean {
         val plan = PlayerStartupServiceSyncPlanner.planServiceStart(
-            source = source,
-            forceForeground = forceForeground,
+            source = request.source,
+            forceForeground = request.forceForeground,
             serviceReady = isServiceReadyForPassiveLocalPlaybackSync(),
             hasItems = hasItems(),
             hasLocalCurrentSong = hasLocalCurrentSong(),
@@ -44,10 +62,13 @@ internal class PlayerStartupServiceSyncCoordinator(
                     "source=${plan.source} serviceInstance=${isServiceInstanceActiveForDiagnostics()} " +
                     "serviceForeground=${isServiceForegroundActiveForDiagnostics()}"
             )
-            return
+            pendingServiceStart.value = null
+            return true
         }
         NPLogger.d("NERI-App", "Starting audio service: source=${plan.source}")
-        startService(plan.source, plan.forceForeground)
+        val started = startService(plan.source, plan.forceForeground)
+        pendingServiceStart.value = if (started) null else request
+        return started
     }
 
     suspend fun collectLocalPlaybackCommands() {
