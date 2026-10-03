@@ -157,6 +157,8 @@ internal class SyncArchiveV4Bridge(private val directory: File, private val orig
 
     internal fun newWorkspace(): SyncArchiveWorkspace = SyncArchiveWorkspace.create(directory)
 
+    internal fun openLegacy(root: SyncArchiveRef): InputStream = SyncArchiveInputStream(localLeaves(root), originalCache)
+
     internal class Loaded(
         val manifest: SyncArchiveManifest,
         val paths: Set<String>,

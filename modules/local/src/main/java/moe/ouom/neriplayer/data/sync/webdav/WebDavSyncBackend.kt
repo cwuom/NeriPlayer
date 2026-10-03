@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavArchiveLeaseLostException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavArchiveListing
 import moe.ouom.neriplayer.data.sync.archive.SyncPreparedArchive
 import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcJournal
+import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcState
 
 internal class WebDavSyncBackend(
     private val webDavStorage: WebDavStorage,
@@ -89,6 +90,7 @@ internal class WebDavSyncBackend(
         }
         val snapshot = fetched.getOrThrow()
         return decodeArchive(snapshot.content, Version(snapshot.version, false, snapshot.fingerprint), lease)
+            .mapCatching { maintainFetchedArchive(snapshot.content, it, lease) }
     }
 
     private suspend fun decodeArchive(
@@ -220,14 +222,8 @@ internal class WebDavSyncBackend(
             currentProtocolObserved(4)
             val published = Version(written.version, false, written.fingerprint, prepared.paths)
             if (lease != null && permitsGc(version, published)) {
-                try { collectUnreferenced(publishedContent, version.knownPaths + prepared.paths, lease) }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (lost: WebDavArchiveLeaseLostException) { throw lost }
-                catch (conflict: WebDavContentConflictException) { throw conflict }
-                catch (error: Exception) {
-                    // 清单已发布，清理失败留待后续同步重试，不撤销已提交的数据
-                    NPLogger.e(TAG, "WebDAV archive maintenance deferred", error)
-                }
+                try { collectUnreferenced(publishedContent, prepared.paths, version.knownPaths, lease) }
+                catch (error: Exception) { deferMaintenanceFailure(error) }
             }
             published
         }
@@ -241,16 +237,56 @@ internal class WebDavSyncBackend(
         return etag != previousETag
     }
 
-    private suspend fun collectUnreferenced(content: ByteArray, protectedPaths: Set<String>, lease: WebDavArchiveLease) {
+    private suspend fun maintainFetchedArchive(
+        content: ByteArray, snapshot: SyncDatasetRemoteSnapshot<Version>, lease: WebDavArchiveLease?
+    ): SyncDatasetRemoteSnapshot<Version> {
+        if (lease == null || snapshot.requiresMigrationUpload || !canSafelyPublish(snapshot.version)) return snapshot
+        var version = snapshot.version
+        try {
+            val state = observeUnreferenced(version.knownPaths, emptySet(), lease)
+            if (WebDavArchiveGcJournal.eligible(state).isEmpty()) return snapshot
+            // 真正删除前刷新同一闭包的发布屏障，让锁外旧写入者的条件失效
+            val publishedContent = SyncArchiveRepository.webDavPublicationContent(content)
+            val written = writeFile(manifestUrl, publishedContent, lease, version.token).getOrThrow()
+            version = Version(written.version, false, written.fingerprint, version.knownPaths)
+            if (permitsGc(snapshot.version, version)) deleteEligible(state, lease)
+        } catch (error: Exception) {
+            try { deferMaintenanceFailure(error) }
+            catch (unsafe: Exception) {
+                try { snapshot.dataset?.close() } catch (cleanup: Exception) { unsafe.addSuppressed(cleanup) }
+                throw unsafe
+            }
+        }
+        return snapshot.copy(version = version)
+    }
+
+    private fun deferMaintenanceFailure(error: Exception) {
+        when (error) {
+            is CancellationException, is WebDavArchiveLeaseLostException, is WebDavContentConflictException -> throw error
+            else -> NPLogger.e(TAG, "WebDAV archive maintenance deferred", error)
+        }
+    }
+
+    private suspend fun collectUnreferenced(content: ByteArray, expectedPaths: Set<String>, previousPaths: Set<String>, lease: WebDavArchiveLease) {
         val current = archive.verifyRemoteClosure(content) { path ->
             readFile(WebDavApiClient.buildSiblingFileUrl(remoteUrl, path), lease).map { it.content }
         }.getOrThrow()
-        require(current.all(protectedPaths::contains)) { "Published WebDAV closure does not match prepared archive" }
+        require(current == expectedPaths) { "Published WebDAV closure does not match prepared archive" }
+        deleteEligible(observeUnreferenced(current, previousPaths, lease), lease)
+    }
+
+    private suspend fun observeUnreferenced(current: Set<String>, previous: Set<String>, lease: WebDavArchiveLease): WebDavArchiveGcState {
         val entries = apiClient.listArchiveFiles(lease).getOrThrow()
-        var state = WebDavArchiveGcJournal.observe(webDavStorage.archiveGcState(maintenanceScope), entries,
-            protectedPaths + current, wallMs(), uptimeMs())
+        // 前代刚失去引用，重置旧候选年龄后开始新的完整宽限
+        val baseline = WebDavArchiveGcJournal.protect(webDavStorage.archiveGcState(maintenanceScope), previous)
+        val state = WebDavArchiveGcJournal.observe(baseline, entries, current, wallMs(), uptimeMs())
         currentCoroutineContext().ensureActive()
         webDavStorage.saveArchiveGcState(maintenanceScope, state)
+        return state
+    }
+
+    private suspend fun deleteEligible(initial: WebDavArchiveGcState, lease: WebDavArchiveLease) {
+        var state = initial
         for (entry in WebDavArchiveGcJournal.eligible(state)) {
             currentCoroutineContext().ensureActive()
             apiClient.deleteArchiveObject(entry, lease).getOrThrow()

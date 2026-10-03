@@ -3,8 +3,8 @@
 package moe.ouom.neriplayer.data.sync.archive
 
 import kotlinx.serialization.decodeFromByteArray
-import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
+import kotlinx.serialization.serializer
 import moe.ouom.neriplayer.data.model.sync.*
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 import moe.ouom.neriplayer.data.sync.policy.sanitizeCoverUrlForSync
@@ -16,6 +16,8 @@ import java.io.OutputStream
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackSink
 import moe.ouom.neriplayer.data.sync.dataset.SyncPlaybackPageWriter
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveMetadataBudget
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveMetadataLimits
 
 internal object SyncArchiveRecords {
     fun header(data: SyncData): SyncData = data.copy(
@@ -26,8 +28,9 @@ internal object SyncArchiveRecords {
         lyricOverrides = emptyList(), playlistUsageDeletions = emptyList()
     )
 
-    fun write(data: SyncData, stream: OutputStream, checkActive: () -> Unit = {}): Long {
-        val writer = Writer(DataOutputStream(stream), checkActive)
+    fun write(data: SyncData, stream: OutputStream, checkActive: () -> Unit = {},
+        metadataBudget: SyncArchiveMetadataBudget = SyncArchiveMetadataBudget(SyncArchiveMetadataLimits())): Long {
+        val writer = Writer(DataOutputStream(stream), checkActive, metadataBudget, includePlayback = true)
         writer.playlists(data)
         writer.favorites(data)
         writer.history(data)
@@ -40,9 +43,10 @@ internal object SyncArchiveRecords {
         return writer.count
     }
 
-    suspend fun writeDataset(dataset: SyncDataset, stream: OutputStream, checkActive: () -> Unit): Long {
+    suspend fun writeDataset(dataset: SyncDataset, stream: OutputStream, checkActive: () -> Unit,
+        metadataBudget: SyncArchiveMetadataBudget = SyncArchiveMetadataBudget(SyncArchiveMetadataLimits())): Long {
         val data = dataset.data
-        val writer = Writer(DataOutputStream(stream), checkActive)
+        val writer = Writer(DataOutputStream(stream), checkActive, metadataBudget, includePlayback = false)
         writer.playlists(data)
         writer.favorites(data)
         writer.history(data)
@@ -70,7 +74,8 @@ internal object SyncArchiveRecords {
 
     private fun song(song: SyncSong): SyncSong = SyncArchiveLyricProjection.reference(song.sanitizeCoverUrlsForSync())
 
-    private class Writer(private val output: DataOutputStream, private val checkActive: () -> Unit) {
+    private class Writer(private val output: DataOutputStream, private val checkActive: () -> Unit,
+        private val metadataBudget: SyncArchiveMetadataBudget, private val includePlayback: Boolean) {
         var count = 0L
 
         fun playlists(data: SyncData) {
@@ -106,7 +111,8 @@ internal object SyncArchiveRecords {
 
         inline fun <reified T> record(kind: Int, value: T) {
             if (count % 1024 == 0L) checkActive()
-            val bytes = ProtoBuf.encodeToByteArray(value)
+            val budget = if (!includePlayback && kind in 8..9) metadataBudget.isolated() else metadataBudget
+            val bytes = budget.encode(serializer<T>(), value, checkActive)
             require(bytes.size <= SyncArchiveLimits.MAX_RECORD_BYTES) { "Single sync record exceeds safe decoding budget" }
             output.writeByte(kind)
             output.writeInt(bytes.size)
@@ -116,17 +122,29 @@ internal object SyncArchiveRecords {
     }
 
     fun read(header: SyncData, stream: InputStream, expectedRecords: Long, expectedBytes: Long,
-        beforeRestore: (SyncData) -> Unit = {}, checkActive: () -> Unit = {}): SyncData {
+        beforeRestore: (SyncData) -> Unit = {},
+        metadataBudget: SyncArchiveMetadataBudget = SyncArchiveMetadataBudget(SyncArchiveMetadataLimits()),
+        checkActive: () -> Unit = {}): SyncData {
         val accumulator = SyncRecordAccumulator(header)
-        visit(stream, expectedRecords, expectedBytes, checkActive, accumulator::record)
+        visitRetained(stream, expectedRecords, expectedBytes, metadataBudget, checkActive, accumulator::record)
         return SyncArchiveLyricProjection.restore(accumulator.finish(), beforeRestore)
     }
 
     fun visit(stream: InputStream, expectedRecords: Long, expectedBytes: Long, checkActive: () -> Unit = {}, record: (Int, ByteArray) -> Unit) {
-        val reader = SyncRecordReader(DataInputStream(stream), expectedRecords, expectedBytes, checkActive)
+        visitWithBudget(stream, expectedRecords, expectedBytes, checkActive, { null }, record)
+    }
+
+    fun visitRetained(stream: InputStream, expectedRecords: Long, expectedBytes: Long,
+        budget: SyncArchiveMetadataBudget, checkActive: () -> Unit, record: (Int, ByteArray) -> Unit) {
+        visitWithBudget(stream, expectedRecords, expectedBytes, checkActive, { budget }, record)
+    }
+
+    private fun visitWithBudget(stream: InputStream, expectedRecords: Long, expectedBytes: Long,
+        checkActive: () -> Unit, budgetFor: (Int) -> SyncArchiveMetadataBudget?, record: (Int, ByteArray) -> Unit) {
+        val reader = SyncRecordReader(DataInputStream(stream), expectedRecords, expectedBytes, checkActive, budgetFor)
         while (true) {
             val kind = reader.nextKind() ?: break
-            record(kind, reader.payload())
+            record(kind, reader.payload(kind))
         }
         reader.finish()
     }
@@ -140,15 +158,18 @@ internal object SyncArchiveRecords {
         sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?,
         sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?,
         beforeRestore: (SyncData) -> Unit = {},
+        metadataBudget: SyncArchiveMetadataBudget = SyncArchiveMetadataBudget(SyncArchiveMetadataLimits()),
         checkActive: () -> Unit
     ): SyncDataset {
         val accumulator = SyncRecordAccumulator(header, includePlayback = false)
-        val reader = SyncRecordReader(DataInputStream(stream), expectedRecords, expectedBytes, checkActive)
+        val reader = SyncRecordReader(DataInputStream(stream), expectedRecords, expectedBytes, checkActive) { kind ->
+            if (kind in 8..9) metadataBudget.isolated() else metadataBudget
+        }
         val tracks = SyncPlaybackPageWriter(SyncTrackStat.serializer(), sink::appendTracks)
         val buckets = SyncPlaybackPageWriter(SyncPlaybackStatBucket.serializer(), sink::appendBuckets)
         while (true) {
             val kind = reader.nextKind() ?: break
-            val payload = reader.payload()
+            val payload = reader.payload(kind)
             accumulator.record(kind, payload)
             when (kind) {
                 8 -> sanitizeTrack(ProtoBuf.decodeFromByteArray<SyncTrackStat>(payload))?.let { stat ->
@@ -173,7 +194,8 @@ private class SyncRecordReader(
     private val input: DataInputStream,
     private val expectedRecords: Long,
     private val expectedBytes: Long,
-    private val checkActive: () -> Unit
+    private val checkActive: () -> Unit,
+    private val budgetFor: (Int) -> SyncArchiveMetadataBudget?
 ) {
     private var count = 0L
     private var consumed = 0L
@@ -192,11 +214,14 @@ private class SyncRecordReader(
         require(expectedBytes - consumed >= 5L) { "Unexpected sync record" }
     }
 
-    fun payload(): ByteArray {
+    fun payload(kind: Int): ByteArray {
         val size = input.readInt()
         require(size in 0..SyncArchiveLimits.MAX_RECORD_BYTES) { "Invalid sync record size" }
         require(size.toLong() <= expectedBytes - consumed - 5L) { "Invalid sync record size" }
+        val budget = budgetFor(kind)
+        budget?.beginRecord(size)
         val payload = ByteArray(size).also(input::readFully)
+        budget?.inspect(kind, payload, checkActive)
         count++
         consumed += size + 5L
         return payload

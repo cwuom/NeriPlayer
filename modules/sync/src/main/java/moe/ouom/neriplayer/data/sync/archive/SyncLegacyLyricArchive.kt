@@ -12,6 +12,8 @@ import kotlinx.serialization.Serializable
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveMetadataBudget
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveMetadataLimits
 
 interface SyncLegacyLyricRecovery {
     fun isCompleted(sourceHash: String): Boolean
@@ -42,8 +44,10 @@ internal data class SyncLegacyLyricSource(
 
 internal data class CapturedLegacyLyrics(val source: SyncLegacyLyricSource, val objects: List<SyncArchiveRef>)
 
-internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache) {
+internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache,
+    private val metadataLimits: SyncArchiveMetadataLimits = SyncArchiveMetadataLimits()) {
     fun capture(data: SyncData, optimize: Boolean = false): CapturedLegacyLyrics? {
+        val budget = SyncArchiveMetadataBudget(metadataLimits)
         val chunks = ArrayList<SyncArchiveRef>()
         val objects = LinkedHashMap<String, SyncArchiveRef>()
         val chunker = SyncContentChunker { raw ->
@@ -55,7 +59,7 @@ internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache) {
         var count = 0L
         DataOutputStream(chunker).use { output ->
             candidates(data, optimize).forEach { candidate ->
-                val bytes = ProtoBuf.encodeToByteArray(candidate)
+                val bytes = budget.encode(SyncSong.serializer(), candidate) {}
                 require(bytes.size <= SyncArchiveLimits.MAX_RECORD_BYTES) { "Single legacy lyric record exceeds safe budget" }
                 require(bytes.size.toLong() + FRAME_BYTES <= SyncArchiveLimits.MAX_LEGACY_SOURCE_RAW_BYTES - chunker.totalBytes) {
                     "Legacy lyric source exceeds raw budget"
@@ -79,15 +83,22 @@ internal class SyncLegacyLyricArchive(private val cache: SyncArchiveCache) {
         return CapturedLegacyLyrics(source, objects.values.toList())
     }
 
-    fun read(source: SyncLegacyLyricSource, input: InputStream, checkActive: () -> Unit): SyncData {
+    fun read(source: SyncLegacyLyricSource, input: InputStream,
+        budget: SyncArchiveMetadataBudget = SyncArchiveMetadataBudget(metadataLimits), checkActive: () -> Unit): SyncData {
         val candidates = ArrayList<SyncSong>()
-        SyncArchiveRecords.visit(input, source.recordCount, source.rawDataBytes, checkActive) { kind, bytes ->
+        SyncArchiveRecords.visitRetained(input, source.recordCount, source.rawDataBytes, budget, checkActive) { kind, bytes ->
             require(kind == LEGACY_RECORD_KIND) { "Legacy lyric source contains unrelated records" }
             val candidate = ProtoBuf.decodeFromByteArray<SyncSong>(bytes)
             require(hasUnknownLyrics(candidate) && candidate.lyricSyncRevision == 0L) { "Invalid legacy lyric candidate" }
             candidates += candidate
         }
         return SyncData(lyricOverrides = candidates)
+    }
+
+    fun verifyBudget(source: SyncLegacyLyricSource, input: InputStream, budget: SyncArchiveMetadataBudget, checkActive: () -> Unit) {
+        SyncArchiveRecords.visitRetained(input, source.recordCount, source.rawDataBytes, budget, checkActive) { kind, _ ->
+            require(kind == LEGACY_RECORD_KIND) { "Legacy lyric source contains unrelated records" }
+        }
     }
 
     private fun candidates(data: SyncData, optimize: Boolean): Sequence<SyncSong> {

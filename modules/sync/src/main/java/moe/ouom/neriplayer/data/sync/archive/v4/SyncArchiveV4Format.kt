@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.data.sync.archive.SyncArchiveCodec
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveLimits
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveManifest
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveManifestValidation
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveManifestWireGuard
 
 @Serializable
 internal data class SyncArchiveV4Ref(
@@ -87,7 +88,9 @@ internal object SyncArchiveV4Format {
         val hash = ByteArray(32).also(input::readFully)
         val compressed = bytes.copyOfRange(HEADER_BYTES, bytes.size)
         require(MessageDigest.isEqual(hash, MessageDigest.getInstance("SHA-256").digest(compressed))) { "Sync manifest checksum mismatch" }
-        return ProtoBuf.decodeFromByteArray<SyncArchiveV4Manifest>(SyncArchiveCodec.decompress(compressed, rawSize))
+        val raw = SyncArchiveCodec.decompress(compressed, rawSize)
+        SyncArchiveManifestWireGuard.validate(raw, v4 = true)
+        return ProtoBuf.decodeFromByteArray<SyncArchiveV4Manifest>(raw)
             .also(::validateManifest)
     }
 

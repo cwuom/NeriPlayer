@@ -15,6 +15,9 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavArchiveLeaseLostException
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.model.sync.CURRENT_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.sync.change.SyncDataChangeDetector
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRepository
 import moe.ouom.neriplayer.data.sync.remote.SyncRemoteSnapshotDecoder
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
@@ -55,6 +58,10 @@ class WebDavArchiveGcHttpTest {
     private val payload = SyncData(deviceId = "lease-test", playlists = listOf(
         SyncPlaylist(id = 1L, name = "playlist", songs = listOf(SyncSong(id = 2L, name = "song")))
     ))
+    private val noChangePayload = payload.copy(playlists = listOf(SyncPlaylist(
+        id = 1L, name = "playlist", songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION,
+        songs = listOf(SyncSong(id = 2L, name = "song", syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION))
+    )))
 
     @Test
     fun `identical uploads invalidate a writer that verified objects before publication`() = runTest {
@@ -229,14 +236,247 @@ class WebDavArchiveGcHttpTest {
         val first = fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
             fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
         }
-        val path = first.knownPaths.first()
-        fixture.gcState = fixture.gcState.copy(candidates = listOf(WebDavArchiveGcCandidate(path, fixture.objectETag(path), 1)))
+        val next = payload.copy(playlists = listOf(payload.playlists.single().copy(name = "changed")))
+        val nextPaths = fixture.archive.playbackDatasets.fromLegacy(next).use { data ->
+            fixture.archive.prepareCancellable(data).use { it.paths }
+        }
+        val removed = first.knownPaths - nextPaths
+        assertTrue(removed.isNotEmpty())
+        val path = removed.first()
+        fixture.gcState = fixture.gcState.copy(candidates = listOf(WebDavArchiveGcCandidate(
+            path, fixture.objectETag(path), fixture.wallMs - WebDavArchiveGcJournal.GRACE_MS, WebDavArchiveGcJournal.GRACE_MS)))
         fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
-        fixture.archive.playbackDatasets.fromLegacy(payload.copy(deviceId = "changed")).use { data ->
-            fixture.backend.upload(data, first).getOrThrow()
+        fixture.archive.playbackDatasets.fromLegacy(next).use { data ->
+            val published = fixture.backend.upload(data, first).getOrThrow()
+            assertFalse(path in published.knownPaths)
         }
         assertTrue(fixture.files.containsKey(path))
-        assertTrue(fixture.gcState.candidates.none { it.path == path })
+        val candidate = fixture.gcState.candidates.single { it.path == path }
+        assertEquals(fixture.wallMs, candidate.firstSeenMs)
+        assertEquals(0L, candidate.observedAgeMs)
+    }
+
+    @Test
+    fun `an unchanged sync collects the replaced closure after grace without uploading data again`() = runTest {
+        val fixture = Fixture()
+        val next = noChangePayload.copy(playlists = listOf(noChangePayload.playlists.single().copy(name = "changed")))
+        fixture.files["backup.json.gz"] = byteArrayOf(7)
+        fixture.files["notes.txt"] = byteArrayOf(8)
+        val first = fixture.archive.playbackDatasets.fromLegacy(noChangePayload).use { data ->
+            fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+        }
+        val second = fixture.archive.playbackDatasets.fromLegacy(next).use { data ->
+            fixture.backend.upload(data, first).getOrThrow()
+        }
+        val replaced = first.knownPaths - second.knownPaths
+        assertTrue(replaced.isNotEmpty())
+        assertTrue(replaced.all(fixture.files::containsKey))
+        fixture.backend.saveRemoteVersion(second)
+        fixture.requests.clear()
+
+        runUnchangedSession(fixture, next)
+
+        assertTrue(replaced.all(fixture.files::containsKey))
+        assertTrue(fixture.requests.none { it.method == "PUT" || it.method == "DELETE" })
+        fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
+        fixture.requests.clear()
+
+        runUnchangedSession(fixture, next)
+
+        assertTrue(replaced.none(fixture.files::containsKey))
+        assertTrue(second.knownPaths.all(fixture.files::containsKey))
+        assertTrue(fixture.files.containsKey("backup.json.gz"))
+        assertTrue(fixture.files.containsKey("notes.txt"))
+        assertTrue(fixture.requests.none { it.method == "PUT" && it.url.pathSegments.last().endsWith(".zst") })
+        val publication = fixture.requests.single { it.method == "PUT" }
+        assertEquals(SyncArchiveRepository.MANIFEST_FILE_NAME, publication.url.pathSegments.last())
+        assertEquals(second.token!!.etag, publication.header("If-Match"))
+        assertTrue(fixture.requests.filter { it.method == "DELETE" }.all {
+            it.header("If-Match") != null && it.header("If")?.contains(TOKEN) == true
+        })
+        assertEquals("LOCK", fixture.requests.first().method)
+        assertEquals("UNLOCK", fixture.requests.last().method)
+        assertEquals(WebDavApiClient.calculateFingerprint(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)),
+            fixture.savedRemoteFingerprint)
+        fixture.backend.fetch().getOrThrow().dataset!!.use { assertEquals(next, it.data) }
+    }
+
+    @Test
+    fun `unchanged maintenance never deletes through a root without a changed strong ETag`() = runTest {
+        for (etag in listOf(null, "W/\"weak\"", "invalid", "\"constant\"")) {
+            val fixture = Fixture()
+            if (etag == "\"constant\"") fixture.constantETag = true
+            val orphan = fixture.addOrphan()
+            fixture.archive.playbackDatasets.fromLegacy(noChangePayload).use { data ->
+                fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            }
+            fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
+            fixture.manifestReadETag = { etag }
+            fixture.requests.clear()
+
+            runUnchangedSession(fixture, noChangePayload)
+
+            assertTrue(fixture.files.containsKey(orphan))
+            assertTrue(fixture.requests.none { it.method == "DELETE" })
+            assertTrue(fixture.requests.none { it.method == "PUT" && it.url.pathSegments.last().endsWith(".zst") })
+            if (etag != "\"constant\"") assertTrue(fixture.requests.none { it.method == "PROPFIND" || it.method == "PUT" })
+            assertFalse(fixture.locked)
+        }
+    }
+
+    @Test
+    fun `unchanged maintenance stops before deletion when its root CAS loses the condition`() = runTest {
+        for (status in listOf(412, 423)) {
+            val fixture = Fixture()
+            val orphan = fixture.addOrphan()
+            val first = fixture.archive.playbackDatasets.fromLegacy(noChangePayload).use { data ->
+                fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            }
+            fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
+            fixture.manifestWriteStatus = status
+            fixture.requests.clear()
+
+            val error = assertThrows(moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException::class.java) {
+                kotlinx.coroutines.runBlocking { runUnchangedSession(fixture, noChangePayload) }
+            }
+
+            assertEquals(status, error.statusCode)
+            assertTrue(fixture.files.containsKey(orphan))
+            assertTrue(first.knownPaths.all(fixture.files::containsKey))
+            assertTrue(fixture.requests.none { it.method == "DELETE" })
+            assertEquals("UNLOCK", fixture.requests.last().method)
+        }
+    }
+
+    @Test
+    fun `unchanged maintenance preserves cancellation and a lost lease before its root barrier`() = runTest {
+        for (error in listOf(CancellationException("cancelled maintenance"), WebDavArchiveLeaseLostException("lost maintenance lease"))) {
+            val fixture = Fixture()
+            val orphan = fixture.addOrphan()
+            val first = fixture.archive.playbackDatasets.fromLegacy(noChangePayload).use { data ->
+                fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            }
+            fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
+            fixture.beforeRequest = {
+                if (it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME) throw error
+            }
+            fixture.requests.clear()
+
+            assertSame(error, assertThrows(error.javaClass) {
+                kotlinx.coroutines.runBlocking { runUnchangedSession(fixture, noChangePayload) }
+            })
+
+            assertTrue(fixture.files.containsKey(orphan))
+            assertTrue(first.knownPaths.all(fixture.files::containsKey))
+            assertTrue(fixture.requests.none { it.method == "DELETE" })
+            assertEquals("UNLOCK", fixture.requests.last().method)
+        }
+    }
+
+    @Test
+    fun `unchanged maintenance retains objects when the root barrier response is not a new strong ETag`() = runTest {
+        for (reply in listOf(null, "W/\"weak\"", "invalid", "unchanged")) {
+            val fixture = Fixture()
+            val orphan = fixture.addOrphan()
+            val first = fixture.archive.playbackDatasets.fromLegacy(noChangePayload).use { data ->
+                fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            }
+            fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
+            fixture.manifestWriteETag = { if (reply == "unchanged") first.token!!.etag else reply }
+            fixture.requests.clear()
+
+            runUnchangedSession(fixture, noChangePayload)
+
+            assertTrue(fixture.files.containsKey(orphan))
+            assertTrue(first.knownPaths.all(fixture.files::containsKey))
+            assertEquals(1, fixture.requests.count { it.method == "PUT" })
+            assertTrue(fixture.requests.none { it.method == "DELETE" })
+            assertEquals(WebDavApiClient.calculateFingerprint(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)),
+                fixture.savedRemoteFingerprint)
+            assertFalse(fixture.locked)
+        }
+    }
+
+    @Test
+    fun `unchanged maintenance defers an invalid listing and retries the same objects later`() = runTest {
+        val fixture = Fixture()
+        val orphan = fixture.addOrphan()
+        val first = fixture.archive.playbackDatasets.fromLegacy(noChangePayload).use { data ->
+            fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+        }
+        fixture.backend.saveRemoteVersion(first)
+        fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
+        fixture.badListing = true
+        fixture.requests.clear()
+
+        runUnchangedSession(fixture, noChangePayload)
+
+        assertTrue(fixture.files.containsKey(orphan))
+        assertTrue(fixture.requests.none { it.method == "PUT" || it.method == "DELETE" })
+        fixture.badListing = false
+        fixture.requests.clear()
+
+        runUnchangedSession(fixture, noChangePayload)
+
+        assertFalse(fixture.files.containsKey(orphan))
+        assertTrue(first.knownPaths.all(fixture.files::containsKey))
+        assertEquals(1, fixture.requests.count { it.method == "PUT" })
+        assertEquals(WebDavApiClient.calculateFingerprint(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)),
+            fixture.savedRemoteFingerprint)
+    }
+
+    @Test
+    fun `a deferred unchanged deletion still saves its new root version before retrying`() = runTest {
+        val fixture = Fixture()
+        val orphan = fixture.addOrphan()
+        val first = fixture.archive.playbackDatasets.fromLegacy(noChangePayload).use { data ->
+            fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+        }
+        fixture.backend.saveRemoteVersion(first)
+        fixture.advance(WebDavArchiveGcJournal.GRACE_MS)
+        fixture.deleteStatus = 500
+        fixture.requests.clear()
+
+        runUnchangedSession(fixture, noChangePayload)
+
+        assertTrue(fixture.files.containsKey(orphan))
+        assertTrue(first.knownPaths.all(fixture.files::containsKey))
+        assertFalse(first.lastKnownFingerprint == fixture.savedRemoteFingerprint)
+        assertEquals(WebDavApiClient.calculateFingerprint(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)),
+            fixture.savedRemoteFingerprint)
+        fixture.deleteStatus = 204
+        fixture.requests.clear()
+
+        runUnchangedSession(fixture, noChangePayload)
+
+        assertFalse(fixture.files.containsKey(orphan))
+        assertEquals(1, fixture.requests.count { it.method == "PUT" })
+        assertTrue(fixture.requests.none { it.method == "PUT" && it.url.pathSegments.last().endsWith(".zst") })
+    }
+
+    private suspend fun runUnchangedSession(fixture: Fixture, data: SyncData) {
+        val local = object : SyncLocalDataStore {
+            override suspend fun awaitInitialized() = true
+            override fun mutationVersion() = 1L
+            override suspend fun snapshot() = fixture.archive.playbackDatasets.fromLegacy(data)
+            override suspend fun apply(dataset: SyncDataset, remoteChanged: Boolean, expectedMutationVersion: Long): Boolean {
+                assertEquals(1L, expectedMutationVersion)
+                assertEquals(data.playlists, dataset.data.playlists)
+                return true
+            }
+        }
+        val host = mock(SyncMergeHost::class.java) { call ->
+            when (call.method.name) {
+                "getMergeSuccessMessage" -> "merged"
+                "getInitialUploadMessage" -> "uploaded"
+                else -> null
+            }
+        }
+        val merger = SyncDataMerger(host) { 10L }
+        assertFalse(SyncDataChangeDetector.hasDataChanged(data, merger.merge(data, data, 0L).mergedData))
+        val session = SyncSession(local, merger, fixture.archive.playbackDatasets,
+            "unchanged", "uploaded", { IOException("busy") }, nowMs = { fixture.wallMs })
+        assertTrue(session.execute { fixture.backend }.getOrThrow().success)
     }
 
     @Test
@@ -722,9 +962,12 @@ class WebDavArchiveGcHttpTest {
         var unlockStatus = 204
         var deleteStatus = 204
         var currentUsername = "fixture-user"
+        var savedRemoteFingerprint: String? = null
         val maintenanceScopes = arrayListOf<String>()
         var constantETag = false
         var manifestWriteETag: (String) -> String? = { it }
+        var manifestReadETag: (String) -> String? = { it }
+        var manifestWriteStatus: Int? = null
         var badListing = false
         var beforeRequest: (Request) -> Unit = {}
         private val storage = mock(WebDavStorage::class.java) { call ->
@@ -733,6 +976,8 @@ class WebDavArchiveGcHttpTest {
             }
             when (call.method.name) {
                 "getUsername" -> currentUsername
+                "getLastRemoteFingerprint" -> savedRemoteFingerprint
+                "saveLastRemoteFingerprint" -> { savedRemoteFingerprint = call.arguments[0] as String; null }
                 "archiveLockSupported" -> supported
                 "archiveGcState" -> gcState
                 "rememberArchiveLock" -> { supported = true; null }
@@ -773,7 +1018,12 @@ class WebDavArchiveGcHttpTest {
                     else { files.remove(name); response(request, 204) }
                 }
                 "PROPFIND" -> response(request, 207, (if (badListing) "<bad/>" else directoryListing()).toByteArray())
-                else -> files[name]?.let { response(request, 200, it).newBuilder().header("ETag", etag(it)).build() }
+                else -> files[name]?.let {
+                    val read = response(request, 200, it).newBuilder()
+                    val tag = if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestReadETag(etag(it)) else etag(it)
+                    if (tag != null) read.header("ETag", tag)
+                    read.build()
+                }
                     ?: response(request, 404)
             }
         }.build(), "auth")
@@ -783,6 +1033,7 @@ class WebDavArchiveGcHttpTest {
 
         private fun write(request: Request, name: String): Response {
             if (locked && request.header("If")?.contains(TOKEN) != true) return response(request, 423)
+            if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestWriteStatus?.let { return response(request, it) }
             val previous = files[name]
             if (request.header("If-None-Match") == "*" && previous != null) return response(request, 412)
             if (request.header("If-Match") != null && request.header("If-Match") != previous?.let(::etag)) return response(request, 412)

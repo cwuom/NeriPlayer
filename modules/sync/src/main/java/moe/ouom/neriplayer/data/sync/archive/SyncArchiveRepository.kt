@@ -19,21 +19,30 @@ import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Bridge
 import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Format
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveMetadataLimits
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveMetadataBudget
 
 class SyncArchiveRepository private constructor(
     cacheDirectory: File,
     private val beforeNormalization: (SyncData) -> Unit,
-    private val legacyRecovery: SyncLegacyLyricRecovery?
+    private val legacyRecovery: SyncLegacyLyricRecovery?,
+    private val metadataLimits: SyncArchiveMetadataLimits
 ) {
     constructor(cacheDirectory: File, beforeNormalization: (SyncData) -> Unit = {}) :
-        this(cacheDirectory, beforeNormalization, null)
+        this(cacheDirectory, beforeNormalization, null, SyncArchiveMetadataLimits())
 
     constructor(cacheDirectory: File, legacyRecovery: SyncLegacyLyricRecovery, beforeNormalization: (SyncData) -> Unit = {}) :
-        this(cacheDirectory, beforeNormalization, legacyRecovery)
+        this(cacheDirectory, beforeNormalization, legacyRecovery, SyncArchiveMetadataLimits())
+
+    internal constructor(cacheDirectory: File,
+        metadataLimits: SyncArchiveMetadataLimits,
+        legacyRecovery: SyncLegacyLyricRecovery? = null,
+        beforeNormalization: (SyncData) -> Unit = {}) :
+        this(cacheDirectory, beforeNormalization, legacyRecovery, metadataLimits)
 
     private val cache = SyncArchiveCache(cacheDirectory)
     private val bridge = SyncArchiveV4Bridge(cacheDirectory, cache)
-    private val legacyArchive = SyncLegacyLyricArchive(cache)
+    private val legacyArchive = SyncLegacyLyricArchive(cache, metadataLimits)
     private val retainedSource = SyncRetainedLegacySource(cacheDirectory)
     private var legacySource: SyncLegacyLyricSource? = null
     private var capturedLegacyObjects = emptyList<SyncArchiveRef>()
@@ -60,6 +69,7 @@ class SyncArchiveRepository private constructor(
     }
 
     private suspend fun prepareOriginal(dataset: SyncDataset, checkActive: () -> Unit): SyncPreparedArchive {
+        val budget = SyncArchiveMetadataBudget(metadataLimits)
         val chunks = ArrayList<SyncArchiveRef>()
         val objects = LinkedHashMap<String, SyncArchiveRef>()
         val chunker = SyncContentChunker { raw ->
@@ -68,7 +78,8 @@ class SyncArchiveRepository private constructor(
             chunks.add(ref)
             objects[ref.path] = ref
         }
-        val records = chunker.use { SyncArchiveRecords.writeDataset(dataset, it, checkActive) }
+        val records = chunker.use { SyncArchiveRecords.writeDataset(dataset, it, checkActive, budget) }
+        verifyLegacyBudget(budget, checkActive)
         checkActive()
         val root = buildTree(chunks, objects, checkActive)
         addLegacyObjects(objects)
@@ -82,6 +93,7 @@ class SyncArchiveRepository private constructor(
     }
 
     internal fun prepareOriginal(data: SyncData, checkActive: () -> Unit = {}): SyncPreparedArchive {
+        val budget = SyncArchiveMetadataBudget(metadataLimits)
         val chunks = ArrayList<SyncArchiveRef>()
         val objects = LinkedHashMap<String, SyncArchiveRef>()
         val chunker = SyncContentChunker { raw ->
@@ -90,13 +102,20 @@ class SyncArchiveRepository private constructor(
             chunks.add(ref)
             objects[ref.path] = ref
         }
-        val records = chunker.use { SyncArchiveRecords.write(data, it, checkActive) }
+        val records = chunker.use { SyncArchiveRecords.write(data, it, checkActive, budget) }
+        verifyLegacyBudget(budget, checkActive)
         checkActive()
         val root = buildTree(chunks, objects, checkActive)
         addLegacyObjects(objects)
         val manifest = SyncArchiveManifest(3, SyncArchiveRecords.header(data), root,
             records, chunker.totalBytes, chunks.size.toLong(), legacySource)
         return SyncPreparedArchive(SyncArchiveCodec.manifest(manifest), protectedPaths(objects.keys), cache, objects.values.toList())
+    }
+
+    private fun verifyLegacyBudget(budget: SyncArchiveMetadataBudget, checkActive: () -> Unit) {
+        val source = legacySource ?: return
+        val input = retainedSource.resolve(source)?.inputStream() ?: bridge.openLegacy(source.root)
+        input.use { legacyArchive.verifyBudget(source, it, budget, checkActive) }
     }
 
     private inline fun prepareSafely(block: () -> SyncPreparedArchive): SyncPreparedArchive = try {
@@ -139,13 +158,14 @@ class SyncArchiveRepository private constructor(
         val rollbackPaths = lastReferencedPaths
         lastReferencedPaths = emptySet()
         return try {
+            val budget = SyncArchiveMetadataBudget(metadataLimits)
             load(content, verifyRemoteObjects, fetch).use { loaded ->
                 val context = coroutineContext
                 val data = loaded.main().use {
                     SyncArchiveRecords.read(loaded.manifest.header, it, loaded.manifest.recordCount,
-                        loaded.manifest.rawDataBytes, beforeNormalization) { context.ensureActive() }
+                        loaded.manifest.rawDataBytes, beforeNormalization, budget) { context.ensureActive() }
                 }
-                val restored = restorePreservedLyrics(data, recoverLegacyLyrics(loaded))
+                val restored = restorePreservedLyrics(data, recoverLegacyLyrics(loaded, budget))
                 retainLegacy(loaded)
                 cache.trim(loaded.paths)
                 lastReferencedPaths = loaded.paths
@@ -180,10 +200,11 @@ class SyncArchiveRepository private constructor(
         val rollbackPaths = lastReferencedPaths
         lastReferencedPaths = emptySet()
         return try {
+            val budget = SyncArchiveMetadataBudget(metadataLimits)
             load(content, verifyRemoteObjects, fetch).use { loaded ->
-                val dataset = decodeDataset(loaded, store, sanitizeTrack, sanitizeBucket)
+                val dataset = decodeDataset(loaded, store, sanitizeTrack, sanitizeBucket, budget)
                 try {
-                    val data = restorePreservedLyrics(dataset.data, recoverLegacyLyrics(loaded))
+                    val data = restorePreservedLyrics(dataset.data, recoverLegacyLyrics(loaded, budget))
                     retainLegacy(loaded)
                     val restored = if (data === dataset.data) dataset else SyncDataset(data, dataset.playback,
                         dataset.capturedPlaybackRevision, dataset.playbackMatchesCaptured)
@@ -247,22 +268,41 @@ class SyncArchiveRepository private constructor(
         return file to refs.paths
     }
 
-    private suspend fun recoverLegacyLyrics(loaded: SyncArchiveV4Bridge.Loaded): List<SyncSong> {
+    private suspend fun recoverLegacyLyrics(loaded: SyncArchiveV4Bridge.Loaded, budget: SyncArchiveMetadataBudget): List<SyncSong> {
         val source = loaded.manifest.legacyLyrics ?: return emptyList()
         coroutineContext.ensureActive()
         val recovery = legacyRecovery
         if (recovery != null && recovery.isCompleted(source.hash)) {
-            return recovery.preservedLyrics().also { coroutineContext.ensureActive() }
+            return verifyPreservedLyrics(recovery.preservedLyrics(), budget)
         }
+        return recoverLegacySource(source, requireNotNull(loaded.legacy), budget, recovery)
+    }
+
+    private suspend fun recoverLegacySource(source: SyncLegacyLyricSource, file: File,
+        budget: SyncArchiveMetadataBudget, recovery: SyncLegacyLyricRecovery?): List<SyncSong> {
         val context = coroutineContext
-        val data = requireNotNull(loaded.legacy).inputStream().use {
-            legacyArchive.read(source, it) { context.ensureActive() }
+        val data = file.inputStream().use {
+            legacyArchive.read(source, it, budget) { context.ensureActive() }
         }
+        val accounted = data.lyricOverrides.toHashSet()
+        verifyPreservedLyrics(recovery?.preservedLyrics().orEmpty(), budget, accounted)
         context.ensureActive()
         if (recovery == null) beforeNormalization(data) else recovery.recover(source.hash, data)
-        val preserved = recovery?.preservedLyrics().orEmpty()
+        val preserved = verifyPreservedLyrics(recovery?.preservedLyrics().orEmpty(), budget, accounted)
         context.ensureActive()
         return data.lyricOverrides + preserved
+    }
+
+    private suspend fun verifyPreservedLyrics(candidates: List<SyncSong>, budget: SyncArchiveMetadataBudget,
+        accounted: MutableSet<SyncSong> = HashSet()): List<SyncSong> {
+        val context = coroutineContext
+        for (candidate in candidates) {
+            context.ensureActive()
+            // 同一份已恢复候选只占一次容量，不同全文仍分别检查
+            if (accounted.add(candidate)) budget.encode(SyncSong.serializer(), candidate) { context.ensureActive() }
+        }
+        context.ensureActive()
+        return candidates
     }
 
     private fun retainLegacy(loaded: SyncArchiveV4Bridge.Loaded) {
@@ -280,14 +320,15 @@ class SyncArchiveRepository private constructor(
 
     private suspend fun decodeDataset(
         loaded: SyncArchiveV4Bridge.Loaded, store: SyncPlaybackDatasetStore,
-        sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?, sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?
+        sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?, sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?,
+        budget: SyncArchiveMetadataBudget
     ): SyncDataset {
         val context = coroutineContext
         val manifest = loaded.manifest
         return store.newSink().use { sink ->
             loaded.main().use {
                 SyncArchiveRecords.readDataset(manifest.header, it, manifest.recordCount,
-                    manifest.rawDataBytes, sink, sanitizeTrack, sanitizeBucket, beforeNormalization) { context.ensureActive() }
+                    manifest.rawDataBytes, sink, sanitizeTrack, sanitizeBucket, beforeNormalization, budget) { context.ensureActive() }
             }
         }
     }

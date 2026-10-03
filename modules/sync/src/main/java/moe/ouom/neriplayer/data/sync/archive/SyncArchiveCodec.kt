@@ -12,6 +12,7 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.security.MessageDigest
+import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveManifestWireGuard
 
 internal object SyncArchiveCodec {
     private val magic = "NPSYNC03".toByteArray(Charsets.US_ASCII)
@@ -97,7 +98,9 @@ internal object SyncArchiveCodec {
         val expected = ByteArray(DIGEST_BYTES).also(input::readFully)
         val compressed = bytes.copyOfRange(HEADER_BYTES, bytes.size)
         require(MessageDigest.isEqual(expected, MessageDigest.getInstance("SHA-256").digest(compressed))) { "Sync manifest checksum mismatch" }
-        return ProtoBuf.decodeFromByteArray<SyncArchiveManifest>(decompress(compressed, rawSize))
+        val raw = decompress(compressed, rawSize)
+        SyncArchiveManifestWireGuard.validate(raw, v4 = false)
+        return ProtoBuf.decodeFromByteArray<SyncArchiveManifest>(raw)
             .also(SyncArchiveManifestValidation::validate)
     }
 

@@ -230,7 +230,7 @@ class SyncArchiveLegacyDeviceMigrationTest {
         val directory = temporary.newFolder()
         val repository = SyncArchiveRepository(directory)
         val oversized = SyncData(lyricOverrides = listOf(legacy.copy(matchedLyric = "x".repeat(32 * 1024 * 1024))))
-        assertThrows(IllegalArgumentException::class.java) { repository.captureLegacyLyrics(oversized) }
+        assertThrows(IOException::class.java) { repository.captureLegacyLyrics(oversized) }
         assertEquals(setOf(".sync-stage.guard"), directory.listFiles().orEmpty().map { it.name }.toSet())
     }
 

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.sync.archive
 
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
@@ -16,7 +17,7 @@ class SyncArchiveStatisticsOrderTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun `finalized shuffled device statistics reuse blocks after one playback delta`() {
+    fun `finalized shuffled device statistics reuse blocks after one playback delta`() = runBlocking {
         val stats = (0 until 100_000).map { index ->
             SyncTrackStat(
                 id = index + 1L,
@@ -46,12 +47,12 @@ class SyncArchiveStatisticsOrderTest {
         val firstData = SyncData(deviceId = "device-a", lastModified = 1,
             playbackStats = firstFinalized.stats, playbackStatBuckets = firstFinalized.buckets)
 
-        repository.prepare(firstData).use { first ->
+        prepare(repository, firstData).use { first ->
             assertTrue("fixture must contain many independently reusable objects", first.paths.size > 10)
             val fullWire = first.objects.sumOf { it.content.size.toLong() } + first.content.size
             val secondData = firstData.copy(deviceId = "device-b",
                 playbackStats = secondFinalized.stats, playbackStatBuckets = secondFinalized.buckets)
-            repository.prepare(secondData).use { same ->
+            prepare(repository, secondData).use { same ->
                 assertEquals(first.paths, same.paths)
                 assertTrue(same.objects(first.paths).none())
             }
@@ -71,7 +72,7 @@ class SyncArchiveStatisticsOrderTest {
             val changed = SyncPlaybackStatsMergePolicy.finalizeMergedStats(changedStats, changedBuckets)
             assertEquals(100_000, changed.stats.size)
             assertEquals(100_000, changed.buckets.size)
-            repository.prepare(secondData.copy(lastModified = 2,
+            prepare(repository, secondData.copy(lastModified = 2,
                 playbackStats = changed.stats, playbackStatBuckets = changed.buckets)).use { updated ->
                 val changedObjects = updated.objects(first.paths).toList()
                 val changedWire = changedObjects.sumOf { it.content.size.toLong() } + updated.content.size
@@ -83,4 +84,7 @@ class SyncArchiveStatisticsOrderTest {
             }
         }
     }
+
+    private suspend fun prepare(repository: SyncArchiveRepository, data: SyncData): SyncPreparedArchive =
+        repository.playbackDatasets.fromLegacy(data).use { repository.prepareCancellable(it) }
 }
