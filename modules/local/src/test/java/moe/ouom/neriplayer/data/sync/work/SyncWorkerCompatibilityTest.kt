@@ -84,9 +84,12 @@ class SyncWorkerCompatibilityTest {
         val invocations = mockingDetails(manager).invocations.toList()
         assertEquals(listOf("github_sync_periodic", "webdav_sync_periodic", "github_sync_work", "github_sync_periodic",
             "webdav_sync_work", "webdav_sync_periodic"), invocations.dropLast(1).map { it.getArgument<String>(0) })
-        val now = invocations.last().getArgument<OneTimeWorkRequest>(0)
-        assertTrue(now.workSpec.input.getBoolean("force_sync", false))
-        assertTrue(now.tags.contains("sync_now"))
+        for ((invocation, providerTag) in invocations.takeLast(1).zip(listOf("github_sync_work"))) {
+            val now = invocation.getArgument<OneTimeWorkRequest>(0)
+            assertTrue(now.workSpec.input.getBoolean("force_sync", false))
+            assertTrue(now.tags.contains("sync_now"))
+            assertTrue(now.tags.contains(providerTag))
+        }
         assertEquals(ExistingWorkPolicy.KEEP, GitHubSyncWorker.delayedSyncWorkPolicy(false, false))
         assertEquals(ExistingWorkPolicy.APPEND_OR_REPLACE, WebDavSyncWorker.delayedSyncWorkPolicy(false, true))
         assertEquals(0L, GitHubSyncWorker.buildDelayedSyncRequest(true, -1).workSpec.initialDelay)

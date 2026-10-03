@@ -9,13 +9,9 @@ internal class SyncDeviceStateStore(private val encryptedPrefs: SharedPreference
     fun saveDeviceId(deviceId: String) {
         require(deviceId.isNotBlank()) { "Device ID must not be blank" }
         synchronized(syncCausalTokenLock) {
-            val deviceChanged = getDeviceId() != deviceId
             check(
                 encryptedPrefs.commitEdit {
                     putString(KEY_DEVICE_ID, deviceId)
-                    if (deviceChanged) {
-                        remove(KEY_SYNC_CAUSAL_COUNTER)
-                    }
                 }
             ) { "Failed to persist sync causal device state" }
         }
@@ -27,9 +23,10 @@ internal class SyncDeviceStateStore(private val encryptedPrefs: SharedPreference
 
     fun getOrCreateDeviceId(): String {
         return synchronized(syncCausalTokenLock) {
-            getDeviceId()
-                ?.takeIf { it.isNotBlank() }
-                ?: UUID.randomUUID().toString().also(::saveDeviceId)
+            val deviceId = deviceIdCandidate()
+            // commit 失败也会改变内存，重新读取同一值不能替代持久确认
+            saveDeviceId(deviceId)
+            deviceId
         }
     }
 
@@ -38,13 +35,14 @@ internal class SyncDeviceStateStore(private val encryptedPrefs: SharedPreference
         if (count == 0) return emptyList()
 
         return synchronized(syncCausalTokenLock) {
-            val deviceId = getOrCreateDeviceId()
+            val deviceId = deviceIdCandidate()
             val currentCounter = encryptedPrefs.getLong(KEY_SYNC_CAUSAL_COUNTER, 0L)
             check(currentCounter >= 0L) { "Stored sync causal counter is invalid" }
             val nextCounter = Math.addExact(currentCounter, count.toLong())
             // token 范围必须先落盘，避免崩溃后重复分配
             check(
                 encryptedPrefs.commitEdit {
+                    putString(KEY_DEVICE_ID, deviceId)
                     putLong(KEY_SYNC_CAUSAL_COUNTER, nextCounter)
                 }
             ) { "Failed to persist sync causal counter" }
@@ -57,4 +55,7 @@ internal class SyncDeviceStateStore(private val encryptedPrefs: SharedPreference
             }
         }
     }
+
+    private fun deviceIdCandidate(): String =
+        getDeviceId()?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
 }

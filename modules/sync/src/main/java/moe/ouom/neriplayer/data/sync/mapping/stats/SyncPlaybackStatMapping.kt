@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.sync.mapping.stats
 
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncCounterShardPolicy
+import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackCounterArithmetic
 import moe.ouom.neriplayer.data.sync.sanitize.SyncSanitizationHost
 import moe.ouom.neriplayer.data.sync.policy.isLocalMediaUri
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
@@ -160,7 +161,7 @@ object SyncPlaybackStatMapping {
         totalListenMs: Long,
         counterShards: List<SyncPlaybackCounterShard>
     ): Long {
-        val shardTotal = counterShards.sumOf { it.totalListenMs.coerceAtLeast(0L) }
+        val shardTotal = counterShards.fold(0L) { total, shard -> SyncPlaybackCounterArithmetic.add(total, shard.totalListenMs) }
         return (totalListenMs.coerceAtLeast(0L) - shardTotal).coerceAtLeast(0L)
     }
 
@@ -168,7 +169,7 @@ object SyncPlaybackStatMapping {
         playCount: Int,
         counterShards: List<SyncPlaybackCounterShard>
     ): Int {
-        val shardTotal = counterShards.sumOf { it.playCount.coerceAtLeast(0) }
+        val shardTotal = counterShards.fold(0) { total, shard -> SyncPlaybackCounterArithmetic.add(total, shard.playCount) }
         return (playCount.coerceAtLeast(0) - shardTotal).coerceAtLeast(0)
     }
 

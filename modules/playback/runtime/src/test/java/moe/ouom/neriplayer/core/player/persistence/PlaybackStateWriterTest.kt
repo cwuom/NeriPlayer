@@ -22,6 +22,70 @@ class PlaybackStateWriterTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `fallback cannot confirm progress until the primary marker is durable`() = runTest {
+        val writer = PlaybackStateWriter()
+        val room = MemoryRoomStore()
+        val legacy = legacyStore()
+        val queue = queue()
+        writer.write(snapshot(queue, 1_000), room, legacy)
+        room.failUpdate = true
+        room.failMarker = true
+        val failure = runCatching { writer.write(snapshot(queue, 2_000), room, legacy) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertEquals(2_000L, legacy.read()?.positionMs)
+        room.failUpdate = false
+        room.failMarker = false
+        writer.write(snapshot(queue, 3_000), room, legacy)
+        assertEquals(listOf("replace", "update", "legacy", "replace"), room.operations)
+        assertEquals(3_000L, room.state?.positionMs)
+    }
+
+    @Test
+    fun `fallback cannot confirm an empty queue until the primary marker is durable`() = runTest {
+        val writer = PlaybackStateWriter()
+        val room = MemoryRoomStore()
+        val legacy = legacyStore()
+        room.failClear = true
+        room.failMarker = true
+        val empty = snapshot(PlayerQueueSnapshot.EMPTY, 0)
+        val failure = runCatching { writer.write(empty, room, legacy) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertEquals(emptyList<Any>(), legacy.read()?.playlist)
+        room.failClear = false
+        room.failMarker = false
+        writer.write(empty, room, legacy)
+        assertEquals(listOf("clear", "legacy", "clear"), room.operations)
+        assertNull(legacy.read())
+    }
+
+    @Test
+    fun `confirmed progress does not serialize the full queue and fallback still preserves it`() = runTest {
+        var queueMaterializations = 0
+        val writer = PlaybackStateWriter { value ->
+            queueMaterializations++
+            value.toPersistedState()
+        }
+        val room = MemoryRoomStore()
+        val legacy = legacyStore()
+        val queue = queue()
+        writer.write(snapshot(queue, 1_000), room, legacy)
+        assertEquals(1, queueMaterializations)
+        writer.write(snapshot(queue, 2_000), room, legacy)
+        assertEquals(1, queueMaterializations)
+        assertEquals(2_000L, room.state?.positionMs)
+
+        room.failUpdate = true
+        assertEquals(PlaybackQueuePersistTarget.LEGACY_JSON, writer.write(snapshot(queue, 3_000), room, legacy))
+        assertEquals(2, queueMaterializations)
+        assertEquals(listOf("New queue"), legacy.read()?.playlist?.map { it.name })
+        assertEquals(3_000L, legacy.read()?.positionMs)
+        room.failUpdate = false
+        writer.write(snapshot(queue, 4_000), room, legacy)
+        assertEquals(3, queueMaterializations)
+        assertEquals(listOf("replace", "update", "update", "legacy", "replace"), room.operations)
+    }
+
+    @Test
     fun `confirmed queue needs only progress updates and identical saves are skipped`() = runTest {
         val writer = PlaybackStateWriter()
         val room = MemoryRoomStore()
@@ -177,7 +241,9 @@ class PlaybackStateWriterTest {
         val operations = mutableListOf<String>()
         var state: PersistedState? = null
         var failReplacement = false
+        var failUpdate = false
         var failClear = false
+        var failMarker = false
         var beforeReplace: () -> Unit = {}
 
         override suspend fun replaceSnapshot(state: PersistedState, now: Long) {
@@ -189,6 +255,7 @@ class PlaybackStateWriterTest {
 
         override suspend fun updatePlaybackState(state: PersistedPlaybackState, now: Long) {
             operations.add("update")
+            if (failUpdate) throw IOException("Room progress update unavailable")
             this.state = checkNotNull(this.state).withPlaybackState(state)
         }
 
@@ -200,6 +267,7 @@ class PlaybackStateWriterTest {
 
         override suspend fun markLegacyJsonPrimary(now: Long) {
             operations.add("legacy")
+            if (failMarker) throw IOException("Room primary marker unavailable")
         }
     }
 }

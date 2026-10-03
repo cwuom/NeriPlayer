@@ -80,14 +80,15 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
     playbackState: PersistedPlaybackState,
     shouldWriteQueueState: Boolean,
     shouldWritePlaybackState: Boolean,
-    onRoomFailure: (Throwable) -> Unit = {}
+    onRoomFailure: (Throwable) -> Unit = {},
+    queueStateProvider: (() -> PersistedState)? = null
 ): PlaybackQueuePersistTarget {
     currentCoroutineContext().ensureActive()
     if (!shouldWriteQueueState && !shouldWritePlaybackState) {
         return PlaybackQueuePersistTarget.NONE
     }
     val now = System.currentTimeMillis()
-    if (queueState == null) {
+    if (queueState == null && queueStateProvider == null) {
         return runCatchingNonCancellation {
             roomStore.clear(now)
             currentCoroutineContext().ensureActive()
@@ -104,14 +105,17 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
             runCatchingNonCancellation { roomStore.markLegacyJsonPrimary(now) }
                 .onFailure { markerError ->
                     onRoomFailure(markerError)
-                }
+                }.getOrThrow()
             PlaybackQueuePersistTarget.LEGACY_JSON
         }
     }
 
+    val resolvedQueueState by lazy(LazyThreadSafetyMode.NONE) {
+        checkNotNull(queueStateProvider?.invoke() ?: queueState)
+    }
     return runCatchingNonCancellation {
         if (shouldWriteQueueState) {
-            roomStore.replaceSnapshot(queueState, now)
+            roomStore.replaceSnapshot(resolvedQueueState, now)
         }
         if (shouldWritePlaybackState && !shouldWriteQueueState) {
             roomStore.updatePlaybackState(playbackState, now)
@@ -123,11 +127,11 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
     }.getOrElse { error ->
         currentCoroutineContext().ensureActive()
         onRoomFailure(error)
-        legacyStore.write(queueState, playbackState)
+        legacyStore.write(resolvedQueueState, playbackState)
         runCatchingNonCancellation { roomStore.markLegacyJsonPrimary(now) }
             .onFailure { markerError ->
                 onRoomFailure(markerError)
-            }
+            }.getOrThrow()
         PlaybackQueuePersistTarget.LEGACY_JSON
     }
 }

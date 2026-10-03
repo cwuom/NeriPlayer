@@ -43,7 +43,9 @@ data class PlaylistUsageEntity(
     @ColumnInfo(name = "playlist_id")
     val playlistId: String?,
     val subtype: String?,
-    val subtitle: String?
+    val subtitle: String?,
+    @ColumnInfo(name = "usage_deletion_tokens_json")
+    val usageDeletionTokensJson: String? = null
 )
 
 @Entity(

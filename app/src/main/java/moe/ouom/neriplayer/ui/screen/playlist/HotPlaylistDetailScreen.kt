@@ -26,7 +26,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,15 +36,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stats.PlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
-import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist
+import moe.ouom.neriplayer.ui.screen.history.stats.rememberHotPlaybackStatsQuery
+import moe.ouom.neriplayer.ui.screen.history.stats.rememberStatsQueryDay
+import moe.ouom.neriplayer.ui.screen.history.stats.StatsPageRequest
+import moe.ouom.neriplayer.ui.screen.history.stats.StatsPageNavigation
+import moe.ouom.neriplayer.ui.screen.history.stats.rememberStatsPage
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -58,33 +58,14 @@ fun HotPlaylistDetailScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     offlineMode: Boolean = false
 ) {
-    val hotPlaylist by produceState<PlaybackStatsHotPlaylist?>(
-        initialValue = null,
-        key1 = period
-    ) {
-        val statsRepository = withContext(Dispatchers.IO) {
-            AppContainer.playbackStatsRepo
-        }
-        combine(
-            statsRepository.statsFlow,
-            statsRepository.dailyStatsFlow
-        ) { stats, dailyStats ->
-            stats to dailyStats
-        }.collect { (stats, dailyStats) ->
-            value = withContext(Dispatchers.Default) {
-                buildPlaybackStatsHotPlaylist(
-                    stats = stats,
-                    dailyStats = dailyStats,
-                    period = period
-                )
-            }
-        }
-    }
-    val playlist = hotPlaylist
-    val tracks = playlist?.tracks.orEmpty()
-    val songs = remember(tracks) {
-        tracks.map { stat -> stat.toPlaybackStatsSongItem() }
-    }
+    val queryDay by rememberStatsQueryDay()
+    val query = rememberHotPlaybackStatsQuery(period, queryDay.nowMillis)
+    val queryDayKey = queryDay.key.takeUnless { period == PlaybackStatsPeriod.ALL }
+    val pageRequestState = remember(query, queryDayKey) { mutableStateOf(StatsPageRequest()) }
+    var pageRequest by pageRequestState
+    val state by rememberStatsPage(query, pageRequestState)
+    val tracks = state.page.tracks
+    val songs = remember(tracks) { tracks.map { it.toPlaybackStatsSongItem() } }
     val context = LocalContext.current
     val title = stringResource(period.hotPlaylistTitleResId())
 
@@ -109,7 +90,7 @@ fun HotPlaylistDetailScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Outlined.PlaylistPlay,
-                            contentDescription = stringResource(CoreCommonR.string.cd_play_all)
+                            contentDescription = stringResource(if (state.summary.trackCount <= 100) CoreCommonR.string.cd_play_all else CoreCommonR.string.stats_play_page)
                         )
                     }
                 },
@@ -120,7 +101,7 @@ fun HotPlaylistDetailScreen(
             )
         }
     ) { padding ->
-        if (playlist == null) {
+        if (state.loading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -128,6 +109,10 @@ fun HotPlaylistDetailScreen(
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
+            }
+        } else if (state.failed) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                moe.ouom.neriplayer.ui.haptic.HapticTextButton(onClick = { pageRequest = pageRequest.copy(retry = pageRequest.retry + 1) }) { Text(stringResource(CoreCommonR.string.stats_load_failed)) }
             }
         } else {
             LazyColumn(
@@ -162,8 +147,8 @@ fun HotPlaylistDetailScreen(
                         Text(
                             text = stringResource(
                                 CoreCommonR.string.library_hot_playlist_summary,
-                                tracks.size,
-                                formatPlayCount(context, playlist.totalPlayCount)
+                                state.summary.trackCount,
+                                formatPlayCount(context, state.summary.totalPlayCount)
                             ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium
@@ -188,12 +173,15 @@ fun HotPlaylistDetailScreen(
                 } else {
                     itemsIndexed(tracks, key = { _, stat -> stat.identityKey }) { index, stat ->
                         StatTrackRow(
-                            rank = index + 1,
+                            rank = pageRequest.offset + index + 1,
                             stat = stat,
                             offlineMode = offlineMode,
                             onClick = { onSongClick(songs, index) }
                         )
                     }
+                }
+                item(key = "hot_playlist_page_navigation") {
+                    StatsPageNavigation(state, pageRequest) { pageRequest = it }
                 }
             }
         }

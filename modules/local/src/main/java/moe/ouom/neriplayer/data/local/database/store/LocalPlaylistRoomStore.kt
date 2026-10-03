@@ -1,17 +1,25 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.local.database.store.stats.toDomain
+
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import androidx.room.withTransaction
 import com.google.gson.Gson
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistDao
 import moe.ouom.neriplayer.data.local.database.entity.SyncOutboxEntity
 import moe.ouom.neriplayer.data.local.database.entity.SyncOutboxStatus
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSyncMutationOutbox
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSyncMutation
+import moe.ouom.neriplayer.data.local.playlist.decodeLocalPlaylistSyncMutation
 import moe.ouom.neriplayer.data.model.stableKey
 import java.security.MessageDigest
+import java.io.IOException
 import java.util.UUID
 
 internal enum class LocalPlaylistRoomShadowImportStatus {
@@ -26,6 +34,11 @@ internal data class LocalPlaylistRoomShadowImportResult(
     val memberCount: Int,
     val firstMismatch: String? = null
 )
+
+internal sealed interface LocalPlaylistPreviewAuthority {
+    data object Unmigrated : LocalPlaylistPreviewAuthority
+    data class RoomPrimary(val playlist: LocalPlaylist?) : LocalPlaylistPreviewAuthority
+}
 
 internal class LocalPlaylistRoomStore(
     private val database: NeriUserDataDatabase,
@@ -95,84 +108,49 @@ internal class LocalPlaylistRoomStore(
         sourceDigest: String,
         now: Long = System.currentTimeMillis()
     ) {
-        val previousById = previous.associateBy(LocalPlaylist::id)
-        val nextById = next.associateBy(LocalPlaylist::id)
-        val previousPositions = previous.withIndex().associate { it.value.id to it.index }
-        val nextPositions = next.withIndex().associate { it.value.id to it.index }
-        val changedIds = (previousById.keys + nextById.keys)
-            .filter { playlistId ->
-                previousById[playlistId] != nextById[playlistId] ||
-                    previousPositions[playlistId] != nextPositions[playlistId]
-            }
-            .toSet()
-        if (changedIds.isEmpty()) {
-            database.withTransaction {
-                database.syncMetadataDao().upsertMigrationMetadata(
-                    migrationMetadata(CUTOVER_STATE_METADATA_KEY, ROOM_PRIMARY_STATE, now)
-                )
-                database.syncMetadataDao().upsertMigrationMetadata(
-                    migrationMetadata(SOURCE_DIGEST_METADATA_KEY, sourceDigest, now)
-                )
-            }
-            return
-        }
-
-        val removedIds = changedIds.filter { it !in nextById }
-        val changedPlaylists = next
-            .filter { it.id in changedIds }
-            .map { playlist ->
-                playlist to nextPositions.getValue(playlist.id)
-            }
-        val snapshot = mapper.toSnapshot(
-            playlists = changedPlaylists.map { it.first },
-            sourceDigest = sourceDigest,
-            now = now
-        )
-        val tracksByIdentity = snapshot.tracks.associateBy { it.identityKey }
-        val changedMembers = snapshot.members
-        val changedTokens = snapshot.memberTokens
-
+        val changes = mapper.toWriteSet(previous, next)
         database.withTransaction {
-            removedIds.forEach { playlistId ->
-                database.localPlaylistDao().deleteMemberTokensForPlaylist(playlistId)
-                database.localPlaylistDao().deleteMembersForPlaylist(playlistId)
-                database.localPlaylistDao().deletePlaylist(playlistId)
-            }
-
-            database.localPlaylistDao().insertPlaylists(
-                changedPlaylists.map { (playlist, position) ->
-                    snapshot.playlists
-                        .first { it.playlistId == playlist.id }
-                        .copy(displayPosition = position)
-                }
-            )
-
-            changedIds
-                .filter { it in nextById }
-                .forEach { playlistId ->
-                    if (playlistId !in removedIds) {
-                        database.localPlaylistDao().deleteMemberTokensForPlaylist(playlistId)
-                        database.localPlaylistDao().deleteMembersForPlaylist(playlistId)
-                    }
-                }
-            database.localPlaylistDao().insertTracks(tracksByIdentity.values.toList())
-            database.localPlaylistDao().insertMembers(changedMembers)
-            database.localPlaylistDao().insertMemberTokens(changedTokens)
-            database.localPlaylistDao().deleteOrphanTracks()
+            applyWriteSet(changes)
             database.syncMetadataDao().upsertMigrationMetadata(
                 migrationMetadata(CUTOVER_STATE_METADATA_KEY, ROOM_PRIMARY_STATE, now)
             )
             database.syncMetadataDao().upsertMigrationMetadata(
                 migrationMetadata(SOURCE_DIGEST_METADATA_KEY, sourceDigest, now)
             )
-            database.syncMetadataDao().upsertMigrationMetadata(
-                migrationMetadata(
-                    IMPORT_SCHEMA_METADATA_KEY,
-                    moe.ouom.neriplayer.data.local.database.entity
-                        .LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION.toString(),
-                    now
+            if (changes.domainChanged) {
+                database.syncMetadataDao().upsertMigrationMetadata(
+                    migrationMetadata(
+                        IMPORT_SCHEMA_METADATA_KEY,
+                        moe.ouom.neriplayer.data.local.database.entity.LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION.toString(),
+                        now
+                    )
                 )
-            )
+            }
+        }
+    }
+
+    private suspend fun applyWriteSet(changes: LocalPlaylistRoomWriteSet) {
+        val dao = database.localPlaylistDao()
+        changes.removedPlaylistIds.forEach { dao.deletePlaylist(it) }
+        changes.removedMembers.forEach { (playlistId, keys) ->
+            keys.chunked(PLAYLIST_WRITE_BATCH_SIZE).forEach { dao.deleteMembersByIdentityKeys(playlistId, it) }
+        }
+        if (changes.playlists.isNotEmpty()) dao.insertPlaylists(changes.playlists)
+        writeChangedTracks(dao, changes)
+        changes.members.chunked(PLAYLIST_WRITE_BATCH_SIZE).forEach { dao.insertMembers(it) }
+        changes.positions.forEach { dao.updateMemberPosition(it.playlistId, it.identityKey, it.displayPosition) }
+        changes.removedTokens.chunked(PLAYLIST_WRITE_BATCH_SIZE).forEach { dao.deleteMemberTokenRows(it) }
+        changes.memberTokens.chunked(PLAYLIST_WRITE_BATCH_SIZE).forEach { dao.insertMemberTokens(it) }
+        changes.orphanCandidates.toList().chunked(PLAYLIST_WRITE_BATCH_SIZE).forEach {
+            dao.deleteOrphanTracksByIdentityKeys(it)
+        }
+    }
+
+    private suspend fun writeChangedTracks(dao: LocalPlaylistDao, changes: LocalPlaylistRoomWriteSet) {
+        changes.tracks.chunked(PLAYLIST_WRITE_BATCH_SIZE).forEach { candidates ->
+            val existing = dao.getTracksByIdentityKeys(candidates.map { it.identityKey }).associateBy { it.identityKey }
+            val changed = candidates.filter { existing[it.identityKey] != it }
+            if (changed.isNotEmpty()) dao.insertTracks(changed)
         }
     }
 
@@ -188,12 +166,18 @@ internal class LocalPlaylistRoomStore(
     }
 
     suspend fun readPlaylistIfRoomPrimary(playlistId: Long): LocalPlaylist? {
-        if (!isRoomPrimary()) {
-            return null
+        return when (val authority = readFastPlaylistAuthority(playlistId)) {
+            LocalPlaylistPreviewAuthority.Unmigrated -> null
+            is LocalPlaylistPreviewAuthority.RoomPrimary -> authority.playlist
         }
+    }
+
+    suspend fun readFastPlaylistAuthority(playlistId: Long): LocalPlaylistPreviewAuthority {
         return database.withTransaction {
+            if (!isRoomPrimary()) return@withTransaction LocalPlaylistPreviewAuthority.Unmigrated
             val dao = database.localPlaylistDao()
-            val playlist = dao.getPlaylist(playlistId) ?: return@withTransaction null
+            val playlist = dao.getPlaylist(playlistId)
+                ?: return@withTransaction LocalPlaylistPreviewAuthority.RoomPrimary(null)
             val members = dao.getMembersForPlaylist(playlistId)
             val identityKeys = members.mapTo(linkedSetOf()) { it.identityKey }
             val tracks = identityKeys
@@ -201,33 +185,38 @@ internal class LocalPlaylistRoomStore(
                 .flatMap { keys ->
                     if (keys.isEmpty()) emptyList() else dao.getTracksByIdentityKeys(keys)
                 }
-            mapper.toDomain(
+            val resolved = mapper.toDomain(
                 playlists = listOf(playlist),
                 tracks = tracks,
                 members = members,
                 memberTokens = dao.getMemberTokensForPlaylist(playlistId)
             ).firstOrNull()
+            LocalPlaylistPreviewAuthority.RoomPrimary(resolved)
         }
     }
 
     suspend fun readPendingSyncMutationOutbox(): LocalPlaylistSyncMutationOutbox? {
-        val entries = database.syncMetadataDao().getOutbox(
-            statuses = listOf(SyncOutboxStatus.PENDING),
-            limit = MAX_PENDING_OUTBOX_ENTRIES
-        )
-        if (entries.isEmpty()) {
-            return null
-        }
-        return LocalPlaylistSyncMutationOutbox(
-            mutations = entries.mapNotNull { entry ->
-                runCatching {
-                    gson.fromJson(
-                        entry.mutationPayloadJson,
-                        moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSyncMutation::class.java
-                    )
-                }.getOrNull()
+        return database.withTransaction {
+            val mutations = ArrayList<LocalPlaylistSyncMutation>()
+            var afterSequence = 0L
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val entries = database.syncMetadataDao().getOutboxPage(
+                    statuses = listOf(SyncOutboxStatus.PENDING),
+                    afterSequence = afterSequence,
+                    limit = PENDING_OUTBOX_PAGE_SIZE
+                )
+                if (entries.isEmpty()) break
+                for (entry in entries) {
+                    currentCoroutineContext().ensureActive()
+                    if (entry.payloadVersion != 1) throw IOException("Unsupported playlist sync outbox payload version")
+                    mutations.add(decodeLocalPlaylistSyncMutation(entry.mutationPayloadJson))
+                }
+                afterSequence = entries.last().sequence
             }
-        ).takeIf { it.mutations.isNotEmpty() }
+            currentCoroutineContext().ensureActive()
+            if (mutations.isEmpty()) null else LocalPlaylistSyncMutationOutbox(mutations)
+        }
     }
 
     suspend fun writePendingSyncMutationOutbox(
@@ -319,7 +308,8 @@ internal class LocalPlaylistRoomStore(
         const val IMPORT_SCHEMA_METADATA_KEY = "local_playlist_import_schema"
         const val ROOM_PRIMARY_STATE = "room_primary"
         const val LEGACY_JSON_STATE = "legacy_json"
-        private const val MAX_PENDING_OUTBOX_ENTRIES = 256
+        private const val PLAYLIST_WRITE_BATCH_SIZE = 500
+        private const val PENDING_OUTBOX_PAGE_SIZE = 256
 
         fun sourceDigest(playlists: List<LocalPlaylist>): String {
             return domainDigest(playlists)
@@ -389,6 +379,15 @@ internal class LocalPlaylistRoomStore(
                             append(token.deviceId)
                             append(token.counter)
                         }
+                    // 默认值保留旧摘要，避免升级后丢失已提交的旧 outbox
+                    if (song.lyricSyncRevision != 0L) {
+                        append("lyricSyncRevision")
+                        append(song.lyricSyncRevision)
+                    }
+                    if (song.lyricSyncEdited != null) {
+                        append("lyricSyncEdited")
+                        append(song.lyricSyncEdited)
+                    }
                 }
             }
             return digest.digest()

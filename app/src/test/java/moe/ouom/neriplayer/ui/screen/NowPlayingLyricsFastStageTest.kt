@@ -4,8 +4,10 @@ import android.content.Context
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadStages
@@ -21,6 +23,47 @@ class NowPlayingLyricsFastStageTest {
         5L, "Local", "Artist", "__local_files__", 0L, 90_000L, null,
         mediaUri = "content://media/audio/5", localFileName = "track.mp3"
     )
+
+    @Test
+    fun `confirmed edits overlay stale preferred local and downloaded first frames per variant`() = runTest {
+        val preferred = PreferredLyricSourceResult(
+            listOf(LyricEntry("preferred original", 1000, 2000)),
+            listOf(LyricEntry("preferred translation", 1000, 2000)),
+            listOf(LyricEntry("preferred romanized", 1000, 2000)), LyricSourcePreference.Kugou
+        )
+        for (managed in listOf(false, true)) {
+            val sources = object : FakeNowPlayingLyricsSources() {
+                override fun hasManagedDownload(song: SongItem) = managed
+                override fun inspectLocal(context: Context, song: SongItem, includeEmbedded: Boolean) =
+                    LocalLyricsScanMetadata("local old", "local translation", "local romanized")
+                override fun fastDownloaded(context: Context, song: SongItem) =
+                    ManagedDownloadStorage.DownloadedLyricsBundle("download old", "download translation", "download romanized")
+            }
+            val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+            val base = localSong.copy(lyricSyncEdited = true, lyricSyncRevision = 20)
+            val edits = listOf(
+                base.copy(matchedLyric = "[00:01.00]edited", matchedTranslatedLyric = "[00:01.00]edited translation",
+                    matchedRomanizedLyric = "[00:01.00]edited romanized"),
+                base.copy(matchedTranslatedLyric = "[00:01.00]edited translation"),
+                base.copy(matchedRomanizedLyric = "[00:01.00]edited romanized"),
+                base.copy(matchedLyric = "", matchedTranslatedLyric = "", matchedRomanizedLyric = "")
+            )
+            for (edited in edits) {
+                val input = request(edited).copy(cachedPreferredLyrics = preferred, defaultLyricSource = LyricSourcePreference.Kugou)
+                for (state in listOf(stages.readInitial(input).state, stages.readFast(input).state)) {
+                    assertEquals(edited.matchedLyric, state.rawLyrics)
+                    assertEquals(edited.matchedTranslatedLyric, state.rawTranslatedLyrics)
+                    assertEquals(edited.matchedRomanizedLyric, state.rawPhoneticLyrics)
+                    assertEquals(edited.matchedLyric?.substringAfter(']') ?: "preferred original",
+                        state.lyrics.firstOrNull()?.text.orEmpty())
+                    assertEquals(edited.matchedTranslatedLyric?.substringAfter(']') ?: "preferred translation",
+                        state.translatedLyrics.firstOrNull()?.text.orEmpty())
+                    assertEquals(edited.matchedRomanizedLyric?.substringAfter(']') ?: "preferred romanized",
+                        state.phoneticLyrics.firstOrNull()?.text.orEmpty())
+                }
+            }
+        }
+    }
 
     @Test
     fun `local fast stage avoids embedded scan then background completes unresolved scan`() = runTest {

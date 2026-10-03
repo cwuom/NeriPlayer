@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore
+
 
 object RepositoryCutoverKeys {
     const val LOCAL_PLAYLIST = LocalPlaylistRoomStore.CUTOVER_STATE_METADATA_KEY

@@ -38,10 +38,12 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.taglib)
 
+    testRuntimeOnly(libs.zstd.jni)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockwebserver)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.room.testing)

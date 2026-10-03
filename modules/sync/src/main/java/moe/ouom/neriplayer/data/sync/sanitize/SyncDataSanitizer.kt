@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.model.sync.SyncSystemPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletionPolicy
 import moe.ouom.neriplayer.data.sync.mapping.stats.SyncPlaybackStatMapping
 import moe.ouom.neriplayer.data.sync.merge.song.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaylistUsageStatsMergePolicy
@@ -35,16 +36,19 @@ class SyncDataSanitizer(private val host: SyncSanitizationHost) {
             playbackStatBuckets = data.playbackStatBuckets.mapNotNull {
                 SyncPlaybackStatMapping.sanitize(it, host)
             },
-            playlistUsageStats = data.playlistUsageStats.mapNotNull { stat ->
-                SyncPlaylistUsageStatsMergePolicy.sanitize(stat)
-            },
+            playlistUsageDeletions = SyncPlaylistUsageDeletionPolicy.merge(data.playlistUsageDeletions),
+            playlistUsageStats = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+                data.playlistUsageStats, emptyList(), data.playlistUsageDeletions
+            ),
             localPlaylistPlaybackStats = data.localPlaylistPlaybackStats.mapNotNull { stat ->
                 SyncPlaylistUsageStatsMergePolicy.sanitize(stat)
             },
             localPlaylistPlaybackBuckets = data.localPlaylistPlaybackBuckets.mapNotNull { bucket ->
                 SyncPlaylistUsageStatsMergePolicy.sanitize(bucket)
             },
-            biliVideoSkipRules = SyncBiliVideoSkipMergePolicy.sanitize(data.biliVideoSkipRules)
+            biliVideoSkipRules = SyncBiliVideoSkipMergePolicy.sanitize(data.biliVideoSkipRules),
+            lyricOverrides = data.lyricOverrides.mapNotNull { sanitizeSyncSong(it) }
+                .filter { it.lyricSyncRevision > 0L }
         )
     }
 

@@ -1,9 +1,7 @@
 package moe.ouom.neriplayer.core.player.runtime.stats
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.runtime.blocking.blockingIo
 import moe.ouom.neriplayer.data.model.SongItem
@@ -12,19 +10,31 @@ class PlaybackStatsOwner(
     private val scope: CoroutineScope,
     private val writes: PlaybackStatsWritePort,
     private val tracker: PlaybackStatsTracker,
+    private val pendingWrites: PlaybackStatsPendingWrites,
     private val blockForPersistence: (Long, suspend () -> Unit) -> Unit = { timeoutMs, block ->
         blockingIo(timeoutMs, block)
     }
 ) {
-    private val persistenceLock = Any()
-    private var persistJob: Job? = null
+    private var currentSong: SongItem? = null
+    private var currentPlaylistId: Long? = null
+    private var currentPlaying = false
+    private var samplingSuspended = false
+    private var statisticsEnabled = false
 
-    fun onSongChanged(song: SongItem?, localPlaylistId: Long?, writesEnabled: Boolean) {
+    init { pendingWrites.registerSampler(this) }
+
+    fun onSongChanged(song: SongItem?, localPlaylistId: Long?, writesEnabled: Boolean) = pendingWrites.collect(this) {
+        if (samplingSuspended && !tracker.matchesTrackedSong(song, localPlaylistId)) tracker.resetUntrackedPlayCycle()
+        currentSong = song
+        currentPlaylistId = localPlaylistId
+        if (!canSample(writesEnabled)) return@collect
         val snapshot = synchronized(tracker) { tracker.onSongChanged(song, localPlaylistId) }
         persist(snapshot, writesEnabled)
     }
 
-    fun onPlayingChanged(playing: Boolean, reason: String, writesEnabled: Boolean) {
+    fun onPlayingChanged(playing: Boolean, reason: String, writesEnabled: Boolean) = pendingWrites.collect(this) {
+        currentPlaying = playing
+        if (!canSample(writesEnabled)) return@collect
         val snapshot = synchronized(tracker) { tracker.onPlayingChanged(playing) }
         if (snapshot != null) {
             NPLogger.d(
@@ -35,22 +45,35 @@ class PlaybackStatsOwner(
         persist(snapshot, writesEnabled)
     }
 
-    fun onTrackEnded(writesEnabled: Boolean) {
+    fun onTrackEnded(writesEnabled: Boolean) = pendingWrites.collect(this) {
+        if (!canSample(writesEnabled)) {
+            tracker.resetUntrackedPlayCycle()
+            return@collect
+        }
         val snapshot = synchronized(tracker) { tracker.onTrackEnded() }
         persist(snapshot, writesEnabled)
     }
 
-    fun onManualSeek(positionMs: Long) {
+    fun onManualSeek(positionMs: Long) = pendingWrites.collect(this) {
         synchronized(tracker) { tracker.onManualSeek(positionMs) }
     }
 
     fun onProgress(positionMs: Long, writesEnabled: Boolean): Boolean {
-        val snapshot = synchronized(tracker) { tracker.onPlaybackProgress(positionMs) }
-        persist(snapshot, writesEnabled)
-        return snapshot != null
+        var sampled = false
+        pendingWrites.collect(this) {
+            if (!canSample(writesEnabled)) {
+                tracker.onUntrackedPlaybackProgress(positionMs)
+                return@collect
+            }
+            val snapshot = synchronized(tracker) { tracker.onPlaybackProgress(positionMs) }
+            persist(snapshot, writesEnabled)
+            sampled = snapshot != null
+        }
+        return sampled
     }
 
-    fun flushPeriodic(writesEnabled: Boolean) {
+    fun flushPeriodic(writesEnabled: Boolean) = pendingWrites.collect(this) {
+        if (!canSample(writesEnabled)) return@collect
         val snapshot = synchronized(tracker) {
             if (tracker.shouldFlushPeriodically()) tracker.flushPeriodic() else null
         }
@@ -59,13 +82,64 @@ class PlaybackStatsOwner(
 
     private fun persist(snapshot: PlaybackStatsSnapshot?, writesEnabled: Boolean) {
         if (snapshot == null || !writesEnabled) return
-        synchronized(persistenceLock) {
-            val previousJob = persistJob
-            persistJob = scope.launch {
-                previousJob?.join()
-                writes.record(snapshot)
-            }
+        pendingWrites.activate(writes)
+        if (!pendingWrites.enqueue(snapshot)) suspendSampling()
+    }
+
+    private fun canSample(writesEnabled: Boolean): Boolean {
+        statisticsEnabled = writesEnabled
+        if (pendingWrites.isRestoringStatistics) {
+            pauseForStatisticsRestore()
+            return false
         }
+        if (!writesEnabled) return true
+        pendingWrites.activate(writes)
+        if (!pendingWrites.canCollect) {
+            suspendSampling()
+            pendingWrites.retry()
+            return false
+        }
+        resumeSampling()
+        return true
+    }
+
+    private fun suspendSampling() {
+        if (!pauseSampling()) return
+        NPLogger.e("PlaybackStats", "Playback statistics collection suspended; new listening time is not recorded while storage is unavailable")
+    }
+
+    private fun pauseSampling(): Boolean {
+        if (samplingSuspended) return false
+        samplingSuspended = true
+        val final = synchronized(tracker) { tracker.suspendForPersistence() }
+        if (statisticsEnabled) final?.let(pendingWrites::enqueue)
+        return true
+    }
+
+    internal fun pauseForStatisticsRestore() { pauseSampling() }
+
+    internal fun rebaseAfterStatisticsRestore() = synchronized(tracker) { tracker.rebaseAfterStatisticsRestore() }
+
+    internal fun retireSampling() {
+        if (!samplingSuspended) {
+            samplingSuspended = true
+            val final = synchronized(tracker) { tracker.suspendForPersistence() }
+            if (statisticsEnabled) final?.let(pendingWrites::enqueue)
+        }
+        currentSong = null
+        currentPlaylistId = null
+        currentPlaying = false
+        tracker.onSongChanged(null)
+    }
+
+    private fun resumeSampling() {
+        if (!samplingSuspended) return
+        synchronized(tracker) {
+            tracker.onSongChanged(currentSong, currentPlaylistId)
+            tracker.onPlayingChanged(currentPlaying)
+        }
+        samplingSuspended = false
+        NPLogger.d("PlaybackStats", "Playback statistics collection resumed; the unavailable interval was not recorded")
     }
 
     fun drainBlocking(reason: String, writesEnabled: Boolean) {
@@ -74,14 +148,11 @@ class PlaybackStatsOwner(
     }
 
     private fun drainPendingBlocking(reason: String) {
-        val pendingJob = pendingJob()
-        if (!hasPendingWork(pendingJob)) return
+        if (!hasPendingWork()) return
         NPLogger.d("NERI-PlayerManager", "drainPlaybackStatsPersistJobBlocking: reason=$reason")
         blockForPersistence(3_000L) {
-            pendingJob?.join()
-            writes.flushPendingWrites()
+            pendingWrites.flush(writes)
         }
-        clearCompletedJob(pendingJob)
     }
 
     fun flushBlocking(reason: String, stopTracking: Boolean, writesEnabled: Boolean) {
@@ -90,44 +161,34 @@ class PlaybackStatsOwner(
     }
 
     private fun flushBlockingWhenEnabled(reason: String, stopTracking: Boolean) {
-        val pendingJob = pendingJob()
-        val snapshot = finalSnapshot(stopTracking)
-        clearTrackedSongIfStopped(stopTracking)
-        if (!hasBlockingFlushWork(pendingJob, snapshot)) return
+        var snapshot: PlaybackStatsSnapshot? = null
+        pendingWrites.collect(this) {
+            snapshot = if (canSample(true)) finalSnapshot(stopTracking) else null
+            persist(snapshot, true)
+            clearTrackedSongIfStopped(stopTracking)
+        }
+        if (!hasPendingWork()) return
         logFlush("flushPlaybackStatsBlocking", reason, snapshot)
         blockForPersistence(2_000L) {
-            pendingJob?.join()
-            snapshot?.let { writes.record(it) }
-            writes.flushPendingWrites()
+            pendingWrites.flush(writes)
         }
-        clearCompletedJob(pendingJob)
     }
 
     private fun clearTrackedSongIfStopped(stopTracking: Boolean) {
         if (stopTracking) clearTrackedSong()
     }
 
-    private fun hasBlockingFlushWork(job: Job?, snapshot: PlaybackStatsSnapshot?): Boolean =
-        hasPendingWork(job) || snapshot != null
-
-    fun flushAsync(reason: String, stopTracking: Boolean, writesEnabled: Boolean) {
-        if (!writesEnabled) return
-        val snapshot = finalSnapshot(stopTracking)
+    fun flushAsync(reason: String, stopTracking: Boolean, writesEnabled: Boolean) = pendingWrites.collect(this) {
+        if (!writesEnabled) return@collect
+        val snapshot = if (canSample(true)) finalSnapshot(stopTracking) else null
         logFlush("flushPlaybackStatsAsync", reason, snapshot)
         persist(snapshot, writesEnabled)
         if (stopTracking) clearTrackedSong()
     }
 
     fun cancelSharedScopeAfterWrites() {
-        val pendingJob = pendingJob()
-        if (pendingJob == null) {
-            scope.cancel()
-            return
-        }
-        scope.launch {
-            pendingJob.join()
-            scope.cancel()
-        }
+        // 统计写入由独立共享队列持有，释放播放器不能取消后续播放器的重放
+        scope.cancel()
     }
 
     private fun finalSnapshot(stopTracking: Boolean): PlaybackStatsSnapshot? {
@@ -142,27 +203,13 @@ class PlaybackStatsOwner(
     }
 
     private fun clearTrackedSong() {
+        currentSong = null
+        currentPlaylistId = null
+        currentPlaying = false
         synchronized(tracker) { tracker.onSongChanged(null) }
     }
 
-    private fun pendingJob(): Job? = synchronized(persistenceLock) { persistJob }
-
-    private fun hasPendingWork(job: Job?): Boolean =
-        (job != null && !job.isCompleted) || writes.hasPendingWrites()
-
-    private fun clearCompletedJob(job: Job?) {
-        if (job != null) clearCompletedJobIfFinished(job)
-    }
-
-    private fun clearCompletedJobIfFinished(job: Job) {
-        if (job.isCompleted) clearCompletedJobIfCurrent(job)
-    }
-
-    private fun clearCompletedJobIfCurrent(job: Job) {
-        synchronized(persistenceLock) {
-            if (persistJob === job) persistJob = null
-        }
-    }
+    private fun hasPendingWork(): Boolean = pendingWrites.hasPendingWork() || writes.hasPendingWrites()
 
     private fun logFlush(label: String, reason: String, snapshot: PlaybackStatsSnapshot?) {
         snapshot ?: return

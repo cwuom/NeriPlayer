@@ -9,6 +9,57 @@ import org.junit.Test
 
 class PlaybackStatsTrackerTest {
     @Test
+    fun `track ending while a clear is observed cannot create a new epoch phantom play`() {
+        var elapsed = 0L
+        var clear = 0L
+        val tracker = PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { elapsed }, readClearedAt = { clear })
+        tracker.onSongChanged(testSong(1, "song"))
+        tracker.onPlayingChanged(true)
+        elapsed = 30_000
+        clear = 2000
+        assertNull(tracker.onTrackEnded())
+        elapsed = 45_000
+        assertEquals(15_000L, tracker.flushPeriodic()!!.listenedMs)
+    }
+
+    @Test
+    fun `new playback carries its observed clear epoch even if the device wall clock is behind`() {
+        var elapsed = 0L
+        val clear = System.currentTimeMillis() + 86_400_000
+        val tracker = PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { elapsed }, readClearedAt = { clear })
+        tracker.onSongChanged(testSong(1, "song"))
+        tracker.onPlayingChanged(true)
+        elapsed = 30_000
+        val snapshot = tracker.flushPeriodic()!!
+        assertEquals(clear, snapshot.observedClearedAt)
+        assertEquals(30_000L, snapshot.listenedMs)
+        assertEquals(1, snapshot.playCountIncrement)
+    }
+
+    @Test
+    fun `observing a clear drops the mixed segment and starts a new count threshold`() {
+        var elapsed = 0L
+        var clear = 0L
+        val tracker = PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { elapsed }, readClearedAt = { clear })
+        tracker.onSongChanged(testSong(1, "song"))
+        tracker.onPlayingChanged(true)
+        elapsed = 30_000
+        val beforeClear = tracker.flushPeriodic()!!
+        elapsed = 40_000
+        clear = 2000
+        assertEquals(false, tracker.shouldFlushPeriodically())
+        assertNull(tracker.flushPeriodic())
+        elapsed = 55_000
+        val fresh = tracker.flushPeriodic()!!
+        assertEquals(15_000L, fresh.listenedMs)
+        assertEquals(0, fresh.playCountIncrement)
+        assertEquals(2000L, fresh.observedClearedAt)
+        assertEquals(0L, beforeClear.observedClearedAt)
+        elapsed = 70_000
+        assertEquals(1, tracker.flushPeriodic()!!.playCountIncrement)
+    }
+
+    @Test
     fun `periodic flush eligibility requires active tracking and the elapsed interval`() {
         var now = 0L
         val tracker = PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { now })

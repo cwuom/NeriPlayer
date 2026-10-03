@@ -31,6 +31,39 @@ class NowPlayingLyricsResolutionTest {
     private val localSong = song.copy(album = "__local_files__", mediaUri = "content://media/audio/6")
 
     @Test
+    fun `confirmed edited variants override local download and word timing refresh including explicit clears`() = runTest {
+        val local = LocalLyricsScanMetadata("[00:01.00]local", "[00:01.00]local translation", "[00:01.00]local romanized")
+        val downloaded = ManagedDownloadStorage.DownloadedLyricsBundle(
+            "[00:01.00]download", "[00:01.00]download translation", "[00:01.00]download romanized",
+            hasOriginalSidecar = true, hasTranslatedSidecar = true, hasRomanizedSidecar = true
+        )
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun onlineOriginal(song: SongItem): List<LyricEntry> = error("must preserve edited original")
+            override suspend fun onlineTranslated(song: SongItem): List<LyricEntry> = error("must preserve edited translation")
+            override suspend fun onlineRomanized(song: SongItem): List<LyricEntry> = error("must preserve edited romanized")
+        }
+        for (base in listOf(song, localSong)) {
+            for (managed in listOf(false, true)) {
+                for (text in listOf("[00:01.00]user", "")) {
+                    val edited = base.copy(lyricSyncEdited = true, lyricSyncRevision = 20,
+                        matchedLyric = text, matchedTranslatedLyric = text, matchedRomanizedLyric = text)
+                    val inputs = inputs(edited, local, downloaded, managed, preferWordTimed = true)
+                    for (variant in ManagedLyricVariant.entries) assertEquals(text, effectiveRawLyric(inputs, variant))
+                    val netease = NowPlayingNeteaseFallback("[00:01.00]network old", "[00:01.00]network romanized")
+                    val raw = buildBackgroundRawLyrics(inputs, netease)
+                    assertEquals(text, raw.original)
+                    assertEquals(text, raw.translated)
+                    assertEquals(text, raw.phonetic)
+                    val expected = if (text.isEmpty()) emptyList() else listOf("user")
+                    assertEquals(expected, resolveBackgroundOriginal(inputs, raw, sources).map { it.text })
+                    assertEquals(expected, resolveBackgroundTranslated(inputs, raw, sources).map { it.text })
+                    assertEquals(expected, resolveBackgroundPhonetic(inputs, netease, sources).map { it.text })
+                }
+            }
+        }
+    }
+
+    @Test
     fun `managed sidecar wins over embedded and stored lyric for all variants`() {
         val local = LocalLyricsScanMetadata(
             lyric = "local", translatedLyric = "local translation", romanizedLyric = "local phonetic"

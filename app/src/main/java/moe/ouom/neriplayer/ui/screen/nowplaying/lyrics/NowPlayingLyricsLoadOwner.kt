@@ -15,9 +15,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 
@@ -30,7 +30,62 @@ internal data class NowPlayingLyricsLoadRequest(
     val cachedPreferredLyrics: PreferredLyricSourceResult?
 )
 
+internal data class NowPlayingLyricsRefreshVersions(
+    val lyricsPreferenceRevision: Long,
+    val downloadPresenceVersion: Int,
+    val downloadedLyricsRefreshVersion: Long
+)
+
+private data class NowPlayingLyricsReloadTrigger(
+    val lyrics: NowPlayingLyricsReloadKey?,
+    val mediaUrl: String?,
+    val preferWordTimedLyrics: Boolean,
+    val source: LyricSourcePreference,
+    val versions: NowPlayingLyricsRefreshVersions
+)
+
+internal data class NowPlayingLyricsReloadKey(
+    val songId: Long,
+    val edited: Boolean?,
+    val revision: Long,
+    val lyric: String?,
+    val translatedLyric: String?,
+    val romanizedLyric: String?,
+    val originalLyric: String?,
+    val originalTranslatedLyric: String?,
+    val originalRomanizedLyric: String?,
+    val matchedSongId: String?,
+    val matchedSource: MusicPlatform?,
+    val album: String,
+    val mediaUri: String?,
+    val localFilePath: String?
+)
+
+internal fun nowPlayingLyricsReloadKey(song: SongItem?): NowPlayingLyricsReloadKey? {
+    if (song == null) return null
+    return NowPlayingLyricsReloadKey(
+        songId = song.id,
+        edited = song.lyricSyncEdited,
+        revision = song.lyricSyncRevision,
+        lyric = song.matchedLyric,
+        translatedLyric = song.matchedTranslatedLyric,
+        romanizedLyric = song.matchedRomanizedLyric,
+        originalLyric = song.originalLyric,
+        originalTranslatedLyric = song.originalTranslatedLyric,
+        originalRomanizedLyric = song.originalRomanizedLyric,
+        matchedSongId = song.matchedSongId,
+        matchedSource = song.matchedLyricSource,
+        album = song.album,
+        mediaUri = song.mediaUri,
+        localFilePath = song.localFilePath
+    )
+}
+
 internal interface NowPlayingLyricsStages {
+    fun readInitial(request: NowPlayingLyricsLoadRequest): NowPlayingInitialLyricsResult =
+        NowPlayingInitialLyricsResult(request.cachedPreferredLyrics,
+            buildNowPlayingInitialLyricsState(request.song, request.cachedPreferredLyrics))
+
     suspend fun readFast(request: NowPlayingLyricsLoadRequest): NowPlayingFastLyricsResult
     suspend fun readBackground(
         request: NowPlayingLyricsLoadRequest,
@@ -80,8 +135,9 @@ internal class NowPlayingLyricsLoadOwner(
         stage: String
     ) {
         if (!isCurrent(generation)) return
-        val hasLyrics = loaded.hasDisplayableContent()
-        if (shouldReplaceLyricsAfterRefresh(song != null, hasLyrics)) state = loaded
+        val resolved = overlayConfirmedUserLyrics(song, loaded)
+        val hasLyrics = resolved.hasDisplayableContent()
+        if (song.hasConfirmedLyricOverride() || shouldReplaceLyricsAfterRefresh(song != null, hasLyrics)) state = resolved
         logPublishedLyrics(song, stage, hasLyrics)
     }
 
@@ -100,56 +156,36 @@ internal class NowPlayingLyricsLoadOwner(
 }
 
 @Composable
-internal fun rememberNowPlayingLyricsLoadOwner(
-    context: Context,
+internal fun rememberNowPlayingLyricsOwner(
     song: SongItem?,
-    currentMediaUrl: String?,
-    preferWordTimedLyrics: Boolean,
     defaultLyricSource: LyricSourcePreference,
-    lyricsPreferenceRevision: Long,
-    downloadPresenceVersion: Int,
-    downloadedLyricsRefreshVersion: Long
+    initial: LoadedLyricsState,
+    scope: CoroutineScope,
+    stages: NowPlayingLyricsStages
 ): NowPlayingLyricsLoadOwner {
-    val sourceKey = song?.stableKey()
-    val scope = rememberCoroutineScope()
-    val cachedPreferred = remember(song, defaultLyricSource, preferWordTimedLyrics, lyricsPreferenceRevision) {
-        song?.let { PlayerManager.getCachedPreferredLyricSourceResult(it, defaultLyricSource, preferWordTimedLyrics) }
-    }
-    val initial = remember(song, cachedPreferred) {
-        buildNowPlayingInitialLyricsState(
-            song,
-            cachedPreferred
-        )
-    }
-    val owner = remember(sourceKey, defaultLyricSource) {
-        NowPlayingLyricsLoadOwner(initial, scope, DefaultNowPlayingLyricsStages)
+    val owner = remember(song?.stableKey(), defaultLyricSource, song?.lyricSyncRevision, song?.lyricSyncEdited, stages) {
+        NowPlayingLyricsLoadOwner(initial, scope, stages)
     }
     DisposableEffect(owner) { onDispose(owner::dispose) }
-    LaunchedEffect(
-        song?.id,
-        song?.matchedLyric,
-        song?.matchedTranslatedLyric,
-        song?.matchedRomanizedLyric,
-        song?.originalLyric,
-        song?.originalTranslatedLyric,
-        song?.originalRomanizedLyric,
-        song?.matchedSongId,
-        song?.matchedLyricSource,
-        song?.album,
-        song?.mediaUri,
-        song?.localFilePath,
-        downloadPresenceVersion,
-        downloadedLyricsRefreshVersion,
-        resolveNowPlayingLyricsMediaReloadKey(song, currentMediaUrl),
-        preferWordTimedLyrics,
-        defaultLyricSource,
-        lyricsPreferenceRevision
-    ) {
-        owner.reload(
-            NowPlayingLyricsLoadRequest(
-                context, song, currentMediaUrl, preferWordTimedLyrics, defaultLyricSource, cachedPreferred
-            )
-        )
+    return owner
+}
+
+@Composable
+internal fun rememberNowPlayingLyricsLoadOwner(
+    request: NowPlayingLyricsLoadRequest,
+    versions: NowPlayingLyricsRefreshVersions,
+    stages: NowPlayingLyricsStages = DefaultNowPlayingLyricsStages
+): NowPlayingLyricsLoadOwner {
+    val scope = rememberCoroutineScope()
+    val initial = rememberNowPlayingInitialLyrics(request, versions.lyricsPreferenceRevision, stages)
+    val owner = rememberNowPlayingLyricsOwner(request.song, request.defaultLyricSource, initial.state, scope, stages)
+    val reloadKey = NowPlayingLyricsReloadTrigger(
+        nowPlayingLyricsReloadKey(request.song),
+        resolveNowPlayingLyricsMediaReloadKey(request.song, request.currentMediaUrl),
+        request.preferWordTimedLyrics, request.defaultLyricSource, versions
+    )
+    LaunchedEffect(owner, reloadKey, stages) {
+        owner.reload(request.copy(cachedPreferredLyrics = initial.cachedPreferredLyrics))
     }
     return owner
 }

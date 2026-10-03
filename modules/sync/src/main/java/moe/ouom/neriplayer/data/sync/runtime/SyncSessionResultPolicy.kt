@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.data.sync.runtime
 
-import moe.ouom.neriplayer.data.model.sync.SyncMergeResult
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetMergeResult
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.model.sync.SyncUploadResolution
 
 internal object SyncSessionResultPolicy {
     fun <TVersion> result(
-        resolution: SyncUploadResolution<SyncMergeResult, TVersion>,
+        resolution: SyncUploadResolution<SyncDatasetMergeResult, TVersion>,
         firstSync: Boolean,
         initialRemoteMissing: Boolean,
         noChangeMessage: String,

@@ -12,6 +12,35 @@ import org.junit.Test
 
 class PlaybackStatePersistenceSnapshotTest {
     @Test
+    fun `unselected user lyric edits survive queue persistence`() {
+        val edited = song(2L).copy(matchedLyric = "edit", matchedRomanizedLyric = "romanized", lyricSyncEdited = true, lyricSyncRevision = 20L)
+        val cached = song(1L).copy(matchedLyric = "cache", lyricSyncEdited = false)
+        val persisted = edited.toPersistedSongItem(includeLyrics = false)
+        assertEquals("edit", persisted.toSongItem().matchedLyric)
+        assertEquals("romanized", persisted.toSongItem().matchedRomanizedLyric)
+        assertEquals(20L, persisted.toSongItem().lyricSyncRevision)
+        assertNull(cached.toPersistedSongItem(includeLyrics = false).matchedLyric)
+    }
+
+    @Test
+    fun `unselected legacy overrides retain full lyrics until provenance migration`() {
+        val legacy = song(2L).copy(
+            matchedLyric = "old user edit", originalLyric = "base",
+            matchedTranslatedLyric = "edited translation", originalTranslatedLyric = "base translation",
+            matchedRomanizedLyric = "edited romanized", originalRomanizedLyric = "base romanized"
+        )
+        val restored = legacy.toPersistedSongItem(includeLyrics = false).toSongItem()
+        assertEquals("old user edit", restored.matchedLyric)
+        assertEquals("edited translation", restored.matchedTranslatedLyric)
+        assertEquals("edited romanized", restored.matchedRomanizedLyric)
+        assertEquals("base", restored.originalLyric)
+        assertNull(restored.lyricSyncEdited)
+        assertNull(song(1L).copy(matchedLyric = "cache", originalLyric = "cache", lyricSyncEdited = false)
+            .toPersistedSongItem(includeLyrics = false).matchedLyric)
+        val unconfirmed = song(1L).copy(matchedLyric = "unknown", originalLyric = "unknown")
+        assertEquals(unconfirmed, unconfirmed.toPersistedSongItem(includeLyrics = false).toSongItem())
+    }
+    @Test
     fun `empty snapshots clear storage once and clear again when playback state changes`() {
         val empty = PlayerQueueSnapshot.EMPTY
         val previous = PlaybackStatePersistenceSnapshot(empty, PersistedPlaybackState(-1), null, -1)
@@ -105,8 +134,8 @@ class PlaybackStatePersistenceSnapshotTest {
 
     @Test
     fun `captured queue selection and shuffle order survive later list changes`() {
-        val first = song(1L).copy(matchedLyric = "first lyrics")
-        val second = song(2L).copy(matchedLyric = "second lyrics")
+        val first = song(1L).copy(matchedLyric = "first lyrics", lyricSyncEdited = false)
+        val second = song(2L).copy(matchedLyric = "second lyrics", lyricSyncEdited = false)
         val restore = mutableListOf(second, first)
         val queue = PlayerQueueSnapshot.from(listOf(first, second), 0)
         val snapshot = PlaybackStatePersistenceSnapshot(

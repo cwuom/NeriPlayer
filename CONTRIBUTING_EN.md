@@ -529,21 +529,22 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   files. Use safe defaults, filter records without resolvable track identity,
   valid deletion time, or valid playlist id, and never let songs with missing
   `addedAt` sort ahead of songs that already have timestamps.
-- Data Saver writes raw `GZIP(ProtoBuf)` bytes to `backup-raw.bin`; normal mode writes
-  `backup.json`. Reads must also accept historical `backup.bin` Base64. Do not switch
-  formats on one client before Android and Desktop both support read-both. JSON, compressed,
-  and decompressed payloads are capped at 8 MiB, 12 MiB, and 16 MiB.
-- GitHub sync writes through Git Data API blob/tree/commit calls and advances the branch
-  with a non-force ref update. Base64 in blob requests is only the API transport envelope;
-  raw content reads and repository bodies remain binary. Do not reintroduce the deprecated
-  asset-manifest transport.
-- WebDAV prefers ETag/Last-Modified conditional writes. Without condition tokens,
-  only an unchanged remote SHA-256 fingerprint permits an unconditional retry;
-  otherwise return a concurrency conflict.
+- V4 writes a Protobuf record stream, ZSTD content chunks, and a root manifest;
+  compressed objects are capped at 2 MiB. Legacy JSON, raw GZIP, and Base64 files are
+  read only when the manifest is absent. The 8/12/16 MiB safety limits apply only to
+  legacy reads. V3 archives are read only for migration, and unsupported future versions must be rejected.
+  Every syncing device must support V4; traditional and V3 migration require confirmation.
+- GitHub writes through Git Data API blob/tree/commit calls and atomically publishes
+  the manifest through GraphQL `updateRefs` with `beforeOid` and `force=false`.
+  Base64 in blob requests is only the transport envelope; repository bodies remain
+  raw binary, and raw content reads are pinned to a fixed branch head.
+- WebDAV creates immutable objects and the initial manifest with `If-None-Match: *`.
+  Later manifest writes require `If-Match` with a strong ETag. Stop publication when
+  a strong condition is unavailable; do not fall back to unconditional writes.
 - Playback and traffic statistics use delayed batch writes. Playback stats flush at
   important player/activity lifecycle points, while traffic accumulators flush when
-  a request or download attempt ends; playback daily buckets are bounded by retention
-  window and count. Sync merging must preserve aggregate totals, daily buckets,
+  a request or download attempt ends; playback totals and daily buckets are retained
+  without count eviction. Sync merging must preserve aggregate totals, daily buckets,
   and legacy bucket-only lifting; do not trim a visible window before lifting totals.
 - Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
   with `Android Keystore + EncryptedSharedPreferences`.
@@ -709,10 +710,12 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `data/sync/codec/SyncDataSerializer.kt` in `:sync` compatibility first. Shared payload
    models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
-   and playback stats. Data Saver writes raw `GZIP(ProtoBuf)` to `backup-raw.bin`,
-   normal mode writes `backup.json`, and the reader must also accept historical
-   `backup.bin` Base64. GitHub Git Data API blob requests use Base64 only as a
-   transport envelope; the repository body remains raw binary.
+   playback stats, and independent lyric overrides. V4 uses a Protobuf record stream,
+   ZSTD content chunks, and a root manifest, keeping the `neriplayer-sync-v3.manifest` filename.
+   V3 archives are read only for migration. Legacy JSON, raw GZIP, and Base64 are read
+   only when the manifest is absent. GitHub Git Data API blob requests use Base64 only
+   as a transport envelope; repository bodies remain raw binary. Migration preserves all legacy lyrics without a lossy option;
+   see `modules/sync/LYRIC_SYNC.md`.
 3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
    represents current display order. Serialization, merging, and local restoration
    must preserve the migration path for older data.
@@ -731,11 +734,10 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    playlists. `SyncSession` coordinates conflict retries, local mutation-version checks,
    and persistence confirmation; backends provide transport and remote-version interfaces.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
-   behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`. GitHub writes must use
-   the remote branch head and a non-force update, failing on conflicts rather than
-   overwriting. Large-file reads should use the raw content path, and WebDAV writes
-   without ETag/Last-Modified must revalidate the remote fingerprint before an
-   unconditional retry.
+   behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`. GitHub must publish the
+   manifest against a fixed branch head with an atomic `beforeOid` non-force update,
+   failing on conflicts. Later WebDAV manifest writes require `If-Match` with a strong
+   ETag; stop publication when safe conditional writes are unavailable.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 9. Preference file names, keys, Worker class names, work names, and input keys are upgrade contracts and must remain stable across module moves.

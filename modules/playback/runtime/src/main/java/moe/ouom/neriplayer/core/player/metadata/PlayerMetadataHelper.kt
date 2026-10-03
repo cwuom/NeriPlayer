@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongDetails
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.sync.nextLyricSyncRevision
 
 internal fun shouldSkipSongMetadataMutation(
     currentSong: SongItem,
@@ -17,12 +18,16 @@ internal fun shouldSkipSongMetadataMutation(
 internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     newLyrics: String? = matchedLyric,
     newTranslatedLyric: String? = matchedTranslatedLyric,
-    newRomanizedLyric: String? = matchedRomanizedLyric
+    newRomanizedLyric: String? = matchedRomanizedLyric,
+    userEdited: Boolean = true,
+    revision: Long = if (userEdited) nextLyricSyncRevision(lyricSyncRevision, System.currentTimeMillis()) else lyricSyncRevision
 ): SongItem {
     return copy(
         matchedLyric = newLyrics,
         matchedTranslatedLyric = newTranslatedLyric,
         matchedRomanizedLyric = newRomanizedLyric,
+        lyricSyncEdited = userEdited,
+        lyricSyncRevision = revision,
         originalLyric = originalLyric ?: matchedLyric,
         originalTranslatedLyric = originalTranslatedLyric ?: matchedTranslatedLyric,
         originalRomanizedLyric = originalRomanizedLyric ?: matchedRomanizedLyric
@@ -170,7 +175,8 @@ internal fun applyManualSearchMetadata(
     matchedSource: MusicPlatform,
     matchedSongId: String,
     useCustomOverride: Boolean,
-    preserveExistingMatchedLyrics: Boolean = false
+    preserveExistingMatchedLyrics: Boolean = false,
+    lyricRevision: Long = nextLyricSyncRevision(originalSong.lyricSyncRevision, System.currentTimeMillis())
 ): SongItem {
     val originalName = originalSong.originalName ?: originalSong.name
     val originalArtist = originalSong.originalArtist ?: originalSong.artist
@@ -184,6 +190,7 @@ internal fun applyManualSearchMetadata(
     } else {
         translatedLyric
     }
+    val resolvedRomanizedLyric = if (keepExistingMatch) originalSong.matchedRomanizedLyric else ""
     val resolvedMatchedSource = if (keepExistingMatch) {
         originalSong.matchedLyricSource ?: matchedSource
     } else {
@@ -195,10 +202,15 @@ internal fun applyManualSearchMetadata(
         matchedSongId
     }
 
+    val resolvedLyricRevision = if (keepExistingMatch) originalSong.lyricSyncRevision else lyricRevision
+    val lyricEdited = if (keepExistingMatch) originalSong.lyricSyncEdited else true
     return if (useCustomOverride) {
         originalSong.copy(
             matchedLyric = resolvedLyric,
             matchedTranslatedLyric = resolvedTranslatedLyric,
+            matchedRomanizedLyric = resolvedRomanizedLyric,
+            lyricSyncEdited = lyricEdited,
+            lyricSyncRevision = resolvedLyricRevision,
             matchedLyricSource = resolvedMatchedSource,
             matchedSongId = resolvedMatchedSongId,
             customCoverUrl = normalizeCustomMetadataValue(coverUrl, originalSong.coverUrl),
@@ -208,7 +220,8 @@ internal fun applyManualSearchMetadata(
             originalArtist = originalArtist,
             originalCoverUrl = originalCoverUrl,
             originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
-            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
+            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric,
+            originalRomanizedLyric = originalSong.originalRomanizedLyric ?: originalSong.matchedRomanizedLyric
         )
     } else {
         originalSong.copy(
@@ -217,6 +230,9 @@ internal fun applyManualSearchMetadata(
             coverUrl = coverUrl,
             matchedLyric = resolvedLyric,
             matchedTranslatedLyric = resolvedTranslatedLyric,
+            matchedRomanizedLyric = resolvedRomanizedLyric,
+            lyricSyncEdited = lyricEdited,
+            lyricSyncRevision = resolvedLyricRevision,
             matchedLyricSource = resolvedMatchedSource,
             matchedSongId = resolvedMatchedSongId,
             customCoverUrl = null,
@@ -226,7 +242,8 @@ internal fun applyManualSearchMetadata(
             originalArtist = originalArtist,
             originalCoverUrl = originalCoverUrl,
             originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
-            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
+            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric,
+            originalRomanizedLyric = originalSong.originalRomanizedLyric ?: originalSong.matchedRomanizedLyric
         )
     }
 }

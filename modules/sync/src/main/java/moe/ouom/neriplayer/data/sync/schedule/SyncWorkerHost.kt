@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.model.sync.SyncWorkerOutcome
 interface SyncWorkerHost {
     fun autoSyncEnabled(): Boolean
     fun configured(): Boolean
+    suspend fun protocolUpgradeApproved(): Boolean
     fun playbackActive(): Boolean
     fun validatedNetwork(): Boolean
     fun deferForPlayback()

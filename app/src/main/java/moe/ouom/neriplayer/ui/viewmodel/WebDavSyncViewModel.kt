@@ -6,6 +6,9 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -18,20 +21,26 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncInProgressException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
+import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 
 class WebDavSyncViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(WebDavSyncUiState())
     val uiState: StateFlow<WebDavSyncUiState> = _uiState
 
     private var storage: WebDavStorage? = null
-    private var syncManager: WebDavSyncManager? = null
+    internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
+    internal var targetSyncOperation: (suspend (String) -> Result<SyncResult>)? = null
+    private var syncJob: Job? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         viewModelScope.launch(Dispatchers.IO) {
             if (storage == null) {
                 storage = WebDavStorage(appContext)
-                syncManager = WebDavSyncManager.getInstance(appContext)
+                val manager = WebDavSyncManager.getInstance(appContext)
+                syncOperation = manager::performSync
+                targetSyncOperation = manager::performSyncForTarget
             }
             loadConfiguration()
         }
@@ -103,27 +112,60 @@ class WebDavSyncViewModel : ViewModel() {
         }
     }
 
-    fun performSync(context: Context) {
-        val appContext = context.applicationContext
-        _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null)
+    fun performSyncForTarget(
+        context: Context,
+        targetId: String,
+        onFinished: () -> Unit = {},
+        onUpgradeRequired: ((SyncProtocolUpgradeChallenge) -> Unit)? = null
+    ) {
+        val operation = targetSyncOperation ?: return
+        if (targetId.isBlank()) return
+        startSync(context, { operation(targetId) }, onUpgradeRequired, onFinished)
+    }
 
-        viewModelScope.launch {
-            val manager = syncManager ?: return@launch
-            val result = manager.performSync()
+    fun performSync(context: Context, onUpgradeRequired: ((SyncProtocolUpgradeChallenge) -> Unit)? = null) {
+        val operation = syncOperation ?: return
+        startSync(context, operation, onUpgradeRequired)
+    }
+
+    private fun startSync(
+        context: Context,
+        operation: suspend () -> Result<SyncResult>,
+        onUpgradeRequired: ((SyncProtocolUpgradeChallenge) -> Unit)?,
+        onFinished: () -> Unit = {}
+    ) {
+        if (syncJob?.isActive == true) return
+        val appContext = context.applicationContext
+        _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null, successMessage = null)
+
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            val result = operation()
+            coroutineContext.ensureActive()
+            if (syncJob !== coroutineContext[Job]) return@launch
             if (result.isSuccess) {
                 val syncResult = result.getOrNull()!!
-                val lastSyncTime = storage?.getLastSyncTime() ?: _uiState.value.lastSyncTime
-                _uiState.value = _uiState.value.copy(
-                    isSyncing = false,
-                    syncResult = syncResult,
-                    lastSyncTime = lastSyncTime,
-                    successMessage = syncResult.message
-                )
-                if (_uiState.value.autoSyncEnabled) {
-                    WebDavSyncWorker.schedulePeriodicSync(appContext)
+                if (syncResult.success) {
+                    val lastSyncTime = storage?.getLastSyncTime() ?: _uiState.value.lastSyncTime
+                    _uiState.value = _uiState.value.copy(
+                        isSyncing = false,
+                        syncResult = syncResult,
+                        lastSyncTime = lastSyncTime,
+                        successMessage = syncResult.message
+                    )
+                    if (_uiState.value.autoSyncEnabled) {
+                        WebDavSyncWorker.schedulePeriodicSync(appContext)
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(isSyncing = false, errorMessage = syncResult.message)
                 }
             } else {
                 val error = result.exceptionOrNull()
+                val challenge = (error as? SyncProtocolUpgradeRequiredException)?.challenge
+                if (challenge != null && onUpgradeRequired != null) {
+                    _uiState.value = _uiState.value.copy(isSyncing = false)
+                    onUpgradeRequired(challenge)
+                    return@launch
+                }
                 if (error is WebDavSyncInProgressException) {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
@@ -147,6 +189,15 @@ class WebDavSyncViewModel : ViewModel() {
                 }
             }
         }
+        syncJob = job
+        job.invokeOnCompletion {
+            if (syncJob === job) {
+                syncJob = null
+                _uiState.value = _uiState.value.copy(isSyncing = false)
+                onFinished()
+            }
+        }
+        job.start()
     }
 
     fun toggleAutoSync(context: Context, enabled: Boolean) {
@@ -162,6 +213,9 @@ class WebDavSyncViewModel : ViewModel() {
 
     fun clearConfiguration(context: Context) {
         val appContext = context.applicationContext
+        val activeSync = syncJob
+        syncJob = null
+        activeSync?.cancel()
         storage?.clearAll()
         WebDavSyncWorker.cancelAllSync(appContext)
         _uiState.value = WebDavSyncUiState()

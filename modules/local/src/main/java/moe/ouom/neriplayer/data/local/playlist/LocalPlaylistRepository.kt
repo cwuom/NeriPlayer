@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.data.local.playlist
 
+import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.sync.mapping.fromSongItemOrNull
+import moe.ouom.neriplayer.data.sync.identity.stableKey
+import moe.ouom.neriplayer.data.model.sync.nextLyricSyncRevision
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -31,16 +36,20 @@ import android.content.Context
 import android.os.SystemClock
 import com.google.gson.Gson
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
@@ -48,6 +57,7 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
+import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPreviewAuthority
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.localMediaUri
@@ -143,6 +153,7 @@ class LocalPlaylistRepository private constructor(
     internal var corruptPrimaryNeedsQuarantine = false
     internal var replaceBackupOnNextWrite = false
     internal val initialLoad = CompletableDeferred<Unit>()
+    private val initializationRetryMutex = Mutex()
     @Volatile
     internal var initialLoadFailure: Exception? = null
     internal val initializationScope by lazy {
@@ -174,19 +185,34 @@ class LocalPlaylistRepository private constructor(
 
     suspend fun awaitInitialized(): Boolean {
         initialLoad.await()
-        return initialLoadFailure == null
+        if (initialLoadFailure == null) return true
+        return withContext(Dispatchers.IO) {
+            initializationRetryMutex.withLock {
+                if (initialLoadFailure != null) {
+                    completeInitialLoad()
+                }
+                currentCoroutineContext().ensureActive()
+                initialLoadFailure == null
+            }
+        }
     }
 
     /** 首帧只读取当前歌单，权威状态仍由正常初始化流程提供 */
     suspend fun readFastPlaylist(playlistId: Long): LocalPlaylist? = withContext(Dispatchers.IO) {
-        runCatching {
-            roomStore?.readPlaylistIfRoomPrimary(playlistId)
-        }.onFailure { error ->
+        val authority = try {
+            roomStore?.readFastPlaylistAuthority(playlistId)
+                ?: LocalPlaylistPreviewAuthority.Unmigrated
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
             NPLogger.w(
                 "LocalPlaylistRepo",
                 "Fast Room playlist preview unavailable: ${error.message}"
             )
-        }.getOrNull()?.let { return@withContext it }
+            return@withContext null
+        }
+        if (authority is LocalPlaylistPreviewAuthority.RoomPrimary) {
+            return@withContext authority.playlist
+        }
 
         val primaryText = runCatching { storage.readPrimary() }
             .onFailure { error ->
@@ -953,6 +979,7 @@ class LocalPlaylistRepository private constructor(
         triggerSync: Boolean = false
     ) {
         withContext(Dispatchers.IO) {
+            recordLyricSyncState(newSongInfo)
             commitPlaylistMutation {
                 val modifiedAt = if (triggerSync) System.currentTimeMillis() else null
                 var changed = false
@@ -990,6 +1017,23 @@ class LocalPlaylistRepository private constructor(
                 )
             }
         }
+    }
+
+    suspend fun recordLyricSyncState(song: SongItem) {
+        if (song.lyricSyncEdited == null || song.lyricSyncRevision <= 0L) return
+        withContext(Dispatchers.IO) {
+            SyncSong.fromSongItemOrNull(song, context)
+                ?.let(syncStorage::recordLyricOverride)
+        }
+    }
+
+    suspend fun nextUserLyricSyncRevision(song: SongItem): Long = withContext(Dispatchers.IO) {
+        val syncSong = SyncSong.fromSongItemOrNull(song, context)
+        val knownRevision = if (syncSong == null) 0L else {
+            val key = syncSong.stableKey()
+            syncStorage.getLyricOverrides().firstOrNull { it.stableKey() == key }?.lyricSyncRevision ?: 0L
+        }
+        nextLyricSyncRevision(maxOf(song.lyricSyncRevision, knownRevision), System.currentTimeMillis())
     }
 
     internal class SongMetadataUpdateIndex(updates: List<SongMetadataUpdate>) {
@@ -1105,12 +1149,30 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
+    internal suspend fun <T> withCommittedSyncSnapshot(read: () -> T): T {
+        return commitPlaylistMutation {
+            flushPendingSyncMutationBeforeSync()
+            currentCoroutineContext().ensureActive()
+            // 后续处理与网络请求留在锁外，避免阻塞本地编辑
+            val captured = read()
+            currentCoroutineContext().ensureActive()
+            captured
+        }
+    }
+
+    private suspend fun flushPendingSyncMutationBeforeSync() {
+        if (_syncMutationPending.value) {
+            flushPendingSyncMutation(LocalPlaylistRoomStore.domainDigest(_playlists.value))
+        }
+    }
+
     internal suspend fun applySyncedPlaylistsIfUnchanged(
         playlists: List<LocalPlaylist>,
         expectedMutationVersion: Long
     ): Boolean {
         return withContext(Dispatchers.IO) {
             commitPlaylistMutation {
+                flushPendingSyncMutationBeforeSync()
                 if (syncMutationStore.getSyncMutationVersion() != expectedMutationVersion) {
                     return@commitPlaylistMutation false
                 }

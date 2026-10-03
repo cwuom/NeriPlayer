@@ -122,6 +122,70 @@ class SyncConfigurationStorageTest {
     }
 
     @Test
+    fun `persisted invalid webdav URLs remain available for configuration repair`() {
+        for (server in listOf("not-a-url", "https://", "https://[::1", "ftp://example.test/dav")) {
+            val prefs = MemorySyncPreferences(mapOf(
+                "server_url" to server, "base_path" to "music", "username" to "user",
+                "password" to "pass", "auto_sync_enabled" to false,
+                "last_sync_time" to 77L, "last_remote_fingerprint" to "fingerprint"
+            ))
+            val store = WebDavStorage(prefs.preferences)
+            val original = store.snapshot()
+            val originalValues = prefs.values.toMap()
+
+            assertFalse(store.isConfigured())
+
+            assertEquals(original, store.snapshot())
+            assertEquals(originalValues, prefs.values.toMap())
+            assertEquals(77L, store.getLastSyncTime())
+            assertEquals("fingerprint", store.getLastRemoteFingerprint())
+        }
+    }
+
+    @Test
+    fun `restored invalid webdav URLs are retained until the user repairs them`() {
+        for (server in listOf("not-a-url", "ftp://example.test/dav")) {
+            val prefs = MemorySyncPreferences()
+            val store = WebDavStorage(prefs.preferences)
+            val imported = WebDavSyncConfigSnapshot(server, "music", "user", "pass", false)
+            store.restore(imported)
+
+            assertFalse(store.isConfigured())
+            assertEquals(imported, store.snapshot())
+            val reopened = WebDavStorage(prefs.restart().preferences)
+            assertFalse(reopened.isConfigured())
+            assertEquals(imported, reopened.snapshot())
+
+            reopened.saveConfiguration("https://example.test/dav", "user", "pass", "music")
+            assertTrue(reopened.isConfigured())
+            assertEquals("https://example.test/dav/music/neriplayer-sync.json", reopened.getRemoteFileUrl())
+        }
+    }
+
+    @Test
+    fun `valid webdav HTTP URLs preserve query fragment and encoded paths after restore`() {
+        for ((server, remote) in listOf(
+            "http://example.test/dav%2Fmusic?route=fixture%2Fv4#settings" to
+                "http://example.test/dav%2Fmusic/a%20b/neriplayer-sync.json?route=fixture%2Fv4#settings",
+            "https://example.test/dav%20music?route=fixture&selector=a%20b#settings" to
+                "https://example.test/dav%20music/a%20b/neriplayer-sync.json?route=fixture&selector=a%20b#settings"
+        )) {
+            val prefs = MemorySyncPreferences()
+            val store = WebDavStorage(prefs.preferences)
+            val imported = WebDavSyncConfigSnapshot(server, "a b", "user", "pass", false)
+            store.restore(imported)
+
+            assertTrue(store.isConfigured())
+            assertEquals(imported, store.snapshot())
+            assertEquals(remote, store.getRemoteFileUrl())
+            val reopened = WebDavStorage(prefs.restart().preferences)
+            assertTrue(reopened.isConfigured())
+            assertEquals(imported, reopened.snapshot())
+            assertEquals(remote, reopened.getRemoteFileUrl())
+        }
+    }
+
+    @Test
     fun `history interval migrates legacy once and explicit preference wins`() {
         val prefs = MemorySyncPreferences()
         val context = mock(Context::class.java)

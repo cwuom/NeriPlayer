@@ -3,15 +3,30 @@ package moe.ouom.neriplayer.ui.screen.lyrics
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc
 
+internal fun resolveEffectivePhoneticLyrics(
+    rawPhoneticLyrics: String?,
+    phoneticLyrics: List<LyricEntry>,
+    embeddedPhoneticLyrics: List<LyricEntry>
+): List<LyricEntry> {
+    if (rawPhoneticLyrics != null) return phoneticLyrics
+    return phoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
+}
+
 internal fun hasDisplayableLyricTranslation(
     rawTranslatedLyrics: String?,
     translatedLyrics: List<LyricEntry>,
     lyrics: List<LyricEntry>
 ): Boolean {
+    if (rawTranslatedLyrics != null) return hasSuppliedTranslation(rawTranslatedLyrics, translatedLyrics)
     if (translatedLyrics.any { it.text.isNotBlank() } ||
         lyrics.any { !it.translation.isNullOrBlank() }
     ) return true
-    val raw = rawTranslatedLyrics?.takeIf(String::isNotBlank) ?: return false
+    return false
+}
+
+private fun hasSuppliedTranslation(raw: String, translated: List<LyricEntry>): Boolean {
+    if (raw.isBlank()) return false
+    if (translated.any { it.text.isNotBlank() }) return true
     return runCatching { parseNeteaseLrc(raw).any { it.text.isNotBlank() } }
         .getOrDefault(false)
 }

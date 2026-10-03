@@ -15,12 +15,201 @@ import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
+import org.junit.After
 import java.nio.charset.StandardCharsets
 import java.util.ArrayDeque
 import java.util.Base64
+import java.security.MessageDigest
 
 class GitHubRepositorySyncTransportTest {
+    private val ownedClients = ArrayList<OkHttpClient>()
+
+    @After
+    fun closeOwnedClients() {
+        for (client in ownedClients) {
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdown()
+        }
+    }
+    private val manifestPath = "neriplayer-sync-v3.manifest"
+    private fun archiveObject(content: ByteArray): Pair<String, ByteArray> {
+        val hash = MessageDigest.getInstance("SHA-256").digest(content).joinToString("") { "%02x".format(it) }
+        return "neriplayer-sync-v3-$hash.zst" to content
+    }
+
+    @Test
+    fun `reads archive objects at the supplied immutable head without resolving another head`() = runBlocking {
+        val script = ScriptedInterceptor(listOf(StubResponse.binary(200, byteArrayOf(1, 2))))
+
+        assertArrayEquals(byteArrayOf(1, 2), newTransport(script)
+            .getFileContentAtRef("owner", "repo", "object.zst", "snapshot-head").getOrThrow())
+
+        assertEquals(1, script.requests.size)
+        assertEquals("snapshot-head", script.requests.single().url.queryParameter("ref"))
+    }
+
+    @Test
+    fun `commits multiple archive files with one manifest publication`() = runBlocking {
+        val script = ScriptedInterceptor(listOf(
+            StubResponse.json(200, """{"node_id":"repository-node"}"""),
+            StubResponse.json(200, """{"tree":{"sha":"base-tree"}}"""),
+            StubResponse.json(201, """{"sha":"object-blob"}"""),
+            StubResponse.json(201, """{"sha":"manifest-blob"}"""),
+            StubResponse.json(201, """{"sha":"updated-tree"}"""),
+            StubResponse.json(201, """{"sha":"new-commit"}"""),
+            StubResponse.json(200, """{"data":{"updateRefs":{"clientMutationId":"new-commit"}}}""")
+        ))
+        val files = sequenceOf(archiveObject(byteArrayOf(1)), manifestPath to byteArrayOf(2))
+
+        val sha = newTransport(script).updateFilesContent("owner", "repo", files,
+            GitHubSyncHead("main", "expected-head"), "sync").getOrThrow()
+
+        assertEquals("new-commit", sha)
+        val tree = JSONObject(String(script.requests[4].body, StandardCharsets.UTF_8))
+        assertEquals(2, tree.getJSONArray("tree").length())
+        val commit = JSONObject(String(script.requests[5].body, StandardCharsets.UTF_8))
+        assertEquals("expected-head", commit.getJSONArray("parents").getString(0))
+        assertTrue(script.requests.none { it.method == "PATCH" })
+        assertEquals("/graphql", script.requests.last().url.encodedPath)
+        val publication = JSONObject(String(script.requests.last().body, StandardCharsets.UTF_8)).getJSONObject("variables").getJSONObject("input")
+        assertEquals("repository-node", publication.getString("repositoryId"))
+        val update = publication.getJSONArray("refUpdates").getJSONObject(0)
+        assertEquals("expected-head", update.getString("beforeOid"))
+        assertEquals("new-commit", update.getString("afterOid"))
+        assertFalse(update.getBoolean("force"))
+    }
+
+    @Test
+    fun `large archives chain unpublished trees before one final commit`() = runBlocking {
+        val requests = mutableListOf<Request>()
+        var treeCalls = 0
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests += request
+            val path = request.url.encodedPath
+            val response = when {
+                path == "/repos/owner/repo" -> """{"node_id":"repository-node"}"""
+                request.method == "GET" -> """{"tree":{"sha":"base-tree"}}"""
+                path == "/graphql" -> """{"data":{"updateRefs":{"clientMutationId":"final-commit"}}}"""
+                path.endsWith("/git/trees") -> """{"sha":"tree-${++treeCalls}"}"""
+                path.endsWith("/git/commits") -> """{"sha":"final-commit"}"""
+                else -> """{"sha":"blob"}"""
+            }
+            Response.Builder().request(request).code(200).message("test").protocol(Protocol.HTTP_1_1)
+                .body(response.toResponseBody()).build()
+        }.build()
+        ownedClients += client
+        val transport = GitHubRepositorySyncTransport(client, "test", "https://sync.test", "expired")
+        val files = (0..1000).asSequence().map { archiveObject(it.toString().toByteArray()) }
+
+        transport.updateFilesContent("owner", "repo", files, GitHubSyncHead("main", "head"), "sync").getOrThrow()
+
+        val trees = requests.filter { it.url.encodedPath.endsWith("/git/trees") }
+        assertEquals(2, trees.size)
+        fun body(request: Request): JSONObject = Buffer().use { request.body!!.writeTo(it); JSONObject(it.readUtf8()) }
+        assertEquals(1000, body(trees[0]).getJSONArray("tree").length())
+        assertEquals("tree-1", body(trees[1]).getString("base_tree"))
+        assertEquals(1, requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/git/commits") })
+        assertEquals(1, requests.count { it.url.encodedPath == "/graphql" })
+        assertTrue(requests.none { it.method == "PATCH" })
+    }
+
+    @Test
+    fun `failed archive object creation cannot publish a manifest`() = runBlocking {
+        val script = ScriptedInterceptor(listOf(
+            StubResponse.json(200, """{"node_id":"repository-node"}"""),
+            StubResponse.json(200, """{"tree":{"sha":"base"}}"""),
+            StubResponse.json(500, """{"message":"failed"}""")
+        ))
+        val result = newTransport(script).updateFilesContent("owner", "repo",
+            sequenceOf(archiveObject(byteArrayOf(1))), GitHubSyncHead("main", "head"), "sync")
+        assertTrue(result.isFailure)
+        assertTrue(script.requests.none { it.method == "PATCH" || it.url.encodedPath.endsWith("/git/trees") })
+    }
+
+    @Test
+    fun `atomic stale reference error is a retriable content conflict`() = runBlocking {
+        val script = ScriptedInterceptor(listOf(
+            StubResponse.json(200, """{"node_id":"repository-node"}"""),
+            StubResponse.json(200, """{"tree":{"sha":"base"}}"""),
+            StubResponse.json(201, """{"sha":"blob"}"""),
+            StubResponse.json(201, """{"sha":"tree"}"""),
+            StubResponse.json(201, """{"sha":"commit"}"""),
+            StubResponse.json(200, """{"errors":[{"type":"STALE_DATA","message":"Reference does not match beforeOid"}]}""")
+        ))
+        val result = newTransport(script).updateFilesContent("owner", "repo",
+            sequenceOf(manifestPath to byteArrayOf(1)), GitHubSyncHead("main", "head"), "sync")
+        assertTrue(result.exceptionOrNull() is GitHubContentConflictException)
+    }
+
+    @Test
+    fun `archive rejects non protocol paths and mismatched content addresses before creating blobs`() = runBlocking {
+        val invalidPaths = listOf("", "backup.json", "../object.zst", "/object.zst",
+            "neriplayer-sync-v3-${"0".repeat(64)}.zst")
+        for (path in invalidPaths) {
+            val script = ScriptedInterceptor(listOf(StubResponse.json(200, """{"node_id":"repository-node"}"""),
+                StubResponse.json(200, """{"tree":{"sha":"base"}}""")))
+            val result = newTransport(script).updateFilesContent("owner", "repo",
+                sequenceOf(path to byteArrayOf(1)), GitHubSyncHead("main", "head"), "sync")
+            assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+            assertEquals(2, script.requests.size)
+            assertTrue(script.requests.all { it.method == "GET" })
+        }
+    }
+
+    @Test
+    fun `archive object budget refuses empty and oversized content`() {
+        assertTrue(runCatching { GitHubArchiveUploadValidation.validate(manifestPath, byteArrayOf()) }.isFailure)
+        assertTrue(runCatching { GitHubArchiveUploadValidation.validate(manifestPath, ByteArray(2 * 1024 * 1024 + 1)) }.isFailure)
+        val maximumObject = archiveObject(ByteArray(2 * 1024 * 1024))
+        GitHubArchiveUploadValidation.validate(maximumObject.first, maximumObject.second)
+    }
+
+    @Test
+    fun `empty archive cannot create a commit or move the branch`() = runBlocking {
+        val script = ScriptedInterceptor(listOf(StubResponse.json(200, """{"node_id":"repository-node"}"""),
+            StubResponse.json(200, """{"tree":{"sha":"base"}}""")))
+        val result = newTransport(script).updateFilesContent("owner", "repo", emptySequence(),
+            GitHubSyncHead("main", "head"), "sync")
+        assertTrue(result.isFailure)
+        assertEquals(2, script.requests.size)
+    }
+
+    @Test
+    fun `tree and commit failures leave the expected head unpublished`() = runBlocking {
+        for (failureAtCommit in listOf(false, true)) {
+            val responses = mutableListOf(
+                StubResponse.json(200, """{"node_id":"repository-node"}"""),
+                StubResponse.json(200, """{"tree":{"sha":"base"}}"""),
+                StubResponse.json(201, """{"sha":"blob"}""")
+            )
+            if (failureAtCommit) responses += StubResponse.json(201, """{"sha":"tree"}""")
+            responses += StubResponse.json(500, """{"message":"failed"}""")
+            val script = ScriptedInterceptor(responses)
+            val result = newTransport(script).updateFilesContent("owner", "repo",
+                sequenceOf(manifestPath to byteArrayOf(1)), GitHubSyncHead("main", "head"), "sync")
+            assertTrue(result.isFailure)
+            assertTrue(script.requests.none { it.method == "PATCH" })
+        }
+    }
+
+    @Test
+    fun `repository head resolution preserves branch and fails on incomplete metadata`() = runBlocking {
+        val valid = ScriptedInterceptor(listOf(
+            StubResponse.json(200, """{"default_branch":"sync"}"""),
+            StubResponse.json(200, """{"object":{"sha":"snapshot"}}""")
+        ))
+        assertEquals(GitHubSyncHead("sync", "snapshot"), newTransport(valid).getRepositoryHead("owner", "repo").getOrThrow())
+        assertEquals("/repos/owner/repo/git/ref/heads/sync", valid.requests.last().url.encodedPath)
+        val missingBranch = ScriptedInterceptor(listOf(StubResponse.json(200, "{}")))
+        assertTrue(newTransport(missingBranch).getRepositoryHead("owner", "repo").isFailure)
+        val missingHead = ScriptedInterceptor(listOf(
+            StubResponse.json(200, """{"default_branch":"main"}"""), StubResponse.json(200, """{"object":{}}""")
+        ))
+        assertTrue(newTransport(missingHead).getRepositoryHead("owner", "repo").isFailure)
+    }
 
     @Test
     fun `reads repository raw backup file`() = runBlocking {
@@ -162,6 +351,7 @@ class GitHubRepositorySyncTransportTest {
 
     private fun newTransport(script: ScriptedInterceptor): GitHubRepositorySyncTransport {
         val client = OkHttpClient.Builder().addInterceptor(script).build()
+        ownedClients += client
         return GitHubRepositorySyncTransport(
             client = client,
             token = "token",

@@ -1,10 +1,17 @@
 package moe.ouom.neriplayer.data.sync.runtime
 
+import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
-import moe.ouom.neriplayer.data.model.sync.SyncRemoteSnapshot
+import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackDatasetStore
+import moe.ouom.neriplayer.data.sync.runtime.dataset.readForTest
+import org.junit.After
+import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.model.sync.SyncSystemPlaylist
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
@@ -17,10 +24,14 @@ import org.junit.Test
 import java.io.IOException
 
 class SyncSessionTest {
-    private val local = MemoryStore()
-    private val backend = MemoryBackend()
+    private val directory = kotlin.io.path.createTempDirectory("sync-session-test").toFile()
+    private val store = FileSyncPlaybackDatasetStore(directory)
+    private val local = MemoryStore(store)
+    private val backend = MemoryBackend(store)
+    @After fun releaseStaging() { directory.deleteRecursively() }
     private val session = SyncSession(
         local = local,
+        datasetStore = store,
         merger = SyncDataMerger(Messages, nowMs = { 500L }),
         noChangeMessage = "unchanged",
         initialUploadMessage = "initial",
@@ -94,17 +105,17 @@ class SyncSessionTest {
         session.execute { backend }.getOrThrow()
         assertEquals("edited", local.data.deviceId)
         assertEquals(0, local.applied)
-        assertEquals(2, backend.savedVersion)
+        assertEquals(null, backend.savedVersion)
         assertEquals(null, backend.savedTime)
         assertEquals(1, backend.followUps)
     }
 
     @Test
-    fun `rejected local apply keeps sync time pending`() = runTest {
+    fun `rejected local apply keeps remote version and sync time pending`() = runTest {
         local.acceptApply = false
         session.execute { backend }.getOrThrow()
         assertEquals(1, local.applied)
-        assertEquals(2, backend.savedVersion)
+        assertEquals(null, backend.savedVersion)
         assertEquals(null, backend.savedTime)
         assertEquals(1, backend.followUps)
     }
@@ -113,8 +124,79 @@ class SyncSessionTest {
     fun `local edit after apply schedules another sync`() = runTest {
         local.onApply = { local.epoch++ }
         session.execute { backend }.getOrThrow()
+        assertEquals(null, backend.savedVersion)
         assertEquals(null, backend.savedTime)
         assertEquals(1, backend.followUps)
+    }
+
+    @Test
+    fun `rejected application retries unchanged remote version and learns missing history`() = runTest {
+        val first = history(1L)
+        val second = history(2L)
+        local.data = local.data.copy(recentPlays = listOf(first))
+        local.guardHistory = true
+        local.acceptApply = false
+        backend.firstSync = false
+        backend.compareSavedVersion = true
+        backend.savedVersion = 1
+        backend.lastSyncTime = 50L
+        backend.version = 2
+        backend.data = local.data.copy(recentPlays = listOf(second, first))
+
+        session.execute { backend }.getOrThrow()
+
+        assertEquals(1, backend.savedVersion)
+        assertEquals(null, backend.savedTime)
+        assertEquals(listOf(1L), local.data.recentPlays.map { it.songId })
+        assertEquals(2, backend.version)
+        assertEquals(1, backend.followUps)
+        local.acceptApply = true
+
+        session.execute { backend }.getOrThrow()
+
+        assertEquals(2, backend.version)
+        assertEquals(listOf(true, true), local.remoteChangeFlags)
+        assertEquals(listOf(2L, 1L), local.data.recentPlays.map { it.songId })
+        assertEquals(2, backend.savedVersion)
+        assertEquals(900L, backend.savedTime)
+        assertEquals(1, backend.followUps)
+    }
+
+    @Test
+    fun `first sync with nonempty local history applies additional remote identities`() = runTest {
+        val first = history(1L)
+        val second = history(2L)
+        local.data = local.data.copy(recentPlays = listOf(first))
+        local.guardHistory = true
+        backend.compareSavedVersion = true
+        backend.data = local.data.copy(recentPlays = listOf(second, first))
+
+        session.execute { backend }.getOrThrow()
+
+        assertEquals(1, backend.version)
+        assertEquals(listOf(true), local.remoteChangeFlags)
+        assertEquals(listOf(2L, 1L), local.data.recentPlays.map { it.songId })
+        assertEquals(1, backend.savedVersion)
+        assertEquals(900L, backend.savedTime)
+        assertEquals(0, backend.followUps)
+    }
+
+    @Test
+    fun `acknowledged unchanged history retains normal no change behavior`() = runTest {
+        local.data = local.data.copy(recentPlays = listOf(history(2L), history(1L)))
+        local.guardHistory = true
+        backend.firstSync = false
+        backend.compareSavedVersion = true
+        backend.savedVersion = backend.version
+        backend.data = local.data.copy()
+
+        assertEquals("unchanged", session.execute { backend }.getOrThrow().message)
+
+        assertEquals(1, backend.version)
+        assertEquals(listOf(false), local.remoteChangeFlags)
+        assertEquals(listOf(2L, 1L), local.data.recentPlays.map { it.songId })
+        assertEquals(900L, backend.savedTime)
+        assertEquals(0, backend.followUps)
     }
 
     @Test
@@ -191,34 +273,45 @@ class SyncSessionTest {
         assertTrue(session.execute { backend }.isSuccess)
     }
 
-    private class MemoryStore : SyncLocalDataStore {
+    private fun history(id: Long) = SyncRecentPlay(id, SyncSong(id = id, album = "netease"), id * 100L, "remote")
+
+    private class MemoryStore(private val store: SyncPlaybackDatasetStore) : SyncLocalDataStore {
         var initialized = true
         var epoch = 10L
         var data = SyncData(playlists = listOf(SyncPlaylist(id = 7L, name = "local", songOrderVersion = 1)))
         var remoteChanged = false
         var applied = 0
         var acceptApply = true
+        var guardHistory = false
+        val remoteChangeFlags = ArrayList<Boolean>()
         var onApply: () -> Unit = {}
         override suspend fun awaitInitialized() = initialized
         override fun mutationVersion() = epoch
-        override fun snapshot() = data
-        override suspend fun apply(data: SyncData, remoteChanged: Boolean, expectedMutationVersion: Long): Boolean {
-            assertEquals(10L, expectedMutationVersion)
+        override suspend fun snapshot() = store.fromLegacy(data)
+        override suspend fun apply(dataset: SyncDataset, remoteChanged: Boolean, expectedMutationVersion: Long): Boolean {
+            val data = dataset.readForTest()
+            assertEquals(epoch, expectedMutationVersion)
             applied++
             this.remoteChanged = remoteChanged
+            remoteChangeFlags += remoteChanged
             onApply()
-            if (acceptApply) this.data = data
+            if (acceptApply) {
+                this.data = if (guardHistory && !remoteChanged && this.data.recentPlays.isNotEmpty()) {
+                    data.copy(recentPlays = this.data.recentPlays)
+                } else data
+            }
             return acceptApply
         }
     }
 
     private class Conflict : IOException()
 
-    private class MemoryBackend : SyncBackend<Int> {
+    private class MemoryBackend(private val store: SyncPlaybackDatasetStore) : SyncBackend<Int> {
         var data: SyncData? = null
         var version = 1
         var firstSync = true
         var changed = false
+        var compareSavedVersion = false
         var migration = false
         var savedVersion: Int? = null
         var savedTime: Long? = null
@@ -228,25 +321,26 @@ class SyncSessionTest {
         var onFetch: () -> Unit = {}
         var onUpload: () -> Unit = {}
         override val isFirstSync get() = firstSync
-        override val lastSyncTime = 0L
+        override var lastSyncTime = 0L
         override val mutationConflictMessage = "local edited"
-        override suspend fun fetch(): Result<SyncRemoteSnapshot<Int>> {
+        override suspend fun fetch(): Result<SyncDatasetRemoteSnapshot<Int>> {
             onFetch()
             fetchError?.let { return Result.failure(it) }
-            return Result.success(SyncRemoteSnapshot(data, version, migration))
+            return Result.success(SyncDatasetRemoteSnapshot(data?.let { store.fromLegacy(it) }, version, migration))
         }
-        override suspend fun refetch(version: Int) = Result.success(SyncRemoteSnapshot(data, this.version))
-        override suspend fun upload(data: SyncData, version: Int): Result<Int> {
+        override suspend fun refetch(version: Int) = Result.success(SyncDatasetRemoteSnapshot(data?.let { store.fromLegacy(it) }, this.version))
+        override suspend fun upload(data: SyncDataset, version: Int): Result<Int> {
             return try {
                 onUpload()
-                this.data = data
+                this.data = data.readForTest()
                 this.version++
                 Result.success(this.version)
             } catch (error: IOException) {
                 Result.failure(error)
             }
         }
-        override fun remoteChanged(version: Int) = changed
+        override fun remoteChanged(version: Int) =
+            if (compareSavedVersion) savedVersion?.let { it != version } ?: false else changed
         override fun isConflict(error: Throwable?) = error is Conflict
         override fun saveRemoteVersion(version: Int) { savedVersion = version }
         override fun saveSyncTime(timestamp: Long) { savedTime = timestamp }

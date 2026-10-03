@@ -2,10 +2,14 @@ package moe.ouom.neriplayer.data.sync.schedule
 
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.sync.SyncResult
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerOutcome
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,7 +26,7 @@ class SyncWorkerExecutionTest {
         for ((force, user) in listOf(true to false, false to true, true to true)) {
             val host = Host().apply { automatic = false; playback = true }
             assertEquals(SyncWorkerOutcome.SUCCESS, SyncWorkerExecution(host).execute(force, user))
-            assertEquals(listOf("configured", "network", "sync"), host.calls)
+            assertEquals(listOf("configured", "approval", "network", "sync"), host.calls)
         }
         val unconfigured = Host().apply { configured = false }
         assertEquals(SyncWorkerOutcome.SUCCESS, SyncWorkerExecution(unconfigured).execute(true, false))
@@ -33,7 +37,7 @@ class SyncWorkerExecutionTest {
     fun `automatic playback defers once before network checks`() = runTest {
         val host = Host().apply { playback = true }
         assertEquals(SyncWorkerOutcome.SUCCESS, SyncWorkerExecution(host).execute(false, false))
-        assertEquals(listOf("automatic", "configured", "playback", "defer"), host.calls)
+        assertEquals(listOf("automatic", "configured", "approval", "playback", "defer"), host.calls)
     }
 
     @Test
@@ -47,7 +51,52 @@ class SyncWorkerExecutionTest {
     fun `successful automatic sync reads eligibility in order`() = runTest {
         val host = Host()
         assertEquals(SyncWorkerOutcome.SUCCESS, SyncWorkerExecution(host).execute(false, false))
-        assertEquals(listOf("automatic", "configured", "playback", "network", "sync"), host.calls)
+        assertEquals(listOf("automatic", "configured", "approval", "playback", "network", "sync"), host.calls)
+    }
+
+    @Test
+    fun `pending approval finishes manual and automatic work before playback or network decisions`() = runTest {
+        for ((force, user) in listOf(false to false, true to false, false to true, true to true)) {
+            for (playing in listOf(false, true)) {
+                for (online in listOf(false, true)) {
+                    val host = Host().apply { approved = false; playback = playing; network = online }
+                    assertEquals(SyncWorkerOutcome.SUCCESS, SyncWorkerExecution(host).execute(force, user))
+                    val eligibility = if (force || user) listOf("configured") else listOf("automatic", "configured")
+                    assertEquals(eligibility + "approval", host.calls)
+                    assertEquals(null, host.failure)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `cancelling a suspended approval read propagates before deferral notification or retry`() = runTest {
+        val readStarted = CompletableDeferred<Unit>()
+        val readResult = CompletableDeferred<Boolean>()
+        val host = Host().apply {
+            playback = true
+            network = false
+            readApproval = { readStarted.complete(Unit); readResult.await() }
+        }
+        val execution = async { SyncWorkerExecution(host).execute(false, false) }
+        readStarted.await()
+        assertFalse(execution.isCompleted)
+        assertEquals(listOf("automatic", "configured", "approval"), host.calls)
+        execution.cancelAndJoin()
+        assertTrue(runCatching { execution.await() }.exceptionOrNull() is CancellationException)
+        assertEquals(null, host.failure)
+        assertEquals(listOf("automatic", "configured", "approval"), host.calls)
+    }
+
+    @Test
+    fun `approval read errors retain unexpected failure handling without checking network or syncing`() = runTest {
+        val host = Host().apply {
+            readApproval = { throw IOException("approval storage unavailable") }
+            outcome = SyncWorkerOutcome.FAILURE
+        }
+        assertEquals(SyncWorkerOutcome.FAILURE, SyncWorkerExecution(host).execute(false, false))
+        assertEquals(Triple("approval storage unavailable", false, true), host.failure)
+        assertEquals(listOf("automatic", "configured", "approval"), host.calls)
     }
 
     @Test
@@ -75,6 +124,8 @@ class SyncWorkerExecutionTest {
         val calls = mutableListOf<String>()
         var automatic = true
         var configured = true
+        var approved = true
+        var readApproval: suspend () -> Boolean = { approved }
         var playback = false
         var network = true
         var result = Result.success(SyncResult(success = true, message = "synced"))
@@ -83,6 +134,7 @@ class SyncWorkerExecutionTest {
         var failure: Triple<String?, Boolean, Boolean>? = null
         override fun autoSyncEnabled(): Boolean { calls += "automatic"; return automatic }
         override fun configured(): Boolean { calls += "configured"; return configured }
+        override suspend fun protocolUpgradeApproved(): Boolean { calls += "approval"; return readApproval() }
         override fun playbackActive(): Boolean { calls += "playback"; return playback }
         override fun validatedNetwork(): Boolean { calls += "network"; return network }
         override fun deferForPlayback() { calls += "defer" }

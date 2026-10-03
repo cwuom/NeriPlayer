@@ -1,15 +1,14 @@
 package moe.ouom.neriplayer.data.sync.store.state
 
 import android.content.SharedPreferences
-import com.google.gson.Gson
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
 
-internal class SyncPlaylistMutationStore(private val encryptedPrefs: SharedPreferences,
+internal class SyncPlaylistMutationStore(encryptedPrefs: SharedPreferences,
     private val playlists: SyncPlaylistDeletionStore,
-    private val songs: SyncPlaylistSongDeletionStore) {
-    private val gson = Gson()
+    private val songs: SyncPlaylistSongDeletionStore,
+    private val files: SyncDeletionStateStorage) {
     private val mutation = SyncMutationVersionStore(encryptedPrefs)
 
     fun applyPlaylistSyncMutation(
@@ -53,21 +52,12 @@ internal class SyncPlaylistMutationStore(private val encryptedPrefs: SharedPrefe
                 deletedTimestamps -= playlistId
             }
 
-            val editor = encryptedPrefs.edit()
-            if (playlistDeletions.isEmpty()) {
-                editor.remove(KEY_PLAYLIST_SONG_DELETIONS)
-            } else {
-                editor.putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(playlistDeletions))
-            }
-            if (deletedIds.isEmpty()) {
-                editor.remove(KEY_DELETED_PLAYLIST_IDS)
-                    .remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
-            } else {
-                editor.putString(KEY_DELETED_PLAYLIST_IDS, deletedIds.joinToString(","))
-                    .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(deletedTimestamps))
-            }
-            val nextVersion = mutation.bump(editor)
-            check(editor.commit()) { "Failed to persist playlist sync mutation" }
+            var nextVersion = 0L
+            check(files.commitEdit {
+                files.write(this, KEY_PLAYLIST_SONG_DELETIONS, playlistDeletions.takeIf { it.isNotEmpty() })
+                playlists.writeDeletionState(this, deletedIds, deletedTimestamps)
+                nextVersion = mutation.bump(this)
+            }) { "Failed to persist playlist sync mutation" }
             return nextVersion
         }
     }
@@ -75,6 +65,6 @@ internal class SyncPlaylistMutationStore(private val encryptedPrefs: SharedPrefe
     private fun normalizePlaylistSongDeletions(
         deletions: List<SyncPlaylistSongDeletion>
     ): List<SyncPlaylistSongDeletion> {
-        return SyncPlaylistDeletionPolicy.limitDeletions(deletions)
+        return SyncPlaylistDeletionPolicy.mergeDeletions(deletions, emptyList())
     }
 }

@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
+import moe.ouom.neriplayer.ui.sync.upgrade.syncProtocolStartupConfigurationGate
 
 @Composable
 internal fun SettingsGitHubDialogs(
@@ -70,6 +71,14 @@ internal fun SettingsGitHubDialogs(
     LaunchedEffect(githubVm, context) {
         githubVm.initialize(context)
     }
+
+    if (syncProtocolStartupConfigurationGate(
+            dialogRequested = showGitHubConfigDialog || showClearGitHubConfigDialog,
+            onDismiss = {
+                onShowGitHubConfigDialogChange(false)
+                onShowClearGitHubConfigDialogChange(false)
+            }
+        )) return
 
     if (showGitHubConfigDialog) {
         val githubState by githubVm.uiState.collectAsStateWithLifecycleCompat()

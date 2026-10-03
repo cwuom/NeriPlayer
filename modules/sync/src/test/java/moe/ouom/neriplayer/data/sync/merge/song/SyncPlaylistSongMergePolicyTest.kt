@@ -10,6 +10,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncPlaylistSongMergePolicyTest {
+    @Test(timeout = 30_000)
+    fun `many independent membership bridges preserve slot order and old identity aliases`() {
+        val pairs = (1L..10_000L).map { id ->
+            val first = syncSong(id = id * 2, name = "first-$id", membershipTokens = listOf(token("first", id)))
+            val second = syncSong(id = id * 2 + 1, name = "second-$id", membershipTokens = listOf(token("second", id)))
+            first to second
+        }
+        val bridges = pairs.map { (first, second) -> first.copy(syncMembershipTokens = second.syncMembershipTokens) }
+        val oldAliases = pairs.map { it.second }
+
+        val merged = SyncPlaylistSongMergePolicy.deduplicateSongs(pairs.flatMap { listOf(it.first, it.second) } + bridges + oldAliases)
+
+        assertEquals(10_000, merged.size)
+        assertEquals((1L..10_000L).map { it * 2 }, merged.map(SyncSong::id))
+        assertTrue(merged.all { it.syncMembershipTokens.size == 2 })
+    }
+
     @Test
     fun `remote phone reorder keeps remote addedAt values and order`() {
         val local = listOf(
@@ -70,6 +87,8 @@ class SyncPlaylistSongMergePolicyTest {
     fun `legacy primary order keeps current rich metadata`() {
         val current = syncSong(id = 1L, name = "Original", addedAt = 100L).copy(
             matchedLyric = "[00:01.00]lyric",
+            lyricSyncEdited = true,
+            lyricSyncRevision = 1L,
             customName = "Custom title",
             originalName = "Original"
         )
@@ -77,6 +96,8 @@ class SyncPlaylistSongMergePolicyTest {
             name = "Custom title",
             addedAt = 900L,
             matchedLyric = null,
+            lyricSyncEdited = null,
+            lyricSyncRevision = 0L,
             customName = null,
             originalName = null,
             syncMetadataVersion = LEGACY_SYNC_METADATA_VERSION
@@ -659,7 +680,9 @@ class SyncPlaylistSongMergePolicyTest {
             membershipTokens = listOf(token("local", 1L))
         ).copy(
             matchedLyric = "",
-            userLyricOffsetMs = 0L
+            userLyricOffsetMs = 0L,
+            lyricSyncEdited = true,
+            lyricSyncRevision = 3L
         )
         val localSecond = syncSong(
             id = 2L,
@@ -674,7 +697,9 @@ class SyncPlaylistSongMergePolicyTest {
             membershipTokens = listOf(token("remote", 1L))
         ).copy(
             matchedLyric = "[00:00.00]old lyric",
-            userLyricOffsetMs = 500L
+            userLyricOffsetMs = 500L,
+            lyricSyncEdited = true,
+            lyricSyncRevision = 2L
         )
         val remoteSecond = syncSong(
             id = 2L,
@@ -776,7 +801,9 @@ class SyncPlaylistSongMergePolicyTest {
             matchedTranslatedLyric = "",
             matchedLyricSource = null,
             matchedSongId = null,
-            userLyricOffsetMs = 0L
+            userLyricOffsetMs = 0L,
+            lyricSyncEdited = true,
+            lyricSyncRevision = 3L
         )
         val remote = syncSong(
             id = 1L,
@@ -787,7 +814,9 @@ class SyncPlaylistSongMergePolicyTest {
             matchedTranslatedLyric = "[00:00.00]old translation",
             matchedLyricSource = "QQ_MUSIC",
             matchedSongId = "qq:old",
-            userLyricOffsetMs = 350L
+            userLyricOffsetMs = 350L,
+            lyricSyncEdited = true,
+            lyricSyncRevision = 2L
         )
 
         val result = SyncPlaylistSongMergePolicy.mergeSongs(

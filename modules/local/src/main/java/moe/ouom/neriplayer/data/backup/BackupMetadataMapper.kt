@@ -2,6 +2,11 @@ package moe.ouom.neriplayer.data.backup
 
 import android.content.Context
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
+import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.mapping.fromLocalPlaylist
+import moe.ouom.neriplayer.data.sync.mapping.fromSongItemOrNull
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.model.stats.TrackStat
@@ -14,6 +19,20 @@ import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 
 internal object BackupMetadataMapper {
     private const val BACKUP_DEVICE_ID = "manual_backup"
+
+    fun toSyncPlaylist(playlist: LocalPlaylist, context: Context): SyncPlaylist {
+        val metadata = SyncPlaylist.fromLocalPlaylist(playlist.copy(songs = mutableListOf()), playlist.modifiedAt, context)
+        return metadata.copy(songs = playlist.songs.mapNotNull { toBackupSongOrNull(it, context) })
+    }
+
+    private fun toBackupSongOrNull(song: SongItem, context: Context): SyncSong? =
+        SyncSong.fromSongItemOrNull(song, context)?.copy(
+            matchedLyric = song.matchedLyric, matchedTranslatedLyric = song.matchedTranslatedLyric,
+            matchedRomanizedLyric = song.matchedRomanizedLyric, originalLyric = song.originalLyric,
+            originalTranslatedLyric = song.originalTranslatedLyric, originalRomanizedLyric = song.originalRomanizedLyric,
+            lyricSyncEdited = song.lyricSyncEdited,
+            lyricSyncRevision = song.lyricSyncRevision
+        )
 
     fun shouldExportHistory(entry: PlayedEntry, context: Context): Boolean {
         return shouldExportRemoteMetadata(entry.localFilePath, entry.album, entry.mediaUri, entry.albumId, context)
@@ -52,6 +71,12 @@ internal object BackupMetadataMapper {
                 mediaUri = LocalSongSupport.sanitizeMediaUriForSync(entry.mediaUri),
                 matchedLyric = entry.matchedLyric,
                 matchedTranslatedLyric = entry.matchedTranslatedLyric,
+                matchedRomanizedLyric = entry.matchedRomanizedLyric,
+                matchedLyricSource = entry.matchedLyricSource?.name,
+                matchedSongId = entry.matchedSongId,
+                lyricSyncEdited = entry.lyricSyncEdited,
+                lyricSyncRevision = entry.lyricSyncRevision,
+                userLyricOffsetMs = entry.userLyricOffsetMs,
                 customCoverUrl = entry.customCoverUrl,
                 customName = entry.customName,
                 customArtist = entry.customArtist,
@@ -60,6 +85,7 @@ internal object BackupMetadataMapper {
                 originalCoverUrl = entry.originalCoverUrl,
                 originalLyric = entry.originalLyric,
                 originalTranslatedLyric = entry.originalTranslatedLyric,
+                originalRomanizedLyric = entry.originalRomanizedLyric,
                 syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
             ),
             playedAt = entry.playedAt,
@@ -84,6 +110,12 @@ internal object BackupMetadataMapper {
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri),
             matchedLyric = song.matchedLyric,
             matchedTranslatedLyric = song.matchedTranslatedLyric,
+            matchedRomanizedLyric = song.matchedRomanizedLyric,
+            matchedLyricSource = song.matchedLyricSource?.let { runCatching { moe.ouom.neriplayer.data.model.music.MusicPlatform.valueOf(it) }.getOrNull() },
+            matchedSongId = song.matchedSongId,
+            lyricSyncEdited = song.lyricSyncEdited,
+            lyricSyncRevision = song.lyricSyncRevision,
+            userLyricOffsetMs = song.userLyricOffsetMs,
             customCoverUrl = song.customCoverUrl,
             customName = song.customName,
             customArtist = song.customArtist,
@@ -92,6 +124,7 @@ internal object BackupMetadataMapper {
             originalCoverUrl = song.originalCoverUrl,
             originalLyric = song.originalLyric,
             originalTranslatedLyric = song.originalTranslatedLyric,
+            originalRomanizedLyric = song.originalRomanizedLyric,
             resumePositionMs = syncPlay.resumePositionMs,
             playedAt = syncPlay.playedAt
         )

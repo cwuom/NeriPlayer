@@ -455,17 +455,17 @@
 - 同步快照可能来自旧版 JSON/ProtoBuf 或异常远端文件；读取时要用安全默认值，
   过滤缺少可解析歌曲身份、无有效删除时间或无效歌单 ID 的记录，
   缺失 `addedAt` 的歌曲不能排到已有时间歌曲之前。
-- 省流模式写入 `backup-raw.bin` 原始 `GZIP(ProtoBuf)` 字节；读取必须兼容
-  `backup.json` 与历史 `backup.bin` Base64，不能在 Android 与 Desktop 尚未同时
-  支持 read-both 前单独切换格式。JSON、压缩正文和解压后正文上限分别为 8 MiB、
-  12 MiB 和 16 MiB。
-- GitHub 同步通过 Git Data API 的 blob/tree/commit 写入仓库，分支 ref 使用非强制更新；
-  blob 请求中的 Base64 只是 API 传输封装。读取优先使用 raw 内容，不能再描述为
-  已废弃的资产清单协议。
-- WebDAV 优先使用 ETag/Last-Modified 条件写入；没有条件令牌时只能在远端 SHA-256
-  指纹与已读快照一致的情况下回退无条件写入，否则必须按并发冲突失败。
+- V4 写入 Protobuf 记录流、ZSTD 内容分块和根清单，每个压缩对象不超过 2 MiB。
+  清单不存在时才读取旧 `backup.json`、`backup-raw.bin` GZIP 与 `backup.bin` Base64；
+  8/12/16 MiB 安全限制仅适用于旧格式读取。V3 仅供读取迁移，未知未来版本须明确拒绝；
+  所有同步设备须支持 V4，传统数据或 V3 迁移须先确认升级。
+- GitHub 通过 Git Data API 的 blob/tree/commit 写入仓库，以 GraphQL `updateRefs`
+  的 `beforeOid` 和 `force=false` 原子发布清单。blob 请求的 Base64 只是传输封装，
+  仓库正文仍为原始二进制；读取固定分支头并使用 raw 内容。
+- WebDAV 使用 `If-None-Match: *` 创建不可变对象和首次清单；后续清单必须使用强 ETag
+  的 `If-Match`。缺少强条件时停止发布，不能回退无条件写入。
 - 播放统计与流量统计采用延迟批量写入；播放统计在播放器/Activity 关键生命周期
-  flush，流量累积器在请求或下载尝试结束时 flush，播放每日桶按保留窗口和数量上限裁剪。
+  flush，流量累积器在请求或下载尝试结束时 flush，播放累计与每日桶不再按数量淘汰。
   同步合并需要同时维护全量累计、每日桶和旧版 bucket-only 载荷提升，不能先裁剪窗口再抬升。
 - 平台 Cookie / 鉴权信息、GitHub Token、WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 加密保存。
@@ -603,10 +603,10 @@
 1. 先理解 `data/model/sync/SyncDataModels.kt` 与
    `:sync` 中 `data/sync/codec/SyncDataSerializer.kt` 的兼容策略；共享载荷模型不得
    重新放回 GitHub provider 包。
-2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
-   省流写侧使用 `backup-raw.bin` 原始 `GZIP(ProtoBuf)`，普通模式使用
-   `backup.json`；读侧还必须兼容历史 `backup.bin` Base64。GitHub Git Data API
-   的 blob 请求会使用 Base64 传输封装，但仓库内保存的是原始正文。
+2. 同步对象包含歌单、收藏歌单、最近播放、删除记录、播放统计和独立歌词修改记录。
+   V4 使用 Protobuf 记录流、ZSTD 内容分块与根清单，发布点保留 `neriplayer-sync-v3.manifest` 文件名。
+   V3 仅供读取迁移；仅清单不存在时读取旧 JSON、原始 GZIP 与 Base64。GitHub Git Data API 的 blob 请求使用 Base64 传输封装，
+   仓库内仍保存原始正文。歌词迁移完整保留旧数据，不再提供有损选择，详见 `modules/sync/LYRIC_SYNC.md`。
 3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
    序列化、合并和落回本地歌单时必须保留旧数据迁移。
 4. 歌单成员使用 `syncMembershipTokens` / `removedMembershipTokens` 表达
@@ -620,9 +620,9 @@
    业务规则在共享组件中维护，宿主负责资源文案与系统歌单解析；`SyncSession` 统一
    执行冲突重试、本地 mutation version 校验和落库确认，后端提供传输与远端版本接口。
 7. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
-   周期同步、validated network 检查和失败重试行为。GitHub 写入按远端分支头做
-   非强制更新，冲突时必须失败而不是覆盖；WebDAV 无 ETag/Last-Modified 时仍需
-   重新验证远端 SHA-256 指纹。
+   周期同步、validated network 检查和失败重试行为。GitHub 清单发布必须按固定远端
+   分支头做 `beforeOid` 原子非强制更新，冲突时失败；WebDAV 后续清单写入必须使用
+   强 ETag 的 `If-Match`，不支持安全条件写入时停止发布。
 8. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
 9. 存储文件名、键名、Worker 类全名、任务名与输入键属于升级兼容边界，迁移模块时必须保持。

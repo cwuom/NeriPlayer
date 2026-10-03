@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.local.database.store.stats.toDomain
+
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
@@ -22,6 +24,34 @@ class LocalPlaylistRoomMapperTest {
             "fb2c447ba6ceec0b5b0e7856303450290c7250829f9d25df2625a32612f0b937",
             LocalPlaylistRoomStore.domainDigest(emptyList())
         )
+    }
+
+    @Test
+    fun `domain digest keeps legacy bytes when lyric sync fields are absent`() {
+        assertEquals(
+            "aeb25c7c366ccec9db03a8b2f4aa2d66b0fa3e1ea60245ab5eac33a77c9d20d0",
+            digestWithSong(digestSong())
+        )
+    }
+
+    @Test
+    fun `domain digest distinguishes lyric sync revisions`() {
+        val song = digestSong()
+        val digests = listOf(0L, 1L, Long.MIN_VALUE, Long.MAX_VALUE).map { revision ->
+            digestWithSong(song.copy(lyricSyncRevision = revision))
+        }
+
+        assertEquals(digests.size, digests.toSet().size)
+    }
+
+    @Test
+    fun `domain digest distinguishes unknown unedited and edited lyric states`() {
+        val song = digestSong()
+        val digests = listOf(null, false, true).map { edited ->
+            digestWithSong(song.copy(lyricSyncEdited = edited))
+        }
+
+        assertEquals(digests.size, digests.toSet().size)
     }
 
     @Test
@@ -122,6 +152,14 @@ class LocalPlaylistRoomMapperTest {
         assertEquals(1, result.playlistCount)
         assertEquals(1, result.memberCount)
         assertNull(result.firstMismatch)
+    }
+
+    private fun digestSong() = SongItem(17L, "song", "artist", "netease", 0L, 180_000L, null)
+
+    private fun digestWithSong(song: SongItem): String {
+        return LocalPlaylistRoomStore.domainDigest(
+            listOf(LocalPlaylist(701L, "restore", mutableListOf(song), modifiedAt = 4_000L))
+        )
     }
 
     private fun remoteSong(

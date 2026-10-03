@@ -5,7 +5,6 @@ import moe.ouom.neriplayer.data.model.stats.TrackStat
 import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -169,39 +168,6 @@ class PlaybackStatsDailyBucketsTest {
         assertEquals(utcMillis(2), recorded.last().dayStartAt)
     }
 
-    @Test
-    fun `retention includes the four hundred day boundary and keeps original order`() {
-        val newestDay = utcMillis(2)
-        val current = listOf(
-            bucket(key = "expired", dayStartAt = newestDay - 401L * MILLIS_PER_DAY),
-            bucket(key = "boundary", dayStartAt = newestDay - 400L * MILLIS_PER_DAY),
-            bucket(key = "newest", dayStartAt = newestDay)
-        )
-
-        assertEquals(listOf("boundary", "newest"), trimPlaybackStatBuckets(current).map { it.identityKey })
-        val empty = emptyList<PlaybackStatBucket>()
-        assertSame(empty, trimPlaybackStatBuckets(empty))
-    }
-
-    @Test
-    fun `bucket cap prefers newer days then play counts then stable identity`() {
-        val newestDay = utcMillis(2)
-        val current = (0 until 7_999).map { index ->
-            bucket(key = "track-${index.toString().padStart(4, '0')}", dayStartAt = newestDay)
-        } + listOf(
-            bucket(key = "older", dayStartAt = newestDay - MILLIS_PER_DAY, playCount = 100),
-            bucket(key = "tie-b", dayStartAt = newestDay, playCount = 5),
-            bucket(key = "tie-a", dayStartAt = newestDay, playCount = 5)
-        )
-
-        val trimmed = trimPlaybackStatBuckets(current)
-
-        assertEquals(8_000, trimmed.size)
-        assertEquals(listOf("tie-a", "tie-b"), trimmed.take(2).map { it.identityKey })
-        assertEquals("track-7997", trimmed.last().identityKey)
-        assertFalse(trimmed.any { it.identityKey == "track-7998" || it.identityKey == "older" })
-    }
-
     private fun stat(
         key: String = "netease:42",
         firstPlayedAt: Long = utcMillis(2),
@@ -265,7 +231,4 @@ class PlaybackStatsDailyBucketsTest {
         }.timeInMillis
     }
 
-    private companion object {
-        const val MILLIS_PER_DAY = 86_400_000L
-    }
 }

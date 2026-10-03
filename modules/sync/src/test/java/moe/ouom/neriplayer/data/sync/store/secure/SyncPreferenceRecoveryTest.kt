@@ -9,6 +9,23 @@ import org.mockito.Mockito.mock
 
 class SyncPreferenceRecoveryTest {
     @Test
+    fun `sync metadata corruption cannot clear epochs or file generation markers`() {
+        val events = mutableListOf<String>()
+        val original = IllegalStateException("corrupt")
+        val failure = assertThrows(IllegalStateException::class.java) {
+            SyncPreferenceRecovery.open(
+                create = { events += "create"; throw original },
+                delete = { throw AssertionError("sync metadata must not be deleted") },
+                onOpenFailure = { events += "open failure" },
+                onDeleteFailure = { throw AssertionError("unexpected delete failure") },
+                recoverOnFailure = false
+            )
+        }
+        assertSame(original, failure)
+        assertEquals(listOf("create", "open failure"), events)
+    }
+
+    @Test
     fun `healthy preferences never clear storage`() {
         val preferences = mock(SharedPreferences::class.java)
         assertSame(preferences, SyncPreferenceRecovery.open(

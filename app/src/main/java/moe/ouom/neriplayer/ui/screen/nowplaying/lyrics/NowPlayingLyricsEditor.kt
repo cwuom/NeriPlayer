@@ -583,6 +583,7 @@ fun LyricsEditorSheet(
         }
     }
 
+
     if (showLocalMetadataWriteBackConfirm) {
         AlertDialog(
             onDismissRequest = { showLocalMetadataWriteBackConfirm = false },

@@ -10,6 +10,10 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlay
 import moe.ouom.neriplayer.data.model.sync.SyncSong
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -27,7 +31,10 @@ class BackupMetadataMapperTest {
             matchedLyric = "matched", matchedTranslatedLyric = "translated",
             customCoverUrl = "https://custom-cover", customName = "custom-name", customArtist = "custom-artist",
             originalName = "original-name", originalArtist = "original-artist", originalCoverUrl = "https://original-cover",
-            originalLyric = "original", originalTranslatedLyric = "original-translated"
+            originalLyric = "original", originalTranslatedLyric = "original-translated",
+            matchedRomanizedLyric = "romanized", matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+            matchedSongId = "42", lyricSyncEdited = true, lyricSyncRevision = 20,
+            userLyricOffsetMs = 123, originalRomanizedLyric = "original romanized"
         )
 
         val exported = BackupMetadataMapper.toSyncRecentPlay(entry)
@@ -36,6 +43,26 @@ class BackupMetadataMapperTest {
         assertEquals("manual_backup", exported.deviceId)
         assertEquals(CURRENT_SYNC_METADATA_VERSION, exported.song.syncMetadataVersion)
         assertEquals(entry, BackupMetadataMapper.toPlayedEntry(exported, context))
+    }
+
+    @Test
+    fun manualBackupKeepsUnknownLyricsWithoutConfirmingThemForSync() {
+        CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
+        try {
+            val unknown = SongItem(7, "song", "artist", "netease", 1, 100, null,
+                matchedLyric = "unknown old lyrics", matchedTranslatedLyric = "old translation",
+                matchedRomanizedLyric = "old romanized", matchedLyricSource = MusicPlatform.CLOUD_MUSIC, matchedSongId = "42")
+            val backup = BackupMetadataMapper.toSyncPlaylist(LocalPlaylist(8, "playlist", mutableListOf(unknown)), context)
+            val song = backup.songs.single()
+            assertEquals(unknown.matchedLyric, song.matchedLyric)
+            assertEquals(unknown.matchedTranslatedLyric, song.matchedTranslatedLyric)
+            assertEquals(unknown.matchedRomanizedLyric, song.matchedRomanizedLyric)
+            assertNull(song.lyricSyncEdited)
+            assertEquals(0L, song.lyricSyncRevision)
+            assertEquals("42", song.matchedSongId)
+        } finally {
+            CoverUrlMapper.installForTest(null)
+        }
     }
 
     @Test

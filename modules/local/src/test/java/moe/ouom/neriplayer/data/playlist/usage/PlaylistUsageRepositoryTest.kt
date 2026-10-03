@@ -20,6 +20,10 @@ import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -27,6 +31,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyBoolean
+import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
 import org.mockito.Mockito.CALLS_REAL_METHODS
@@ -34,6 +42,13 @@ import org.mockito.Mockito.`when`
 import java.util.Locale
 
 class PlaylistUsageRepositoryTest {
+    private val ownedScopes = mutableListOf<CoroutineScope>()
+
+    @After
+    fun cancelOwnedRepositories() {
+        ownedScopes.forEach { it.cancel() }
+        ownedScopes.clear()
+    }
 
     @Before
     fun bindEmptyMediaLibrary() {
@@ -65,7 +80,7 @@ class PlaylistUsageRepositoryTest {
             songs = mutableListOf(localSong(null))
         ))
         val artist = buildLocalArtistSummaries(playlists, context).single()
-        val repo = PlaylistUsageRepository(context)
+        val repo = createRepository(context)
         repo.recordOpen(
             id = artist.id,
             name = artist.name,
@@ -192,7 +207,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `normalization keeps local display cover when counter shards exist`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
         val localCoverUrl = "file:///covers/local.jpg"
 
         repo.recordOpen(
@@ -223,7 +238,7 @@ class PlaylistUsageRepositoryTest {
             """.trimIndent()
         )
 
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
 
         val entry = repo.frequentPlaylistsFlow.value.single()
         assertEquals(2, entry.openCount)
@@ -243,7 +258,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `record open removes stale empty playlist instead of keeping it`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
 
         repo.recordOpen(
             id = 42L,
@@ -267,7 +282,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `update info promotes playlist only after detail has tracks`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
 
         repo.updateInfo(
             id = 7L,
@@ -298,7 +313,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `manual removal stays hidden when stale usage stats are merged`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
 
         repo.recordOpen(
             id = 42L,
@@ -329,7 +344,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `opening a manually removed playlist clears its hidden state`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
 
         repo.recordOpen(
             id = 42L,
@@ -355,7 +370,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `continue entry open keeps its display order`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
         repo.recordOpen(
             id = 1L,
             name = "较早歌单",
@@ -399,7 +414,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `bili usage keeps uploader subtitle when reopening and refreshing`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
 
         repo.recordOpen(
             id = 8801L,
@@ -477,7 +492,7 @@ class PlaylistUsageRepositoryTest {
     @Test
     fun `sync local entries keeps favorites cover when newest song is local`() {
         val context = mockLocalizedContext()
-        val repo = PlaylistUsageRepository(context)
+        val repo = createRepository(context)
         val localCoverUrl = "file:///covers/favorite-local.jpg"
         val favorites = LocalPlaylist(
             id = FavoritesPlaylist.SYSTEM_ID,
@@ -501,7 +516,7 @@ class PlaylistUsageRepositoryTest {
     @Test
     fun `sync local entries uses downloaded song cover for local files card`() {
         val context = mockLocalizedContext()
-        val repo = PlaylistUsageRepository(context)
+        val repo = createRepository(context)
         val downloadedCoverUrl = "file:///covers/downloaded.jpg"
         val localFiles = LocalPlaylist(
             id = LocalFilesPlaylist.SYSTEM_ID,
@@ -540,7 +555,7 @@ class PlaylistUsageRepositoryTest {
     @Test
     fun `sync local entries keeps last known cover when fallback is temporarily blank`() {
         val context = mockLocalizedContext()
-        val repo = PlaylistUsageRepository(context)
+        val repo = createRepository(context)
         val knownCoverUrl = "file:///covers/known-local.jpg"
         val localFiles = LocalPlaylist(
             id = LocalFilesPlaylist.SYSTEM_ID,
@@ -564,7 +579,7 @@ class PlaylistUsageRepositoryTest {
     @Test
     fun `lightweight local sync updates direct cover without media fallback`() {
         val context = mockLocalizedContext()
-        val repo = PlaylistUsageRepository(context)
+        val repo = createRepository(context)
         val currentCoverUrl = "file:///covers/current-local.jpg"
         val localFiles = LocalPlaylist(
             id = LocalFilesPlaylist.SYSTEM_ID,
@@ -591,7 +606,7 @@ class PlaylistUsageRepositoryTest {
     @Test
     fun `sync local entries clears stale cover when local files becomes empty`() {
         val context = mockLocalizedContext()
-        val repo = PlaylistUsageRepository(context)
+        val repo = createRepository(context)
         val knownCoverUrl = "file:///covers/stale-local.jpg"
         val emptyLocalFiles = LocalPlaylist(
             id = LocalFilesPlaylist.SYSTEM_ID,
@@ -614,7 +629,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `opening local playlist without cover does not clear known cover`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
         val knownCoverUrl = "file:///covers/known-local.jpg"
 
         repo.recordOpen(
@@ -639,7 +654,7 @@ class PlaylistUsageRepositoryTest {
 
     @Test
     fun `merged usage stats keep local cover when sync omits local file cover`() {
-        val repo = PlaylistUsageRepository(mockContext())
+        val repo = createRepository(mockContext())
         val knownCoverUrl = "file:///covers/known-local.jpg"
 
         repo.recordOpen(
@@ -687,6 +702,31 @@ class PlaylistUsageRepositoryTest {
             openCount = openCount,
             subtype = subtype
         )
+    }
+
+    private fun createRepository(context: Context): PlaylistUsageRepository {
+        val removals = mutableMapOf<String, Long>()
+        val storage = mock(SecureTokenStorage::class.java)
+        `when`(storage.getOrCreateDeviceId()).thenReturn("usage-fixture-device")
+        `when`(storage.getPlaylistUsageDeletions()).thenAnswer { removals.toMap() }
+        `when`(storage.getPlaylistUsageDeletionsConfirmed()).thenAnswer { removals.toMap() }
+        doAnswer {
+            val key = it.getArgument<String>(0)
+            val deletedAt = it.getArgument<Long>(1)
+            removals[key] = maxOf(removals[key] ?: 0L, deletedAt)
+            Unit
+        }.`when`(storage).addPlaylistUsageDeletion(anyString(), anyLong())
+        doAnswer {
+            removals.remove(it.getArgument<String>(0))
+            Unit
+        }.`when`(storage).removePlaylistUsageDeletion(anyString(), anyBoolean())
+        val repository = PlaylistUsageRepository(context)
+        PlaylistUsageRepository::class.java.getDeclaredField("syncStorage\$delegate")
+            .also { it.isAccessible = true }.set(repository, lazy { storage })
+        val scope = PlaylistUsageRepository::class.java.getDeclaredField("scope")
+            .also { it.isAccessible = true }.get(repository) as CoroutineScope
+        ownedScopes.add(scope)
+        return repository
     }
 
     private fun mockContext(): Context {

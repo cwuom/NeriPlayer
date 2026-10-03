@@ -20,6 +20,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncDataChangeDetectorSectionsTest {
+    @Test
+    fun `lyric reset without any remaining song copy requires upload`() {
+        val original = SyncData()
+        val reset = original.copy(lyricOverrides = listOf(SyncSong(id = 1L, lyricSyncEdited = false, lyricSyncRevision = 20L)))
+        assertTrue(SyncDataChangeDetector.hasDataChanged(original, reset))
+        assertFalse(SyncDataChangeDetector.hasDataChanged(reset, reset))
+    }
     private val song = SyncSong(id = 42L, album = "remote")
     private val playlist = SyncPlaylist(id = 7L, songs = listOf(song), songOrderVersion = 1)
     private val favorite = SyncFavoritePlaylist(id = 8L, songs = listOf(song))
@@ -56,7 +63,8 @@ class SyncDataChangeDetectorSectionsTest {
             song.copy(name = "name"), song.copy(artist = "artist"), song.copy(album = "album"),
             song.copy(albumId = 3L), song.copy(durationMs = 4L), song.copy(coverUrl = "cover"),
             song.copy(mediaUri = "https://audio"), song.copy(addedAt = 5L), song.copy(matchedLyric = "lyric"),
-            song.copy(matchedTranslatedLyric = "translation"), song.copy(matchedLyricSource = "NETEASE"),
+            song.copy(matchedTranslatedLyric = "translation"), song.copy(matchedRomanizedLyric = "romanized"),
+            song.copy(lyricSyncRevision = 20L), song.copy(lyricSyncEdited = true), song.copy(matchedLyricSource = "NETEASE"),
             song.copy(matchedSongId = "matched"), song.copy(userLyricOffsetMs = 6L),
             song.copy(customCoverUrl = "custom cover"), song.copy(customName = "custom name"),
             song.copy(customArtist = "custom artist"), song.copy(originalName = "original name"),

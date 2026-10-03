@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.sync.merge.stats
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 
-internal object SyncPlaybackBucketTotalsPolicy {
+object SyncPlaybackBucketTotalsPolicy {
     private data class BucketTotals(
         val totalListenMs: Long,
         val playCount: Long,
@@ -11,6 +11,20 @@ internal object SyncPlaybackBucketTotalsPolicy {
         val lastPlayedAt: Long,
         val latestBucket: SyncPlaybackStatBucket
     )
+
+    class Fold(private val identityKey: String) {
+        private var totals: BucketTotals? = null
+
+        fun add(bucket: SyncPlaybackStatBucket) {
+            require(bucket.identityKey == identityKey)
+            totals = mergeBucketTotals(totals, bucket)
+        }
+
+        fun lift(stat: SyncTrackStat?): SyncTrackStat? {
+            require(stat == null || stat.identityKey == identityKey)
+            return if (stat == null) totals?.toTrackStat(identityKey) else liftTrack(stat, totals)
+        }
+    }
 
     fun liftStatsToBucketTotals(
         stats: List<SyncTrackStat>,

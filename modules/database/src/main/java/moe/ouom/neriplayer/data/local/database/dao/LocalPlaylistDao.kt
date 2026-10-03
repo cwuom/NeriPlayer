@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
@@ -89,6 +90,24 @@ interface LocalPlaylistDao {
 
     @Upsert
     suspend fun insertMemberTokens(tokens: List<PlaylistMemberTokenEntity>)
+
+    @Delete
+    suspend fun deleteMemberTokenRows(tokens: List<PlaylistMemberTokenEntity>)
+
+    @Query("DELETE FROM playlist_member WHERE playlist_id = :playlistId AND identity_key IN (:identityKeys)")
+    suspend fun deleteMembersByIdentityKeys(playlistId: Long, identityKeys: List<String>)
+
+    @Query(
+        "UPDATE playlist_member SET display_position = :displayPosition, order_tie_break = :displayPosition " +
+            "WHERE playlist_id = :playlistId AND identity_key = :identityKey"
+    )
+    suspend fun updateMemberPosition(playlistId: Long, identityKey: String, displayPosition: Int)
+
+    @Query(
+        "DELETE FROM track WHERE identity_key IN (:identityKeys) AND NOT EXISTS " +
+            "(SELECT 1 FROM playlist_member WHERE playlist_member.identity_key = track.identity_key)"
+    )
+    suspend fun deleteOrphanTracksByIdentityKeys(identityKeys: List<String>)
 
     @Query("DELETE FROM playlist_member_token")
     suspend fun deleteMemberTokens()

@@ -551,7 +551,7 @@ class SyncPlaylistDeletionPolicyTest {
     }
 
     @Test
-    fun `bounded deletion retention keeps recent legacy and causal tombstones`() {
+    fun `deletion retention keeps old and recent legacy and causal tombstones`() {
         val legacy = (1L..6L).map { id ->
             deletion(playlistId = 7L, songId = id, deletedAt = id, deviceId = "legacy")
         }
@@ -565,24 +565,21 @@ class SyncPlaylistDeletionPolicyTest {
             )
         }
 
-        val retained = SyncPlaylistDeletionPolicy.limitDeletions(
-            deletions = legacy + causal,
-            maxCount = 6
-        )
+        val retained = SyncPlaylistDeletionPolicy.mergeDeletions(legacy, causal)
 
-        assertEquals(6, retained.size)
-        assertEquals(3, retained.count { it.removedMembershipTokens.isEmpty() })
-        assertEquals(3, retained.count { it.removedMembershipTokens.isNotEmpty() })
-        assertEquals(setOf(4L, 5L, 6L), retained.filter {
+        assertEquals(12, retained.size)
+        assertEquals(6, retained.count { it.removedMembershipTokens.isEmpty() })
+        assertEquals(6, retained.count { it.removedMembershipTokens.isNotEmpty() })
+        assertEquals(setOf(1L, 2L, 3L, 4L, 5L, 6L), retained.filter {
             it.removedMembershipTokens.isEmpty()
         }.map { it.songId }.toSet())
-        assertEquals(setOf(14L, 15L, 16L), retained.filter {
+        assertEquals(setOf(11L, 12L, 13L, 14L, 15L, 16L), retained.filter {
             it.removedMembershipTokens.isNotEmpty()
         }.map { it.songId }.toSet())
     }
 
     @Test
-    fun `bounded deletion retention fills unused class capacity`() {
+    fun `deletion retention never evicts one deletion family`() {
         val legacy = (1L..2L).map { id ->
             deletion(playlistId = 7L, songId = id, deletedAt = id, deviceId = "legacy")
         }
@@ -596,14 +593,11 @@ class SyncPlaylistDeletionPolicyTest {
             )
         }
 
-        val retained = SyncPlaylistDeletionPolicy.limitDeletions(
-            deletions = legacy + causal,
-            maxCount = 6
-        )
+        val retained = SyncPlaylistDeletionPolicy.mergeDeletions(legacy, causal)
 
-        assertEquals(6, retained.size)
+        assertEquals(8, retained.size)
         assertEquals(2, retained.count { it.removedMembershipTokens.isEmpty() })
-        assertEquals(4, retained.count { it.removedMembershipTokens.isNotEmpty() })
+        assertEquals(6, retained.count { it.removedMembershipTokens.isNotEmpty() })
     }
 
     private fun syncSong(

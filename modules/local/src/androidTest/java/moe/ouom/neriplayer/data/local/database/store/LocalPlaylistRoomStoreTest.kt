@@ -84,7 +84,7 @@ class LocalPlaylistRoomStoreTest {
             val outbox = LocalPlaylistSyncMutationOutbox(
                 mutations = listOf(
                     LocalPlaylistSyncMutation(
-                        expectedPrimaryDigest = "digest"
+                        expectedPrimaryDigest = LocalPlaylistRoomStore.domainDigest(emptyList())
                     )
                 )
             )

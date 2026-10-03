@@ -9,11 +9,16 @@ import androidx.security.crypto.MasterKey
 import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal object EncryptedSyncPreferences {
-    fun open(context: Context, name: String, tag: String): SharedPreferences = SyncPreferenceRecovery.open(
+    fun open(context: Context, name: String, tag: String, recoverOnFailure: Boolean = true): SharedPreferences = SyncPreferenceRecovery.open(
         create = { create(context, name) },
         delete = { context.deleteSharedPreferences(name) },
-        onOpenFailure = { NPLogger.w(tag, "Failed to open secure prefs, clearing storage and recreating", it) },
-        onDeleteFailure = { NPLogger.w(tag, "Failed to delete corrupted secure prefs file", it) }
+        onOpenFailure = {
+            val message = if (recoverOnFailure) "Failed to open secure prefs, clearing storage and recreating"
+                else "Failed to open secure sync metadata, preserving storage"
+            NPLogger.w(tag, message, it)
+        },
+        onDeleteFailure = { NPLogger.w(tag, "Failed to delete corrupted secure prefs file", it) },
+        recoverOnFailure = recoverOnFailure
     )
 
     private fun create(context: Context, name: String): SharedPreferences {

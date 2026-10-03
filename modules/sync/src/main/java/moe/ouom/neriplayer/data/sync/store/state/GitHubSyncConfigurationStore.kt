@@ -79,7 +79,16 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun clearAll() {
-        encryptedPrefs.edit { clear() }
+        encryptedPrefs.edit {
+            remove(KEY_GITHUB_TOKEN)
+            remove(KEY_REPO_OWNER)
+            remove(KEY_REPO_NAME)
+            remove(KEY_LAST_SYNC_TIME)
+            remove(KEY_LAST_REMOTE_SHA)
+            remove(KEY_AUTO_SYNC_ENABLED)
+            remove(KEY_TOKEN_WARNING_DISMISSED)
+            remove(KEY_DATA_SAVER_MODE)
+        }
     }
 
     fun setTokenWarningDismissed(dismissed: Boolean) {

@@ -44,8 +44,12 @@ internal object SyncPlaybackCounterMergePolicy {
 
         val baseListenMs = maxOf(existingBaseListenMs, incomingBaseListenMs).coerceAtLeast(0L)
         val basePlayCount = maxOf(existingBasePlayCount, incomingBasePlayCount).coerceAtLeast(0)
-        val shardedListenMs = baseListenMs + shards.sumOf { it.totalListenMs.coerceAtLeast(0L) }
-        val shardedPlayCount = basePlayCount + shards.sumOf { it.playCount.coerceAtLeast(0) }
+        val shardedListenMs = shards.fold(baseListenMs) { total, shard ->
+            SyncPlaybackCounterArithmetic.add(total, shard.totalListenMs)
+        }
+        val shardedPlayCount = shards.fold(basePlayCount) { total, shard ->
+            SyncPlaybackCounterArithmetic.add(total, shard.playCount)
+        }
         return SyncPlaybackCounterMergeResult(
             totalListenMs = maxOf(shardedListenMs, existingTotalListenMs, incomingTotalListenMs)
                 .coerceAtLeast(0L),

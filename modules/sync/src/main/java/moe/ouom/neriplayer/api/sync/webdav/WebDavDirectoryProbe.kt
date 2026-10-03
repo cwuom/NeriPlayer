@@ -14,7 +14,7 @@ internal class WebDavDirectoryProbe(
     private val directoryMissingMessage: String,
     private val accessDeniedMessage: String
 ) {
-    fun requireExists(remoteUrl: String) {
+    fun requireExists(remoteUrl: String, lease: WebDavArchiveLease? = null) {
         val fileUrl = remoteUrl.toHttpUrl()
         val directoryUrl = fileUrl.newBuilder()
             .removePathSegment(fileUrl.pathSegments.lastIndex)
@@ -27,9 +27,8 @@ internal class WebDavDirectoryProbe(
             .header("Depth", "0")
             .method("PROPFIND", "<d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/></d:prop></d:propfind>"
                 .toRequestBody("application/xml; charset=utf-8".toMediaType()))
-            .build()
 
-        client.newCall(request).execute().use { response ->
+        val parse: (okhttp3.Response, () -> Unit) -> Unit = { response, _ ->
             val statusCode = WebDavDirectoryResponse.statusCode(response)
             when {
                 statusCode in 200..299 -> Unit
@@ -42,5 +41,7 @@ internal class WebDavDirectoryProbe(
                 }
             }
         }
+        if (lease != null) lease.execute(request, parse)
+        else client.newCall(request.build()).execute().use { parse(it) {} }
     }
 }

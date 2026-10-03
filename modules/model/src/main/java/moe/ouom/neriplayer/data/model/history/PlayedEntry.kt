@@ -26,5 +26,12 @@ data class PlayedEntry(
     val audioId: String? = null,
     val subAudioId: String? = null,
     val sourceStableKey: String? = null,
-    val playedAt: Long
+    val playedAt: Long,
+    val matchedRomanizedLyric: String? = null,
+    val originalRomanizedLyric: String? = null,
+    val matchedLyricSource: moe.ouom.neriplayer.data.model.music.MusicPlatform? = null,
+    val matchedSongId: String? = null,
+    val userLyricOffsetMs: Long = 0L,
+    val lyricSyncRevision: Long = 0L,
+    val lyricSyncEdited: Boolean? = null
 )

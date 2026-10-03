@@ -11,44 +11,36 @@ import moe.ouom.neriplayer.data.model.sync.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
-import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
-import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
-import moe.ouom.neriplayer.data.stats.PlaybackStatsPersistenceSnapshot
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.mapping.fromFavoritePlaylist
 import moe.ouom.neriplayer.data.sync.mapping.buildPlaylistSyncSnapshots
 import moe.ouom.neriplayer.data.sync.mapping.buildRecentPlaySyncSnapshots
 import moe.ouom.neriplayer.data.sync.mapping.toSyncBiliVideoSkipRule
 import moe.ouom.neriplayer.data.sync.policy.SyncBiliVideoSkipMergePolicy
 import moe.ouom.neriplayer.data.sync.policy.copyWithNormalizedMembershipTokens
+import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 
 internal class AndroidSyncSnapshotBuilder(
     private val storage: SecureTokenStorage,
     private val playlistRepo: LocalPlaylistRepository,
     private val favoriteRepo: FavoritePlaylistRepository,
     private val playHistoryRepo: PlayHistoryRepository,
-    private val playbackStatsRepo: PlaybackStatsRepository,
     private val playlistUsageRepo: PlaylistUsageRepository,
     private val localPlaylistPlaybackStatsRepo: LocalPlaylistPlaybackStatsRepository,
     private val biliVideoSkipRepo: BiliVideoSkipRepository
 ) {
-    fun build(localizedContext: Context): SyncData {
+    fun build(localizedContext: Context, playbackStatsClearedAt: Long): SyncData {
         val syncPlaylists = buildPlaylistSyncSnapshots(playlistRepo.playlists.value, storage.getDeletedPlaylistTimestamps(), localizedContext)
         val syncFavoritePlaylists = favoritePlaylists(localizedContext)
 
-        val syncRecentPlays = buildRecentPlaySyncSnapshots(playHistoryRepo.historyFlow.value, ::getDeviceId, localizedContext)
+        val syncRecentPlays = buildRecentPlaySyncSnapshots(playHistoryRepo.syncSnapshot(), ::getDeviceId, localizedContext)
         val syncRecentPlayDeletions = recentPlayDeletions()
         val syncPlaylistSongDeletions = playlistSongDeletions()
-        val playbackSnapshot = playbackStatsRepo.syncSnapshot()
-        val syncPlaybackStats = playbackStats(localizedContext, playbackSnapshot)
-        val syncPlaybackStatBuckets = playbackBuckets(localizedContext, playbackSnapshot)
-        val syncPlaylistUsageStats = playlistUsageRepo.syncStats()
+        val (syncPlaylistUsageStats, syncPlaylistUsageDeletions) = playlistUsageRepo.syncStatsAndDeletions()
         val localPlaylistPlaybackSnapshot = localPlaylistPlaybackStatsRepo.syncSnapshot()
         val syncBiliVideoSkipRules = videoSkipRules()
 
-        return SyncData(
+        val data = SyncData(
             deviceId = getDeviceId(),
             deviceName = getDeviceName(),
             lastModified = System.currentTimeMillis(),
@@ -57,15 +49,16 @@ internal class AndroidSyncSnapshotBuilder(
             recentPlays = syncRecentPlays,
             syncLog = emptyList(),
             recentPlayDeletions = syncRecentPlayDeletions,
-            playbackStats = syncPlaybackStats,
-            playbackStatsClearedAt = playbackSnapshot.clearedAt,
-            playbackStatBuckets = syncPlaybackStatBuckets,
+            playbackStatsClearedAt = playbackStatsClearedAt,
             playlistSongDeletions = syncPlaylistSongDeletions,
             playlistUsageStats = syncPlaylistUsageStats,
+            playlistUsageDeletions = syncPlaylistUsageDeletions,
             localPlaylistPlaybackStats = localPlaylistPlaybackSnapshot.stats,
             localPlaylistPlaybackBuckets = localPlaylistPlaybackSnapshot.buckets,
-            biliVideoSkipRules = syncBiliVideoSkipRules
+            biliVideoSkipRules = syncBiliVideoSkipRules,
+            lyricOverrides = storage.getLyricOverrides() + storage.getLegacyLyricCandidates()
         )
+        return SyncSongLyricMergePolicy.prepareLegacy(data)
     }
 
     private fun recentPlayDeletions(): List<moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion> {
@@ -101,33 +94,6 @@ internal class AndroidSyncSnapshotBuilder(
         )
 
         return syncBiliVideoSkipRules
-    }
-
-    private fun playbackStats(localizedContext: Context, snapshot: PlaybackStatsPersistenceSnapshot): List<SyncTrackStat> {
-        val syncPlaybackStats = snapshot.stats
-            .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
-            .map { stat ->
-                SyncPlaybackStatMapper.fromTrackStat(
-                    stat = stat,
-                    counterShards = snapshot.counterSnapshot.trackShards(stat.identityKey)
-                )
-            }
-        return syncPlaybackStats
-    }
-
-    private fun playbackBuckets(localizedContext: Context, snapshot: PlaybackStatsPersistenceSnapshot): List<SyncPlaybackStatBucket> {
-        val syncPlaybackStatBuckets = snapshot.dailyStats
-            .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
-            .map { bucket ->
-                SyncPlaybackStatMapper.fromPlaybackStatBucket(
-                    bucket = bucket,
-                    counterShards = snapshot.counterSnapshot.dailyShards(
-                        dayStartAt = bucket.dayStartAt,
-                        identityKey = bucket.identityKey
-                    )
-                )
-            }
-        return syncPlaybackStatBuckets
     }
 
     private fun getDeviceId(): String {

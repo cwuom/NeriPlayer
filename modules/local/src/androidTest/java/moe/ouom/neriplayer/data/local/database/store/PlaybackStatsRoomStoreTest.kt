@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -182,6 +184,247 @@ class PlaybackStatsRoomStoreTest {
             database.close()
         }
     }
+
+    @Test
+    fun incrementalWritePreservesDailyCounterChangesAcrossBatchesAndDeletesChildren() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val stats = (0L..503L).map { index ->
+                testTrackStat().copy(id = index + 7, identityKey = "track|${index + 7}")
+            }
+            val buckets = stats.map(::testBucket)
+            val shard = testCounter()
+            val counters = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = stats.associate { it.identityKey to listOf(shard) },
+                dailyShardsByBucketKey = buckets.associate { it.counterKey() to listOf(shard) }
+            )
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(stats, buckets, counters, counterEpochStartedAt = 10, clearedAt = 5)
+            val nextStats = stats.drop(1)
+            val nextBuckets = buckets.drop(1)
+            val unchangedIdentity = nextStats.last().identityKey
+            val nextCounters = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = counters.trackShardsByIdentity - stats.first().identityKey,
+                dailyShardsByBucketKey = nextBuckets.associate { bucket ->
+                    bucket.counterKey() to listOf(
+                        if (bucket.identityKey == unchangedIdentity) shard else shard.copy(playCount = 2, lastPlayedAt = 300)
+                    )
+                }
+            )
+
+            store.writeIncremental(stats, nextStats, buckets, nextBuckets, counters, nextCounters, 10, 5)
+
+            val saved = requireNotNull(store.readIfRoomPrimary())
+            assertEquals(nextStats.associateBy(TrackStat::identityKey), saved.stats.associateBy(TrackStat::identityKey))
+            assertEquals(nextBuckets.associateBy { it.counterKey() }, saved.dailyStats.associateBy { it.counterKey() })
+            assertEquals(nextCounters, saved.counterSnapshot)
+            assertEquals(10L, saved.counterEpochStartedAt)
+            assertEquals(5L, saved.clearedAt)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun failedIncrementalWriteRollsBackBucketsCountersAndClearMetadata() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val stat = testTrackStat()
+            val bucket = testBucket(stat)
+            val shard = testCounter()
+            val counters = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = mapOf(stat.identityKey to listOf(shard)),
+                dailyShardsByBucketKey = mapOf(bucket.counterKey() to listOf(shard))
+            )
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(listOf(stat), listOf(bucket), counters, 10, 5)
+            val before = requireNotNull(store.readIfRoomPrimary())
+            database.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER reject_stat_update BEFORE UPDATE ON playback_stat " +
+                    "BEGIN SELECT RAISE(ABORT, 'injected write failure'); END"
+            )
+            val failure = runCatching {
+                store.writeIncremental(
+                    previousStats = listOf(stat), nextStats = listOf(stat.copy(name = "updated")),
+                    previousDailyStats = listOf(bucket), nextDailyStats = listOf(bucket),
+                    previousCounterSnapshot = counters, counterSnapshot = counters,
+                    counterEpochStartedAt = 20, clearedAt = 15
+                )
+            }.exceptionOrNull()
+
+            assertNotNull(failure)
+            assertEquals(before, store.readIfRoomPrimary())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun replaceAllPersistsLargeBucketAndShardGroupsWithoutOrphanRows() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val stats = (0L..1_000L).map { index ->
+                testTrackStat().copy(id = index + 7, identityKey = "track|${index + 7}")
+            }
+            val stat = stats.first()
+            val buckets = (0L..1_500L).map { day -> testBucket(stat).copy(dayStartAt = day * 86_400_000L) }
+            val shards = (0..1_000).map { index ->
+                testCounter().copy(deviceId = "device-${index.toString().padStart(4, '0')}")
+            }
+            val orphanBucket = testBucket(stat).copy(identityKey = "missing-track")
+            val expectedCounters = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = mapOf(stat.identityKey to shards),
+                dailyShardsByBucketKey = buckets.associate { bucket ->
+                    bucket.counterKey() to if (bucket == buckets.last()) shards else listOf(testCounter())
+                }
+            )
+            val inputCounters = expectedCounters.copy(
+                trackShardsByIdentity = expectedCounters.trackShardsByIdentity + ("missing-track" to shards),
+                dailyShardsByBucketKey = expectedCounters.dailyShardsByBucketKey + (orphanBucket.counterKey() to shards)
+            )
+            val store = PlaybackStatsRoomStore(database)
+
+            store.importLegacyAndPromote(stats, buckets + orphanBucket, inputCounters, 10, 5)
+
+            val saved = requireNotNull(store.readIfRoomPrimary())
+            assertEquals(stats.associateBy(TrackStat::identityKey), saved.stats.associateBy(TrackStat::identityKey))
+            assertEquals(buckets, saved.dailyStats)
+            assertEquals(expectedCounters, saved.counterSnapshot)
+            assertEquals(10L, saved.counterEpochStartedAt)
+            assertEquals(5L, saved.clearedAt)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun incrementalWritePersistsSingleTrackBucketAndShardGroupsAcrossBatches() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val stat = testTrackStat()
+            val initialBuckets = listOf(testBucket(stat))
+            val buckets = (0L..1_500L).map { day -> testBucket(stat).copy(dayStartAt = day * 86_400_000L) }
+            val shards = (0..1_000).map { index ->
+                testCounter().copy(deviceId = "device-${index.toString().padStart(4, '0')}")
+            }
+            val counters = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = mapOf(stat.identityKey to shards),
+                dailyShardsByBucketKey = buckets.associate { bucket ->
+                    bucket.counterKey() to if (bucket == buckets.last()) shards else listOf(testCounter())
+                }
+            )
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(listOf(stat), initialBuckets, PlaybackStatsSyncCounterSnapshot(), 0, 0)
+
+            store.writeIncremental(
+                listOf(stat), listOf(stat), initialBuckets, buckets,
+                PlaybackStatsSyncCounterSnapshot(), counters, 10, 5
+            )
+
+            val saved = requireNotNull(store.readIfRoomPrimary())
+            assertEquals(listOf(stat), saved.stats)
+            assertEquals(buckets, saved.dailyStats)
+            assertEquals(counters, saved.counterSnapshot)
+            assertEquals(10L, saved.counterEpochStartedAt)
+            assertEquals(5L, saved.clearedAt)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun failedReplaceAllAfterFirstBucketBatchRollsBackEntireSnapshot() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val stat = testTrackStat()
+            val initialBuckets = listOf(testBucket(stat))
+            val counters = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = mapOf(stat.identityKey to listOf(testCounter())),
+                dailyShardsByBucketKey = initialBuckets.associate { it.counterKey() to listOf(testCounter()) }
+            )
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(listOf(stat), initialBuckets, counters, 10, 5)
+            val before = requireNotNull(store.readIfRoomPrimary())
+            database.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER reject_later_bucket BEFORE INSERT ON playback_stat_bucket " +
+                    "WHEN NEW.day_start_at = ${500L * 86_400_000L} " +
+                    "BEGIN SELECT RAISE(ABORT, 'injected later bucket failure'); END"
+            )
+            val buckets = (0L..1_000L).map { day -> testBucket(stat).copy(dayStartAt = day * 86_400_000L) }
+
+            val failure = runCatching {
+                store.replaceAll(listOf(stat.copy(name = "updated")), buckets, counters, 20, 15)
+            }.exceptionOrNull()
+
+            assertNotNull(failure)
+            assertEquals(before, store.readIfRoomPrimary())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun failedIncrementalWriteAfterFirstBucketBatchRollsBackEntireSnapshot() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val stat = testTrackStat()
+            val initialBuckets = listOf(testBucket(stat))
+            val counters = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = mapOf(stat.identityKey to listOf(testCounter())),
+                dailyShardsByBucketKey = initialBuckets.associate { it.counterKey() to listOf(testCounter()) }
+            )
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(listOf(stat), initialBuckets, counters, 10, 5)
+            val before = requireNotNull(store.readIfRoomPrimary())
+            database.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER reject_later_bucket BEFORE INSERT ON playback_stat_bucket " +
+                    "WHEN NEW.day_start_at = ${500L * 86_400_000L} " +
+                    "BEGIN SELECT RAISE(ABORT, 'injected later bucket failure'); END"
+            )
+            val buckets = (0L..1_000L).map { day -> testBucket(stat).copy(dayStartAt = day * 86_400_000L) }
+
+            val failure = runCatching {
+                store.writeIncremental(
+                    listOf(stat), listOf(stat.copy(name = "updated")), initialBuckets, buckets,
+                    counters, counters, 20, 15
+                )
+            }.exceptionOrNull()
+
+            assertNotNull(failure)
+            assertEquals(before, store.readIfRoomPrimary())
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun testBucket(stat: TrackStat) = PlaybackStatBucket(
+        dayStartAt = 86_400_000, id = stat.id, name = stat.name, artist = stat.artist,
+        album = stat.album, albumId = stat.albumId, coverUrl = stat.coverUrl,
+        durationMs = stat.durationMs, totalListenMs = stat.totalListenMs, playCount = stat.playCount,
+        lastPlayedAt = stat.lastPlayedAt, firstPlayedAt = stat.firstPlayedAt,
+        mediaUri = stat.mediaUri, localFilePath = stat.localFilePath, localFileName = stat.localFileName,
+        customName = stat.customName, customArtist = stat.customArtist, customCoverUrl = stat.customCoverUrl,
+        identityKey = stat.identityKey
+    )
+
+    private fun testCounter() = SyncPlaybackCounterShard(
+        deviceId = "device-a", epochStartedAt = 10, totalListenMs = 30_000,
+        playCount = 1, firstPlayedAt = 200, lastPlayedAt = 200
+    )
+
+    private fun PlaybackStatBucket.counterKey(): String = PlaybackStatsSyncCounterSnapshot.dailyCounterKey(dayStartAt, identityKey)
 
     private fun testTrackStat(): TrackStat {
         return TrackStat(

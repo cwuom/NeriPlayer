@@ -13,13 +13,16 @@ internal class PlaylistUsageRoomStore(
     private val database: NeriUserDataDatabase
 ) {
     suspend fun readIfRoomPrimary(): List<UsageEntry>? {
-        if (database.syncMetadataDao()
+        // 恢复证明和计数必须从同一事务读取，不能把新证明配到旧计数上
+        return database.withTransaction {
+            if (database.syncMetadataDao()
                 .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
                 ?.value != ROOM_PRIMARY_STATE
-        ) {
-            return null
+            ) {
+                return@withTransaction null
+            }
+            readEntries()
         }
-        return readEntries()
     }
 
     suspend fun importLegacyAndPromote(
@@ -116,7 +119,8 @@ internal class PlaylistUsageRoomStore(
                 browseId = entry.browseId,
                 playlistId = entry.playlistId,
                 subtype = entry.subtype,
-                subtitle = entry.subtitle
+                subtitle = entry.subtitle,
+                observedDeletionTokens = decodeUsageDeletionTokens(entry.usageDeletionTokensJson)
             )
         }
     }

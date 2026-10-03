@@ -390,7 +390,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     }
                     .getOrNull()
                     ?: return@launch
-                if (playlistId != id || _uiState.value.playlist != null) return@launch
+                if (playlistId != id || _uiState.value.isResolved || _uiState.value.playlist != null) return@launch
                 _uiState.value = _uiState.value.copy(
                     playlist = preview,
                     requestedPlaylistId = id

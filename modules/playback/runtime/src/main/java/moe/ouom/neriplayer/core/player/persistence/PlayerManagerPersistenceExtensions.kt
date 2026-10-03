@@ -12,6 +12,7 @@ import android.os.SystemClock
 import androidx.media3.common.Player
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -66,11 +67,14 @@ import moe.ouom.neriplayer.lyrics.offset.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.host.PlayerFeedback
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.coroutineContext
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
 
@@ -141,7 +145,7 @@ internal fun shouldSyncDownloadedMetadataAfterMetadataUpdate(
 
 internal fun shouldSyncDownloadedMetadataAfterPlaybackHydration(): Boolean = false
 
-private suspend fun <T> runSongMetadataMutation(block: suspend () -> T): T {
+internal suspend fun <T> runSongMetadataMutation(block: suspend () -> T): T {
     return withContext(Dispatchers.IO) {
         songMetadataMutationMutex.withLock { block() }
     }
@@ -205,7 +209,8 @@ private fun buildRestoredStateSnapshot(
     app: Application,
     data: PersistedState,
     keepLastPlaybackProgressEnabled: Boolean,
-    keepPlaybackModeStateEnabled: Boolean
+    keepPlaybackModeStateEnabled: Boolean,
+    readLyricOverrides: (Set<String>) -> List<SyncSong>
 ): RestoredPlayerStateSnapshot? {
     return runCatching {
         val playlist = data.playlist.map { persistedSong -> persistedSong.toSongItem() }
@@ -254,7 +259,7 @@ private fun buildRestoredStateSnapshot(
             Player.REPEAT_MODE_OFF
         }
 
-        RestoredPlayerStateSnapshot(
+        val snapshot = RestoredPlayerStateSnapshot(
             playlist = playlist,
             currentIndex = currentIndex,
             currentMediaUrl = currentMediaUrl,
@@ -279,7 +284,11 @@ private fun buildRestoredStateSnapshot(
             originalPlaylistSize = data.playlist.size,
             persistedIndex = data.index
         )
+        val identities = playbackLyricIdentityKeys(snapshot.playlist.getOrNull(snapshot.currentIndex),
+            snapshot.playlist, snapshot.shuffleRestorePlaylist)
+        PlaybackLyricOverrideProjection(readLyricOverrides(identities)).restoredSnapshot(snapshot)
     }.onFailure { error ->
+        if (error is CancellationException) throw error
         NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${error.message}")
     }.getOrNull()
 }
@@ -292,6 +301,7 @@ suspend fun preloadRestoredStateSnapshot(
     val startupStateFile = File(app.filesDir, "last_playlist.json")
     val startupPlaybackStateFile = File(app.filesDir, "last_playback_state.json")
     return withContext(Dispatchers.IO) {
+        val readContext = coroutineContext
         val roomStore = PlaybackQueueRoomStore(
             NeriUserDataDatabase.getInstance(app.applicationContext)
         )
@@ -352,7 +362,10 @@ suspend fun preloadRestoredStateSnapshot(
                 app = app,
                 data = data,
                 keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
-                keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled
+                keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled,
+                readLyricOverrides = { keys ->
+                    SecureTokenStorage(app).getLyricOverridesForIdentityKeys(keys) { readContext.ensureActive() }
+                }
             )
         }
     }
@@ -366,7 +379,8 @@ private fun loadRestoredStateSnapshot(
     keepPlaybackModeStateEnabled: Boolean
 ): RestoredPlayerStateSnapshot? {
     return runCatching {
-        val data = runBlocking(Dispatchers.IO) {
+        runBlocking(Dispatchers.IO) {
+            val readContext = coroutineContext
             val database = NeriUserDataDatabase.getInstance(app.applicationContext)
             val roomStore = PlaybackQueueRoomStore(database)
             val roomPrimary = runCatching { roomStore.isRoomPrimary() }
@@ -410,7 +424,7 @@ private fun loadRestoredStateSnapshot(
                 legacySnapshot = legacySnapshot
             )
             val selectedLegacySnapshot = legacySnapshot
-            if (selected != null && selectedLegacySnapshot != null && selected === selectedLegacySnapshot.state) {
+            val data = if (selected != null && selectedLegacySnapshot != null && selected === selectedLegacySnapshot.state) {
                 selectedLegacySnapshot.state.also { legacyData ->
                     runCatching {
                         roomStore.replaceSnapshot(legacyData)
@@ -424,14 +438,19 @@ private fun loadRestoredStateSnapshot(
             } else {
                 selected
             }
-        } ?: return@runCatching null
-        buildRestoredStateSnapshot(
-            app = app,
-            data = data,
-            keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
-            keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled
-        )
+            if (data == null) return@runBlocking null
+            buildRestoredStateSnapshot(
+                app = app,
+                data = data,
+                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
+                keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled,
+                readLyricOverrides = { keys ->
+                    SecureTokenStorage(app).getLyricOverridesForIdentityKeys(keys) { readContext.ensureActive() }
+                }
+            )
+        }
     }.onFailure { error ->
+        if (error is CancellationException) throw error
         NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${error.message}")
     }.getOrNull()
 }
@@ -933,7 +952,8 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                     latestOriginalSong.withUpdatedLyricsPreservingOriginal(
                         newLyrics = newDetails.lyric ?: latestOriginalSong.matchedLyric,
                         newTranslatedLyric = newDetails.translatedLyric
-                            ?: latestOriginalSong.matchedTranslatedLyric
+                            ?: latestOriginalSong.matchedTranslatedLyric,
+                        userEdited = false
                     ).copy(
                         matchedLyricSource = selectedSong.source,
                         matchedSongId = selectedSong.id
@@ -962,7 +982,8 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                         matchedSource = selectedSong.source,
                         matchedSongId = selectedSong.id,
                         useCustomOverride = shouldApplySearchMetadataAsCustomOverride(latestOriginalSong),
-                        preserveExistingMatchedLyrics = usedSearchSummaryFallback
+                        preserveExistingMatchedLyrics = usedSearchSummaryFallback,
+                        lyricRevision = localRepo.nextUserLyricSyncRevision(latestOriginalSong)
                     )
                 }
 
@@ -1351,6 +1372,10 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 originalName = originalName,
                 originalArtist = originalArtist,
                 originalCoverUrl = originalCoverUrl,
+                lyricSyncEdited = if (restoreBaseLyrics || clearMatchedMetadata) false else currentSong.lyricSyncEdited,
+                lyricSyncRevision = if (restoreBaseLyrics || clearMatchedMetadata) {
+                    localRepo.nextUserLyricSyncRevision(currentSong)
+                } else currentSong.lyricSyncRevision,
                 matchedLyricSource = if (clearMatchedMetadata) null else currentSong.matchedLyricSource,
                 matchedSongId = if (clearMatchedMetadata) null else currentSong.matchedSongId
             )
@@ -1594,41 +1619,57 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
         "NERI-PlayerManager",
         "updateSongLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, lyricLength=${newLyrics?.length ?: 0}"
     )
-    updateQueuedSong(songToUpdate) { current ->
-        current.withUpdatedLyricsPreservingOriginal(
-            newLyrics = newLyrics
-        )
-    }
-
-    if (isCurrentSong(songToUpdate)) {
-        setCurrentSongForPlayback(
-            _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
-                newLyrics = newLyrics
+    val currentSong = currentQueueSnapshot().playlist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+        ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
+        ?: songToUpdate
+    recordUserLyricEditThenPublish(
+        prepare = {
+            currentSong.withUpdatedLyricsPreservingOriginal(
+                newLyrics = newLyrics,
+                revision = localRepo.nextUserLyricSyncRevision(currentSong)
             )
-        )
-    }
-
-    val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
-    if (latestSong != null) {
-        runLocalPlaylistMutationSafely("updateSongLyrics") {
-            withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(
-                    originalSong = songToUpdate,
-                    newSongInfo = latestSong,
-                    triggerSync = true
-                )
-            }
+        },
+        record = localRepo::recordLyricSyncState
+    ) { updatedSong ->
+        val revision = updatedSong.lyricSyncRevision
+        updateQueuedSong(songToUpdate) { current ->
+            current.withUpdatedLyricsPreservingOriginal(
+                newLyrics = newLyrics,
+                revision = revision
+            )
         }
-        PlayerDependencies.downloads.syncDownloadedSongMetadataNow(latestSong)
-        PlayerDependencies.repositories.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
-        PlayerDependencies.repositories.playlistUsageRepo.syncLocalEntries(
-            playlists = localRepo.playlists.value,
-            localFilesCoverCandidates = downloadedLocalFilesCoverCandidates(),
-            resolveLocalMetadataFallback = false
-        )
-    }
 
-    persistState()
+        if (isCurrentSong(songToUpdate)) {
+            setCurrentSongForPlayback(
+                _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+                    newLyrics = newLyrics,
+                    revision = revision
+                )
+            )
+        }
+
+        val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+        if (latestSong != null) {
+            runLocalPlaylistMutationSafely("updateSongLyrics") {
+                withContext(Dispatchers.IO) {
+                    localRepo.updateSongMetadata(
+                        originalSong = songToUpdate,
+                        newSongInfo = latestSong,
+                        triggerSync = true
+                    )
+                }
+            }
+            PlayerDependencies.downloads.syncDownloadedSongMetadataNow(latestSong)
+            PlayerDependencies.repositories.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
+            PlayerDependencies.repositories.playlistUsageRepo.syncLocalEntries(
+                playlists = localRepo.playlists.value,
+                localFilesCoverCandidates = downloadedLocalFilesCoverCandidates(),
+                resolveLocalMetadataFallback = false
+            )
+        }
+
+        persistState()
+    }
 }
 
 internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
@@ -1639,40 +1680,56 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
         "NERI-PlayerManager",
         "updateSongTranslatedLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, translatedLength=${newTranslatedLyrics?.length ?: 0}"
     )
-    updateQueuedSong(songToUpdate) { current ->
-        current.withUpdatedLyricsPreservingOriginal(
-            newTranslatedLyric = newTranslatedLyrics
-        )
-    }
-
-    if (isCurrentSong(songToUpdate)) {
-        setCurrentSongForPlayback(
-            _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
-                newTranslatedLyric = newTranslatedLyrics
+    val currentSong = currentQueueSnapshot().playlist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+        ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
+        ?: songToUpdate
+    recordUserLyricEditThenPublish(
+        prepare = {
+            currentSong.withUpdatedLyricsPreservingOriginal(
+                newTranslatedLyric = newTranslatedLyrics,
+                revision = localRepo.nextUserLyricSyncRevision(currentSong)
             )
-        )
-    }
-
-    val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
-    if (latestSong != null) {
-        runLocalPlaylistMutationSafely("updateSongTranslatedLyrics") {
-            withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(
-                    originalSong = songToUpdate,
-                    newSongInfo = latestSong,
-                    triggerSync = true
-                )
-            }
+        },
+        record = localRepo::recordLyricSyncState
+    ) { updatedSong ->
+        val revision = updatedSong.lyricSyncRevision
+        updateQueuedSong(songToUpdate) { current ->
+            current.withUpdatedLyricsPreservingOriginal(
+                newTranslatedLyric = newTranslatedLyrics,
+                revision = revision
+            )
         }
-        PlayerDependencies.downloads.syncDownloadedSongMetadataNow(latestSong)
-        PlayerDependencies.repositories.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
-        PlayerDependencies.repositories.playlistUsageRepo.syncLocalEntries(
-            playlists = localRepo.playlists.value,
-            localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
-        )
-    }
 
-    persistState()
+        if (isCurrentSong(songToUpdate)) {
+            setCurrentSongForPlayback(
+                _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+                    newTranslatedLyric = newTranslatedLyrics,
+                    revision = revision
+                )
+            )
+        }
+
+        val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+        if (latestSong != null) {
+            runLocalPlaylistMutationSafely("updateSongTranslatedLyrics") {
+                withContext(Dispatchers.IO) {
+                    localRepo.updateSongMetadata(
+                        originalSong = songToUpdate,
+                        newSongInfo = latestSong,
+                        triggerSync = true
+                    )
+                }
+            }
+            PlayerDependencies.downloads.syncDownloadedSongMetadataNow(latestSong)
+            PlayerDependencies.repositories.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
+            PlayerDependencies.repositories.playlistUsageRepo.syncLocalEntries(
+                playlists = localRepo.playlists.value,
+                localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
+            )
+        }
+
+        persistState()
+    }
 }
 
 internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
@@ -1682,7 +1739,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     newRomanizedLyrics: String? = null,
     writeLocalMetadata: Boolean = false,
     persistLocalSidecars: Boolean = true,
-    syncDownloadedMetadata: Boolean = true
+    syncDownloadedMetadata: Boolean = true,
+    userEdited: Boolean = true
 ) : Boolean = runSongMetadataMutation {
     val currentQueueSong = currentQueueSnapshot().playlist
         .firstOrNull { it.sameIdentityAs(songToUpdate) }
@@ -1693,11 +1751,13 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         ?: currentQueueSong.matchedTranslatedLyric
     val effectiveRomanizedLyrics = newRomanizedLyrics
         ?: currentQueueSong.matchedRomanizedLyric
+    val revision = if (userEdited) localRepo.nextUserLyricSyncRevision(currentQueueSong)
+        else currentQueueSong.lyricSyncRevision
 
     val lyricsChanged = effectiveLyrics != currentQueueSong.matchedLyric ||
         effectiveTranslatedLyrics != currentQueueSong.matchedTranslatedLyric ||
         effectiveRomanizedLyrics != currentQueueSong.matchedRomanizedLyric
-    if (!lyricsChanged && !writeLocalMetadata) {
+    if (!lyricsChanged && !writeLocalMetadata && currentQueueSong.lyricSyncEdited == userEdited) {
         val localSidecarRepairRequired =
             LocalSongSupport.isLocalSong(currentQueueSong, application) &&
             persistLocalSidecars &&
@@ -1715,7 +1775,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     val updatedSong = currentQueueSong.withUpdatedLyricsPreservingOriginal(
         newLyrics = effectiveLyrics,
         newTranslatedLyric = effectiveTranslatedLyrics,
-        newRomanizedLyric = effectiveRomanizedLyrics
+        newRomanizedLyric = effectiveRomanizedLyrics,
+        userEdited = userEdited,
+        revision = revision
     )
     val isLocalSong = LocalSongSupport.isLocalSong(updatedSong, application)
     val sidecarsWritten = if (isLocalSong && writeLocalMetadata) {
@@ -1780,11 +1842,16 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         return@runSongMetadataMutation false
     }
 
+    // 编辑或恢复记录先落盘，用户立即删歌也不能使其它设备的旧歌词回流
+    localRepo.recordLyricSyncState(updatedSong)
+
     val updatedQueueSong = updateQueuedSong(songToUpdate) { current ->
         current.withUpdatedLyricsPreservingOriginal(
             newLyrics = effectiveLyrics,
             newTranslatedLyric = effectiveTranslatedLyrics,
-            newRomanizedLyric = effectiveRomanizedLyrics
+            newRomanizedLyric = effectiveRomanizedLyrics,
+            userEdited = userEdited,
+            revision = revision
         )
     }
     if (updatedQueueSong != null) {
@@ -1796,7 +1863,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
             activeSong.withUpdatedLyricsPreservingOriginal(
                 newLyrics = effectiveLyrics,
                 newTranslatedLyric = effectiveTranslatedLyrics,
-                newRomanizedLyric = effectiveRomanizedLyrics
+                newRomanizedLyric = effectiveRomanizedLyrics,
+                userEdited = userEdited,
+                revision = revision
             )
         )
     }
@@ -1865,6 +1934,7 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
     clearRestorableOverrides: RestorableMetadataClearPolicy =
         RestorableMetadataClearPolicy()
 ) {
+    localRepo.recordLyricSyncState(updatedSong)
     NPLogger.d(
         "NERI-PlayerManager",
         "updateSongInAllPlaces: original=${originalSong.name}/${originalSong.id}, updated=${updatedSong.name}/${updatedSong.id}, hasCurrentMatch=${isCurrentSong(originalSong)}, stack=[${debugStackHint()}]"

@@ -1,14 +1,18 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.metadata.shouldReadManagedDownloadLyrics
+import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.lyrics.parser.resolveStoredLyricText
 
 internal data class NowPlayingFastLyricsResult(
@@ -19,10 +23,41 @@ internal data class NowPlayingFastLyricsResult(
     val canReadManagedDownloadLyrics: Boolean
 )
 
+internal data class NowPlayingInitialLyricsResult(
+    val cachedPreferredLyrics: PreferredLyricSourceResult?,
+    val state: LoadedLyricsState
+)
+
+private data class NowPlayingInitialLyricsKey(
+    val song: SongItem?,
+    val source: LyricSourcePreference,
+    val preferWordTimedLyrics: Boolean,
+    val preferenceRevision: Long,
+    val providedCache: PreferredLyricSourceResult?
+)
+
+@Composable
+internal fun rememberNowPlayingInitialLyrics(
+    request: NowPlayingLyricsLoadRequest,
+    preferenceRevision: Long,
+    stages: NowPlayingLyricsStages
+): NowPlayingInitialLyricsResult {
+    val cacheKey = NowPlayingInitialLyricsKey(request.song, request.defaultLyricSource,
+        request.preferWordTimedLyrics, preferenceRevision, request.cachedPreferredLyrics)
+    return remember(cacheKey, stages) { stages.readInitial(request) }
+}
+
 internal class NowPlayingLyricsLoadStages(
     private val sources: NowPlayingLyricsSources,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : NowPlayingLyricsStages {
+    override fun readInitial(request: NowPlayingLyricsLoadRequest): NowPlayingInitialLyricsResult {
+        val cached = request.cachedPreferredLyrics ?: request.song?.let { song ->
+            sources.cachedPreferred(song, request.defaultLyricSource, request.preferWordTimedLyrics)
+        }
+        return NowPlayingInitialLyricsResult(cached, buildNowPlayingInitialLyricsState(request.song, cached))
+    }
+
     override suspend fun readFast(request: NowPlayingLyricsLoadRequest): NowPlayingFastLyricsResult =
         withContext(ioDispatcher) { readFastOnIo(request) }
 
@@ -48,7 +83,9 @@ internal class NowPlayingLyricsLoadStages(
         managed: Boolean,
         local: LocalLyricsScanMetadata?,
         downloaded: ManagedDownloadStorage.DownloadedLyricsBundle?
-    ): LoadedLyricsState = request.cachedPreferredLyrics?.let(::buildPreferredLyricSourceState)
+    ): LoadedLyricsState = request.cachedPreferredLyrics?.let {
+        overlayConfirmedUserLyrics(request.song, buildPreferredLyricSourceState(it))
+    }
         ?: buildFastState(request.song, managed, local, downloaded)
 
     private fun readFastDownloaded(
@@ -95,7 +132,7 @@ internal fun buildFastState(
     local: LocalLyricsScanMetadata?,
     downloaded: ManagedDownloadStorage.DownloadedLyricsBundle?
 ): LoadedLyricsState =
-    buildNowPlayingFastLyricsState(
+    overlayConfirmedUserLyrics(song, buildNowPlayingFastLyricsState(
         rawLyrics = resolveFastRawLyric(
             song,
             managed,
@@ -117,7 +154,7 @@ internal fun buildFastState(
             downloaded,
             ManagedLyricVariant.ROMANIZED
         )
-    )
+    ))
 
 internal fun resolveFastRawLyric(
     song: SongItem?,
@@ -125,15 +162,23 @@ internal fun resolveFastRawLyric(
     local: LocalLyricsScanMetadata?,
     downloaded: ManagedDownloadStorage.DownloadedLyricsBundle?,
     variant: ManagedLyricVariant
-): String? = resolveNowPlayingLyricText(
-    isManagedLocalDownload = managed,
-    localLyrics = local,
-    downloadedLyrics = downloaded,
-    localLyric = local.lyricFor(variant),
-    storedLyric = song.storedLyricFor(variant),
-    downloadedLyric = null,
-    variant = variant
-)
+): String? {
+    song.confirmedLyricFor(variant)?.let { return it }
+    return resolveNowPlayingLyricText(
+        isManagedLocalDownload = managed,
+        localLyrics = local,
+        downloadedLyrics = downloaded,
+        localLyric = local.lyricFor(variant),
+        storedLyric = song.storedLyricFor(variant),
+        downloadedLyric = null,
+        variant = variant
+    )
+}
+
+internal fun SongItem?.confirmedLyricFor(variant: ManagedLyricVariant): String? {
+    if (this?.lyricSyncEdited != true) return null
+    return variant.matchedText(this)
+}
 
 internal fun SongItem?.storedLyricFor(variant: ManagedLyricVariant): String? =
     this?.let { resolveStoredLyricText(variant.matchedText(it), variant.legacyText(it)) }

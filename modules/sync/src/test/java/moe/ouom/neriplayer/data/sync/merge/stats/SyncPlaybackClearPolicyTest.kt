@@ -9,22 +9,35 @@ import org.junit.Test
 
 class SyncPlaybackClearPolicyTest {
     private val old = SyncPlaybackCounterShard("old", totalListenMs = 5, playCount = 1, lastPlayedAt = 40)
-    private val current = SyncPlaybackCounterShard("current", totalListenMs = 7, playCount = 2, lastPlayedAt = 100)
+    private val current = SyncPlaybackCounterShard("current", epochStartedAt = 50, totalListenMs = 7, playCount = 2, firstPlayedAt = 60, lastPlayedAt = 100)
+
+    @Test
+    fun `legacy counters require a complete valid post clear time interval`() {
+        val fresh = SyncTrackStat(firstPlayedAt = 50, lastPlayedAt = 100, totalListenMs = 7, playCount = 2)
+        val bucket = SyncPlaybackStatBucket(firstPlayedAt = 50, lastPlayedAt = 100, totalListenMs = 7, playCount = 2)
+        assertEquals(fresh, SyncPlaybackClearPolicy.normalizeAfterClear(fresh, 50))
+        assertEquals(bucket, SyncPlaybackClearPolicy.normalizeBucketAfterClear(bucket, 50))
+        for (first in listOf(0L, 49L, 101L)) {
+            assertNull(SyncPlaybackClearPolicy.normalizeAfterClear(fresh.copy(firstPlayedAt = first), 50))
+            assertNull(SyncPlaybackClearPolicy.normalizeBucketAfterClear(bucket.copy(firstPlayedAt = first), 50))
+        }
+    }
 
     @Test
     fun `clear normalizes first time and removes stale device shards for tracks and buckets`() {
-        for (first in listOf(40L, 60L, 110L)) for (shards in listOf(emptyList(), listOf(old, current))) {
+        for (first in listOf(40L, 60L, 110L)) {
+            val shards = listOf(old, current)
             val stat = SyncTrackStat(firstPlayedAt = first, lastPlayedAt = 100, counterBaseListenMs = 10,
                 counterBasePlayCount = 3, counterShards = shards)
             val bucket = SyncPlaybackStatBucket(firstPlayedAt = first, lastPlayedAt = 100, counterBaseListenMs = 10,
                 counterBasePlayCount = 3, counterShards = shards)
             val normalizedStat = SyncPlaybackClearPolicy.normalizeAfterClear(stat, 50)!!
             val normalizedBucket = SyncPlaybackClearPolicy.normalizeBucketAfterClear(bucket, 50)!!
-            assertEquals(if (first == 60L) 60L else 100L, normalizedStat.firstPlayedAt)
+            assertEquals(60L, normalizedStat.firstPlayedAt)
             assertEquals(normalizedStat.firstPlayedAt, normalizedBucket.firstPlayedAt)
-            assertEquals(if (shards.isEmpty()) 10L else 0L, normalizedStat.counterBaseListenMs)
-            assertEquals(if (shards.isEmpty()) 3 else 0, normalizedBucket.counterBasePlayCount)
-            assertEquals(if (shards.isEmpty()) emptyList<String>() else listOf("current"), normalizedBucket.counterShards.map { it.deviceId })
+            assertEquals(0L, normalizedStat.counterBaseListenMs)
+            assertEquals(0, normalizedBucket.counterBasePlayCount)
+            assertEquals(listOf("current"), normalizedBucket.counterShards.map { it.deviceId })
         }
         assertNull(SyncPlaybackClearPolicy.normalizeBucketAfterClear(SyncPlaybackStatBucket(lastPlayedAt = 49), 50))
         assertEquals(SyncPlaybackStatBucket(), SyncPlaybackClearPolicy.normalizeBucketAfterClear(SyncPlaybackStatBucket(), 0))
@@ -50,11 +63,11 @@ class SyncPlaybackClearPolicyTest {
     fun `missing first timestamps follow normalized shard time`() {
         val stat = SyncTrackStat(identityKey = "song", counterShards = listOf(current))
         val merged = SyncPlaybackStatsMergePolicy.merge(listOf(stat), listOf(stat), 0).single()
-        assertEquals(100L, merged.firstPlayedAt)
+        assertEquals(60L, merged.firstPlayedAt)
         assertEquals(100L, merged.lastPlayedAt)
         assertEquals(7L, merged.totalListenMs)
         assertEquals(2, merged.playCount)
-        val unknown = stat.copy(counterShards = listOf(current.copy(lastPlayedAt = 0)))
+        val unknown = stat.copy(counterShards = listOf(current.copy(firstPlayedAt = 0, lastPlayedAt = 0)))
         assertEquals(0L, SyncPlaybackStatsMergePolicy.merge(listOf(unknown), listOf(unknown), 0).single().firstPlayedAt)
     }
 }

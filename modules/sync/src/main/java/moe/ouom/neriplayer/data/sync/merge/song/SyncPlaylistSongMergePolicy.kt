@@ -93,21 +93,21 @@ object SyncPlaylistSongMergePolicy {
 
     private fun sameSongList(left: List<SyncSong>, right: List<SyncSong>): Boolean {
         if (left.size != right.size) return false
-        return left.zip(right).all { (leftSong, rightSong) ->
-            leftSong.copyWithNormalizedMembershipTokens() ==
-                rightSong.copyWithNormalizedMembershipTokens()
+        return left.indices.all { index ->
+            left[index].copyWithNormalizedMembershipTokens() ==
+                right[index].copyWithNormalizedMembershipTokens()
         }
     }
 
     private class SongMergeAccumulator(
         private val resolvePayloadDeterministically: Boolean = false
     ) {
-        private var mergeIndex = SongMergeIndex()
+        private val mergeIndex = SongMergeIndex()
         private val entries = mutableListOf<SongMergeEntry>()
 
         fun addIfAbsent(song: SyncSong) {
             val normalizedSong = normalizeSong(song)
-            val matchingIndices = mergeIndex.findMatchingIndices(normalizedSong)
+            val matchingIndices = matchingRoots(normalizedSong)
             if (matchingIndices.isNotEmpty()) {
                 mergeMembershipComponents(matchingIndices, normalizedSong)
                 return
@@ -116,18 +116,33 @@ object SyncPlaylistSongMergePolicy {
             mergeIndex.register(normalizedSong, entries.size)
             entries += SongMergeEntry(
                 song = normalizedSong,
-                aliases = mutableListOf(normalizedSong)
+                parent = entries.size
             )
         }
 
         fun mergeMatchingMembershipTokens(song: SyncSong) {
             val normalizedSong = normalizeSong(song)
-            val matchingIndices = mergeIndex.findMatchingIndices(normalizedSong)
+            val matchingIndices = matchingRoots(normalizedSong)
             if (matchingIndices.isEmpty()) return
             mergeMembershipComponents(matchingIndices, normalizedSong)
         }
 
-        fun toList(): List<SyncSong> = entries.map(SongMergeEntry::song)
+        fun toList(): List<SyncSong> = entries.mapIndexedNotNull { index, entry ->
+            entry.song.takeIf { entry.parent == index }?.let(SyncSongLyricMergePolicy::normalize)
+        }
+
+        private fun matchingRoots(song: SyncSong): Set<Int> =
+            mergeIndex.findMatchingIndices(song).mapTo(mutableSetOf(), ::root)
+
+        private fun root(index: Int): Int {
+            var current = index
+            while (entries[current].parent != current) {
+                val parent = entries[current].parent
+                entries[current].parent = entries[parent].parent
+                current = parent
+            }
+            return current
+        }
 
         private fun mergeMembershipComponents(
             matchingIndices: Set<Int>,
@@ -163,52 +178,27 @@ object SyncPlaylistSongMergePolicy {
                 syncMembershipTokens = mergedTokens,
                 syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
             )
-            matchingIndices
-                .asSequence()
-                .filter { index -> index != primaryIndex }
-                .forEach { index ->
-                    entries[index].aliases.forEach { alias ->
-                        if (alias !in primaryEntry.aliases) {
-                            primaryEntry.aliases += alias
-                        }
-                    }
-                }
-            if (other !in primaryEntry.aliases) {
-                primaryEntry.aliases += other
+            // 保留稳定槽位，旧身份索引经根节点找到合并结果，避免每次桥接重建整个歌单
+            matchingIndices.forEach { index ->
+                entries[index].parent = primaryIndex
             }
-            if (matchingIndices.size == 1) {
-                mergeIndex.register(primaryEntry.song, primaryIndex)
-                mergeIndex.register(other, primaryIndex)
-                return
-            }
-            matchingIndices
-                .asSequence()
-                .filter { index -> index != primaryIndex }
-                .sortedDescending()
-                .forEach(entries::removeAt)
-            rebuildMergeIndex()
-        }
-
-        private fun rebuildMergeIndex() {
-            mergeIndex = SongMergeIndex()
-            entries.forEachIndexed { index, entry ->
-                mergeIndex.register(entry.song, index)
-                entry.aliases.forEach { alias -> mergeIndex.register(alias, index) }
-            }
+            mergeIndex.register(primaryEntry.song, primaryIndex)
+            mergeIndex.register(other, primaryIndex)
         }
 
         private fun normalizeSong(song: SyncSong): SyncSong {
             val normalizedTokens = song.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
-            return if (normalizedTokens == song.syncMembershipTokens) {
+            val normalized = if (normalizedTokens == song.syncMembershipTokens) {
                 song
             } else {
                 song.copy(syncMembershipTokens = normalizedTokens)
             }
+            return normalized
         }
 
         private data class SongMergeEntry(
             var song: SyncSong,
-            val aliases: MutableList<SyncSong>
+            var parent: Int
         )
     }
 

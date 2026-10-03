@@ -84,6 +84,7 @@ import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistorySyncPreferences
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
@@ -100,6 +101,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
+import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeSetting
+import moe.ouom.neriplayer.ui.sync.upgrade.SyncProtocolUpgradeWarning
+import moe.ouom.neriplayer.ui.sync.upgrade.rememberSyncProtocolUpgradeViewModel
 
 @Composable
 internal fun SettingsBackupRestoreSection(
@@ -147,6 +151,8 @@ internal fun SettingsBackupRestoreSection(
 
     val content: @Composable () -> Unit = {
         val context = androidx.compose.ui.platform.LocalContext.current
+        val syncUpgradeVm = rememberSyncProtocolUpgradeViewModel()
+        val syncUpgradeState by syncUpgradeVm.uiState.collectAsStateWithLifecycleCompat()
         val needsGitHubState = shouldShowCard(2) || shouldShowCard(4)
         val needsWebDavState = shouldShowCard(3) || shouldShowCard(4)
         val needsPlayHistoryMode = shouldShowCard(1)
@@ -170,6 +176,35 @@ internal fun SettingsBackupRestoreSection(
             webDavVm.uiState.collectAsStateWithLifecycleCompat().value
         } else {
             WebDavSyncUiState()
+        }
+        val githubTarget = if (githubState.isConfigured) {
+            SyncProtocolUpgradeRepository.githubTargetHash(githubState.repoOwner, githubState.repoName)
+        } else null
+        val webDavTarget = if (webDavState.isConfigured) {
+            SyncProtocolUpgradeRepository.webDavTargetHash(
+                webDavState.serverUrl, webDavState.basePath, webDavState.username
+            )
+        } else null
+        LaunchedEffect(githubTarget, webDavTarget, configTransferUiState.lastImportSuccess) {
+            syncUpgradeVm.refreshTargets()
+        }
+        fun performGitHubSync(targetId: String) {
+            githubVm?.performSyncForTarget(context, targetId, onFinished = syncUpgradeVm::refreshTargets) { challenge ->
+                syncUpgradeVm.requestUpgrade(challenge) { performGitHubSync(challenge.targetId) }
+            }
+        }
+        fun requestGitHubSync() {
+            val targetId = githubTarget ?: return
+            syncUpgradeVm.requestSync(targetId) { performGitHubSync(targetId) }
+        }
+        fun performWebDavSync(targetId: String) {
+            webDavVm?.performSyncForTarget(context, targetId, onFinished = syncUpgradeVm::refreshTargets) { challenge ->
+                syncUpgradeVm.requestUpgrade(challenge) { performWebDavSync(challenge.targetId) }
+            }
+        }
+        fun requestWebDavSync() {
+            val targetId = webDavTarget ?: return
+            syncUpgradeVm.requestSync(targetId) { performWebDavSync(targetId) }
         }
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
         var showConfigExportWarningDialog by remember { mutableStateOf(false) }
@@ -243,6 +278,10 @@ internal fun SettingsBackupRestoreSection(
                             webDavState.errorMessage != null ||
                             webDavState.successMessage != null
                         )
+
+            if (shouldShowCard(0)) {
+                SyncProtocolUpgradeWarning(syncUpgradeState) { syncUpgradeVm.openConfirmation() }
+            }
 
             if (shouldShowCard(0)) BackupDetailCard(
                 showCard = !showHeader,
@@ -547,6 +586,8 @@ internal fun SettingsBackupRestoreSection(
                 description = stringResource(CoreCommonR.string.settings_backup_github_section_desc)
             )
 
+            SyncProtocolUpgradeSetting(githubTarget)
+
             ListItem(
                 leadingContent = {
                     Icon(
@@ -649,7 +690,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            MiuixSettingsTextButton(onClick = { githubVm?.performSync(context) }) {
+                            MiuixSettingsTextButton(onClick = ::requestGitHubSync) {
                                 Text(stringResource(CoreCommonR.string.sync_title))
                             }
                         }
@@ -713,6 +754,8 @@ internal fun SettingsBackupRestoreSection(
                 title = stringResource(CoreCommonR.string.settings_backup_webdav_section),
                 description = stringResource(CoreCommonR.string.settings_backup_webdav_section_desc)
             )
+
+            SyncProtocolUpgradeSetting(webDavTarget)
 
             ListItem(
                 leadingContent = {
@@ -816,7 +859,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            MiuixSettingsTextButton(onClick = { webDavVm?.performSync(context) }) {
+                            MiuixSettingsTextButton(onClick = ::requestWebDavSync) {
                                 Text(stringResource(CoreCommonR.string.sync_title))
                             }
                         }

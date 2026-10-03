@@ -1,34 +1,26 @@
 package moe.ouom.neriplayer.data.sync.store.state
 
 import android.content.SharedPreferences
-import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.model.SongIdentity
-import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.sync.merge.history.SyncRecentPlayMerger
 
-internal class SyncRecentPlayDeletionStore(private val encryptedPrefs: SharedPreferences) {
-    private val gson = Gson()
+internal class SyncRecentPlayDeletionStore(encryptedPrefs: SharedPreferences, private val files: SyncDeletionStateStorage) {
     private val mutation = SyncMutationVersionStore(encryptedPrefs)
 
     fun getRecentPlayDeletions(): List<SyncRecentPlayDeletion> {
         return synchronized(syncMutationLock) {
-            val raw = encryptedPrefs.getString(KEY_RECENT_PLAY_DELETIONS, null).orEmpty()
-            if (raw.isBlank()) {
-                return@synchronized emptyList()
-            }
-            val parsed = runCatching {
-                val type = object : TypeToken<List<SyncRecentPlayDeletion>>() {}.type
-                gson.fromJson<List<SyncRecentPlayDeletion>>(raw, type).orEmpty()
-            }.getOrElse { emptyList() }
-            normalizeRecentPlayDeletions(parsed)
+            val type = object : TypeToken<List<SyncRecentPlayDeletion>>() {}.type
+            val parsed = files.read<List<SyncRecentPlayDeletion>>(KEY_RECENT_PLAY_DELETIONS, type).orEmpty()
+            SyncRecentPlayMerger.mergeRecentPlayDeletions(parsed, emptyList())
         }
     }
 
     fun setRecentPlayDeletions(deletions: List<SyncRecentPlayDeletion>) {
         synchronized(syncMutationLock) {
             persistRecentPlayDeletionsLocked(
-                deletions = normalizeRecentPlayDeletions(deletions),
+                deletions = SyncRecentPlayMerger.mergeRecentPlayDeletions(deletions, emptyList()),
                 bumpVersion = false
             )
         }
@@ -40,7 +32,7 @@ internal class SyncRecentPlayDeletionStore(private val encryptedPrefs: SharedPre
         }
         synchronized(syncMutationLock) {
             persistRecentPlayDeletionsLocked(
-                deletions = normalizeRecentPlayDeletions(getRecentPlayDeletions() + deletions),
+                deletions = SyncRecentPlayMerger.mergeRecentPlayDeletions(getRecentPlayDeletions(), deletions),
                 bumpVersion = true
             )
         }
@@ -49,45 +41,28 @@ internal class SyncRecentPlayDeletionStore(private val encryptedPrefs: SharedPre
     fun removeRecentPlayDeletion(identity: SongIdentity) {
         synchronized(syncMutationLock) {
             val current = getRecentPlayDeletions()
+            val normalizedIdentity = SyncRecentPlayMerger.normalizeDeletion(
+                SyncRecentPlayDeletion(songId = identity.id, album = identity.album, mediaUri = identity.mediaUri)
+            ).identity()
             val remaining = current
-                .filterNot { it.identity() == identity }
-            if (remaining != current) {
-                persistRecentPlayDeletionsLocked(remaining, bumpVersion = true)
-            }
+                .filterNot { it.identity() == normalizedIdentity }
+            persistRecentPlayDeletionsLocked(remaining, bumpVersion = true, changed = remaining != current)
         }
     }
 
     private fun persistRecentPlayDeletionsLocked(
         deletions: List<SyncRecentPlayDeletion>,
-        bumpVersion: Boolean
+        bumpVersion: Boolean,
+        changed: Boolean = true
     ) {
         check(
-            encryptedPrefs.commitEdit {
-                if (deletions.isEmpty()) {
-                    remove(KEY_RECENT_PLAY_DELETIONS)
-                } else {
-                    putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(deletions))
-                }
-                if (bumpVersion) {
-                    mutation.bump(this)
+            files.commitEdit {
+                if (changed) {
+                    files.write(this, KEY_RECENT_PLAY_DELETIONS, deletions.takeIf { it.isNotEmpty() })
+                    if (bumpVersion) mutation.bump(this)
                 }
             }
         ) { "Failed to persist recent play deletion state" }
     }
 
-    private fun normalizeRecentPlayDeletions(
-        deletions: List<SyncRecentPlayDeletion>
-    ): List<SyncRecentPlayDeletion> {
-        return deletions
-            .groupBy { it.stableKey() }
-            .map { (_, snapshots) ->
-                snapshots.maxWithOrNull(
-                    compareBy<SyncRecentPlayDeletion> { it.deletedAt }
-                        .thenBy { it.deviceId }
-                ) ?: return@map null
-            }
-            .filterNotNull()
-            .sortedByDescending { it.deletedAt }
-            .take(MAX_RECENT_PLAY_DELETIONS)
-    }
 }

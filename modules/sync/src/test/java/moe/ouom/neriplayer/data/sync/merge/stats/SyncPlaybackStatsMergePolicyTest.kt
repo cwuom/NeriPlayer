@@ -4,7 +4,6 @@ import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -46,7 +45,7 @@ class SyncPlaybackStatsMergePolicyTest {
     }
 
     @Test
-    fun `clear barrier keeps stats updated after clear even when first play is old`() {
+    fun `clear barrier rejects legacy totals spanning both sides of the clear`() {
         val clearedAt = 1_000L
         val local = trackStat(
             identityKey = "local-resumed",
@@ -60,10 +59,7 @@ class SyncPlaybackStatsMergePolicyTest {
             playbackStatsClearedAt = clearedAt
         )
 
-        assertEquals(1, merged.size)
-        assertEquals("local-resumed", merged.single().identityKey)
-        assertEquals(1_200L, merged.single().firstPlayedAt)
-        assertEquals(1_200L, merged.single().lastPlayedAt)
+        assertTrue(merged.isEmpty())
     }
 
     @Test
@@ -226,127 +222,6 @@ class SyncPlaybackStatsMergePolicyTest {
         )
 
         assertTrue(merged.isEmpty())
-    }
-
-    // ---- P0-2 裁剪: 曲目统计上限 ----
-
-    @Test
-    fun `trimStats caps to max keeping most recent`() {
-        val stats = (1..(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS + 1)).map { i ->
-            trackStat(identityKey = "k-$i", firstPlayedAt = 1L, lastPlayedAt = i.toLong())
-        }
-
-        val trimmed = SyncPlaybackStatsMergePolicy.trimStats(stats)
-
-        assertEquals(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS, trimmed.size)
-        // lastPlayedAt = 1 的一条被裁掉, 仅保留 2..MAX+1
-        assertEquals(2L, trimmed.minOf { it.lastPlayedAt })
-    }
-
-    @Test
-    fun `trimStats keeps deterministic ascending identityKey on ties at boundary`() {
-        val high = (1 until SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS).map { i ->
-            trackStat(identityKey = "high-$i", firstPlayedAt = 1L, lastPlayedAt = 1_000L + i)
-        }
-        val tieKept = trackStat(identityKey = "tie-a", firstPlayedAt = 1L, lastPlayedAt = 50L)
-        val tieDropped = trackStat(identityKey = "tie-b", firstPlayedAt = 1L, lastPlayedAt = 50L)
-
-        val trimmed = SyncPlaybackStatsMergePolicy.trimStats(high + tieDropped + tieKept)
-
-        assertEquals(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS, trimmed.size)
-        val keys = trimmed.map { it.identityKey }.toSet()
-        assertTrue(keys.contains("tie-a"))
-        assertFalse(keys.contains("tie-b"))
-    }
-
-    @Test
-    fun `trimStats is idempotent`() {
-        val stats = (1..(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS + 5)).map { i ->
-            trackStat(identityKey = "k-$i", firstPlayedAt = 1L, lastPlayedAt = i.toLong())
-        }
-
-        val once = SyncPlaybackStatsMergePolicy.trimStats(stats)
-        val twice = SyncPlaybackStatsMergePolicy.trimStats(once)
-
-        assertEquals(once, twice)
-    }
-
-    @Test
-    fun `trimStats under cap is unchanged`() {
-        val stats = listOf(
-            trackStat(identityKey = "a", firstPlayedAt = 1L, lastPlayedAt = 10L),
-            trackStat(identityKey = "b", firstPlayedAt = 1L, lastPlayedAt = 20L)
-        )
-
-        assertEquals(stats, SyncPlaybackStatsMergePolicy.trimStats(stats))
-    }
-
-    // ---- P0-2 裁剪: 日桶 400 天窗口 + 数量上限 ----
-
-    @Test
-    fun `trimBuckets drops buckets outside retention window`() {
-        val day = 86_400_000L
-        val newest = trackBucket(identityKey = "a", dayStartAt = 500 * day, firstPlayedAt = 1L, lastPlayedAt = 500 * day)
-        val within = trackBucket(identityKey = "b", dayStartAt = 200 * day, firstPlayedAt = 1L, lastPlayedAt = 200 * day)
-        val outside = trackBucket(identityKey = "c", dayStartAt = 50 * day, firstPlayedAt = 1L, lastPlayedAt = 50 * day)
-
-        val trimmed = SyncPlaybackStatsMergePolicy.trimBuckets(listOf(newest, within, outside))
-
-        val days = trimmed.map { it.dayStartAt }.toSet()
-        assertTrue(days.contains(500 * day))
-        assertTrue(days.contains(200 * day))
-        assertFalse(days.contains(50 * day))
-    }
-
-    @Test
-    fun `trimBuckets window anchor uses dataset max not wall clock`() {
-        val day = 86_400_000L
-        // 全部为"远古"日桶: 若锚点用墙钟会被全部裁掉; 用数据集内最大 dayStartAt 则应全部保留
-        val ancient = listOf(
-            trackBucket(identityKey = "a", dayStartAt = 1 * day, firstPlayedAt = 1L, lastPlayedAt = 1 * day),
-            trackBucket(identityKey = "b", dayStartAt = 2 * day, firstPlayedAt = 1L, lastPlayedAt = 2 * day),
-            trackBucket(identityKey = "c", dayStartAt = 3 * day, firstPlayedAt = 1L, lastPlayedAt = 3 * day)
-        )
-
-        val trimmed = SyncPlaybackStatsMergePolicy.trimBuckets(ancient)
-
-        assertEquals(3, trimmed.size)
-    }
-
-    @Test
-    fun `trimBuckets caps to max buckets by playCount`() {
-        val day = 86_400_000L
-        val buckets = (1..(SyncPlaybackStatsMergePolicy.MAX_STAT_BUCKETS + 1)).map { i ->
-            trackBucket(
-                identityKey = "k-$i",
-                dayStartAt = 10 * day,
-                playCount = i,
-                firstPlayedAt = 1L,
-                lastPlayedAt = 10 * day
-            )
-        }
-
-        val trimmed = SyncPlaybackStatsMergePolicy.trimBuckets(buckets)
-
-        assertEquals(SyncPlaybackStatsMergePolicy.MAX_STAT_BUCKETS, trimmed.size)
-        // playCount 最小(=1)的一条按 playCount 降序被裁掉
-        assertFalse(trimmed.any { it.playCount == 1 })
-    }
-
-    @Test
-    fun `trimBuckets is idempotent across window and count`() {
-        val day = 86_400_000L
-        val buckets = buildList {
-            addAll((1..(SyncPlaybackStatsMergePolicy.MAX_STAT_BUCKETS + 3)).map { i ->
-                trackBucket(identityKey = "k-$i", dayStartAt = 500 * day, playCount = i, firstPlayedAt = 1L, lastPlayedAt = 500 * day)
-            })
-            add(trackBucket(identityKey = "old", dayStartAt = 10 * day, firstPlayedAt = 1L, lastPlayedAt = 10 * day))
-        }
-
-        val once = SyncPlaybackStatsMergePolicy.trimBuckets(buckets)
-        val twice = SyncPlaybackStatsMergePolicy.trimBuckets(once)
-
-        assertEquals(once, twice)
     }
 
     // ---- P1-2 单调抬升 (消除"年 > 总") ----
@@ -512,8 +387,7 @@ class SyncPlaybackStatsMergePolicyTest {
                 lastPlayedAt = newestDay
             )
         )
-        // 同一曲: 窗口内当天一桶 + 窗口外(>400 天)一桶; 窗口外桶会被 trimBuckets 裁掉
-        // 但收尾必须先用"未裁剪"全量桶抬升, 故"总"应覆盖两桶之和 (与桌面一致)
+        // 较早日桶仍参与总数，并与新日桶一起保留
         val buckets = listOf(
             trackBucket(
                 identityKey = "song",
@@ -538,19 +412,18 @@ class SyncPlaybackStatsMergePolicyTest {
         // 全量桶之和 = 120 + 50 = 170, 2 + 1 = 3; 若回退成"先裁剪再抬升"则只会得到 120 / 2
         assertEquals(170L, finalized.stats.single().totalListenMs)
         assertEquals(3, finalized.stats.single().playCount)
-        // 窗口外桶已被裁剪, 仅保留窗口内当天桶
-        assertEquals(setOf(newestDay), finalized.buckets.map { it.dayStartAt }.toSet())
+        assertEquals(setOf(newestDay, newestDay - 401 * day), finalized.buckets.map { it.dayStartAt }.toSet())
     }
 
     @Test
-    fun `finalizeMergedStats applies stat and bucket count caps`() {
+    fun `finalizeMergedStats retains every identity represented by stats or buckets`() {
         val day = 86_400_000L
         val newestDay = 10 * day
-        // 曲目统计与日桶数量分别超上限; 收尾 (GitHub 与 WebDAV 共用同一函数) 应把两者裁到各自上限
-        val stats = (1..(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS + 5)).map { i ->
+        // 日桶中的独立曲目必须补入汇总，旧条目不能因为超出曾经的上限而丢失
+        val stats = (1..(2_005)).map { i ->
             trackStat(identityKey = "s-$i", firstPlayedAt = 1L, lastPlayedAt = i.toLong())
         }
-        val buckets = (1..(SyncPlaybackStatsMergePolicy.MAX_STAT_BUCKETS + 5)).map { i ->
+        val buckets = (1..(8_005)).map { i ->
             trackBucket(
                 identityKey = "b-$i",
                 dayStartAt = newestDay,
@@ -562,8 +435,8 @@ class SyncPlaybackStatsMergePolicyTest {
 
         val finalized = SyncPlaybackStatsMergePolicy.finalizeMergedStats(stats, buckets)
 
-        assertEquals(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS, finalized.stats.size)
-        assertEquals(SyncPlaybackStatsMergePolicy.MAX_STAT_BUCKETS, finalized.buckets.size)
+        assertEquals(10_010, finalized.stats.size)
+        assertEquals(8_005, finalized.buckets.size)
     }
 
     private fun trackStat(

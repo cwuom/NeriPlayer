@@ -10,6 +10,17 @@ import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.PlayHistoryDao
 import moe.ouom.neriplayer.data.local.database.dao.stats.PlaylistUsageDao
 import moe.ouom.neriplayer.data.local.database.dao.stats.LocalPlaylistPlaybackDao
+import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackStatsSnapshotDao
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotTrackEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotBucketEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotCounterEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotDailyCounterEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotDeletedTrackEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotDeletedBucketEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPendingDeltaEntity
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
+import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatsPagedMigration
 import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.stats.TrafficStatsDao
@@ -57,6 +68,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackEntity
 
 import moe.ouom.neriplayer.data.local.database.migration.library.PlayHistoryMigration
+import moe.ouom.neriplayer.data.local.database.migration.library.LyricSyncPersistenceMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaylistUsageMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.LocalPlaylistPlaybackMigration
 import moe.ouom.neriplayer.data.local.database.migration.library.PlaybackStatsMigration
@@ -74,7 +86,7 @@ import moe.ouom.neriplayer.data.local.database.migration.download.DownloadFinali
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadBatchMigration
 import moe.ouom.neriplayer.data.local.database.migration.download.DownloadRecoveryCursorMigration
 
-private const val NERI_USER_DATA_FINAL_VERSION = 18
+private const val NERI_USER_DATA_FINAL_VERSION = 20
 
 @Database(
     entities = [
@@ -92,6 +104,15 @@ private const val NERI_USER_DATA_FINAL_VERSION = 18
         LocalPlaylistPlaybackBucketEntity::class,
         LocalPlaylistPlaybackCounterShardEntity::class,
         PlaybackStatEntity::class,
+        PlaybackStatsSnapshotEntity::class,
+        PlaybackStatsSnapshotTrackEntity::class,
+        PlaybackStatsSnapshotBucketEntity::class,
+        PlaybackStatsSnapshotCounterEntity::class,
+        PlaybackStatsSnapshotDailyCounterEntity::class,
+        PlaybackStatsSnapshotDeletedTrackEntity::class,
+        PlaybackStatsSnapshotDeletedBucketEntity::class,
+        PlaybackStatsPendingDeltaEntity::class,
+        PlaybackStatsEventReceiptEntity::class,
         PlaybackStatBucketEntity::class,
         PlaybackStatCounterShardEntity::class,
         PlaybackStatDailyCounterShardEntity::class,
@@ -125,6 +146,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun localPlaylistPlaybackDao(): LocalPlaylistPlaybackDao
 
     abstract fun playbackStatsDao(): PlaybackStatsDao
+
+    abstract fun playbackStatsSnapshotDao(): PlaybackStatsSnapshotDao
 
     abstract fun favoritePlaylistDao(): FavoritePlaylistDao
 
@@ -184,7 +207,9 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_14_15,
                 MIGRATION_15_FINAL,
                 MIGRATION_16_17,
-                MIGRATION_17_18
+                MIGRATION_17_18,
+                MIGRATION_18_19,
+                MIGRATION_19_20
             ).build()
         }
 
@@ -214,6 +239,8 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
         val MIGRATION_15_FINAL: Migration = DownloadFinalizationMigration
         val MIGRATION_16_17: Migration = DownloadBatchMigration
         val MIGRATION_17_18: Migration = DownloadRecoveryCursorMigration
+        val MIGRATION_18_19: Migration = LyricSyncPersistenceMigration
+        val MIGRATION_19_20: Migration = PlaybackStatsPagedMigration
 
         const val FINAL_DB_VERSION = NERI_USER_DATA_FINAL_VERSION
     }

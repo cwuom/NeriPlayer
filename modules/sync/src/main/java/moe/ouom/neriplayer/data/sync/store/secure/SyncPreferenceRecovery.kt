@@ -7,9 +7,11 @@ internal object SyncPreferenceRecovery {
         create: () -> SharedPreferences,
         delete: () -> Unit,
         onOpenFailure: (Throwable) -> Unit,
-        onDeleteFailure: (Throwable) -> Unit
+        onDeleteFailure: (Throwable) -> Unit,
+        recoverOnFailure: Boolean = true
     ): SharedPreferences = runCatching(create).getOrElse { error ->
         onOpenFailure(error)
+        if (!recoverOnFailure) throw error
         runCatching(delete).onFailure(onDeleteFailure)
         create()
     }

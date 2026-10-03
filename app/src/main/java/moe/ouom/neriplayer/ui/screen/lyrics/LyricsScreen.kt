@@ -205,6 +205,7 @@ fun LyricsScreen(
     lyrics: List<LyricEntry>,
     rawLyrics: String? = null,
     rawTranslatedLyrics: String? = null,
+    rawPhoneticLyrics: String? = null,
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
     lyricFontScales: LyricFontScales,
@@ -268,8 +269,8 @@ fun LyricsScreen(
             lyrics = lyrics
         )
     }
-    val effectivePhoneticLyrics = remember(phoneticLyrics, embeddedPhoneticLyrics) {
-        phoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
+    val effectivePhoneticLyrics = remember(rawPhoneticLyrics, phoneticLyrics, embeddedPhoneticLyrics) {
+        resolveEffectivePhoneticLyrics(rawPhoneticLyrics, phoneticLyrics, embeddedPhoneticLyrics)
     }
     val hasTranslation = remember(rawTranslatedLyrics, translatedLyrics, lyrics) {
         hasDisplayableLyricTranslation(rawTranslatedLyrics, translatedLyrics.orEmpty(), lyrics)

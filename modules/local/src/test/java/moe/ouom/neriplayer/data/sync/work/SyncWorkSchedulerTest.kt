@@ -75,6 +75,7 @@ class SyncWorkSchedulerTest {
         assertTrue(periodic.tags.contains("periodic"))
         val immediate = invocations[1].getArgument<OneTimeWorkRequest>(0)
         assertTrue(immediate.tags.contains("sync_now"))
+        assertTrue(immediate.tags.contains("sync"))
         assertTrue(immediate.workSpec.input.getBoolean("force_sync", false))
         assertEquals(listOf("sync", "periodic"), invocations.drop(2).map { it.getArgument<String>(0) })
     }

@@ -12,3 +12,17 @@
     <fields>;
     <init>(...);
 }
+# 歌词编辑状态的持久化载荷使用稳定字段名，升级后需能读回恢复标记
+-keepclassmembers,allowoptimization class moe.ouom.neriplayer.data.model.lyrics.LyricSyncPersistence {
+    <fields>;
+    <init>(...);
+}
+# 歌单使用记录的删除观察证明必须能在混淆后的版本继续读回
+-keepclassmembers,allowoptimization class moe.ouom.neriplayer.data.model.stats.UsageEntry {
+    <fields>;
+    <init>(...);
+}
+-keepclassmembers,allowoptimization class moe.ouom.neriplayer.data.sync.model.SyncCausalToken {
+    <fields>;
+    <init>(...);
+}

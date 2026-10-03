@@ -47,7 +47,7 @@ private suspend fun readPreferredLyrics(
     val preferred = sources.preferred(song, request.defaultLyricSource)
     if (preferred != null) {
         NPLogger.d("NowPlayingLyrics", "使用偏好歌词源: source=${request.defaultLyricSource.storageValue}, song=${song.name}")
-        return buildPreferredLyricSourceState(preferred)
+        return overlayConfirmedUserLyrics(song, buildPreferredLyricSourceState(preferred))
     }
     NPLogger.d("NowPlayingLyrics", "偏好歌词源未命中，回退已存或平台歌词: song=${song.name}")
     return null
@@ -108,7 +108,7 @@ private suspend fun resolveNowPlayingBackgroundLyrics(
     val original = resolveBackgroundOriginal(inputs, raw, sources)
     val translated = resolveBackgroundTranslated(inputs, raw, sources)
     val phonetic = resolveBackgroundPhonetic(inputs, netease, sources)
-    return buildBackgroundLyricsState(raw, original, translated, phonetic)
+    return overlayConfirmedUserLyrics(inputs.song, buildBackgroundLyricsState(raw, original, translated, phonetic))
 }
 
 internal data class NowPlayingNeteaseFallback(
@@ -166,4 +166,5 @@ internal fun shouldReadNeteaseOriginal(inputs: NowPlayingLyricsBackgroundInputs)
     ).all { it == null }
 
 internal fun shouldReadNeteaseRomanized(inputs: NowPlayingLyricsBackgroundInputs): Boolean =
-    listOf(inputs.local?.romanizedLyric, inputs.downloaded?.romanizedLyric).all { it == null }
+    listOf(inputs.local?.romanizedLyric, inputs.song.storedLyricFor(ManagedLyricVariant.ROMANIZED),
+        inputs.downloaded?.romanizedLyric).all { it == null }

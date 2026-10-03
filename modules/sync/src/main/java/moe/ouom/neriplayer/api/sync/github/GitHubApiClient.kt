@@ -37,6 +37,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.io.File
 
 /**
  * Token过期异常
@@ -55,6 +56,8 @@ class GitHubContentConflictException(
     message: String
 ) : GitHubApiException(statusCode, message)
 
+data class GitHubSyncHead(val branch: String, val sha: String)
+
 /**
  * GitHub API客户端
  * 使用 GitHub API 管理仓库与二进制同步载体
@@ -63,7 +66,8 @@ class GitHubApiClient(
     private val token: String,
     private val client: OkHttpClient,
     private val tokenExpiredMessage: String,
-    private val apiBase: String = "https://api.github.com"
+    private val apiBase: String = "https://api.github.com",
+    private val checkpointDirectory: File? = null
 ) {
     private val gson = Gson()
 
@@ -189,6 +193,21 @@ class GitHubApiClient(
         return syncTransport().getFileContent(owner, repo, path, strict = true)
     }
 
+    suspend fun getRepositoryHead(owner: String, repo: String): Result<GitHubSyncHead> =
+        syncTransport().getRepositoryHead(owner, repo)
+
+    suspend fun getFileContentAtRef(owner: String, repo: String, path: String, ref: String): Result<ByteArray> =
+        syncTransport().getFileContentAtRef(owner, repo, path, ref)
+
+    suspend fun updateFilesContent(
+        owner: String,
+        repo: String,
+        files: Sequence<Pair<String, ByteArray>>,
+        expectedHead: GitHubSyncHead,
+        message: String = "Update sync archive",
+        retainedArchivePaths: Set<String>? = null
+    ): Result<String> = syncTransport().updateFilesContent(owner, repo, files, expectedHead, message, retainedArchivePaths)
+
     /** 上传同步正文为仓库中的实际二进制或 JSON 文件 */
     suspend fun updateFileContent(
         owner: String,
@@ -203,6 +222,6 @@ class GitHubApiClient(
     }
 
     private fun syncTransport(): GitHubRepositorySyncTransport {
-        return GitHubRepositorySyncTransport(client, token, apiBase, tokenExpiredMessage)
+        return GitHubRepositorySyncTransport(client, token, apiBase, tokenExpiredMessage, checkpointDirectory)
     }
 }

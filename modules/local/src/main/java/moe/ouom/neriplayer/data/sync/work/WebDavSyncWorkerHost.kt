@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.sync.SyncProvider
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerFailureKind
 import moe.ouom.neriplayer.data.sync.host.SyncPlaybackActivity
+import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerFailureClassifier
 import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerHost
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
@@ -26,6 +27,11 @@ internal fun createWebDavWorkerHost(context: Context): SyncWorkerHost {
     return SyncRepositoryWorkerHost(
         provider = SyncProvider.WEBDAV,
         readAutoSync = { storage.isAutoSyncEnabled() }, readConfigured = { storage.isConfigured() },
+        readProtocolUpgradeApproved = {
+            SyncProtocolUpgradeRepository(context).canSyncTarget(SyncProtocolUpgradeRepository.webDavTargetHash(
+                storage.getServerUrl().orEmpty(), storage.getBasePath(), storage.getUsername().orEmpty()
+            ))
+        },
         readPlayback = { SyncPlaybackActivity.isActive }, readNetwork = { hasValidatedSyncNetwork(context) },
         defer = { WebDavSyncWorker.scheduleDelayedSync(context, initialDelayMs = 60_000L, appendToCurrentWork = true) },
         sync = { WebDavSyncManager.getInstance(context).performSync() },

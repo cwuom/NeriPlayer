@@ -17,6 +17,76 @@ import org.junit.Test
 class PlayerManagerSearchMetadataTest {
 
     @Test
+    fun `manual replacement clears the old romanized track while retaining its restoration baseline`() {
+        for (customOverride in listOf(false, true)) {
+            for (baseline in listOf(null, "", "[00:01.00]first baseline")) {
+                val original = SongItem(1L, "song", "artist", "netease", 0L, 1000L, null,
+                    matchedLyric = "[00:01.00]old original", matchedTranslatedLyric = "[00:01.00]old translation",
+                    matchedRomanizedLyric = "[00:01.00]old romanized", originalRomanizedLyric = baseline,
+                    matchedLyricSource = MusicPlatform.CLOUD_MUSIC, matchedSongId = "old-match",
+                    lyricSyncEdited = false, lyricSyncRevision = 10)
+
+                val matched = applyManualSearchMetadata(original, "new song", "new artist", null,
+                    "[00:02.00]new original", "[00:02.00]new translation", MusicPlatform.QQ_MUSIC, "new-match",
+                    customOverride, preserveExistingMatchedLyrics = false, lyricRevision = 11)
+
+                assertEquals("[00:02.00]new original", matched.matchedLyric)
+                assertEquals("[00:02.00]new translation", matched.matchedTranslatedLyric)
+                assertEquals("", matched.matchedRomanizedLyric)
+                assertEquals(baseline ?: original.matchedRomanizedLyric, matched.originalRomanizedLyric)
+                assertEquals("", resolveStoredLyricText(matched.matchedRomanizedLyric, matched.originalRomanizedLyric))
+                assertEquals(emptyList<Any>(), PlayerLyricsProvider.parseConfirmedUserLyricEntries(matched, matched.matchedRomanizedLyric))
+                assertEquals(true, matched.lyricSyncEdited)
+                assertEquals(11L, matched.lyricSyncRevision)
+                assertEquals(MusicPlatform.QQ_MUSIC, matched.matchedLyricSource)
+                assertEquals("new-match", matched.matchedSongId)
+            }
+        }
+    }
+
+    @Test
+    fun `search summary fallback keeps romanization and the existing edit state in both metadata branches`() {
+        for (customOverride in listOf(false, true)) {
+            for (romanized in listOf(null, "", "[00:01.00]kept romanized")) {
+                for (edited in listOf(null, false, true)) {
+                    val original = SongItem(1L, "song", "artist", "netease", 0L, 1000L, null,
+                        matchedLyric = "[00:01.00]kept original", matchedTranslatedLyric = "[00:01.00]kept translation",
+                        matchedRomanizedLyric = romanized, originalRomanizedLyric = "[00:00.00]baseline romanized",
+                        matchedLyricSource = MusicPlatform.CLOUD_MUSIC, matchedSongId = "old-match",
+                        lyricSyncEdited = edited, lyricSyncRevision = 10)
+
+                    val matched = applyManualSearchMetadata(original, "new song", "new artist", null,
+                        null, null, MusicPlatform.QQ_MUSIC, "new-match", customOverride,
+                        preserveExistingMatchedLyrics = true, lyricRevision = 11)
+
+                    assertEquals(original.matchedLyric, matched.matchedLyric)
+                    assertEquals(original.matchedTranslatedLyric, matched.matchedTranslatedLyric)
+                    assertEquals(romanized, matched.matchedRomanizedLyric)
+                    assertEquals(original.originalRomanizedLyric, matched.originalRomanizedLyric)
+                    assertEquals(edited, matched.lyricSyncEdited)
+                    assertEquals(10L, matched.lyricSyncRevision)
+                    assertEquals(original.matchedLyricSource, matched.matchedLyricSource)
+                    assertEquals(original.matchedSongId, matched.matchedSongId)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `manual matching preserves cached romanized baseline for later lyric restoration`() {
+        val original = SongItem(1L, "song", "artist", "netease", 0L, 1L, null,
+            matchedRomanizedLyric = "cached romanized", lyricSyncEdited = false)
+        for (customOverride in listOf(false, true)) {
+            val matched = applyManualSearchMetadata(
+                original, "new song", "new artist", null, "selected lyric", null,
+                MusicPlatform.CLOUD_MUSIC, "matched", customOverride
+            )
+            assertEquals("cached romanized", matched.originalRomanizedLyric)
+            assertTrue(matched.lyricSyncEdited == true)
+        }
+    }
+
+    @Test
     fun `search summary fallback keeps selected display metadata`() {
         val selectedSong = SongSearchInfo(
             id = "remote-id",
@@ -365,6 +435,24 @@ class PlayerManagerSearchMetadataTest {
         assertEquals("[00:00.00]新译文", updatedSong.matchedTranslatedLyric)
         assertEquals("[00:00.00]旧原文", updatedSong.originalLyric)
         assertEquals("[00:00.00]旧译文", updatedSong.originalTranslatedLyric)
+        assertTrue(updatedSong.lyricSyncEdited == true)
+        assertTrue(updatedSong.lyricSyncRevision > 0L)
+    }
+
+    @Test
+    fun `automatic lyric cache update does not create an edit revision`() {
+        val song = SongItem(id = 1L, name = "song", artist = "artist", album = "netease", albumId = 0L, durationMs = 1L, coverUrl = null)
+        val updated = song.withUpdatedLyricsPreservingOriginal(newLyrics = "cached", userEdited = false)
+        assertEquals(false, updated.lyricSyncEdited)
+        assertEquals(0L, updated.lyricSyncRevision)
+    }
+
+    @Test
+    fun `manual lyric revision remains monotonic after clock moves backwards`() {
+        val song = SongItem(id = 1L, name = "song", artist = "artist", album = "netease", albumId = 0L, durationMs = 1L, coverUrl = null,
+            lyricSyncRevision = Long.MAX_VALUE - 1000L)
+        val updated = song.withUpdatedLyricsPreservingOriginal(newLyrics = "edit")
+        assertEquals(Long.MAX_VALUE - 999L, updated.lyricSyncRevision)
     }
 
     @Test

@@ -7,10 +7,49 @@ import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.queue.policy.reorderQueueSongsPreservingLatestMetadata
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerQueueStateStoreTest {
+    @Test
+    fun `song projection updates active and shuffle restore atomically without changing selection or order`() {
+        val first = song(1, "First")
+        val second = song(2, "Second")
+        val store = PlayerQueueStateStore(TestQueueSongIdentity)
+        store.restoreSession(PlayerQueueSnapshot.from(listOf(second, first), 1), true,
+            PlayerQueueSnapshot.from(listOf(first, second), 0))
+        assertTrue(store.projectSongs { songs -> songs.map { it.copy(matchedLyric = "remote", lyricSyncRevision = 20) } })
+        val after = store.sessionSnapshot()
+        val restored = checkNotNull(after.shuffleRestore)
+        assertEquals(listOf(2L, 1L), after.queue.playlist.map { it.id })
+        assertEquals(listOf(1L, 2L), restored.playlist.map { it.id })
+        assertEquals(1, after.queue.currentIndex)
+        assertEquals(0, restored.currentIndex)
+        assertTrue(after.shuffleEnabled)
+        assertEquals("remote", after.queue.playlist[1].matchedLyric)
+        assertEquals("remote", restored.playlist[0].matchedLyric)
+        assertFalse(store.projectSongs { it })
+        assertSame(after, store.sessionSnapshot())
+    }
+
+    @Test
+    fun `failed shuffle projection publishes neither half of the queue state`() {
+        val store = PlayerQueueStateStore(TestQueueSongIdentity)
+        store.restoreSession(PlayerQueueSnapshot.from(listOf(song(1, "First")), 0), true,
+            PlayerQueueSnapshot.from(listOf(song(2, "Second")), 0))
+        val before = store.sessionSnapshot()
+        val failure = runCatching {
+            store.projectSongs { songs ->
+                check(songs.single().id == 1L) { "restore projection failed" }
+                songs.map { it.copy(matchedLyric = "remote") }
+            }
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertSame(before, store.sessionSnapshot())
+    }
+
     @Test
     fun `late metadata update follows song identity and keeps the latest selection`() {
         val first = song(1L, "First")

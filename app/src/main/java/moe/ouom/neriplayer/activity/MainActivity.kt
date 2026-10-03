@@ -156,6 +156,7 @@ import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
+import moe.ouom.neriplayer.ui.sync.upgrade.StartupSyncUpgradePrompt
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
@@ -506,9 +507,11 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                        var startupCrashReportReadCompleted by remember { mutableStateOf(false) }
                         LaunchedEffect(Unit) {
                             pendingStartupCrashReport =
                                 startupCrashReportManager.readPendingReport()
+                            startupCrashReportReadCompleted = true
                         }
                         LaunchedEffect(Unit) {
                             handleIncomingIntent(intent)
@@ -581,6 +584,7 @@ class MainActivity : ComponentActivity() {
                         val rootLifecycleOwner = LocalLifecycleOwner.current
                         var hasShownTokenWarning by rememberSaveable { mutableStateOf(false) }
                         var showTokenWarningDialog by rememberSaveable { mutableStateOf(false) }
+                        var startupTokenWarningCheckCompleted by remember { mutableStateOf(false) }
                         LaunchedEffect(stage, rootLifecycleOwner.lifecycle) {
                             if (stage != StartupStage.Main) {
                                 return@LaunchedEffect
@@ -611,6 +615,7 @@ class MainActivity : ComponentActivity() {
                                     NPLogger.d("MainActivity", "显示 GitHub 配置警告")
                                     showTokenWarningDialog = true
                                 }
+                                startupTokenWarningCheckCompleted = true
                             }
                         }
 
@@ -1088,6 +1093,15 @@ class MainActivity : ComponentActivity() {
                                             onLanguageChanged = { language ->
                                                 selectedAppLanguage = language
                                             }
+                                        )
+                                        StartupSyncUpgradePrompt(
+                                            canShowDialog = startupCrashReportReadCompleted &&
+                                                startupTokenWarningCheckCompleted &&
+                                                pendingStartupCrashReport == null &&
+                                                !showTokenWarningDialog &&
+                                                pendingMobileDataDownloadInterruptionRequest == null &&
+                                                !showDialog && !showErrorDialog &&
+                                                pendingInvite == null && loudPlaybackConfirmation == null
                                         )
                                     }
                                 }

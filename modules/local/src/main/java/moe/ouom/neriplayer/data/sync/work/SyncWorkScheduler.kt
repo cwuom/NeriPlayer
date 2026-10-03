@@ -35,7 +35,7 @@ internal class SyncWorkScheduler(
     }
 
     fun syncNow() {
-        val request = SyncWorkRequests.immediate(workerClass)
+        val request = SyncWorkRequests.immediate(workerClass, workName)
         manager().enqueue(request)
     }
 

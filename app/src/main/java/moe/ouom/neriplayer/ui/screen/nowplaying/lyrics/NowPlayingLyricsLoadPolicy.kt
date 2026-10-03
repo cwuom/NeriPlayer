@@ -178,18 +178,54 @@ internal fun buildPreferredLyricSourceState(
  * 为当前曲目建立无需磁盘访问的首帧歌词快照
  */
 internal fun buildNowPlayingImmediateLyricsState(song: SongItem?): LoadedLyricsState {
-    return buildNowPlayingFastLyricsState(
+    return overlayConfirmedUserLyrics(song, buildNowPlayingFastLyricsState(
         rawLyrics = song.storedLyricFor(ManagedLyricVariant.ORIGINAL),
         rawTranslatedLyrics = song.storedLyricFor(ManagedLyricVariant.TRANSLATED),
         rawPhoneticLyrics = song.storedLyricFor(ManagedLyricVariant.ROMANIZED)
-    )
+    ))
 }
 
 internal fun buildNowPlayingInitialLyricsState(
     song: SongItem?,
     cachedPreferredLyrics: PreferredLyricSourceResult?
-): LoadedLyricsState = cachedPreferredLyrics?.let(::buildPreferredLyricSourceState)
-    ?: buildNowPlayingImmediateLyricsState(song)
+): LoadedLyricsState {
+    if (cachedPreferredLyrics == null) return buildNowPlayingImmediateLyricsState(song)
+    return overlayConfirmedUserLyrics(song, buildPreferredLyricSourceState(cachedPreferredLyrics))
+}
+
+internal fun SongItem?.hasConfirmedLyricOverride(): Boolean = this?.lyricSyncEdited == true &&
+    listOf(matchedLyric, matchedTranslatedLyric, matchedRomanizedLyric).any { it != null }
+
+internal fun overlayConfirmedUserLyrics(song: SongItem?, fallback: LoadedLyricsState): LoadedLyricsState {
+    if (song?.lyricSyncEdited != true) return fallback
+    val original = overlayConfirmedOriginal(song.matchedLyric, fallback)
+    val translated = overlayConfirmedTranslation(song.matchedTranslatedLyric, original)
+    return overlayConfirmedPhonetic(song.matchedRomanizedLyric, translated)
+}
+
+private fun overlayConfirmedOriginal(text: String?, fallback: LoadedLyricsState): LoadedLyricsState {
+    if (text == null) return fallback
+    val parsed = parseFastLyric(text, bypass = false)
+    return fallback.copy(rawLyrics = text, lyrics = parsed,
+        plainLyrics = parsed.flattenWordTimedEntries(),
+        embeddedPhoneticLyrics = buildPhoneticLyricEntries(text, parsed), preferredSource = null)
+}
+
+private fun overlayConfirmedTranslation(text: String?, fallback: LoadedLyricsState): LoadedLyricsState {
+    if (text == null) return fallback
+    val parsed = parseFastLyric(text, bypass = false)
+    return fallback.copy(rawTranslatedLyrics = text, translatedLyrics = parsed,
+        lyrics = fallback.lyrics.map { it.copy(translation = null) },
+        plainLyrics = fallback.plainLyrics.map { it.copy(translation = null) },
+        plainTranslatedLyrics = parsed.flattenWordTimedEntries(), preferredSource = null)
+}
+
+private fun overlayConfirmedPhonetic(text: String?, fallback: LoadedLyricsState): LoadedLyricsState {
+    if (text == null) return fallback
+    // 独立音译分轨一旦明确提供，也不能再从旧原文中回退嵌入音译
+    return fallback.copy(rawPhoneticLyrics = text, phoneticLyrics = parseFastLyric(text, bypass = false),
+        embeddedPhoneticLyrics = emptyList(), preferredSource = null)
+}
 
 internal fun shouldReplaceLyricsAfterRefresh(
     sameSong: Boolean,

@@ -1,26 +1,18 @@
 package moe.ouom.neriplayer.data.sync.store.state
 
 import android.content.SharedPreferences
-import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.merge.playlist.SyncPlaylistDeletionPolicy
 
-internal class SyncPlaylistSongDeletionStore(private val encryptedPrefs: SharedPreferences) {
-    private val gson = Gson()
+internal class SyncPlaylistSongDeletionStore(encryptedPrefs: SharedPreferences, private val files: SyncDeletionStateStorage) {
     private val mutation = SyncMutationVersionStore(encryptedPrefs)
 
     fun getPlaylistSongDeletions(): List<SyncPlaylistSongDeletion> {
         return synchronized(syncMutationLock) {
-            val raw = encryptedPrefs.getString(KEY_PLAYLIST_SONG_DELETIONS, null).orEmpty()
-            if (raw.isBlank()) {
-                return@synchronized emptyList()
-            }
-            val parsed = runCatching {
-                val type = object : TypeToken<List<SyncPlaylistSongDeletion>>() {}.type
-                gson.fromJson<List<SyncPlaylistSongDeletion>>(raw, type).orEmpty()
-            }.getOrElse { emptyList() }
+            val type = object : TypeToken<List<SyncPlaylistSongDeletion>>() {}.type
+            val parsed = files.read<List<SyncPlaylistSongDeletion>>(KEY_PLAYLIST_SONG_DELETIONS, type).orEmpty()
             normalizePlaylistSongDeletions(parsed)
         }
     }
@@ -60,9 +52,7 @@ internal class SyncPlaylistSongDeletionStore(private val encryptedPrefs: SharedP
                 playlistId = playlistId,
                 identities = identities
             )
-            if (remaining != current) {
-                persistPlaylistSongDeletionsLocked(remaining, bumpVersion = true)
-            }
+            persistPlaylistSongDeletionsLocked(remaining, bumpVersion = true, changed = remaining != current)
         }
     }
 
@@ -71,26 +61,21 @@ internal class SyncPlaylistSongDeletionStore(private val encryptedPrefs: SharedP
             val current = getPlaylistSongDeletions()
             val remaining = current
                 .filterNot { it.playlistId == playlistId }
-            if (remaining != current) {
-                persistPlaylistSongDeletionsLocked(remaining, bumpVersion = true)
-            }
+            persistPlaylistSongDeletionsLocked(remaining, bumpVersion = true, changed = remaining != current)
         }
     }
 
     private fun persistPlaylistSongDeletionsLocked(
         deletions: List<SyncPlaylistSongDeletion>,
-        bumpVersion: Boolean
+        bumpVersion: Boolean,
+        changed: Boolean = true
     ) {
-        val normalized = normalizePlaylistSongDeletions(deletions)
         check(
-            encryptedPrefs.commitEdit {
-                if (normalized.isEmpty()) {
-                    remove(KEY_PLAYLIST_SONG_DELETIONS)
-                } else {
-                    putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
-                }
-                if (bumpVersion) {
-                    mutation.bump(this)
+            files.commitEdit {
+                if (changed) {
+                    val normalized = normalizePlaylistSongDeletions(deletions)
+                    files.write(this, KEY_PLAYLIST_SONG_DELETIONS, normalized.takeIf { it.isNotEmpty() })
+                    if (bumpVersion) mutation.bump(this)
                 }
             }
         ) { "Failed to persist playlist deletion state" }
@@ -99,6 +84,6 @@ internal class SyncPlaylistSongDeletionStore(private val encryptedPrefs: SharedP
     private fun normalizePlaylistSongDeletions(
         deletions: List<SyncPlaylistSongDeletion>
     ): List<SyncPlaylistSongDeletion> {
-        return SyncPlaylistDeletionPolicy.limitDeletions(deletions)
+        return SyncPlaylistDeletionPolicy.mergeDeletions(deletions, emptyList())
     }
 }

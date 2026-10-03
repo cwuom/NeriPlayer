@@ -113,7 +113,9 @@ class DatabaseUpgradeInstrumentedTest {
         }
         helper.runMigrationsAndValidate(
             "database-upgrade-from-v17", NeriUserDataDatabase.FINAL_DB_VERSION, true,
-            NeriUserDataDatabase.MIGRATION_17_18
+            NeriUserDataDatabase.MIGRATION_17_18,
+            NeriUserDataDatabase.MIGRATION_18_19,
+            NeriUserDataDatabase.MIGRATION_19_20
         ).use { database ->
             database.query("SELECT state, bytes_written FROM download_operation WHERE operation_id = 'operation'").use { cursor ->
                 check(cursor.moveToFirst())
@@ -145,6 +147,8 @@ class DatabaseUpgradeInstrumentedTest {
         NeriUserDataDatabase.MIGRATION_14_15,
         NeriUserDataDatabase.MIGRATION_15_FINAL,
         NeriUserDataDatabase.MIGRATION_16_17,
-        NeriUserDataDatabase.MIGRATION_17_18
+        NeriUserDataDatabase.MIGRATION_17_18,
+        NeriUserDataDatabase.MIGRATION_18_19,
+            NeriUserDataDatabase.MIGRATION_19_20
     )
 }

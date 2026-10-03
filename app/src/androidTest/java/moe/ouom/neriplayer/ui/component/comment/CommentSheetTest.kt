@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.model.comments.SongComment
 import moe.ouom.neriplayer.data.model.comments.CommentQuote
 import moe.ouom.neriplayer.data.model.comments.CommentReplyTarget
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.ui.viewmodel.CommentListStatus
 import moe.ouom.neriplayer.ui.viewmodel.CommentUiState
 import moe.ouom.neriplayer.ui.viewmodel.CommentReplyState
@@ -148,7 +149,9 @@ class CommentSheetTest {
                 }
             }
         }
-        composeRule.waitUntil(timeoutMillis = 5_000L) { sheetFocused.get() }
+        UiFailureDiagnostics.onFailure("comment-retained-reply-initial-focus") {
+            composeRule.waitUntil(timeoutMillis = 5_000L) { sheetFocused.get() }
+        }
         composeRule.onNodeWithTag("comment-draft").assertIsNotFocused()
         waitForKeyboardVisibility(false)
         composeRule.onNodeWithText(state.value.comments.single().content).performClick()
@@ -191,9 +194,11 @@ class CommentSheetTest {
         composeRule.onNodeWithText("被回复的内容", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_copy)).performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000L) {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.primaryClip?.getItemAt(0)?.text?.toString() == child.content
+        UiFailureDiagnostics.onFailure("comment-nested-reply-clipboard") {
+            composeRule.waitUntil(timeoutMillis = 5_000L) {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.primaryClip?.getItemAt(0)?.text?.toString() == child.content
+            }
         }
         composeRule.onNodeWithText(child.content, useUnmergedTree = true).performTouchInput { longClick() }
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.comment_reply)).performClick()
@@ -256,7 +261,9 @@ class CommentSheetTest {
                 }
             }
         }
-        composeRule.waitUntil(timeoutMillis = 5_000L) { sheetFocused.get() }
+        UiFailureDiagnostics.onFailure("comment-composer-initial-focus") {
+            composeRule.waitUntil(timeoutMillis = 5_000L) { sheetFocused.get() }
+        }
         composeRule.onNodeWithTag("comment-send").assertIsNotEnabled()
         composeRule.onNodeWithTag("comment-draft").performClick().performTextInput("准备发送的评论")
         waitForKeyboardVisibility(true)

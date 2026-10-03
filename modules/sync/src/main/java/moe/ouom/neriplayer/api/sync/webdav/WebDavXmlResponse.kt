@@ -25,8 +25,8 @@ internal object WebDavXmlResponse {
     )
     private val declarationEncoding = Regex("^<\\?xml\\s+[^?]*?\\bencoding\\s*=\\s*(['\"])([^'\"]+)\\1")
 
-    fun read(response: Response): InputSource {
-        val bytes = SyncResponseBodyReader.read(response.body)
+    fun read(response: Response, maxBytes: Int = SyncResponseBodyReader.MAX_SYNC_FILE_BYTES): InputSource {
+        val bytes = SyncResponseBodyReader.read(response.body, maxBytes)
         val (charset, offset) = inputEncoding(bytes, response.body.contentType()?.parameter("charset"))
         val xml = String(bytes, offset, bytes.size - offset, charset)
         // 与解析器使用相同编码，避免 UTF16 等响应绕过 DTD 检查

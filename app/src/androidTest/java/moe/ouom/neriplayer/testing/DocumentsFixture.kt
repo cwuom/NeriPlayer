@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -104,6 +105,7 @@ internal object DocumentsFixture {
             return requireNotNull(response.get())
         } catch (error: Throwable) {
             failure = error
+            UiFailureDiagnostics.record("documents-fixture", error)
             throw error
         } finally {
             try {

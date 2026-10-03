@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.documentfile.provider.DocumentFile
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -42,7 +43,9 @@ class DocumentsFixtureRecoveryTest {
                 TextField(text.value, { text.value = it }, Modifier.testTag("fixture-recovery-input"))
             }
         }
-        compose.waitUntil(5_000) { focused.get() }
+        UiFailureDiagnostics.onFailure("documents-recovery-initial-focus") {
+            compose.waitUntil(5_000) { focused.get() }
+        }
         val failure = assertThrows(IllegalStateException::class.java) {
             DocumentsFixture.createExternalTree(confirmPicker = false, timeoutMillis = 3_000)
         }

@@ -58,6 +58,22 @@ class SyncDataMergerTest {
     }
 
     @Test
+    fun `remote only playlist cannot reintroduce a locally removed membership`() {
+        val deletedSong = song(42L)
+        val identity = deletedSong.identity()
+        val local = snapshot().copy(playlistSongDeletions = listOf(
+            SyncPlaylistSongDeletion(playlistId = 7, songId = identity.id, album = identity.album, deletedAt = 20)
+        ))
+        val remote = snapshot(playlist(7L).copy(songs = listOf(deletedSong)))
+
+        val merged = merger.merge(local, remote, 100L).mergedData
+
+        assertTrue(merged.playlists.single().songs.isEmpty())
+        assertEquals(1, merged.playlistSongDeletions.size)
+        assertEquals(merged.playlists, merger.merge(merged, remote, 100L).mergedData.playlists)
+    }
+
+    @Test
     fun `remote-only edits choose remote order while simultaneous edits keep local order`() {
         val local = snapshot(playlist(1L, modified = 50L), playlist(2L, modified = 50L))
         val remote = snapshot(playlist(2L), playlist(1L))
@@ -219,7 +235,7 @@ class SyncDataMergerTest {
     }
 
     @Test
-    fun `recent history and its tombstones retain only the newest five hundred identities`() {
+    fun `recent history keeps all plays and every unresolved deletion beyond former capacity`() {
         val plays = (1L..501L).map { SyncRecentPlay(it, song(it), it, "device") }
         val deleted = plays.map { play ->
             val identity = play.song.identity()
@@ -228,10 +244,30 @@ class SyncDataMergerTest {
         val local = snapshot().copy(recentPlays = plays, recentPlayDeletions = deleted)
         val remote = snapshot().copy(recentPlayDeletions = deleted.map { it.copy(deviceId = "z") })
         val merged = merger.merge(local, remote, 0L).mergedData
-        assertEquals(500, merged.recentPlayDeletions.size)
+        assertEquals(501, merged.recentPlayDeletions.size)
         assertTrue(merged.recentPlayDeletions.all { it.deviceId == "z" })
         assertEquals(1501L, merged.recentPlayDeletions.first().deletedAt)
-        assertEquals(500, merger.merge(snapshot().copy(recentPlays = plays), snapshot(), 0L).mergedData.recentPlays.size)
+        assertEquals(501, merger.merge(snapshot().copy(recentPlays = plays), snapshot(), 0L).mergedData.recentPlays.size)
+    }
+
+    @Test
+    fun `large recent history merge keeps newest per song and prevents deleted songs returning`() {
+        val localPlays = (1L..1500L).map { SyncRecentPlay(it, song(it), it, "local") }
+        val remotePlays = (1001L..3000L).map { SyncRecentPlay(it, song(it), it + 10_000L, "remote") }
+        val removed = SyncRecentPlayDeletion(songId = 1L, album = song(1L).album, deletedAt = 50_000L, deviceId = "local")
+        val replayed = removed.copy(songId = 2001L, deletedAt = 1L)
+        val absent = removed.copy(songId = 4000L)
+        val local = snapshot().copy(recentPlays = localPlays, recentPlayDeletions = listOf(removed, replayed, absent))
+        val remote = snapshot().copy(recentPlays = remotePlays)
+
+        val merged = merger.merge(local, remote, 0L).mergedData
+
+        assertEquals(2999, merged.recentPlays.size)
+        assertFalse(merged.recentPlays.any { it.songId == 1L })
+        assertEquals(11_001L, merged.recentPlays.single { it.songId == 1001L }.playedAt)
+        assertEquals(12_001L, merged.recentPlays.single { it.songId == 2001L }.playedAt)
+        assertEquals(setOf(1L, 4000L), merged.recentPlayDeletions.map { it.songId }.toSet())
+        assertEquals(merged.recentPlays, merger.merge(merged, snapshot().copy(recentPlays = localPlays), 0L).mergedData.recentPlays)
     }
 
     @Test

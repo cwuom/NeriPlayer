@@ -1,194 +1,140 @@
 package moe.ouom.neriplayer.data.stats
 
-import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
-import moe.ouom.neriplayer.data.model.stats.PlaybackStatBucket
-import moe.ouom.neriplayer.data.model.stats.PlaybackStatsSyncCounterSnapshot
-
-import moe.ouom.neriplayer.data.model.stats.TrackStat
-
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.CoroutineScope
+import com.google.gson.stream.JsonWriter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomSnapshot
-import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomStore
-import moe.ouom.neriplayer.data.identity.stableKey
-import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
-import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackStatsMergePolicy
-import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
-import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
-import moe.ouom.neriplayer.common.io.writeTextAtomically
-import java.io.File
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomSnapshotAccess
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomDiffAccess
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomExportCapture
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsCaptureStamp
+import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomState
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatProjection
+import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.stats.TrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackSink
+import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackSource
 import java.io.IOException
-import kotlin.time.Duration.Companion.milliseconds
+import java.util.UUID
 
-internal data class PlaybackStatsPersistenceSnapshot(
-    val stats: List<TrackStat>,
-    val dailyStats: List<PlaybackStatBucket>,
-    val counterSnapshot: PlaybackStatsSyncCounterSnapshot,
-    val counterEpochStartedAt: Long,
-    val clearedAt: Long
-)
-
-private fun PlaybackStatsRoomSnapshot.toPersistenceSnapshot():
-    PlaybackStatsPersistenceSnapshot {
-    return PlaybackStatsPersistenceSnapshot(
-        stats = stats,
-        dailyStats = dailyStats,
-        counterSnapshot = counterSnapshot,
-        counterEpochStartedAt = counterEpochStartedAt,
-        clearedAt = clearedAt
-    )
-}
-
-private data class PlaybackStatsMetadata(
-    val clearedAt: Long = 0L,
-    val snapshot: PlaybackStatsPersistenceSnapshot? = null
-)
-
-private const val MIN_LISTEN_MS_FOR_PLAY_COUNT = 30_000L
 internal const val PLAYBACK_STATS_SYNC_DELAY_MS = 60_000L
+
+data class PlaybackStatsCapturedState(
+    val revision: Long, val clearedAt: Long, val counterEpochStartedAt: Long = clearedAt
+)
+
+internal data class PlaybackStatsCaptureProjection(
+    val localeTags: String, val localAlbumNames: Set<String>, val policyVersion: Int = 1
+)
+internal data class PlaybackStatsSyncCapture(val state: PlaybackStatsCapturedState, val playback: SyncPlaybackSource)
+private data class WarmPlaybackCapture(
+    val stamp: PlaybackStatsCaptureStamp,
+    val projection: PlaybackStatsCaptureProjection,
+    val playback: SyncPlaybackSource
+)
 
 class PlaybackStatsRepository internal constructor(
     private val app: Context,
-    private val roomStore: PlaybackStatsRoomStore = PlaybackStatsRoomStore(
-        NeriUserDataDatabase.getInstance(app.applicationContext)
-    ),
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val roomStore: PlaybackStatsRoomStore = PlaybackStatsRoomStore(NeriUserDataDatabase.getInstance(app.applicationContext)),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val readDeviceId: () -> String = { SecureTokenStorage(app).getOrCreateDeviceId() }
 ) {
     private val gson = Gson()
-    private val file: File by lazy { File(app.filesDir, "playback_stats.json") }
-    private val dailyFile: File by lazy { File(app.filesDir, "playback_stats_daily.json") }
-    private val metadataFile: File by lazy { File(app.filesDir, "playback_stats_meta.json") }
     private val mutex = Mutex()
-    private val persistFileMutex = Mutex()
-    private val roomPersistenceMutex = Mutex()
-    private var persistJob: Job? = null
-    private var persistGeneration = 0L
-    private var pendingPersistence: PlaybackStatsPersistenceSnapshot? = null
-    private var persistenceDirty = false
-    private var legacyCommitSeeded = false
-    private val counterStore = PlaybackStatsCounterStore(app, gson)
-    @Volatile
-    private var roomStorageEnabled = true
-    @Volatile
-    private var initialized = false
-    private var initialLoadFailure: Exception? = null
+    private val captureCacheMutex = Mutex()
+    private var warmCapture: WarmPlaybackCapture? = null
     private val initialLoad = CompletableDeferred<Unit>()
-    private val _stats = MutableStateFlow<List<TrackStat>>(emptyList())
-    private val _statsClearedAt = MutableStateFlow(0L)
-    private val _dailyStats = MutableStateFlow<List<PlaybackStatBucket>>(emptyList())
-    @Volatile
-    private var persistedSnapshot = PlaybackStatsPersistenceSnapshot(
-        emptyList(), emptyList(), PlaybackStatsSyncCounterSnapshot(), 0L, 0L
-    )
-    val statsFlow: StateFlow<List<TrackStat>> = _stats
-    val dailyStatsFlow: StateFlow<List<PlaybackStatBucket>> = _dailyStats
-    val statsClearedAtFlow: StateFlow<Long> = _statsClearedAt
+    private val _clearedAt = MutableStateFlow(0L)
+    val statsClearedAtFlow: StateFlow<Long> = _clearedAt
+    val revisionFlow: Flow<Long> = flow {
+        if (!awaitInitialized()) throw IOException("Playback stats initialization failed", initialLoadFailure)
+        emitAll(roomStore.revisionFlow)
+    }
+    @Volatile private var initialized = false
+    @Volatile private var pendingWrites = true
+    private var initialLoadFailure: Exception? = null
+    private var clearObservationJob: Job? = null
 
     init {
         scope.launch {
-            try {
-                mutex.withLock { ensureInitializedLocked() }
-            } finally {
-                initialLoad.complete(Unit)
-            }
+            try { mutex.withLock { ensureInitializedLocked() } }
+            finally { initialLoad.complete(Unit) }
         }
-    }
-
-    private suspend fun loadInitialState(): PlaybackStatsPersistenceSnapshot {
-        // 读取失败不能被当成未迁移，否则旧文件会覆盖 Room 主存
-        val roomSnapshot = roomStore.readIfRoomPrimary()
-        if (roomSnapshot != null) {
-            roomStorageEnabled = true
-            counterStore.replaceFromRoom(
-                snapshot = roomSnapshot.counterSnapshot,
-                epochStartedAt = roomSnapshot.counterEpochStartedAt
-            )
-            LegacyJsonCleanupRequests.schedule(app, "playback-stats-room-load")
-            return roomSnapshot.toPersistenceSnapshot()
-        }
-
-        val metadata = loadMetadata()
-        val legacyState = metadata.snapshot?.also { snapshot ->
-            counterStore.replaceFromRoom(snapshot.counterSnapshot, snapshot.counterEpochStartedAt)
-        } ?: run {
-            val stats = loadFromDisk()
-            val dailyStats = loadDailyStatsFromDisk(stats, metadata.clearedAt)
-            counterStore.loadLegacy()
-            PlaybackStatsPersistenceSnapshot(
-                stats = stats,
-                dailyStats = dailyStats,
-                counterSnapshot = counterStore.snapshot(),
-                counterEpochStartedAt = counterStore.epochStartedAt(),
-                clearedAt = metadata.clearedAt
-            )
-        }
-        runCatching {
-            roomStore.importLegacyAndPromote(
-                stats = legacyState.stats,
-                dailyStats = legacyState.dailyStats,
-                counterSnapshot = legacyState.counterSnapshot,
-                counterEpochStartedAt = legacyState.counterEpochStartedAt,
-                clearedAt = legacyState.clearedAt
-            )
-            LegacyJsonCleanupRequests.schedule(app, "playback-stats-import")
-            roomStorageEnabled = true
-        }.onFailure { error ->
-            if (error is CancellationException) throw error
-            roomStorageEnabled = false
-            NPLogger.e(
-                "PlaybackStatsRepo",
-                "Failed to promote playback stats JSON to Room",
-                error
-            )
-        }
-        return legacyState
     }
 
     private suspend fun ensureInitializedLocked(): Boolean {
-        if (initialized) return true
-        try {
-            val loaded = loadInitialState()
-            val reconciled = reconcileLoadedStats(loaded)
-            _stats.value = reconciled
-            _dailyStats.value = loaded.dailyStats
-            _statsClearedAt.value = loaded.clearedAt
-            persistedSnapshot = loaded
-            initialLoadFailure = null
-            persistenceDirty = reconciled != loaded.stats
-            initialized = true
-            if (persistenceDirty) {
-                scope.launch {
-                    mutex.withLock { persistSnapshot(currentPersistenceSnapshot()) }
-                }
+        if (initialized) { startClearObservationLocked(); return true }
+        return try {
+            var state = roomStore.readPrimaryState()
+            roomStore.cleanupAbandonedSnapshots()
+            if (state == null) {
+                PlaybackStatsLegacyImporter(app, gson, roomStore).migrate()
+                state = checkNotNull(roomStore.readPrimaryState())
+                LegacyJsonCleanupRequests.schedule(app, "playback-stats-import")
             }
-            return true
+            _clearedAt.value = state.clearedAt
+            initialLoadFailure = null
+            initialized = true
+            startClearObservationLocked()
+            drainPendingLocked()
+            true
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             initialLoadFailure = error
-            NPLogger.e("PlaybackStatsRepo", "Playback stats unavailable; preserving storage for retry", error)
-            return false
+            NPLogger.e("PlaybackStatsRepo", "Playback statistics unavailable; preserving the primary store", error)
+            false
+        }
+    }
+
+    private fun startClearObservationLocked() {
+        if (clearObservationJob?.isActive == true) return
+        clearObservationJob = scope.launch {
+            try {
+                // 即使写入在提交后的返回阶段取消，也从已提交元数据观察清除代次
+                roomStore.clearedAtFlow.collect {
+                    mutex.withLock {
+                        val state = roomStore.readPrimaryState()
+                            ?: throw IOException("Playback statistics primary state is unavailable")
+                        _clearedAt.value = state.clearedAt
+                    }
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                NPLogger.e("PlaybackStatsRepo", "Playback clear observation failed; preserving the observed epoch", error)
+            }
         }
     }
 
@@ -197,465 +143,284 @@ class PlaybackStatsRepository internal constructor(
         mutex.withLock { ensureInitializedLocked() }
     }
 
-    private fun reconcileLoadedStats(loaded: PlaybackStatsPersistenceSnapshot): List<TrackStat> {
-        if (loaded.stats.isEmpty() && loaded.dailyStats.isEmpty()) return loaded.stats
-
-        val counterSnapshot = loaded.counterSnapshot
-        val reconciled = SyncPlaybackStatsMergePolicy.liftStatsToBucketTotals(
-            stats = loaded.stats.map { stat ->
-                SyncPlaybackStatMapper.fromTrackStat(
-                    stat = stat,
-                    counterShards = counterSnapshot.trackShards(stat.identityKey)
-                )
-            },
-            buckets = loaded.dailyStats.map { bucket ->
-                SyncPlaybackStatMapper.fromPlaybackStatBucket(
-                    bucket = bucket,
-                    counterShards = counterSnapshot.dailyShards(
-                        dayStartAt = bucket.dayStartAt,
-                        identityKey = bucket.identityKey
-                    )
-                )
-            }
-        )
-        val localStats = loaded.stats.associateBy { it.identityKey }
-        return reconciled.map { stat ->
-            localStats[stat.identityKey]?.applySyncedCounters(stat) ?: stat.toTrackStat()
-        }
+    private suspend fun requireInitializedLocked() {
+        if (!ensureInitializedLocked()) throw IOException("Playback statistics initialization failed", initialLoadFailure)
     }
 
-    private fun SyncTrackStat.toTrackStat(): TrackStat {
-        return TrackStat(
-            id = id,
-            name = name,
-            artist = artist,
-            album = album,
-            albumId = albumId,
-            coverUrl = coverUrl,
-            durationMs = durationMs,
-            totalListenMs = totalListenMs,
-            playCount = playCount,
-            lastPlayedAt = lastPlayedAt,
-            firstPlayedAt = firstPlayedAt,
-            mediaUri = mediaUri,
-            localFilePath = null,
-            localFileName = null,
-            customName = null,
-            customArtist = null,
-            customCoverUrl = null,
-            identityKey = identityKey
-        )
-    }
+    fun hasPendingWrites(): Boolean = pendingWrites
 
-    private fun TrackStat.applySyncedCounters(remote: SyncTrackStat): TrackStat {
-        val useRemoteMetadata = remote.lastPlayedAt > lastPlayedAt
-        return copy(
-            totalListenMs = remote.totalListenMs,
-            playCount = remote.playCount,
-            lastPlayedAt = remote.lastPlayedAt,
-            firstPlayedAt = remote.firstPlayedAt,
-            name = if (useRemoteMetadata) remote.name else name,
-            artist = if (useRemoteMetadata) remote.artist else artist,
-            coverUrl = if (useRemoteMetadata) remote.coverUrl else coverUrl
-        )
-    }
-
-    private fun loadFromDisk(): List<TrackStat> {
-        if (!file.exists()) return emptyList()
-        val type = object : TypeToken<List<TrackStat>>() {}.type
-        return gson.fromJson<List<TrackStat>>(file.readText(), type)
-            ?: throw IOException("Playback stats JSON has no valid list")
-    }
-
-    private fun loadMetadata(): PlaybackStatsMetadata {
-        if (!metadataFile.exists()) return PlaybackStatsMetadata()
-        return gson.fromJson(metadataFile.readText(), PlaybackStatsMetadata::class.java)
-            ?: throw IOException("Playback stats metadata JSON has no valid state")
-    }
-
-    private fun loadDailyStatsFromDisk(
-        stats: List<TrackStat>,
-        clearedAt: Long
-    ): List<PlaybackStatBucket> {
-        if (!dailyFile.exists()) return buildLegacyDailyStats(stats, clearedAt)
-        val type = object : TypeToken<List<PlaybackStatBucket>>() {}.type
-        val loaded = gson.fromJson<List<PlaybackStatBucket>>(dailyFile.readText(), type)
-            ?: throw IOException("Playback stats daily JSON has no valid list")
-        return trimPlaybackStatBuckets(loaded)
-    }
-
-    private fun persistToDisk(list: List<TrackStat>): Boolean {
-        return runCatching {
-            file.writeTextAtomically(gson.toJson(list))
-            true
-        }.onFailure { error ->
-            NPLogger.e("PlaybackStatsRepo", "Failed to persist stats", error)
-        }.getOrDefault(false)
-    }
-
-    private fun persistDailyStatsToDisk(list: List<PlaybackStatBucket>): Boolean {
-        return runCatching {
-            dailyFile.writeTextAtomically(gson.toJson(list))
-            true
-        }.onFailure { error ->
-            NPLogger.e("PlaybackStatsRepo", "Failed to persist daily stats", error)
-        }.getOrDefault(false)
-    }
-
-    private fun persistMetadata(snapshot: PlaybackStatsPersistenceSnapshot): Boolean {
-        return runCatching {
-            metadataFile.writeTextAtomically(gson.toJson(PlaybackStatsMetadata(snapshot.clearedAt, snapshot)))
-            true
-        }.onFailure { error ->
-            NPLogger.e("PlaybackStatsRepo", "Failed to persist stats metadata", error)
-        }.getOrDefault(false)
-    }
-
-    private fun currentPersistenceSnapshot(): PlaybackStatsPersistenceSnapshot {
-        return PlaybackStatsPersistenceSnapshot(
-            stats = _stats.value,
-            dailyStats = _dailyStats.value,
-            counterSnapshot = counterStore.snapshot(),
-            counterEpochStartedAt = counterStore.epochStartedAt(),
-            clearedAt = _statsClearedAt.value
-        )
-    }
-
-    private fun schedulePersistenceLocked() {
-        pendingPersistence = currentPersistenceSnapshot()
-        persistenceDirty = true
-        persistGeneration += 1L
-        val generation = persistGeneration
-        persistJob?.cancel()
-        persistJob = scope.launch {
-            delay(PERSIST_DEBOUNCE_MS.milliseconds)
-            val snapshot = synchronized(this@PlaybackStatsRepository) {
-                if (generation != persistGeneration) {
-                    null
-                } else {
-                    pendingPersistence.also {
-                        pendingPersistence = null
-                        persistJob = null
-                    }
-                }
-            }
-            snapshot?.let { persistSnapshot(it, generation) }
-        }
-    }
-
-    private fun cancelScheduledPersistenceLocked() {
-        persistGeneration += 1L
-        persistJob?.cancel()
-        persistJob = null
-        pendingPersistence = null
-    }
-
-    private suspend fun persistSnapshot(
-        snapshot: PlaybackStatsPersistenceSnapshot,
-        expectedGeneration: Long? = null
-    ): Boolean {
-        return roomPersistenceMutex.withLock {
-            if (expectedGeneration != null && synchronized(this) {
-                    expectedGeneration != persistGeneration
-                }
-            ) return@withLock false
-            if (roomStorageEnabled) {
-                val roomSucceeded = runCatching {
-                    roomStore.writeIncremental(
-                        previousStats = persistedSnapshot.stats,
-                        nextStats = snapshot.stats,
-                        previousDailyStats = persistedSnapshot.dailyStats,
-                        nextDailyStats = snapshot.dailyStats,
-                        previousCounterSnapshot = persistedSnapshot.counterSnapshot,
-                        counterSnapshot = snapshot.counterSnapshot,
-                        counterEpochStartedAt = snapshot.counterEpochStartedAt,
-                        clearedAt = snapshot.clearedAt
-                    )
-                }.onFailure { error ->
-                    if (error is CancellationException) throw error
-                    roomStorageEnabled = false
-                    NPLogger.e(
-                        "PlaybackStatsRepo",
-                        "Failed to write Room playback stats",
-                        error
-                    )
-                }.isSuccess
-                if (roomSucceeded) {
-                    persistedSnapshot = snapshot
-                    markPersistenceClean(expectedGeneration)
-                    return@withLock true
-                }
-            }
-            val legacySucceeded = runCatching {
-                roomStore.commitLegacyFallback { persistLegacySnapshot(snapshot) }
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                NPLogger.e("PlaybackStatsRepo", "Failed to commit playback stats JSON fallback", error)
-            }.getOrDefault(false)
-            if (legacySucceeded) {
-                persistedSnapshot = snapshot
-                markPersistenceClean(expectedGeneration)
-            }
-            legacySucceeded
-        }
-    }
-
-    private fun markPersistenceClean(expectedGeneration: Long?) {
-        synchronized(this) {
-            if (expectedGeneration == null || expectedGeneration == persistGeneration) {
-                persistenceDirty = false
-            }
-        }
-    }
-
-    private fun persistLegacySnapshot(
-        snapshot: PlaybackStatsPersistenceSnapshot
-    ): Boolean {
-        return synchronized(persistFileMutex) {
-            if (!legacyCommitSeeded) {
-                // 先保留旧投影对应的完整快照，首轮保存中断后也能恢复
-                if (!persistMetadata(persistedSnapshot)) return@synchronized false
-                legacyCommitSeeded = true
-            }
-            persistToDisk(snapshot.stats) &&
-                persistDailyStatsToDisk(snapshot.dailyStats) &&
-                counterStore.persistLegacyProjection(
-                    snapshot.counterSnapshot,
-                    snapshot.counterEpochStartedAt
-                ) &&
-                persistMetadata(snapshot)
-        }
-    }
-
-    fun hasPendingWrites(): Boolean {
-        return synchronized(this) {
-            persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
-        }
-    }
-
-    suspend fun flushPendingWrites() {
+    suspend fun flushPendingWrites() = withContext(Dispatchers.IO) {
         initialLoad.await()
         mutex.withLock {
-            if (!ensureInitializedLocked()) return@withLock
-            val shouldPersist = synchronized(this@PlaybackStatsRepository) {
-                persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
-            }
-            cancelScheduledPersistenceLocked()
-            if (shouldPersist) {
-                persistSnapshot(currentPersistenceSnapshot())
-            }
+            requireInitializedLocked()
+            if (!drainPendingLocked()) throw IOException("Playback statistics have uncommitted journal entries")
         }
     }
-
-    private fun triggerSync() {
-        // 播放统计先本地落盘, 延后同步给切歌首帧和重缓冲留出资源
-        runCatching {
-            SecureTokenStorage(app).markSyncMutation()
-            GitHubSyncWorker.scheduleDelayedSync(
-                app,
-                triggerByUserAction = false,
-                markMutation = false,
-                initialDelayMs = PLAYBACK_STATS_SYNC_DELAY_MS
-            )
-            WebDavSyncWorker.scheduleDelayedSync(
-                app,
-                triggerByUserAction = false,
-                markMutation = false,
-                initialDelayMs = PLAYBACK_STATS_SYNC_DELAY_MS
-            )
-        }
-    }
-
-    internal fun syncSnapshot(): PlaybackStatsPersistenceSnapshot {
-        if (!initialized || hasPendingWrites()) {
-            throw IOException("Playback stats have no complete persisted snapshot", initialLoadFailure)
-        }
-        return persistedSnapshot
-    }
-
-    fun syncCounterSnapshot(): PlaybackStatsSyncCounterSnapshot = syncSnapshot().counterSnapshot
 
     fun recordSession(song: SongItem, listenedMs: Long) {
         if (listenedMs <= 0) return
-        scope.launch {
-            recordSessionInternal(
-                song = song,
-                listenedMs = listenedMs,
-                playCountIncrement = null,
-                scheduleSync = true
-            )
-        }
+        scope.launch { recordDelta(song, listenedMs, null, true, UUID.randomUUID().toString(), System.currentTimeMillis()) }
     }
 
     suspend fun recordListenDeltaNow(
         song: SongItem,
         listenedMs: Long,
         playCountIncrement: Int,
-        scheduleSync: Boolean = true
+        scheduleSync: Boolean = true,
+        eventId: String = UUID.randomUUID().toString(),
+        playedAt: Long = System.currentTimeMillis(),
+        observedClearedAt: Long? = null
     ) {
         if (listenedMs <= 0 && playCountIncrement <= 0) return
-        recordSessionInternal(
-            song = song,
-            listenedMs = listenedMs,
-            playCountIncrement = playCountIncrement.coerceAtLeast(0),
-            scheduleSync = scheduleSync
-        )
+        recordDelta(song, listenedMs, playCountIncrement.coerceAtLeast(0), scheduleSync, eventId, playedAt, observedClearedAt)
     }
 
-    private suspend fun recordSessionInternal(
-        song: SongItem,
-        listenedMs: Long,
-        playCountIncrement: Int?,
-        scheduleSync: Boolean
-    ) {
+    private suspend fun recordDelta(song: SongItem, listenedMs: Long, count: Int?, scheduleSync: Boolean, eventId: String, playedAt: Long,
+        observedClearedAt: Long? = null) = withContext(Dispatchers.IO) {
+        require(eventId.isNotBlank())
         initialLoad.await()
         mutex.withLock {
-            if (!ensureInitializedLocked()) return@withLock
-            val now = System.currentTimeMillis()
-            val key = song.stableKey()
-            val current = _stats.value
-            val existingIndex = current.indexOfFirst { it.identityKey == key }
-            val existing = current.getOrNull(existingIndex)
-            val shouldStartNewStatsEpoch = existing?.let {
-                shouldStartNewStatsEpoch(it, _statsClearedAt.value)
-            } == true
+            requireInitializedLocked()
+            val deviceId = readDeviceId()
+            check(deviceId.isNotBlank()) { "Playback counter device identity unavailable" }
+            val accepted = roomStore.enqueueDelta(eventId, gson.toJson(song.toStatisticsMetadata()), listenedMs.coerceAtLeast(0), count,
+                playedAt, deviceId, observedClearedAt, observeCurrentClear = true)
+            // 入队已经是持久确认，应用失败由后续 drain 重试，不能让调用方重复增加计数
+            pendingWrites = true
+            drainPendingLocked()
+            if (accepted && scheduleSync) triggerSync()
+        }
+    }
 
-            val safeListenedMs = listenedMs.coerceAtLeast(0L)
-            val sessionCountIncrement: Int
-            val sessionStat: TrackStat
-
-            val updated = if (existing != null && !shouldStartNewStatsEpoch) {
-                val newTotalMs = existing.totalListenMs + safeListenedMs
-                val countIncrement = playCountIncrement ?: calculatePlayCountIncrement(
-                    existing = existing,
-                    song = song,
-                    listenedMs = listenedMs,
-                    newTotalMs = newTotalMs
-                )
-                sessionCountIncrement = countIncrement
-
-                val updatedStat = existing.copy(
-                    name = song.name,
-                    artist = song.artist,
-                    coverUrl = song.coverUrl,
-                    durationMs = song.durationMs.takeIf { it > 0 } ?: existing.durationMs,
-                    totalListenMs = newTotalMs,
-                    playCount = existing.playCount + countIncrement,
-                    lastPlayedAt = now,
-                    mediaUri = song.mediaUri,
-                    localFilePath = song.localFilePath,
-                    localFileName = song.localFileName,
-                    customName = song.customName,
-                    customArtist = song.customArtist,
-                    customCoverUrl = song.customCoverUrl
-                )
-                sessionStat = updatedStat
-                current.toMutableList().apply {
-                    this[existingIndex] = updatedStat
+    private suspend fun drainPendingLocked(): Boolean {
+        return try {
+            while (true) {
+                val page = roomStore.pendingDeltas()
+                if (page.isEmpty()) break
+                for (delta in page) {
+                    val metadata = gson.fromJson(delta.trackJson, TrackStat::class.java)
+                        ?: throw IOException("Playback journal contains no track metadata")
+                    roomStore.applyDelta(delta, metadata.identityKey) { rows -> PlaybackStatsDeltaPolicy.apply(delta, metadata, rows) }
                 }
-            } else {
-                val freshStat = createTrackStat(
-                    song = song,
-                    listenedMs = listenedMs,
-                    playCountIncrement = playCountIncrement,
-                    now = now,
-                    key = key
-                )
-                sessionCountIncrement = freshStat.playCount
-                sessionStat = freshStat
-                if (existingIndex >= 0) {
-                    current.toMutableList().apply {
-                        this[existingIndex] = freshStat
+            }
+            pendingWrites = false
+            true
+        } catch (error: Exception) {
+            pendingWrites = true
+            if (error is CancellationException) throw error
+            NPLogger.e("PlaybackStatsRepo", "Playback delta retained in the durable journal", error)
+            false
+        }
+    }
+
+    suspend fun captureSyncSnapshot(sink: SyncPlaybackSink): PlaybackStatsCapturedState {
+        PlaybackStatsCaptureBarrier.await(app)
+        return captureSyncSnapshot(sink, null)
+    }
+
+    private suspend fun captureSyncSnapshot(sink: SyncPlaybackSink, projection: SyncPlaybackStatProjection?): PlaybackStatsCapturedState = withContext(Dispatchers.IO) {
+        initialLoad.await()
+        val capture = mutex.withLock {
+            requireInitializedLocked()
+            if (!drainPendingLocked()) throw IOException("Playback statistics have pending journal entries")
+            PlaybackStatsRoomExportCapture.open(roomStore)
+        }
+        try {
+            capture.export(app, sink::appendTracks, sink::appendBuckets, projection)
+            PlaybackStatsCapturedState(capture.state.revision, capture.state.clearedAt, capture.state.counterEpochStartedAt)
+        } finally {
+            withContext(NonCancellable) { capture.release() }
+        }
+    }
+
+    internal suspend fun borrowSyncCapture(store: FileSyncPlaybackDatasetStore): PlaybackStatsSyncCapture =
+        borrowSyncCapture(store, ::captureProjection)
+
+    internal suspend fun borrowSyncCapture(store: FileSyncPlaybackDatasetStore,
+        readProjection: () -> PlaybackStatsCaptureProjection): PlaybackStatsSyncCapture {
+        PlaybackStatsCaptureBarrier.await(app)
+        var owned: SyncPlaybackSource? = null
+        try {
+            return withContext(Dispatchers.IO) {
+                captureCacheMutex.withLock {
+                    try { borrowSyncCaptureLocked(store, readProjection) }
+                    catch (failure: Throwable) {
+                        try { invalidateCaptureLocked() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+                        throw failure
                     }
+                }.also { owned = it.playback }
+            }
+        } catch (failure: Throwable) {
+            // IO 已取得引用后，返回调用方的调度仍可能被取消
+            try { owned?.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+            throw failure
+        }
+    }
+
+    internal suspend fun releaseSyncCaptureCache() = withContext(Dispatchers.IO) {
+        captureCacheMutex.withLock { invalidateCaptureLocked() }
+    }
+
+    private fun captureProjection(): PlaybackStatsCaptureProjection = PlaybackStatsCaptureProjection(
+        LanguageManager.applyLanguage(app).resources.configuration.locales.toLanguageTags(),
+        LocalFilesPlaylist.candidateNames(app)
+    )
+
+    private fun frozenProjection(read: () -> PlaybackStatsCaptureProjection): PlaybackStatsCaptureProjection =
+        read().let { it.copy(localAlbumNames = it.localAlbumNames.toSet()) }
+
+    private suspend fun confirmedCaptureStamp(): PlaybackStatsCaptureStamp {
+        initialLoad.await()
+        return mutex.withLock {
+            requireInitializedLocked()
+            if (!drainPendingLocked()) throw IOException("Playback statistics have pending journal entries")
+            roomStore.readConfirmedCaptureStamp()
+        }
+    }
+
+    private suspend fun borrowSyncCaptureLocked(store: FileSyncPlaybackDatasetStore,
+        readProjection: () -> PlaybackStatsCaptureProjection): PlaybackStatsSyncCapture {
+        val stamp = confirmedCaptureStamp()
+        val projection = frozenProjection(readProjection)
+        borrowWarmCapture(store, stamp, projection, readProjection)?.let { return it }
+        return captureNewSource(store, stamp, projection, readProjection)
+    }
+
+    private suspend fun borrowWarmCapture(store: FileSyncPlaybackDatasetStore, stamp: PlaybackStatsCaptureStamp,
+        projection: PlaybackStatsCaptureProjection, readProjection: () -> PlaybackStatsCaptureProjection): PlaybackStatsSyncCapture? {
+        val cached = warmCapture ?: return null
+        if (cached.stamp != stamp || cached.projection != projection) {
+            invalidateCaptureLocked()
+            return null
+        }
+        val borrowed = try { store.retainValidated(cached.playback) }
+        catch (failure: IOException) {
+            NPLogger.w("PlaybackStatsRepo", "Warm playback capture unavailable; recapturing the primary store: ${failure.message}")
+            invalidateCaptureLocked()
+            return null
+        }
+        try {
+            if (confirmedCaptureStamp() == stamp && frozenProjection(readProjection) == projection) {
+                return PlaybackStatsSyncCapture(stamp.state.capturedState(), borrowed)
+            }
+        } catch (failure: Throwable) {
+            try { borrowed.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+            throw failure
+        }
+        borrowed.close()
+        invalidateCaptureLocked()
+        return null
+    }
+
+    private suspend fun captureNewSource(store: FileSyncPlaybackDatasetStore, stamp: PlaybackStatsCaptureStamp,
+        projection: PlaybackStatsCaptureProjection, readProjection: () -> PlaybackStatsCaptureProjection): PlaybackStatsSyncCapture =
+        store.newOrderedSink().use { sink ->
+            val state = captureSyncSnapshot(sink, SyncPlaybackStatMapper.bind(app, projection.localAlbumNames))
+            val source = sink.seal()
+            var borrowed: SyncPlaybackSource? = null
+            try {
+                // 先结束 sink 的所有权，避免 use 在返回借用后抛异常而遗失借用引用
+                sink.close()
+                val retained = store.retainValidated(source)
+                borrowed = retained
+                if (state == stamp.state.capturedState() && confirmedCaptureStamp() == stamp &&
+                    frozenProjection(readProjection) == projection) {
+                    warmCapture = WarmPlaybackCapture(stamp, projection, source)
                 } else {
-                    current + freshStat
+                    source.close()
                 }
+                PlaybackStatsSyncCapture(state, retained)
+            } catch (failure: Throwable) {
+                try { borrowed?.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+                try { source.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+                throw failure
             }
+        }
 
-            _stats.value = updated
-            val dailyStats = trimPlaybackStatBuckets(recordPlaybackStatBucket(
-                current = _dailyStats.value,
-                stat = sessionStat,
-                listenedMs = safeListenedMs,
-                playCountIncrement = sessionCountIncrement,
-                playedAt = now
-            ))
-            _dailyStats.value = dailyStats
-            counterStore.recordLocalDelta(
-                identityKey = key,
-                dayStartAt = playbackStatsDayStartAt(now),
-                listenedMs = safeListenedMs,
-                playCountIncrement = sessionCountIncrement,
-                playedAt = now,
-                epochStartedAt = _statsClearedAt.value.coerceAtLeast(0L)
-            )
-            schedulePersistenceLocked()
-            if (scheduleSync) {
-                triggerSync()
-            }
+    private fun invalidateCaptureLocked() {
+        val previous = warmCapture
+        warmCapture = null
+        previous?.playback?.close()
+    }
+
+    suspend fun writeBackupStatistics(writer: JsonWriter): PlaybackStatsCapturedState = withContext(Dispatchers.IO) {
+        PlaybackStatsCaptureBarrier.await(app)
+        initialLoad.await()
+        val capture = mutex.withLock {
+            requireInitializedLocked()
+            if (!drainPendingLocked()) throw IOException("Playback statistics have pending journal entries")
+            PlaybackStatsRoomExportCapture.open(roomStore)
+        }
+        try {
+            writer.name("playbackStats").beginArray()
+            var bucketsStarted = false
+            capture.export(app, { page ->
+                page.forEach { gson.toJson(it, SyncTrackStat::class.java, writer) }
+            }, { page ->
+                if (!bucketsStarted) { writer.endArray().name("playbackStatBuckets").beginArray(); bucketsStarted = true }
+                page.forEach { gson.toJson(it, SyncPlaybackStatBucket::class.java, writer) }
+            })
+            if (!bucketsStarted) writer.endArray().name("playbackStatBuckets").beginArray()
+            writer.endArray()
+            PlaybackStatsCapturedState(capture.state.revision, capture.state.clearedAt, capture.state.counterEpochStartedAt)
+        } finally { withContext(NonCancellable) { capture.release() } }
+    }
+
+    suspend fun checkCapturedRevision(expectedRevision: Long): Boolean = withContext(Dispatchers.IO) {
+        initialLoad.await()
+        mutex.withLock {
+            requireInitializedLocked()
+            if (!drainPendingLocked()) throw IOException("Playback statistics have pending journal entries")
+            roomStore.checkCapturedRevision(expectedRevision)
         }
     }
 
-    private fun createTrackStat(
-        song: SongItem,
-        listenedMs: Long,
-        playCountIncrement: Int?,
-        now: Long,
-        key: String
-    ): TrackStat {
-        val countIncrement = playCountIncrement
-            ?: if (listenedMs >= MIN_LISTEN_MS_FOR_PLAY_COUNT) 1 else 0
-        return TrackStat(
-            id = song.id,
-            name = song.name,
-            artist = song.artist,
-            album = song.album,
-            albumId = song.albumId,
-            coverUrl = song.coverUrl,
-            durationMs = song.durationMs,
-            totalListenMs = listenedMs.coerceAtLeast(0L),
-            playCount = countIncrement,
-            lastPlayedAt = now,
-            firstPlayedAt = now,
-            mediaUri = song.mediaUri,
-            localFilePath = song.localFilePath,
-            localFileName = song.localFileName,
-            customName = song.customName,
-            customArtist = song.customArtist,
-            customCoverUrl = song.customCoverUrl,
-            identityKey = key
-        )
+    suspend fun applySyncSnapshot(source: SyncPlaybackSource, clearedAt: Long, expectedRevision: Long): Boolean = withContext(Dispatchers.IO) {
+        initialLoad.await()
+        val frozen = mutex.withLock {
+            requireInitializedLocked()
+            if (!drainPendingLocked()) throw IOException("Playback statistics have pending journal entries")
+            val state = checkNotNull(roomStore.readPrimaryState())
+            if (state.revision != expectedRevision) return@withContext false
+            roomStore.beginDiffSnapshot(clearedAt)
+        }
+        try {
+            val barrier = maxOf(frozen.clearedAt, clearedAt)
+            PlaybackStatsRoomDiffAccess(roomStore).build(frozen.id, source, app)
+            mutex.withLock {
+                val applied = roomStore.commitDiffSnapshot(frozen.id, expectedRevision)
+                if (applied) _clearedAt.value = barrier
+                applied
+            }
+        } finally {
+            withContext(NonCancellable) { roomStore.releaseSnapshot(frozen.id) }
+        }
     }
 
-    private fun calculatePlayCountIncrement(
-        existing: TrackStat,
-        song: SongItem,
-        listenedMs: Long,
-        newTotalMs: Long
-    ): Int {
-        val durationMs = song.durationMs.takeIf { it > 0 } ?: existing.durationMs
-        val prevFullPlays = existing.totalListenMs / maxOf(existing.durationMs, 1L)
-        val newFullPlays = newTotalMs / maxOf(durationMs, 1L)
-        return if (listenedMs >= MIN_LISTEN_MS_FOR_PLAY_COUNT || newFullPlays > prevFullPlays) {
-            1
-        } else {
-            0
-        }
+    suspend fun getStatForTrack(identityKey: String): TrackStat? = withContext(Dispatchers.IO) {
+        if (!awaitInitialized()) throw IOException("Playback statistics unavailable", initialLoadFailure)
+        roomStore.readTrack(identityKey)
+    }
+
+    suspend fun readSummary(query: PlaybackStatsQuery): PlaybackStatsSummary = withContext(Dispatchers.IO) {
+        if (!awaitInitialized()) throw IOException("Playback statistics unavailable", initialLoadFailure)
+        roomStore.readSummary(query)
+    }
+
+    suspend fun readPage(query: PlaybackStatsQuery, after: PlaybackStatsCursor? = null, pageSize: Int = 100, before: Boolean = false): PlaybackStatsPage = withContext(Dispatchers.IO) {
+        if (!awaitInitialized()) throw IOException("Playback statistics unavailable", initialLoadFailure)
+        roomStore.readPage(query, after, pageSize, before)
     }
 
     fun clearAll() {
         scope.launch {
             initialLoad.await()
             mutex.withLock {
-                if (!ensureInitializedLocked()) return@withLock
-                val clearedAt = System.currentTimeMillis()
-                _stats.value = emptyList()
-                _dailyStats.value = emptyList()
-                _statsClearedAt.value = clearedAt
-                cancelScheduledPersistenceLocked()
-                counterStore.reset(clearedAt)
-                persistenceDirty = true
-                if (persistSnapshot(currentPersistenceSnapshot())) triggerSync()
+                requireInitializedLocked()
+                val state = roomStore.clear(System.currentTimeMillis())
+                _clearedAt.value = state.clearedAt
+                pendingWrites = false
+                triggerSync()
             }
         }
     }
@@ -665,127 +430,75 @@ class PlaybackStatsRepository internal constructor(
         scope.launch {
             initialLoad.await()
             mutex.withLock {
-                if (!ensureInitializedLocked()) return@withLock
-                val updated = _stats.value.filterNot { it.identityKey in keys }
-                val updatedDailyStats = _dailyStats.value.filterNot { it.identityKey in keys }
-                _stats.value = updated
-                _dailyStats.value = updatedDailyStats
-                cancelScheduledPersistenceLocked()
-                counterStore.removeTracks(keys)
-                persistenceDirty = true
-                if (persistSnapshot(currentPersistenceSnapshot())) triggerSync()
+                requireInitializedLocked()
+                if (!drainPendingLocked()) throw IOException("Playback statistics have pending journal entries")
+                roomStore.removeTracks(keys)
+                triggerSync()
             }
         }
     }
 
-    suspend fun applyMergedStats(
-        syncStats: List<SyncTrackStat>,
-        playbackStatsClearedAt: Long,
-        respectLocalClear: Boolean = true,
-        syncDailyStats: List<SyncPlaybackStatBucket> = emptyList()
-    ) {
+    suspend fun applyMergedStats(syncStats: List<SyncTrackStat>, playbackStatsClearedAt: Long, respectLocalClear: Boolean = true, syncDailyStats: List<SyncPlaybackStatBucket> = emptyList()) {
+        mergeBackupStatistics(playbackStatsClearedAt, respectLocalClear) { access, id, barrier ->
+            access.mergeLegacyBackup(id, syncStats, syncDailyStats, barrier, respectLocalClear)
+        }
+    }
+
+    suspend fun applyMergedStats(source: SyncPlaybackSource, playbackStatsClearedAt: Long, respectLocalClear: Boolean = true) {
+        mergeBackupStatistics(playbackStatsClearedAt, respectLocalClear) { access, id, barrier ->
+            access.mergeLegacyBackup(id, source, barrier, respectLocalClear, app)
+        }
+    }
+
+    private suspend fun mergeBackupStatistics(playbackStatsClearedAt: Long, respectLocalClear: Boolean,
+        merge: suspend (PlaybackStatsRoomSnapshotAccess, String, Long) -> Unit) {
+        if (respectLocalClear) mergePreparedBackup(playbackStatsClearedAt, true, merge)
+        else PlaybackStatsCaptureBarrier.withRestore(app) {
+            mergePreparedBackup(playbackStatsClearedAt, false, merge)
+        }
+    }
+
+    private suspend fun mergePreparedBackup(playbackStatsClearedAt: Long, respectLocalClear: Boolean,
+        merge: suspend (PlaybackStatsRoomSnapshotAccess, String, Long) -> Unit) {
+        val clearedAt = playbackStatsClearedAt.coerceAtLeast(0L)
         initialLoad.await()
-        mutex.withLock {
-            if (!ensureInitializedLocked()) {
-                throw IOException("Playback stats initialization failed", initialLoadFailure)
-            }
-            val counterSnapshot = counterStore.snapshot()
-            val effectiveClearedAt = if (respectLocalClear) {
-                maxOf(_statsClearedAt.value, playbackStatsClearedAt)
-            } else {
-                playbackStatsClearedAt
-            }
-            val currentStats = _stats.value
-                .filter { shouldKeepTrackStatAfterClear(it, effectiveClearedAt) }
-                .associateBy { it.identityKey }
-            val normalizedRemoteStats = SyncPlaybackStatsMergePolicy.merge(
-                local = currentStats.values.map { stat ->
-                    SyncPlaybackStatMapper.fromTrackStat(
-                        stat = stat,
-                        counterShards = counterSnapshot.trackShards(stat.identityKey)
-                    )
-                },
-                remote = syncStats,
-                playbackStatsClearedAt = effectiveClearedAt
-            )
-
-            val currentDailyStats = _dailyStats.value
-                .filter { shouldKeepDailyBucketAfterClear(it, effectiveClearedAt) }
-                .associateBy { it.dayStartAt to it.identityKey }
-            val normalizedRemoteDailyStats = SyncPlaybackStatsMergePolicy.mergeBuckets(
-                local = currentDailyStats.values.map { bucket ->
-                    SyncPlaybackStatMapper.fromPlaybackStatBucket(
-                        bucket = bucket,
-                        counterShards = counterSnapshot.dailyShards(
-                            dayStartAt = bucket.dayStartAt,
-                            identityKey = bucket.identityKey
-                        )
-                    )
-                },
-                remote = syncDailyStats,
-                playbackStatsClearedAt = effectiveClearedAt
-            )
-
-            val finalized = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
-                mergedStats = normalizedRemoteStats,
-                mergedBuckets = normalizedRemoteDailyStats
-            )
-            val updated = finalized.stats.map { remote ->
-                currentStats[remote.identityKey]?.applySyncedCounters(remote)
-                    ?: remote.toTrackStat()
-            }
-            val updatedDailyStats = if (
-                currentDailyStats.isEmpty() &&
-                normalizedRemoteDailyStats.isEmpty() &&
-                _dailyStats.value.isEmpty() &&
-                updated.isNotEmpty()
-            ) {
-                buildLegacyDailyStats(updated, effectiveClearedAt)
-            } else {
-                finalized.buckets.map { remote ->
-                    currentDailyStats[remote.dayStartAt to remote.identityKey]?.let { local ->
-                        mergeDailyBucket(local, remote)
-                    } ?: remote.toPlaybackStatBucket()
+        val frozen = mutex.withLock {
+            requireInitializedLocked()
+            if (!drainPendingLocked()) throw IOException("Playback statistics have pending journal entries")
+            roomStore.freezeSnapshot()
+        }
+        try {
+            val access = PlaybackStatsRoomSnapshotAccess(roomStore)
+            val barrier = if (respectLocalClear) maxOf(frozen.clearedAt, clearedAt) else clearedAt
+            merge(access, frozen.id, barrier)
+            mutex.withLock {
+                currentCoroutineContext().ensureActive()
+                // 提交和发布清除时间必须一起完成，恢复采样才能读取真实的删除栅栏
+                withContext(NonCancellable) {
+                    if (!roomStore.commitFrozenSnapshot(frozen.id, frozen.revision)) throw IOException("Playback statistics changed during backup import")
+                    _clearedAt.value = barrier
                 }
             }
-            _stats.value = updated
-            _dailyStats.value = updatedDailyStats
-            val shouldUpdateClearBarrier = if (respectLocalClear) {
-                effectiveClearedAt > _statsClearedAt.value
-            } else {
-                syncStats.isNotEmpty() && effectiveClearedAt != _statsClearedAt.value
-            }
-            if (shouldUpdateClearBarrier) {
-                _statsClearedAt.value = effectiveClearedAt
-            }
-            cancelScheduledPersistenceLocked()
-            counterStore.replaceFromSync(
-                syncStats = finalized.stats,
-                syncDailyStats = finalized.buckets,
-                epochStartedAt = effectiveClearedAt
-            )
-            persistenceDirty = true
-            if (!persistSnapshot(currentPersistenceSnapshot())) {
-                throw IOException("Merged playback stats could not be persisted")
-            }
-        }
+        } finally { withContext(NonCancellable) { roomStore.releaseSnapshot(frozen.id) } }
     }
 
-    fun getStatForTrack(identityKey: String): TrackStat? {
-        return _stats.value.firstOrNull { it.identityKey == identityKey }
+    private fun triggerSync() {
+        runCatching {
+            SecureTokenStorage(app).markSyncMutation()
+            GitHubSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false, markMutation = false, initialDelayMs = PLAYBACK_STATS_SYNC_DELAY_MS)
+            WebDavSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false, markMutation = false, initialDelayMs = PLAYBACK_STATS_SYNC_DELAY_MS)
+        }
     }
 
     companion object {
-        private const val PERSIST_DEBOUNCE_MS = 5_000L
-
-        @SuppressLint("StaticFieldLeak")
-        @Volatile
-        private var INSTANCE: PlaybackStatsRepository? = null
-
-        fun getInstance(context: Context): PlaybackStatsRepository {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: PlaybackStatsRepository(context.applicationContext).also { INSTANCE = it }
-            }
+        @SuppressLint("StaticFieldLeak") @Volatile private var INSTANCE: PlaybackStatsRepository? = null
+        fun getInstance(context: Context): PlaybackStatsRepository = INSTANCE ?: synchronized(this) {
+            INSTANCE ?: PlaybackStatsRepository(context.applicationContext).also { INSTANCE = it }
         }
     }
 }
+
+internal fun SongItem.toStatisticsMetadata() = TrackStat(id, name, artist, album, albumId, coverUrl, durationMs, 0, 0, 0, 0,
+    mediaUri, localFilePath, localFileName, customName, customArtist, customCoverUrl, stableKey())
+
+private fun PlaybackStatsRoomState.capturedState() = PlaybackStatsCapturedState(revision, clearedAt, counterEpochStartedAt)

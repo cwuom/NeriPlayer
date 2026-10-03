@@ -53,6 +53,15 @@ object LocalSongSupport {
             )
     }
 
+    internal fun isLocalSong(
+        album: String?,
+        mediaUri: String?,
+        albumId: Long?,
+        localAlbumNames: Set<String>
+    ): Boolean = isLocalMediaUri(mediaUri) ||
+        (mediaUri.isNullOrBlank() && albumId == 0L && !album.isNullOrBlank() &&
+            (album == LOCAL_ALBUM_IDENTITY || localAlbumNames.any { it.equals(album, ignoreCase = true) }))
+
     fun isLocalMediaUri(mediaUri: String?): Boolean =
         moe.ouom.neriplayer.data.sync.policy.isLocalMediaUri(mediaUri)
 

@@ -14,7 +14,8 @@ internal object SyncSongMetadataComparison {
     private fun sameLyrics(a: SyncSong, b: SyncSong): Boolean =
         a.matchedLyric == b.matchedLyric && a.matchedTranslatedLyric == b.matchedTranslatedLyric &&
             a.matchedLyricSource == b.matchedLyricSource && a.matchedSongId == b.matchedSongId &&
-            a.userLyricOffsetMs == b.userLyricOffsetMs
+            a.userLyricOffsetMs == b.userLyricOffsetMs && a.matchedRomanizedLyric == b.matchedRomanizedLyric &&
+            a.lyricSyncRevision == b.lyricSyncRevision && a.lyricSyncEdited == b.lyricSyncEdited
 
     private fun sameCustomMetadata(a: SyncSong, b: SyncSong): Boolean =
         a.customCoverUrl == b.customCoverUrl && a.customName == b.customName &&

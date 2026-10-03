@@ -3,8 +3,11 @@ package moe.ouom.neriplayer.core.player.persistence
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.util.concurrent.atomic.AtomicReference
+import moe.ouom.neriplayer.data.model.playback.PersistedState
 
-internal class PlaybackStateWriter {
+internal class PlaybackStateWriter(
+    private val buildQueueState: (PlaybackStatePersistenceSnapshot) -> PersistedState = { it.toPersistedState() }
+) {
     private sealed interface Confirmation {
         class Unconfirmed : Confirmation
         data class Room(val snapshot: PlaybackStatePersistenceSnapshot) : Confirmation
@@ -33,11 +36,12 @@ internal class PlaybackStateWriter {
             val target = persistPlaybackQueueWithRoomFallback(
                 roomStore = roomStore,
                 legacyStore = legacyStore,
-                queueState = if (write == PlaybackStateWrite.CLEAR) null else snapshot.toPersistedState(),
+                queueState = null,
                 playbackState = snapshot.playback,
                 shouldWriteQueueState = write != PlaybackStateWrite.UPDATE_PLAYBACK,
                 shouldWritePlaybackState = true,
-                onRoomFailure = onRoomFailure
+                onRoomFailure = onRoomFailure,
+                queueStateProvider = if (write == PlaybackStateWrite.CLEAR) null else { { buildQueueState(snapshot) } }
             )
             currentCoroutineContext().ensureActive()
             val next = when (target) {
