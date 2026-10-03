@@ -99,6 +99,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsSh
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
@@ -542,18 +543,6 @@ fun BiliPlaylistDetailScreen(
                             }
                         },
                         actions = {
-                            HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
-                                Icon(
-                                    imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                    contentDescription = if (allSelected) stringResource(CoreCommonR.string.action_deselect_all) else stringResource(CoreCommonR.string.action_select_all)
-                                )
-                            }
-                            HapticIconButton(
-                                onClick = { if (selectedIds.isNotEmpty()) showExportSheet = true },
-                                enabled = selectedIds.isNotEmpty()
-                            ) {
-                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(CoreCommonR.string.explore_export_to_playlist))
-                            }
                             HapticIconButton(
                                 onClick = {
                                     if (selectedIds.isNotEmpty()) {
@@ -570,6 +559,14 @@ fun BiliPlaylistDetailScreen(
                             ) {
                                 Icon(Icons.Outlined.Download, contentDescription = stringResource(CoreCommonR.string.download_selected_videos))
                             }
+                            PlaylistSelectionMoreMenu(
+                                allSelected = allSelected,
+                                onToggleSelectAll = {
+                                    if (allSelected) clearSelection() else selectAll()
+                                },
+                                canExport = selectedIds.isNotEmpty(),
+                                onExport = { showExportSheet = true }
+                            )
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(

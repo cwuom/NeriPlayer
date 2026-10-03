@@ -57,8 +57,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
@@ -129,6 +127,9 @@ import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCar
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.component.download.shouldShowDownloadedSongDeleteProgress
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
+import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertDialog
+import moe.ouom.neriplayer.ui.screen.playlist.insert.isPlaylistInsertPreviewCurrent
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
@@ -163,6 +164,11 @@ internal fun LocalPlaylistDetailModernContent(
         val deleteFailureDismissed by
         vm.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
         var deletingSongCount by remember(playlistId) { mutableIntStateOf(0) }
+        var showInsertDialog by remember(playlistId) { mutableStateOf(false) }
+        var insertInProgress by remember(playlistId) { mutableStateOf(false) }
+        LaunchedEffect(selectionMode, canReorderCurrentSongs) {
+            if (!selectionMode || !canReorderCurrentSongs) showInsertDialog = false
+        }
         val deletionInProgress = deletingSongCount > 0 ||
                 isDownloadedSongDeletionRunning(deleteProgress)
         PlaylistModernVisualColorsProvider(
@@ -453,45 +459,6 @@ internal fun LocalPlaylistDetailModernContent(
                             actions = {
                                 HapticIconButton(
                                     onClick = {
-                                        selectedKeysState.value = toggleDisplayedSongSelection(
-                                            selectedKeys = selectedKeysState.value,
-                                            displayedKeys = displayedSongKeys
-                                        )
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                        contentDescription = if (allSelected) stringResource(CoreCommonR.string.action_deselect_all) else stringResource(
-                                            CoreCommonR.string.action_select_all
-                                        )
-                                    )
-                                }
-                                HapticIconButton(
-                                    onClick = { openNeteaseRemotePlaylistPicker() },
-                                    enabled = selectedKeysState.value.isNotEmpty() && !syncInProgress
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Sync,
-                                        contentDescription = stringResource(
-                                            CoreCommonR.string.local_playlist_sync_netease_playlist
-                                        )
-                                    )
-                                }
-                                HapticIconButton(
-                                    onClick = {
-                                        if (selectedKeysState.value.isNotEmpty()) {
-                                            showExportSheet = true
-                                        }
-                                    },
-                                    enabled = selectedKeysState.value.isNotEmpty()
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                        contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
-                                    )
-                                }
-                                HapticIconButton(
-                                    onClick = {
                                         val selectedSongs = selectedSongsForAction
                                         if (selectedSongs.isNotEmpty()) {
                                             showDownloadManager = true
@@ -502,7 +469,7 @@ internal fun LocalPlaylistDetailModernContent(
                                             )
                                         }
                                     },
-                                    enabled = selectedSongsForAction.isNotEmpty()
+                                    enabled = selectedSongsForAction.isNotEmpty() && !insertInProgress
                                 ) {
                                     Icon(
                                         Icons.Outlined.Download,
@@ -516,6 +483,7 @@ internal fun LocalPlaylistDetailModernContent(
                                         }
                                     },
                                     enabled = selectedKeysState.value.isNotEmpty() &&
+                                            !insertInProgress &&
                                             !(isLocalFilesPlaylist &&
                                                     selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED &&
                                                     deletionInProgress)
@@ -525,6 +493,27 @@ internal fun LocalPlaylistDetailModernContent(
                                         contentDescription = stringResource(CoreCommonR.string.common_delete_selected)
                                     )
                                 }
+                                PlaylistSelectionMoreMenu(
+                                    allSelected = allSelected,
+                                    onToggleSelectAll = {
+                                        selectedKeysState.value = toggleDisplayedSongSelection(
+                                            selectedKeys = selectedKeysState.value,
+                                            displayedKeys = displayedSongKeys
+                                        )
+                                    },
+                                    canExport = selectedKeysState.value.isNotEmpty(),
+                                    onExport = { showExportSheet = true },
+                                    canSync = selectedKeysState.value.isNotEmpty() && !syncInProgress,
+                                    onSync = { openNeteaseRemotePlaylistPicker() },
+                                    canInsert = canReorderCurrentSongs &&
+                                            selectedKeysState.value.isNotEmpty() &&
+                                            !blockSync && !insertInProgress,
+                                    onInsert = if (canReorderCurrentSongs) {
+                                        { showInsertDialog = true }
+                                    } else {
+                                        null
+                                    }
+                                )
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
@@ -1093,7 +1082,11 @@ internal fun LocalPlaylistDetailModernContent(
                                                     } else if (canReorderCurrentSongs) {
                                                         Box(
                                                             modifier = Modifier
-                                                                .detectReorder(reorderState)
+                                                                .then(if (insertInProgress) {
+                                                                    Modifier
+                                                                } else {
+                                                                    Modifier.detectReorder(reorderState)
+                                                                })
                                                                 .padding(8.dp),
                                                             contentAlignment = Alignment.Center
                                                         ) {
@@ -1550,6 +1543,59 @@ internal fun LocalPlaylistDetailModernContent(
                         onDismiss = {
                             pendingSyncConfirmAction = null
                             pendingSyncConfirmLabel = ""
+                        }
+                    )
+                }
+
+                if (showInsertDialog && selectionMode && canReorderCurrentSongs) {
+                    PlaylistInsertDialog(
+                        songs = localSongs.toList(),
+                        selectedKeys = selectedKeysState.value,
+                        offlineMode = offlineMode,
+                        onDismiss = { showInsertDialog = false },
+                        onConfirm = { preview ->
+                            val sourceSongs = localSongs.toList()
+                            val currentKeys = sourceSongs.map { it.stableKey() }
+                            if (blockSync || insertInProgress || !isPlaylistInsertPreviewCurrent(
+                                    preview, currentKeys, selectedKeysState.value
+                                )
+                            ) {
+                                showInsertDialog = false
+                                scope.launch {
+                                    snackbarHostState.showNeriSnackbar(
+                                        composeResources.getString(CoreCommonR.string.playlist_insert_stale)
+                                    )
+                                }
+                            } else {
+                                val songsByKey = sourceSongs.associateBy { it.stableKey() }
+                                val newOrder = preview.orderedKeys.map { songsByKey.getValue(it).identity() }
+                                showInsertDialog = false
+                                insertInProgress = true
+                                scope.launchLocalPlaylistMutation(
+                                    operation = "insertPlaylistSongs",
+                                    onResult = { result ->
+                                        insertInProgress = false
+                                        val message = when {
+                                            result.isFailure -> CoreCommonR.string.playlist_insert_failed
+                                            result.getOrNull() != true -> CoreCommonR.string.playlist_insert_stale
+                                            else -> null
+                                        }
+                                        if (message != null) {
+                                            scope.launch {
+                                                snackbarHostState.showNeriSnackbar(
+                                                    composeResources.getString(message)
+                                                )
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    repo.reorderSongs(
+                                        playlistId = playlistId,
+                                        newOrder = newOrder,
+                                        expectedOrder = sourceSongs.map { it.identity() }
+                                    )
+                                }
+                            }
                         }
                     )
                 }

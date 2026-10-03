@@ -1058,9 +1058,8 @@ fun LocalPlaylistDetailScreen(
                         localSongs.add(toIdx, localSongs.removeAt(fromIdx))
                     }
                 },
-                canDragOver = { _, over ->
-                    canReorderCurrentSongsState.value &&
-                        (over.key as? String) !in LOCAL_PLAYLIST_FIXED_ITEM_KEYS
+                canDragOver = localPlaylistCanDragOver {
+                    canReorderCurrentSongsState.value
                 },
                 onDragEnd = { _, _ ->
                     if (!canReorderCurrentSongsState.value) {
