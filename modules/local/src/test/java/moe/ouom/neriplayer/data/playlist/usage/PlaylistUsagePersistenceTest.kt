@@ -16,6 +16,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -26,6 +27,7 @@ import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackSyncSnapshot
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.model.sync.SyncData
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
@@ -415,7 +417,8 @@ class PlaylistUsagePersistenceTest {
     fun `readiness flush cannot acknowledge UI counters that changed during persistence`() = runTest {
         val room = mock(PlaylistUsageRoomStore::class.java)
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
-        Fixture(this, room).use { fixture ->
+        val uiScheduler = TestCoroutineScheduler()
+        Fixture(this, room, uiScheduler = uiScheduler).use { fixture ->
             fixture.repository.applyMergedStats(listOf(remote()))
             var mutated = false
             doAnswer {
@@ -427,9 +430,9 @@ class PlaylistUsagePersistenceTest {
                 Unit
             }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
             assertFalse(fixture.repository.awaitInitialized())
-            runCurrent()
+            uiScheduler.runCurrent()
             assertTrue(fixture.repository.awaitInitialized())
-            runCurrent()
+            uiScheduler.runCurrent()
             assertEquals("newest UI", fixture.repository.syncStats().single().name)
             assertEquals(fixture.repository.frequentPlaylistsFlow.value, fixture.persistedEntries())
         }
@@ -685,6 +688,159 @@ class PlaylistUsagePersistenceTest {
             doAnswer { Unit }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
             runCurrent()
             assertEquals(fixture.repository.frequentPlaylistsFlow.value, fixture.persistedEntries())
+        }
+    }
+
+    @Test
+    fun `an open during a committed sync save keeps remote counters and the new local open`() = runTest {
+        for (cancelAfterCommit in listOf(false, true)) {
+            val primary = usagePrimary(listOf(entry()))
+            val remoteShard = SyncPlaybackCounterShard("remote-device", 0, playCount = 4, firstPlayedAt = 100, lastPlayedAt = 200)
+            val remoteUsage = remote().copy(openCount = 10, counterBaseOpenCount = 6, counterShards = listOf(remoteShard))
+            val remoteOnly = remote().copy(playlistKey = "netease:2", id = 2, name = "remote only", openCount = 7)
+            val storage = realStorage(RamDiskPreferences())
+            val cancelled = CancellationException("sync usage committed before cancellation")
+            Fixture(this, primary.room, storage).use { fixture ->
+                primary.beforeWrite = {
+                    primary.beforeWrite = {}
+                    fixture.repository.recordOpen(1, "opened locally", "https://fixture.invalid/local.jpg", 5,
+                        source = "netease", now = 300)
+                }
+                if (cancelAfterCommit) primary.afterWrite = {
+                    primary.afterWrite = {}
+                    throw cancelled
+                }
+                val failure = runCatching {
+                    fixture.repository.applyMergedStatsAndPersist(listOf(remoteUsage, remoteOnly))
+                }.exceptionOrNull()
+                if (cancelAfterCommit) assertSame(cancelled, failure) else assertTrue(failure is IOException)
+                runCurrent()
+                assertTrue(fixture.repository.awaitInitialized())
+                val accepted = primary.rows.single { it.id == 1L }
+                assertEquals(11, accepted.openCount)
+                assertEquals(6L, accepted.counterBaseOpenCount)
+                assertEquals(remoteShard, accepted.counterShards.single { it.deviceId == "remote-device" })
+                assertEquals(1, accepted.counterShards.single { it.deviceId == "usage-fixture-device" }.playCount)
+                assertEquals(300L, accepted.lastOpened)
+                assertEquals("opened locally", accepted.name)
+                assertEquals("https://fixture.invalid/local.jpg", accepted.picUrl)
+                assertEquals(5, accepted.trackCount)
+                assertEquals(7, primary.rows.single { it.id == 2L }.openCount)
+                assertEquals(primary.rows, fixture.repository.frequentPlaylistsFlow.value)
+                Fixture(this, primary.room, storage).use { reopened ->
+                    assertEquals(primary.rows, reopened.repository.frequentPlaylistsFlow.value)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `an info update during a committed sync save keeps remote counters and the new local metadata`() = runTest {
+        val primary = usagePrimary(listOf(entry()))
+        val remoteShard = SyncPlaybackCounterShard("remote-device", 0, playCount = 4, firstPlayedAt = 100, lastPlayedAt = 200)
+        val remoteUsage = remote().copy(openCount = 10, counterBaseOpenCount = 6, counterShards = listOf(remoteShard))
+        Fixture(this, primary.room).use { fixture ->
+            primary.beforeWrite = {
+                primary.beforeWrite = {}
+                fixture.repository.updateInfo(1, "refreshed locally", "https://fixture.invalid/refreshed.jpg", 8,
+                    source = "netease", subtitle = "local subtitle", now = 300)
+            }
+            assertTrue(runCatching {
+                fixture.repository.applyMergedStatsAndPersist(listOf(remoteUsage))
+            }.exceptionOrNull() is IOException)
+            runCurrent()
+            assertTrue(fixture.repository.awaitInitialized())
+            val accepted = primary.rows.single()
+            assertEquals(10, accepted.openCount)
+            assertEquals(6L, accepted.counterBaseOpenCount)
+            assertEquals(listOf(remoteShard), accepted.counterShards)
+            assertEquals(200L, accepted.lastOpened)
+            assertEquals("refreshed locally", accepted.name)
+            assertEquals("https://fixture.invalid/refreshed.jpg", accepted.picUrl)
+            assertEquals(8, accepted.trackCount)
+            assertEquals("local subtitle", accepted.subtitle)
+            assertEquals(primary.rows, fixture.repository.frequentPlaylistsFlow.value)
+            Fixture(this, primary.room).use { reopened ->
+                assertEquals(primary.rows, reopened.repository.frequentPlaylistsFlow.value)
+            }
+        }
+    }
+
+    @Test
+    fun `an open during sync adds its local delta above a larger same device counter`() = runTest {
+        for (cancelAfterCommit in listOf(false, true)) {
+            val localShard = SyncPlaybackCounterShard("usage-fixture-device", 0, playCount = 2, firstPlayedAt = 100, lastPlayedAt = 100)
+            val initial = entry().copy(openCount = 2, counterShards = listOf(localShard))
+            val primary = usagePrimary(listOf(initial))
+            val storage = realStorage(RamDiskPreferences())
+            val remoteUsage = remote().copy(openCount = 10, counterShards = listOf(localShard.copy(playCount = 10, lastPlayedAt = 200)))
+            val cancelled = CancellationException("larger counter committed before cancellation")
+            Fixture(this, primary.room, storage).use { fixture ->
+                primary.beforeWrite = {
+                    primary.beforeWrite = {}
+                    fixture.repository.recordOpen(1, "new local open", null, 3, source = "netease", now = 300)
+                }
+                if (cancelAfterCommit) primary.afterWrite = {
+                    primary.afterWrite = {}
+                    throw cancelled
+                }
+                val failure = runCatching { fixture.repository.applyMergedStatsAndPersist(listOf(remoteUsage)) }.exceptionOrNull()
+                if (cancelAfterCommit) assertSame(cancelled, failure) else assertTrue(failure is IOException)
+                runCurrent()
+                repeat(2) { assertTrue(fixture.repository.awaitInitialized()) }
+                assertEquals(11, primary.rows.single().openCount)
+                assertEquals(11, primary.rows.single().counterShards.single().playCount)
+                assertEquals(300L, primary.rows.single().lastOpened)
+                Fixture(this, primary.room, storage).use { reopened ->
+                    assertEquals(11, reopened.repository.syncStats().single().openCount)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `an equal timestamp info update rebases only changed fields onto committed remote metadata`() = runTest {
+        val initial = entry().copy(picUrl = "https://fixture.invalid/old.jpg", subtitle = "old subtitle")
+        val primary = usagePrimary(listOf(initial))
+        val remoteUsage = remote().copy(lastOpenedAt = 100, trackCount = 8, coverUrl = "https://fixture.invalid/remote.jpg", subtitle = "remote subtitle")
+        Fixture(this, primary.room).use { fixture ->
+            primary.beforeWrite = {
+                primary.beforeWrite = {}
+                fixture.repository.updateInfo(1, "changed locally", null, 3, source = "netease", subtitle = "old subtitle", now = 300)
+            }
+            assertTrue(runCatching { fixture.repository.applyMergedStatsAndPersist(listOf(remoteUsage)) }.exceptionOrNull() is IOException)
+            runCurrent()
+            assertTrue(fixture.repository.awaitInitialized())
+            val accepted = primary.rows.single()
+            assertEquals("changed locally", accepted.name)
+            assertEquals(8, accepted.trackCount)
+            assertEquals("https://fixture.invalid/remote.jpg", accepted.picUrl)
+            assertEquals("remote subtitle", accepted.subtitle)
+            assertEquals(2, accepted.openCount)
+            Fixture(this, primary.room).use { reopened ->
+                assertEquals(accepted, reopened.repository.frequentPlaylistsFlow.value.single())
+            }
+        }
+    }
+
+    @Test
+    fun `an empty playlist during sync stays removed while remote only usage remains`() = runTest {
+        val primary = usagePrimary(listOf(entry()))
+        val remoteOnly = remote().copy(playlistKey = "netease:2", id = 2, name = "remote only", openCount = 7)
+        Fixture(this, primary.room).use { fixture ->
+            primary.beforeWrite = {
+                primary.beforeWrite = {}
+                fixture.repository.updateInfo(1, "now empty", null, 0, source = "netease", now = 300)
+            }
+            assertTrue(runCatching { fixture.repository.applyMergedStatsAndPersist(listOf(remote(), remoteOnly)) }.exceptionOrNull() is IOException)
+            runCurrent()
+            assertTrue(fixture.repository.awaitInitialized())
+            assertEquals(listOf(2L), primary.rows.map { it.id })
+            assertEquals(7, primary.rows.single().openCount)
+            assertEquals(primary.rows, fixture.repository.frequentPlaylistsFlow.value)
+            Fixture(this, primary.room).use { reopened ->
+                assertEquals(primary.rows, reopened.repository.frequentPlaylistsFlow.value)
+            }
         }
     }
 
@@ -1015,6 +1171,7 @@ class PlaylistUsagePersistenceTest {
         val room = mock(PlaylistUsageRoomStore::class.java)
         var rows = initial.toList()
         var beforeWrite: (List<UsageEntry>) -> Unit = {}
+        var afterWrite: () -> Unit = {}
     }
 
     private suspend fun usagePrimary(initial: List<UsageEntry>): UsagePrimary {
@@ -1026,6 +1183,7 @@ class PlaylistUsagePersistenceTest {
             assertEquals(primary.rows, previous)
             primary.beforeWrite(next)
             primary.rows = next.toList()
+            primary.afterWrite()
             Unit
         }.`when`(primary.room).writeIncremental(anyList(), anyList(), anyLong())
         return primary
@@ -1043,9 +1201,10 @@ class PlaylistUsagePersistenceTest {
     private inner class Fixture(
         testScope: TestScope,
         room: PlaylistUsageRoomStore,
-        storageOverride: SecureTokenStorage? = null
+        storageOverride: SecureTokenStorage? = null,
+        uiScheduler: TestCoroutineScheduler = testScope.testScheduler
     ) : Closeable {
-        private val ownedScope = CoroutineScope(SupervisorJob(testScope.backgroundScope.coroutineContext[Job]) + StandardTestDispatcher(testScope.testScheduler))
+        private val ownedScope = CoroutineScope(SupervisorJob(testScope.backgroundScope.coroutineContext[Job]) + StandardTestDispatcher(uiScheduler))
         val repository: PlaylistUsageRepository
         init {
             val context = mock(Context::class.java)

@@ -194,6 +194,7 @@ class PlaylistUsageRepository internal constructor(
     @Volatile
     private var baselineTrusted = initialized
     private var pendingUiChanges = false
+    private var pendingWrite: UsageWriteSnapshot? = null
     @Volatile
     private var persistenceInProgress = false
     @Volatile
@@ -275,9 +276,17 @@ class PlaylistUsageRepository internal constructor(
             val actual = roomEntries?.let(::normalizeUsageEntries) ?: loadLegacyEntries()
             currentCoroutineContext().ensureActive()
             synchronized(mutationLock) {
+                val write = pendingWrite
+                if (write != null) {
+                    // 取消前可能已提交，只把尚未进入实际主存的 UI 变化重放一次
+                    val previous = if (actual == write.next) write.previousVisible else write.previousPersisted
+                    _flow.value = rebaseUiEntriesLocked(previous, actual)
+                    pendingUiChanges = _flow.value != actual
+                }
                 persistedEntries = actual
                 roomStorageEnabled = roomEntries != null
                 baselineTrusted = true
+                pendingWrite = null
             }
         }
         synchronized(mutationLock) {
@@ -298,8 +307,13 @@ class PlaylistUsageRepository internal constructor(
 
     private fun confirmPersistedEntries(entries: List<UsageEntry>) {
         synchronized(mutationLock) {
+            val write = pendingWrite
+            if (write != null && (persistenceGeneration != write.generation || _flow.value != write.previousVisible)) {
+                _flow.value = rebaseUiEntriesLocked(write.previousVisible, entries)
+            }
             persistedEntries = entries
             baselineTrusted = true
+            pendingWrite = null
             if (_flow.value == entries) pendingUiChanges = false
         }
     }
@@ -324,7 +338,7 @@ class PlaylistUsageRepository internal constructor(
                 if (visible != _flow.value) publishUiEntries(visible)
                 visible
             }
-            persistEntriesChecked(snapshot)
+            persistEntriesChecked(snapshot, generation)
             synchronized(mutationLock) {
                 generation == persistenceGeneration && baselineTrusted && _flow.value == persistedEntries
             }
@@ -345,7 +359,7 @@ class PlaylistUsageRepository internal constructor(
         }
         scope.launch {
             try {
-                persistSnapshotChecked(list, generation)
+                persistSnapshotChecked(generation)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -354,17 +368,19 @@ class PlaylistUsageRepository internal constructor(
         }
     }
 
-    private suspend fun persistSnapshotChecked(list: List<UsageEntry>, generation: Long): Boolean {
+    private suspend fun persistSnapshotChecked(generation: Long): Boolean {
         return withPersistenceLock {
             if (!isLatestGeneration(generation)) return@withPersistenceLock false
             if (!recoverBaselineLocked()) throw IOException("Cannot recover playlist usage authority", initialLoadFailure)
             if (!isLatestGeneration(generation)) return@withPersistenceLock false
             val visible = synchronized(mutationLock) {
-                val filtered = visibleEntriesLocked(list)
-                if (generation == persistenceGeneration && _flow.value == list && filtered != list) publishUiEntries(filtered)
+                // 前一笔提交可能已重基 UI，排队时捕获的列表不能覆盖这份新基线
+                val current = _flow.value
+                val filtered = visibleEntriesLocked(current)
+                if (generation == persistenceGeneration && filtered != current) publishUiEntries(filtered)
                 filtered
             }
-            persistEntriesChecked(visible)
+            persistEntriesChecked(visible, generation)
             true
         }
     }
@@ -382,7 +398,7 @@ class PlaylistUsageRepository internal constructor(
         }
     }
 
-    private suspend fun persistEntriesChecked(list: List<UsageEntry>) {
+    private suspend fun persistEntriesChecked(list: List<UsageEntry>, generation: Long, previousVisible: List<UsageEntry> = list) {
         currentCoroutineContext().ensureActive()
         if (!initialized || !baselineTrusted) throw IOException("Cannot persist unknown playlist usage", initialLoadFailure)
         if (list == persistedEntries) {
@@ -391,7 +407,10 @@ class PlaylistUsageRepository internal constructor(
         }
         writingTrustedSnapshot = true
         try {
-            baselineTrusted = false
+            synchronized(mutationLock) {
+                pendingWrite = UsageWriteSnapshot(persistedEntries, previousVisible, list, generation)
+                baselineTrusted = false
+            }
             persistEntriesToStorage(list)
         } finally {
             writingTrustedSnapshot = false
@@ -546,7 +565,7 @@ class PlaylistUsageRepository internal constructor(
                 val next = mergeStatsLocked(stats)
                 previous to next
             }
-            persistEntriesChecked(next)
+            persistEntriesChecked(next, generation, previous)
             currentCoroutineContext().ensureActive()
             synchronized(mutationLock) {
                 if (generation != persistenceGeneration || _flow.value != previous) {
@@ -573,6 +592,42 @@ class PlaylistUsageRepository internal constructor(
             if (stableCover == entry.picUrl) entry else entry.copy(picUrl = stableCover)
         }
         return normalizeUsageEntries(mergedEntries)
+    }
+
+    private fun rebaseUiEntriesLocked(previous: List<UsageEntry>, committed: List<UsageEntry>): List<UsageEntry> {
+        val previousByKey = previous.associateBy(UsageEntry::usageKey)
+        val currentByKey = _flow.value.associateBy(UsageEntry::usageKey)
+        val committedByKey = committed.associateBy(UsageEntry::usageKey)
+        val removedKeys = previousByKey.keys - currentByKey.keys
+        val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+            committed.map(UsageEntry::toSyncPlaylistUsageStat), _flow.value.map(UsageEntry::toSyncPlaylistUsageStat), deletionBarriersLocked()
+        )
+        return normalizeUsageEntries(merged.filterNot { it.playlistKey in removedKeys }.map { stat ->
+            val restored = stat.toUsageEntry()
+            val confirmed = committedByKey[restored.usageKey()]
+            val current = currentByKey[restored.usageKey()]
+            val metadata = confirmed ?: current ?: restored
+            val stable = metadata.copy(openCount = restored.openCount, lastOpened = restored.lastOpened,
+                firstOpened = restored.firstOpened, counterBaseOpenCount = restored.counterBaseOpenCount,
+                counterShards = restored.counterShards, observedDeletionTokens = restored.observedDeletionTokens)
+            if (current == null) stable else {
+                val before = previousByKey[current.usageKey()]
+                current.rebaseMetadata(before, rebaseOpenDelta(before, current, confirmed, stable))
+            }
+        })
+    }
+
+    private fun rebaseOpenDelta(previous: UsageEntry?, current: UsageEntry, committed: UsageEntry?, merged: UsageEntry): UsageEntry {
+        if (current.counterShards.orEmpty().isEmpty()) return merged
+        val deviceId = syncCounterDeviceId()
+        val currentCount = current.ownedOpenCount(deviceId)
+        val delta = (currentCount - previous.ownedOpenCount(deviceId)).coerceAtLeast(0)
+        if (delta == 0) return merged
+        // 合并可能带回更大的本机分片，写入期间新发生的打开仍须在它之后累加
+        val count = maxOf(currentCount, committed.ownedOpenCount(deviceId).toLong().saturatingAdd(delta.toLong()).toBoundedInt())
+        return merged.copy(counterShards = merged.counterShards.orEmpty().map { shard ->
+            if (shard.deviceId == deviceId && shard.epochStartedAt == 0L) shard.copy(playCount = count) else shard
+        })
     }
 
     /** 刷新歌单信息；详情加载出有效曲目时可补齐打开记录 */
@@ -944,6 +999,34 @@ class PlaylistUsageRepository internal constructor(
         }
     }
 }
+
+private data class UsageWriteSnapshot(
+    val previousPersisted: List<UsageEntry>,
+    val previousVisible: List<UsageEntry>,
+    val next: List<UsageEntry>,
+    val generation: Long
+)
+
+private fun UsageEntry.rebaseMetadata(previous: UsageEntry?, committed: UsageEntry): UsageEntry {
+    val base = previous ?: committed
+    return committed.copy(
+        name = localChange(base.name, name, committed.name),
+        picUrl = localChange(base.picUrl, picUrl, committed.picUrl),
+        trackCount = localChange(base.trackCount, trackCount, committed.trackCount),
+        fid = localChange(base.fid, fid, committed.fid),
+        mid = localChange(base.mid, mid, committed.mid),
+        browseId = localChange(base.browseId, browseId, committed.browseId),
+        playlistId = localChange(base.playlistId, playlistId, committed.playlistId),
+        subtype = localChange(base.subtype, subtype, committed.subtype),
+        subtitle = localChange(base.subtitle, subtitle, committed.subtitle)
+    )
+}
+
+private fun <T> localChange(previous: T?, current: T, committed: T): T =
+    if (current != previous) current else committed
+
+private fun UsageEntry?.ownedOpenCount(deviceId: String): Int = this?.counterShards.orEmpty()
+    .firstOrNull { it.deviceId == deviceId && it.epochStartedAt == 0L }?.playCount?.coerceAtLeast(0) ?: 0
 
 internal fun resolveRefreshedLocalUsageCover(
     immediateCover: String?,

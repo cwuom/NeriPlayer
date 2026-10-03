@@ -190,6 +190,7 @@ internal fun applyManualSearchMetadata(
     } else {
         translatedLyric
     }
+    val resolvedRomanizedLyric = if (keepExistingMatch) originalSong.matchedRomanizedLyric else ""
     val resolvedMatchedSource = if (keepExistingMatch) {
         originalSong.matchedLyricSource ?: matchedSource
     } else {
@@ -207,6 +208,7 @@ internal fun applyManualSearchMetadata(
         originalSong.copy(
             matchedLyric = resolvedLyric,
             matchedTranslatedLyric = resolvedTranslatedLyric,
+            matchedRomanizedLyric = resolvedRomanizedLyric,
             lyricSyncEdited = lyricEdited,
             lyricSyncRevision = resolvedLyricRevision,
             matchedLyricSource = resolvedMatchedSource,
@@ -228,6 +230,7 @@ internal fun applyManualSearchMetadata(
             coverUrl = coverUrl,
             matchedLyric = resolvedLyric,
             matchedTranslatedLyric = resolvedTranslatedLyric,
+            matchedRomanizedLyric = resolvedRomanizedLyric,
             lyricSyncEdited = lyricEdited,
             lyricSyncRevision = resolvedLyricRevision,
             matchedLyricSource = resolvedMatchedSource,
