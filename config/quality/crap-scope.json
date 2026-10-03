@@ -539,15 +539,15 @@
       "class": "moe.ouom.neriplayer.ui.NeriAppKt",
       "methods": [
         "NeriAppContent",
-        "NeriAppContent$lambda$165",
-        "NeriAppContent$lambda$165$RenderMainTabRoute",
-        "NeriAppContent$lambda$165$RenderMainTabRoute$38",
-        "NeriAppContent$lambda$165$RenderMainTabRoute$39",
-        "NeriAppContent$lambda$165$RenderMainTabRoute$40",
-        "NeriAppContent$lambda$165$RenderMainTabRoute$41",
-        "NeriAppContent$lambda$165$RenderMainTabRoute$42",
-        "NeriAppContent$lambda$165$RenderMainTabRoute$42$1",
-        "NeriAppContent$lambda$165$47"
+        "NeriAppContent$lambda$167",
+        "NeriAppContent$lambda$167$RenderMainTabRoute",
+        "NeriAppContent$lambda$167$RenderMainTabRoute$38",
+        "NeriAppContent$lambda$167$RenderMainTabRoute$39",
+        "NeriAppContent$lambda$167$RenderMainTabRoute$40",
+        "NeriAppContent$lambda$167$RenderMainTabRoute$41",
+        "NeriAppContent$lambda$167$RenderMainTabRoute$42",
+        "NeriAppContent$lambda$167$RenderMainTabRoute$42$1",
+        "NeriAppContent$lambda$167$47"
       ]
     },
     {

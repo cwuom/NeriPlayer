@@ -18,6 +18,231 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerStartupServiceSyncCoordinatorTest {
     @Test
+    fun `foreground recovery retries app bootstrap before transport is active`() = runTest {
+        val starts = mutableListOf<Pair<String, Boolean>>()
+        var accepted = false
+        val coordinator = coordinator(
+            starts = starts,
+            playbackActive = { false },
+            bootstrapRequired = { true },
+            serviceStartAccepted = { accepted }
+        )
+        coordinator.requestServiceStart(PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE, true)
+
+        accepted = true
+        coordinator.retryPendingServiceStart()
+
+        assertEquals(
+            listOf(
+                PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE to true,
+                PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE to true
+            ),
+            starts
+        )
+        assertNull(coordinator.pendingServiceStartFlow.value)
+    }
+
+    @Test
+    fun `foreground recovery retries preempt focus bootstrap without playback`() = runTest {
+        val starts = mutableListOf<Pair<String, Boolean>>()
+        var accepted = false
+        val coordinator = coordinator(
+            starts = starts,
+            playbackActive = { false },
+            preemptAudioFocus = { true },
+            serviceStartAccepted = { accepted }
+        )
+        coordinator.requestServiceStart(PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE, false)
+
+        accepted = true
+        coordinator.retryPendingServiceStart()
+
+        assertEquals(
+            listOf(
+                PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE to false,
+                PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE to false
+            ),
+            starts
+        )
+        assertNull(coordinator.pendingServiceStartFlow.value)
+    }
+
+    @Test
+    fun `cancelled restored playback discards app bootstrap without starting playback`() = runTest {
+        val starts = mutableListOf<Pair<String, Boolean>>()
+        var bootstrapRequired = true
+        val coordinator = coordinator(
+            starts = starts,
+            playbackActive = { false },
+            bootstrapRequired = { bootstrapRequired },
+            serviceStartAccepted = { false }
+        )
+        coordinator.requestServiceStart(PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE, true)
+
+        bootstrapRequired = false
+        coordinator.retryPendingServiceStart()
+
+        assertEquals(1, starts.size)
+        assertNull(coordinator.pendingServiceStartFlow.value)
+    }
+
+    @Test
+    fun `disabled preempt focus discards its pending bootstrap`() = runTest {
+        val starts = mutableListOf<Pair<String, Boolean>>()
+        var preemptAudioFocus = true
+        val coordinator = coordinator(
+            starts = starts,
+            playbackActive = { false },
+            preemptAudioFocus = { preemptAudioFocus },
+            serviceStartAccepted = { false }
+        )
+        coordinator.requestServiceStart(PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE, false)
+
+        preemptAudioFocus = false
+        coordinator.retryPendingServiceStart()
+
+        assertEquals(1, starts.size)
+        assertNull(coordinator.pendingServiceStartFlow.value)
+    }
+
+    @Test
+    fun `enabled mixed playback discards pending preempt focus bootstrap`() = runTest {
+        val starts = mutableListOf<Pair<String, Boolean>>()
+        var allowMixedPlayback = false
+        val coordinator = coordinator(
+            starts = starts,
+            playbackActive = { false },
+            preemptAudioFocus = { true },
+            allowMixedPlayback = { allowMixedPlayback },
+            serviceStartAccepted = { false }
+        )
+        coordinator.requestServiceStart(PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE, false)
+
+        allowMixedPlayback = true
+        coordinator.retryPendingServiceStart()
+
+        assertEquals(1, starts.size)
+        assertNull(coordinator.pendingServiceStartFlow.value)
+    }
+
+    @Test
+    fun `cleared queue discards both bootstrap sources`() = runTest {
+        for (source in listOf(
+            PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE,
+            PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE
+        )) {
+            val starts = mutableListOf<Pair<String, Boolean>>()
+            var hasItems = true
+            val coordinator = coordinator(
+                starts = starts,
+                hasItems = { hasItems },
+                playbackActive = { false },
+                bootstrapRequired = { source == PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE },
+                preemptAudioFocus = { true },
+                serviceStartAccepted = { false }
+            )
+            coordinator.requestServiceStart(source, source == PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE)
+
+            hasItems = false
+            coordinator.retryPendingServiceStart()
+
+            assertEquals(1, starts.size)
+            assertNull(coordinator.pendingServiceStartFlow.value)
+        }
+    }
+
+    @Test
+    fun `new restored intent upgrades pending preempt bootstrap to foreground bootstrap`() = runTest {
+        val starts = mutableListOf<Pair<String, Boolean>>()
+        var bootstrapRequired = false
+        var accepted = false
+        val coordinator = coordinator(
+            starts = starts,
+            playbackActive = { false },
+            bootstrapRequired = { bootstrapRequired },
+            preemptAudioFocus = { true },
+            serviceStartAccepted = { accepted }
+        )
+        coordinator.requestServiceStart(PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE, false)
+
+        bootstrapRequired = true
+        accepted = true
+        coordinator.retryPendingServiceStart()
+
+        assertEquals(
+            listOf(
+                PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE to false,
+                PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE to true
+            ),
+            starts
+        )
+        assertNull(coordinator.pendingServiceStartFlow.value)
+    }
+
+    @Test
+    fun `cancelled restoration replans bootstrap as passive preempt focus session`() = runTest {
+        val starts = mutableListOf<Pair<String, Boolean>>()
+        var bootstrapRequired = true
+        var accepted = false
+        val coordinator = coordinator(
+            starts = starts,
+            playbackActive = { false },
+            bootstrapRequired = { bootstrapRequired },
+            preemptAudioFocus = { true },
+            serviceStartAccepted = { accepted }
+        )
+        coordinator.requestServiceStart(PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE, true)
+
+        bootstrapRequired = false
+        accepted = true
+        coordinator.retryPendingServiceStart()
+
+        assertEquals(
+            listOf(
+                PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE to true,
+                PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE to false
+            ),
+            starts
+        )
+        assertNull(coordinator.pendingServiceStartFlow.value)
+    }
+
+    @Test
+    fun `rejected bootstrap recovery remains pending without retry looping`() = runTest {
+        for (bootstrapRequired in listOf(true, false)) {
+            val starts = mutableListOf<Pair<String, Boolean>>()
+            val source = if (bootstrapRequired) {
+                PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE
+            } else {
+                PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE
+            }
+            val coordinator = coordinator(
+                starts = starts,
+                playbackActive = { false },
+                bootstrapRequired = { bootstrapRequired },
+                preemptAudioFocus = { true },
+                serviceStartAccepted = { false }
+            )
+            coordinator.requestServiceStart(source, bootstrapRequired)
+            val observer = backgroundScope.launch {
+                coordinator.pendingServiceStartFlow.filterNotNull().collect {
+                    coordinator.retryPendingServiceStart()
+                }
+            }
+            runCurrent()
+            advanceTimeBy(10_000L)
+            runCurrent()
+
+            assertEquals(2, starts.size)
+            assertEquals(
+                PlayerStartupServiceStart(source, bootstrapRequired),
+                coordinator.pendingServiceStartFlow.value
+            )
+            observer.cancel()
+        }
+    }
+
+    @Test
     fun `rejected service start reports failure`() = runTest {
         val starts = mutableListOf<Pair<String, Boolean>>()
         val coordinator = coordinator(starts = starts, serviceStartAccepted = { false })
@@ -297,6 +522,9 @@ class PlayerStartupServiceSyncCoordinatorTest {
         commands: MutableSharedFlow<PlaybackCommand>? = null,
         hasItems: () -> Boolean = { true },
         playbackActive: () -> Boolean = { true },
+        bootstrapRequired: () -> Boolean = playbackActive,
+        preemptAudioFocus: () -> Boolean = { false },
+        allowMixedPlayback: () -> Boolean = { false },
         usbExclusiveActive: () -> Boolean = { false },
         serviceStartAccepted: () -> Boolean = { true }
     ): PlayerStartupServiceSyncCoordinator = PlayerStartupServiceSyncCoordinator(
@@ -305,6 +533,14 @@ class PlayerStartupServiceSyncCoordinatorTest {
         hasLocalCurrentSong = { false },
         isUsbExclusivePlaybackActiveForForegroundService = usbExclusiveActive,
         shouldRunPlaybackServiceInForeground = playbackActive,
+        currentBootstrapServiceStart = {
+            PlayerStartupServicePlanner.plan(
+                hasItems = hasItems(),
+                shouldBootstrapPlaybackService = bootstrapRequired(),
+                preemptAudioFocus = preemptAudioFocus(),
+                allowMixedPlayback = allowMixedPlayback()
+            )
+        },
         startService = { source, foreground ->
             starts.add(source to foreground)
             serviceStartAccepted()

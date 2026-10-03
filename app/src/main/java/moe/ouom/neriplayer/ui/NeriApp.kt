@@ -115,6 +115,7 @@ import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupBootstrapper
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupAudioFocusRefresher
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupHistoryRecorder
+import moe.ouom.neriplayer.core.startup.player.PlayerStartupServicePlanner
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupServiceSyncCoordinator
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
 import moe.ouom.neriplayer.data.identity.playbackVisualKey
@@ -604,6 +605,14 @@ private fun NeriAppContent(
         }
     }
 
+    val currentBootstrapServiceStart by rememberUpdatedState {
+        PlayerStartupServicePlanner.plan(
+            hasItems = PlayerManager.hasItems(),
+            shouldBootstrapPlaybackService = PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch(),
+            preemptAudioFocus = preemptAudioFocus,
+            allowMixedPlayback = allowMixedPlayback
+        )
+    }
     val serviceSyncCoordinator = remember(application) {
         PlayerStartupServiceSyncCoordinator(
             isServiceReadyForPassiveLocalPlaybackSync = AudioPlayerService::isReadyForPassiveLocalPlaybackSync,
@@ -616,6 +625,7 @@ private fun NeriAppContent(
             isUsbExclusivePlaybackActiveForForegroundService =
                 PlayerManager::isUsbExclusivePlaybackActiveForForegroundService,
             shouldRunPlaybackServiceInForeground = PlayerManager::shouldRunPlaybackServiceInForeground,
+            currentBootstrapServiceStart = { currentBootstrapServiceStart() },
             isServiceInstanceActiveForDiagnostics = AudioPlayerService::isInstanceActiveForDiagnostics,
             isServiceForegroundActiveForDiagnostics = AudioPlayerService::isForegroundActiveForDiagnostics,
             startService = { source, forceForeground ->

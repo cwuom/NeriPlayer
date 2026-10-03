@@ -16,6 +16,7 @@ internal class PlayerStartupServiceSyncCoordinator(
     private val hasLocalCurrentSong: () -> Boolean,
     private val isUsbExclusivePlaybackActiveForForegroundService: () -> Boolean,
     private val shouldRunPlaybackServiceInForeground: () -> Boolean,
+    private val currentBootstrapServiceStart: () -> PlayerStartupServiceStart?,
     private val isServiceInstanceActiveForDiagnostics: () -> Boolean = { false },
     private val isServiceForegroundActiveForDiagnostics: () -> Boolean = { false },
     private val startService: (source: String, forceForeground: Boolean) -> Boolean,
@@ -39,11 +40,20 @@ internal class PlayerStartupServiceSyncCoordinator(
 
     fun retryPendingServiceStart() {
         val request = pendingServiceStart.value ?: return
-        if (!hasItems() || !shouldRunPlaybackServiceInForeground()) {
+        if (!hasItems()) {
             pendingServiceStart.value = null
             return
         }
-        startServiceOrDefer(request)
+        val retryRequest = when (request.source) {
+            PlayerStartupServicePlanner.APP_BOOTSTRAP_SOURCE,
+            PlayerStartupServicePlanner.PREEMPT_AUDIO_FOCUS_BOOTSTRAP_SOURCE -> currentBootstrapServiceStart()
+            else -> request.takeIf { shouldRunPlaybackServiceInForeground() }
+        }
+        if (retryRequest == null) {
+            pendingServiceStart.value = null
+            return
+        }
+        startServiceOrDefer(retryRequest)
     }
 
     private fun startServiceOrDefer(request: PlayerStartupServiceStart): Boolean {
