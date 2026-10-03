@@ -702,9 +702,26 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    suspend fun reorderSongs(playlistId: Long, newOrder: List<SongIdentity>) {
-        withContext(Dispatchers.IO) {
+    suspend fun reorderSongs(
+        playlistId: Long,
+        newOrder: List<SongIdentity>,
+        expectedOrder: List<SongIdentity>? = null
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
             commitPlaylistMutation {
+                if (expectedOrder != null) {
+                    val currentOrder = _playlists.value.firstOrNull { it.id == playlistId }
+                        ?.songs?.map { it.identity() }
+                    // 预览快照与顺序写入共用提交锁，避免确认期间覆盖其他修改
+                    if (currentOrder != expectedOrder) return@commitPlaylistMutation false
+                    val orderedIdentities = newOrder.toSet()
+                    if (newOrder.size != expectedOrder.size ||
+                        orderedIdentities.size != newOrder.size ||
+                        orderedIdentities != expectedOrder.toSet()
+                    ) {
+                        return@commitPlaylistMutation false
+                    }
+                }
                 val updated = _playlists.value.map { playlist ->
                     if (playlist.id != playlistId) return@map playlist
                     val byIdentity = playlist.songs.associateBy { it.identity() }
@@ -728,6 +745,7 @@ class LocalPlaylistRepository private constructor(
                     )
                 }
                 publishLocked(updated)
+                true
             }
         }
     }

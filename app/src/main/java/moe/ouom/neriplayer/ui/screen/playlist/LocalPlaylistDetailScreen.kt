@@ -148,7 +148,8 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogConte
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import org.burnoutcrew.reorderable.ItemPosition
-import org.burnoutcrew.reorderable.rememberReorderableLazyListState
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.rememberLocalPlaylistReorderCoverPlaylist
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.rememberLocalPlaylistReorderState
 import kotlin.random.Random
 
 internal enum class LocalFilesSongTab {
@@ -1044,27 +1045,26 @@ fun LocalPlaylistDetailScreen(
                 selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED
             val canReorderCurrentSongsState = rememberUpdatedState(canReorderCurrentSongs)
 
-            val reorderState = rememberReorderableLazyListState(
+            val reorderState = rememberLocalPlaylistReorderState(
                 onMove = { from: ItemPosition, to: ItemPosition ->
                     if (!canReorderCurrentSongsState.value) {
-                        return@rememberReorderableLazyListState
+                        return@rememberLocalPlaylistReorderState
                     }
                     if (!blockSync) blockSync = true
-                    val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
-                    val toKey = to.key as? String ?: return@rememberReorderableLazyListState
+                    val fromKey = from.key as? String ?: return@rememberLocalPlaylistReorderState
+                    val toKey = to.key as? String ?: return@rememberLocalPlaylistReorderState
                     val fromIdx = localSongs.indexOfFirst { it.stableKey() == fromKey }
                     val toIdx = localSongs.indexOfFirst { it.stableKey() == toKey }
                     if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
                         localSongs.add(toIdx, localSongs.removeAt(fromIdx))
                     }
                 },
-                canDragOver = { _, over ->
-                    canReorderCurrentSongsState.value &&
-                        (over.key as? String) !in LOCAL_PLAYLIST_FIXED_ITEM_KEYS
+                canDragOver = localPlaylistCanDragOver {
+                    canReorderCurrentSongsState.value
                 },
                 onDragEnd = { _, _ ->
                     if (!canReorderCurrentSongsState.value) {
-                        return@rememberReorderableLazyListState
+                        return@rememberLocalPlaylistReorderState
                     }
                     val newOrder = localSongs.map { it.identity() }
                     pendingOrderIdentities = newOrder
@@ -1128,9 +1128,12 @@ fun LocalPlaylistDetailScreen(
                     }
                 }
             }
-            val displayOrderPlaylistForCover = remember(playlist, tabSongs) {
-                playlist.copy(songs = tabSongs.toMutableList())
-            }
+            val displayOrderPlaylistForCover = rememberLocalPlaylistReorderCoverPlaylist(
+                playlist = playlist,
+                displayedSongs = tabSongs,
+                tabKey = selectedLocalFilesTab,
+                freezeOrder = reorderState.draggingItemKey != null || pendingOrderIdentities != null
+            )
             val resolveHeaderCoverFallback = shouldResolveLocalPlaylistHeaderCoverFallback(
                 isListArtworkIdle
             )

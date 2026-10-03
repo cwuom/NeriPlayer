@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_insert_action">Move to…</string>
+    <string name="playlist_insert_title">Move to a position</string>
+    <plurals name="playlist_insert_description">
+        <item quantity="one">Move the selected song to a new position</item>
+        <item quantity="other">Move %1$d selected songs together in their current order</item>
+    </plurals>
+    <string name="playlist_insert_position_label">Final starting position</string>
+    <string name="playlist_insert_position_summary">Starting position: %1$d</string>
+    <string name="playlist_insert_edit_position">Edit position</string>
+    <string name="playlist_insert_position_hint">Enter 1 to %1$d</string>
+    <string name="playlist_insert_position_help">Position in the resulting playlist. Allowed range: 1–%1$d</string>
+    <string name="playlist_insert_invalid_position">Enter a whole number from 1 to %1$d</string>
+    <string name="playlist_insert_preview_action">Preview position</string>
+    <string name="playlist_insert_confirm_action">Confirm move</string>
+    <string name="playlist_insert_preview_title">Resulting order</string>
+    <string name="playlist_insert_preview_range">Selected songs will occupy positions %1$d–%2$d</string>
+    <plurals name="playlist_insert_section_selected">
+        <item quantity="one">Moving · %1$d song</item>
+        <item quantity="other">Moving · %1$d songs</item>
+    </plurals>
+    <string name="playlist_insert_section_before">Before the insertion</string>
+    <string name="playlist_insert_section_after">After the insertion</string>
+    <string name="playlist_insert_at_start">Start of playlist</string>
+    <string name="playlist_insert_at_end">End of playlist</string>
+    <plurals name="playlist_insert_omitted_before">
+        <item quantity="one">%1$d more song before</item>
+        <item quantity="other">%1$d more songs before</item>
+    </plurals>
+    <plurals name="playlist_insert_omitted_after">
+        <item quantity="one">%1$d more song after</item>
+        <item quantity="other">%1$d more songs after</item>
+    </plurals>
+    <string name="playlist_insert_invalid_selection">The selection has changed. Close this dialog and select again</string>
+    <string name="playlist_insert_stale">The playlist has changed. Preview the position again</string>
+    <string name="playlist_insert_failed">Could not move songs. Try again.</string>
+    <string name="playlist_insert_success">Moved to position %1$d</string>
+    <string name="playlist_insert_undone">Move undone</string>
+    <string name="playlist_insert_undo_stale">The playlist changed. This move cannot be undone</string>
+    <string name="playlist_insert_undo_failed">Could not undo the move</string>
+</resources>

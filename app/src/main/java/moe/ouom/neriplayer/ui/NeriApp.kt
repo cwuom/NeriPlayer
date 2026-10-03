@@ -1773,11 +1773,9 @@ private fun NeriAppContent(
                         onMainTabSelected = ::navigateToMainTab,
                         onExpandNowPlaying = { showNowPlaying = true }
                     ) { _ ->
-                        // Keep the effect on a stable layer outside NavHost transitions
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .captureAdvancedGlassBackdrop(contentGlassBackdrop)
                         ) {
                             MainTabLayerHost(
                                 selectedRoute = selectedMainTabRoute,

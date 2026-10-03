@@ -87,30 +87,34 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
         if (
             abs(offsetY) > OFFSET_THRESHOLD_PX &&
             delta.y != 0f &&
-            sign(delta.y) != sign(rawDragY)
+            sign(delta.y) != sign(offsetY)
         ) {
-            val consumed = if (abs(rawDragY) <= abs(delta.y)) -rawDragY else delta.y
-            if (abs(rawDragY) <= abs(delta.y)) {
+            // 反向手势只需收回可见位移，不能继续偿还阻尼前的隐藏拖动量
+            val consumed = if (abs(offsetY) <= abs(delta.y)) -offsetY else delta.y
+            if (abs(offsetY) <= abs(delta.y)) {
                 resetOffset()
-                scrollDeltaY -= consumed
-                overscrollConsumedY = consumed
             } else {
-                applyDrag(consumed)
-                scrollDeltaY = 0f
-                overscrollConsumedY = delta.y
+                offsetY += consumed
+                rawDragY = restoredAdvancedGlassOverscrollDrag(offsetY, resistanceScalePx)
             }
+            scrollDeltaY -= consumed
+            overscrollConsumedY = consumed
         }
 
         val adjustedDelta = Offset(delta.x, scrollDeltaY)
         val scrollConsumed = performScroll(adjustedDelta)
         val unconsumedY = adjustedDelta.y - scrollConsumed.y
-        if (unconsumedY != 0f) {
+        // 列表的亚像素舍入残差不代表真正到达边界
+        val overscrollDeltaY = if (abs(unconsumedY) > MIN_OVERSCROLL_DELTA_PX) {
             applyDrag(unconsumedY)
+            unconsumedY
+        } else {
+            0f
         }
 
         return Offset(
             x = scrollConsumed.x,
-            y = overscrollConsumedY + scrollConsumed.y + unconsumedY
+            y = overscrollConsumedY + scrollConsumed.y + overscrollDeltaY
         )
     }
 
@@ -183,6 +187,7 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
         }
         val launch = launchAnimation ?: return
         animationJob?.cancel()
+        val returnDirection = sign(if (offsetY != 0f) offsetY else initialVelocity)
         animationJob = launch {
             val stiffness = springStiffness(
                 advancedGlassOverscrollReturnPeriodSeconds(
@@ -203,10 +208,13 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
                     visibilityThreshold = OFFSET_THRESHOLD_PX
                 )
             ) { value, _ ->
-                offsetY = value.coerceIn(
-                    -maxAdvancedGlassOverscrollOffset(resistanceScalePx),
-                    maxAdvancedGlassOverscrollOffset(resistanceScalePx)
-                )
+                val maxOffset = maxAdvancedGlassOverscrollOffset(resistanceScalePx)
+                // 回弹不能跨过原点，制造相反边缘并吞掉下一次滑动
+                offsetY = if (returnDirection > 0f) {
+                    value.coerceIn(0f, maxOffset)
+                } else {
+                    value.coerceIn(-maxOffset, 0f)
+                }
                 rawDragY = restoredAdvancedGlassOverscrollDrag(offsetY, resistanceScalePx)
             }
             resetOffset()
@@ -358,6 +366,7 @@ private fun springStiffness(periodSeconds: Float): Float =
 
 private const val OVERSCROLL_RESISTANCE_SCALE_DP = 108f
 private const val OFFSET_THRESHOLD_PX = 1f
+private const val MIN_OVERSCROLL_DELTA_PX = 0.5f
 private const val CRITICAL_DAMPING_RATIO = 1f
 private const val MIN_RETURN_SPRING_PERIOD_SECONDS = 0.44f
 private const val MAX_RETURN_SPRING_PERIOD_SECONDS = 0.62f

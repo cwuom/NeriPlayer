@@ -207,6 +207,7 @@
     "moe/ouom/neriplayer/ui/settings/owner/AppSettingsCacheClearOwner.kt",
     "moe/ouom/neriplayer/ui/navigation/AppNavigationGraph.kt",
     "moe/ouom/neriplayer/ui/navigation/AppNavigationScaffold.kt",
+    "moe/ouom/neriplayer/ui/navigation/AppDragBoundsOwner.kt",
     "moe/ouom/neriplayer/ui/banner/AppManagedProcessingBannerOwner.kt",
     "moe/ouom/neriplayer/ui/theme/reveal/AppThemeRevealOverlayHost.kt",
     "moe/ouom/neriplayer/ui/dialog/AppGlobalDialogHosts.kt",

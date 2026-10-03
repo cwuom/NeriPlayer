@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.ui.banner.shouldExpandManagedProcessingBannerFromDrag
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -59,10 +60,36 @@ class NeriAppProcessingBannerLayoutPolicyTest {
         assertTrue(contentLayout.contains(".align(Alignment.TopCenter)"))
         assertTrue(contentLayout.contains("content(layoutInsets)"))
         assertTrue(
-            source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
-                .contains(".captureAdvancedGlassBackdrop(contentGlassBackdrop)")
+            contentLayout.contains("Modifier.captureAdvancedGlassBackdrop(backdrops.content)")
         )
         assertFalse(contentLayout.contains(".weight(1f)\n                                        .fillMaxWidth()"))
+    }
+
+    @Test
+    fun contentCaptureIncludesDragOverlayAndKeepsMiniPlayerOutside() {
+        val contentLayer = scaffoldSource()
+            .substringAfter("private fun AppManagedProcessingLayer(")
+            .substringBefore("private fun managedProcessingBannerEnterTransition()")
+        val app = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
+        val overlay = source("app/src/main/java/moe/ouom/neriplayer/ui/navigation/AppDragOverlay.kt")
+            .substringAfter("internal fun AppDragOverlayHost(")
+
+        assertTrue(contentLayer.contains("val backdrops = LocalAdvancedGlassBackdrops.current"))
+        assertEquals(1, Regex("captureAdvancedGlassBackdrop\\(").findAll(contentLayer).count())
+        assertTrue(
+            Regex(
+                "AppDragOverlayHost\\(modifier = Modifier.fillMaxSize\\(\\)" +
+                    "\\.then\\(contentCaptureModifier\\)\\) \\{\\s*" +
+                    "content\\(layoutInsets\\)\\s*\\}\\s*AppMiniPlayerOverlay\\("
+            ).containsMatchIn(contentLayer)
+        )
+        assertFalse(app.contains(".captureAdvancedGlassBackdrop(contentGlassBackdrop)"))
+        assertTrue(app.contains(".captureAdvancedGlassBackdrop(backgroundGlassBackdrop)"))
+        assertTrue(overlay.contains("modifier = modifier"))
+        assertTrue(
+            Regex("\\.drawWithContent \\{\\s*drawContent\\(\\)\\s*overlay.draw\\(this\\)\\s*\\}")
+                .containsMatchIn(overlay)
+        )
     }
 
     @Test

@@ -527,7 +527,11 @@ For release build and signing details, see
   song that was also manually added appears in both tabs. Removing a manually added song
   only removes its playlist entry, while confirming deletion of a downloaded song also
   removes its managed download files. User playlists support create, rename,
-  delete, reorder, and add-song actions. Playlist or song deletion shows undo
+  delete, reorder, and add-song actions. After a long press, delete and download stay
+  in the top bar while other actions move into More. In reorderable playlists, selected
+  songs can move together to a final position, with artwork and up to five neighboring
+  songs on each side shown in a preview before confirmation. After saving, the list
+  scrolls to the inserted songs and a snackbar offers undo. Playlist or song deletion shows undo
   feedback, and batch export into a local playlist confirms the target and can
   undo newly added items. Each detail shows the total play count, and Favorites
   offers playlist, artist, and Hot categories with playable weekly/monthly playlists
