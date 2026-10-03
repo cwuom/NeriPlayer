@@ -259,4 +259,141 @@ class BiliCommentMapperTest {
         assertEquals(CommentError.API, biliCommentError(-1))
         assertEquals(CommentError.API, biliCommentError(0))
     }
+
+    /**
+     * content.emote 的对象 key 就是正文标记，`//` 开头的表情地址补 `https:`；
+     * 地址为空或成员不是对象的条目被丢弃。
+     */
+    @Test
+    fun `parses content emote payload into placeholder and absolute url`() {
+        val page = parseBiliCommentPage(
+            JSONObject(
+                """
+                {"code":0,"data":{"page":{"num":1,"size":20,"count":1},"replies":[
+                  {"rpid":1,"content":{
+                    "message":"[doge][大哭]",
+                    "emote":{
+                      "[doge]":{"id":26,"text":"[doge]","url":"//i0.hdslb.com/bfs/emote/doge.png"},
+                      "[大哭]":{"id":2,"text":"[大哭]","url":"https://i0.hdslb.com/bfs/emote/cry.png"},
+                      "[broken]":{"id":3,"text":"[broken]","url":""},
+                      "[odd]":"not an object"
+                    }
+                  }}
+                ]}}
+                """.trimIndent()
+            ),
+            page = 1,
+            pageSize = 20
+        )
+
+        val comment = page.comments.single()
+        assertEquals("[doge][大哭]", comment.content)
+        assertEquals(
+            mapOf(
+                "[doge]" to "https://i0.hdslb.com/bfs/emote/doge.png",
+                "[大哭]" to "https://i0.hdslb.com/bfs/emote/cry.png"
+            ),
+            comment.emotes.associate { it.placeholder to it.url }
+        )
+    }
+
+    /**
+     * content.pictures 取 img_src 并补协议头，img_width/img_height 缺省为 0，空地址条目丢弃。
+     */
+    @Test
+    fun `parses content pictures with dimensions`() {
+        val page = parseBiliCommentPage(
+            JSONObject(
+                """
+                {"code":0,"data":{"page":{"num":1,"size":20,"count":1},"replies":[
+                  {"rpid":1,"content":{"message":"看图","pictures":[
+                    {"img_src":"//i0.hdslb.com/bfs/new_dyn/aaa.jpg","img_width":2400,"img_height":1080,"img_size":1305.53},
+                    {"img_src":"","img_width":100,"img_height":100},
+                    {"img_src":"https://i0.hdslb.com/bfs/new_dyn/bbb.png"}
+                  ]}}
+                ]}}
+                """.trimIndent()
+            ),
+            page = 1,
+            pageSize = 20
+        )
+
+        val images = page.comments.single().images
+        assertEquals(2, images.size)
+
+        val pictured = images[0]
+        assertEquals("https://i0.hdslb.com/bfs/new_dyn/aaa.jpg", pictured.url)
+        assertEquals(2400, pictured.width)
+        assertEquals(1080, pictured.height)
+        assertEquals(2400f / 1080f, pictured.aspectRatio, 0.0001f)
+
+        val sized = images[1]
+        assertEquals("https://i0.hdslb.com/bfs/new_dyn/bbb.png", sized.url)
+        assertEquals(0, sized.width)
+        assertEquals(0, sized.height)
+        assertEquals(1f, sized.aspectRatio, 0.0001f)
+    }
+
+    /**
+     * 没有 emote / pictures 字段时表情与配图是空列表，不是 null。
+     */
+    @Test
+    fun `comment without emotes or pictures yields empty lists`() {
+        val page = parseBiliCommentPage(
+            JSONObject(
+                """{"code":0,"data":{"page":{"num":1,"size":20,"count":1},
+                "replies":[{"rpid":1,"content":{"message":"纯文本"}}]}}"""
+            ),
+            page = 1,
+            pageSize = 20
+        )
+
+        val comment = page.comments.single()
+        assertEquals("纯文本", comment.content)
+        assertTrue(comment.emotes.isEmpty())
+        assertTrue(comment.images.isEmpty())
+    }
+
+    /**
+     * 一级评论与楼中楼回复都按同一条路径解析表情与配图。
+     */
+    @Test
+    fun `top level and preview replies both parse emotes and pictures`() {
+        val page = parseBiliCommentPage(
+            JSONObject(
+                """
+                {"code":0,"data":{"page":{"num":1,"size":20,"count":1},"replies":[
+                  {"rpid":10,"content":{
+                     "message":"[doge]",
+                     "emote":{"[doge]":{"url":"//i0.hdslb.com/bfs/emote/doge.png"}},
+                     "pictures":[{"img_src":"//i0.hdslb.com/bfs/new_dyn/root.jpg","img_width":800,"img_height":600}]
+                   },
+                   "replies":[
+                     {"rpid":11,"root":10,"content":{
+                        "message":"[大哭]",
+                        "emote":{"[大哭]":{"url":"//i0.hdslb.com/bfs/emote/cry.png"}},
+                        "pictures":[{"img_src":"//i0.hdslb.com/bfs/new_dyn/reply.jpg","img_width":300,"img_height":400}]
+                     }}
+                   ]}
+                ]}}
+                """.trimIndent()
+            ),
+            page = 1,
+            pageSize = 20
+        )
+
+        val root = page.comments.single()
+        assertEquals("[doge]", root.emotes.single().placeholder)
+        assertEquals("https://i0.hdslb.com/bfs/emote/doge.png", root.emotes.single().url)
+        assertEquals("https://i0.hdslb.com/bfs/new_dyn/root.jpg", root.images.single().url)
+        assertEquals(800, root.images.single().width)
+
+        val reply = root.previewReplies.single()
+        assertEquals("11", reply.id)
+        assertEquals("[大哭]", reply.emotes.single().placeholder)
+        assertEquals("https://i0.hdslb.com/bfs/emote/cry.png", reply.emotes.single().url)
+        assertEquals("https://i0.hdslb.com/bfs/new_dyn/reply.jpg", reply.images.single().url)
+        assertEquals(300, reply.images.single().width)
+        assertEquals(400, reply.images.single().height)
+    }
 }

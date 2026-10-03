@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.platform.comments.mapper
 
 import moe.ouom.neriplayer.platform.comments.CommentApiException
+import moe.ouom.neriplayer.data.model.comments.CommentEmote
 import moe.ouom.neriplayer.data.model.comments.CommentError
 import moe.ouom.neriplayer.data.model.comments.CommentPage
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.data.model.comments.CommentQuote
 import moe.ouom.neriplayer.data.model.comments.SongComment
+import moe.ouom.neriplayer.data.model.comments.neteaseEmoteUrlMap
 import moe.ouom.neriplayer.common.json.mapObjectsNotNull
 import org.json.JSONObject
 
@@ -65,13 +67,15 @@ internal fun parseNeteaseCommentPage(
 private fun parseNeteaseComment(item: JSONObject, includePreview: Boolean = true): SongComment {
     val user = item.optJSONObject("user") ?: JSONObject()
     val createTime = item.optLong("time", 0L).takeIf { it > 0L }
+    // 正文原样保留 (含表情标记), UI 按 emotes 自行切分渲染
+    val contentText = item.optString("content")
 
     return SongComment(
         id = item.optLong("commentId", 0L).toString(),
         userId = user.optLong("userId", 0L).takeIf { it > 0L }?.toString(),
         username = user.optString("nickname"),
         avatarUrl = user.optString("avatarUrl").takeIf { it.isNotBlank() },
-        content = item.optString("content"),
+        content = contentText,
         likeCount = item.optLong("likedCount", 0L),
         replyCount = resolveNeteaseReplyCount(item),
         // 网易云的时间戳已经是毫秒
@@ -91,10 +95,64 @@ private fun parseNeteaseComment(item: JSONObject, includePreview: Boolean = true
                 ?.mapObjectsNotNull { parseNeteaseComment(it, false) }
                 .orEmpty()
         } else emptyList(),
-        rootId = item.optLong("parentCommentId", 0L).takeIf { it > 0L }?.toString()
+        rootId = item.optLong("parentCommentId", 0L).takeIf { it > 0L }?.toString(),
+        // 正文里的 `[名称]` 标记按内置表情表展开, 楼中楼回复走同一条解析路径
+        emotes = parseNeteaseEmotes(contentText)
     )
 }
 
+/**
+ * 网易云正文里的 `[名称]` 表情标记 -> 统一表情模型。
+ *
+ * 只展开能命中 [neteaseEmoteUrlMap] 的标记 (未知 `[xxx]` 不产生表情, 由 UI 当纯文本渲染),
+ * 同一个标记在正文里出现多次只产出一条; 正文本身不改写, 切分交给 UI。
+ */
+private fun parseNeteaseEmotes(content: String): List<CommentEmote> {
+    if (content.isEmpty()) return emptyList()
+    val catalog = neteaseEmoteUrlMap()
+    if (catalog.isEmpty()) return emptyList()
+
+    // 不用 mutableListOf / mutableSetOf / Regex: 它们会把 java.util.ArrayList、
+    // java.util.LinkedHashSet、kotlin.text.Regex + MatchResult、kotlin.sequences.*
+    // 带进本文件常量池, 全部落在 platform-comments 域的依赖白名单之外
+    // (:platform:verifyDomainDependencies)。手工扫描与 `\[[^\[\]]+]` 等价:
+    // 标记非空、内部不含 `[`, 非重叠, 未知与重复标记不产出。
+    var result: List<CommentEmote> = emptyList()
+    var cursor = 0
+    while (cursor < content.length) {
+        val start = content.indexOf('[', cursor)
+        if (start < 0) break
+        val end = content.indexOf(']', start + 1)
+        if (end < 0) break
+        val inner = content.substring(start + 1, end)
+        if (inner.isEmpty() || '[' in inner) {
+            // 与正则一致: 该位置匹配失败, 从下一个字符继续找 `[` (内部的 `[` 仍可能成对)
+            cursor = start + 1
+            continue
+        }
+        val url = catalog[inner]
+        if (url != null) {
+            val token = content.substring(start, end + 1)
+            if (result.none { it.placeholder == token }) {
+                result = result + CommentEmote(placeholder = token, url = url)
+            }
+        }
+        cursor = end + 1
+    }
+    return result
+}
+
+/**
+ * 网易云楼中楼回复的分页解析: 复用 [parseNeteaseCommentPage] 拿到评论页后, 把 `nextCursor` 换成该接口自己的游标。
+ *
+ * 游标优先取 `data.time` (楼中楼按时间翻页), 缺失时退回本页最后一条回复的发布时间; 响应里没有 `data`
+ * 对象时抛 [CommentApiException]。
+ *
+ * @param rawJson 接口返回的原始 JSON
+ * @param page 请求的页码, 原样写回 [CommentPage]
+ * @param pageSize 请求的每页条数, 原样写回 [CommentPage]
+ * @return 带楼中楼游标的评论分页
+ */
 internal fun parseNeteaseReplyPage(rawJson: String, page: Int, pageSize: Int): CommentPage {
     val result = parseNeteaseCommentPage(rawJson, page, pageSize)
     val data = JSONObject(rawJson).optJSONObject("data")

@@ -22,7 +22,11 @@ data class SongComment(
     val isLiked: Boolean = false,
     val quotedComments: List<CommentQuote> = emptyList(),
     val previewReplies: List<SongComment> = emptyList(),
-    val rootId: String? = null
+    val rootId: String? = null,
+    /** 正文里可出现的内联表情 (标记 -> 图片地址), 为空表示正文是纯文本 */
+    val emotes: List<CommentEmote> = emptyList(),
+    /** 评论配图 (Bilibili `content.pictures`), 为空表示无图 */
+    val images: List<CommentImage> = emptyList()
 )
 
 data class CommentQuote(
@@ -36,6 +40,11 @@ data class CommentReplyTarget(
     val username: String
 )
 
+/**
+ * 各平台单条评论正文的长度上限: 网易云 140, Bilibili 1000。
+ *
+ * 发送前用它校验草稿长度, 超出上限的提交在本地就会被拦下。
+ */
 fun CommentPlatform.commentLengthLimit(): Int = when (this) {
     CommentPlatform.NETEASE -> 140
     CommentPlatform.BILIBILI -> 1000

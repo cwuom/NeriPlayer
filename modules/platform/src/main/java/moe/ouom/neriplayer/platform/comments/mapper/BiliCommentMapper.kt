@@ -2,7 +2,9 @@ package moe.ouom.neriplayer.platform.comments.mapper
 
 import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.platform.comments.CommentApiException
+import moe.ouom.neriplayer.data.model.comments.CommentEmote
 import moe.ouom.neriplayer.data.model.comments.CommentError
+import moe.ouom.neriplayer.data.model.comments.CommentImage
 import moe.ouom.neriplayer.data.model.comments.CommentPage
 import moe.ouom.neriplayer.data.model.comments.CommentPlatform
 import moe.ouom.neriplayer.data.model.comments.SongComment
@@ -99,17 +101,67 @@ private fun parseBiliComment(item: JSONObject, includePreview: Boolean = true): 
                 ?.mapObjectsNotNull { parseBiliComment(it, false) }
                 .orEmpty()
         } else emptyList(),
-        rootId = item.optLong("root", 0L).takeIf { it > 0L }?.toString()
+        rootId = item.optLong("root", 0L).takeIf { it > 0L }?.toString(),
+        // 表情与配图都挂在 content 子对象上, 一级评论与楼中楼走同一条解析路径
+        emotes = parseBiliEmotes(content),
+        images = parseBiliImages(content)
     )
+}
+
+/**
+ * Bilibili 评论内联表情 (`content.emote`) -> 统一表情模型。
+ *
+ * 载荷形如 `{"[doge]":{"id":26,"text":"[doge]","url":"//i0.hdslb.com/bfs/emote/xxx.png"}}`,
+ * JSON key 就是正文里出现的标记文本; 地址为空或非对象的条目直接丢弃, 不做占位。
+ */
+private fun parseBiliEmotes(content: JSONObject): List<CommentEmote> {
+    val emoteObject = content.optJSONObject("emote") ?: return emptyList()
+    // 不用 mutableListOf: 它是 inline, 会把 java.util.ArrayList 带进本文件的常量池,
+    // 撞上 platform-comments 域的依赖白名单 (:platform:verifyDomainDependencies)
+    var result: List<CommentEmote> = emptyList()
+    val placeholders = emoteObject.keys()
+    while (placeholders.hasNext()) {
+        val placeholder = placeholders.next()
+        val url = ensureBiliMediaScheme(emoteObject.optJSONObject(placeholder)?.optString("url"))
+            ?: continue
+        result = result + CommentEmote(placeholder = placeholder, url = url)
+    }
+    return result
+}
+
+/**
+ * Bilibili 评论配图 (`content.pictures`) -> 统一配图模型。
+ *
+ * 载荷形如 `[{"img_src":"//i0.hdslb.com/bfs/xxx.jpg","img_width":2400,"img_height":1080}]`;
+ * 宽高缺失时取 0 (`optInt` 默认值), 地址为空的条目丢弃。
+ */
+private fun parseBiliImages(content: JSONObject): List<CommentImage> =
+    content.optJSONArray("pictures")
+        ?.mapObjectsNotNull { picture ->
+            val url = ensureBiliMediaScheme(picture.optString("img_src"))
+                ?: return@mapObjectsNotNull null
+            CommentImage(
+                url = url,
+                width = picture.optInt("img_width", 0),
+                height = picture.optInt("img_height", 0)
+            )
+        }
+        .orEmpty()
+
+/**
+ * Bilibili 图片地址协议归一化: `//` 开头补 `https:`, 空值返回 null。
+ */
+private fun ensureBiliMediaScheme(raw: String?): String? {
+    val trimmed = raw?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    return if (trimmed.startsWith("//")) "https:$trimmed" else trimmed
 }
 
 /**
  * Bilibili 头像地址归一化: 补齐协议头 + 追加尺寸参数 (复用 BiliImageUrl 的逻辑)。
  */
 private fun normalizeBiliAvatarUrl(raw: String?): String? {
-    val trimmed = raw?.trim().orEmpty()
-    if (trimmed.isEmpty()) return null
-    val withScheme = if (trimmed.startsWith("//")) "https:$trimmed" else trimmed
+    val withScheme = ensureBiliMediaScheme(raw) ?: return null
     return buildBiliThumbnailUrl(withScheme, width = 96, height = 96)
         .takeIf { it.isNotBlank() }
 }
