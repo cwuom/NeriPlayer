@@ -48,6 +48,7 @@ class SyncBackendConfiguredTargetTest {
             `when`(api.getFileContentStrict(remoteUrl))
                 .thenReturn(Result.failure(WebDavFileNotFoundException("No legacy backup")))
             mockConstruction(WebDavStorage::class.java) { storage, _ ->
+                `when`(storage.captureSyncMetadataGuard()).thenReturn { write -> write(); true }
                 `when`(storage.getServerUrl()).thenReturn(server)
                 `when`(storage.getBasePath()).thenReturn(directory)
                 `when`(storage.getUsername()).thenReturn(username)

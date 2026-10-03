@@ -9,14 +9,15 @@ import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 
 internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPreferences) {
-    private val completionTime = SyncCompletionTimeStore(encryptedPrefs, completionTimeChanges, ::getLastSyncTime)
+    private val completionTime = SyncCompletionTimeStore(encryptedPrefs, completionTimeChanges, configurationLock, ::getLastSyncTime)
 
     private companion object {
         val completionTimeChanges = MutableStateFlow(0L)
+        val configurationLock = Any()
     }
 
     fun saveToken(token: String) {
-        encryptedPrefs.edit { putString(KEY_GITHUB_TOKEN, token) }
+        completionTime.editConfiguration { putString(KEY_GITHUB_TOKEN, token) }
     }
 
     fun getToken(): String? {
@@ -24,11 +25,11 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun clearToken() {
-        encryptedPrefs.edit { remove(KEY_GITHUB_TOKEN) }
+        completionTime.editConfiguration { remove(KEY_GITHUB_TOKEN) }
     }
 
     fun saveRepository(owner: String, name: String) {
-        encryptedPrefs.edit {
+        completionTime.editConfiguration {
             putString(KEY_REPO_OWNER, owner)
                 .putString(KEY_REPO_NAME, name)
         }
@@ -52,6 +53,8 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun saveLastCompletedSyncTime(timestamp: Long) = completionTime.save(timestamp)
+
+    fun captureSyncMetadataGuard(): (() -> Unit) -> Boolean = completionTime.captureConfigurationGuard()
 
     fun getLastCompletedSyncTime(): Long = completionTime.read()
 
@@ -93,7 +96,7 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun clearAll() {
-        encryptedPrefs.edit {
+        completionTime.editConfiguration {
             remove(KEY_GITHUB_TOKEN)
             remove(KEY_REPO_OWNER)
             remove(KEY_REPO_NAME)
@@ -134,7 +137,7 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun restore(snapshot: GitHubSyncConfigSnapshot) {
-        encryptedPrefs.edit {
+        completionTime.editConfiguration {
             remove(KEY_GITHUB_TOKEN)
             remove(KEY_REPO_OWNER)
             remove(KEY_REPO_NAME)

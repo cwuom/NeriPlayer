@@ -874,7 +874,7 @@ class WebDavArchiveGcHttpTest {
             backend = WebDavSyncBackend(storage, api, server.url("/dav/backup").toString(),
                 SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, {}, archive,
                 currentProtocolObserved = { onObserved(it) },
-                wallMs = { 1_800_000_000_000L }, uptimeMs = { 1_000L })
+                wallMs = { 1_800_000_000_000L }, uptimeMs = { 1_000L }, metadataGuard = { write -> write(); true })
         }
 
         private fun dispatchRequest(request: RecordedRequest): MockResponse {
@@ -1029,7 +1029,7 @@ class WebDavArchiveGcHttpTest {
         }.build(), "auth")
         val backend = WebDavSyncBackend(storage, api,
             remoteUrl, SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, {}, archive,
-            wallMs = { wallMs }, uptimeMs = { uptimeMs })
+            wallMs = { wallMs }, uptimeMs = { uptimeMs }, metadataGuard = { write -> write(); true })
 
         private fun write(request: Request, name: String): Response {
             if (locked && request.header("If")?.contains(TOKEN) != true) return response(request, 423)

@@ -93,6 +93,17 @@ class SyncSessionTest {
     }
 
     @Test
+    fun `a configuration change rejecting completion does not report sync success`() = runTest {
+        backend.acceptCompletedTime = false
+
+        val result = session.execute { backend }.getOrThrow()
+
+        assertFalse(result.success)
+        assertEquals("pending", result.message)
+        assertEquals(null, backend.completedTime)
+    }
+
+    @Test
     fun `changed remote is applied even when upload is unnecessary`() = runTest {
         backend.data = local.data.copy()
         backend.firstSync = false
@@ -358,6 +369,7 @@ class SyncSessionTest {
         var savedVersion: Int? = null
         var savedTime: Long? = null
         var completedTime: Long? = null
+        var acceptCompletedTime = true
         var followUps = 0
         var lastError: Throwable? = null
         var fetchError: Throwable? = null
@@ -387,7 +399,10 @@ class SyncSessionTest {
         override fun isConflict(error: Throwable?) = error is Conflict
         override fun saveRemoteVersion(version: Int) { savedVersion = version }
         override fun saveSyncTime(timestamp: Long) { savedTime = timestamp }
-        override fun saveCompletedSyncTime(timestamp: Long) { completedTime = timestamp }
+        override fun saveCompletedSyncTime(timestamp: Long): Boolean {
+            if (acceptCompletedTime) completedTime = timestamp
+            return acceptCompletedTime
+        }
         override fun scheduleFollowUp() { followUps++ }
         override fun onFailure(error: Throwable) { lastError = error }
     }

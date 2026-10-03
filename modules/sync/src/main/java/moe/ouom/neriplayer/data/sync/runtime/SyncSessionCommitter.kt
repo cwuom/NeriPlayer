@@ -12,7 +12,7 @@ internal class SyncSessionCommitter(
         resolution: SyncUploadResolution<SyncDatasetMergeResult, TVersion>,
         firstSync: Boolean,
         mutationVersion: Long
-    ) {
+    ): Boolean {
         val applied = if (local.mutationVersion() == mutationVersion) {
             local.apply(
                 resolution.merged.dataset,
@@ -31,6 +31,6 @@ internal class SyncSessionCommitter(
             backend.scheduleFollowUp()
         }
         // 远端交换已完成，新产生的本地数据继续重试，合并检查点仍按应用结果推进
-        backend.saveCompletedSyncTime(completedAt)
+        return backend.saveCompletedSyncTime(completedAt)
     }
 }

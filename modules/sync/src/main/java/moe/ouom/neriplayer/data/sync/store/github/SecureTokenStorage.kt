@@ -78,6 +78,9 @@ class SecureTokenStorage internal constructor(
 
     fun saveLastCompletedSyncTime(timestamp: Long) = configuration.saveLastCompletedSyncTime(timestamp)
 
+    /** 配置保存或清除后，旧会话不再写入确认元数据 */
+    fun captureSyncMetadataGuard(): (() -> Unit) -> Boolean = configuration.captureSyncMetadataGuard()
+
     fun getLastCompletedSyncTime(): Long = configuration.getLastCompletedSyncTime()
 
     fun observeLastCompletedSyncTime(): Flow<Long> = configuration.observeLastCompletedSyncTime()

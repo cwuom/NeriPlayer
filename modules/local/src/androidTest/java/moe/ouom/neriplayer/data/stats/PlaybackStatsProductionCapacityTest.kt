@@ -257,7 +257,7 @@ class PlaybackStatsProductionCapacityTest {
         override fun isConflict(error: Throwable?) = false
         override fun saveRemoteVersion(version: Int) { acknowledgedVersion = version }
         override fun saveSyncTime(timestamp: Long) { time = timestamp }
-        override fun saveCompletedSyncTime(timestamp: Long) = Unit
+        override fun saveCompletedSyncTime(timestamp: Long) = true
         override fun scheduleFollowUp() = error("Unexpected stale local snapshot")
         override fun onFailure(error: Throwable) = Unit
     }

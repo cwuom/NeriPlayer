@@ -28,6 +28,7 @@ internal fun createGitHubSyncBackend(
     storage: SecureTokenStorage,
     expectedTargetId: String? = null
 ): GitHubSyncBackend {
+    val metadataGuard = storage.captureSyncMetadataGuard()
     val configuredOwner = storage.getRepoOwner()
     val configuredRepo = storage.getRepoName()
     val capturedTarget = if (configuredOwner != null && configuredRepo != null)
@@ -50,12 +51,14 @@ internal fun createGitHubSyncBackend(
         authorizeLegacyMigration = { content ->
             upgrades.requireLegacyMigration(migrationChallenge(target, content))
         },
-        currentProtocolObserved = { version -> upgrades.markCurrent(target, version) }
+        currentProtocolObserved = { version -> upgrades.markCurrent(target, version) },
+        metadataGuard = metadataGuard
     )
 }
 
 internal fun createWebDavSyncBackend(context: Context, expectedTargetId: String? = null): WebDavSyncBackend {
     val webDavStorage = WebDavStorage(context)
+    val metadataGuard = webDavStorage.captureSyncMetadataGuard()
     val serverUrl = webDavStorage.getServerUrl()?.takeIf { it.isNotBlank() }
     val basePath = webDavStorage.getBasePath()
     val configuredUsername = webDavStorage.getUsername()
@@ -79,7 +82,8 @@ internal fun createWebDavSyncBackend(context: Context, expectedTargetId: String?
         authorizeLegacyMigration = { content ->
             upgrades.requireLegacyMigration(migrationChallenge(target, content))
         },
-        currentProtocolObserved = { version -> upgrades.markCurrent(target, version) }
+        currentProtocolObserved = { version -> upgrades.markCurrent(target, version) },
+        metadataGuard = metadataGuard
     )
 }
 

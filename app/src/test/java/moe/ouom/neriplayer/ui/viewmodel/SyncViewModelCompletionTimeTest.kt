@@ -120,7 +120,7 @@ class SyncViewModelCompletionTimeTest {
     }
 
     @Test
-    fun `a cancelled stale sync cannot restore a cleared completion time`() = runTest {
+    fun `a cancelled manual sync result cannot overwrite the cleared UI`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         mockConstruction(Class.forName("moe.ouom.neriplayer.data.sync.work.SyncWorkScheduler")).use {
             for (fixture in fixtures()) {
@@ -168,7 +168,11 @@ class SyncViewModelCompletionTimeTest {
             githubFixture.savedCompletedTime
         }
         `when`(githubStorage.observeLastCompletedSyncTime()).thenReturn(githubFixture.events)
-        doAnswer { githubFixture.events.value = 0L; null }.`when`(githubStorage).clearAll()
+        doAnswer {
+            githubFixture.savedCompletedTime = 0L
+            githubFixture.events.value = 0L
+            null
+        }.`when`(githubStorage).clearAll()
 
         val webDav = WebDavSyncViewModel().also(viewModels::add)
         val webDavStorage = mock(WebDavStorage::class.java)
@@ -187,7 +191,11 @@ class SyncViewModelCompletionTimeTest {
             webDavFixture.savedCompletedTime
         }
         `when`(webDavStorage.observeLastCompletedSyncTime()).thenReturn(webDavFixture.events)
-        doAnswer { webDavFixture.events.value = 0L; null }.`when`(webDavStorage).clearAll()
+        doAnswer {
+            webDavFixture.savedCompletedTime = 0L
+            webDavFixture.events.value = 0L
+            null
+        }.`when`(webDavStorage).clearAll()
         return listOf(githubFixture, webDavFixture)
     }
 

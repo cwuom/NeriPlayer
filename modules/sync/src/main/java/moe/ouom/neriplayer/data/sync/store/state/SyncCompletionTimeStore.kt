@@ -11,14 +11,42 @@ import kotlinx.coroutines.flow.update
 internal class SyncCompletionTimeStore(
     private val preferences: SharedPreferences,
     private val changes: MutableStateFlow<Long>,
+    private val configurationLock: Any,
     private val readCheckpoint: () -> Long
 ) {
-    fun save(timestamp: Long) {
+    fun save(timestamp: Long) = synchronized(configurationLock) {
         preferences.edit { putLong(KEY_LAST_COMPLETED_SYNC_TIME, timestamp) }
         notifyChanged()
     }
 
-    fun read(): Long = preferences.getLong(KEY_LAST_COMPLETED_SYNC_TIME, readCheckpoint())
+    fun read(): Long = synchronized(configurationLock) {
+        preferences.getLong(KEY_LAST_COMPLETED_SYNC_TIME, readCheckpoint())
+    }
+
+    fun captureConfigurationGuard(): (() -> Unit) -> Boolean {
+        val expectedGeneration = synchronized(configurationLock) { configurationGeneration() }
+        return { write ->
+            synchronized(configurationLock) {
+                if (configurationGeneration() != expectedGeneration) {
+                    false
+                } else {
+                    write()
+                    true
+                }
+            }
+        }
+    }
+
+    fun editConfiguration(action: SharedPreferences.Editor.() -> Unit) = synchronized(configurationLock) {
+        val nextGeneration = configurationGeneration() + 1L
+        preferences.edit {
+            action()
+            // clear() 也会清除代次，必须在配置编辑后保存新代次
+            putLong(KEY_CONFIGURATION_GENERATION, nextGeneration)
+        }
+    }
+
+    private fun configurationGeneration(): Long = preferences.getLong(KEY_CONFIGURATION_GENERATION, 0L)
 
     fun observe(): Flow<Long> = changes.map { read() }.distinctUntilChanged()
 
@@ -33,5 +61,6 @@ internal class SyncCompletionTimeStore(
 
     private companion object {
         const val KEY_LAST_COMPLETED_SYNC_TIME = "last_completed_sync_time"
+        const val KEY_CONFIGURATION_GENERATION = "sync_configuration_generation"
     }
 }

@@ -53,7 +53,9 @@ class SyncSession(
             if (resolved.isFailure) return uploadFailure(backend, resolved.exceptionOrNull())
             val resolution = resolved.getOrThrow()
             resolution.merged.dataset.use {
-                SyncSessionCommitter(local, nowMs).commit(backend, resolution, firstSync, mutationVersion)
+                if (!SyncSessionCommitter(local, nowMs).commit(backend, resolution, firstSync, mutationVersion)) {
+                    return Result.success(SyncResult(success = false, message = deferredMessage))
+                }
                 return Result.success(SyncSessionResultPolicy.result(
                     resolution, firstSync, initialRemoteMissing, noChangeMessage, initialUploadMessage
                 ))

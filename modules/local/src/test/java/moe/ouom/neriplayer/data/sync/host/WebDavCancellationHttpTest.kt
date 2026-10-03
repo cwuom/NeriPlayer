@@ -54,7 +54,8 @@ class WebDavCancellationHttpTest {
             server.start()
             val backend = WebDavSyncBackend(mock(WebDavStorage::class.java),
                 WebDavApiClient("test-user", "test-password", client, "auth"), server.url("/backup").toString(),
-                SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { }, SyncArchiveRepository(temporary.newFolder()))
+                SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { }, SyncArchiveRepository(temporary.newFolder()),
+                metadataGuard = { write -> write(); true })
             val data = SyncData(deviceId = "cancel", playlists = listOf(
                 SyncPlaylist(id = 1L, name = "playlist", songs = listOf(SyncSong(id = 2L, name = "song")))
             ))

@@ -20,7 +20,7 @@ import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcState
 class WebDavStorage internal constructor(private val encryptedPrefs: SharedPreferences) {
     constructor(context: Context) : this(EncryptedSyncPreferences.open(context, PREFS_NAME, "NERI-WebDavStorage"))
 
-    private val completionTime = SyncCompletionTimeStore(encryptedPrefs, completionTimeChanges, ::getLastSyncTime)
+    private val completionTime = SyncCompletionTimeStore(encryptedPrefs, completionTimeChanges, configurationLock, ::getLastSyncTime)
 
     companion object {
         private const val PREFS_NAME = "webdav_secure_prefs"
@@ -33,6 +33,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         private const val KEY_LAST_REMOTE_FINGERPRINT = "last_remote_fingerprint"
         private const val KEY_ARCHIVE_MAINTENANCE = "archive_maintenance_"
         private val completionTimeChanges = MutableStateFlow(0L)
+        private val configurationLock = Any()
     }
 
     fun saveConfiguration(
@@ -41,7 +42,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         password: String,
         basePath: String
     ) {
-        encryptedPrefs.edit {
+        completionTime.editConfiguration {
             putString(KEY_SERVER_URL, normalizeServerUrl(serverUrl))
             putString(KEY_BASE_PATH, normalizeBasePath(basePath))
             putString(KEY_USERNAME, username)
@@ -70,6 +71,9 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
     fun getLastSyncTime(): Long = encryptedPrefs.getLong(KEY_LAST_SYNC_TIME, 0L)
 
     fun saveLastCompletedSyncTime(timestamp: Long) = completionTime.save(timestamp)
+
+    /** 配置保存或清除后，旧会话不再写入确认元数据 */
+    fun captureSyncMetadataGuard(): (() -> Unit) -> Boolean = completionTime.captureConfigurationGuard()
 
     fun getLastCompletedSyncTime(): Long = completionTime.read()
 
@@ -129,7 +133,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
     }
 
     fun clearAll() {
-        encryptedPrefs.edit { clear() }
+        completionTime.editConfiguration { clear() }
         completionTime.notifyChanged()
     }
 
@@ -144,7 +148,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
     }
 
     fun restore(snapshot: WebDavSyncConfigSnapshot) {
-        encryptedPrefs.edit {
+        completionTime.editConfiguration {
             remove(KEY_SERVER_URL)
             remove(KEY_BASE_PATH)
             remove(KEY_USERNAME)

@@ -35,7 +35,8 @@ internal class GitHubSyncBackend(
     private val archive: SyncArchiveRepository,
     private val datasetStore: SyncPlaybackDatasetStore = archive.playbackDatasets,
     private val authorizeLegacyMigration: suspend (ByteArray) -> Unit = {},
-    private val currentProtocolObserved: suspend (Int) -> Unit = {}
+    private val currentProtocolObserved: suspend (Int) -> Unit = {},
+    private val metadataGuard: (() -> Unit) -> Boolean = storage.captureSyncMetadataGuard()
 ) : SyncBackend<GitHubSyncBackend.Version> {
     private val useDataSaver = storage.isDataSaverMode()
     private val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
@@ -59,9 +60,9 @@ internal class GitHubSyncBackend(
     }
 
     override fun isConflict(error: Throwable?): Boolean = error is GitHubContentConflictException
-    override fun saveRemoteVersion(version: Version) { version.sha?.let(storage::saveLastRemoteSha) }
-    override fun saveSyncTime(timestamp: Long) { storage.saveLastSyncTime(timestamp) }
-    override fun saveCompletedSyncTime(timestamp: Long) { storage.saveLastCompletedSyncTime(timestamp) }
+    override fun saveRemoteVersion(version: Version) { metadataGuard { version.sha?.let(storage::saveLastRemoteSha) } }
+    override fun saveSyncTime(timestamp: Long) { metadataGuard { storage.saveLastSyncTime(timestamp) } }
+    override fun saveCompletedSyncTime(timestamp: Long): Boolean = metadataGuard { storage.saveLastCompletedSyncTime(timestamp) }
     override fun scheduleFollowUp() {
         followUp()
     }

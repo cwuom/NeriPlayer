@@ -158,7 +158,7 @@ class SyncDatasetSessionTest {
         override fun isConflict(error: Throwable?) = error is Conflict
         override fun saveRemoteVersion(version: Int) { savedVersion = version }
         override fun saveSyncTime(timestamp: Long) { savedTime = timestamp }
-        override fun saveCompletedSyncTime(timestamp: Long) { completedTime = timestamp }
+        override fun saveCompletedSyncTime(timestamp: Long): Boolean { completedTime = timestamp; return true }
         override fun scheduleFollowUp() { followUps++ }
         override fun onFailure(error: Throwable) = Unit
     }
