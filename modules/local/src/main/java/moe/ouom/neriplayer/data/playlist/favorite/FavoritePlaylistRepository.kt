@@ -52,7 +52,6 @@ import moe.ouom.neriplayer.common.io.writeTextAtomically
 import java.io.File
 import java.io.IOException
 
-const val FAVORITE_SOURCE_NETEASE_ARTIST = "neteaseArtist"
 private const val TAG = "FavoritePlaylistRepo"
 
 class FavoritePlaylistRepository internal constructor(
@@ -306,6 +305,41 @@ class FavoritePlaylistRepository internal constructor(
 
             publish(list)
             }
+        }
+    }
+
+    suspend fun mergeFollowedArtists(
+        source: String,
+        artists: List<FavoriteArtist>,
+        importStartedAt: Long
+    ): Int = withContext(Dispatchers.IO) {
+        initialLoad.await()
+        mutex.withLock {
+            if (!ensureInitializedLocked()) {
+                throw IOException("收藏歌手尚未成功加载", initialLoadFailure)
+            }
+            val imported = mergeFollowedArtistFavorites(
+                existing = _snapshots.value,
+                source = source,
+                artists = artists,
+                importStartedAt = importStartedAt,
+                now = System.currentTimeMillis()
+            )
+            if (imported.addedCount == 0) return@withLock 0
+            val normalized = normalize(imported.favorites)
+            // 提交后才收到取消时，下一次操作必须先确认实际主存
+            initialized = false
+            try {
+                if (!persist(normalized)) throw IOException("远端关注歌手未能保存")
+                publishInMemory(normalized)
+                initialized = true
+            } catch (error: Exception) {
+                initialLoadFailure = error
+                throw error
+            }
+            syncStorage.markSyncMutation()
+            triggerAutoSync()
+            imported.addedCount
         }
     }
 

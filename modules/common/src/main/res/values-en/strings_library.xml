@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="library_artist_platform_bili">Bilibili</string>
+    <string name="library_artist_platform_youtube">YouTube</string>
+    <string name="library_artist_following">Following</string>
+    <plurals name="library_artist_count">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artists</item>
+    </plurals>
+    <string name="library_artist_import">Import followed artists</string>
+    <string name="library_artist_import_loading">Importing…</string>
+    <string name="library_artist_import_login">Sign in to this platform first</string>
+    <string name="library_artist_import_account_changed">Your account changed. Try importing again</string>
+    <string name="library_artist_import_failed">Could not import artists. Try again later</string>
+    <string name="library_artist_import_no_new">No new followed artists</string>
+    <plurals name="library_artist_import_success">
+        <item quantity="one">Added %1$d artist</item>
+        <item quantity="other">Added %1$d artists</item>
+    </plurals>
     <!-- Library -->
     <string name="library_favorite_tab_playlists">Playlists</string>
     <string name="library_favorite_tab_artists">Artists</string>
@@ -10,7 +27,7 @@
     <string name="library_hot_empty">No matching hot songs yet</string>
     <string name="library_hot_empty_hint">Start listening and hot songs will appear here</string>
     <string name="library_no_favorite_artist">No followed artists</string>
-    <string name="library_favorite_artist_hint">Tap Follow on an artist page, and the artist will appear here</string>
+    <string name="library_favorite_artist_hint">Follow an artist or creator to find them here</string>
     <string name="library_favorite_source_artist">Artist</string>
     <string name="library_local_artist_empty">No local artists</string>
     <string name="library_local_artist_hint">After importing local audio, songs are grouped by artist automatically</string>

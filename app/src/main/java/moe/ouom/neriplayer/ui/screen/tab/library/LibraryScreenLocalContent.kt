@@ -93,6 +93,8 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
+import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_BILI_ARTIST
+import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_YOUTUBE_ARTIST
 import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -1254,7 +1256,9 @@ internal fun favoriteSourceSearchAliases(source: String): List<String> {
         "neteaseAlbum" -> listOf("Netease Album", "网易云专辑", "专辑")
         "netease" -> listOf("Netease", "网易云", "歌单")
         "bili" -> listOf("Bilibili", "哔哩哔哩", "B站")
-        FAVORITE_SOURCE_NETEASE_ARTIST -> listOf("Artist", "歌手")
+        FAVORITE_SOURCE_NETEASE_ARTIST -> listOf("Netease", "网易云", "Artist", "歌手")
+        FAVORITE_SOURCE_BILI_ARTIST -> listOf("Bilibili", "哔哩哔哩", "B站", "UP主", "歌手")
+        FAVORITE_SOURCE_YOUTUBE_ARTIST -> listOf("YouTube", "YouTube Music", "Artist", "歌手", "频道")
         else -> listOf(source)
     }
 }

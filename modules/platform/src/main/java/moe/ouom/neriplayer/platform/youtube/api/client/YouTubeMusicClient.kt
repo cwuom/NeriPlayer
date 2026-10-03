@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.platform.youtube.api.client
  */
 
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasLoginCookies
 import moe.ouom.neriplayer.platform.youtube.api.auth.normalized
 import java.io.IOException
@@ -86,6 +87,7 @@ import org.json.JSONObject
 
 private const val TAG = "NERI-YTMusicClient"
 private const val YOUTUBE_MUSIC_BROWSE_ID_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
+private const val YOUTUBE_MUSIC_BROWSE_ID_FOLLOWED_ARTISTS = "FEmusic_library_corpus_artists"
 private const val YOUTUBE_MUSIC_MUSIC_ORIGIN = "https://music.youtube.com"
 private const val YOUTUBE_MUSIC_BOOTSTRAP_TTL_MS = 10L * 60L * 1000L
 private const val YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX = "67"
@@ -759,6 +761,43 @@ class YouTubeMusicClient(
         resolveMissingTrackCounts = resolveMissingTrackCounts,
         authRefreshRetryCount = 0
     )
+
+    suspend fun getFollowedArtists(): List<YouTubeMusicCreatorSummary> = withContext(Dispatchers.IO) {
+        requireFollowedArtistsAuth()
+        var bootstrap = authenticatedBootstrap(reason = "followed_artists")
+        var requestLocale = YouTubeMusicLocaleResolver.preferred()
+        val artists = linkedMapOf<String, YouTubeMusicCreatorSummary>()
+        val seenContinuations = mutableSetOf<String>()
+        var continuation: String? = null
+
+        repeat(YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT) {
+            requireFollowedArtistsAuth()
+            val payload = continuation?.let { JSONObject().put("continuation", it) }
+                ?: JSONObject().put("browseId", YOUTUBE_MUSIC_BROWSE_ID_FOLLOWED_ARTISTS)
+            val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
+            bootstrap = response.bootstrap
+            requestLocale = response.requestLocale
+            requireFollowedArtistsAuth()
+            val page = YouTubeMusicParser.parseFollowedArtistsPage(response.root)
+                ?: throw IOException("YouTube Music followed artists response missing library contents")
+            page.artists.forEach { artist -> artists.putIfAbsent(artist.browseId, artist) }
+            val nextContinuation = page.continuation?.takeIf(String::isNotBlank)
+            if (nextContinuation == null) {
+                return@withContext artists.values.toList()
+            }
+            if (!seenContinuations.add(nextContinuation)) {
+                throw IOException("YouTube Music followed artists continuation repeated")
+            }
+            continuation = nextContinuation
+        }
+        throw IOException("YouTube Music followed artists pagination did not reach an end")
+    }
+
+    private fun requireFollowedArtistsAuth() {
+        if (!authRepo.getAuthOnce().hasEffectiveAuth()) {
+            throw IOException("YouTube Music login is required to fetch followed artists")
+        }
+    }
 
     private suspend fun getLibraryPlaylistsInternal(
         resolveMissingTrackCounts: Boolean,

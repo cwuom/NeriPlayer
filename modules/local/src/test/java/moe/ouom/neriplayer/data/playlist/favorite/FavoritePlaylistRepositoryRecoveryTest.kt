@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.data.playlist.favorite
 
 import android.content.Context
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -140,6 +143,134 @@ class FavoritePlaylistRepositoryRecoveryTest {
         assertFalse(repository.replaceFavoritesFromSyncIfUnchanged(listOf(favorite(1, "After")), 0))
         assertTrue(runCatching { repository.getSyncSnapshots() }.exceptionOrNull() is IOException)
     }
+
+    @Test
+    fun `follow import persists the whole batch and leaves existing collections untouched`() = runTest {
+        val original = favorite(1, "Existing playlist")
+        var stored = listOf(original)
+        var writes = 0
+        val room = mock(FavoritePlaylistRoomStore::class.java)
+        `when`(room.readIfRoomPrimary()).thenAnswer { stored }
+        doAnswer { invocation ->
+            stored = invocation.getArgument(1)
+            writes += 1
+            Unit
+        }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+        val repository = repository(room, backgroundScope)
+
+        val added = repository.mergeFollowedArtists(
+            FAVORITE_SOURCE_NETEASE_ARTIST,
+            listOf(FavoriteArtist(1L, "Artist with same numeric ID"), FavoriteArtist(2L, "Second artist"), FavoriteArtist(2L, "Duplicate")),
+            importStartedAt = 100L
+        )
+
+        assertEquals(2, added)
+        assertEquals(1, writes)
+        assertEquals(original, stored.single { it.source == "netease" })
+        assertEquals(stored, repository.getSyncSnapshots())
+        assertEquals(0, repository.mergeFollowedArtists(
+            FAVORITE_SOURCE_NETEASE_ARTIST,
+            listOf(FavoriteArtist(1L, "Already followed"), FavoriteArtist(2L, "Already followed")),
+            importStartedAt = 100L
+        ))
+        assertEquals(1, writes)
+    }
+
+    @Test
+    fun `follow import cannot replace unreadable primary data`() = runTest {
+        val room = mock(FavoritePlaylistRoomStore::class.java)
+        `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("Room unavailable") }
+        val json = File(temporaryFolder.root, "favorite_playlists.json")
+        json.writeText("[]")
+        val repository = repository(room, backgroundScope)
+
+        val result = runCatching {
+            repository.mergeFollowedArtists(FAVORITE_SOURCE_NETEASE_ARTIST, listOf(FavoriteArtist(1L, "Artist")), 100L)
+        }
+
+        assertTrue(result.exceptionOrNull() is IOException)
+        assertTrue(repository.favorites.value.isEmpty())
+        assertEquals("[]", json.readText())
+    }
+
+    @Test
+    fun `failed follow import keeps visible records and requires the primary snapshot to be confirmed again`() = runTest {
+        val original = listOf(favorite(1, "Before"))
+        val room = mock(FavoritePlaylistRoomStore::class.java)
+        `when`(room.readIfRoomPrimary()).thenReturn(original)
+        doAnswer { throw IOException("Room write unavailable") }.`when`(room)
+            .writeIncremental(anyList(), anyList(), anyLong())
+        doAnswer { throw IOException("Room metadata unavailable") }.`when`(room).markLegacyJsonPrimary(anyLong())
+        val repository = repository(room, backgroundScope)
+
+        val result = runCatching {
+            repository.mergeFollowedArtists(FAVORITE_SOURCE_NETEASE_ARTIST, listOf(FavoriteArtist(2L, "Artist")), 100L)
+        }
+
+        assertTrue(result.exceptionOrNull() is IOException)
+        assertEquals(original, repository.favorites.value)
+        assertTrue(runCatching { repository.getSyncSnapshots() }.exceptionOrNull() is IOException)
+        assertTrue(repository.awaitInitialized())
+        assertEquals(original, repository.getSyncSnapshots())
+    }
+
+    @Test
+    fun `committed then cancelled follow import recovers the entire batch before later writes`() = runTest {
+        val original = listOf(favorite(1L, "Before"))
+        val primary = temporaryFolder.newFile("room-favorites.json")
+        primary.writeText(Gson().toJson(original))
+        val room = committingThenCancellingStore(primary)
+        val repository = repository(room, backgroundScope)
+
+        val result = runCatching {
+            repository.mergeFollowedArtists(
+                FAVORITE_SOURCE_NETEASE_ARTIST,
+                listOf(FavoriteArtist(2L, "Imported 2"), FavoriteArtist(3L, "Imported 3")),
+                100L
+            )
+        }
+
+        assertTrue(result.exceptionOrNull() is CancellationException)
+        assertEquals(setOf(1L, 2L, 3L), readPrimary(primary).map { it.id }.toSet())
+        assertEquals(original, repository.favorites.value)
+        assertTrue(runCatching { repository.getSyncSnapshots() }.exceptionOrNull() is IOException)
+        assertTrue(repository.awaitInitialized())
+        assertEquals(readPrimary(primary).toSet(), repository.getSyncSnapshots().toSet())
+
+        repository.removeFavorite(2L, FAVORITE_SOURCE_NETEASE_ARTIST)
+
+        assertEquals(setOf(1L, 3L), repository.favorites.value.map { it.id }.toSet())
+        assertTrue(readPrimary(primary).single { it.id == 2L }.isDeleted)
+        assertFalse(readPrimary(primary).single { it.id == 3L }.isDeleted)
+        assertEquals(readPrimary(primary).toSet(), repository.getSyncSnapshots().toSet())
+    }
+
+    private suspend fun committingThenCancellingStore(primary: File): FavoritePlaylistRoomStore {
+        val room = mock(FavoritePlaylistRoomStore::class.java)
+        var cancelAfterCommit = true
+        `when`(room.readIfRoomPrimary()).thenAnswer { readPrimary(primary) }
+        doAnswer { invocation ->
+            val previous = invocation.getArgument<List<FavoritePlaylist>>(0).associateBy { it.id to it.source }
+            val next = invocation.getArgument<List<FavoritePlaylist>>(1).associateBy { it.id to it.source }
+            val stored = readPrimary(primary).associateBy { it.id to it.source }.toMutableMap()
+            (previous.keys - next.keys).forEach(stored::remove)
+            next.forEach { (key, favorite) ->
+                if (previous[key] != favorite) stored[key] = favorite
+            }
+            primary.writeText(Gson().toJson(stored.values.toList()))
+            if (cancelAfterCommit) {
+                cancelAfterCommit = false
+                throw CancellationException("Room batch committed before cancellation")
+            }
+            Unit
+        }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+        return room
+    }
+
+    private fun readPrimary(primary: File): List<FavoritePlaylist> = Gson().fromJson(
+        primary.readText(),
+        object : TypeToken<List<FavoritePlaylist>>() {}.type
+    )
 
     private suspend fun repository(room: FavoritePlaylistRoomStore, scope: CoroutineScope): FavoritePlaylistRepository {
         val context = mock(Context::class.java)

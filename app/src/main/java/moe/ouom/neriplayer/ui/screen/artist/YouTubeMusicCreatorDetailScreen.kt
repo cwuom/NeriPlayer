@@ -70,11 +70,15 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorHeader as CreatorHeader
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemType
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
+import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_YOUTUBE_ARTIST
+import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.theme.background.BlurTransformation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -123,6 +127,42 @@ internal fun youtubeMusicCreatorSectionScrollStateKey(
 
 internal fun youtubeMusicCreatorDetailViewModelKey(creatorBrowseId: String): String {
     return "youtube_music_creator_detail_view_model_$creatorBrowseId"
+}
+
+internal fun createYouTubeMusicCreatorFavorite(
+    creator: YouTubeMusicCreatorSummary,
+    header: CreatorHeader?
+): FavoritePlaylist {
+    val currentHeader = header?.takeIf { it.browseId == creator.browseId }
+    return FavoritePlaylist(
+        id = stableYouTubeMusicId(creator.browseId),
+        name = currentHeader?.title?.ifBlank { creator.title } ?: creator.title,
+        coverUrl = (currentHeader?.coverUrl?.ifBlank { creator.coverUrl }
+            ?: creator.coverUrl).takeIf { it.isNotBlank() },
+        trackCount = 0,
+        source = FAVORITE_SOURCE_YOUTUBE_ARTIST,
+        browseId = creator.browseId,
+        subtitle = (currentHeader?.subtitle?.ifBlank { creator.subtitle }
+            ?: creator.subtitle).takeIf { it.isNotBlank() },
+        songs = emptyList()
+    )
+}
+
+internal fun resolveYouTubeMusicCreatorDetail(
+    uiState: YouTubeMusicCreatorDetailUiState,
+    creator: YouTubeMusicCreatorSummary?
+): YouTubeMusicCreatorDetail? {
+    return uiState.detail ?: creator?.let {
+        YouTubeMusicCreatorDetail(
+            header = CreatorHeader(
+                browseId = it.browseId,
+                title = it.title,
+                subtitle = it.subtitle,
+                coverUrl = it.coverUrl
+            ),
+            sections = emptyList()
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -203,7 +243,9 @@ fun YouTubeMusicCreatorDetailScreen(
                 },
                 onCreatorClick = onCreatorClick,
                 onSectionMoreClick = onSectionMoreClick,
-                isTabletLayout = isTabletLayout
+                isTabletLayout = isTabletLayout,
+                fallbackCreator = creator,
+                followFavorite = createYouTubeMusicCreatorFavorite(creator, uiState.detail?.header)
             )
         }
     }
@@ -223,9 +265,11 @@ internal fun YouTubeMusicCreatorDetailContent(
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
     onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit,
-    isTabletLayout: Boolean
+    isTabletLayout: Boolean,
+    fallbackCreator: YouTubeMusicCreatorSummary? = null,
+    followFavorite: FavoritePlaylist? = null
 ) {
-    val detail = uiState.detail
+    val detail = resolveYouTubeMusicCreatorDetail(uiState, fallbackCreator)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -287,7 +331,8 @@ internal fun YouTubeMusicCreatorDetailContent(
                     YouTubeMusicCreatorHeader(
                         detail = detail,
                         offlineMode = offlineMode,
-                        isTabletLayout = isTabletLayout
+                        isTabletLayout = isTabletLayout,
+                        followFavorite = followFavorite
                     )
                 }
                 if (!uiState.error.isNullOrBlank()) {
@@ -308,7 +353,7 @@ internal fun YouTubeMusicCreatorDetailContent(
                         }
                     }
                 }
-                if (detail.sections.isEmpty()) {
+                if (detail.sections.isEmpty() && uiState.detail != null) {
                     item(key = "creator-empty") {
                         Text(
                             text = stringResource(CoreCommonR.string.youtube_creator_sections_empty),
@@ -354,7 +399,8 @@ internal fun YouTubeMusicCreatorDetailContent(
 private fun YouTubeMusicCreatorHeader(
     detail: YouTubeMusicCreatorDetail,
     offlineMode: Boolean,
-    isTabletLayout: Boolean
+    isTabletLayout: Boolean,
+    followFavorite: FavoritePlaylist?
 ) {
     val context = LocalContext.current
     val header = detail.header
@@ -493,6 +539,12 @@ private fun YouTubeMusicCreatorHeader(
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+            if (followFavorite != null) {
+                if (metadata.isNotEmpty() || header.description.isNotBlank()) {
+                    Spacer(Modifier.height(14.dp))
+                }
+                CreatorFollowButton(favorite = followFavorite)
             }
         }
     }

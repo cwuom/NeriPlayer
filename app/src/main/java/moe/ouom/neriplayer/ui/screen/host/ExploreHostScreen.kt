@@ -295,6 +295,13 @@ fun ExploreHostScreen(
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
+            contentKey = { item ->
+                when (item) {
+                    is ExploreSelectedItem.NeteaseArtist -> "netease_artist_${item.artist.id}"
+                    is ExploreSelectedItem.YouTubeMusicCreator -> youtubeMusicCreatorDetailStateKey(item.creator)
+                    else -> item
+                }
+            },
             transitionSpec = {
                 if (
                     shouldSuppressRestoredMainTabHostEntry(
@@ -436,20 +443,24 @@ fun ExploreHostScreen(
                             }
 
                             is ExploreSelectedItem.NeteaseArtist -> {
-                                NeteaseArtistDetailScreen(
-                                    artist = current.artist,
-                                    onBack = ::closeSelectedDetail,
-                                    onSongClick = onSongClick,
-                                    onAlbumClick = { album ->
-                                        openExploreSelectedItem(
-                                            ExploreSelectedItem.NeteaseArtistAlbum(
-                                                artist = current.artist,
-                                                album = album
+                                detailStateHolder.SaveableStateProvider(
+                                    "netease_artist_${current.artist.id}"
+                                ) {
+                                    NeteaseArtistDetailScreen(
+                                        artist = current.artist,
+                                        onBack = ::closeSelectedDetail,
+                                        onSongClick = onSongClick,
+                                        onAlbumClick = { album ->
+                                            openExploreSelectedItem(
+                                                ExploreSelectedItem.NeteaseArtistAlbum(
+                                                    artist = current.artist,
+                                                    album = album
+                                                )
                                             )
-                                        )
-                                    },
-                                    offlineMode = offlineMode
-                                )
+                                        },
+                                        offlineMode = offlineMode
+                                    )
+                                }
                             }
 
                             is ExploreSelectedItem.NeteaseArtistAlbum -> {
