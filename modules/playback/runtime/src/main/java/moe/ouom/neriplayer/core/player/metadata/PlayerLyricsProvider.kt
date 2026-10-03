@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.platform.youtube.media.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.parseEmbeddedPhoneticLyrics
 import moe.ouom.neriplayer.lyrics.parser.resolveStoredLyricText
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.storage.source.lyricsCacheDirectory
@@ -206,7 +207,9 @@ internal data class DurationMatchedExternalLyrics(
     val lyrics: List<LyricEntry>,
     val translatedLyrics: List<LyricEntry>,
     val source: EditableLyricMatchSource,
-    val durationDeltaMs: Long
+    val durationDeltaMs: Long,
+    val romanizedLyrics: List<LyricEntry> = emptyList(),
+    val neteaseSongId: Long? = null
 )
 
 data class PreferredLyricSourceResult(
@@ -291,7 +294,7 @@ object PlayerLyricsProvider {
         }
     }
 
-    private val amllLyricsCache = LruCache<String, List<LyricEntry>>(40)
+    private val amllLyricsCache = androidx.collection.LruCache<String, PreferredLyricSourceResult>(40)
     private val preferredLyricSourceCache = LruCache<String, PreferredLyricSourceResult>(40)
     private val neteaseRefreshInFlight = ConcurrentHashMap.newKeySet<Long>()
     private val neteaseColdLoadLocks = ConcurrentHashMap<Long, Mutex>()
@@ -428,15 +431,22 @@ object PlayerLyricsProvider {
         val cacheKey = buildAmllLyricsCacheKey(song, requireDurationMatch)
         amllLyricsCache.get(cacheKey)?.let { cached ->
             NPLogger.d("NERI-PlayerManager", "Using cached AMLL lyrics for '${song.name}'")
-            return cached
+            return cached.lyrics
         }
-        val entries = AmllLyricsResolver.loadForSong(
-            song = song,
+        val resolved = AmllLyricsResolver.loadRawByMetadata(
+            trackName = song.name,
+            artistName = song.artist,
+            durationMs = song.durationMs,
             amllTtmlClient = amllTtmlClient,
             requireDurationMatch = requireDurationMatch
         )
-        amllLyricsCache.put(cacheKey, entries)
-        return entries
+        val result = PreferredLyricSourceResult(
+            lyrics = resolved?.entries.orEmpty(),
+            romanizedLyrics = parseEmbeddedPhoneticLyrics(resolved?.rawLyrics.orEmpty()),
+            source = LyricSourcePreference.AmllTtml
+        )
+        amllLyricsCache.put(cacheKey, result)
+        return result.lyrics
     }
 
     private fun parseRemoteLyricEntriesOrEmpty(
@@ -778,6 +788,8 @@ object PlayerLyricsProvider {
             try {
                 getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
                     .romanizedLyricEntries
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 logNeteaseLyricLoadFailure("getNeteaseRomanizedLyrics", error)
                 emptyList()
@@ -979,7 +991,7 @@ object PlayerLyricsProvider {
         editableLyricsMatcher: EditableLyricsMatcher,
         preferWordTimedLyrics: Boolean,
         defaultLyricSource: LyricSourcePreference,
-        biliSourceTag: String
+        amllLyricsEnabled: Boolean = true
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             parseConfirmedUserLyricEntries(song, song.matchedRomanizedLyric)?.let { return@withContext it }
@@ -1043,37 +1055,17 @@ object PlayerLyricsProvider {
             if (!shouldLoadRemoteLyrics(song)) {
                 return@withContext emptyList()
             }
-            if (isYouTubeMusicSong(song)) {
-                return@withContext emptyList()
+            val embedded = parseEmbeddedPhoneticLyrics(
+                resolveStoredLyricText(song.matchedLyric, song.originalLyric).orEmpty()
+            )
+            if (embedded.isNotEmpty()) return@withContext embedded
+            if (amllLyricsEnabled && preferWordTimedLyrics &&
+                resolveStoredLyricText(song.matchedLyric, song.originalLyric) == null
+            ) {
+                val cachedAmll = amllLyricsCache.get(buildAmllLyricsCacheKey(song, requireDurationMatch = false))
+                cachedAmll?.romanizedLyrics?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
             }
-
-            if (song.album.startsWith(biliSourceTag)) {
-                return@withContext when (song.matchedLyricSource) {
-                    MusicPlatform.CLOUD_MUSIC -> {
-                        val matchedId = song.matchedSongId?.toLongOrNull()
-                        if (matchedId != null) {
-                            getNeteaseRomanizedLyrics(
-                                matchedId,
-                                neteaseClient,
-                                neteaseLyricsCache
-                            )
-                        } else {
-                            emptyList()
-                        }
-                    }
-                    else -> emptyList()
-                }
-            }
-
-            when (song.matchedLyricSource) {
-                null,
-                MusicPlatform.CLOUD_MUSIC -> getNeteaseRomanizedLyrics(
-                    song.id,
-                    neteaseClient,
-                    neteaseLyricsCache
-                )
-                else -> emptyList()
-            }
+            loadNeteaseRomanizedFallback(song, preferWordTimedLyrics, editableLyricsMatcher, neteaseClient, neteaseLyricsCache)
         }
     }
 
@@ -1216,6 +1208,7 @@ object PlayerLyricsProvider {
                 platformLyrics.hasWordTimedEntries() ||
                 !amllLyricsEnabled
             ) {
+                amllLyricsCache.remove(buildAmllLyricsCacheKey(song, requireDurationMatch = false))
                 platformLyrics
             } else {
                 loadAmllLyricsWithCache(
@@ -1245,6 +1238,8 @@ object PlayerLyricsProvider {
         append(song.matchedLyricSource)
         append('|')
         append(song.matchedSongId)
+        append('|')
+        append(song.lyricSyncEdited == true && song.matchedRomanizedLyric != null)
         append('|')
         append(preference.storageValue)
         append('|')
@@ -1276,11 +1271,10 @@ object PlayerLyricsProvider {
         val cacheKey = preferredLyricSourceCacheKey(song, preference, preferWordTimed)
         peekPreferredLyricSourceResult(song, preference, preferWordTimed)?.let { return it }
         val cacheGeneration = currentLyricsCacheGeneration()
-        if (preference == LyricSourcePreference.CloudMusic &&
-            song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC
-        ) {
+        val knownNeteaseId = resolveKnownNeteaseLyricSongId(song)
+        if (preference == LyricSourcePreference.CloudMusic && knownNeteaseId != null) {
             // 网易云曲目按 ID 精确取词, 比文本搜索更准, 优先走这条路
-            val matchedId = song.matchedSongId?.toLongOrNull() ?: song.id
+            val matchedId = knownNeteaseId
             return getNeteaseLyrics(matchedId, neteaseClient, neteaseLyricsCache).takeIf {
                 it.isNotEmpty()
             }?.let { entries ->
@@ -1289,8 +1283,9 @@ object PlayerLyricsProvider {
                     translatedLyrics = getNeteaseTranslatedLyrics(
                         matchedId, neteaseClient, neteaseLyricsCache
                     ),
-                    romanizedLyrics = getNeteaseRomanizedLyrics(
-                        matchedId, neteaseClient, neteaseLyricsCache
+                    romanizedLyrics = loadNeteaseRomanizedFallback(
+                        song, preferWordTimed, editableLyricsMatcher, neteaseClient, neteaseLyricsCache,
+                        matchedNeteaseSongId = matchedId
                     ),
                     source = preference
                 )
@@ -1343,6 +1338,9 @@ object PlayerLyricsProvider {
         return PreferredLyricSourceResult(
             lyrics = selected.lyrics,
             translatedLyrics = selected.translatedLyrics,
+            romanizedLyrics = selected.romanizedLyrics.takeIf { it.isNotEmpty() }
+                ?: loadNeteaseRomanizedFallback(song, preferWordTimed, editableLyricsMatcher, neteaseClient,
+                    neteaseLyricsCache, matchedNeteaseSongId = selected.neteaseSongId),
             source = preference
         ).also { result ->
             withLyricsCacheWriteLock {
@@ -1798,7 +1796,11 @@ object PlayerLyricsProvider {
                 lyrics = entries,
                 translatedLyrics = translatedEntries,
                 source = candidate.source,
-                durationDeltaMs = kotlin.math.abs(expectedDurationMs - candidate.durationMs)
+                durationDeltaMs = kotlin.math.abs(expectedDurationMs - candidate.durationMs),
+                romanizedLyrics = parseEmbeddedPhoneticLyrics(candidate.lyrics),
+                neteaseSongId = candidate.id.toLongOrNull()?.takeIf {
+                    candidate.source == EditableLyricMatchSource.CLOUD_MUSIC && it > 0L
+                }
             )
         }
         return null

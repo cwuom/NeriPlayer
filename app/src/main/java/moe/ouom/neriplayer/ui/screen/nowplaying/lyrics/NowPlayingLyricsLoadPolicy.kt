@@ -1,9 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.lyrics
 
 import moe.ouom.neriplayer.platform.lyrics.matching.hasCollapsedTimedLyricTimeline
-import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.metadata.resolveKnownNeteaseLyricSongId
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.core.player.metadata.resolveLyricTextForPlayback
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
@@ -16,21 +15,8 @@ import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
 
 internal fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
-    if (song == null) return null
-    return resolveMatchedNeteaseLyricSongId(song)
-        ?: resolveDirectNeteaseLyricSongId(song)
+    return song?.let(::resolveKnownNeteaseLyricSongId)
 }
-
-private fun resolveMatchedNeteaseLyricSongId(song: SongItem): Long? =
-    song.matchedSongId?.toLongOrNull()?.takeIf { it > 0L }
-
-private fun resolveDirectNeteaseLyricSongId(song: SongItem): Long? =
-    song.id.takeIf { it > 0L }?.takeIf { isDirectNeteaseLyricSong(song) }
-
-private fun isDirectNeteaseLyricSong(song: SongItem): Boolean =
-    song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC ||
-        song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG) ||
-        song.mediaUri?.contains("music.163.com") == true
 
 internal data class LoadedLyricsState(
     val rawLyrics: String?,
