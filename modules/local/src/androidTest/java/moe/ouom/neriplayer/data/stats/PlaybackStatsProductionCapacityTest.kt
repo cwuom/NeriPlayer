@@ -86,7 +86,8 @@ class PlaybackStatsProductionCapacityTest {
             val store = FileSyncPlaybackDatasetStore(File(directory, "datasets"))
             val local = RoomLocal(repository, store)
             val backend = DiskBackend(context, File(directory, "remote"))
-            val session = SyncSession(local, SyncDataMerger(Messages), store, "unchanged", "initial", { IllegalStateException("busy") })
+            val session = SyncSession(local, SyncDataMerger(Messages), store, "unchanged", "initial",
+                { IllegalStateException("busy") }, deferredMessage = "pending")
             val revision = room.readPrimaryState()!!.revision
             measure("initial_session", count) { session.execute { backend }.getOrThrow() }
             assertEquals(1, backend.uploads)
@@ -256,6 +257,7 @@ class PlaybackStatsProductionCapacityTest {
         override fun isConflict(error: Throwable?) = false
         override fun saveRemoteVersion(version: Int) { acknowledgedVersion = version }
         override fun saveSyncTime(timestamp: Long) { time = timestamp }
+        override fun saveCompletedSyncTime(timestamp: Long) = true
         override fun scheduleFollowUp() = error("Unexpected stale local snapshot")
         override fun onFailure(error: Throwable) = Unit
     }

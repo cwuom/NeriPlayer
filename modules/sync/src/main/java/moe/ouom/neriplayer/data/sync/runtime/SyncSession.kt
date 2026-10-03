@@ -21,7 +21,8 @@ class SyncSession(
     private val noChangeMessage: String,
     private val initialUploadMessage: String,
     private val inProgressError: () -> Exception,
-    private val nowMs: () -> Long = System::currentTimeMillis
+    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val deferredMessage: String
 ) {
     private val merger = SyncDatasetMerger(merger, datasetStore)
     suspend fun <TVersion> execute(backendFactory: () -> SyncBackend<TVersion>): Result<SyncResult> {
@@ -52,7 +53,9 @@ class SyncSession(
             if (resolved.isFailure) return uploadFailure(backend, resolved.exceptionOrNull())
             val resolution = resolved.getOrThrow()
             resolution.merged.dataset.use {
-                SyncSessionCommitter(local, nowMs).commit(backend, resolution, firstSync, mutationVersion)
+                if (!SyncSessionCommitter(local, nowMs).commit(backend, resolution, firstSync, mutationVersion)) {
+                    return Result.success(SyncResult(success = false, message = deferredMessage))
+                }
                 return Result.success(SyncSessionResultPolicy.result(
                     resolution, firstSync, initialRemoteMissing, noChangeMessage, initialUploadMessage
                 ))
@@ -90,7 +93,7 @@ class SyncSession(
     private fun <TVersion> uploadFailure(backend: SyncBackend<TVersion>, error: Throwable?): Result<SyncResult> {
         if (error is LocalSyncMutationConflictException) {
             backend.scheduleFollowUp()
-            return Result.success(SyncResult(success = true, message = noChangeMessage))
+            return Result.success(SyncResult(success = false, message = deferredMessage))
         }
         return failure(backend, error)
     }

@@ -43,7 +43,8 @@ internal class WebDavSyncBackend(
     private val authorizeLegacyMigration: suspend (ByteArray) -> Unit = {},
     private val currentProtocolObserved: suspend (Int) -> Unit = {},
     private val wallMs: () -> Long = System::currentTimeMillis,
-    private val uptimeMs: () -> Long = { android.os.SystemClock.elapsedRealtime() }
+    private val uptimeMs: () -> Long = { android.os.SystemClock.elapsedRealtime() },
+    private val metadataGuard: (() -> Unit) -> Boolean = webDavStorage.captureSyncMetadataGuard()
 ) : SyncBackend<WebDavSyncBackend.Version> {
     private val manifestUrl = WebDavApiClient.buildSiblingFileUrl(remoteUrl, SyncArchiveRepository.MANIFEST_FILE_NAME)
     private val maintenanceScope = apiClient.archiveMaintenanceScope(manifestUrl)
@@ -63,9 +64,10 @@ internal class WebDavSyncBackend(
     }
     override fun isConflict(error: Throwable?): Boolean = error is WebDavContentConflictException
     override fun saveRemoteVersion(version: Version) {
-        version.lastKnownFingerprint?.let(webDavStorage::saveLastRemoteFingerprint)
+        metadataGuard { version.lastKnownFingerprint?.let(webDavStorage::saveLastRemoteFingerprint) }
     }
-    override fun saveSyncTime(timestamp: Long) { webDavStorage.saveLastSyncTime(timestamp) }
+    override fun saveSyncTime(timestamp: Long) { metadataGuard { webDavStorage.saveLastSyncTime(timestamp) } }
+    override fun saveCompletedSyncTime(timestamp: Long): Boolean = metadataGuard { webDavStorage.saveLastCompletedSyncTime(timestamp) }
     override fun scheduleFollowUp() {
         followUp()
     }

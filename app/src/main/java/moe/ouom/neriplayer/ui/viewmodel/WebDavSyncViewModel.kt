@@ -11,6 +11,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -32,30 +34,43 @@ class WebDavSyncViewModel : ViewModel() {
     internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
     internal var targetSyncOperation: (suspend (String) -> Result<SyncResult>)? = null
     private var syncJob: Job? = null
+    private var completionTimeJob: Job? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
-        viewModelScope.launch(Dispatchers.IO) {
-            if (storage == null) {
-                storage = WebDavStorage(appContext)
-                val manager = WebDavSyncManager.getInstance(appContext)
-                syncOperation = manager::performSync
-                targetSyncOperation = manager::performSyncForTarget
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                if (storage == null) {
+                    storage = WebDavStorage(appContext)
+                    val manager = WebDavSyncManager.getInstance(appContext)
+                    syncOperation = manager::performSync
+                    targetSyncOperation = manager::performSyncForTarget
+                }
+                loadConfiguration()
             }
-            loadConfiguration()
+            if (completionTimeJob?.isActive != true) {
+                val store = storage ?: return@launch
+                completionTimeJob = viewModelScope.launch {
+                    store.observeLastCompletedSyncTime().collect { timestamp ->
+                        _uiState.update { it.copy(lastSyncTime = timestamp) }
+                    }
+                }
+            }
         }
     }
 
     private fun loadConfiguration() {
         val store = storage ?: return
-        _uiState.value = _uiState.value.copy(
-            isConfigured = store.isConfigured(),
-            autoSyncEnabled = store.isAutoSyncEnabled(),
-            serverUrl = store.getServerUrl().orEmpty(),
-            basePath = store.getBasePath(),
-            username = store.getUsername().orEmpty(),
-            lastSyncTime = store.getLastSyncTime()
-        )
+        _uiState.update {
+            it.copy(
+                isConfigured = store.isConfigured(),
+                autoSyncEnabled = store.isAutoSyncEnabled(),
+                serverUrl = store.getServerUrl().orEmpty(),
+                basePath = store.getBasePath(),
+                username = store.getUsername().orEmpty(),
+                lastSyncTime = store.getLastCompletedSyncTime()
+            )
+        }
     }
 
     fun validateAndSaveConfiguration(
@@ -145,13 +160,15 @@ class WebDavSyncViewModel : ViewModel() {
             if (result.isSuccess) {
                 val syncResult = result.getOrNull()!!
                 if (syncResult.success) {
-                    val lastSyncTime = storage?.getLastSyncTime() ?: _uiState.value.lastSyncTime
-                    _uiState.value = _uiState.value.copy(
-                        isSyncing = false,
-                        syncResult = syncResult,
-                        lastSyncTime = lastSyncTime,
-                        successMessage = syncResult.message
-                    )
+                    val lastSyncTime = storage?.getLastCompletedSyncTime() ?: _uiState.value.lastSyncTime
+                    _uiState.update {
+                        it.copy(
+                            isSyncing = false,
+                            syncResult = syncResult,
+                            lastSyncTime = lastSyncTime,
+                            successMessage = syncResult.message
+                        )
+                    }
                     if (_uiState.value.autoSyncEnabled) {
                         WebDavSyncWorker.schedulePeriodicSync(appContext)
                     }

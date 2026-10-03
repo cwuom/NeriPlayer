@@ -36,7 +36,8 @@ class SyncSessionTest {
         noChangeMessage = "unchanged",
         initialUploadMessage = "initial",
         inProgressError = { IllegalStateException("busy") },
-        nowMs = { 900L }
+        nowMs = { 900L },
+        deferredMessage = "pending"
     )
 
     @Test
@@ -45,6 +46,7 @@ class SyncSessionTest {
         assertEquals(listOf(7L), backend.data!!.playlists.map { it.id })
         assertEquals(2, backend.savedVersion)
         assertEquals(900L, backend.savedTime)
+        assertEquals(900L, backend.completedTime)
         assertTrue(local.remoteChanged)
         assertEquals(0, backend.followUps)
     }
@@ -57,6 +59,48 @@ class SyncSessionTest {
         assertEquals(1, backend.version)
         assertFalse(local.remoteChanged)
         assertEquals(900L, backend.savedTime)
+        assertEquals(900L, backend.completedTime)
+    }
+
+    @Test
+    fun `unchanged remote records completion while a new playback revision awaits follow up`() = runTest {
+        backend.data = local.data.copy()
+        backend.firstSync = false
+        backend.lastSyncTime = 50L
+        backend.savedTime = 50L
+        backend.savedVersion = 1
+        local.acceptApply = false
+
+        assertEquals("unchanged", session.execute { backend }.getOrThrow().message)
+
+        assertEquals(1, backend.version)
+        assertEquals(1, backend.savedVersion)
+        assertEquals(50L, backend.savedTime)
+        assertEquals(900L, backend.completedTime)
+        assertEquals(1, backend.followUps)
+    }
+
+    @Test
+    fun `local apply errors do not record a completed sync`() = runTest {
+        val error = IOException("local persistence failed")
+        local.onApply = { throw error }
+
+        assertSame(error, session.execute { backend }.exceptionOrNull())
+
+        assertEquals(null, backend.savedVersion)
+        assertEquals(null, backend.savedTime)
+        assertEquals(null, backend.completedTime)
+    }
+
+    @Test
+    fun `a configuration change rejecting completion does not report sync success`() = runTest {
+        backend.acceptCompletedTime = false
+
+        val result = session.execute { backend }.getOrThrow()
+
+        assertFalse(result.success)
+        assertEquals("pending", result.message)
+        assertEquals(null, backend.completedTime)
     }
 
     @Test
@@ -91,12 +135,15 @@ class SyncSessionTest {
     @Test
     fun `local edit during fetch prevents stale upload and schedules a follow up`() = runTest {
         backend.onFetch = { local.epoch++ }
-        assertEquals("unchanged", session.execute { backend }.getOrThrow().message)
+        val result = session.execute { backend }.getOrThrow()
+        assertFalse(result.success)
+        assertEquals("pending", result.message)
         assertEquals(1, backend.version)
         assertEquals(0, local.applied)
         assertEquals(1, backend.followUps)
         assertEquals(null, backend.savedVersion)
         assertEquals(null, backend.savedTime)
+        assertEquals(null, backend.completedTime)
     }
 
     @Test
@@ -107,6 +154,7 @@ class SyncSessionTest {
         assertEquals(0, local.applied)
         assertEquals(null, backend.savedVersion)
         assertEquals(null, backend.savedTime)
+        assertEquals(900L, backend.completedTime)
         assertEquals(1, backend.followUps)
     }
 
@@ -117,6 +165,7 @@ class SyncSessionTest {
         assertEquals(1, local.applied)
         assertEquals(null, backend.savedVersion)
         assertEquals(null, backend.savedTime)
+        assertEquals(900L, backend.completedTime)
         assertEquals(1, backend.followUps)
     }
 
@@ -126,6 +175,7 @@ class SyncSessionTest {
         session.execute { backend }.getOrThrow()
         assertEquals(null, backend.savedVersion)
         assertEquals(null, backend.savedTime)
+        assertEquals(900L, backend.completedTime)
         assertEquals(1, backend.followUps)
     }
 
@@ -221,6 +271,7 @@ class SyncSessionTest {
         assertSame(error, backend.lastError)
         assertEquals(0, local.applied)
         assertEquals(null, backend.savedVersion)
+        assertEquals(null, backend.completedTime)
     }
 
     @Test
@@ -230,6 +281,7 @@ class SyncSessionTest {
         assertSame(error, session.execute { backend }.exceptionOrNull())
         assertSame(error, backend.lastError)
         assertEquals(0, local.applied)
+        assertEquals(null, backend.completedTime)
     }
 
     @Test
@@ -269,6 +321,7 @@ class SyncSessionTest {
         }
         assertEquals(0, local.applied)
         assertEquals(null, backend.lastError)
+        assertEquals(null, backend.completedTime)
         backend.onFetch = {}
         assertTrue(session.execute { backend }.isSuccess)
     }
@@ -315,6 +368,8 @@ class SyncSessionTest {
         var migration = false
         var savedVersion: Int? = null
         var savedTime: Long? = null
+        var completedTime: Long? = null
+        var acceptCompletedTime = true
         var followUps = 0
         var lastError: Throwable? = null
         var fetchError: Throwable? = null
@@ -344,6 +399,10 @@ class SyncSessionTest {
         override fun isConflict(error: Throwable?) = error is Conflict
         override fun saveRemoteVersion(version: Int) { savedVersion = version }
         override fun saveSyncTime(timestamp: Long) { savedTime = timestamp }
+        override fun saveCompletedSyncTime(timestamp: Long): Boolean {
+            if (acceptCompletedTime) completedTime = timestamp
+            return acceptCompletedTime
+        }
         override fun scheduleFollowUp() { followUps++ }
         override fun onFailure(error: Throwable) { lastError = error }
     }

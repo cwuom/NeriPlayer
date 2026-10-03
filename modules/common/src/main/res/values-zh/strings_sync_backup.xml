@@ -49,6 +49,7 @@
     <string name="sync_upload_failed">上传失败</string>
     <string name="sync_send_cancelled">已取消发送</string>
     <string name="sync_initial_uploaded">初始数据已上传</string>
+    <string name="sync_local_changes_pending">本地数据已变化，请稍后重新同步</string>
     <string name="sync_history_frequency">播放历史更新频率</string>
     <string name="sync_after_play">每次播放后立即同步</string>
     <string name="sync_config">配置</string>

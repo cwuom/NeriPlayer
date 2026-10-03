@@ -577,7 +577,7 @@ class SyncBackendTransportTest {
             "owner", "repo", SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
             SyncArchiveRepository(temporary.newFolder()),
             authorizeLegacyMigration = { authorizeMigration(it) },
-            currentProtocolObserved = { currentObservations++ })
+            currentProtocolObserved = { currentObservations++ }, metadataGuard = { write -> write(); true })
     }
 
     private inner class WebDavFixture {
@@ -634,7 +634,7 @@ class SyncBackendTransportTest {
             "https://sync.test/backup", SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
             SyncArchiveRepository(temporary.newFolder()),
             authorizeLegacyMigration = { authorizeMigration(it) },
-            currentProtocolObserved = { currentObservations++ })
+            currentProtocolObserved = { currentObservations++ }, metadataGuard = { write -> write(); true })
     }
 
     private fun response(request: Request, code: Int, body: ByteArray): Response = Response.Builder()

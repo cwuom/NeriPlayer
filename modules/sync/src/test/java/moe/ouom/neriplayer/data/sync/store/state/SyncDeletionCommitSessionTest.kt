@@ -44,7 +44,7 @@ class SyncDeletionCommitSessionTest {
         val backend = PendingBackend(remote, datasets)
         val session = SyncSession(
             local, SyncDataMerger(TestSyncMergeHost()) { 50L }, datasets,
-            "unchanged", "initial", { IllegalStateException("busy") }, { 900L }
+            "unchanged", "initial", { IllegalStateException("busy") }, { 900L }, deferredMessage = "pending"
         )
 
         assertTrue(session.execute { backend }.isFailure)
@@ -120,6 +120,7 @@ class SyncDeletionCommitSessionTest {
         override fun isConflict(error: Throwable?) = false
         override fun saveRemoteVersion(version: Int) { savedVersion = version }
         override fun saveSyncTime(timestamp: Long) { savedTime = timestamp }
+        override fun saveCompletedSyncTime(timestamp: Long) = true
         override fun scheduleFollowUp() = Unit
         override fun onFailure(error: Throwable) = Unit
     }

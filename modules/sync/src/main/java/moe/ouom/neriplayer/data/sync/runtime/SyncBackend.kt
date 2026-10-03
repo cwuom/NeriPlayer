@@ -14,6 +14,7 @@ interface SyncBackend<TVersion> {
     fun isConflict(error: Throwable?): Boolean
     fun saveRemoteVersion(version: TVersion)
     fun saveSyncTime(timestamp: Long)
+    fun saveCompletedSyncTime(timestamp: Long): Boolean
     fun scheduleFollowUp()
     fun onFailure(error: Throwable)
 }

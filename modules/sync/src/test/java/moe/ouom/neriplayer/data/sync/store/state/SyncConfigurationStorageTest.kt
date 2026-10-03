@@ -76,8 +76,16 @@ class SyncConfigurationStorageTest {
         assertEquals("t", store.snapshot().token)
         store.clearToken()
         assertFalse(store.isConfigured())
+        val acknowledge = store.captureSyncMetadataGuard()
         store.clearAll()
-        assertTrue(prefs.values.isEmpty())
+        assertFalse(acknowledge { store.saveLastCompletedSyncTime(200L) })
+        assertEquals(setOf("sync_configuration_generation"), prefs.values.keys)
+        assertNull(store.getToken())
+        assertNull(store.getRepoOwner())
+        assertNull(store.getRepoName())
+        assertNull(store.getLastRemoteSha())
+        assertEquals(0L, store.getLastSyncTime())
+        assertEquals(0L, store.getLastCompletedSyncTime())
     }
 
     @Test
@@ -117,8 +125,17 @@ class SyncConfigurationStorageTest {
         assertEquals("fingerprint", store.getLastRemoteFingerprint())
         store.restore(snapshot)
         assertEquals(snapshot, store.snapshot())
+        val acknowledge = store.captureSyncMetadataGuard()
         store.clearAll()
-        assertTrue(prefs.values.isEmpty())
+        assertFalse(acknowledge { store.saveLastCompletedSyncTime(200L) })
+        assertEquals(setOf("sync_configuration_generation"), prefs.values.keys)
+        assertNull(store.getServerUrl())
+        assertNull(store.getUsername())
+        assertNull(store.getPassword())
+        assertEquals("", store.getBasePath())
+        assertNull(store.getLastRemoteFingerprint())
+        assertEquals(0L, store.getLastSyncTime())
+        assertEquals(0L, store.getLastCompletedSyncTime())
     }
 
     @Test

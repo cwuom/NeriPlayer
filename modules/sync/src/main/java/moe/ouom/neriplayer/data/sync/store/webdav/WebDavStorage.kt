@@ -6,9 +6,12 @@ import android.content.Context
 import moe.ouom.neriplayer.data.sync.store.secure.EncryptedSyncPreferences
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import moe.ouom.neriplayer.data.model.config.WebDavSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.store.state.hasNonBlankSyncCredential
+import moe.ouom.neriplayer.data.sync.store.state.SyncCompletionTimeStore
 import com.google.gson.Gson
 import java.io.IOException
 import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcJournal
@@ -16,6 +19,8 @@ import moe.ouom.neriplayer.data.sync.remote.WebDavArchiveGcState
 
 class WebDavStorage internal constructor(private val encryptedPrefs: SharedPreferences) {
     constructor(context: Context) : this(EncryptedSyncPreferences.open(context, PREFS_NAME, "NERI-WebDavStorage"))
+
+    private val completionTime = SyncCompletionTimeStore(encryptedPrefs, completionTimeChanges, configurationLock, ::getLastSyncTime)
 
     companion object {
         private const val PREFS_NAME = "webdav_secure_prefs"
@@ -27,6 +32,8 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         private const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
         private const val KEY_LAST_REMOTE_FINGERPRINT = "last_remote_fingerprint"
         private const val KEY_ARCHIVE_MAINTENANCE = "archive_maintenance_"
+        private val completionTimeChanges = MutableStateFlow(0L)
+        private val configurationLock = Any()
     }
 
     fun saveConfiguration(
@@ -35,7 +42,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         password: String,
         basePath: String
     ) {
-        encryptedPrefs.edit {
+        completionTime.editConfiguration {
             putString(KEY_SERVER_URL, normalizeServerUrl(serverUrl))
             putString(KEY_BASE_PATH, normalizeBasePath(basePath))
             putString(KEY_USERNAME, username)
@@ -58,9 +65,19 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
 
     fun saveLastSyncTime(timestamp: Long) {
         encryptedPrefs.edit { putLong(KEY_LAST_SYNC_TIME, timestamp) }
+        completionTime.notifyChanged()
     }
 
     fun getLastSyncTime(): Long = encryptedPrefs.getLong(KEY_LAST_SYNC_TIME, 0L)
+
+    fun saveLastCompletedSyncTime(timestamp: Long) = completionTime.save(timestamp)
+
+    /** 配置保存或清除后，旧会话不再写入确认元数据 */
+    fun captureSyncMetadataGuard(): (() -> Unit) -> Boolean = completionTime.captureConfigurationGuard()
+
+    fun getLastCompletedSyncTime(): Long = completionTime.read()
+
+    fun observeLastCompletedSyncTime(): Flow<Long> = completionTime.observe()
 
     fun setAutoSyncEnabled(enabled: Boolean) {
         encryptedPrefs.edit { putBoolean(KEY_AUTO_SYNC_ENABLED, enabled) }
@@ -116,7 +133,8 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
     }
 
     fun clearAll() {
-        encryptedPrefs.edit { clear() }
+        completionTime.editConfiguration { clear() }
+        completionTime.notifyChanged()
     }
 
     fun snapshot(): WebDavSyncConfigSnapshot {
@@ -130,7 +148,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
     }
 
     fun restore(snapshot: WebDavSyncConfigSnapshot) {
-        encryptedPrefs.edit {
+        completionTime.editConfiguration {
             remove(KEY_SERVER_URL)
             remove(KEY_BASE_PATH)
             remove(KEY_USERNAME)

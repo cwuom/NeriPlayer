@@ -72,6 +72,7 @@ class WebDavSyncManager private constructor(context: Context) {
                 merger = SyncDataMerger(AndroidSyncMergeHost(localizedContext, CoreCommonR.string.webdav_sync_success_detail)),
                 noChangeMessage = localizedContext.getString(CoreCommonR.string.webdav_sync_no_change),
                 initialUploadMessage = localizedContext.getString(CoreCommonR.string.sync_initial_uploaded),
+                deferredMessage = localizedContext.getString(CoreCommonR.string.sync_local_changes_pending),
                 inProgressError = { WebDavSyncInProgressException(localizedContext.getString(CoreCommonR.string.webdav_sync_in_progress)) }
             ).execute { createWebDavSyncBackend(appContext, expectedTargetId) }
         }
