@@ -61,6 +61,7 @@ internal class GitHubSyncBackend(
     override fun isConflict(error: Throwable?): Boolean = error is GitHubContentConflictException
     override fun saveRemoteVersion(version: Version) { version.sha?.let(storage::saveLastRemoteSha) }
     override fun saveSyncTime(timestamp: Long) { storage.saveLastSyncTime(timestamp) }
+    override fun saveCompletedSyncTime(timestamp: Long) { storage.saveLastCompletedSyncTime(timestamp) }
     override fun scheduleFollowUp() {
         followUp()
     }

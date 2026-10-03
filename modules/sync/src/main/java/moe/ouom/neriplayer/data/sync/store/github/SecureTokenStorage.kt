@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
 import android.content.Context
 import android.system.Os
 import android.system.OsConstants
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import moe.ouom.neriplayer.data.sync.store.state.*
@@ -74,6 +75,12 @@ class SecureTokenStorage internal constructor(
     fun saveLastSyncTime(timestamp: Long) = configuration.saveLastSyncTime(timestamp)
 
     fun getLastSyncTime(): Long = configuration.getLastSyncTime()
+
+    fun saveLastCompletedSyncTime(timestamp: Long) = configuration.saveLastCompletedSyncTime(timestamp)
+
+    fun getLastCompletedSyncTime(): Long = configuration.getLastCompletedSyncTime()
+
+    fun observeLastCompletedSyncTime(): Flow<Long> = configuration.observeLastCompletedSyncTime()
 
     fun setAutoSyncEnabled(enabled: Boolean) = configuration.setAutoSyncEnabled(enabled)
 

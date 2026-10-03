@@ -64,6 +64,7 @@ class SyncDatasetSessionTest {
         fixture.session.execute { fixture.backend }.getOrThrow()
         assertNull(fixture.backend.savedVersion)
         assertNull(fixture.backend.savedTime)
+        assertEquals(100L, fixture.backend.completedTime)
         assertEquals(1, fixture.backend.followUps)
         assertEquals(listOf(1L), fixture.local.data.playbackStats.map { it.id })
         assertTrue(fixture.staging.listFiles().orEmpty().isEmpty())
@@ -84,7 +85,7 @@ class SyncDatasetSessionTest {
         val local = Local(data("local", 1), datasets)
         val backend = ArchiveBackend(SyncArchiveRepository(temporary.newFolder()), datasets)
         val session = SyncSession(local, SyncDataMerger(TestSyncMergeHost()) { 10L }, datasets,
-            "unchanged", "initial", { IllegalStateException("busy") }, { 100L })
+            "unchanged", "initial", { IllegalStateException("busy") }, { 100L }, deferredMessage = "pending")
     }
 
     private class Local(var data: SyncData, private val datasets: SyncPlaybackDatasetStore) : SyncLocalDataStore {
@@ -121,6 +122,7 @@ class SyncDatasetSessionTest {
         var beforeFirstUpload: suspend () -> Unit = {}
         var savedVersion: Int? = null
         var savedTime: Long? = null
+        var completedTime: Long? = null
         var followUps = 0
         override val isFirstSync = false
         override val lastSyncTime = 0L
@@ -156,6 +158,7 @@ class SyncDatasetSessionTest {
         override fun isConflict(error: Throwable?) = error is Conflict
         override fun saveRemoteVersion(version: Int) { savedVersion = version }
         override fun saveSyncTime(timestamp: Long) { savedTime = timestamp }
+        override fun saveCompletedSyncTime(timestamp: Long) { completedTime = timestamp }
         override fun scheduleFollowUp() { followUps++ }
         override fun onFailure(error: Throwable) = Unit
     }

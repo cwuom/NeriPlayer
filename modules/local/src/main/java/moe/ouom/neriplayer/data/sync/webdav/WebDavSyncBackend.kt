@@ -66,6 +66,7 @@ internal class WebDavSyncBackend(
         version.lastKnownFingerprint?.let(webDavStorage::saveLastRemoteFingerprint)
     }
     override fun saveSyncTime(timestamp: Long) { webDavStorage.saveLastSyncTime(timestamp) }
+    override fun saveCompletedSyncTime(timestamp: Long) { webDavStorage.saveLastCompletedSyncTime(timestamp) }
     override fun scheduleFollowUp() {
         followUp()
     }

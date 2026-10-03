@@ -475,7 +475,7 @@ class WebDavArchiveGcHttpTest {
         val merger = SyncDataMerger(host) { 10L }
         assertFalse(SyncDataChangeDetector.hasDataChanged(data, merger.merge(data, data, 0L).mergedData))
         val session = SyncSession(local, merger, fixture.archive.playbackDatasets,
-            "unchanged", "uploaded", { IOException("busy") }, nowMs = { fixture.wallMs })
+            "unchanged", "uploaded", { IOException("busy") }, nowMs = { fixture.wallMs }, deferredMessage = "pending")
         assertTrue(session.execute { fixture.backend }.getOrThrow().success)
     }
 
@@ -604,7 +604,7 @@ class WebDavArchiveGcHttpTest {
                 }
             }
             val session = SyncSession(local, SyncDataMerger(host) { 10L }, fixture.archive.playbackDatasets,
-                "unchanged", "uploaded", { IOException("busy") }, nowMs = { 20L })
+                "unchanged", "uploaded", { IOException("busy") }, nowMs = { 20L }, deferredMessage = "pending")
 
             assertTrue(session.execute { fixture.backend }.getOrThrow().success)
 
