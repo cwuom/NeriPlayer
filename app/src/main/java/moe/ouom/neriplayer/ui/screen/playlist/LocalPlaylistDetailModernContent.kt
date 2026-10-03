@@ -83,12 +83,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -96,7 +99,10 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -110,13 +116,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
+import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.local.media.isLocalSong
@@ -129,7 +138,11 @@ import moe.ouom.neriplayer.ui.component.download.shouldShowDownloadedSongDeleteP
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertDialog
+import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertPreview
 import moe.ouom.neriplayer.ui.screen.playlist.insert.isPlaylistInsertPreviewCurrent
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.LocalPlaylistReorderableItem
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.localPlaylistDetectReorder
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.localPlaylistReorderable
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
@@ -139,14 +152,12 @@ import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
-import org.burnoutcrew.reorderable.ReorderableItem
-import org.burnoutcrew.reorderable.detectReorder
-import org.burnoutcrew.reorderable.reorderable
 import kotlin.time.Duration.Companion.milliseconds
 
 
@@ -160,6 +171,15 @@ internal fun LocalPlaylistDetailModernContent(
     contentScope: LocalPlaylistDetailModernContentScope
 ) {
     with(contentScope) {
+        val currentContentScope by rememberUpdatedState(contentScope)
+        SideEffect {
+            reorderState.updatePresentedOrder { key ->
+                val songIndex = displayedSongs.indexOfFirst { it.stableKey() == key }
+                if (songIndex < 0) -1 else resolveLocalPlaylistSongListIndex(
+                    songIndex, metadataProcessingVisible
+                )
+            }
+        }
         val deleteProgress by vm.downloadedSongDeleteProgress.collectAsStateWithLifecycle()
         val deleteFailureDismissed by
         vm.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
@@ -169,6 +189,85 @@ internal fun LocalPlaylistDetailModernContent(
         LaunchedEffect(selectionMode, canReorderCurrentSongs) {
             if (!selectionMode || !canReorderCurrentSongs) showInsertDialog = false
         }
+
+        suspend fun scrollToInsertedSongs(newOrder: List<SongIdentity>, movedKeys: Set<String>) {
+            val ready = withTimeoutOrNull(PLAYLIST_INSERT_SCROLL_SYNC_TIMEOUT_MS) {
+                snapshotFlow {
+                    val current = currentContentScope
+                    current.playlistId == playlistId &&
+                        current.playlist.songs.map { it.identity() } == newOrder &&
+                        current.localSongs.map { it.identity() } == newOrder
+                }.first { it }
+            }
+            if (ready != true) return
+            // 等新顺序完成布局，再按稳定身份定位，搜索过滤和固定头部都会改变列表索引
+            withFrameNanos { }
+            val current = currentContentScope
+            if (current.playlistId != playlistId ||
+                !current.canReorderCurrentSongs || current.blockSync ||
+                repo.playlists.value.firstOrNull { it.id == playlistId }
+                    ?.songs?.map { it.identity() } != newOrder
+            ) return
+            val songIndex = current.displayedSongs.indexOfFirst { it.stableKey() in movedKeys }
+            if (songIndex >= 0) {
+                current.reorderState.listState.animateScrollToItem(
+                    resolveLocalPlaylistSongListIndex(
+                        songIndex = songIndex,
+                        metadataProcessingVisible = current.metadataProcessingVisible
+                    )
+                )
+            }
+        }
+
+        fun showInsertSuccess(
+            preview: PlaylistInsertPreview,
+            originalOrder: List<SongIdentity>,
+            newOrder: List<SongIdentity>
+        ) {
+            scope.launch feedback@{
+                val scrollJob = launch {
+                    scrollToInsertedSongs(newOrder, preview.movedKeys.toSet())
+                }
+                // 每次成功提示都对应独立撤销快照，不能按相同文案去重
+                snackbarHostState.currentSnackbarData?.dismiss()
+                val action = snackbarHostState.showSnackbar(
+                    message = composeResources.getString(
+                        CoreCommonR.string.playlist_insert_success,
+                        preview.startPosition
+                    ),
+                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_batch_export_undo),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
+                )
+                if (action != SnackbarResult.ActionPerformed) return@feedback
+                scrollJob.cancel()
+                if (insertInProgress || blockSync || currentContentScope.playlistId != playlistId) {
+                    snackbarHostState.showNeriSnackbar(
+                        composeResources.getString(CoreCommonR.string.playlist_insert_undo_stale)
+                    )
+                    return@feedback
+                }
+                insertInProgress = true
+                val undo = try {
+                    runLocalPlaylistMutationSafely("undoPlaylistInsert") {
+                        repo.reorderSongs(
+                            playlistId = playlistId,
+                            newOrder = originalOrder,
+                            expectedOrder = newOrder
+                        )
+                    }
+                } finally {
+                    insertInProgress = false
+                }
+                val undoMessage = when {
+                    undo.isFailure -> CoreCommonR.string.playlist_insert_undo_failed
+                    undo.getOrNull() != true -> CoreCommonR.string.playlist_insert_undo_stale
+                    else -> CoreCommonR.string.playlist_insert_undone
+                }
+                snackbarHostState.showNeriSnackbar(composeResources.getString(undoMessage))
+            }
+        }
+
         val deletionInProgress = deletingSongCount > 0 ||
                 isDownloadedSongDeletionRunning(deleteProgress)
         PlaylistModernVisualColorsProvider(
@@ -598,7 +697,7 @@ internal fun LocalPlaylistDetailModernContent(
                                     contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .reorderable(reorderState)
+                                        .localPlaylistReorderable(reorderState)
                                 ) {
                                     item(
                                         key = headerKey,
@@ -736,7 +835,7 @@ internal fun LocalPlaylistDetailModernContent(
                                         contentType = { _, _ -> "local_playlist_song" }
                                     ) { revIndex, song ->
                                         val songKey = remember(song) { song.stableKey() }
-                                        ReorderableItem(
+                                        LocalPlaylistReorderableItem(
                                             state = reorderState,
                                             key = songKey
                                         ) { isDragging ->
@@ -1085,7 +1184,7 @@ internal fun LocalPlaylistDetailModernContent(
                                                                 .then(if (insertInProgress) {
                                                                     Modifier
                                                                 } else {
-                                                                    Modifier.detectReorder(reorderState)
+                                                                    Modifier.localPlaylistDetectReorder(reorderState, songKey)
                                                                 })
                                                                 .padding(8.dp),
                                                             contentAlignment = Alignment.Center
@@ -1568,6 +1667,7 @@ internal fun LocalPlaylistDetailModernContent(
                                 }
                             } else {
                                 val songsByKey = sourceSongs.associateBy { it.stableKey() }
+                                val originalOrder = sourceSongs.map { it.identity() }
                                 val newOrder = preview.orderedKeys.map { songsByKey.getValue(it).identity() }
                                 showInsertDialog = false
                                 insertInProgress = true
@@ -1586,13 +1686,15 @@ internal fun LocalPlaylistDetailModernContent(
                                                     composeResources.getString(message)
                                                 )
                                             }
+                                        } else {
+                                            showInsertSuccess(preview, originalOrder, newOrder)
                                         }
                                     }
                                 ) {
                                     repo.reorderSongs(
                                         playlistId = playlistId,
                                         newOrder = newOrder,
-                                        expectedOrder = sourceSongs.map { it.identity() }
+                                        expectedOrder = originalOrder
                                     )
                                 }
                             }
@@ -1606,3 +1708,5 @@ internal fun LocalPlaylistDetailModernContent(
         }
     }
 }
+
+private const val PLAYLIST_INSERT_SCROLL_SYNC_TIMEOUT_MS = 1_500L

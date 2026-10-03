@@ -15,7 +15,6 @@
     <string name="playlist_insert_confirm_action">确认插入</string>
     <string name="playlist_insert_preview_title">移动后的顺序</string>
     <string name="playlist_insert_preview_range">选中歌曲将占据第 %1$d–%2$d 位</string>
-    <string name="playlist_insert_preview_notice">仅预览，确认插入后才会保存</string>
     <plurals name="playlist_insert_section_selected">
         <item quantity="other">本次插入 · %1$d 首</item>
     </plurals>
@@ -32,4 +31,8 @@
     <string name="playlist_insert_invalid_selection">选择的歌曲已变化，请关闭弹窗后重新选择</string>
     <string name="playlist_insert_stale">歌单内容已变化，请重新预览</string>
     <string name="playlist_insert_failed">插入失败，请重试</string>
+    <string name="playlist_insert_success">已移动到第 %1$d 位</string>
+    <string name="playlist_insert_undone">已撤销移动</string>
+    <string name="playlist_insert_undo_stale">歌单已变化，无法撤销本次移动</string>
+    <string name="playlist_insert_undo_failed">撤销移动失败</string>
 </resources>

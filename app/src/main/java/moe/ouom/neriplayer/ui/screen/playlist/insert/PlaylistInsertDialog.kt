@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassOverscrollBackdrop
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogContent
@@ -77,117 +79,120 @@ internal fun PlaylistInsertDialog(
         }
     }
 
-    MiuixSettingsDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(CoreCommonR.string.playlist_insert_title)) },
-        text = {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 520.dp)
-            ) {
-                val previewMaxHeight = maxHeight
-                Crossfade(
-                    targetState = currentPreview,
-                    animationSpec = tween(180),
-                    label = "playlist_insert_stage"
-                ) { stagePreview ->
-                    if (stagePreview != null) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Row(
+    // 弹窗使用独立窗口，回弹位移不能写回背后的歌单头图
+    CompositionLocalProvider(LocalAdvancedGlassOverscrollBackdrop provides null) {
+        MiuixSettingsDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(CoreCommonR.string.playlist_insert_title)) },
+            text = {
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                ) {
+                    val previewMaxHeight = maxHeight
+                    Crossfade(
+                        targetState = currentPreview,
+                        animationSpec = tween(180),
+                        label = "playlist_insert_stage"
+                    ) { stagePreview ->
+                        if (stagePreview != null) {
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(
-                                    text = stringResource(
-                                        CoreCommonR.string.playlist_insert_position_summary,
-                                        stagePreview.startPosition
-                                    ),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = stringResource(
+                                            CoreCommonR.string.playlist_insert_position_summary,
+                                            stagePreview.startPosition
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    MiuixSettingsTextButton(onClick = { preview = null }) {
+                                        Text(stringResource(CoreCommonR.string.playlist_insert_edit_position))
+                                    }
+                                }
+                                PlaylistInsertPreviewCard(
+                                    preview = stagePreview,
+                                    songs = songs,
+                                    offlineMode = offlineMode,
+                                    maxHeight = previewMaxHeight,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
-                                MiuixSettingsTextButton(onClick = { preview = null }) {
-                                    Text(stringResource(CoreCommonR.string.playlist_insert_edit_position))
+                            }
+                        } else {
+                            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                MiuixSettingsDialogContent(verticalSpacing = 10.dp) {
+                                    Text(
+                                        text = pluralStringResource(
+                                            CoreCommonR.plurals.playlist_insert_description,
+                                            selectedSnapshot.size,
+                                            selectedSnapshot.size
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    MiuixSettingsTextField(
+                                        value = input,
+                                        onValueChange = {
+                                            input = it
+                                            preview = null
+                                        },
+                                        label = {
+                                            Text(stringResource(CoreCommonR.string.playlist_insert_position_label))
+                                        },
+                                        placeholder = {
+                                            Text(stringResource(CoreCommonR.string.playlist_insert_position_hint, maxPosition))
+                                        },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Number,
+                                            imeAction = ImeAction.Done
+                                        ),
+                                        keyboardActions = KeyboardActions(onDone = { showPreview() })
+                                    )
+                                    PlaylistInsertSupportText(
+                                        selectionValid = selectionValid,
+                                        sourceChanged = sourceChanged || (preview != null && currentPreview == null),
+                                        invalidInput = input.isNotBlank() && position == null,
+                                        maxPosition = maxPosition
+                                    )
                                 }
                             }
-                            PlaylistInsertPreviewCard(
-                                preview = stagePreview,
-                                songs = songs,
-                                offlineMode = offlineMode,
-                                maxHeight = previewMaxHeight,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                        }
-                    } else {
-                        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                            MiuixSettingsDialogContent(verticalSpacing = 10.dp) {
-                                Text(
-                                    text = pluralStringResource(
-                                        CoreCommonR.plurals.playlist_insert_description,
-                                        selectedSnapshot.size,
-                                        selectedSnapshot.size
-                                    ),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                MiuixSettingsTextField(
-                                    value = input,
-                                    onValueChange = {
-                                        input = it
-                                        preview = null
-                                    },
-                                    label = {
-                                        Text(stringResource(CoreCommonR.string.playlist_insert_position_label))
-                                    },
-                                    placeholder = {
-                                        Text(stringResource(CoreCommonR.string.playlist_insert_position_hint, maxPosition))
-                                    },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Done
-                                    ),
-                                    keyboardActions = KeyboardActions(onDone = { showPreview() })
-                                )
-                                PlaylistInsertSupportText(
-                                    selectionValid = selectionValid,
-                                    sourceChanged = sourceChanged || (preview != null && currentPreview == null),
-                                    invalidInput = input.isNotBlank() && position == null,
-                                    maxPosition = maxPosition
-                                )
-                            }
                         }
                     }
                 }
-            }
-        },
-        confirmButton = {
-            MiuixSettingsButton(
-                enabled = candidate != null,
-                onClick = {
-                    if (currentPreview == null) {
-                        showPreview()
-                    } else if (isPlaylistInsertPreviewCurrent(currentPreview, sourceKeys, selectedSnapshot)) {
-                        onConfirm(currentPreview)
+            },
+            confirmButton = {
+                MiuixSettingsButton(
+                    enabled = candidate != null,
+                    onClick = {
+                        if (currentPreview == null) {
+                            showPreview()
+                        } else if (isPlaylistInsertPreviewCurrent(currentPreview, sourceKeys, selectedSnapshot)) {
+                            onConfirm(currentPreview)
+                        }
                     }
-                }
-            ) {
-                Text(
-                    stringResource(
-                        if (currentPreview == null) CoreCommonR.string.playlist_insert_preview_action
-                        else CoreCommonR.string.playlist_insert_confirm_action
+                ) {
+                    Text(
+                        stringResource(
+                            if (currentPreview == null) CoreCommonR.string.playlist_insert_preview_action
+                            else CoreCommonR.string.playlist_insert_confirm_action
+                        )
                     )
-                )
+                }
+            },
+            dismissButton = {
+                MiuixSettingsTextButton(onClick = onDismiss) {
+                    Text(stringResource(CoreCommonR.string.action_cancel))
+                }
             }
-        },
-        dismissButton = {
-            MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(CoreCommonR.string.action_cancel))
-            }
-        }
-    )
+        )
+    }
 }
 
 @Composable

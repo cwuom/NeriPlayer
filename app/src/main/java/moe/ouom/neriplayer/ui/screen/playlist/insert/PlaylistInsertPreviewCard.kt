@@ -45,11 +45,10 @@ internal fun PlaylistInsertPreviewCard(
     val songsByKey = remember(songs.toList()) { songs.associateBy { it.stableKey() } }
     val startIndex = preview.startPosition - 1
     val endIndex = startIndex + preview.movedKeys.size
-    val selectedSectionIndex = when {
-        startIndex > 1 -> 3
-        startIndex > 0 -> 2
-        else -> 1
-    }
+    val beforeStartIndex = (startIndex - ContextSongCount).coerceAtLeast(0)
+    val afterEndIndex = (endIndex + ContextSongCount).coerceAtMost(preview.orderedKeys.size)
+    val beforeCount = startIndex - beforeStartIndex
+    val selectedSectionIndex = 1 + beforeCount + if (beforeStartIndex > 0) 1 else 0
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedSectionIndex)
     Surface(
         modifier = modifier.heightIn(max = maxHeight),
@@ -89,22 +88,24 @@ internal fun PlaylistInsertPreviewCard(
                         )
                     )
                 }
-                if (startIndex > 1) {
+                if (beforeStartIndex > 0) {
                     item(key = "omitted-before") {
                         PlaylistInsertContextLabel(
                             pluralStringResource(
                                 CoreCommonR.plurals.playlist_insert_omitted_before,
-                                startIndex - 1,
-                                startIndex - 1
+                                beforeStartIndex,
+                                beforeStartIndex
                             )
                         )
                     }
                 }
-                if (startIndex > 0) {
-                    item(key = preview.orderedKeys[startIndex - 1]) {
-                        songsByKey[preview.orderedKeys[startIndex - 1]]?.let {
-                            PlaylistInsertPreviewSongRow(it, startIndex, false, offlineMode)
-                        }
+                items(
+                    count = beforeCount,
+                    key = { offset -> preview.orderedKeys[beforeStartIndex + offset] }
+                ) { offset ->
+                    val index = beforeStartIndex + offset
+                    songsByKey[preview.orderedKeys[index]]?.let {
+                        PlaylistInsertPreviewSongRow(it, index + 1, false, offlineMode)
                     }
                 }
                 item(key = "selected-label") {
@@ -130,33 +131,32 @@ internal fun PlaylistInsertPreviewCard(
                         )
                     )
                 }
-                if (endIndex < preview.orderedKeys.size) {
-                    item(key = preview.orderedKeys[endIndex]) {
-                        songsByKey[preview.orderedKeys[endIndex]]?.let {
-                            PlaylistInsertPreviewSongRow(it, endIndex + 1, false, offlineMode)
-                        }
+                items(
+                    count = afterEndIndex - endIndex,
+                    key = { offset -> preview.orderedKeys[endIndex + offset] }
+                ) { offset ->
+                    val index = endIndex + offset
+                    songsByKey[preview.orderedKeys[index]]?.let {
+                        PlaylistInsertPreviewSongRow(it, index + 1, false, offlineMode)
                     }
                 }
-                if (endIndex + 1 < preview.orderedKeys.size) {
+                if (afterEndIndex < preview.orderedKeys.size) {
                     item(key = "omitted-after") {
                         PlaylistInsertContextLabel(
                             pluralStringResource(
                                 CoreCommonR.plurals.playlist_insert_omitted_after,
-                                preview.orderedKeys.size - endIndex - 1,
-                                preview.orderedKeys.size - endIndex - 1
+                                preview.orderedKeys.size - afterEndIndex,
+                                preview.orderedKeys.size - afterEndIndex
                             )
                         )
                     }
                 }
             }
-            Text(
-                text = stringResource(CoreCommonR.string.playlist_insert_preview_notice),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
+
+private const val ContextSongCount = 5
 
 @Composable
 private fun PlaylistInsertContextLabel(text: String, emphasized: Boolean = false) {

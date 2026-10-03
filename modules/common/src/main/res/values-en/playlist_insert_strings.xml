@@ -16,7 +16,6 @@
     <string name="playlist_insert_confirm_action">Confirm move</string>
     <string name="playlist_insert_preview_title">Resulting order</string>
     <string name="playlist_insert_preview_range">Selected songs will occupy positions %1$d–%2$d</string>
-    <string name="playlist_insert_preview_notice">Preview only. Saved after you confirm the move</string>
     <plurals name="playlist_insert_section_selected">
         <item quantity="one">Moving · %1$d song</item>
         <item quantity="other">Moving · %1$d songs</item>
@@ -36,4 +35,8 @@
     <string name="playlist_insert_invalid_selection">The selection has changed. Close this dialog and select again</string>
     <string name="playlist_insert_stale">The playlist has changed. Preview the position again</string>
     <string name="playlist_insert_failed">Could not move songs. Try again.</string>
+    <string name="playlist_insert_success">Moved to position %1$d</string>
+    <string name="playlist_insert_undone">Move undone</string>
+    <string name="playlist_insert_undo_stale">The playlist changed. This move cannot be undone</string>
+    <string name="playlist_insert_undo_failed">Could not undo the move</string>
 </resources>

@@ -129,6 +129,42 @@ class LocalPlaylistRepositoryReorderTest : LocalPlaylistRepositoryTestSupport() 
         assertEquals(versionBeforeReject, fixture.syncStore.mutationVersion)
     }
 
+    @Test
+    fun `undo restores the original order only from its committed insertion snapshot`() = runTest {
+        val fixture = createReorderFixture()
+        val repository = fixture.repository
+        val originalOrder = repository.playlists.value.single().songs.map { it.identity() }
+        val insertedOrder = listOf(originalOrder[2], originalOrder[0], originalOrder[1])
+
+        assertTrue(repository.reorderSongs(PLAYLIST_ID, insertedOrder, originalOrder))
+        assertEquals(listOf(3L, 1L, 2L), restorePlaylist(fixture).songs.map { it.id })
+        assertTrue(repository.reorderSongs(PLAYLIST_ID, originalOrder, insertedOrder))
+
+        assertEquals(listOf(1L, 2L, 3L), repository.playlists.value.single().songs.map { it.id })
+        assertEquals(listOf(1L, 2L, 3L), restorePlaylist(fixture).songs.map { it.id })
+    }
+
+    @Test
+    fun `undo cannot overwrite a subsequent playlist reorder`() = runTest {
+        val fixture = createReorderFixture()
+        val repository = fixture.repository
+        val originalOrder = repository.playlists.value.single().songs.map { it.identity() }
+        val insertedOrder = listOf(originalOrder[2], originalOrder[0], originalOrder[1])
+        assertTrue(repository.reorderSongs(PLAYLIST_ID, insertedOrder, originalOrder))
+        repository.reorderSongs(PLAYLIST_ID, listOf(originalOrder[0], originalOrder[2], originalOrder[1]))
+        val currentState = repository.playlists.value
+        val currentPrimary = fixture.storage.primary
+        val commitsBeforeUndo = fixture.storage.commitCount
+        val versionBeforeUndo = fixture.syncStore.mutationVersion
+
+        assertFalse(repository.reorderSongs(PLAYLIST_ID, originalOrder, insertedOrder))
+
+        assertEquals(currentState, repository.playlists.value)
+        assertEquals(currentPrimary, fixture.storage.primary)
+        assertEquals(commitsBeforeUndo, fixture.storage.commitCount)
+        assertEquals(versionBeforeUndo, fixture.syncStore.mutationVersion)
+    }
+
     private suspend fun createReorderFixture(): ReorderFixture {
         val storage = RecordingStorage(primary = null)
         val syncStore = RecordingSyncMutationStore()
