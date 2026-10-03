@@ -602,7 +602,6 @@ private fun NeriAppContent(
 
     val serviceSyncCoordinator = remember(context) {
         PlayerStartupServiceSyncCoordinator(
-            awaitUiFrame = { withFrameNanos { } },
             isServiceReadyForPassiveLocalPlaybackSync = AudioPlayerService::isReadyForPassiveLocalPlaybackSync,
             hasItems = PlayerManager::hasItems,
             hasLocalCurrentSong = {
@@ -627,7 +626,7 @@ private fun NeriAppContent(
     }
     val scheduleAudioServiceStart: (String, Boolean) -> Unit = { source, forceForeground ->
         scope.launch {
-            serviceSyncCoordinator.startServiceAfterUiFrame(
+            serviceSyncCoordinator.requestServiceStart(
                 source = source,
                 forceForeground = forceForeground
             )

@@ -39,6 +39,8 @@ fun pcmAudioRequirements(
 fun shouldUpdateAudioOffloadForReactiveChange(
     audioReactiveEnabled: Boolean,
     playbackActive: Boolean,
+    currentAudioReactiveEnabled: Boolean = audioReactiveEnabled,
 ): Boolean {
-    return audioReactiveEnabled || !playbackActive
+    return audioReactiveEnabled == currentAudioReactiveEnabled &&
+        (currentAudioReactiveEnabled || !playbackActive)
 }

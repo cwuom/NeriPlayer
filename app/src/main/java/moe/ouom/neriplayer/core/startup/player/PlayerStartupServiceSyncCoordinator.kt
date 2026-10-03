@@ -9,7 +9,6 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackCommand
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class PlayerStartupServiceSyncCoordinator(
-    private val awaitUiFrame: suspend () -> Unit,
     private val isServiceReadyForPassiveLocalPlaybackSync: () -> Boolean,
     private val hasItems: () -> Boolean,
     private val hasLocalCurrentSong: () -> Boolean,
@@ -20,12 +19,14 @@ internal class PlayerStartupServiceSyncCoordinator(
     private val startService: (source: String, forceForeground: Boolean) -> Unit,
     private val playbackCommandFlow: Flow<PlaybackCommand>? = null
 ) {
-    suspend fun startServiceAfterUiFrame(
+    suspend fun requestServiceStart(
         source: String,
         forceForeground: Boolean
     ) {
-        awaitUiFrame()
-        if (PlayerStartupServiceSyncPlanner.isLocalPlaybackCommandSource(source)) {
+        if (
+            !forceForeground &&
+            PlayerStartupServiceSyncPlanner.isLocalPlaybackCommandSource(source)
+        ) {
             delay(PlayerStartupServiceSyncPlanner.LOCAL_PLAYBACK_COMMAND_DELAY_MS.milliseconds)
         }
         val plan = PlayerStartupServiceSyncPlanner.planServiceStart(
@@ -59,7 +60,7 @@ internal class PlayerStartupServiceSyncCoordinator(
                     shouldRunServiceInForeground = shouldRunPlaybackServiceInForeground()
                 ) ?: return@collect
                 launch {
-                    startServiceAfterUiFrame(
+                    requestServiceStart(
                         source = serviceStart.source,
                         forceForeground = serviceStart.forceForeground
                     )

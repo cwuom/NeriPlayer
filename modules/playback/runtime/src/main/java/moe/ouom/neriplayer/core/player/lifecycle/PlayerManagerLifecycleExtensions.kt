@@ -607,19 +607,22 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
 
     AudioReactive.setEnabledChangeListener { enabled ->
         mainScope.launch {
+            val currentAudioReactiveEnabled = AudioReactive.enabled
             val playbackActive = isTransportActiveWithoutInitialization()
             if (
                 shouldUpdateAudioOffloadForReactiveChange(
                     audioReactiveEnabled = enabled,
-                    playbackActive = playbackActive
+                    playbackActive = playbackActive,
+                    currentAudioReactiveEnabled = currentAudioReactiveEnabled
                 )
             ) {
                 updateAudioOffloadPreferences("audio_reactive_$enabled")
             } else {
                 NPLogger.d(
                     "NERI-PlayerManager",
-                    "keep audio offload pipeline during active playback: " +
-                        "audioReactive=$enabled"
+                    "skip audio offload preference update: " +
+                        "audioReactive=$enabled currentAudioReactive=$currentAudioReactiveEnabled " +
+                        "playbackActive=$playbackActive"
                 )
             }
         }
