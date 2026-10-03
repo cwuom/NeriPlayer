@@ -645,44 +645,47 @@ class ManagedDownloadScanDeleteSafetyTest {
             assertTrue(otherAudio.exists())
         } else {
             GlobalDownloadManager.startupRecoveryMutex.withLock {
-                val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
-                val catalogDirectory = File(context.cacheDir, "catalog-cover-${java.util.UUID.randomUUID()}").apply { mkdirs() }
-                val catalogContext = object : android.content.ContextWrapper(context) {
-                    override fun getApplicationContext(): android.content.Context = this
-                    override fun getFilesDir(): File = catalogDirectory
-                }
-                val database = androidx.room.Room.inMemoryDatabaseBuilder(context,
-                    moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase::class.java).build()
-                val store = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogRoomStore(
-                    catalogContext, database, "catalog.json", { rootKey }, "CatalogCoverSafety")
-                try {
-                    store.persist(listOf(stale))
-                    val restored = requireNotNull(store.restore()).single()
-                    assertEquals(stale.coverPath, restored.coverPath)
-                    assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
-                    assertTrue(PersistentDownloadedSongDeleteIntentStore.begin(context, rootKey, listOf(restored)))
-                    val plan = ManagedDownloadDeletePlanner().buildFullLibraryDeletePlan(context, listOf(restored))
-                    assertTrue(plan.snapshotComplete)
-                    assertFalse("catalog cover is not a receipt", plan.requestedReferences.any { isDocument(it, foreignCover) })
-                    assertEquals(receiptOwnsCover, plan.requestedReferences.any { isDocument(it, fixture.cover) })
-                    assertTrue(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, rootKey, plan.requestedReferences))
-                    assertFalse(requireNotNull(PersistentDownloadedSongDeleteIntentStore.read(context)).ownedReferences
-                        .any { isDocument(it, foreignCover) })
-                    val core = plan.requestedReferences.filterTo(linkedSetOf()) {
-                        isDocument(it, fixture.audio) || isDocument(it, fixture.metadata)
+                // 后台恢复会接管持久意图，fixture 也要在同一把锁内完成删除
+                GlobalDownloadManager.downloadedSongDeleteMutex.withLock {
+                    val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(context)
+                    val catalogDirectory = File(context.cacheDir, "catalog-cover-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+                    val catalogContext = object : android.content.ContextWrapper(context) {
+                        override fun getApplicationContext(): android.content.Context = this
+                        override fun getFilesDir(): File = catalogDirectory
                     }
-                    assertEquals(if (receiptOwnsCover) 2 else 1, core.size)
-                    assertEquals(core, ManagedDownloadStorage.deleteFullLibraryReferences(context, core))
-                    assertFalse(fixture.audio.exists())
-                    if (receiptOwnsCover) assertFalse(fixture.metadata.exists())
-                    ManagedDownloadStorage.snapshotCacheStore.invalidate()
-                    ManagedDownloadStorage.treeChildRegistry.clear()
-                    assertTrue(GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context))
-                    assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
-                } finally {
-                    assertTrue(PersistentDownloadedSongDeleteIntentStore.clear(context))
-                    database.close()
-                    assertTrue(catalogDirectory.deleteRecursively())
+                    val database = androidx.room.Room.inMemoryDatabaseBuilder(context,
+                        moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase::class.java).build()
+                    val store = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogRoomStore(
+                        catalogContext, database, "catalog.json", { rootKey }, "CatalogCoverSafety")
+                    try {
+                        store.persist(listOf(stale))
+                        val restored = requireNotNull(store.restore()).single()
+                        assertEquals(stale.coverPath, restored.coverPath)
+                        assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+                        assertTrue(PersistentDownloadedSongDeleteIntentStore.begin(context, rootKey, listOf(restored)))
+                        val plan = ManagedDownloadDeletePlanner().buildFullLibraryDeletePlan(context, listOf(restored))
+                        assertTrue(plan.snapshotComplete)
+                        assertFalse("catalog cover is not a receipt", plan.requestedReferences.any { isDocument(it, foreignCover) })
+                        assertEquals(receiptOwnsCover, plan.requestedReferences.any { isDocument(it, fixture.cover) })
+                        assertTrue(PersistentDownloadedSongDeleteIntentStore.mergeOwnedReferences(context, rootKey, plan.requestedReferences))
+                        assertFalse(requireNotNull(PersistentDownloadedSongDeleteIntentStore.read(context)).ownedReferences
+                            .any { isDocument(it, foreignCover) })
+                        val core = plan.requestedReferences.filterTo(linkedSetOf()) {
+                            isDocument(it, fixture.audio) || isDocument(it, fixture.metadata)
+                        }
+                        assertEquals(if (receiptOwnsCover) 2 else 1, core.size)
+                        assertEquals(core, ManagedDownloadStorage.deleteFullLibraryReferences(context, core))
+                        assertFalse(fixture.audio.exists())
+                        if (receiptOwnsCover) assertFalse(fixture.metadata.exists())
+                        ManagedDownloadStorage.snapshotCacheStore.invalidate()
+                        ManagedDownloadStorage.treeChildRegistry.clear()
+                        assertTrue(GlobalDownloadManager.replayFullLibraryDeleteWithoutCatalog(context))
+                        assertFalse(PersistentDownloadedSongDeleteIntentStore.hasPending(context))
+                    } finally {
+                        assertTrue(PersistentDownloadedSongDeleteIntentStore.clear(context))
+                        database.close()
+                        assertTrue(catalogDirectory.deleteRecursively())
+                    }
                 }
             }
         }
