@@ -353,6 +353,14 @@ Current positioning:
 > Invitations shared by Debug use `neriplayer-debug://` to open that build. Regular invitation links can still be pasted into the app to join.
 > A Debug build warning appears after onboarding. Once confirmed, it stays dismissed across updates; clearing app data or reinstalling resets it.
 
+To run from Android Studio, select the `app` run configuration and the `debug`
+variant for `:app` in Build Variants. After changing the application ID configuration
+or switching to a branch containing that change, run **Sync Project with Gradle Files**.
+Rebuilding the APK alone does not refresh the IDE's cached launch package and can
+install Debug while launching an existing Release app. The launch component in
+the Run window should be
+`moe.ouom.neriplayer.debug/moe.ouom.neriplayer.activity.MainActivity`.
+
 For release build and signing details, see
 [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md#release-build).
 

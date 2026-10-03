@@ -280,6 +280,12 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 > DEBUG 分享的一起听邀请使用 `neriplayer-debug://`，避免打开正式版；仍可在应用内粘贴普通邀请链接加入。
 > 完成启动引导后会提示 DEBUG 构建风险；确认后不再提醒，更新保留该状态，清除数据或重新安装后会再次提示。
 
+在 Android Studio 中运行时，选择 `app` 运行配置，并确认 Build Variants 中
+`:app` 使用 `debug`。更新包名配置或切换到包含该变更的分支后，先执行
+**Sync Project with Gradle Files**；仅重新构建 APK 不会刷新 IDE 缓存的启动包名，
+可能导致安装 DEBUG 包后仍启动已安装的正式版。运行窗口中的启动组件应为
+`moe.ouom.neriplayer.debug/moe.ouom.neriplayer.activity.MainActivity`。
+
 发布版构建与签名流程请参阅
 [CONTRIBUTING.md](./CONTRIBUTING.md#构建发布版--release-build)。
 
