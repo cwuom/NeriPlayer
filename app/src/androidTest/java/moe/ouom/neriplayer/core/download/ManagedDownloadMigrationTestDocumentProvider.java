@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import androidx.annotation.NonNull;
+import moe.ouom.neriplayer.test.BuildConfig;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -29,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ManagedDownloadMigrationTestDocumentProvider extends ContentProvider {
     public static final String AUTHORITY =
-        "moe.ouom.neriplayer.test.manageddownloadmigration";
+        BuildConfig.APPLICATION_ID + ".manageddownloadmigration";
     public static final String ROOT_ID = "migration-root";
     public static final String SOURCE_ROOT_ID = "migration-source-root";
     public static final String TARGET_ROOT_ID = "migration-target-root";

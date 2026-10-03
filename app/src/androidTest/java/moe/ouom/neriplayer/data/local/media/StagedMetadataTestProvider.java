@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import androidx.annotation.NonNull;
+import moe.ouom.neriplayer.test.BuildConfig;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -18,7 +19,7 @@ import java.io.IOException;
 
 public final class StagedMetadataTestProvider extends ContentProvider {
     public static final String AUTHORITY =
-        "moe.ouom.neriplayer.test.stagedmetadataprovider";
+        BuildConfig.APPLICATION_ID + ".stagedmetadataprovider";
     public static final String DIRECTORY_NAME = "staged_metadata_test";
     public static final String DISPLAY_NAME = "staged-content-probe.m4a";
     public static final Uri CONTENT_URI = Uri.parse(

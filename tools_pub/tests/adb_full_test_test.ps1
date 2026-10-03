@@ -22,8 +22,19 @@ function script:adb {
     switch -Wildcard ($command) {
         "shell pm list packages *" { return "package:$neriAdbTestInstalledPackage" }
         "shell cmd package resolve-activity *" { return "$neriAdbTestPackage/moe.ouom.neriplayer.activity.MainActivity" }
-        "shell pm list instrumentation" { return "instrumentation:$neriAdbTestPackage.test/moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner" }
-        "shell am instrument *" { return "OK (1 test)" }
+        "shell pm list instrumentation" {
+            if ($neriAdbTestBootstrapMode -eq "missing") { return "instrumentation:unrelated.test/unrelated.Runner" }
+            return "instrumentation:$neriAdbTestPackage.test/moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner"
+        }
+        "shell am instrument *" {
+            switch ($neriAdbTestBootstrapMode) {
+                "failed" { return "INSTRUMENTATION_STATUS: performance_startup_ready=$neriAdbTestPackage`nFAILURES!!!" }
+                "no-marker" { return "OK (1 test)" }
+                "wrong-package" { return "INSTRUMENTATION_STATUS: performance_startup_ready=moe.ouom.neriplayer`nOK (1 test)" }
+                "command-failed" { throw "adb command failed" }
+                default { return "INSTRUMENTATION_STATUS: performance_startup_ready=$neriAdbTestPackage`nOK (1 test)" }
+            }
+        }
         "shell content query *" { return "Row: 0 _id=42, _display_name=neri_test_tone_20s.wav" }
         "shell dumpsys media_session" { return $neriAdbTestSessionDump }
         default { return "Success" }
@@ -36,6 +47,7 @@ function script:Test-Path { param($Path) return $true }
 function script:Get-Content { param($Path, [switch]$Raw) return "mock-cookie" }
 function script:Get-ChildItem {
     param($Path, $Filter, [switch]$File)
+    if ($Path -match "androidTest" -and $neriAdbTestBootstrapMode -eq "missing-apk") { return $null }
     $apkName = if ($Path -match "androidTest") { "debug-androidTest.apk" } elseif ($Path -match "release$") { "release.apk" } else { "debug.apk" }
     return [pscustomobject]@{ FullName = $apkName; LastWriteTime = [DateTime]::Now }
 }
@@ -53,9 +65,19 @@ function Assert-Command {
 }
 
 function Invoke-ScriptScenario {
-    param([string]$Variant, [switch]$MissingTarget, [switch]$PlaybackFromOtherPackage, [switch]$ConcurrentSessions, [switch]$TargetSessionFirst, [switch]$TargetStateNull)
+    param(
+        [string]$Variant,
+        [switch]$MissingTarget,
+        [switch]$PlaybackFromOtherPackage,
+        [switch]$ConcurrentSessions,
+        [switch]$TargetSessionFirst,
+        [switch]$TargetStateNull,
+        [ValidateSet("ready", "failed", "missing", "no-marker", "wrong-package", "command-failed", "missing-apk")]
+        [string]$BootstrapMode = "ready"
+    )
 
     $script:neriAdbTestCommands = [System.Collections.Generic.List[string]]::new()
+    $script:neriAdbTestBootstrapMode = $BootstrapMode
     $script:neriAdbTestPackage = if ($Variant -eq "debug") { "moe.ouom.neriplayer.debug" } else { "moe.ouom.neriplayer" }
     $script:neriAdbTestInstalledPackage = if ($MissingTarget) {
         if ($Variant -eq "debug") { "moe.ouom.neriplayer" } else { "moe.ouom.neriplayer.debug" }
@@ -89,6 +111,23 @@ function Invoke-ScriptScenario {
         }
         return
     }
+    if ($Variant -eq "debug" -and $BootstrapMode -ne "ready") {
+        $expectedFailure = switch ($BootstrapMode) {
+            "missing" { "startup bootstrap instrumentation is not installed:" }
+            "missing-apk" { "debug androidTest apk is required for startup bootstrap" }
+            "command-failed" { "adb command failed" }
+            default { "startup bootstrap failed:" }
+        }
+        if ($failure -notlike "$expectedFailure*") {
+            throw "invalid bootstrap was not rejected ($BootstrapMode): $failure"
+        }
+        if (@($script:neriAdbTestCommands | Where-Object {
+            $_ -like "shell am force-stop *" -or $_ -like "shell am start *" -or $_ -like "shell dumpsys *"
+        }).Count -gt 0 -or $null -ne $script:neriAdbTestReport.Value) {
+            throw "invalid startup bootstrap was followed by metrics or a report"
+        }
+        return
+    }
     if ($failure) { throw $failure }
 
     $package = $script:neriAdbTestPackage
@@ -108,7 +147,11 @@ function Invoke-ScriptScenario {
     }
     if ($Variant -eq "debug") {
         Assert-Command "install -r debug-androidTest.apk"
-        Assert-Command "shell am instrument -w -r -e class moe.ouom.neriplayer.testing.PermissionBootstrapTest $package.test/moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner"
+        $bootstrapCommand = "shell am instrument -w -r -e class moe.ouom.neriplayer.testing.PerformanceStartupBootstrapTest -e preparePerformanceStartup true $package.test/moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner"
+        Assert-Command $bootstrapCommand
+        $bootstrapIndex = $script:neriAdbTestCommands.IndexOf($bootstrapCommand)
+        $firstLaunchIndex = $script:neriAdbTestCommands.IndexOf("shell am force-stop $package")
+        if ($bootstrapIndex -ge $firstLaunchIndex) { throw "metrics started before startup readiness was verified" }
         Assert-Command "shell am broadcast -a moe.ouom.neriplayer.debug.CLEAR_AUTH -n $package/moe.ouom.neriplayer.testing.DebugCookieImportReceiver --es platform all"
         $imports = @($script:neriAdbTestCommands | Where-Object { $_ -like "shell am broadcast -a moe.ouom.neriplayer.debug.IMPORT_AUTH -n $package/moe.ouom.neriplayer.testing.DebugCookieImportReceiver *" })
         if ($imports.Count -ne 3) { throw "debug cookie imports targeted the wrong component" }
@@ -128,4 +171,10 @@ Invoke-ScriptScenario -Variant "release" -ConcurrentSessions -TargetSessionFirst
 Invoke-ScriptScenario -Variant "release" -PlaybackFromOtherPackage
 Invoke-ScriptScenario -Variant "release" -ConcurrentSessions -TargetStateNull
 Invoke-ScriptScenario -Variant "release" -ConcurrentSessions -TargetStateNull -TargetSessionFirst
-Write-Output "PASS: 11 scenarios covering variants, missing targets, and isolated playback states"
+Invoke-ScriptScenario -Variant "debug" -BootstrapMode "failed"
+Invoke-ScriptScenario -Variant "debug" -BootstrapMode "missing"
+Invoke-ScriptScenario -Variant "debug" -BootstrapMode "no-marker"
+Invoke-ScriptScenario -Variant "debug" -BootstrapMode "wrong-package"
+Invoke-ScriptScenario -Variant "debug" -BootstrapMode "command-failed"
+Invoke-ScriptScenario -Variant "debug" -BootstrapMode "missing-apk"
+Write-Output "PASS: 17 scenarios covering variants, startup readiness, and isolated playback states"

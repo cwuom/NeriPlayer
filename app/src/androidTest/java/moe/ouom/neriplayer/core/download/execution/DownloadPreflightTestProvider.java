@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import androidx.annotation.NonNull;
+import moe.ouom.neriplayer.test.BuildConfig;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -20,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class DownloadPreflightTestProvider extends ContentProvider {
-    public static final String AUTHORITY = "moe.ouom.neriplayer.test.downloadpreflight";
+    public static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".downloadpreflight";
     private final AtomicInteger queries = new AtomicInteger();
     private final AtomicInteger opens = new AtomicInteger();
     private final ConcurrentHashMap<String, AtomicInteger> referenceQueries = new ConcurrentHashMap<>();
