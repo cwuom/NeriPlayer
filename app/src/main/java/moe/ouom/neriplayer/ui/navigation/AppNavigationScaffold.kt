@@ -126,8 +126,7 @@ internal fun AppNavigationScaffold(
     onExpandNowPlaying: () -> Unit,
     content: @Composable (BottomBarLayoutInsets) -> Unit
 ) {
-    var bottomTabBarBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
-    var miniPlayerBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    val dragBoundsOwner = remember { AppDragBoundsOwner() }
     val reservedMiniPlayerHeight = reservedMiniPlayerHeight(
         miniPlayer.hasSong,
         bottomBar.showNowPlaying
@@ -147,7 +146,7 @@ internal fun AppNavigationScaffold(
                 AppScaffoldBottomBar(
                     bottomBar = bottomBar,
                     onMainTabSelected = onMainTabSelected,
-                    onTabBarBoundsChanged = { bottomTabBarBoundsInRoot = it }
+                    onTabBarBoundsChanged = dragBoundsOwner::updateTabBarBounds
                 )
             }
         ) { innerPadding ->
@@ -156,14 +155,11 @@ internal fun AppNavigationScaffold(
                 bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
                 reservedMiniPlayerHeight = reservedMiniPlayerHeight
             )
+            val dragBounds = dragBoundsOwner.visibleBounds(miniPlayer.hasSong, bottomBar.showNowPlaying)
             CompositionLocalProvider(
                 LocalMiniPlayerHeight provides layoutInsets.screenBottomInset,
-                LocalMiniPlayerBoundsInRoot provides miniPlayerBoundsInRoot?.takeUnless {
-                    !shouldShowMiniPlayer(miniPlayer.hasSong, bottomBar.showNowPlaying) || it.isEmpty
-                },
-                LocalBottomTabBarBoundsInRoot provides bottomTabBarBoundsInRoot?.takeUnless {
-                    bottomBar.showNowPlaying || it.isEmpty
-                }
+                LocalMiniPlayerBoundsInRoot provides dragBounds.miniPlayer,
+                LocalBottomTabBarBoundsInRoot provides dragBounds.bottomTabBar
             ) {
                 AppManagedProcessingLayer(
                     layoutInsets = layoutInsets,
@@ -171,7 +167,7 @@ internal fun AppNavigationScaffold(
                     showNowPlaying = bottomBar.showNowPlaying,
                     offlineMode = bottomBar.offlineMode,
                     onExpandNowPlaying = onExpandNowPlaying,
-                    onMiniPlayerBoundsChanged = { miniPlayerBoundsInRoot = it },
+                    onMiniPlayerBoundsChanged = dragBoundsOwner::updateMiniPlayerBounds,
                     content = content
                 )
             }
@@ -225,19 +221,7 @@ private fun AppScaffoldBottomBar(
             NeriBottomBar(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onGloballyPositioned { coordinates ->
-                        val bounds = coordinates.boundsInRoot()
-                        val left = bounds.left + tabInsets.getLeft(density, layoutDirection)
-                        onTabBarBoundsChanged(
-                            bounds.copy(
-                                left = left,
-                                right = (bounds.right - tabInsets.getRight(density, layoutDirection))
-                                    .coerceAtLeast(left),
-                                bottom = (bounds.bottom - tabInsets.getBottom(density))
-                                    .coerceAtLeast(bounds.top)
-                            )
-                        )
-                    },
+                    .reportBottomTabBounds(tabInsets, density, layoutDirection, onTabBarBoundsChanged),
                 selectAlpha = selectAlpha,
                 items = bottomBar.items,
                 currentDestination = bottomBar.currentDestination,
@@ -276,9 +260,12 @@ private fun AppManagedProcessingLayer(
     content: @Composable (BottomBarLayoutInsets) -> Unit
 ) {
     val (owner, presentation) = rememberManagedProcessingBannerSession()
-    val contentCaptureModifier = LocalAdvancedGlassBackdrops.current?.content?.let {
-        Modifier.captureAdvancedGlassBackdrop(it)
-    } ?: Modifier
+    val backdrops = LocalAdvancedGlassBackdrops.current
+    val contentCaptureModifier = if (backdrops == null) {
+        Modifier
+    } else {
+        Modifier.captureAdvancedGlassBackdrop(backdrops.content)
+    }
     val edgePx = with(LocalDensity.current) { MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE.toPx() }
     val thresholdPx = with(LocalDensity.current) { MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD.toPx() }
     Box(
