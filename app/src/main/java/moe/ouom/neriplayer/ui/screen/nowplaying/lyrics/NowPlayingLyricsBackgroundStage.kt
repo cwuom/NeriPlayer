@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.player.metadata.shouldTryPreferredLyricSource
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.lyrics.parser.parseEmbeddedPhoneticLyrics
 
 internal data class NowPlayingLyricsBackgroundInputs(
     val song: SongItem?,
@@ -148,7 +149,8 @@ private suspend fun readNeteaseRomanized(
     songId: Long,
     sources: NowPlayingLyricsSources
 ): String {
-    if (!shouldReadNeteaseRomanized(inputs)) return ""
+    // 逐词模式可能改用 AMLL，音译交由选中的来源判断是否需要回退
+    if (inputs.preferWordTimedLyrics || !shouldReadNeteaseRomanized(inputs)) return ""
     return try {
         sources.neteaseRomanized(songId)
     } catch (cancelled: CancellationException) {
@@ -167,4 +169,5 @@ internal fun shouldReadNeteaseOriginal(inputs: NowPlayingLyricsBackgroundInputs)
 
 internal fun shouldReadNeteaseRomanized(inputs: NowPlayingLyricsBackgroundInputs): Boolean =
     listOf(inputs.local?.romanizedLyric, inputs.song.storedLyricFor(ManagedLyricVariant.ROMANIZED),
-        inputs.downloaded?.romanizedLyric).all { it == null }
+        inputs.downloaded?.romanizedLyric).all { it == null } &&
+        parseEmbeddedPhoneticLyrics(effectiveRawLyric(inputs, ManagedLyricVariant.ORIGINAL).orEmpty()).isEmpty()

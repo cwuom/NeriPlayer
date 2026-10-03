@@ -412,6 +412,8 @@ For release build and signing details, see
   mismatched durations fall back to automatic lyrics.
   Remote tracks display cached lyrics first, then try the preferred source in the background.
   A successful match replaces the displayed lyrics; otherwise the cached lyrics remain.
+  When the current source has no romanization, NeriPlayer tries NetEase while keeping the
+  original lyrics and translation. The source's own romanization and manually edited or cleared tracks take precedence.
   Changing either setting clears cached lyrics so the new preference applies immediately.
   The **Lyric Offset** card has separate defaults for NetEase, QQ Music, Kugou,
   LRCLIB, and AMLL TTML, with individual and all-source reset buttons. The last

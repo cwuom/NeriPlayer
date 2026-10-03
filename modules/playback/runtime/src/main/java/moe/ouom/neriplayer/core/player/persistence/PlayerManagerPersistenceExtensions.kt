@@ -677,7 +677,7 @@ internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<
         editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
         preferWordTimedLyrics = preferWordTimedLyrics,
         defaultLyricSource = defaultLyricSource,
-        biliSourceTag = BILI_SOURCE_TAG
+        amllLyricsEnabled = amllLyricsEnabled
     )
 }
 
