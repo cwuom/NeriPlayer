@@ -63,6 +63,7 @@ internal data class CommentUiState(
     val page: Int = 0,
     val hasMore: Boolean = false,
     val total: Long? = null,
+    val totalIncludingReplies: Long? = null,
     val isRefreshing: Boolean = false,
     val isCheckingCache: Boolean = false,
     val isLoadingMore: Boolean = false,
@@ -110,6 +111,25 @@ internal fun mergeComments(
     if (incoming.isEmpty()) return existing
     if (existing.isEmpty()) return incoming.distinctBy { it.id }
     return existing.mergeDistinctBy(incoming) { it.id }
+}
+
+internal fun hasMoreComments(
+    hasMore: Boolean,
+    comments: List<SongComment>,
+    totalIncludingReplies: Long?
+): Boolean {
+    if (!hasMore || totalIncludingReplies == null) return hasMore
+    // 总数可能包含楼中楼，预览回复已计入 replyCount，不能重复累加
+    var remaining = totalIncludingReplies
+    for (comment in comments) {
+        if (remaining <= 0L) return true
+        remaining--
+        val replies = comment.replyCount?.coerceAtLeast(0L) ?: 0L
+        // 超出总数说明计数不一致，继续沿用接口的分页状态
+        if (replies > remaining) return true
+        remaining -= replies
+    }
+    return remaining != 0L
 }
 
 /**
@@ -541,13 +561,15 @@ internal class CommentViewModel : ViewModel() {
                     if (!isActive || !request.isCurrent) return@launch
                     val snapshot = cached
                     _uiState.update { current ->
+                        val comments = snapshot?.comments?.distinctBy { it.id }.orEmpty()
                         if (snapshot == null) current.copy(status = CommentListStatus.LOADING, isCheckingCache = false)
                         else current.copy(
                             status = if (snapshot.comments.isEmpty()) CommentListStatus.EMPTY else CommentListStatus.SUCCESS,
-                            comments = snapshot.comments.distinctBy { it.id },
+                            comments = comments,
                             page = snapshot.page,
-                            hasMore = snapshot.hasMore,
+                            hasMore = hasMoreComments(snapshot.hasMore, comments, snapshot.totalIncludingReplies),
                             total = snapshot.total,
+                            totalIncludingReplies = snapshot.totalIncludingReplies,
                             nextCursor = snapshot.nextCursor
                         )
                     }
@@ -576,6 +598,8 @@ internal class CommentViewModel : ViewModel() {
                     } else {
                         mergeComments(current.comments, result.comments)
                     }
+                    val totalIncludingReplies = if (isFirstPage) result.totalIncludingReplies
+                        else result.totalIncludingReplies ?: current.totalIncludingReplies
                     current.copy(
                         status = if (comments.isEmpty()) {
                             CommentListStatus.EMPTY
@@ -586,7 +610,8 @@ internal class CommentViewModel : ViewModel() {
                         sort = sort,
                         pendingSort = null,
                         page = result.page,
-                        hasMore = result.hasMore,
+                        hasMore = hasMoreComments(result.hasMore, comments, totalIncludingReplies),
+                        totalIncludingReplies = totalIncludingReplies,
                         nextCursor = result.nextCursor,
                         // 后续页可能拿到服务端的降级空载荷 (例如 B 站匿名请求第 2 页返回 page.count=0),
                         // 不能让它把首页拿到的总数覆盖成 0, 否则头部会从「共 N 条」掉到「共 0 条」(§32/§33)

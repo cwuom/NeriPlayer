@@ -15,6 +15,50 @@ import org.junit.Test
  */
 class BiliCommentMapperTest {
     @Test
+    fun `top level pages retain the explicit total including replies`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":17,"acount":31},
+                "replies":[{"rpid":1,"rcount":14}]}}"""),
+            page = 1,
+            pageSize = 20,
+            includeReplyTotal = true
+        )
+
+        assertEquals(17L, page.total)
+        assertEquals(31L, page.totalIncludingReplies)
+        assertTrue(page.hasMore)
+    }
+
+    @Test
+    fun `missing or contradictory reply totals are not used to finish pagination`() {
+        for (replyTotal in listOf("", ",\"acount\":-1", ",\"acount\":0", ",\"acount\":16")) {
+            val page = parseBiliCommentPage(
+                JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":17$replyTotal},
+                    "replies":[{"rpid":1}]}}"""),
+                page = 1,
+                pageSize = 20,
+                includeReplyTotal = true
+            )
+
+            assertNull(page.totalIncludingReplies)
+            assertTrue(page.hasMore)
+        }
+    }
+
+    @Test
+    fun `reply pages do not use the top level total including replies`() {
+        val page = parseBiliCommentPage(
+            JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":17,"acount":31},
+                "replies":[{"rpid":2,"root":1}]}}"""),
+            page = 1,
+            pageSize = 20
+        )
+
+        assertNull(page.totalIncludingReplies)
+        assertTrue(page.hasMore)
+    }
+
+    @Test
     fun `mixed reply arrays preserve valid order and pagination count`() {
         val page = parseBiliCommentPage(
             JSONObject("""{"code":0,"data":{"page":{"num":1,"size":20,"count":3},

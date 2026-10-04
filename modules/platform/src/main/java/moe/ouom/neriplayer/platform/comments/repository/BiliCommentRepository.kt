@@ -56,7 +56,7 @@ class BiliCommentRepository(
         val root = withContext(Dispatchers.IO) {
             client.getVideoComments(resourceId, page, pageSize, if (sort == CommentSort.NEWEST) 0 else 1)
         }
-        val result = parseBiliCommentPage(root, page, pageSize)
+        val result = parseBiliCommentPage(root, page, pageSize, includeReplyTotal = true)
         if (sessionKey == client.commentCacheSessionKey()) {
             if (forceRefresh && page == 1) cache.invalidate(platform.name, resourceId)
             cache.put(platform.name, resourceId, page, result, sort, pageSize, cursor, sessionKey)
