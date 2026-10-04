@@ -89,6 +89,18 @@
                     android:pathPrefix="/join" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".activity.car.BluetoothMediaValidationActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <data android:scheme="content" android:host="media"
+                    android:pathPrefix="/internal/audio/media/" android:mimeType="audio/*" />
+            </intent-filter>
+        </activity>
         <activity-alias
             android:name=".activity.UsbDeviceAttachedActivityAlias"
             android:enabled="true"
