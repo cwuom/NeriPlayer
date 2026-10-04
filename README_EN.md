@@ -187,16 +187,16 @@ Current positioning:
   and browsed in separate Favorites categories. NetEase and YouTube Music support
   importing followed artists from a signed-in account while preserving local follows.
 - **Large screens and daily controls are getting real polish**:
-  tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
-  width constraints and bottom control layouts. The `Mini Player` supports
+  tablet Now Playing, Lyrics, Settings, and artist pages, plus phone landscape
+  playback, use steadier width constraints and bottom controls. The `Mini Player` supports
   horizontal swipe for previous/next without expanding the full player. Home
   widgets include a 4x1 slim player, a 2x2 mini player, and a 4x2 playback card.
   Artwork-colored Material You cards adapt to light/dark themes, orientation,
   and host size. Wide cards add progress, favorites, and floating lyrics; all sizes retain previous,
   play/pause, and next track. Launcher shortcuts can continue
   playback, open Explore, open Library, or shuffle My Favorite Music.
-  Main bottom tabs use interruptible directional page transitions that retain both
-  outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
+  Tablet main tabs use interruptible centered scale and opacity transitions; phones
+  retain directional horizontal transitions. Both retain outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
   discontinuities during rapid switching. Long-pressing the Now Playing artwork
   opens an immersive preview with pinch-to-zoom, panning, and a download action.
 - **Sound controls are tied to the active audio session**:
@@ -747,8 +747,9 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   `Home / Explore / Library / Settings` are the primary tabs.
 - `Home` is displayed dynamically based on available Home cards. `Debug` appears
   only after enabling developer mode.
-- `MainTabLayerHost` retains outgoing and incoming main-tab scenes and moves them
-  horizontally according to tab order. Each scene owns saved state and its own
+- `MainTabLayerHost` retains outgoing and incoming main-tab scenes. Tablets use
+  centered scale and opacity animations, while phones retain horizontal translation. Each scene owns
+  saved state and its own
   advanced-glass owner, and interrupted reverse switches continue from the
   current transition progress.
 - Detail pages use a drawer-style rise over a slightly recessed background by
@@ -767,9 +768,43 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - `LocalArtistDetailScreen` handles local artist pages with play-all,
   multi-select, playlist export, and batch downloads for online songs.
   `NeteaseArtistDetailScreen` handles NetEase artist songs/albums and follow state.
-- Tablet and landscape layouts constrain content width and adjust bottom control
+- Tablet layouts constrain content width and adjust bottom control
   areas on Now Playing, Lyrics, artist detail, and Settings pages to avoid overly
   wide content and scattered controls.
+- Tablet landscape uses a left navigation rail, while portrait keeps bottom navigation.
+  Only the selected rail item shows its label. Landscape hides system navigation;
+  an edge swipe reveals it temporarily, and portrait restores it.
+  Tablet mini players add previous and next buttons; narrow windows retain play/pause and swipe controls.
+  Portrait playback limits artwork and control widths to leave more space for lyrics.
+  The full Lyrics page uses a centered reading pane and compact controls in portrait.
+  Rail destinations are vertically centered. The player overlay naturally covers and reveals the rail during transitions,
+  preserving the underlying page width and blurred background.
+  Tablets default to bottom playback controls with progress, with lyrics at 125% and
+  translations at 115% of phone defaults. Saved font sizes and control positions remain in effect.
+- Tablets follow system rotation, while phones allow landscape only in Now Playing.
+  Landscape playback adapts artwork, lyrics, and controls to the available height:
+  tablets use spacious panes and short phone windows use compact panes with square
+  artwork. Phone landscape hides auxiliary
+  tools and uses smaller playback buttons; returning to portrait keeps it locked until
+  Now Playing is reopened. Landscape lyrics use a transparent pane and leave vertical
+  space around the artwork. Only phone landscape hides audio specifications; tablets
+  follow existing display preferences. Opening playback dismisses the
+  underlying input focus and text selection menu.
+  Phone landscape places playback controls and progress at the bottom right and track
+  actions at the top right; tablets and portrait keep control placement preferences.
+  Landscape cover and lyrics pages share the same layout while retaining separate
+  font and button-size preferences; horizontal swipes switch between the two pages.
+  Short phone landscape editing keeps a compact cover beside a scrollable form;
+  scrolling the fields does not drag the sheet. Song and lyrics editing adapt to
+  available height, with scrollable access to all actions when a keyboard or large text reduces space.
+- Tablet onboarding and disclaimer screens place guidance beside settings in both
+  orientations, with scrollable content and fixed actions.
+- Tablet NetEase artist detail places the profile beside songs and albums; playback
+  statistics use separate overview cards and rankings, adapting to narrower windows.
+  Artist artwork is smaller, with the follow action above the biography and a compact
+  gap between the works pane and the mini player.
+  Tablet comments leave space above the sheet, with compact landscape headers and
+  composers to keep more of the comment list visible.
 
 ### Playback, cache, and service
 

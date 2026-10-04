@@ -13,9 +13,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.unit.dp
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
@@ -78,6 +82,17 @@ internal fun AppNowPlayingOverlay(
     content: @Composable () -> Unit
 ) {
     val latestOnVisibilityChanged by rememberUpdatedState(onVisibilityChanged)
+    val focusManager = LocalFocusManager.current
+    val textToolbar = LocalTextToolbar.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(visible) {
+        if (visible) {
+            // 系统选择菜单独立于播放覆盖层，进入时结束底层输入会话
+            focusManager.clearFocus(force = true)
+            textToolbar.hide()
+            keyboardController?.hide()
+        }
+    }
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically(

@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.settings.lyrics
  */
 
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.settings.defaultLyricFontScales
 const val MIN_LYRIC_FONT_SCALE = 0.5f
 const val MAX_LYRIC_FONT_SCALE = 1.6f
 
@@ -35,17 +36,21 @@ fun scaledLyricFontSize(baseSizeSp: Float, scale: Float): Float =
     baseSizeSp * normalizeLyricFontScale(scale)
 
 fun resolveLyricFontScales(
-    legacyScale: Float,
+    legacyScale: Float?,
     coverLyric: Float?,
     coverTranslation: Float?,
     lyricsPageLyric: Float?,
-    lyricsPageTranslation: Float?
+    lyricsPageTranslation: Float?,
+    defaults: LyricFontScales = defaultLyricFontScales(smallestScreenWidthDp = 0)
 ): LyricFontScales {
-    val fallback = normalizeLyricFontScale(legacyScale)
+    // 旧版统一字号只有实际保存时才优先于设备默认
+    val fallback = legacyScale?.let(::normalizeLyricFontScale)
     return LyricFontScales(
-        coverLyric = normalizeLyricFontScale(coverLyric ?: fallback),
-        coverTranslation = normalizeLyricFontScale(coverTranslation ?: fallback),
-        lyricsPageLyric = normalizeLyricFontScale(lyricsPageLyric ?: fallback),
-        lyricsPageTranslation = normalizeLyricFontScale(lyricsPageTranslation ?: fallback)
+        coverLyric = normalizeLyricFontScale(coverLyric ?: fallback ?: defaults.coverLyric),
+        coverTranslation = normalizeLyricFontScale(coverTranslation ?: fallback ?: defaults.coverTranslation),
+        lyricsPageLyric = normalizeLyricFontScale(lyricsPageLyric ?: fallback ?: defaults.lyricsPageLyric),
+        lyricsPageTranslation = normalizeLyricFontScale(
+            lyricsPageTranslation ?: fallback ?: defaults.lyricsPageTranslation
+        )
     )
 }

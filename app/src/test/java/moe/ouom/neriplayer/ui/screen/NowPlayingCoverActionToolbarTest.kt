@@ -31,6 +31,14 @@ class NowPlayingCoverActionToolbarTest {
         assertSame(Arrangement.SpaceEvenly, toolbarRowArrangement(layout(), spec(wide = true)))
     }
 
+    @Test
+    fun `short landscape removes decorative padding while keeping action slots`() {
+        val compactLandscape = spec(wide = true).copy(compactHeight = true)
+        assertEquals(0.dp, toolbarPreferredPadding(compactLandscape))
+        assertEquals(0.dp, toolbarRowVerticalPadding(compactLandscape))
+        assertSame(Arrangement.SpaceEvenly, toolbarRowArrangement(layout(), compactLandscape))
+    }
+
     private fun spec(
         wide: Boolean = false,
         compact: Boolean = false,

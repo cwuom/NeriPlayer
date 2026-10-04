@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.first
@@ -62,7 +63,10 @@ private fun rememberInitialSettingsPageState(): MutableState<SettingsPage?> =
     rememberSaveable { mutableStateOf(null) }
 
 @Composable
-private fun settingsSplitLayout(): Boolean = currentWindowWidthDp() >= 840.dp
+private fun settingsSplitLayout(): Boolean {
+    // 手机播放页旋转时设置仍在底层组合，不能因此改写当前设置页
+    return LocalConfiguration.current.smallestScreenWidthDp >= 600 && currentWindowWidthDp() >= 840.dp
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 internal class SettingsNavigationState(

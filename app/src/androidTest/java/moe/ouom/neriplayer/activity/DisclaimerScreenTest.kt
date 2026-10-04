@@ -1,17 +1,24 @@
 package moe.ouom.neriplayer.activity
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -86,6 +93,40 @@ class DisclaimerScreenTest {
 
         composeRule.onNodeWithText(showDetails).performClick()
         composeRule.onNodeWithText(firstDetailTitle).assertExists()
+    }
+
+    @Test
+    fun shortLandscape_expandedDetailsKeepAgreeActionVisible() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val showDetails = context.getString(CoreCommonR.string.disclaimer_show_details)
+        val firstDetailTitle = context.getString(CoreCommonR.string.disclaimer_section1_title)
+        val agreeButtonLabel = context.getString(CoreCommonR.string.disclaimer_agree_countdown)
+        var agreed = false
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(720.dp, 320.dp)) {
+                    DisclaimerScreen(
+                        onAgree = { agreed = true },
+                        initialCountdownSeconds = 0
+                    )
+                }
+            }
+        }
+        val initialAgreeBounds = composeRule.onNodeWithText(agreeButtonLabel)
+            .fetchSemanticsNode().boundsInRoot
+
+        composeRule.onNodeWithText(showDetails).performScrollTo().performClick()
+        composeRule.onNodeWithText(firstDetailTitle).performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithText(agreeButtonLabel).assertIsDisplayed()
+        assertEquals(
+            "横屏展开和滚动详情不应移动同意按钮",
+            initialAgreeBounds,
+            composeRule.onNodeWithText(agreeButtonLabel).fetchSemanticsNode().boundsInRoot
+        )
+        composeRule.onNodeWithText(agreeButtonLabel).performClick()
+        composeRule.runOnIdle { assertTrue(agreed) }
     }
 
     private fun hasText(text: String): Boolean {

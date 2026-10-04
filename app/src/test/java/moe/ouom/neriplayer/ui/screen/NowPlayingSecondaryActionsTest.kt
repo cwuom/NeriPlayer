@@ -9,8 +9,10 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsBiliTargetOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsPage
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsSheetOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseArtistNavigationSource
+import moe.ouom.neriplayer.ui.screen.nowplaying.isCompactMoreOptionsEditSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.isYouTubeMusicArtistNavigationSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveMoreOptionsSong
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideCompactEditSongHandle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -18,6 +20,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingSecondaryActionsTest {
+    @Test
+    fun `short landscape sheet locking applies only to the edit info page`() {
+        MoreOptionsPage.entries.forEach { page ->
+            assertFalse(isCompactMoreOptionsEditSheet(page, compactLandscape = false))
+            assertEquals(page == MoreOptionsPage.EDIT_INFO,
+                isCompactMoreOptionsEditSheet(page, compactLandscape = true))
+        }
+    }
+
+    @Test
+    fun `keyboard hides the handle only for the compact edit info sheet`() {
+        MoreOptionsPage.entries.forEach { page ->
+            val compactEditSheet = isCompactMoreOptionsEditSheet(page, compactLandscape = true)
+            assertFalse(shouldHideCompactEditSongHandle(compactEditSheet, imeVisible = false))
+            assertEquals(page == MoreOptionsPage.EDIT_INFO,
+                shouldHideCompactEditSongHandle(compactEditSheet, imeVisible = true))
+            assertFalse(shouldHideCompactEditSongHandle(
+                isCompactMoreOptionsEditSheet(page, compactLandscape = false), imeVisible = true))
+        }
+    }
+
     @Test
     fun `bili target owner refreshes on song content or target generation changes`() {
         val song = SongItem(

@@ -67,6 +67,11 @@ internal data class NowPlayingProgressInfoSegment(
     val highlighted: Boolean = false
 )
 
+internal fun nowPlayingVisibleProgressInfoSegments(
+    segments: List<NowPlayingProgressInfoSegment>,
+    phoneLandscape: Boolean
+): List<NowPlayingProgressInfoSegment> = if (phoneLandscape) emptyList() else segments
+
 internal class NowPlayingProgressOwner(initialPositionMs: Long) {
     private var seekActions: NowPlayingSeekActionOwner? = null
     var isDragging by mutableStateOf(false)
@@ -371,6 +376,7 @@ internal fun NowPlayingProgressSection(
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier,
+    tabletLandscape: Boolean = false,
     progressRowModifier: Modifier = Modifier
 ) {
     val owner = remember(songKey) {
@@ -415,7 +421,11 @@ internal fun NowPlayingProgressSection(
                 highlightedContentColor = activeContentColor,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = if (useWideLandscapeLayout) (-5).dp else (-6).dp)
+                    .offset(y = when {
+                        tabletLandscape -> (-1).dp
+                        useWideLandscapeLayout -> (-5).dp
+                        else -> (-6).dp
+                    })
             )
         }
     }

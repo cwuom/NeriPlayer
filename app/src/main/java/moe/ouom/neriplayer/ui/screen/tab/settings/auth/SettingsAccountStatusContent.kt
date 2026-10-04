@@ -1,35 +1,22 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 
 import android.content.res.Resources
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.painterResource
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
+import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
-import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthUiState
-import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthUiState
-import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthUiState
 
 internal fun accountStatusText(
     resources: Resources,
@@ -49,70 +36,61 @@ internal fun accountStatusText(
 private fun accountSavedAtText(savedAt: Long): String =
     if (savedAt > 0L) formatSyncTime(savedAt) else stringResource(CoreCommonR.string.time_just_now)
 
-private data class AccountStatusCopy(
-    val bili: String,
-    val youtube: String,
-    val netease: String
-)
-
 internal fun hasValidSavedCookieHealth(state: SavedCookieAuthState): Boolean =
     state == SavedCookieAuthState.Valid
 
 internal fun hasValidYouTubeAuthHealth(state: YouTubeAuthState): Boolean =
     state == YouTubeAuthState.Valid
 
-private fun accountStatusCopy(
-    resources: Resources,
-    bili: BiliAuthUiState,
-    youtube: YouTubeAuthUiState,
-    netease: NeteaseAuthUiState,
-    biliRelativeTime: String,
-    youtubeRelativeTime: String,
-    neteaseRelativeTime: String
-): AccountStatusCopy = AccountStatusCopy(
-    bili = accountStatusText(
-        resources,
-        hasValidSavedCookieHealth(bili.health.state),
-        bili.hasSavedCookies,
-        biliRelativeTime,
-        CoreCommonR.string.settings_bili_status_valid,
-        CoreCommonR.string.settings_bili_status_saved_invalid,
-        CoreCommonR.string.settings_bili_status_missing
-    ),
-    youtube = accountStatusText(
-        resources,
-        hasValidYouTubeAuthHealth(youtube.health.state),
-        youtube.hasSavedAuth,
-        youtubeRelativeTime,
-        CoreCommonR.string.settings_youtube_status_valid,
-        CoreCommonR.string.settings_youtube_status_saved_invalid,
-        CoreCommonR.string.settings_youtube_status_missing
-    ),
-    netease = accountStatusText(
-        resources,
-        hasValidSavedCookieHealth(netease.health.state),
-        netease.hasSavedCookies,
-        neteaseRelativeTime,
-        CoreCommonR.string.settings_netease_status_valid,
-        CoreCommonR.string.settings_netease_status_saved_invalid,
-        CoreCommonR.string.settings_netease_status_missing
-    )
-)
-
 @Composable
-internal fun SettingsLoginExpandedContent(controller: SettingsAccountAuthController) {
+internal fun SettingsLoginExpandedContent(
+    controller: SettingsAccountAuthController,
+    isActive: Boolean = true,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
+) {
     val biliVm = controller.biliVm
     val youtubeVm = controller.youtubeVm
     val neteaseVm = controller.neteaseVm
     val bili by biliVm.uiState.collectAsStateWithLifecycleCompat()
     val youtube by youtubeVm.uiState.collectAsStateWithLifecycleCompat()
     val netease by neteaseVm.uiState.collectAsStateWithLifecycleCompat()
-    val copy = accountStatusCopy(
-        LocalResources.current, bili, youtube, netease,
-        accountSavedAtText(bili.health.savedAt),
-        accountSavedAtText(youtube.health.savedAt),
-        accountSavedAtText(netease.health.savedAt)
+    val biliAuthorizationFlow = remember {
+        AppContainer.biliCookieRepo.cookieFlow.map { cookies ->
+            SettingsAccountAuthorizationSnapshot(cookies)
+        }.distinctUntilChanged()
+    }
+    val neteaseAuthorizationFlow = remember {
+        AppContainer.neteaseCookieRepo.cookieFlow.map { cookies ->
+            SettingsAccountAuthorizationSnapshot(cookies)
+        }.distinctUntilChanged()
+    }
+    val youtubeAuthorizationFlow = remember {
+        AppContainer.youtubeAuthRepo.authFlow.map { auth ->
+            SettingsYouTubeAccountAuthorizationSnapshot(auth)
+        }.distinctUntilChanged()
+    }
+    val emptyAuthorization = remember { SettingsAccountAuthorizationSnapshot(emptyMap()) }
+    val emptyYouTubeAuthorization = remember { SettingsYouTubeAccountAuthorizationSnapshot(YouTubeAuthBundle()) }
+    val biliAuthorization by biliAuthorizationFlow.collectAsStateWithLifecycle(initialValue = emptyAuthorization)
+    val neteaseAuthorization by neteaseAuthorizationFlow.collectAsStateWithLifecycle(initialValue = emptyAuthorization)
+    val youtubeAuthorization by youtubeAuthorizationFlow.collectAsStateWithLifecycle(initialValue = emptyYouTubeAuthorization)
+    val youtubeEnabled by AppContainer.settingsRepo.youtubeEnabledFlow.collectAsStateWithLifecycle(
+        initialValue = YouTubeFeatureGate.isEnabled()
     )
+    val biliProfile = rememberSettingsAccountProfile(
+        request = SettingsAccountProfileRequest(bili.hasSavedCookies, bili.health.savedAt, biliAuthorization.identity),
+        isActive = isActive
+    ) { loadBiliAccountProfile(biliAuthorization) }
+    val neteaseProfile = rememberSettingsAccountProfile(
+        request = SettingsAccountProfileRequest(netease.hasSavedCookies, netease.health.savedAt, neteaseAuthorization.identity),
+        isActive = isActive
+    ) { loadNeteaseAccountProfile(neteaseAuthorization) }
+    val youtubeProfile = rememberSettingsAccountProfile(
+        request = SettingsAccountProfileRequest(youtube.hasSavedAuth, youtubeAuthorization.savedAt, youtubeAuthorization.identity),
+        isActive = isActive && youtubeEnabled
+    ) { loadYouTubeAccountProfile(youtubeAuthorization) }
 
     LaunchedEffect(biliVm, youtubeVm, neteaseVm) {
         biliVm.refreshAuthHealth()
@@ -120,41 +98,54 @@ internal fun SettingsLoginExpandedContent(controller: SettingsAccountAuthControl
         youtubeVm.refreshAuthHealth()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Transparent)
-            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
-    ) {
-        SettingsAccountPlatformRow(
-            iconRes = CoreCommonR.drawable.ic_bilibili,
-            contentDescriptionRes = CoreCommonR.string.settings_bilibili,
-            titleRes = CoreCommonR.string.platform_bilibili,
-            status = copy.bili,
-            hasSaved = bili.hasSavedCookies,
-            onOpenSaved = controller.actions.openBiliSavedCookieDialog,
-            onOpenSheet = controller.actions.openBiliSheet
-        )
-        SettingsAccountPlatformRow(
-            iconRes = CoreCommonR.drawable.ic_youtube,
-            contentDescriptionRes = CoreCommonR.string.common_youtube,
-            titleRes = CoreCommonR.string.common_youtube,
-            status = copy.youtube,
-            hasSaved = youtube.hasSavedAuth,
-            onOpenSaved = controller.actions.openYouTubeSavedCookieDialog,
-            onOpenSheet = controller.actions.openYouTubeSheet
-        )
-        SettingsAccountPlatformRow(
-            iconRes = CoreCommonR.drawable.ic_netease_cloud_music,
-            contentDescriptionRes = CoreCommonR.string.settings_netease,
-            titleRes = CoreCommonR.string.platform_netease,
-            status = copy.netease,
-            hasSaved = netease.hasSavedCookies,
-            onOpenSaved = controller.actions.openNeteaseSavedCookieDialog,
-            onOpenSheet = controller.actions.openNeteaseSheet
-        )
-        SettingsQqAccountRow()
-    }
+    SettingsAccountCardsContent(
+        accounts = listOf(
+            SettingsAccountCardUiState(
+                platform = SettingsAccountPlatform.Netease,
+                hasSavedAuthorization = netease.hasSavedCookies,
+                authorizationComplete = hasValidSavedCookieHealth(netease.health.state),
+                savedAtLabel = accountSavedAtText(netease.health.savedAt),
+                profile = neteaseProfile.profile,
+                profileLoading = neteaseProfile.loading
+            ),
+            SettingsAccountCardUiState(
+                platform = SettingsAccountPlatform.Bilibili,
+                hasSavedAuthorization = bili.hasSavedCookies,
+                authorizationComplete = hasValidSavedCookieHealth(bili.health.state),
+                savedAtLabel = accountSavedAtText(bili.health.savedAt),
+                profile = biliProfile.profile,
+                profileLoading = biliProfile.loading
+            ),
+            SettingsAccountCardUiState(
+                platform = SettingsAccountPlatform.YouTube,
+                hasSavedAuthorization = youtube.hasSavedAuth,
+                authorizationComplete = hasValidYouTubeAuthHealth(youtube.health.state),
+                savedAtLabel = accountSavedAtText(youtube.health.savedAt),
+                profile = youtubeProfile.profile,
+                profileLoading = youtubeProfile.loading
+            ),
+            SettingsAccountCardUiState(platform = SettingsAccountPlatform.QqMusic)
+        ),
+        onLogin = { platform ->
+            when (platform) {
+                SettingsAccountPlatform.Netease -> controller.actions.openNeteaseSheet()
+                SettingsAccountPlatform.Bilibili -> controller.actions.openBiliSheet()
+                SettingsAccountPlatform.YouTube -> controller.actions.openYouTubeSheet()
+                SettingsAccountPlatform.QqMusic -> Unit
+            }
+        },
+        onManageSaved = { platform ->
+            when (platform) {
+                SettingsAccountPlatform.Netease -> controller.actions.openNeteaseSavedCookieDialog()
+                SettingsAccountPlatform.Bilibili -> controller.actions.openBiliSavedCookieDialog()
+                SettingsAccountPlatform.YouTube -> controller.actions.openYouTubeSavedCookieDialog()
+                SettingsAccountPlatform.QqMusic -> Unit
+            }
+        },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
 }
 
 internal class SettingsAccountEntryAction(
@@ -165,56 +156,4 @@ internal class SettingsAccountEntryAction(
     val onClick: () -> Unit = {
         if (hasSaved) onOpenSaved() else onOpenSheet()
     }
-}
-
-private fun Modifier.settingsAccountRowModifier(
-    hasSaved: Boolean,
-    onOpenSaved: () -> Unit,
-    onOpenSheet: () -> Unit
-): Modifier = settingsItemClickable(
-    onClick = SettingsAccountEntryAction(hasSaved, onOpenSaved, onOpenSheet).onClick
-)
-
-@Composable
-private fun SettingsAccountPlatformRow(
-    iconRes: Int,
-    contentDescriptionRes: Int,
-    titleRes: Int,
-    status: String,
-    hasSaved: Boolean,
-    onOpenSaved: () -> Unit,
-    onOpenSheet: () -> Unit
-) {
-    ListItem(
-        leadingContent = {
-            Icon(
-                painter = painterResource(id = iconRes),
-                contentDescription = stringResource(contentDescriptionRes),
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(stringResource(titleRes)) },
-        supportingContent = { Text(status) },
-        modifier = Modifier.settingsAccountRowModifier(hasSaved, onOpenSaved, onOpenSheet),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
-}
-
-@Composable
-private fun SettingsQqAccountRow() {
-    ListItem(
-        leadingContent = {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_qq_music),
-                contentDescription = stringResource(CoreCommonR.string.settings_qq_music),
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(stringResource(CoreCommonR.string.settings_qq_music)) },
-        supportingContent = { Text(stringResource(CoreCommonR.string.common_coming_soon)) },
-        modifier = Modifier.settingsItemClickable { },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
 }

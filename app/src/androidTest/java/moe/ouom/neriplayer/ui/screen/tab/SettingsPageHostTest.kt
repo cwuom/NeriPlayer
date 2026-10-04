@@ -78,7 +78,7 @@ class SettingsPageHostTest {
             composeRule.runOnIdle { activePage.value = SettingsPage.Accounts }
             advanceRecompositionFrame()
             composeRule.onAllNodesWithTag(NAVIGATION_PANE_TAG).assertCountEquals(1)
-            composeRule.onNodeWithTag("settings-detail-Accounts").assertExists()
+            composeRule.onNodeWithTag("settings-detail-Accounts", useUnmergedTree = true).assertExists()
 
             composeRule.runOnIdle { activePage.value = SettingsPage.Theme }
             advanceRecompositionFrame()
@@ -90,7 +90,7 @@ class SettingsPageHostTest {
     }
 
     @Test
-    fun splitDetailSwitchesWithoutKeepingOutgoingPage() {
+    fun splitDetailRetainsOutgoingPrimaryUntilItsFadeFinishes() {
         lateinit var activePage: MutableState<SettingsPage>
         composeRule.mainClock.autoAdvance = false
         try {
@@ -133,7 +133,11 @@ class SettingsPageHostTest {
             composeRule.runOnIdle { activePage.value = SettingsPage.Accounts }
             advanceRecompositionFrame()
             composeRule.onAllNodesWithTag(NAVIGATION_PANE_TAG).assertCountEquals(1)
-            composeRule.onNodeWithTag("settings-detail-Accounts").assertExists()
+            composeRule.onNodeWithTag("settings-detail-Accounts", useUnmergedTree = true).assertExists()
+            composeRule.onNodeWithTag("settings-detail-General", useUnmergedTree = true).assertExists()
+
+            composeRule.mainClock.advanceTimeBy(2_000)
+            composeRule.waitForIdle()
             composeRule.onAllNodesWithTag("settings-detail-General").assertCountEquals(0)
         } finally {
             composeRule.mainClock.autoAdvance = true
@@ -231,8 +235,8 @@ class SettingsPageHostTest {
 
             composeRule.runOnIdle { activePage.value = SettingsPage.UsbExclusive }
             repeat(3) { composeRule.mainClock.advanceTimeByFrame() }
-            composeRule.onNodeWithTag("settings-detail-Playback").assertExists()
-            composeRule.onNodeWithTag("settings-detail-UsbExclusive").assertExists()
+            composeRule.onNodeWithTag("settings-detail-Playback", useUnmergedTree = true).assertExists()
+            composeRule.onNodeWithTag("settings-detail-UsbExclusive", useUnmergedTree = true).assertExists()
 
             composeRule.mainClock.advanceTimeBy(2_000)
             composeRule.waitForIdle()

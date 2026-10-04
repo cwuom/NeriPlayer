@@ -39,7 +39,6 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
-import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
@@ -334,7 +333,9 @@ internal fun SettingsPersonalizationControlsCard(
     val nowPlayingToolbarDockEnabled by autoSettingsRepository.nowPlayingToolbarDockEnabledFlow
         .collectAsState(initial = true)
     val playbackControlLayoutPreferences by settingsRepository
-        .playbackControlLayoutPreferencesFlow.collectAsState(initial = PlaybackControlLayoutPreferences())
+        .playbackControlLayoutPreferencesFlow.collectAsState(
+            initial = settingsRepository.defaultPlaybackControlLayoutPreferences
+        )
     val nowPlayingControlsAtBottom =
         playbackControlLayoutPreferences.nowPlayingPlacement.placesControlsAtBottom
     val toolbarDockState = resolveToolbarDockSwitchState(

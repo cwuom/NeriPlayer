@@ -13,21 +13,21 @@ class AdvancedGlassSurfaceTest {
 
         assertTrue(
             isAdvancedGlassNavigationOwnerActive(
-                requiresContentBackdrop = false,
+                isGlobalNavigationSurface = false,
                 activeNavigationOwners = activeOwners,
                 navigationOwner = activeOwner
             )
         )
         assertFalse(
             isAdvancedGlassNavigationOwnerActive(
-                requiresContentBackdrop = false,
+                isGlobalNavigationSurface = false,
                 activeNavigationOwners = activeOwners,
                 navigationOwner = inactiveOwner
             )
         )
         assertTrue(
             isAdvancedGlassNavigationOwnerActive(
-                requiresContentBackdrop = true,
+                isGlobalNavigationSurface = true,
                 activeNavigationOwners = activeOwners,
                 navigationOwner = inactiveOwner
             )

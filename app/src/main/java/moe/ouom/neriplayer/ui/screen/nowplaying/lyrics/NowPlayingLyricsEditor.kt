@@ -29,6 +29,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -37,17 +38,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
@@ -83,13 +92,16 @@ import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -405,7 +417,6 @@ fun LyricsEditorSheet(
         )
     }
     DisposableEffect(owner) { onDispose(owner::dispose) }
-    val isSaving by owner.isSavingState
     var showLyricMatchSheet by owner.showMatchSheetState
     val lyricMatchQuery by owner.queryState
     val selectedLyricMatchSources by owner.selectedSourcesState
@@ -456,131 +467,37 @@ fun LyricsEditorSheet(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.9f)
-            .bottomSheetScrollGuard()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .windowInsetsPadding(WindowInsets.navigationBars),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // 标题栏
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(CoreCommonR.string.music_edit_lyrics),
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            HapticTextButton(onClick = ::dismissLyricsEditor, enabled = !isSaving) {
-                Text(stringResource(CoreCommonR.string.action_cancel))
+    LyricsEditorContent(
+        originalSong = originalSong,
+        owner = owner,
+        onDismiss = ::dismissLyricsEditor,
+        onMatch = { showLyricMatchSheet = true },
+        onPaste = {
+            coroutineScope.launch {
+                owner.pasteSelectedText(readLyricsClipboardText(clipboard, context).orEmpty())
+            }
+        },
+        onSave = {
+            if (owner.requestSave(editingSource, hasExistingSidecar)) {
+                saveLyrics(writeLocalMetadata = false)
             }
         }
+    )
 
-        // 歌曲信息
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = originalSong.customName ?: originalSong.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = originalSong.customArtist ?: originalSong.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            HapticTextButton(
-                onClick = {
-                    showLyricMatchSheet = true
-                },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(CoreCommonR.string.lyrics_match_action), maxLines = 1)
-            }
-        }
-
-        LyricsEditorTabs(owner)
-        LyricsEditorTextInput(owner, modifier = Modifier.fillMaxWidth().weight(1f))
-
-        // 底部按钮
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            HapticTextButton(
-                onClick = owner::clearSelectedText,
-                enabled = !isSaving,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(stringResource(CoreCommonR.string.action_clear))
-            }
-
-            HapticTextButton(
-                onClick = {
-                    coroutineScope.launch {
-                        owner.pasteSelectedText(readLyricsClipboardText(clipboard, context).orEmpty())
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = !isSaving
-            ) {
-                Text(stringResource(CoreCommonR.string.action_paste))
-            }
-
-            HapticTextButton(
-                onClick = {
-                    if (owner.requestSave(editingSource, hasExistingSidecar)) {
-                        saveLyrics(writeLocalMetadata = false)
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = !isSaving
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text(stringResource(CoreCommonR.string.music_save_changes))
-                }
-            }
-        }
-
-        if (showLyricMatchSheet) {
-            LyricMatchResultsSheet(
-                query = lyricMatchQuery,
-                onQueryChange = owner::changeQuery,
-                results = visibleLyricMatchResults,
-                isLoading = isLyricMatching,
-                errorMessage = lyricMatchError,
-                hasSearched = hasSearchedSelectedLyricSources,
-                selectedSources = selectedLyricMatchSources,
-                onSourceToggle = owner::toggleSource,
-                onSearch = { query -> runLyricMatch(query, selectedLyricMatchSources) },
-                onApply = owner::applyMatch,
-                onDismiss = { showLyricMatchSheet = false }
-            )
-        }
+    if (showLyricMatchSheet) {
+        LyricMatchResultsSheet(
+            query = lyricMatchQuery,
+            onQueryChange = owner::changeQuery,
+            results = visibleLyricMatchResults,
+            isLoading = isLyricMatching,
+            errorMessage = lyricMatchError,
+            hasSearched = hasSearchedSelectedLyricSources,
+            selectedSources = selectedLyricMatchSources,
+            onSourceToggle = owner::toggleSource,
+            onSearch = { query -> runLyricMatch(query, selectedLyricMatchSources) },
+            onApply = owner::applyMatch,
+            onDismiss = { showLyricMatchSheet = false }
+        )
     }
 
 
@@ -638,6 +555,200 @@ fun LyricsEditorSheet(
     }
 }
 
+private val LyricsEditorMinTextHeight = 128.dp
+private val LyricsEditorCompactHeight = 480.dp
+private val LyricsEditorContentMaxWidth = 720.dp
+
+internal data class LyricsEditorLayoutSpec(
+    val compactHeader: Boolean,
+    val scrollWholeContent: Boolean
+)
+
+internal fun resolveLyricsEditorLayoutSpec(
+    availableHeight: Dp,
+    fontScale: Float
+): LyricsEditorLayoutSpec {
+    val compactHeader = availableHeight < LyricsEditorCompactHeight
+    val baseChromeHeight = if (compactHeader) 184.dp else 288.dp
+    val scalableTextHeight = if (compactHeader) 88.dp else 128.dp
+    val chromeHeight = baseChromeHeight + scalableTextHeight * (fontScale.coerceAtLeast(1f) - 1f)
+    return LyricsEditorLayoutSpec(
+        compactHeader = compactHeader,
+        // 键盘或大字体压缩视窗时让整页滚动，避免固定工具栏把输入区挤到零高度
+        scrollWholeContent = availableHeight < chromeHeight + LyricsEditorMinTextHeight
+    )
+}
+
+@Composable
+internal fun LyricsEditorContent(
+    originalSong: SongItem,
+    owner: NowPlayingLyricsEditorOwner,
+    onDismiss: () -> Unit,
+    onMatch: () -> Unit,
+    onPaste: () -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+    val fontScale = LocalDensity.current.fontScale
+    val isSaving by owner.isSavingState
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("lyrics-editor-layout")
+            .bottomSheetScrollGuard(allowDownwardToParent = { false })
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .imePadding()
+    ) {
+        val layout = resolveLyricsEditorLayoutSpec(maxHeight, fontScale)
+        val spacing = if (layout.compactHeader) 8.dp else 12.dp
+        val contentModifier = Modifier
+            .align(Alignment.TopCenter)
+            .widthIn(max = LyricsEditorContentMaxWidth)
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .testTag("lyrics-editor-content")
+            .then(if (layout.scrollWholeContent) Modifier.verticalScroll(scrollState) else Modifier)
+            .padding(horizontal = if (layout.compactHeader) 16.dp else 24.dp, vertical = spacing)
+        Column(contentModifier, verticalArrangement = Arrangement.spacedBy(spacing)) {
+            LyricsEditorHeader(
+                song = originalSong.takeIf { layout.compactHeader },
+                isSaving = isSaving,
+                onDismiss = onDismiss,
+                onMatch = onMatch
+            )
+            if (!layout.compactHeader) {
+                LyricsEditorSongInfo(originalSong, isSaving, onMatch)
+            }
+            LyricsEditorTabs(owner)
+            LyricsEditorTextInput(
+                owner,
+                modifier = Modifier.fillMaxWidth().then(
+                    if (layout.scrollWholeContent) Modifier.height(LyricsEditorMinTextHeight)
+                    else Modifier.weight(1f).heightIn(min = LyricsEditorMinTextHeight)
+                )
+            )
+            LyricsEditorActions(owner, onPaste, onSave)
+        }
+    }
+}
+
+@Composable
+private fun LyricsEditorHeader(
+    song: SongItem?,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onMatch: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("lyrics-editor-header"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(CoreCommonR.string.music_edit_lyrics),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (song != null) {
+                Text(
+                    text = "${song.customName ?: song.name} · ${song.customArtist ?: song.artist}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (song != null) LyricsEditorMatchButton(isSaving, onMatch)
+        HapticTextButton(
+            onClick = onDismiss,
+            enabled = !isSaving,
+            modifier = Modifier.testTag("lyrics-editor-cancel")
+        ) {
+            Text(stringResource(CoreCommonR.string.action_cancel), maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun LyricsEditorSongInfo(song: SongItem, isSaving: Boolean, onMatch: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp)
+            .testTag("lyrics-editor-song"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = song.customName ?: song.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = song.customArtist ?: song.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        LyricsEditorMatchButton(isSaving, onMatch)
+    }
+}
+
+@Composable
+private fun LyricsEditorMatchButton(isSaving: Boolean, onMatch: () -> Unit) {
+    HapticTextButton(
+        onClick = onMatch,
+        enabled = !isSaving,
+        modifier = Modifier.testTag("lyrics-editor-match"),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(stringResource(CoreCommonR.string.lyrics_match_action), maxLines = 1)
+    }
+}
+
+@Composable
+private fun LyricsEditorActions(owner: NowPlayingLyricsEditorOwner, onPaste: () -> Unit, onSave: () -> Unit) {
+    val isSaving by owner.isSavingState
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("lyrics-editor-actions"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        HapticTextButton(
+            onClick = owner::clearSelectedText,
+            enabled = !isSaving,
+            modifier = Modifier.weight(1f).testTag("lyrics-editor-clear")
+        ) { Text(stringResource(CoreCommonR.string.action_clear), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        HapticTextButton(
+            onClick = onPaste,
+            enabled = !isSaving,
+            modifier = Modifier.weight(1f).testTag("lyrics-editor-paste")
+        ) { Text(stringResource(CoreCommonR.string.action_paste), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        HapticTextButton(
+            onClick = onSave,
+            enabled = !isSaving,
+            modifier = Modifier.weight(1f).testTag("lyrics-editor-save")
+        ) {
+            if (isSaving) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            } else {
+                Text(stringResource(CoreCommonR.string.music_save_changes), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
 internal fun editableLyricMatchFailureDescription(error: Throwable): String =
     error.message.orEmpty().ifBlank { error.javaClass.simpleName }
 
@@ -659,6 +770,7 @@ private fun LyricsEditorTabs(owner: NowPlayingLyricsEditorOwner) {
     )
     PrimaryTabRow(
         selectedTabIndex = selectedTab,
+        modifier = Modifier.testTag("lyrics-editor-tabs"),
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.primary
     ) {
@@ -674,6 +786,7 @@ private fun LyricsEditorTab(owner: NowPlayingLyricsEditorOwner, index: Int, labe
         selected = owner.isSelectedTab(index),
         onClick = { owner.selectedTabState.intValue = index },
         enabled = owner.canEdit,
+        modifier = Modifier.testTag("lyrics-editor-tab-$index"),
         text = { LyricsEditorTabLabel(label) }
     )
 }
@@ -700,7 +813,7 @@ private fun LyricsEditorTextInput(owner: NowPlayingLyricsEditorOwner, modifier: 
         value = textState.value,
         onValueChange = owner::replaceSelectedText,
         enabled = !owner.isSavingState.value,
-        modifier = modifier,
+        modifier = modifier.testTag("lyrics-editor-input"),
         placeholder = {
             Text(
                 text = stringResource(hint),
@@ -713,7 +826,7 @@ private fun LyricsEditorTextInput(owner: NowPlayingLyricsEditorOwner, modifier: 
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LyricMatchResultsSheet(
     query: String,
@@ -733,123 +846,193 @@ private fun LyricMatchResultsSheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         sheetGesturesEnabled = false
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.82f)
-                .padding(horizontal = 24.dp, vertical = 16.dp)
-                .windowInsetsPadding(WindowInsets.navigationBars),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        LyricMatchResultsContent(
+            query, onQueryChange, results, isLoading, errorMessage, hasSearched,
+            selectedSources, onSourceToggle, onSearch, onApply, onDismiss
+        )
+    }
+}
+
+private val LyricMatchPinnedControlsMinHeight = 560.dp
+
+internal fun shouldScrollWholeLyricMatchContent(availableHeight: Dp, fontScale: Float): Boolean =
+    availableHeight < LyricMatchPinnedControlsMinHeight * fontScale.coerceAtLeast(1f)
+
+@Composable
+internal fun LyricMatchResultsContent(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    results: List<RankedEditableLyricMatch>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    hasSearched: Boolean,
+    selectedSources: Set<EditableLyricMatchSource>,
+    onSourceToggle: (EditableLyricMatchSource) -> Unit,
+    onSearch: (String) -> Unit,
+    onApply: (RankedEditableLyricMatch) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val compactListState = rememberLazyListState()
+    val resultListState = rememberLazyListState()
+    val fontScale = LocalDensity.current.fontScale
+    val showEmpty = !isLoading && hasSearched && errorMessage == null && results.isEmpty()
+    val hasFeedback = isLoading || errorMessage != null || showEmpty
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize().testTag("lyrics-match-layout")
+            .bottomSheetScrollGuard(allowDownwardToParent = { false })
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .imePadding()
+    ) {
+        val contentModifier = Modifier.align(Alignment.TopCenter)
+            .widthIn(max = LyricsEditorContentMaxWidth).fillMaxSize()
+        if (shouldScrollWholeLyricMatchContent(maxHeight, fontScale) || errorMessage != null) {
+            // 短视窗共用一个列表，让来源和查询区也能滚动，长错误信息不会挤掉候选结果
+            LazyColumn(
+                modifier = contentModifier.testTag("lyrics-match-scroll"),
+                state = compactListState,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = stringResource(CoreCommonR.string.lyrics_match_title),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                HapticTextButton(onClick = onDismiss) {
-                    Text(stringResource(CoreCommonR.string.action_cancel))
+                item(key = "header") { LyricMatchHeader(onDismiss) }
+                item(key = "sources") { LyricMatchSources(selectedSources, isLoading, onSourceToggle) }
+                item(key = "query") { LyricMatchQuery(query, onQueryChange, isLoading, selectedSources, onSearch) }
+                if (hasFeedback) item(key = "feedback") { LyricMatchFeedback(isLoading, errorMessage, showEmpty) }
+                items(results, key = ::lyricMatchResultKey) { result ->
+                    LyricMatchResultCard(result, onClick = { onApply(result) })
                 }
             }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = stringResource(CoreCommonR.string.lyrics_match_sources),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+        } else {
+            Column(
+                modifier = contentModifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                LyricMatchHeader(onDismiss)
+                LyricMatchSources(selectedSources, isLoading, onSourceToggle)
+                LyricMatchQuery(query, onQueryChange, isLoading, selectedSources, onSearch)
+                if (hasFeedback) LyricMatchFeedback(isLoading, errorMessage, showEmpty)
+                LazyColumn(
+                    modifier = Modifier.weight(1f).testTag("lyrics-match-results"),
+                    state = resultListState,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    lyricMatchSelectableSources.forEach { source ->
-                        FilterChip(
-                            selected = source in selectedSources,
-                            onClick = { onSourceToggle(source) },
-                            enabled = !isLoading,
-                            label = {
-                                Text(
-                                    text = stringResource(source.stringResId()),
-                                    maxLines = 1
-                                )
-                            }
-                        )
+                    items(results, key = ::lyricMatchResultKey) { result ->
+                        LyricMatchResultCard(result, onClick = { onApply(result) })
                     }
                 }
             }
+        }
+    }
+}
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier.weight(1f),
-                    label = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword)) },
-                    placeholder = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword_hint)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { onSearch(query) }
-                    )
+private fun lyricMatchResultKey(result: RankedEditableLyricMatch): String =
+    "${result.candidate.source}:${result.candidate.id}:${result.candidate.lyrics.hashCode()}"
+
+@Composable
+private fun LyricMatchHeader(onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("lyrics-match-header"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = stringResource(CoreCommonR.string.lyrics_match_title),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        HapticTextButton(onClick = onDismiss, modifier = Modifier.testTag("lyrics-match-cancel")) {
+            Text(stringResource(CoreCommonR.string.action_cancel), maxLines = 1)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LyricMatchSources(
+    selectedSources: Set<EditableLyricMatchSource>,
+    isLoading: Boolean,
+    onSourceToggle: (EditableLyricMatchSource) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(CoreCommonR.string.lyrics_match_sources),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            lyricMatchSelectableSources.forEach { source ->
+                FilterChip(
+                    selected = source in selectedSources,
+                    onClick = { onSourceToggle(source) },
+                    enabled = !isLoading,
+                    modifier = Modifier.testTag("lyrics-match-source-${source.name}"),
+                    label = { Text(stringResource(source.stringResId()), maxLines = 1) }
                 )
-                HapticTextButton(
-                    onClick = { onSearch(query) },
-                    enabled = !isLoading && query.isNotBlank() && selectedSources.isNotEmpty(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(stringResource(CoreCommonR.string.lyrics_match_search), maxLines = 1)
-                }
             }
+        }
+    }
+}
 
-            if (isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text(
-                    text = stringResource(CoreCommonR.string.lyrics_match_loading),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+@Composable
+private fun LyricMatchQuery(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    isLoading: Boolean,
+    selectedSources: Set<EditableLyricMatchSource>,
+    onSearch: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.weight(1f).testTag("lyrics-match-query"),
+            label = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword)) },
+            placeholder = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword_hint)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { onSearch(query) })
+        )
+        HapticTextButton(
+            onClick = { onSearch(query) },
+            modifier = Modifier.testTag("lyrics-match-search"),
+            enabled = !isLoading && query.isNotBlank() && selectedSources.isNotEmpty(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(stringResource(CoreCommonR.string.lyrics_match_search), maxLines = 1)
+        }
+    }
+}
 
-            errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-
-            if (!isLoading && hasSearched && errorMessage == null && results.isEmpty()) {
-                Text(
-                    text = stringResource(CoreCommonR.string.lyrics_match_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    items = results,
-                    key = { result ->
-                        "${result.candidate.source}:${result.candidate.id}:${result.candidate.lyrics.hashCode()}"
-                    }
-                ) { result ->
-                    LyricMatchResultCard(
-                        result = result,
-                        onClick = { onApply(result) }
-                    )
-                }
-            }
+@Composable
+private fun LyricMatchFeedback(isLoading: Boolean, errorMessage: String?, showEmpty: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (isLoading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text(
+                text = stringResource(CoreCommonR.string.lyrics_match_loading),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("lyrics-match-loading")
+            )
+        }
+        if (errorMessage != null) {
+            Text(errorMessage, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("lyrics-match-error"))
+        }
+        if (showEmpty) {
+            Text(stringResource(CoreCommonR.string.lyrics_match_empty), style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag("lyrics-match-empty"))
         }
     }
 }
@@ -863,6 +1046,7 @@ private fun LyricMatchResultCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("lyrics-match-result-${candidate.id}")
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)

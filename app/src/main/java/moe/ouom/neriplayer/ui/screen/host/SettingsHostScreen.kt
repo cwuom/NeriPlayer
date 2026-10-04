@@ -239,6 +239,7 @@ internal fun SettingsHostScreen(
                             SettingsScreen(
                                 listState = settingsListState,
                                 bindings = bindings,
+                                isActive = requestedScreenState == SettingsScreenState.Settings,
                                 onNavigateToDownloadManager = {
                                     requestScreen(SettingsScreenState.DownloadManager)
                                 }

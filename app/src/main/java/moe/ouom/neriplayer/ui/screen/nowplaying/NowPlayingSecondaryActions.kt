@@ -18,8 +18,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -28,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -38,7 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.NonRestartableComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +89,7 @@ import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.MoreOptionsMainContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongInfoSheet
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.isCompactEditSongLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricBehaviorSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricFontSizeSheet
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
@@ -640,7 +646,7 @@ private fun MoreOptionsPages(
     MoreOptionsPlaybackSoundPage(targetState, viewModel, owner)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun MoreOptionsSheetSurface(
     owner: MoreOptionsSheetOwner,
@@ -648,16 +654,33 @@ private fun MoreOptionsSheetSurface(
     snackbarHostState: SnackbarHostState,
     content: @Composable () -> Unit
 ) {
+    val compactEditSheet = isCompactMoreOptionsEditSheet(owner.page, isCompactEditSongLandscape())
+    var sheetImeVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(compactEditSheet, sheetState) {
+        if (compactEditSheet) sheetState.expand()
+    }
     ModalBottomSheet(
         onDismissRequest = owner.onDismissRequest,
         sheetState = sheetState,
-        sheetGesturesEnabled = owner.sheetGesturesEnabled,
+        sheetGesturesEnabled = owner.sheetGesturesEnabled && !compactEditSheet,
+        dragHandle = if (shouldHideCompactEditSongHandle(compactEditSheet, sheetImeVisible)) null else {
+            { BottomSheetDefaults.DragHandle() }
+        },
         containerColor = MaterialTheme.colorScheme.surface
     ) {
+        // Sheet 使用独立窗口，键盘可见性应从它自己的 composition 读取
+        val imeVisible = WindowInsets.isImeVisible
+        SideEffect { sheetImeVisible = imeVisible }
         MoreOptionsBackHandlers(owner)
         MoreOptionsSheetBody(owner.page, snackbarHostState, content)
     }
 }
+
+internal fun isCompactMoreOptionsEditSheet(page: MoreOptionsPage, compactLandscape: Boolean): Boolean =
+    compactLandscape && page == MoreOptionsPage.EDIT_INFO
+
+internal fun shouldHideCompactEditSongHandle(compactEditSheet: Boolean, imeVisible: Boolean): Boolean =
+    compactEditSheet && imeVisible
 
 @Composable
 private fun MoreOptionsBackHandlers(owner: MoreOptionsSheetOwner) {

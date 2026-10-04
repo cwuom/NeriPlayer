@@ -383,8 +383,10 @@ internal fun backdropAccentRequest(
     coverUrl?.trim()?.takeIf(String::isNotEmpty), songKey, isDark, refreshKey, offlineMode
 )
 
-private class BackdropAccentOwner {
-    var target by mutableStateOf<Color?>(null)
+private class BackdropAccentOwner(initialRequest: BackdropAccentRequest) {
+    var target by mutableStateOf(backdropAccentColor(
+        CoverArtColorCache.peek(initialRequest.coverUrl), initialRequest.isDark
+    ))
         private set
     var currentRequest: BackdropAccentRequest? = null
 
@@ -405,7 +407,7 @@ internal fun backdropAccentColor(sample: CoverArtColorSample?, isDark: Boolean):
 
 @Composable
 private fun rememberNowPlayingAccentTarget(request: BackdropAccentRequest): Color? {
-    val owner = remember { BackdropAccentOwner() }
+    val owner = remember { BackdropAccentOwner(request) }
     BindBackdropAccentRequest(owner, request)
     return owner.target
 }

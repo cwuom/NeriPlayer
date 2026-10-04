@@ -113,6 +113,12 @@ class SettingsRepository(private val context: Context) {
     private val usbExclusiveSettingsStore = UsbExclusiveSettingsStore(context)
     private val isDimensityBuild = isCurrentBuildDimensity()
 
+    val defaultPlaybackControlLayoutPreferences: PlaybackControlLayoutPreferences
+        get() = defaultPlaybackControlLayoutPreferences(context.resources.configuration.smallestScreenWidthDp)
+
+    val defaultLyricFontScales: LyricFontScales
+        get() = defaultLyricFontScales(context.resources.configuration.smallestScreenWidthDp)
+
     private fun <T> dataStoreSettingFlow(transform: (Preferences) -> T): Flow<T> {
         return context.dataStore.data
             .map(transform)
@@ -150,7 +156,8 @@ class SettingsRepository(private val context: Context) {
             resolvePlaybackControlLayoutPreferences(
                 nowPlayingPlacementValue = preferences[NOW_PLAYING_CONTROL_PLACEMENT],
                 nowPlayingSizeValue = preferences[NOW_PLAYING_CONTROL_SIZE],
-                lyricsSizeValue = preferences[LYRICS_CONTROL_SIZE]
+                lyricsSizeValue = preferences[LYRICS_CONTROL_SIZE],
+                defaults = defaultPlaybackControlLayoutPreferences
             )
         }
 
@@ -421,11 +428,12 @@ class SettingsRepository(private val context: Context) {
     val lyricFontScalesFlow: Flow<LyricFontScales> =
         dataStoreSettingFlow { prefs ->
             resolveLyricFontScales(
-                legacyScale = prefs[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f,
+                legacyScale = prefs[SettingsKeys.LYRIC_FONT_SCALE],
                 coverLyric = prefs[SettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE],
                 coverTranslation = prefs[SettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE],
                 lyricsPageLyric = prefs[SettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE],
-                lyricsPageTranslation = prefs[SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE]
+                lyricsPageTranslation = prefs[SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE],
+                defaults = defaultLyricFontScales
             )
         }
 

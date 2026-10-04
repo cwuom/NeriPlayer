@@ -52,7 +52,8 @@ internal data class NowPlayingCoverToolbarLayoutSpec(
     val compactPortrait: Boolean,
     val docked: Boolean,
     val iconSize: Dp,
-    val minimumTouchTarget: Dp
+    val minimumTouchTarget: Dp,
+    val compactHeight: Boolean = false
 )
 
 internal data class NowPlayingCoverToolbarStatus(
@@ -70,7 +71,8 @@ internal data class NowPlayingCoverToolbarActions(
     val onAddToPlaylist: () -> Unit
 )
 
-private fun toolbarWidthFraction(wideLandscape: Boolean): Float = if (wideLandscape) 0.9f else 1f
+private fun toolbarWidthFraction(spec: NowPlayingCoverToolbarLayoutSpec): Float =
+    if (spec.wideLandscape && !spec.compactHeight) 0.9f else 1f
 
 private fun toolbarHorizontalInset(spec: NowPlayingCoverToolbarLayoutSpec): Dp =
     if (spec.wideLandscape) 0.dp else toolbarPortraitHorizontalInset(spec.compactPortrait)
@@ -86,13 +88,13 @@ private fun toolbarBottomInset(spec: NowPlayingCoverToolbarLayoutSpec): Dp =
 private fun toolbarPortraitBottomInset(docked: Boolean): Dp = if (docked) 2.dp else 0.dp
 
 internal fun toolbarPreferredPadding(spec: NowPlayingCoverToolbarLayoutSpec): Dp =
-    if (spec.compactPortrait) 0.dp else toolbarExpandedPreferredPadding(spec)
+    if (spec.compactPortrait || spec.compactHeight) 0.dp else toolbarExpandedPreferredPadding(spec)
 
 private fun toolbarExpandedPreferredPadding(spec: NowPlayingCoverToolbarLayoutSpec): Dp =
     if (spec.docked || spec.wideLandscape) 18.dp else 6.dp
 
 internal fun toolbarRowVerticalPadding(spec: NowPlayingCoverToolbarLayoutSpec): Dp =
-    if (spec.docked || spec.wideLandscape) 12.dp else 8.dp
+    if (spec.compactHeight) 0.dp else if (spec.docked || spec.wideLandscape) 12.dp else 8.dp
 
 internal fun toolbarRowArrangement(
     layout: PlaybackActionToolbarLayout,
@@ -132,8 +134,11 @@ internal fun NowPlayingCoverActionToolbar(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth(toolbarWidthFraction(spec.wideLandscape))
-            .windowInsetsPadding(WindowInsets.navigationBars)
+            .fillMaxWidth(toolbarWidthFraction(spec))
+            .then(
+                if (spec.wideLandscape) Modifier
+                else Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+            )
             .padding(
                 horizontal = toolbarHorizontalInset(spec),
                 vertical = toolbarVerticalInset(spec.wideLandscape)

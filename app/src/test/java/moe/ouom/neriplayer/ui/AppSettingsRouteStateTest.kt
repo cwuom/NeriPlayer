@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.content.res.Resources
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -29,6 +31,12 @@ class AppSettingsRouteStateTest {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(filesDir)
         `when`(context.applicationContext).thenReturn(context)
+        val configuration = mock(Configuration::class.java).apply {
+            smallestScreenWidthDp = 360
+        }
+        val resources = mock(Resources::class.java)
+        `when`(resources.configuration).thenReturn(configuration)
+        `when`(context.resources).thenReturn(resources)
         val preferences = mock(SharedPreferences::class.java)
         val editor = mock(SharedPreferences.Editor::class.java, RETURNS_SELF)
         `when`(preferences.edit()).thenReturn(editor)

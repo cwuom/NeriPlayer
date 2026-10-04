@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +58,8 @@ import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+
+private const val CompactMetricGlassTintStrength = 0.7f
 
 private val StatsPeriodOptions = listOf(
     PlaybackStatsPeriod.DAY,
@@ -109,13 +113,45 @@ internal fun StatsEmptyContent(message: String) {
 internal fun StatsOverviewCard(
     totalPlayCount: Long,
     totalListenMs: Long,
-    trackCount: Long
+    trackCount: Long,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    stackMetrics: Boolean = false
 ) {
+    if (compact) {
+        val metrics: @Composable (Modifier) -> Unit = { metricModifier ->
+            CompactStatMetric(
+                Icons.Outlined.Headphones, totalPlayCount.toString(),
+                stringResource(CoreCommonR.string.stats_total_plays),
+                metricModifier.testTag("statsMetricPlays")
+            )
+            CompactStatMetric(
+                Icons.Outlined.AccessTime, formatListenDuration(totalListenMs),
+                stringResource(CoreCommonR.string.stats_total_time),
+                metricModifier.testTag("statsMetricListenTime")
+            )
+            CompactStatMetric(
+                Icons.Outlined.LibraryMusic, trackCount.toString(),
+                stringResource(CoreCommonR.string.stats_track_count),
+                metricModifier.testTag("statsMetricTracks")
+            )
+        }
+        if (stackMetrics) {
+            Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                metrics(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                metrics(Modifier.weight(1f))
+            }
+        }
+        return
+    }
     val shape = RoundedCornerShape(16.dp)
     val baseColor = MaterialTheme.colorScheme.secondaryContainer
     AdvancedGlassSurface(
         role = AdvancedGlassRole.SemanticCard,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = shape,
         fallbackColor = baseColor.copy(alpha = 0.25f),
         tintColor = baseColor
@@ -141,6 +177,28 @@ internal fun StatsOverviewCard(
                 value = trackCount.toString(),
                 label = stringResource(CoreCommonR.string.stats_track_count)
             )
+        }
+    }
+}
+
+@Composable
+private fun CompactStatMetric(icon: ImageVector, value: String, label: String, modifier: Modifier) {
+    val tint = MaterialTheme.colorScheme.secondaryContainer
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        fallbackColor = tint.copy(alpha = 0.25f),
+        tintColor = tint.copy(alpha = tint.alpha * CompactMetricGlassTintStrength)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(label, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -176,7 +234,9 @@ private fun StatMetric(
 @Composable
 internal fun TopTracksBarChart(
     tracks: List<TrackStat>,
-    sortMode: StatsSortMode
+    sortMode: StatsSortMode,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
@@ -191,7 +251,7 @@ internal fun TopTracksBarChart(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
     ) {
@@ -215,7 +275,22 @@ internal fun TopTracksBarChart(
                 label = "bar_$index"
             )
 
-            Row(
+            if (compact) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(stat.displayName(), style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(
+                            if (sortMode == StatsSortMode.LISTEN_TIME) formatListenDuration(stat.totalListenMs)
+                            else stat.playCount.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    StatsChartBar(animatedFraction, primaryColor, trackColor, Modifier.fillMaxWidth().height(8.dp))
+                }
+            } else Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
@@ -229,26 +304,7 @@ internal fun TopTracksBarChart(
                     modifier = Modifier.width(100.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Canvas(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(20.dp)
-                ) {
-                    val barHeight = size.height
-                    val cornerPx = 6.dp.toPx()
-                    drawRoundRect(
-                        color = trackColor,
-                        size = Size(size.width, barHeight),
-                        cornerRadius = CornerRadius(cornerPx, cornerPx)
-                    )
-                    if (animatedFraction > 0f) {
-                        drawRoundRect(
-                            color = primaryColor,
-                            size = Size(size.width * animatedFraction, barHeight),
-                            cornerRadius = CornerRadius(cornerPx, cornerPx)
-                        )
-                    }
-                }
+                StatsChartBar(animatedFraction, primaryColor, trackColor, Modifier.weight(1f).height(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     when (sortMode) {
@@ -265,18 +321,36 @@ internal fun TopTracksBarChart(
 }
 
 @Composable
+private fun StatsChartBar(fraction: Float, primaryColor: Color, trackColor: Color, modifier: Modifier) {
+    Canvas(modifier) {
+        val cornerPx = 6.dp.toPx()
+        drawRoundRect(color = trackColor, size = size, cornerRadius = CornerRadius(cornerPx, cornerPx))
+        if (fraction > 0f) {
+            drawRoundRect(color = primaryColor, size = Size(size.width * fraction, size.height),
+                cornerRadius = CornerRadius(cornerPx, cornerPx))
+        }
+    }
+}
+
+@Composable
 internal fun StatTrackRow(
     rank: Int,
     stat: TrackStat,
+    modifier: Modifier = Modifier,
     offlineMode: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         ListItem(
@@ -289,7 +363,9 @@ internal fun StatTrackRow(
                         fontWeight = if (rank <= 3) FontWeight.Bold else FontWeight.Normal,
                         color = if (rank <= 3) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(32.dp)
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.widthIn(min = 32.dp)
                     )
                     val coverUrl = stat.toPlaybackStatsSongItem().displayCoverUrl()
                     if (coverUrl != null) {

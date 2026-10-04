@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.edit
 
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
+import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -31,18 +32,23 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -74,11 +80,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -104,6 +112,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricsEditorSheet
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -265,135 +274,135 @@ fun EditSongInfoSheet(
         enter = fadeIn(),
         exit = fadeOut()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .padding(horizontal = 24.dp, vertical = 16.dp)
-                .windowInsetsPadding(WindowInsets.navigationBars),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-        // 标题栏
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(CoreCommonR.string.music_edit_info),
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            HapticTextButton(
-                onClick = {
-                    clearEditSongInfoFocus()
-                    onDismiss()
-                },
-                enabled = !isSaving
-            ) {
-                Text(stringResource(CoreCommonR.string.action_cancel))
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .bottomSheetScrollGuard { scrollState.value == 0 }
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            EditSongCoverField(
-                owner = owner,
-                offlineMode = offlineMode,
-                canReplaceFromFile = canReplaceCoverFromLocalFile,
-                onRestore = {
-                    applyOriginalInfo(
-                        restoreCover = true,
-                        restoreTitle = false,
-                        restoreArtist = false,
-                        restoreLyrics = false
+        EditSongInfoLayout(
+            compactLandscape = isCompactEditSongLandscape(),
+            scrollState = scrollState,
+            header = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(CoreCommonR.string.music_edit_info),
+                        style = MaterialTheme.typography.titleMedium
                     )
-                },
-                onSelectLocalCover = {
-                    clearEditSongInfoFocus()
-                    showLocalCoverSyncConfirm = true
+                    HapticTextButton(
+                        onClick = {
+                            clearEditSongInfoFocus()
+                            onDismiss()
+                        },
+                        enabled = !isSaving
+                    ) {
+                        Text(stringResource(CoreCommonR.string.action_cancel))
+                    }
                 }
-            )
-            EditSongEditableTextField(
-                value = songName,
-                onValueChange = owner::updateTitle,
-                label = stringResource(CoreCommonR.string.music_edit_title),
-                restoreDescription = stringResource(CoreCommonR.string.music_restore_title),
-                enabled = owner.canEditFields(),
-                onRestore = {
-                    applyOriginalInfo(
-                        restoreCover = false,
-                        restoreTitle = true,
-                        restoreArtist = false,
-                        restoreLyrics = false
-                    )
-                }
-            )
-            EditSongEditableTextField(
-                value = artistName,
-                onValueChange = owner::updateArtist,
-                label = stringResource(CoreCommonR.string.music_edit_artist),
-                restoreDescription = stringResource(CoreCommonR.string.music_restore_artist),
-                enabled = owner.canEditFields(),
-                onRestore = {
-                    applyOriginalInfo(
-                        restoreCover = false,
-                        restoreTitle = false,
-                        restoreArtist = true,
-                        restoreLyrics = false
-                    )
-                }
-            )
-            EditSongLyricsButton(
-                busy = owner.isLyricsButtonBusy(),
-                enabled = owner.canOpenLyricsEditor(),
-                onClick = {
-                    clearEditSongInfoFocus()
-                    owner.openLyricsEditor(
-                        context = context,
-                        actualSong = actualSong,
-                        displayedLyrics = displayedLyrics,
-                        displayedTranslatedLyrics = displayedTranslatedLyrics,
-                        displayedRomanizedLyrics = displayedRomanizedLyrics,
-                        snackbarHostState = snackbarHostState,
-                        composeResources = composeResources
-                    )
-                }
-            )
-        }
-
-        EditSongActionRow(
-            isRestoring = isOriginalInfoRestoring,
-            isSaving = isSaving,
-            isCoverImporting = isCoverImporting,
-            onSearch = {
-                viewModel.prepareForSearch(songName)
-                viewModel.performSearch()
-                showSearchResults = true
-                focusManager.clearFocus()
             },
-            onRestoreAll = {
-                applyOriginalInfo(
-                    restoreCover = true,
-                    restoreTitle = true,
-                    restoreArtist = true,
-                    restoreLyrics = true
+            coverUrl = {
+                EditSongCoverUrlInput(
+                    owner = owner,
+                    onRestore = {
+                        applyOriginalInfo(
+                            restoreCover = true,
+                            restoreTitle = false,
+                            restoreArtist = false,
+                            restoreLyrics = false
+                        )
+                    }
                 )
             },
-            onSave = {
-                owner.requestSave(
-                    song = actualSong,
-                    onConfirmationNeeded = ::clearEditSongInfoFocus,
-                    saveInAppOnly = { saveEditedSongInfo(writeLocalMetadata = false) }
+            coverPreview = { previewSize ->
+                EditSongCoverPreview(
+                    state = EditSongCoverPreviewState(
+                        coverUrl = owner.coverUrlState.value,
+                        offlineMode = offlineMode,
+                        canReplaceFromFile = canReplaceCoverFromLocalFile,
+                        enabled = owner.canEditFields()
+                    ),
+                    size = previewSize,
+                    onClick = {
+                        clearEditSongInfoFocus()
+                        showLocalCoverSyncConfirm = true
+                    }
+                )
+            },
+            fields = {
+                EditSongEditableTextField(
+                    value = songName,
+                    onValueChange = owner::updateTitle,
+                    label = stringResource(CoreCommonR.string.music_edit_title),
+                    restoreDescription = stringResource(CoreCommonR.string.music_restore_title),
+                    enabled = owner.canEditFields(),
+                    onRestore = {
+                        applyOriginalInfo(
+                            restoreCover = false,
+                            restoreTitle = true,
+                            restoreArtist = false,
+                            restoreLyrics = false
+                        )
+                    }
+                )
+                EditSongEditableTextField(
+                    value = artistName,
+                    onValueChange = owner::updateArtist,
+                    label = stringResource(CoreCommonR.string.music_edit_artist),
+                    restoreDescription = stringResource(CoreCommonR.string.music_restore_artist),
+                    enabled = owner.canEditFields(),
+                    onRestore = {
+                        applyOriginalInfo(
+                            restoreCover = false,
+                            restoreTitle = false,
+                            restoreArtist = true,
+                            restoreLyrics = false
+                        )
+                    }
+                )
+                EditSongLyricsButton(
+                    busy = owner.isLyricsButtonBusy(),
+                    enabled = owner.canOpenLyricsEditor(),
+                    onClick = {
+                        clearEditSongInfoFocus()
+                        owner.openLyricsEditor(
+                            context = context,
+                            actualSong = actualSong,
+                            displayedLyrics = displayedLyrics,
+                            displayedTranslatedLyrics = displayedTranslatedLyrics,
+                            displayedRomanizedLyrics = displayedRomanizedLyrics,
+                            snackbarHostState = snackbarHostState,
+                            composeResources = composeResources
+                        )
+                    }
+                )
+            },
+            actions = {
+                EditSongActionRow(
+                    isRestoring = isOriginalInfoRestoring,
+                    isSaving = isSaving,
+                    isCoverImporting = isCoverImporting,
+                    onSearch = {
+                        viewModel.prepareForSearch(songName)
+                        viewModel.performSearch()
+                        showSearchResults = true
+                        focusManager.clearFocus()
+                    },
+                    onRestoreAll = {
+                        applyOriginalInfo(
+                            restoreCover = true,
+                            restoreTitle = true,
+                            restoreArtist = true,
+                            restoreLyrics = true
+                        )
+                    },
+                    onSave = {
+                        owner.requestSave(
+                            song = actualSong,
+                            onConfirmationNeeded = ::clearEditSongInfoFocus,
+                            saveInAppOnly = { saveEditedSongInfo(writeLocalMetadata = false) }
+                        )
+                    }
                 )
             }
         )
-    }
     } // 关闭 AnimatedVisibility
 
     if (showLocalCoverSyncConfirm) {
@@ -515,8 +524,100 @@ fun EditSongInfoSheet(
     }
 }
 
+internal fun shouldUseCompactEditSongLayout(
+    smallestScreenWidthDp: Int,
+    isLandscape: Boolean,
+    availableHeight: Dp
+): Boolean = smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP && isLandscape && availableHeight < 480.dp
+
 @Composable
-private fun EditSongActionRow(
+internal fun isCompactEditSongLandscape(): Boolean {
+    val configuration = LocalConfiguration.current
+    val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+    return shouldUseCompactEditSongLayout(
+        configuration.smallestScreenWidthDp,
+        configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        windowHeight
+    )
+}
+
+@Composable
+internal fun EditSongInfoLayout(
+    compactLandscape: Boolean,
+    scrollState: ScrollState,
+    header: @Composable () -> Unit,
+    coverUrl: @Composable () -> Unit,
+    coverPreview: @Composable (Dp) -> Unit,
+    fields: @Composable () -> Unit,
+    actions: @Composable () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val spacing = if (compactLandscape) 8.dp else 12.dp
+    val insets = if (compactLandscape) {
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+    } else WindowInsets.navigationBars
+    BoxWithConstraints(
+        modifier.fillMaxWidth().fillMaxHeight(if (compactLandscape) 1f else 0.9f).testTag("song-edit-layout")
+    ) {
+        // 键盘挤压时让标题和操作随表单滚动，保证输入框仍能完整显示
+        val inlineHeader = compactLandscape && maxHeight < 240.dp
+        val inlineActions = compactLandscape && maxHeight < 160.dp
+        Column(
+            Modifier.fillMaxSize()
+                .padding(horizontal = if (compactLandscape) 20.dp else 24.dp,
+                    vertical = if (compactLandscape) 8.dp else 16.dp)
+                .windowInsetsPadding(insets),
+            verticalArrangement = Arrangement.spacedBy(spacing)
+        ) {
+            if (!inlineHeader) {
+                Box(Modifier.fillMaxWidth().testTag("song-edit-header")) { header() }
+            }
+            if (compactLandscape) {
+                BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).testTag("song-edit-body")) {
+                    val previewSize = maxHeight.coerceIn(0.dp, 96.dp)
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Box(
+                            Modifier.width(previewSize).fillMaxHeight().testTag("song-edit-cover-pane"),
+                            contentAlignment = Alignment.Center
+                        ) { coverPreview(previewSize) }
+                        Column(
+                            Modifier.weight(1f).fillMaxHeight().testTag("song-edit-fields")
+                                .bottomSheetScrollGuard()
+                                .verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(spacing)
+                        ) {
+                            if (inlineHeader) {
+                                Box(Modifier.fillMaxWidth().testTag("song-edit-header")) { header() }
+                            }
+                            coverUrl()
+                            fields()
+                            if (inlineActions) {
+                                Box(Modifier.fillMaxWidth().testTag("song-edit-actions")) { actions() }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    Modifier.weight(1f).testTag("song-edit-fields")
+                        .bottomSheetScrollGuard { scrollState.value == 0 }
+                        .verticalScroll(scrollState),
+                    verticalArrangement = Arrangement.spacedBy(spacing)
+                ) {
+                    coverUrl()
+                    coverPreview(120.dp)
+                    fields()
+                }
+            }
+            if (!inlineActions) {
+                Box(Modifier.fillMaxWidth().testTag("song-edit-actions")) { actions() }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EditSongActionRow(
     isRestoring: Boolean,
     isSaving: Boolean,
     isCoverImporting: Boolean,
@@ -606,13 +707,14 @@ private fun EditSongSaveAction(
 }
 
 @Composable
-private fun EditSongEditableTextField(
+internal fun EditSongEditableTextField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
     restoreDescription: String,
     enabled: Boolean,
     onRestore: () -> Unit,
+    modifier: Modifier = Modifier,
     placeholder: @Composable (() -> Unit)? = null
 ) {
     OutlinedTextField(
@@ -620,7 +722,7 @@ private fun EditSongEditableTextField(
         onValueChange = onValueChange,
         label = { Text(label) },
         placeholder = placeholder,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         enabled = enabled,
         singleLine = true,
         trailingIcon = {
@@ -628,27 +730,6 @@ private fun EditSongEditableTextField(
                 Icon(Icons.Outlined.Refresh, contentDescription = restoreDescription)
             }
         }
-    )
-}
-
-@Composable
-private fun EditSongCoverField(
-    owner: NowPlayingSongEditOwner,
-    offlineMode: Boolean,
-    canReplaceFromFile: Boolean,
-    onRestore: () -> Unit,
-    onSelectLocalCover: () -> Unit
-) {
-    val enabled = owner.canEditFields()
-    EditSongCoverUrlInput(owner, onRestore)
-    EditSongCoverPreview(
-        state = EditSongCoverPreviewState(
-            coverUrl = owner.coverUrlState.value,
-            offlineMode = offlineMode,
-            canReplaceFromFile = canReplaceFromFile,
-            enabled = enabled
-        ),
-        onClick = onSelectLocalCover
     )
 }
 
@@ -679,14 +760,16 @@ internal data class EditSongCoverPreviewState(
 }
 
 @Composable
-private fun EditSongCoverPreview(
+internal fun EditSongCoverPreview(
     state: EditSongCoverPreviewState,
+    size: Dp = 120.dp,
     onClick: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
-                .size(120.dp)
+                .size(size)
+                .testTag("song-edit-cover-preview")
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(enabled = state.clickable, onClick = onClick),
@@ -741,7 +824,7 @@ private fun editSongCoverDescription(canReplaceFromFile: Boolean): String? =
     stringResource(CoreCommonR.string.music_edit_cover).takeIf { canReplaceFromFile }
 
 @Composable
-private fun EditSongLyricsButton(busy: Boolean, enabled: Boolean, onClick: () -> Unit) {
+internal fun EditSongLyricsButton(busy: Boolean, enabled: Boolean, onClick: () -> Unit) {
     HapticTextButton(
         onClick = onClick,
         enabled = enabled,

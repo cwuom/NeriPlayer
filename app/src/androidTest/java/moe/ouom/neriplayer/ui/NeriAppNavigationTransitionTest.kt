@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import android.content.res.Configuration
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -11,12 +12,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -26,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -33,7 +37,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -49,11 +57,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassSceneOpacity
 import moe.ouom.neriplayer.ui.navigation.DRAWER_DETAIL_OPEN_DURATION_MS
 import moe.ouom.neriplayer.ui.navigation.MAIN_TAB_DETAIL_CLOSE_DURATION_MS
 import moe.ouom.neriplayer.ui.navigation.MAIN_TAB_DETAIL_OPEN_DURATION_MS
 import moe.ouom.neriplayer.ui.navigation.MainTabBackgroundMotion
 import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
+import moe.ouom.neriplayer.ui.navigation.MainTabLayerScenePhase
 import moe.ouom.neriplayer.ui.navigation.MainTabLayerTransitionState
 import moe.ouom.neriplayer.ui.navigation.animateMainTabDetailCloseRootRevealFraction
 import moe.ouom.neriplayer.ui.navigation.clipMainTabDetailCloseRoot
@@ -74,11 +84,14 @@ import moe.ouom.neriplayer.ui.navigation.transparentDetailExitTransition
 import moe.ouom.neriplayer.ui.navigation.transparentDetailPopEnterTransition
 import moe.ouom.neriplayer.ui.navigation.transparentDetailPopExitTransition
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlin.math.ceil
 
 private val Boolean.testNavigationDepth: Int
     get() = if (this) 1 else 0
@@ -112,10 +125,143 @@ class NeriAppNavigationTransitionTest {
     }
 
     @Test
-    fun mainTabSwitchUsesPairedScenesWithoutOverlapAndFinishesWithinBudget() {
+    fun phoneWideWindowKeepsDirectionalSlideWithoutScaleOrFade() {
+        lateinit var selectedRoute: MutableState<String>
+        lateinit var transitionState: MainTabLayerTransitionState
+        val sceneOpacities = mutableMapOf<String, () -> Float>()
+        composeRule.mainClock.autoAdvance = false
+        setMainTabContent(smallestScreenWidthDp = 599, screenWidthDp = 840) {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
+            Box(
+                Modifier.size(240.dp, 320.dp).background(Color.Black).testTag(MainTabRootTag)
+            ) {
+                val parentGlassOpacity = remember { { 0.8f } }
+                CompositionLocalProvider(LocalAdvancedGlassSceneOpacity provides parentGlassOpacity) {
+                    MainTabLayerHost(
+                        selectedRoute = selectedRoute.value,
+                        transitionState = transitionState,
+                        modifier = Modifier.fillMaxSize()
+                    ) { route ->
+                        val sceneOpacity = LocalAdvancedGlassSceneOpacity.current
+                        SideEffect { sceneOpacities[route] = sceneOpacity }
+                        MainTabTestScene(route)
+                    }
+                }
+            }
+        }
+
+        // 首个场景完成准备后再计切页预算，避免把宿主的启动帧算进动画时间
+        repeat(4) { advanceRapidSwitchFrame() }
+        composeRule.runOnIdle {
+            val initial = transitionState.visibleScenes.singleOrNull()
+            assertTrue("Phone Tab host did not prepare its initial scene: $initial",
+                initial != null && initial.route == Destinations.Home.route &&
+                    initial.phase == MainTabLayerScenePhase.Settled)
+        }
+
+        listOf(Destinations.Explore.route, Destinations.Home.route).forEach { target ->
+            val requestTime = composeRule.mainClock.currentTime
+            composeRule.runOnIdle { selectedRoute.value = target }
+            var observedMovingScenes = false
+            repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS / FRAME_MS) + 6) { frame ->
+                advanceRapidSwitchFrame()
+                val root = checkNotNull(singleNodeBoundsOrNull(MainTabRootTag))
+                val home = singleNodeBoundsOrNull(FirstMainTabSceneTag)
+                val explore = singleNodeBoundsOrNull(SecondMainTabSceneTag)
+                if (home != null && explore != null) {
+                    assertTrue("Phone Tab scenes overlapped at frame $frame: $home $explore",
+                        home.right <= explore.left + POSITION_TOLERANCE_PX)
+                    listOf(home, explore).forEach { bounds ->
+                        assertTrue("Phone Tab unexpectedly scaled vertically at frame $frame: $bounds",
+                            abs(bounds.top - root.top) <= POSITION_TOLERANCE_PX &&
+                                abs(bounds.bottom - root.bottom) <= POSITION_TOLERANCE_PX)
+                    }
+                    assertTrue("Phone Tab slide exposed a gap at frame $frame: $home $explore",
+                        abs(home.width + explore.width - root.width) <= POSITION_TOLERANCE_PX * 2)
+                    observedMovingScenes = observedMovingScenes ||
+                        (home.width > POSITION_TOLERANCE_PX && explore.width > POSITION_TOLERANCE_PX)
+                }
+                assertPhoneMainTabFrameOpaque(frame)
+                composeRule.runOnIdle {
+                    sceneOpacities.values.forEach { opacity ->
+                        assertEquals("Phone Tab did not inherit its parent glass opacity", 0.8f, opacity(), 0f)
+                    }
+                }
+            }
+            assertTrue("Phone Tab never showed paired moving scenes for $target", observedMovingScenes)
+            val settledTag = if (target == Destinations.Home.route) FirstMainTabSceneTag else SecondMainTabSceneTag
+            val otherTag = if (target == Destinations.Home.route) SecondMainTabSceneTag else FirstMainTabSceneTag
+            val root = checkNotNull(singleNodeBoundsOrNull(MainTabRootTag))
+            assertEquals(root, singleNodeBoundsOrNull(settledTag))
+            composeRule.runOnIdle {
+                val scenes = transitionState.visibleScenes
+                val diagnostics = scenes.joinToString { scene ->
+                    "${scene.route}:${scene.phase}:token=${scene.transitionToken}:" +
+                        "offset=${transitionState.offsetFractionFor(scene)}"
+                }
+                assertTrue("Phone Tab controller did not settle on $target after " +
+                    "${composeRule.mainClock.currentTime - requestTime}ms: $diagnostics",
+                    scenes.singleOrNull()?.let { scene ->
+                        scene.route == target && scene.phase == MainTabLayerScenePhase.Settled
+                    } == true)
+            }
+            assertTrue("Phone Tab retained its outgoing scene after settling on $target", nodeCount(otherTag) == 0)
+        }
+    }
+
+    @Test
+    fun phoneSlidingScenesKeepPreparationAndOutgoingActionsIsolated() {
+        lateinit var transitionState: MainTabLayerTransitionState
+        val clicks = mutableMapOf<String, Int>()
+        composeRule.mainClock.autoAdvance = false
+        setMainTabContent(smallestScreenWidthDp = 360, screenWidthDp = 840) {
+            transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
+            MainTabLayerHost(
+                selectedRoute = Destinations.Home.route,
+                transitionState = transitionState,
+                modifier = Modifier.size(240.dp, 320.dp).testTag(RapidSwitchRootTag)
+            ) { route ->
+                Box(Modifier.fillMaxSize().testTag("phone-tab-touch-$route").clickable {
+                    clicks[route] = clicks.getOrDefault(route, 0) + 1
+                })
+            }
+        }
+        repeat(4) { advanceRapidSwitchFrame() }
+        composeRule.runOnIdle { transitionState.request(Destinations.Explore.route) }
+        advanceRapidSwitchFrame()
+        composeRule.onNodeWithTag("phone-tab-touch-${Destinations.Home.route}").assertDoesNotExist()
+        composeRule.onNodeWithTag("phone-tab-touch-${Destinations.Explore.route}").assertDoesNotExist()
+        composeRule.onNodeWithTag(RapidSwitchRootTag).performTouchInput { click() }
+        composeRule.runOnIdle { assertTrue("Phone preparation frame accepted a touch", clicks.isEmpty()) }
+
+        repeat(8) { advanceRapidSwitchFrame() }
+        val outgoingTag = "phone-tab-touch-${Destinations.Home.route}"
+        val incomingTag = "phone-tab-touch-${Destinations.Explore.route}"
+        composeRule.onNodeWithTag(outgoingTag).assertDoesNotExist()
+        composeRule.onNodeWithTag(outgoingTag, useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag(incomingTag).assertHasClickAction()
+        val root = checkNotNull(singleNodeBoundsOrNull(RapidSwitchRootTag))
+        val outgoing = checkNotNull(singleNodeBoundsOrNull(outgoingTag))
+        val incoming = checkNotNull(singleNodeBoundsOrNull(incomingTag))
+        composeRule.onNodeWithTag(RapidSwitchRootTag).performTouchInput {
+            click(Offset(outgoing.center.x - root.left, outgoing.center.y - root.top))
+        }
+        composeRule.runOnIdle { assertTrue("Phone outgoing Tab accepted a touch", clicks.isEmpty()) }
+        composeRule.onNodeWithTag(RapidSwitchRootTag).performTouchInput {
+            click(Offset(incoming.center.x - root.left, incoming.center.y - root.top))
+        }
+        composeRule.runOnIdle {
+            assertTrue("Phone prepared incoming Tab did not accept a touch",
+                clicks[Destinations.Explore.route] == 1 && clicks[Destinations.Home.route] == null)
+        }
+    }
+
+    @Test
+    fun mainTabSwitchScalesAndFadesInPlaceAndFinishesWithinBudget() {
         lateinit var selectedRoute: MutableState<String>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             Box(
                 modifier = Modifier
@@ -134,6 +280,9 @@ class NeriAppNavigationTransitionTest {
 
         composeRule.runOnIdle { selectedRoute.value = Destinations.Explore.route }
         var observedPairedScenes = false
+        var observedScale = false
+        var observedIncomingScale = false
+        var observedFade = false
         repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS / FRAME_MS) + 4) { frame ->
             composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
             composeRule.waitForIdle()
@@ -142,14 +291,35 @@ class NeriAppNavigationTransitionTest {
             val secondBounds = singleNodeBoundsOrNull(SecondMainTabSceneTag)
             if (firstBounds != null && secondBounds != null) {
                 observedPairedScenes = true
-                assertHorizontalScenesDoNotOverlap(frame, listOf(firstBounds, secondBounds))
+                assertMainTabScenesStayCentered(frame, listOf(firstBounds, secondBounds), MainTabRootTag)
+                val rootBounds = checkNotNull(singleNodeBoundsOrNull(MainTabRootTag))
+                observedScale = observedScale ||
+                    firstBounds.width < rootBounds.width - POSITION_TOLERANCE_PX
+                observedIncomingScale = observedIncomingScale ||
+                    secondBounds.width < rootBounds.width - POSITION_TOLERANCE_PX
+                val pixels = composeRule.onNodeWithTag(MainTabRootTag).captureToImage().toPixelMap()
+                val center = pixels[pixels.width / 2, pixels.height / 2]
+                observedFade = observedFade || (center.red > 0.15f && center.blue > 0.15f)
             }
         }
 
         assertTrue("Main Tab switch no longer uses isolated paired scenes", observedPairedScenes)
+        assertTrue("Main Tab switch never scaled the outgoing scene", observedScale)
+        assertTrue("Main Tab switch never scaled the incoming scene", observedIncomingScale)
+        assertTrue("Main Tab switch never blended scene opacity", observedFade)
+        val finalRootBounds = checkNotNull(singleNodeBoundsOrNull(MainTabRootTag))
+        val finalSceneBounds = checkNotNull(singleNodeBoundsOrNull(SecondMainTabSceneTag))
+        assertTrue("Settled Main Tab did not restore its full width",
+            abs(finalSceneBounds.width - finalRootBounds.width) <= POSITION_TOLERANCE_PX)
+        assertTrue("Settled Main Tab did not restore its full height",
+            abs(finalSceneBounds.height - finalRootBounds.height) <= POSITION_TOLERANCE_PX)
+        assertMainTabScenesStayCentered(-1, listOf(finalSceneBounds), MainTabRootTag)
         val finalPixels = composeRule.onNodeWithTag(MainTabRootTag)
             .captureToImage()
             .toPixelMap()
+        val finalCenter = finalPixels[finalPixels.width / 2, finalPixels.height / 2]
+        assertTrue("Settled Main Tab retained outgoing opacity",
+            finalCenter.blue >= 0.98f && finalCenter.red <= 0.02f && finalCenter.green <= 0.02f)
         assertTrue(
             "Main Tab transition did not finish within its time budget",
             countDominantPixels(finalPixels, dominantRed = false) >
@@ -161,7 +331,7 @@ class NeriAppNavigationTransitionTest {
     fun rapidMainTabRetargetingContinuesFromCurrentMotionAndSettlesOnLatestTab() {
         lateinit var selectedRoute: MutableState<String>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             Box(
                 modifier = Modifier
@@ -188,7 +358,7 @@ class NeriAppNavigationTransitionTest {
                 "Rapid Tab retargeting removed every content scene at frame $sampledFrame",
                 bounds.isNotEmpty()
             )
-            assertHorizontalScenesDoNotOverlap(sampledFrame, bounds)
+            assertMainTabScenesStayCentered(sampledFrame, bounds, RapidSwitchRootTag)
             sampledFrame++
         }
 
@@ -205,9 +375,9 @@ class NeriAppNavigationTransitionTest {
 
         assertTrue(
             "Rapid retargeting did not settle on the latest tab",
-            composeRule.onAllNodesWithTag(RapidHomeTag).fetchSemanticsNodes().size == 1 &&
-                composeRule.onAllNodesWithTag(RapidExploreTag).fetchSemanticsNodes().isEmpty() &&
-                composeRule.onAllNodesWithTag(RapidLibraryTag).fetchSemanticsNodes().isEmpty()
+            composeRule.onAllNodesWithTag(RapidHomeTag, useUnmergedTree = true).fetchSemanticsNodes().size == 1 &&
+                composeRule.onAllNodesWithTag(RapidExploreTag, useUnmergedTree = true).fetchSemanticsNodes().isEmpty() &&
+                composeRule.onAllNodesWithTag(RapidLibraryTag, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()
         )
     }
 
@@ -215,7 +385,7 @@ class NeriAppNavigationTransitionTest {
     fun rapidMainTabRetargetingKeepsTheFullMotionDuration() {
         lateinit var selectedRoute: MutableState<String>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             MainTabLayerHost(
                 selectedRoute = selectedRoute.value,
@@ -257,7 +427,7 @@ class NeriAppNavigationTransitionTest {
         lateinit var selectedRoute: MutableState<String>
         lateinit var hostWidth: MutableState<androidx.compose.ui.unit.Dp>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             hostWidth = remember { mutableStateOf(0.dp) }
             MainTabLayerHost(
@@ -281,11 +451,11 @@ class NeriAppNavigationTransitionTest {
     }
 
     @Test
-    fun firstMainTabTransitionPreparesTheIncomingSceneBeforeSliding() {
+    fun firstMainTabTransitionPreparesTheIncomingSceneBeforeScalingAndFading() {
         lateinit var transitionState: MainTabLayerTransitionState
         lateinit var incomingSceneWasComposed: MutableState<Boolean>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
             incomingSceneWasComposed = remember { mutableStateOf(false) }
             Box(
@@ -316,19 +486,24 @@ class NeriAppNavigationTransitionTest {
         val rootBounds = singleNodeBoundsOrNull(RapidSwitchRootTag)
         val homeBounds = singleNodeBoundsOrNull(RapidHomeTag)
         assertTrue(
-            "Incoming Tab started moving before its offscreen preparation completed: " +
+            "Incoming Tab started shrinking before its preparation completed: " +
                 "home=$homeBounds",
             rootBounds != null &&
                 homeBounds != null &&
                 incomingSceneWasComposed.value &&
-                homeBounds.left >= rootBounds.left - POSITION_TOLERANCE_PX &&
-                homeBounds.right <= rootBounds.right + POSITION_TOLERANCE_PX
+                abs(homeBounds.width - rootBounds.width) <= POSITION_TOLERANCE_PX
         )
 
-        repeat(4) { advanceRapidSwitchFrame() }
-        val movingHomeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+        var movingHomeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+        for (frame in 0 until 12) {
+            if (rootBounds != null && movingHomeBounds != null &&
+                movingHomeBounds.right < rootBounds.right - POSITION_TOLERANCE_PX
+            ) break
+            advanceRapidSwitchFrame()
+            movingHomeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+        }
         assertTrue(
-            "Incoming Tab did not start after its offscreen preparation: " +
+            "Incoming Tab did not start scaling after its preparation: " +
                 "home=$movingHomeBounds",
             rootBounds != null &&
                 movingHomeBounds != null &&
@@ -340,7 +515,7 @@ class NeriAppNavigationTransitionTest {
     fun queuedMainTabRequestKeepsTheCurrentMotionRunning() {
         lateinit var transitionState: MainTabLayerTransitionState
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
             Box(
                 modifier = Modifier
@@ -408,7 +583,7 @@ class NeriAppNavigationTransitionTest {
     fun immediateMainTabRequestsDoNotWaitForRouteRecomposition() {
         lateinit var transitionState: MainTabLayerTransitionState
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
             Box(
                 modifier = Modifier
@@ -454,15 +629,15 @@ class NeriAppNavigationTransitionTest {
             )
             if (bounds.size == 2) {
                 observedPairedScenes = true
-                assertHorizontalScenesDoNotOverlap(frame, bounds)
+                assertMainTabScenesStayCentered(frame, bounds, RapidSwitchRootTag)
             }
         }
 
         assertTrue("Immediate Tab request did not keep paired scenes during reversal", observedPairedScenes)
         assertTrue(
             "Immediate Tab request did not settle on the latest tab",
-            composeRule.onAllNodesWithTag(RapidHomeTag).fetchSemanticsNodes().size == 1 &&
-                composeRule.onAllNodesWithTag(RapidExploreTag).fetchSemanticsNodes().isEmpty()
+            composeRule.onAllNodesWithTag(RapidHomeTag, useUnmergedTree = true).fetchSemanticsNodes().size == 1 &&
+                composeRule.onAllNodesWithTag(RapidExploreTag, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()
         )
     }
 
@@ -471,7 +646,7 @@ class NeriAppNavigationTransitionTest {
         lateinit var transitionState: MainTabLayerTransitionState
         lateinit var sceneCompositionCounts: MutableMap<String, Int>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
             sceneCompositionCounts = remember { mutableMapOf() }
             MainTabLayerHost(
@@ -491,6 +666,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.runOnIdle { transitionState.request(Destinations.Explore.route) }
         waitForNodeCount(RapidHomeTag, expected = 1)
         waitForNodeCount(RapidExploreTag, expected = 1)
+        repeat(4) { advanceRapidSwitchFrame() }
         val countsAfterTransitionStarts = sceneCompositionCounts.toMap()
 
         repeat(4) {
@@ -499,17 +675,56 @@ class NeriAppNavigationTransitionTest {
         }
 
         assertTrue(
-            "Stable Tab content recomposed while only the frame offset changed: " +
+            "Stable Tab content recomposed while only the graphics layer changed: " +
                 "before=$countsAfterTransitionStarts after=$sceneCompositionCounts",
             sceneCompositionCounts == countsAfterTransitionStarts
         )
     }
 
     @Test
+    fun overlappingMainTabScenesOnlyAllowThePreparedIncomingSceneToHandleTouches() {
+        lateinit var transitionState: MainTabLayerTransitionState
+        val clicks = mutableMapOf<String, Int>()
+        composeRule.mainClock.autoAdvance = false
+        setMainTabContent {
+            transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
+            MainTabLayerHost(
+                selectedRoute = Destinations.Home.route,
+                transitionState = transitionState,
+                modifier = Modifier.size(240.dp, 320.dp).testTag(RapidSwitchRootTag)
+            ) { route ->
+                Box(Modifier.fillMaxSize().testTag("main-tab-touch-$route").clickable {
+                    clicks[route] = clicks.getOrDefault(route, 0) + 1
+                })
+            }
+        }
+        repeat(4) { advanceRapidSwitchFrame() }
+        composeRule.runOnIdle { transitionState.request(Destinations.Explore.route) }
+        advanceRapidSwitchFrame()
+        composeRule.onNodeWithTag("main-tab-touch-${Destinations.Home.route}").assertDoesNotExist()
+        composeRule.onNodeWithTag("main-tab-touch-${Destinations.Explore.route}").assertDoesNotExist()
+        composeRule.onNodeWithTag("main-tab-touch-${Destinations.Home.route}", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithTag(RapidSwitchRootTag).performTouchInput { click() }
+        composeRule.runOnIdle { assertTrue("Preparation frame accepted a touch", clicks.isEmpty()) }
+
+        repeat(8) { advanceRapidSwitchFrame() }
+        composeRule.onNodeWithTag("main-tab-touch-${Destinations.Home.route}").assertDoesNotExist()
+        composeRule.onNodeWithTag("main-tab-touch-${Destinations.Home.route}", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithTag("main-tab-touch-${Destinations.Explore.route}").assertHasClickAction()
+        composeRule.onNodeWithTag(RapidSwitchRootTag).performTouchInput { click() }
+        composeRule.runOnIdle {
+            assertTrue("Outgoing Tab accepted a touch", clicks[Destinations.Home.route] == null)
+            assertTrue("Prepared incoming Tab did not accept a touch", clicks[Destinations.Explore.route] == 1)
+        }
+    }
+
+    @Test
     fun restoredMainTabSceneStateEndsWhenItsTabTransitionSettles() {
         lateinit var selectedRoute: MutableState<String>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             MainTabLayerHost(
                 selectedRoute = selectedRoute.value,
@@ -553,7 +768,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.waitForIdle()
         assertTrue(
             "restored state remained active after the Tab transition settled",
-            composeRule.onAllNodesWithTag(RestoredHomeSceneTag)
+            composeRule.onAllNodesWithTag(RestoredHomeSceneTag, useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty()
         )
@@ -564,7 +779,7 @@ class NeriAppNavigationTransitionTest {
         lateinit var selectedRoute: MutableState<String>
         lateinit var detailKey: MutableState<String>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             detailKey = remember { mutableStateOf("restored_playlist") }
             MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
@@ -605,7 +820,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.waitForIdle()
         assertTrue(
             "restored detail restarted its entry animation after the Tab transition settled",
-            composeRule.onAllNodesWithTag(RestoredEntryTag)
+            composeRule.onAllNodesWithTag(RestoredEntryTag, useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .size == 1
         )
@@ -621,7 +836,7 @@ class NeriAppNavigationTransitionTest {
         lateinit var selectedRoute: MutableState<String>
         lateinit var detailComposed: MutableState<Boolean>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             detailComposed = remember { mutableStateOf(true) }
             MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
@@ -667,7 +882,7 @@ class NeriAppNavigationTransitionTest {
         waitForNodeCount(DelayedRestoredDetailTag, expected = 1)
         assertTrue(
             "delayed restored detail replayed its entry animation",
-            composeRule.onAllNodesWithTag(DelayedFreshDetailTag)
+            composeRule.onAllNodesWithTag(DelayedFreshDetailTag, useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty()
         )
@@ -678,7 +893,7 @@ class NeriAppNavigationTransitionTest {
         lateinit var selectedRoute: MutableState<String>
         lateinit var detailVisible: MutableState<Boolean>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
                 if (route == Destinations.Home.route) {
@@ -803,7 +1018,7 @@ class NeriAppNavigationTransitionTest {
         lateinit var navController: NavHostController
         lateinit var selectedRoute: MutableState<String>
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             navController = rememberNavController()
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
             Box(
@@ -858,7 +1073,7 @@ class NeriAppNavigationTransitionTest {
             assertMainTabFrameCovered(frame, ExternalRootTag)
             val bounds = listOf(ExternalHomeTag, ExternalExploreTag)
                 .mapNotNull(::singleNodeBoundsOrNull)
-            assertHorizontalScenesDoNotOverlap(frame, bounds)
+            assertMainTabScenesStayCentered(frame, bounds, ExternalRootTag)
         }
         composeRule.runOnIdle { navController.navigate(Destinations.Recent.route) }
         repeat((MAIN_TAB_DETAIL_OPEN_DURATION_MS / FRAME_MS) + 4) { frame ->
@@ -874,7 +1089,7 @@ class NeriAppNavigationTransitionTest {
     fun transparentDetailMovesExternalMainTabLayerOutOfViewport() {
         lateinit var navController: NavHostController
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             var layerHeightPx by remember { mutableIntStateOf(0) }
@@ -1009,7 +1224,7 @@ class NeriAppNavigationTransitionTest {
     fun nestedDetailAndAlbumScenesNeverOverlapDuringForwardAndBackTransitions() {
         lateinit var navController: NavHostController
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             navController = rememberNavController()
             MaterialTheme {
                 Box(
@@ -1084,7 +1299,7 @@ class NeriAppNavigationTransitionTest {
     ) {
         lateinit var navController: NavHostController
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             navController = rememberNavController()
             MaterialTheme {
                 Box(
@@ -1162,7 +1377,7 @@ class NeriAppNavigationTransitionTest {
     ) {
         lateinit var navController: NavHostController
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
+        setMainTabContent {
             navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             var layerHeightPx by remember { mutableIntStateOf(0) }
@@ -1318,10 +1533,10 @@ class NeriAppNavigationTransitionTest {
             composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
             composeRule.waitForIdle()
             val upperNodes = composeRule
-                .onAllNodesWithTag(upperSceneTag)
+                .onAllNodesWithTag(upperSceneTag, useUnmergedTree = true)
                 .fetchSemanticsNodes()
             val lowerNodes = composeRule
-                .onAllNodesWithTag(lowerSceneTag)
+                .onAllNodesWithTag(lowerSceneTag, useUnmergedTree = true)
                 .fetchSemanticsNodes()
             assertTrue(
                 "Multiple upper scene nodes at frame $frame: ${upperNodes.size}",
@@ -1348,30 +1563,82 @@ class NeriAppNavigationTransitionTest {
         )
     }
 
+    private fun setMainTabContent(
+        smallestScreenWidthDp: Int = 600,
+        screenWidthDp: Int = 240,
+        content: @Composable () -> Unit
+    ) {
+        composeRule.setContent {
+            val currentConfiguration = LocalConfiguration.current
+            val configuration = remember(currentConfiguration, smallestScreenWidthDp, screenWidthDp) {
+                Configuration(currentConfiguration).apply {
+                    this.smallestScreenWidthDp = smallestScreenWidthDp
+                    this.screenWidthDp = screenWidthDp
+                }
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration, content = content)
+        }
+    }
+
+    private fun assertPhoneMainTabFrameOpaque(frame: Int) {
+        val pixels = composeRule.onNodeWithTag(MainTabRootTag).captureToImage().toPixelMap()
+        var opaquePixels = 0
+        for (y in 0 until pixels.height) {
+            for (x in 0 until pixels.width) {
+                val color = pixels[x, y]
+                if ((color.red >= 0.98f && color.blue <= 0.02f) ||
+                    (color.blue >= 0.98f && color.red <= 0.02f)
+                ) opaquePixels++
+            }
+        }
+        assertTrue("Phone Tab slide faded, blended or uncovered content at frame $frame: " +
+            "$opaquePixels/${pixels.width * pixels.height}",
+            opaquePixels >= pixels.width * pixels.height * 98 / 100)
+    }
+
     private fun assertMainTabFrameCovered(frame: Int, rootTag: String) {
         val pixels = composeRule.onNodeWithTag(rootTag).captureToImage().toPixelMap()
-        val coveredPixels = countNonBlankPixels(pixels)
+        val insetX = ceil(pixels.width * MAIN_TAB_SCALE_INSET_FRACTION).toInt()
+        val insetY = ceil(pixels.height * MAIN_TAB_SCALE_INSET_FRACTION).toInt()
+        val contentArea = (pixels.width - insetX * 2) * (pixels.height - insetY * 2)
+        var coveredPixels = 0
+        for (y in insetY until pixels.height - insetY) {
+            for (x in insetX until pixels.width - insetX) {
+                val color = pixels[x, y]
+                if (color.red > 0.12f || color.green > 0.12f || color.blue > 0.12f) coveredPixels++
+            }
+        }
         assertTrue(
-            "Main Tab frame exposed the blank background at frame $frame: " +
-                "$coveredPixels/${pixels.width * pixels.height}",
-            coveredPixels >= pixels.width * pixels.height * MIN_FRAME_COVERAGE_PERCENT / 100
+            "Main Tab frame exposed blank content inside the scale margin at frame $frame: " +
+                "$coveredPixels/$contentArea",
+            coveredPixels >= contentArea * MIN_FRAME_COVERAGE_PERCENT / 100
         )
     }
 
     private fun singleNodeBoundsOrNull(tag: String): Rect? {
-        val nodes = composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes()
+        val nodes = composeRule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes()
         assertTrue("Multiple scene nodes found for $tag: ${nodes.size}", nodes.size <= 1)
         return nodes.singleOrNull()?.boundsInRoot?.takeIf { bounds ->
             bounds.width > 0f && bounds.height > 0f
         }
     }
 
-    private fun assertHorizontalScenesDoNotOverlap(frame: Int, bounds: List<Rect>) {
-        val orderedBounds = bounds.sortedBy(Rect::left)
-        orderedBounds.zipWithNext().forEach { (left, right) ->
+    private fun assertMainTabScenesStayCentered(frame: Int, bounds: List<Rect>, rootTag: String) {
+        val rootBounds = checkNotNull(singleNodeBoundsOrNull(rootTag))
+        bounds.forEach { sceneBounds ->
             assertTrue(
-                "Isolated Main Tab layers overlap at frame $frame: left=$left right=$right",
-                left.right <= right.left + POSITION_TOLERANCE_PX
+                "Main Tab scene translated at frame $frame: root=$rootBounds scene=$sceneBounds",
+                abs(sceneBounds.center.x - rootBounds.center.x) <= POSITION_TOLERANCE_PX &&
+                    abs(sceneBounds.center.y - rootBounds.center.y) <= POSITION_TOLERANCE_PX
+            )
+            assertTrue(
+                "Main Tab scene distorted its aspect ratio at frame $frame: $sceneBounds",
+                abs(sceneBounds.width / rootBounds.width - sceneBounds.height / rootBounds.height) < 0.01f
+            )
+            assertTrue(
+                "Main Tab scene exceeded its scale range at frame $frame: $sceneBounds",
+                sceneBounds.width >= rootBounds.width * 0.94f - POSITION_TOLERANCE_PX &&
+                    sceneBounds.width <= rootBounds.width + POSITION_TOLERANCE_PX
             )
         }
     }
@@ -1432,7 +1699,7 @@ class NeriAppNavigationTransitionTest {
     }
 
     private fun nodeCount(tag: String): Int =
-        composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().size
+        composeRule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().size
 
     private fun waitForNodeCount(
         tag: String,
@@ -1485,19 +1752,6 @@ class NeriAppNavigationTransitionTest {
                     color.blue > 0.15f && color.blue > color.red * 2f
                 }
                 if (isDominant) count++
-            }
-        }
-        return count
-    }
-
-    private fun countNonBlankPixels(pixels: androidx.compose.ui.graphics.PixelMap): Int {
-        var count = 0
-        for (y in 0 until pixels.height) {
-            for (x in 0 until pixels.width) {
-                val color = pixels[x, y]
-                if (color.red > 0.12f || color.green > 0.12f || color.blue > 0.12f) {
-                    count++
-                }
             }
         }
         return count
@@ -1559,6 +1813,7 @@ class NeriAppNavigationTransitionTest {
         const val FRAME_MS = 16
         const val POSITION_TOLERANCE_PX = 1f
         const val MIN_FRAME_COVERAGE_PERCENT = 98
+        const val MAIN_TAB_SCALE_INSET_FRACTION = 0.03f
         val FirstTabColor = Color(0xFFFF0000)
         val SecondTabColor = Color(0xFF0000FF)
         val ThirdTabColor = Color(0xFF00FF00)

@@ -94,7 +94,8 @@ internal fun NowPlayingTrackIdentity(
     titleColor: Color,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    onArtistClick: () -> Unit
+    onArtistClick: () -> Unit,
+    compact: Boolean = false
 ) {
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
@@ -107,13 +108,13 @@ internal fun NowPlayingTrackIdentity(
             initialOffsetY = { it / 4 }
         ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 150))
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(horizontalAlignment = if (compact) Alignment.Start else Alignment.CenterHorizontally) {
             NowPlayingTrackTitle(
-                display.name, marqueeEnabled, titleColor, owner
+                display.name, marqueeEnabled, titleColor, owner, compact
             )
             NowPlayingTrackArtist(
                 display.artist, sharedTransitionScope, animatedVisibilityScope,
-                onArtistClick, owner
+                onArtistClick, owner, compact
             )
         }
     }
@@ -125,13 +126,14 @@ private fun NowPlayingTrackTitle(
     displayName: String?,
     marqueeEnabled: Boolean,
     titleColor: Color,
-    owner: NowPlayingTrackIdentityOwner
+    owner: NowPlayingTrackIdentityOwner,
+    compact: Boolean
 ) {
     BoxWithConstraints {
         NowPlayingSongTitle(
             text = displayName.orEmpty(),
             marqueeEnabled = marqueeEnabled,
-            style = MaterialTheme.typography.headlineSmall,
+            style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
             color = titleColor,
             modifier = Modifier
                 .widthIn(max = maxWidth)
@@ -157,12 +159,13 @@ private fun NowPlayingTrackArtist(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onArtistClick: () -> Unit,
-    owner: NowPlayingTrackIdentityOwner
+    owner: NowPlayingTrackIdentityOwner,
+    compact: Boolean
 ) {
     Box {
         Text(
             text = displayArtist.orEmpty(),
-            style = MaterialTheme.typography.bodyLarge,
+            style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

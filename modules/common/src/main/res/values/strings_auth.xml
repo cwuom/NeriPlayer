@@ -109,4 +109,13 @@
     <string name="login_paste_bili_cookie_hint">粘贴 Cookie（例如：SESSDATA=…; bili_jct=…）</string>
     <string name="login_paste_youtube_cookie_hint">粘贴 Cookie 或浏览器请求头（需包含 Cookie）</string>
     <string name="settings_cookie_input_hint">请输入 Cookie</string>
+    <string name="settings_account_authorization_saved">已保存授权</string>
+    <string name="settings_account_authorization_missing">未保存授权</string>
+    <string name="settings_account_authorization_incomplete">授权资料不完整，可重新登录或导入</string>
+    <string name="settings_account_last_updated">最近更新于 %1$s</string>
+    <string name="settings_account_profile_loading">正在读取账号资料…</string>
+    <string name="settings_account_profile_unavailable">账号资料暂不可用</string>
+    <string name="settings_account_sign_in_hint">登录后可使用平台相关功能</string>
+    <string name="settings_account_sign_in_again">重新登录</string>
+    <string name="settings_account_avatar">%1$s 账号头像</string>
 </resources>

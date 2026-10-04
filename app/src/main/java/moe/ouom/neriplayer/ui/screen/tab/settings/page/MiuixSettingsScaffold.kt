@@ -1,11 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,13 +61,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdropRegistrationEnabled
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
-import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageTransitionHost
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import kotlin.time.Duration.Companion.milliseconds
@@ -83,19 +76,8 @@ private val MiuixSettingsContentPadding = PaddingValues(horizontal = 4.dp, verti
 private val MiuixPageRowPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 private val MiuixSettingsTabletMaxWidth = 920.dp
 
-private fun shouldAnimateSettingsDetailTransition(
-    initialPage: SettingsPage,
-    targetPage: SettingsPage
-): Boolean {
-    return targetPage.backTargetPage() == initialPage ||
-        initialPage.backTargetPage() == targetPage
-}
-
-private fun SettingsPage.participatesInSplitDetailTransition(): Boolean {
-    return backTargetPage() != null || SettingsPage.entries.any { page ->
-        page.backTargetPage() == this
-    }
-}
+internal const val SETTINGS_SPLIT_NAVIGATION_PANE_TAG = "settings-split-navigation-pane"
+internal const val SETTINGS_SPLIT_DETAIL_PANE_TAG = "settings-split-detail-pane"
 
 internal fun settingsPageRowTestTag(page: SettingsPage): String = "settings-page-row-${page.name}"
 
@@ -458,6 +440,8 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
     homeTitle: @Composable () -> Unit,
     homeContent: LazyListScope.() -> Unit,
     detailContent: (LazyListScope.(SettingsPage) -> Unit)? = null,
+    detailListStates: Map<SettingsPage, LazyListState>? = null,
+    detailTopAppBarStates: Map<SettingsPage, TopAppBarState>? = null,
     content: LazyListScope.() -> Unit
 ) {
     if (!splitLayout) {
@@ -478,6 +462,7 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
             modifier = Modifier
                 .weight(0.42f)
                 .fillMaxHeight()
+                .testTag(SETTINGS_SPLIT_NAVIGATION_PANE_TAG)
         ) {
             MiuixSettingsHomeScaffold(
                 listState = homeListState,
@@ -490,69 +475,38 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
             modifier = Modifier
                 .weight(0.58f)
                 .fillMaxHeight()
+                .testTag(SETTINGS_SPLIT_DETAIL_PANE_TAG)
         ) {
-            when {
-                selectedPage == null -> {
-                    MiuixSettingsDetailScaffold(
-                        title = title,
-                        onBack = onBack,
-                        listState = listState,
-                        topAppBarState = topAppBarState,
-                        showBackButton = false,
-                        content = content
-                    )
-                }
-
-                !selectedPage.participatesInSplitDetailTransition() -> {
-                    MiuixSettingsDetailScaffold(
-                        title = title,
-                        onBack = onBack,
-                        listState = listState,
-                        topAppBarState = topAppBarState,
-                        showBackButton = showSplitDetailBackButton
-                    ) {
-                        if (detailContent == null) {
-                            content()
-                        } else {
-                            detailContent(selectedPage)
-                        }
-                    }
-                }
-
-                else -> {
-                    AnimatedContent(
-                        targetState = selectedPage,
-                        modifier = Modifier.fillMaxSize(),
-                        label = "settings_split_detail_switch",
-                        transitionSpec = {
-                            if (shouldAnimateSettingsDetailTransition(initialState, targetState)) {
-                                isolatedAdvancedGlassHorizontalTransition(
-                                    forward = targetState.backTargetPage() == initialState
-                                ).using(SizeTransform(clip = true))
+            if (selectedPage == null) {
+                MiuixSettingsDetailScaffold(
+                    title = title,
+                    onBack = onBack,
+                    listState = listState,
+                    topAppBarState = topAppBarState,
+                    showBackButton = false,
+                    content = content
+                )
+            } else {
+                SettingsPageTransitionHost(
+                    activePage = selectedPage,
+                    isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions
+                ) { page ->
+                    if (page != null) {
+                        MiuixSettingsDetailScaffold(
+                            title = stringResource(page.titleRes),
+                            onBack = onBack,
+                            listState = detailListStates?.getValue(page) ?: listState,
+                            topAppBarState = detailTopAppBarStates?.getValue(page) ?: topAppBarState,
+                            showBackButton = if (page == selectedPage) {
+                                showSplitDetailBackButton
                             } else {
-                                EnterTransition.None togetherWith ExitTransition.None
+                                page.backTargetPage() != null
                             }
-                        }
-                    ) { page ->
-                        AdvancedGlassNavigationHandoff(
-                            enabled = isolateAdvancedGlassTransitions && transition.isRunning
                         ) {
-                            AdvancedGlassScene(
-                                active = isolateAdvancedGlassTransitions || page == selectedPage
-                            ) {
-                                MiuixSettingsDetailScaffold(
-                                    title = stringResource(page.titleRes),
-                                    onBack = onBack,
-                                    listState = listState,
-                                    topAppBarState = topAppBarState,
-                                    showBackButton = showSplitDetailBackButton
-                                ) {
-                                    if (detailContent == null) {
-                                        content()
-                                    } else {
-                                        detailContent(page)
-                                    }
-                                }
+                            if (detailContent == null) {
+                                content()
+                            } else {
+                                detailContent(page)
                             }
                         }
                     }

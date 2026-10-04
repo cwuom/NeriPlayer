@@ -142,6 +142,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageProcess
 internal fun SettingsScreen(
     listState: LazyListState,
     bindings: AppSettingsHostBindings,
+    isActive: Boolean = true,
     onNavigateToDownloadManager: () -> Unit
 ) {
     val appearanceState = bindings.state.appearance
@@ -304,34 +305,24 @@ internal fun SettingsScreen(
                     content = settingsHomeContent
                 )
             },
-            detail = { selectedPage ->
-                MiuixSettingsResponsiveDetailScaffold(
-                    title = stringResource(selectedPage.titleRes),
-                    onBack = ::navigateBackFromActiveSettingsPage,
-                    listState = detailListStates.getValue(selectedPage),
-                    topAppBarState = detailTopAppBarStates.getValue(selectedPage),
-                    splitLayout = isSettingsSplitLayout,
-                    showSplitDetailBackButton = showSplitDetailBackButton,
-                    selectedPage = selectedPage,
-                    homeListState = listState,
-                    homeTopAppBarState = homeTopAppBarState,
-                    homeTitle = settingsHomeTitle,
-                    homeContent = settingsHomeContent
-                ) {
-                    item(key = "${selectedPage.name}:header") {
-                        MiuixSettingsHeader(
-                            icon = selectedPage.icon,
-                            title = stringResource(selectedPage.titleRes),
-                            description = stringResource(selectedPage.descriptionRes),
-                            modifier = Modifier
-                                .animateItem()
-                                .settingsHighlightTarget(
-                                    targetId = "page:${selectedPage.name}",
-                                    highlightTargetId = settingsHighlightTargetId,
-                                    highlightPulse = settingsHighlightPulse,
-                                    onHighlightFinished = onSettingsHighlightFinished
-                                )
-                        )
+            detail = { requestedDetailPage ->
+                val settingsDetailContent: LazyListScope.(SettingsPage) -> Unit = { selectedPage ->
+                    if (selectedPage != SettingsPage.Accounts) {
+                        item(key = "${selectedPage.name}:header") {
+                            MiuixSettingsHeader(
+                                icon = selectedPage.icon,
+                                title = stringResource(selectedPage.titleRes),
+                                description = stringResource(selectedPage.descriptionRes),
+                                modifier = Modifier
+                                    .animateItem()
+                                    .settingsHighlightTarget(
+                                        targetId = "page:${selectedPage.name}",
+                                        highlightTargetId = settingsHighlightTargetId,
+                                        highlightPulse = settingsHighlightPulse,
+                                        onHighlightFinished = onSettingsHighlightFinished
+                                    )
+                            )
+                        }
                     }
 
                     settingsStorageProcessingItem(selectedPage, downloadDirectorySettings)
@@ -516,8 +507,15 @@ internal fun SettingsScreen(
                         },
 
                         SettingsPage.Accounts to {
-                            miuixSettingsSectionCardItem("${selectedPage.name}:content") {
-                                SettingsLoginExpandedContent(accountAuth)
+                            item(key = "${selectedPage.name}:content") {
+                                SettingsLoginExpandedContent(
+                                    accountAuth,
+                                    isActive = isActive && environment.settingsVisible &&
+                                        activeSettingsPage == SettingsPage.Accounts,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
+                                )
                             }
                         },
 
@@ -1052,6 +1050,24 @@ internal fun SettingsScreen(
                         }
                     )
                     pageItems.getValue(selectedPage).invoke(this)
+                }
+                MiuixSettingsResponsiveDetailScaffold(
+                    title = stringResource(requestedDetailPage.titleRes),
+                    onBack = ::navigateBackFromActiveSettingsPage,
+                    listState = detailListStates.getValue(requestedDetailPage),
+                    topAppBarState = detailTopAppBarStates.getValue(requestedDetailPage),
+                    splitLayout = isSettingsSplitLayout,
+                    showSplitDetailBackButton = showSplitDetailBackButton,
+                    selectedPage = requestedDetailPage,
+                    homeListState = listState,
+                    homeTopAppBarState = homeTopAppBarState,
+                    homeTitle = settingsHomeTitle,
+                    homeContent = settingsHomeContent,
+                    detailContent = settingsDetailContent,
+                    detailListStates = detailListStates,
+                    detailTopAppBarStates = detailTopAppBarStates
+                ) {
+                    settingsDetailContent(requestedDetailPage)
                 }
             }
         )

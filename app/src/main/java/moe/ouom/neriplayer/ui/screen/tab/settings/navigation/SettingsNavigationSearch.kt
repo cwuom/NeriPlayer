@@ -22,8 +22,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
  * File: moe.ouom.neriplayer.ui.screen.tab.settings.navigation/SettingsNavigationSearch
  */
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -49,16 +47,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
-import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageGroupCard
@@ -66,6 +63,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHomePageGroups
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsSearchEntry
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 internal data class PendingSettingsSearchNavigation(
     val page: SettingsPage,
@@ -157,29 +155,18 @@ internal fun SettingsPageHost(
         return
     }
 
-    AnimatedContent(
-        targetState = activePage,
-        modifier = Modifier.fillMaxSize(),
-        label = "settings_page_switch",
-        transitionSpec = {
-            isolatedAdvancedGlassHorizontalTransition(
-                forward = isForwardSettingsPageTransition(initialState, targetState)
-            ).using(SizeTransform(clip = true))
-        }
-    ) { selectedPage ->
-        AdvancedGlassNavigationHandoff(
-            enabled = shouldHandoffGlass(isolateAdvancedGlassTransitions, transition.isRunning)
-        ) {
-            AdvancedGlassScene(
-                active = shouldShowActiveGlassScene(
-                    isolateAdvancedGlassTransitions,
-                    selectedPage,
-                    activePage
-                )
-            ) {
-                content(selectedPage)
-            }
-        }
+    if (LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
+        SettingsPageTransitionHost(
+            activePage = activePage,
+            isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            content = content
+        )
+    } else {
+        PhoneSettingsPageTransitionHost(
+            activePage = activePage,
+            isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            content = content
+        )
     }
 }
 

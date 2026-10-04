@@ -7,12 +7,26 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongCoverPreviewState
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongActionAvailability
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongActionFontSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.editSongCoverRenderer
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.shouldUseCompactEditSongLayout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingSongEditSheetTest {
+    @Test
+    fun `compact editing is limited to short landscape phone windows`() {
+        assertTrue(shouldUseCompactEditSongLayout(360, true, 360.dp))
+        assertTrue(shouldUseCompactEditSongLayout(599, true, 300.dp))
+        assertTrue(shouldUseCompactEditSongLayout(360, true, 479.dp))
+        assertFalse(shouldUseCompactEditSongLayout(360, true, 480.dp))
+        assertFalse(shouldUseCompactEditSongLayout(360, false, 300.dp))
+        assertFalse(shouldUseCompactEditSongLayout(600, true, 360.dp))
+        assertFalse(shouldUseCompactEditSongLayout(800, true, 800.dp))
+    }
+
     @Test
     fun `edit actions retain compact labels below 420 dp`() {
         assertEquals(11.sp, editSongActionFontSize(419.dp))

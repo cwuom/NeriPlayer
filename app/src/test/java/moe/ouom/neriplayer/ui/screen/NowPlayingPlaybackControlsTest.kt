@@ -7,7 +7,9 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressInfoSegment
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingProgressOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingSeekActionOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingProgressInfoSegments
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingProgressFraction
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingVisibleProgressInfoSegments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -16,6 +18,64 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingPlaybackControlsTest {
+    @Test
+    fun `only phone landscape hides audio badges and rotating back restores the original information`() {
+        val segments = listOf(
+            NowPlayingProgressInfoSegment("高清环绕声", highlighted = true),
+            NowPlayingProgressInfoSegment("FLAC"),
+            NowPlayingProgressInfoSegment("96 kHz | 24 bit")
+        )
+
+        assertTrue(nowPlayingVisibleProgressInfoSegments(
+            segments, phoneLandscape = isNowPlayingPhoneLandscape(true, 599)
+        ).isEmpty())
+        assertSame(segments, nowPlayingVisibleProgressInfoSegments(
+            segments, phoneLandscape = isNowPlayingPhoneLandscape(false, 599)
+        ))
+        listOf(600, 800).forEach { tabletWidth ->
+            listOf(true, false).forEach { landscape ->
+                assertSame(segments, nowPlayingVisibleProgressInfoSegments(
+                    segments, phoneLandscape = isNowPlayingPhoneLandscape(landscape, tabletWidth)
+                ))
+            }
+        }
+        assertEquals(3, segments.size)
+        assertTrue(segments.first().highlighted)
+    }
+
+    @Test
+    fun `tablet audio badges still respect individual display settings`() {
+        val info = PlaybackAudioInfo(
+            source = PlaybackAudioSource.NETEASE,
+            qualityLabel = "Hi-Res",
+            codecLabel = "FLAC",
+            sampleRateHz = 96000,
+            bitDepth = 24
+        )
+        val tabletLandscape = isNowPlayingPhoneLandscape(true, 800)
+        assertEquals(
+            listOf(NowPlayingProgressInfoSegment("Hi-Res", highlighted = true)),
+            nowPlayingVisibleProgressInfoSegments(
+                buildNowPlayingProgressInfoSegments(info, true, false, false, 1f), tabletLandscape
+            )
+        )
+        assertEquals(
+            listOf(NowPlayingProgressInfoSegment("FLAC")),
+            nowPlayingVisibleProgressInfoSegments(
+                buildNowPlayingProgressInfoSegments(info, false, true, false, 1f), tabletLandscape
+            )
+        )
+        assertEquals(
+            listOf(NowPlayingProgressInfoSegment("96 kHz | 24 bit")),
+            nowPlayingVisibleProgressInfoSegments(
+                buildNowPlayingProgressInfoSegments(info, false, false, true, 1f), tabletLandscape
+            )
+        )
+        assertTrue(nowPlayingVisibleProgressInfoSegments(
+            buildNowPlayingProgressInfoSegments(info, false, false, false, 1f), tabletLandscape
+        ).isEmpty())
+    }
+
     @Test
     fun `seek owner keeps preview until playback settles`() {
         val owner = NowPlayingProgressOwner(1000L)

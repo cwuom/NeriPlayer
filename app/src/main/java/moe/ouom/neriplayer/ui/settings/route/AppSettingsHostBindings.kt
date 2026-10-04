@@ -19,7 +19,8 @@ internal class AppSettingsHostEnvironment(
     val homeHasRecentUsage: Boolean,
     val onBeforeLanguageRestart: () -> Unit,
     val onLanguageChanged: (LanguageManager.Language) -> Unit,
-    val coherentFeedbackEnabled: Boolean
+    val coherentFeedbackEnabled: Boolean,
+    val settingsVisible: Boolean = true
 )
 
 internal class AppSettingsHostBindings(
