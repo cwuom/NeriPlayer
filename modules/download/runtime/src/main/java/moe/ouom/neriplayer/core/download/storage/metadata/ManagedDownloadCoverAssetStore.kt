@@ -5,6 +5,9 @@ import android.graphics.BitmapFactory
 import androidx.core.net.toUri
 import java.io.File
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +32,21 @@ object ManagedDownloadCoverAssetStore {
         val assetHash: String,
         val fileName: String? = null
     )
+
+    suspend fun isSourceMissing(context: Context, reference: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val target = resolveReference(context, reference) ?: return@withContext false
+            target.localFile?.let { file ->
+                // exists() 无法区分权限失败和文件缺失，只有明确的缺失异常可以结束升级
+                return@withContext try {
+                    Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+                    false
+                } catch (_: NoSuchFileException) {
+                    true
+                }
+            }
+            target.backend.stat(target.reference) == StorageLookupResult.Missing
+        }
 
     suspend fun inspect(
         context: Context,
@@ -428,14 +446,16 @@ object ManagedDownloadCoverAssetStore {
         return file.parentFile?.let { parent ->
             ResolvedReference(
                 backend = FileStorageBackend(parent),
-                reference = StorageReference.FileRef(file.name)
+                reference = StorageReference.FileRef(file.name),
+                localFile = file
             )
         }
     }
 
     private data class ResolvedReference(
         val backend: moe.ouom.neriplayer.core.download.storage.backend.StorageBackend,
-        val reference: StorageReference
+        val reference: StorageReference,
+        val localFile: File? = null
     )
 
     private val COVER_EXTENSIONS = setOf(

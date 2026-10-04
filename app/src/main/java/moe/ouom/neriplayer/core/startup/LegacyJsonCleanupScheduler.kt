@@ -176,7 +176,11 @@ internal object LegacyJsonCleanupScheduler {
         }
     }
 
-    suspend fun runDownloadUpgradeOnce(context: Context): LegacyDownloadUpgradeResult {
+    suspend fun runDownloadUpgradeOnce(
+        context: Context,
+        coordinator: LegacyDownloadUpgradeCoordinator =
+            LegacyDownloadUpgradeCoordinator(context.applicationContext)
+    ): LegacyDownloadUpgradeResult {
         val appContext = context.applicationContext
         return downloadUpgradeMutex.withLock {
             ManagedLibraryProcessingCoordinator.restore(appContext)
@@ -189,7 +193,7 @@ internal object LegacyJsonCleanupScheduler {
                 ManagedLibraryProcessingCoordinator.state.value.reason
             )
             try {
-                LegacyDownloadUpgradeCoordinator(appContext).execute { processed, total ->
+                coordinator.execute { processed, total ->
                     ManagedLibraryProcessingCoordinator.updateProgress(
                         context = appContext,
                         operationId = operationId,

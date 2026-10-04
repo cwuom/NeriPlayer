@@ -233,12 +233,14 @@ class LegacyDownloadUpgradeCoordinatorTest {
             if (differentRoot && !currentAudioReference) {
                 assertFalse("another root's unknown file must not acquire the old identity", metadataFile.exists())
                 assertEquals(0, result.rowsCompleted)
-                assertEquals(1, result.rowsPending)
+                assertTrue(result.isComplete)
+                assertEquals(0, result.rowsPending)
+                assertEquals(1, result.rowsQuarantined)
                 assertEquals(
                     payload,
                     database.openHelper.writableDatabase.query(
-                        "SELECT payload_json FROM legacy_download_upgrade_payload " +
-                            "WHERE stable_key = '1|netease|'"
+                        "SELECT payload_json FROM legacy_download_upgrade_quarantine " +
+                            "WHERE stable_key = '1|netease|' AND reason = 'STORAGE_UNAVAILABLE'"
                     ).use { cursor ->
                         check(cursor.moveToFirst())
                         cursor.getString(0)
