@@ -365,7 +365,7 @@ object ManagedDownloadCoverAssetStore {
                     null
                 } else {
                     try {
-                        val detectedMimeType = validatePixelBudgetOrThrow(spool)
+                        val detectedMimeType = detectCoverMimeType(spool)
                         ReadCover(
                             file = spool,
                             sizeBytes = sizeBytes,
@@ -433,7 +433,8 @@ object ManagedDownloadCoverAssetStore {
         return File.createTempFile(".neriplayer-cover-", ".tmp", directory)
     }
 
-    private fun validatePixelBudgetOrThrow(file: File): String? {
+    private fun detectCoverMimeType(file: File): String? {
+        // 流式复制和指纹计算保留旧图原始字节，像素预算由实际解码入口在采样时控制
         val bounds = runCatching {
             BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { options ->
                 BitmapFactory.decodeFile(file.absolutePath, options)
@@ -441,9 +442,6 @@ object ManagedDownloadCoverAssetStore {
         }.getOrNull() ?: return null
         // 非图片或 Provider 无法提供 bounds 的旧 sidecar 留给下游格式校验
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        if (!isCoverPixelBudgetWithin(bounds.outWidth, bounds.outHeight)) {
-            throw CoverPixelBudgetExceededException(bounds.outWidth, bounds.outHeight)
-        }
         return bounds.outMimeType
     }
 

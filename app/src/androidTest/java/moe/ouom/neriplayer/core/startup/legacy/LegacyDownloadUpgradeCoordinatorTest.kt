@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.startup.legacy
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.BitmapFactory
 import android.system.Os
 import android.system.OsConstants
 import androidx.room.Room
@@ -14,6 +15,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
+import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import org.json.JSONObject
@@ -292,6 +295,100 @@ class LegacyDownloadUpgradeCoordinatorTest {
     @Test
     fun emptyManagedCoverDoesNotBlockSongMetadataUpgrade() = runTest {
         assertEmptyCoverDoesNotBlockUpgrade(managedCover = true)
+    }
+
+    @Test
+    fun oversizedLegacyCoverPreservesOriginalBytesWithoutBlockingSongUpgrade() = runTest {
+        assertOversizedCoverDoesNotBlockUpgrade()
+    }
+
+    @Test
+    fun oversizedExternalCoverWithKnownHashAndMissingFileNameUpgradesLosslessly() = runTest {
+        assertOversizedCoverDoesNotBlockUpgrade(knownCoverHash = true)
+    }
+
+    private suspend fun assertOversizedCoverDoesNotBlockUpgrade(knownCoverHash: Boolean = false) {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            val sourceDirectory = File(fixture.sandbox, "old-covers").apply { mkdirs() }
+            val sourceCover = File(sourceDirectory, "oversized-4500.png")
+            writeLegacyCoverPng(sourceCover)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(sourceCover.absolutePath, bounds)
+            assertEquals(4_500, bounds.outWidth)
+            assertEquals(4_500, bounds.outHeight)
+            assertEquals("image/png", bounds.outMimeType)
+            assertFalse(isCoverPixelBudgetWithin(bounds.outWidth, bounds.outHeight))
+            assertTrue(sourceCover.length() in 1L..MAX_SOURCE_COVER_BYTES)
+            val sourceBytes = sourceCover.readBytes()
+            val expectedHash = MessageDigest.getInstance("SHA-256")
+                .digest(sourceBytes)
+                .joinToString("") { byte -> "%02x".format(byte) }
+            setLegacyCoverPayload(database, sourceCover.absolutePath)
+            val audio = File(fixture.managedRoot, audioName(0))
+            val originalAudio = audio.readBytes()
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            if (knownCoverHash) {
+                val assetRefs = JSONObject()
+                    .put("baselineCoverHash", expectedHash)
+                    .put("currentCoverHash", expectedHash)
+                assertFalse(assetRefs.has("baselineCoverFileName"))
+                assertFalse(assetRefs.has("currentCoverFileName"))
+                metadataFile.writeText(
+                    JSONObject()
+                        .put("stableKey", stableKey(0))
+                        .put("audioFileName", audioName(0))
+                        .put("restorableMetadata", JSONObject()
+                            .put("sourceIdentity", JSONObject().put("stableKey", stableKey(0)))
+                            .put("baseline", JSONObject().put("coverReference", sourceCover.absolutePath))
+                            .put("assetRefs", assetRefs)
+                        )
+                        .toString()
+                )
+            }
+            val coordinator = LegacyDownloadUpgradeCoordinator(fixture.context, database)
+
+            val result = coordinator.execute()
+
+            assertTrue("result=$result", result.isComplete)
+            assertEquals(1, result.rowsCompleted)
+            assertEquals(0, result.rowsPending)
+            assertEquals(0, result.rowsQuarantined)
+            assertFalse(payloadTableExists(database))
+            assertArrayEquals(originalAudio, audio.readBytes())
+            assertArrayEquals(sourceBytes, sourceCover.readBytes())
+            val metadataJson = metadataFile.readText()
+            val restored = JSONObject(metadataJson)
+            assertPreservedCoverFixtureMetadata(restored)
+            val assets = restored.getJSONObject("restorableMetadata").getJSONObject("assetRefs")
+            assertEquals(expectedHash, assets.getString("baselineCoverHash"))
+            assertEquals(expectedHash, assets.getString("currentCoverHash"))
+            val currentFileName = assets.getString("currentCoverFileName")
+            assertEquals(currentFileName, assets.getString("baselineCoverFileName"))
+            val managedCover = File(File(fixture.managedRoot, "Covers"), currentFileName)
+            assertTrue(managedCover.isFile)
+            assertEquals(managedCover.absolutePath, restored.getString("coverPath"))
+            assertArrayEquals(sourceBytes, managedCover.readBytes())
+
+            val repeated = coordinator.execute()
+
+            assertTrue("result=$repeated", repeated.isComplete)
+            assertEquals(0, repeated.rowsPending)
+            assertEquals(0, repeated.rowsSeen)
+            assertEquals(metadataJson, metadataFile.readText())
+            assertArrayEquals(sourceBytes, sourceCover.readBytes())
+            assertArrayEquals(sourceBytes, managedCover.readBytes())
+            assertArrayEquals(originalAudio, audio.readBytes())
+        } finally {
+            database.close()
+            fixture.close()
+        }
     }
 
     private suspend fun assertEmptyCoverDoesNotBlockUpgrade(managedCover: Boolean) {

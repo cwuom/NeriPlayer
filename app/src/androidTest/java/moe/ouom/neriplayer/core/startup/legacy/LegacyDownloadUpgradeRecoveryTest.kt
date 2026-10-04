@@ -94,6 +94,68 @@ class LegacyDownloadUpgradeRecoveryTest {
     }
 
     @Test
+    fun affectedVersion15UserWithOneOversizedCoverPublishesSeventeenSongsAndClearsBanner() = runTest {
+        val fixture = createStorageFixture()
+        val rowCount = 17
+        var affectedOperationId: String? = null
+        try {
+            val cover = File(fixture.managedRoot, "Covers/legacy-large.png").apply {
+                parentFile?.mkdirs()
+                writeLegacyCoverPng(this)
+            }
+            val originalCover = cover.readBytes()
+            val database = openMigratedLegacyDatabase(
+                fixture,
+                audioPresent = true,
+                missingCover = false,
+                coverReference = { index ->
+                    if (index == 0) cover.absolutePath else File(fixture.sandbox, "missing-cover-$index.jpg").absolutePath
+                },
+                rowCount = rowCount
+            )
+            try {
+                val coordinator = LegacyDownloadUpgradeCoordinator(fixture.context, database)
+                affectedOperationId = restoreAffectedUpgradeState(fixture.context, rowCount = rowCount)
+
+                val recovered = LegacyJsonCleanupScheduler.runDownloadUpgradeOnce(fixture.context, coordinator)
+
+                assertTrue(describeResult(recovered), recovered.isComplete)
+                assertEquals(rowCount, recovered.rowsCompleted)
+                assertEquals(0, recovered.rowsPending)
+                assertFalse(tableExists(database.openHelper.writableDatabase, PAYLOAD_TABLE))
+                repeat(rowCount) { index ->
+                    assertTrue(File(fixture.managedRoot, audioName(index)).readBytes().contentEquals(byteArrayOf(index.toByte())))
+                    val metadata = JSONObject(File(fixture.managedRoot, audioName(index) + METADATA_SUFFIX).readText())
+                    assertEquals("User title $index", metadata.getString("customName"))
+                    assertEquals("[00:00.00]Preserved legacy lyrics $index", metadata.getString("matchedLyric"))
+                    assertEquals(250L + index, metadata.getLong("userLyricOffsetMs"))
+                    if (index == 0) {
+                        assertEquals(cover.absolutePath, metadata.getString("coverPath"))
+                        val assets = metadata.getJSONObject("restorableMetadata").getJSONObject("assetRefs")
+                        assertEquals(ManagedDownloadCoverAssetStore.sha256(originalCover), assets.getString("currentCoverHash"))
+                    }
+                }
+                assertProcessingStateAfterUpgrade(fixture.context, affectedOperationId, expectRebuild = true)
+                assertActualCatalogPublishCompletesProcessing(fixture, database, affectedOperationId, rowCount)
+                assertTrue(cover.readBytes().contentEquals(originalCover))
+                val repeated = coordinator.execute()
+                assertTrue(describeResult(repeated), repeated.isComplete)
+                assertEquals(0, repeated.rowsPending)
+                assertProcessingStateAfterUpgrade(fixture.context, affectedOperationId, expectRebuild = false)
+            } finally {
+                awaitSnapshotPersistence()
+                database.close()
+            }
+        } finally {
+            try {
+                completeFixtureOperation(fixture.context, affectedOperationId)
+            } finally {
+                fixture.close()
+            }
+        }
+    }
+
+    @Test
     fun affectedUserWhosePayloadAlreadySettledClearsPersistedWaitingBanner() = runTest {
         val fixture = createStorageFixture()
         var affectedOperationId: String? = null
@@ -540,7 +602,8 @@ class LegacyDownloadUpgradeRecoveryTest {
 
     private suspend fun restoreAffectedUpgradeState(
         context: Context,
-        phase: ManagedLibraryProcessingPhase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
+        phase: ManagedLibraryProcessingPhase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE,
+        rowCount: Int = LEGACY_ROW_COUNT
     ): String {
         ManagedLibraryProcessingCoordinator.state.value.operationId?.let { operationId ->
             ManagedLibraryProcessingCoordinator.complete(context, operationId)
@@ -552,14 +615,14 @@ class LegacyDownloadUpgradeRecoveryTest {
             putString("reason", ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE.name)
             putString("phase", phase.name)
             putString("state_kind", "waiting")
-            putInt("processed", LEGACY_ROW_COUNT)
-            putInt("total", LEGACY_ROW_COUNT)
+            putInt("processed", rowCount)
+            putInt("total", rowCount)
         }
         val restored = ManagedLibraryProcessingCoordinator.restore(context)
         assertTrue("restored=$restored", restored is ManagedLibraryProcessingState.WaitingForRetry)
         assertEquals(operationId, restored.operationId)
-        assertEquals(LEGACY_ROW_COUNT, restored.processed)
-        assertEquals(LEGACY_ROW_COUNT, restored.total)
+        assertEquals(rowCount, restored.processed)
+        assertEquals(rowCount, restored.total)
         return operationId
     }
 
@@ -610,12 +673,13 @@ class LegacyDownloadUpgradeRecoveryTest {
         fixture: StorageFixture,
         audioPresent: Boolean,
         missingCover: Boolean,
-        coverReference: ((Int) -> String)? = null
+        coverReference: ((Int) -> String)? = null,
+        rowCount: Int = LEGACY_ROW_COUNT
     ): NeriUserDataDatabase {
         helper.createDatabase(fixture.databaseName, 15).use { database ->
             val rootKey = ManagedDownloadStorage.currentSnapshotCacheKey(fixture.context)
             val oldCoverDirectory = File(fixture.sandbox, "old-covers").apply { mkdirs() }
-            repeat(LEGACY_ROW_COUNT) { index ->
+            repeat(rowCount) { index ->
                 val audio = File(fixture.managedRoot, audioName(index))
                 if (audioPresent) audio.writeBytes(byteArrayOf(index.toByte()))
                 val coverPath = if (coverReference != null) {
