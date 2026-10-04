@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
 import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
+import moe.ouom.neriplayer.core.player.shizuku.AndroidRuntimeCompatibility
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
@@ -78,6 +79,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        AndroidRuntimeCompatibility.installHiddenApiExemptions()
         AppFeedback.initialize(this)
         installPlayerDependencies(this)
         // 冷启动首个播放点击可能早于 Compose 的 SideEffect, 先把 Application 绑给播放器

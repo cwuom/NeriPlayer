@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.lyrics.offset.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.lyrics.offset.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.lyrics.offset.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.XiaomiSuperIslandLyricsSetting
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.ui.settings.AutoSettingsSwitchItems
@@ -177,6 +178,13 @@ internal fun SettingsLyricsSection(
                 )
                 DynamicIslandLyricsSetting(
                     repository = settingsRepository,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+                XiaomiSuperIslandLyricsSetting(
+                    autoSettingsRepository = autoSettingsRepository,
+                    settingsRepository = settingsRepository,
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished

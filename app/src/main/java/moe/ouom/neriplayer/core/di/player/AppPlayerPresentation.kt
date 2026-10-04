@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import moe.ouom.neriplayer.data.model.system.BackgroundBehaviorAllowance
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
+import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.widget.PlaybackWidgetUpdater
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
@@ -57,4 +58,10 @@ internal object AppPlayerPresentation : PlayerPresentationHost {
         checkNotNull(copyBitmapForRetainedDisplay(drawable.toBitmap())) {
             "Coil returned a recycled artwork bitmap"
         }
+
+    override suspend fun loadCoverAccentColor(context: Context, source: String): Int? =
+        CoverArtColorCache.getOrLoad(context, source)?.baseColorArgb
+
+    override fun peekCoverAccentColor(source: String): Int? =
+        CoverArtColorCache.peek(source)?.baseColorArgb
 }

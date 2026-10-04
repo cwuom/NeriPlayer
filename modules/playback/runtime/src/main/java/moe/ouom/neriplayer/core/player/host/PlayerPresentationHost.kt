@@ -16,6 +16,8 @@ interface PlayerPresentationHost {
     fun publishWidget(context: Context, state: PlaybackWidgetState, artwork: Bitmap?)
     fun publishWidgetProgress(context: Context, state: PlaybackWidgetState)
     suspend fun loadArtwork(context: Context, source: String, sizePx: Int): Bitmap?
+    suspend fun loadCoverAccentColor(context: Context, source: String): Int? = null
+    fun peekCoverAccentColor(source: String): Int? = null
 }
 
 internal object PlayerFeedback {

@@ -56,7 +56,9 @@ import moe.ouom.neriplayer.core.player.audio.processing.PlaybackVolumeNormalizat
 import moe.ouom.neriplayer.core.player.engine.ReactiveRenderersFactory
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.core.player.lyrics.attachLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.clearExternalBluetoothLyricLine
+import moe.ouom.neriplayer.core.player.lyrics.releaseLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
@@ -1110,6 +1112,7 @@ private fun PlayerManager.createCachedPlaybackDataSourceFactory(
 }
 
 private fun PlayerManager.observePlaybackSettings() {
+    attachLiveLyricSurfaces()
     ioScope.launch {
         settingsRepo.audioQualityFlow.collect { q ->
             val previousQuality = preferredQuality
@@ -1615,6 +1618,7 @@ private fun PlayerManager.rollbackInitialization(e: Throwable, effectiveMaxCache
     rollbackInitializationStep("cancelled mainScope", "cancel mainScope") { mainScope.cancel() }
     rollbackInitializationStep("cancelled ioScope", "cancel ioScope") { ioScope.cancel() }
     rollbackInitializationStep("released lyricon", "release lyricon") { LyriconManager.release() }
+    rollbackInitializationStep("released live lyrics", "release live lyrics") { releaseLiveLyricSurfaces() }
     initialized = false
 }
 
@@ -1916,6 +1920,7 @@ private fun PlayerManager.releaseMediaJobsAndLyrics() {
     floatingLyricsShowTranslation = true
     statusBarLyricsEnable = false
     clearExternalBluetoothLyricLine()
+    releaseLiveLyricSurfaces()
     FloatingLyricsOverlayManager.release()
     LyriconManager.release()
 }
