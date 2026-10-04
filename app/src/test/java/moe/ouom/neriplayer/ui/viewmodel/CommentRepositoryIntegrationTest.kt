@@ -77,9 +77,45 @@ class CommentRepositoryIntegrationTest {
     }
 
     @Test
+    fun `bilibili stops after seventeen roots and fourteen replies account for all thirty one comments`(): Unit = runBlocking {
+        val client = biliClient()
+        val replies = (1..17).joinToString(",") {
+            """{"rpid":$it,"rcount":${if (it <= 14) 1 else 0}}"""
+        }
+        `when`(client.getVideoComments(AID, 1, 20)).thenReturn(JSONObject(
+            """{"code":0,"data":{"page":{"num":1,"size":20,"count":31,"acount":31},"replies":[$replies]}}"""
+        ))
+        `when`(client.getVideoComments(AID, 2, 20)).thenReturn(
+            JSONObject("""{"code":0,"data":{"page":{"num":0,"size":0,"count":0},"replies":null}}""")
+        )
+        val vm = CommentViewModel().apply { repositoryFactory = { BiliCommentRepository(cache) { client } } }
+        try {
+            withTimeout(5_000.milliseconds) {
+                vm.onSourceChanged(biliSource())
+                val state = vm.uiState.first { it.status == CommentListStatus.SUCCESS }
+                assertEquals((1..17).map(Int::toString), state.comments.map { it.id })
+                assertEquals(14L, state.comments.sumOf { it.replyCount ?: 0L })
+                assertEquals(31L, state.total)
+                assertEquals(31L, state.totalIncludingReplies)
+                assertFalse(state.hasMore)
+                assertNull(state.loadMoreError)
+                vm.loadMore()
+                assertFalse(vm.uiState.value.isLoadingMore)
+                assertNull(vm.uiState.value.loadMoreError)
+            }
+        } finally {
+            vm.onSheetHidden()
+        }
+        verify(client, times(1)).getVideoComments(AID, 1, 20)
+        verify(client, times(0)).getVideoComments(AID, 2, 20)
+    }
+
+    @Test
     fun `anonymous degraded page preserves comments and retries without cached degradation`(): Unit = runBlocking {
         val client = biliClient()
-        `when`(client.getVideoComments(AID, 1, 20)).thenReturn(biliPage(1..3, 1, 29))
+        `when`(client.getVideoComments(AID, 1, 20)).thenReturn(biliPage(1..3, 1, 29).apply {
+            getJSONObject("data").getJSONObject("page").put("acount", 29)
+        })
         `when`(client.getVideoComments(AID, 2, 20)).thenReturn(
             JSONObject("""{"code":0,"data":{"page":{"num":0,"size":0,"count":0},"replies":null}}"""),
             biliPage(4..5, 2, 29)
@@ -93,6 +129,7 @@ class CommentRepositoryIntegrationTest {
                 val failed = vm.uiState.first { !it.isLoadingMore }
                 assertEquals(listOf("1", "2", "3"), failed.comments.map { it.id })
                 assertEquals(29L, failed.total)
+                assertEquals(29L, failed.totalIncludingReplies)
                 assertEquals(1, failed.page)
                 assertTrue(failed.hasMore)
                 assertEquals(CommentError.API, failed.loadMoreError)
@@ -100,6 +137,7 @@ class CommentRepositoryIntegrationTest {
                 vm.loadMore()
                 val recovered = vm.uiState.first { it.page == 2 }
                 assertEquals(listOf("1", "2", "3", "4", "5"), recovered.comments.map { it.id })
+                assertEquals(29L, recovered.totalIncludingReplies)
                 assertNull(recovered.loadMoreError)
             }
         } finally {
