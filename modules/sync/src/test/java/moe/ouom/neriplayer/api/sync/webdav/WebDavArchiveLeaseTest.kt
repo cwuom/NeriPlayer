@@ -80,6 +80,28 @@ class WebDavArchiveLeaseTest {
         assertEquals(listOf("LOCK", "UNLOCK"), requests.map { it.method })
     }
 
+    @Test fun `a created resource grant is rejected and released before returning the acquisition error`() {
+        for (unlockCode in listOf(204, 500)) {
+            val requests = arrayListOf<Request>()
+            val client = client(requests) { request ->
+                response(if (request.method == "UNLOCK") unlockCode else 201, xml, request)
+            }
+            val error = assertThrows(WebDavApiException::class.java) { acquire(client) }
+            assertEquals(201, error.statusCode)
+            assertEquals(listOf("LOCK", "UNLOCK"), requests.map { it.method })
+            assertEquals("<$token>", requests.last().header("Lock-Token"))
+            assertEquals(if (unlockCode == 204) 0 else 1, error.suppressed.size)
+        }
+    }
+
+    @Test fun `a created resource without a valid token cannot release an unrelated lock`() {
+        val requests = arrayListOf<Request>()
+        val client = client(requests) { request -> response(201, xml, request).newBuilder().removeHeader("Lock-Token").build() }
+        val error = assertThrows(WebDavApiException::class.java) { acquire(client) }
+        assertEquals(201, error.statusCode)
+        assertEquals(listOf("LOCK"), requests.map { it.method })
+    }
+
     @Test fun `first valid unbounded grant is released before falling back without a lease`() {
         for (timeout in listOf("Infinite", "Second-301", "Second-4294967295")) {
             val requests = arrayListOf<Request>()
