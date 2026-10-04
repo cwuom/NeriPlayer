@@ -93,9 +93,11 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -121,6 +123,17 @@ import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.core.player.ltw.toSongItem
 import moe.ouom.neriplayer.data.ltw.playback.currentTrack
 import moe.ouom.neriplayer.core.player.presentation.widget.playbackWidgetProgressRefreshBucket
+import moe.ouom.neriplayer.core.player.service.car.CAR_ACTION_CYCLE_REPEAT
+import moe.ouom.neriplayer.core.player.service.car.CAR_ACTION_TOGGLE_SHUFFLE
+import moe.ouom.neriplayer.core.player.service.car.CarMediaSessionCallback
+import moe.ouom.neriplayer.core.player.service.car.CarMediaSessionControlPort
+import moe.ouom.neriplayer.core.player.service.car.CarPlaybackBindingOwner
+import moe.ouom.neriplayer.core.player.service.car.androidCarMediaLibrary
+import moe.ouom.neriplayer.core.player.service.car.carMediaSessionQueue
+import moe.ouom.neriplayer.core.player.service.car.carQueueIndex
+import moe.ouom.neriplayer.core.player.service.car.clearCarQueueIdentityCache
+import moe.ouom.neriplayer.core.player.service.car.library.CarPlaybackSelection
+import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import kotlin.time.Duration.Companion.milliseconds
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
@@ -350,6 +363,7 @@ class AudioPlayerService : Service() {
         private const val LEGACY_ACTION_HIDE_FLOATING_LYRICS =
             "moe.ouom.neriplayer.action.HIDE_FLOATING_LYRICS"
         const val EXTRA_START_SOURCE = "audio_service_start_source"
+        internal const val ACTION_BIND_CAR = "moe.ouom.neriplayer.action.BIND_CAR"
 
         internal const val NOTIFICATION_ID = 1
         internal const val CHANNEL_ID = "neriplayer_playback_channel"
@@ -582,6 +596,9 @@ class AudioPlayerService : Service() {
     private var usbDeviceAttachHandlingEnabled = true
     private var playerInitializationJob: Job? = null
     private var playerRuntimeReady = false
+    private val carPlaybackBinding = CarPlaybackBindingOwner {
+        presentationOwner.sessionOrNull()?.sessionToken
+    }
     private val pendingStartCommands = ArrayDeque<PendingStartCommand>()
     private val pendingPlayerActions = ArrayDeque<() -> Unit>()
     private var latestStartId = 0
@@ -634,6 +651,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun runWhenPlayerRuntimeReady(source: String, action: () -> Unit) {
+        if (!playerRuntimeReady) initializePlayerRuntime()
         if (playerRuntimeReady) {
             action()
             return
@@ -670,6 +688,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun isEligibleForIdleShutdown(): Boolean {
+        if (!hasReceivedStartCommand) return false
         val playerInitialized = PlayerManager.initialized
         val nativeState = UsbExclusiveSessionController.state.value
         val usbSessionActiveOrTransitioning = nativeState.opened ||
@@ -694,80 +713,103 @@ class AudioPlayerService : Service() {
     }
 
     private fun updateUsbExclusiveServiceKeepAlive(reason: String) {
+        if (!hasReceivedStartCommand) return
         usbKeepAliveOwner.update(reason)
     }
 
     private fun requestUsbExclusiveBackgroundForegroundReassert(reason: String) {
+        if (!hasReceivedStartCommand) return
         usbKeepAliveOwner.requestBackgroundForegroundReassert(reason)
     }
 
-    private val mediaSessionCallback = object : MediaSession.Callback() {
-        override fun onPlay() {
-            runWhenPlayerRuntimeReady("media_session_play") {
-                keepPlayerRuntimeAfterServiceStop = false
-                if (PlayerManager.audioRouteMuteSuppressedFlow.value) {
-                    PlayerManager.restoreAudioRouteMute()
-                } else {
-                    PlayerManager.play()
+    private val mediaSessionCallback = CarMediaSessionCallback(object : CarMediaSessionControlPort {
+        override fun runWhenReady(source: String, action: () -> Unit) = runWhenPlayerRuntimeReady(source, action)
+        override fun runWhenLibraryReady(source: String, action: () -> Unit) = runWhenPlayerRuntimeReady(source) {
+            serviceScope.launch {
+                val ready = withTimeoutOrNull(10_000L) { PlayerManager.localPlaylistsReadyFlow.first { it } }
+                if (ready == true) action()
+            }
+        }
+        override fun library() = androidCarMediaLibrary(this@AudioPlayerService)
+        override fun resume() = resumeFromMediaSession()
+        override fun playSelection(selection: CarPlaybackSelection) = playCarSelection(selection)
+        override fun playQueueItem(id: Long) {
+            val index = carQueueIndex(PlayerManager.currentQueueFlow.value, id) ?: return
+            if (!promoteMediaSessionPlayback()) return
+            PlayerManager.playFromQueue(index)
+            updateAll()
+        }
+        override fun pause(source: String, stopService: Boolean) = handleExternalPauseCommand(source, stopService)
+        override fun next() {
+            if (!promoteMediaSessionPlayback()) return
+            PlayerManager.next()
+            updateAll()
+        }
+        override fun previous() {
+            if (!promoteMediaSessionPlayback()) return
+            PlayerManager.previous()
+            updateAll()
+        }
+        override fun seek(positionMs: Long) {
+            PlayerManager.seekTo(positionMs)
+            updatePlaybackState(force = true)
+            updateNotification()
+            updatePlaybackWidget(force = true)
+        }
+        override fun customAction(action: String, extras: Bundle?) = handleMediaSessionCustomAction(action)
+    })
+
+    private fun resumeFromMediaSession() {
+        if (!PlayerManager.hasItems() && !PlayerManager.audioRouteMuteSuppressedFlow.value) return
+        if (!promoteMediaSessionPlayback()) return
+        if (PlayerManager.audioRouteMuteSuppressedFlow.value) PlayerManager.restoreAudioRouteMute()
+        else PlayerManager.play()
+        updateAll()
+        refreshIdleShutdown("media_session_play")
+    }
+
+    private fun playCarSelection(selection: CarPlaybackSelection) {
+        val song = selection.songs.getOrNull(selection.startIndex) ?: return
+        if (PlayerManager.shouldBlockLocalSongSwitch(song, PlaybackCommandSource.LOCAL)) return
+        if (!promoteMediaSessionPlayback()) return
+        val playlistId = selection.localPlaylistId
+        if (playlistId == null) PlayerManager.playPlaylist(selection.songs, selection.startIndex)
+        else PlayerManager.playLocalPlaylist(playlistId, selection.songs, selection.startIndex)
+        updateAll()
+        refreshIdleShutdown("car_media_selection")
+    }
+
+    private fun promoteMediaSessionPlayback(): Boolean {
+        if (!isForegroundStarted) {
+            if (!startSyncService(this, "car_media_play", forceForeground = true)) return false
+            if (!ensureForegroundStarted()) {
+                handleForegroundPromotionFailure("car_media_play")
+                return false
+            }
+        }
+        keepPlayerRuntimeAfterServiceStop = false
+        return true
+    }
+
+    private fun handleMediaSessionCustomAction(action: String) {
+        when (action) {
+            ACTION_TOGGLE_FAV -> {
+                if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
+                    PlayerManager.toggleCurrentFavorite()
                 }
-                updateAll()
-                refreshIdleShutdown("media_session_play")
             }
+            ACTION_TOGGLE_FLOATING_LYRICS -> applyFloatingLyricsExternalAction(legacyHideAction = false)
+            LEGACY_ACTION_HIDE_FLOATING_LYRICS -> applyFloatingLyricsExternalAction(legacyHideAction = true)
+            CAR_ACTION_TOGGLE_SHUFFLE -> PlayerManager.setShuffle(!PlayerManager.shuffleModeFlow.value)
+            CAR_ACTION_CYCLE_REPEAT -> PlayerManager.cycleRepeatMode()
+            else -> return
         }
-        override fun onPause() {
-            runWhenPlayerRuntimeReady("media_session_pause") {
-                handleExternalPauseCommand("media_session_pause")
-            }
-        }
-        override fun onSkipToNext() {
-            runWhenPlayerRuntimeReady("media_session_next") {
-                PlayerManager.next()
-                updateAll()
-            }
-        }
-        override fun onSkipToPrevious() {
-            runWhenPlayerRuntimeReady("media_session_previous") {
-                PlayerManager.previous()
-                updateAll()
-            }
-        }
-        override fun onStop() {
-            runWhenPlayerRuntimeReady("media_session_stop") {
-                handleExternalPauseCommand(MEDIA_SESSION_STOP_SOURCE, stopService = true)
-            }
-        }
-        override fun onSeekTo(pos: Long) {
-            runWhenPlayerRuntimeReady("media_session_seek") {
-                PlayerManager.seekTo(pos)
-                updatePlaybackState(force = true)
-                updateNotification()
-                updatePlaybackWidget(force = true)
-            }
-        }
-        override fun onCustomAction(action: String, extras: Bundle?) {
-            when (action) {
-                ACTION_TOGGLE_FAV -> {
-                    runWhenPlayerRuntimeReady("media_session_favorite") {
-                        if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
-                            PlayerManager.toggleCurrentFavorite()
-                        }
-                        updateAll()
-                    }
-                }
-                ACTION_TOGGLE_FLOATING_LYRICS -> {
-                    runWhenPlayerRuntimeReady("media_session_toggle_floating_lyrics") {
-                        applyFloatingLyricsExternalAction(legacyHideAction = false)
-                        updateAll()
-                    }
-                }
-                LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
-                    runWhenPlayerRuntimeReady("media_session_legacy_hide_floating_lyrics") {
-                        applyFloatingLyricsExternalAction(legacyHideAction = true)
-                        updateAll()
-                    }
-                }
-            }
-        }
+        updateAll()
+    }
+
+    private fun updateCarQueue() {
+        val queue = PlayerManager.currentQueueSnapshot()
+        presentationOwner.sessionOrNull()?.setQueue(carMediaSessionQueue(this, queue.playlist, queue.currentIndex))
     }
 
     private fun dispatchMediaButtonIntent(intent: Intent?) {
@@ -831,8 +873,6 @@ class AudioPlayerService : Service() {
             isServiceInstanceActive = false
             allowServiceRestart = false
             NPLogger.w("NERI-APS", "onCreate ignored because safe mode is active")
-            // 即使经 startForegroundService / START_STICKY 拉起,也必须先满足 FGS 5s 契约再退出
-            startForegroundForSafeModeThenStop("safe_mode_create")
             return
         }
         startPlaybackService()
@@ -846,11 +886,6 @@ class AudioPlayerService : Service() {
 
         presentationOwner.initializeSession(mediaSessionCallback)
         UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
-        if (!startForegroundImmediately(buildBootstrapNotification(), "service_create")) {
-            handleForegroundPromotionFailure("service_create")
-            return
-        }
-
         initializePlayerRuntime()
     }
 
@@ -859,7 +894,7 @@ class AudioPlayerService : Service() {
             finishPlayerRuntimeSetup()
             return
         }
-        playerInitializationJob?.cancel()
+        if (playerInitializationJob?.isActive == true) return
         playerInitializationJob = serviceScope.launch {
             awaitConcurrentPlayerInitialization()
             if (PlayerManager.initialized) {
@@ -900,6 +935,7 @@ class AudioPlayerService : Service() {
     private fun finishPlayerRuntimeSetup() {
         if (playerRuntimeReady) return
         playerRuntimeReady = true
+        carPlaybackBinding.markRuntimeReady(true)
         refreshFavoriteSongKeys()
 
         serviceScope.launch {
@@ -920,6 +956,13 @@ class AudioPlayerService : Service() {
                 }
         }
         serviceScope.launch {
+            PlayerManager.currentQueueFlow.collectSafely("carQueueFlow") {
+                updateCarQueue()
+                updateMetadata()
+                updatePlaybackState(force = true)
+            }
+        }
+        serviceScope.launch {
             PlayerManager.currentSongFlow.collectSafely("currentSongFlow") {
                 if (it == null && !hasPlaybackSurfaceContent()) {
                     if (!hasReceivedStartCommand || pendingStartCommands.isNotEmpty()) {
@@ -931,6 +974,7 @@ class AudioPlayerService : Service() {
                     return@collectSafely
                 }
                 updateMetadata()
+                updateCarQueue()
                 updatePlaybackState(force = true)
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("current_song")
@@ -1217,7 +1261,6 @@ class AudioPlayerService : Service() {
             return START_NOT_STICKY
         }
         allowServiceRestart = true
-        keepPlayerRuntimeAfterServiceStop = false
         hasReceivedStartCommand = true
         latestStartId = startId
 
@@ -1232,6 +1275,8 @@ class AudioPlayerService : Service() {
                 )
             }
         }
+        keepPlayerRuntimeAfterServiceStop = false
+        if (!playerRuntimeReady) initializePlayerRuntime()
         if (!playerRuntimeReady) {
             pendingStartCommands.addLast(
                 PendingStartCommand(
@@ -1563,7 +1608,19 @@ class AudioPlayerService : Service() {
             .onFailure { NPLogger.w("NERI-APS", "playback stats flush failed during $context", it) }
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder? {
+        if (!presentationOwnerDelegate.isInitialized()) return null
+        return carPlaybackBinding.bind(intent)?.also {
+            if (!hasReceivedStartCommand) keepPlayerRuntimeAfterServiceStop = true
+        }
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean = carPlaybackBinding.unbind(intent)
+
+    override fun onRebind(intent: Intent?) {
+        super.onRebind(intent)
+        carPlaybackBinding.rebind(intent)
+    }
 
     override fun onDestroy() {
         NPLogger.w("NERI-APS", "onDestroy ${buildStateSummary()}")
@@ -1574,6 +1631,7 @@ class AudioPlayerService : Service() {
         } finally {
             clearActiveServiceReference()
             playerRuntimeReady = false
+            carPlaybackBinding.markRuntimeReady(false)
             if (presentationOwnerDelegate.isInitialized()) presentationOwner.resetFavoriteSongKeys()
             shutdownUsbRuntime("service_destroy")
             super.onDestroy()
@@ -1599,6 +1657,7 @@ class AudioPlayerService : Service() {
         serviceScope.cancel()
         disableUsbExclusiveMediaSessionVolumeRouting("service_destroy")
         releaseMediaSessionForDestroy()
+        clearCarQueueIdentityCache()
     }
 
     private fun cancelPlayerInitializationForDestroy() {
@@ -1707,22 +1766,28 @@ class AudioPlayerService : Service() {
     ): Int {
         NPLogger.e("NERI-APS", "foreground promotion failed reason=$reason")
         allowServiceRestart = false
+        hasReceivedStartCommand = false
+        pendingStartCommands.clear()
+        pendingPlayerActions.clear()
+        mediaSessionCallback.cancelPendingPlaybackRequests()
+        stopForegroundIfStarted("foreground_promotion_failed:$reason")
         isServiceForegroundActive = false
-        isServiceInstanceActive = false
-        clearActiveServiceReference()
+        isServiceInstanceActive = carPlaybackBinding.isBound
+        if (!carPlaybackBinding.isBound) clearActiveServiceReference()
         // 前台提升失败仅代表服务无法保持前台, 不代表播放运行时必须销毁
-        // 若仍在播放或用户仍有播放诉求, 保留运行时以保住当前播放
+        // 保留正在播放的运行时, 以及仅浏览绑定时已有的暂停队列
         val preservePlayerRuntime = shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
             enginePlaying = runCatching { PlayerManager.isPlayingFlow.value }.getOrDefault(false),
             playbackControlPlaying = runCatching { PlayerManager.playbackControlPlayingFlow.value }
                 .getOrDefault(false),
+            keepPausedRuntime = keepPlayerRuntimeAfterServiceStop || carPlaybackBinding.isBound,
         )
         if (preservePlayerRuntime) {
-            // 让随后的 onDestroy 走"保留运行时"分支, 避免销毁正在播放的会话
+            // 让随后的 onDestroy 保留已有运行时
             keepPlayerRuntimeAfterServiceStop = true
             NPLogger.w(
                 "NERI-APS",
-                "foreground promotion failed but playback is active; preserving player runtime reason=$reason"
+                "foreground promotion failed; preserving existing player runtime reason=$reason"
             )
         }
         releaseServiceResourcesAfterForegroundFailure(reason, preservePlayerRuntime)
@@ -1740,9 +1805,12 @@ class AudioPlayerService : Service() {
         preservePlayerRuntime: Boolean
     ) {
         cancelUsbKeepAliveAfterForegroundFailure()
-        serviceScope.coroutineContext.cancelChildren()
         disableUsbExclusiveMediaSessionVolumeRouting("foreground_promotion_failed:$reason")
+        // 仍有车机绑定时 stopSelf 不会销毁服务，保留会话和观察任务以便重试
+        if (carPlaybackBinding.isBound) return
+        serviceScope.coroutineContext.cancelChildren()
         releaseMediaSessionAfterForegroundFailure(reason)
+        clearCarQueueIdentityCache()
         releasePlayerAfterForegroundFailure(reason, preservePlayerRuntime)
     }
 
@@ -1758,10 +1826,10 @@ class AudioPlayerService : Service() {
 
     private fun releasePlayerAfterForegroundFailure(reason: String, preservePlayerRuntime: Boolean) {
         if (preservePlayerRuntime) {
-            // 保住当前播放: 不销毁 PlayerManager 运行时, 仅放弃前台化并停止服务
+            // 前台失败后停止服务, 保留已有播放或暂停队列
             NPLogger.i(
                 "NERI-APS",
-                "skipping player release after FGS failure to keep active playback alive reason=$reason"
+                "skipping player release after FGS failure to keep existing runtime reason=$reason"
             )
             return
         }
@@ -1847,6 +1915,11 @@ class AudioPlayerService : Service() {
     }
 
     private fun handleListenTogetherServiceStateChanged(reason: String) {
+        if (!hasReceivedStartCommand) {
+            updateMetadata()
+            updatePlaybackState(force = true)
+            return
+        }
         if (!hasPlaybackSurfaceContent()) {
             stopSelfIfPlaybackSurfaceEmpty("listen_together_$reason")
             return

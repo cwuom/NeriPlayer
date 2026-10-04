@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
+import moe.ouom.neriplayer.core.player.service.car.artwork.CarArtworkProvider
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
 
 internal data class PlaybackServiceNotificationRenderInputs(
@@ -87,6 +88,8 @@ internal interface PlaybackServicePresentationPort {
     fun publishWidget(state: PlaybackWidgetState, artwork: Bitmap?)
     fun publishWidgetProgress(state: PlaybackWidgetState)
     fun setMetadata(metadata: MediaMetadata)
+    fun artworkUri(song: SongItem): String?
+    suspend fun publishArtwork(song: SongItem, bitmap: Bitmap, source: String?): String?
     fun setPlaybackState(state: PlaybackState)
     fun dispatchMediaButtonIntent(intent: Intent?)
     fun elapsedRealtime(): Long
@@ -186,6 +189,11 @@ internal class AndroidPlaybackServicePresentationPort(
     override fun setMetadata(metadata: MediaMetadata) {
         requireSession().setMetadata(metadata)
     }
+
+    override fun artworkUri(song: SongItem): String = CarArtworkProvider.uriFor(context, song).toString()
+
+    override suspend fun publishArtwork(song: SongItem, bitmap: Bitmap, source: String?): String? =
+        CarArtworkProvider.publish(context, song, bitmap, source)?.toString()
 
     override fun setPlaybackState(state: PlaybackState) {
         requireSession().setPlaybackState(state)

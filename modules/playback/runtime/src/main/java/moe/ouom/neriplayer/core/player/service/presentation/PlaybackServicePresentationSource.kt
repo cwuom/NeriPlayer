@@ -4,11 +4,15 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 
 import android.content.Context
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.model.playback.SleepTimerState
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -30,12 +34,15 @@ internal data class PlaybackServicePlaybackSnapshot(
     val playbackControlPlaying: Boolean,
     val audioRouteMuted: Boolean,
     val playbackSpeed: Float,
+    val queue: List<SongItem> = emptyList(),
+    val queueIndex: Int = -1,
 )
 
 internal data class PlaybackServiceMetadataInputs(
     val payload: ExternalBluetoothLyricPayload,
     val audioDeviceType: Int?,
     val forceSendLyrics: Boolean,
+    val album: String? = null,
 )
 
 internal data class PlaybackServiceTimerInputs(
@@ -46,6 +53,7 @@ internal data class PlaybackServiceTimerInputs(
 internal interface PlaybackServicePresentationSource {
     fun playback(): PlaybackServicePlaybackSnapshot
     fun metadata(): PlaybackServiceMetadataInputs
+    fun bluetoothMetadataModes(): Flow<BluetoothMetadataMode> = emptyFlow()
     fun timer(): PlaybackServiceTimerInputs
     fun favoriteSongKeys(): Set<String>
     fun localPlaylistsReady(): Boolean
@@ -57,24 +65,33 @@ internal interface PlaybackServicePresentationSource {
 internal class AndroidPlaybackServicePresentationSource(
     private val context: Context,
 ) : PlaybackServicePresentationSource {
-    override fun playback(): PlaybackServicePlaybackSnapshot = PlaybackServicePlaybackSnapshot(
-        song = playbackSurfaceSong(),
-        playerSongPresent = PlayerManager.currentSongFlow.value != null,
-        playerPositionMs = PlayerManager.playbackPositionFlow.value,
-        roomPositionMs = roomPositionMs(),
-        buffering = PlayerManager.isTransportBuffering(),
-        transportActive = PlayerManager.isTransportActive(),
-        enginePlaying = PlayerManager.isPlayingFlow.value,
-        roomPlaying = roomPlaying(),
-        playbackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
-        audioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
-        playbackSpeed = PlayerManager.playbackSoundStateFlow.value.speed,
-    )
+    override fun playback(): PlaybackServicePlaybackSnapshot {
+        val queue = PlayerManager.currentQueueSnapshot()
+        return PlaybackServicePlaybackSnapshot(
+            song = playbackSurfaceSong(),
+            playerSongPresent = PlayerManager.currentSongFlow.value != null,
+            playerPositionMs = PlayerManager.playbackPositionFlow.value,
+            roomPositionMs = roomPositionMs(),
+            buffering = PlayerManager.isTransportBuffering(),
+            transportActive = PlayerManager.isTransportActive(),
+            enginePlaying = PlayerManager.isPlayingFlow.value,
+            roomPlaying = roomPlaying(),
+            playbackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
+            audioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
+            playbackSpeed = PlayerManager.playbackSoundStateFlow.value.speed,
+            queue = queue.playlist,
+            queueIndex = queue.currentIndex,
+        )
+    }
+
+    override fun bluetoothMetadataModes(): Flow<BluetoothMetadataMode> =
+        PlayerDependencies.repositories.settingsRepo.bluetoothMetadataModeFlow
 
     override fun metadata(): PlaybackServiceMetadataInputs = PlaybackServiceMetadataInputs(
         payload = PlayerManager.externalBluetoothLyricPayloadFlow.value,
         audioDeviceType = PlayerManager.currentAudioDeviceFlow.value?.type,
         forceSendLyrics = PlayerManager.dynamicIslandLyricsEnabled,
+        album = metadataAlbum(),
     )
 
     override fun timer(): PlaybackServiceTimerInputs = PlaybackServiceTimerInputs(
@@ -105,6 +122,8 @@ internal class AndroidPlaybackServicePresentationSource(
     }
 
     private fun playbackSurfaceSong(): SongItem? = PlayerManager.currentSongFlow.value ?: roomSong()
+
+    private fun metadataAlbum(): String? = playbackSurfaceSong()?.displayAlbum(context)
 
     private fun roomSong(): SongItem? = roomTrack()?.toSongItem()
 

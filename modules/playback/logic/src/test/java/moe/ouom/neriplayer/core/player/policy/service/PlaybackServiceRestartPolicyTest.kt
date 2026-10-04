@@ -58,6 +58,28 @@ class PlaybackServiceRestartPolicyTest {
     }
 
     @Test
+    fun `foreground promotion rejection preserves paused runtime owned by a cold browser binding`() {
+        assertTrue(
+            shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
+                enginePlaying = false,
+                playbackControlPlaying = false,
+                keepPausedRuntime = true,
+            )
+        )
+    }
+
+    @Test
+    fun `foreground promotion rejection still releases idle runtime without a browser binding`() {
+        assertFalse(
+            shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
+                enginePlaying = false,
+                playbackControlPlaying = false,
+                keepPausedRuntime = false,
+            )
+        )
+    }
+
+    @Test
     fun `system restart stays sticky while runtime initializes`() {
         assertTrue(
             shouldUseStickyStartModeWhilePlayerRuntimeInitializes(

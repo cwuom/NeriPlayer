@@ -630,8 +630,18 @@ For release build and signing details, see
   disconnect, and USB exclusive playback toggles. The external lyrics path
   receives the current song, playback state, position, word-level lyrics,
   and translations. Original and translated Bluetooth lyrics have independent
-  switches; when both are enabled, they use separate title and artist fields while
+  switches; in the original lyric compatibility mode, enabling both uses separate title and artist fields while
   track identity remains available through album/description metadata.
+- 🚗 **Car playback**:
+  Bluetooth media metadata includes title, artist, album, duration, track counts, and artwork.
+  Under Lyrics settings, Bluetooth car display offers song information, song with lyrics,
+  or the original lyric compatibility mode. The default combines song and lyrics while preserving
+  the artist; previously saved mode choices remain unchanged.
+  Android Auto and AVRCP browsing clients can browse the queue, local playlists, recent history,
+  and offline songs, search the existing library, select songs, resume the saved queue,
+  and control playback. Connecting the browser does not start playback.
+  AVRCP has no separate lyric field, so lyrics use the title field. Artwork and lyric refresh
+  depend on both the phone and the car. A standalone Android Automotive OS app is not included.
 - 🛠️ **Developer mode and debug tools**:
   tap the version number **7 times** to reveal the `Debug` tab, including
   YouTube / Bili / NetEase / Search / Listen Together probes, log viewer, and

@@ -1268,6 +1268,21 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "bluetooth_metadata_mode",
+            type = SettingValueType.String,
+            defaultString = "song_and_lyrics",
+            order = 29,
+            ui = SettingUiType.Custom
+        )
+        val bluetoothMetadataMode = autoStringSetting(
+            key = "bluetooth_metadata_mode",
+            defaultValue = "song_and_lyrics",
+            titleRes = CoreCommonR.string.settings_bluetooth_metadata_mode,
+            descriptionRes = CoreCommonR.string.settings_bluetooth_metadata_mode_desc,
+            icon = AutoSettingIcon.BluetoothAudio
+        )
+
+        @AutoSetting(
             key = "dynamic_island_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
