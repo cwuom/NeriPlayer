@@ -1082,11 +1082,12 @@ internal class LegacyDownloadUpgradeCoordinator(
                     ?: return@forEach
                 val fileName = legacyManagedCoverFileNameHint(reference)
                 val currentEntry = lookup.resolveCover(reference, fileName)
-                val missingSource = currentEntry == null && (
-                    fileName != null || isMaterializableReference(reference) &&
-                        ManagedDownloadCoverAssetStore.isSourceMissing(context, reference)
-                    )
-                if (missingSource) {
+                val sourceReference = currentEntry?.reference ?: reference
+                val unavailableSource = (currentEntry == null && fileName != null) ||
+                    (isMaterializableReference(sourceReference) &&
+                        (ManagedDownloadCoverAssetStore.isSourceMissing(context, sourceReference) ||
+                            ManagedDownloadCoverAssetStore.isSourceEmpty(context, sourceReference)))
+                if (unavailableSource) {
                     val alreadyStored = (0 until recoveryReferences.length()).any { index ->
                         recoveryReferences.optString(index) == reference
                     }
@@ -1166,7 +1167,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 persistedFileName = baselineFileName,
                 references = baselineReferences
             )
-            baselineFileName == null -> fingerprintFirstManagedAvailable(
+            baselineFileName == null -> fingerprintFirstAvailable(
                 snapshot = snapshot,
                 lookup = lookup,
                 expectedHash = baselineHash,
@@ -1190,7 +1191,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                     references = currentReferences
                 )
             } else {
-                fingerprintFirstManagedAvailable(
+                fingerprintFirstAvailable(
                     snapshot = snapshot,
                     lookup = lookup,
                     expectedHash = currentHash,
@@ -1261,7 +1262,7 @@ internal class LegacyDownloadUpgradeCoordinator(
         return null
     }
 
-    private suspend fun fingerprintFirstManagedAvailable(
+    private suspend fun fingerprintFirstAvailable(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         lookup: LegacyManagedRootLookup,
         expectedHash: String,
@@ -1278,7 +1279,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 }
             )
             .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
-        return fingerprintFirstMatchingManagedCover(
+        val managedCover = fingerprintFirstMatchingManagedCover(
             managedEntries = managedEntries,
             expectedHash = expectedHash
         ) { managedEntry ->
@@ -1288,6 +1289,19 @@ internal class LegacyDownloadUpgradeCoordinator(
                 preferredFileName = null
             )
         }
+        if (managedCover != null) return managedCover
+        for (reference in references.filterNotNull().distinct()) {
+            if (!isMaterializableReference(reference) ||
+                lookup.resolveCover(reference, persistedFileName = null) != null
+            ) continue
+            val source = ManagedDownloadCoverAssetStore.inspect(context, reference) ?: continue
+            if (!source.assetHash.equals(expectedHash, ignoreCase = true)) continue
+            val materialized = ManagedDownloadCoverAssetStore.materializeLegacyReadable(context, reference)
+            if (materialized?.assetHash?.equals(expectedHash, ignoreCase = true) == true) {
+                return materialized
+            }
+        }
+        return null
     }
 
     private fun isNonBlank(value: String?): Boolean = !value.isNullOrBlank()

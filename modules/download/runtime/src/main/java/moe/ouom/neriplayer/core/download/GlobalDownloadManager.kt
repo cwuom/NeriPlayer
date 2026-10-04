@@ -799,7 +799,7 @@ object GlobalDownloadManager {
         return this.recoverPostCoreDownloadsForWorkerImpl(context, expectedAdmissionTicket)
     }
 
-    suspend fun reconcileMaterializedLegacyDownloads(context: Context) {
+    suspend fun reconcileMaterializedLegacyDownloads(context: Context): ManagedLibraryRefreshOutcome {
         return this.reconcileMaterializedLegacyDownloadsImpl(context)
     }
 

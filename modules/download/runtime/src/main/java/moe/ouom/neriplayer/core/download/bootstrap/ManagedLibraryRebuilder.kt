@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.bootstrap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
+import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 
 internal data class ManagedLibraryRebuildItem(
     val audio: ManagedDownloadStorage.StoredEntry,
@@ -66,6 +67,10 @@ internal object ManagedLibraryRebuilder {
         isKnownReference: (String) -> Boolean
     ): Boolean {
         if (metadata == null || !snapshot.sidecarEntriesComplete) {
+            return true
+        }
+        // 旧版成品只保证音频与内联元数据，不要求新下载流程的侧载文件
+        if (metadata.metadataEmbeddingState == DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED) {
             return true
         }
         return hasRequiredReference(

@@ -48,6 +48,27 @@ object ManagedDownloadCoverAssetStore {
             target.backend.stat(target.reference) == StorageLookupResult.Missing
         }
 
+    suspend fun isSourceEmpty(context: Context, reference: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val target = resolveReference(context, reference) ?: return@withContext false
+            val declaredSize = target.localFile?.let { file ->
+                Files.readAttributes(file.toPath(), BasicFileAttributes::class.java).size()
+            } ?: when (val stat = target.backend.stat(target.reference)) {
+                is StorageLookupResult.Found -> stat.value.sizeBytes
+                StorageLookupResult.PermissionLost -> throw SecurityException("cover storage permission lost")
+                is StorageLookupResult.ProviderFailure -> throw stat.error
+                else -> return@withContext false
+            }
+            if (declaredSize != null && declaredSize > 0L) return@withContext false
+            // 必须成功打开并读到 EOF，不能把 Provider 的空结果或权限失败当成空文件
+            when (val read = target.backend.read(target.reference) { it.read() == -1 }) {
+                is StorageLookupResult.Found -> read.value
+                StorageLookupResult.PermissionLost -> throw SecurityException("cover storage permission lost")
+                is StorageLookupResult.ProviderFailure -> throw read.error
+                else -> false
+            }
+        }
+
     suspend fun inspect(
         context: Context,
         reference: String?

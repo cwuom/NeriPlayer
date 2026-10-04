@@ -18,8 +18,12 @@ class ManagedDownloadCoverAssetStoreTest {
         val context = mock(Context::class.java)
         try {
             assertTrue(ManagedDownloadCoverAssetStore.isSourceMissing(context, source.absolutePath))
+            source.writeBytes(byteArrayOf())
+            assertFalse(ManagedDownloadCoverAssetStore.isSourceMissing(context, source.absolutePath))
+            assertTrue(ManagedDownloadCoverAssetStore.isSourceEmpty(context, source.absolutePath))
             source.writeBytes("cover-bytes".toByteArray())
             assertFalse(ManagedDownloadCoverAssetStore.isSourceMissing(context, source.absolutePath))
+            assertFalse(ManagedDownloadCoverAssetStore.isSourceEmpty(context, source.absolutePath))
             assertTrue(source.isFile)
         } finally {
             source.delete()
