@@ -36,6 +36,12 @@
     <string name="sync_upgrade_lossless_hint">All legacy lyrics are preserved and compressed losslessly, reducing duplicate storage and transfers. This prompt disappears after the upgrade completes.</string>
     <string name="sync_upgrade_syncing">Upgrading and syncing, please wait</string>
     <string name="sync_upgrade_attempt_failed">The upgrade or sync did not finish. Check your connection and available storage, then retry.</string>
+    <string name="sync_request_failed">The sync request could not be completed. Check the server status and your access permissions, then retry.</string>
+    <string name="sync_remote_changed">The cloud sync state conflicted with this request. Please sync again.</string>
+    <string name="webdav_sync_not_directory">The WebDAV sync path is not a directory. Check the sync path.</string>
+    <string name="webdav_sync_missing_condition">The WebDAV server did not provide the ETag required for safe updates. Check its conditional write support.</string>
+    <string name="webdav_sync_locked">The WebDAV sync directory is in use. Please retry later.</string>
+    <string name="webdav_sync_lock_lost">The WebDAV sync lock expired or was lost. Please sync again.</string>
     <string name="sync_upgrade_all_devices_updated">I confirm every device using sync has been updated to the latest version</string>
     <string name="sync_upgrade_confirm">Upgrade and sync now</string>
     <string name="sync_upgrade_defer">Not now</string>

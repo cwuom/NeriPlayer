@@ -2,7 +2,12 @@ package moe.ouom.neriplayer.ui.sync.upgrade
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.annotation.StringRes
 import java.io.IOException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ensureActive
@@ -19,6 +24,24 @@ import kotlin.coroutines.coroutineContext
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 import moe.ouom.neriplayer.data.model.sync.SyncResult
+import moe.ouom.neriplayer.api.sync.github.GitHubApiException
+import moe.ouom.neriplayer.api.sync.github.GitHubContentConflictException
+import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavAccessDeniedException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavApiException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavArchiveLeaseLostException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavDirectoryNotFoundException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException
+import moe.ouom.neriplayer.api.sync.webdav.WebDavNotDirectoryException
+import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.R as CoreCommonR
+
+internal data class SyncProtocolUpgradeError(
+    @StringRes val messageRes: Int,
+    val httpStatus: Int? = null
+)
 
 internal data class SyncProtocolUpgradeUiState(
     val startupRegistrationComplete: Boolean = false,
@@ -30,7 +53,8 @@ internal data class SyncProtocolUpgradeUiState(
     val isSaving: Boolean = false,
     val isSyncing: Boolean = false,
     val syncResult: SyncResult? = null,
-    val hasError: Boolean = false
+    val hasError: Boolean = false,
+    val errorDetail: SyncProtocolUpgradeError? = null
 ) {
     val targetId: String?
         get() = challenge?.targetId ?: startupTargetId
@@ -42,9 +66,9 @@ internal data class SyncProtocolUpgradeUiState(
         val hasPending = pending != null || startup != null
         if (!hasPending || pending != challenge || startup != startupTargetId) {
             return copy(approved = !hasPending, challenge = pending, startupTargetId = startup,
-                dialogRequested = false, allDevicesUpdated = false, hasError = false)
+                dialogRequested = false, allDevicesUpdated = false, hasError = false, errorDetail = null)
         }
-        return copy(approved = false, hasError = false)
+        return copy(approved = false, hasError = false, errorDetail = null)
     }
 }
 
@@ -56,6 +80,9 @@ internal class SyncProtocolUpgradeViewModel(
     private val initializeStartupTargets: suspend () -> Unit = {},
     private val performImmediateSync: suspend (String, Boolean) -> Result<SyncResult> = { _, _ ->
         Result.success(SyncResult(true, ""))
+    },
+    private val logFailure: (String) -> Unit = { detail ->
+        NPLogger.w("SyncProtocolUpgrade", detail)
     }
 ) : ViewModel() {
     private val mutableUiState = MutableStateFlow(SyncProtocolUpgradeUiState())
@@ -84,11 +111,13 @@ internal class SyncProtocolUpgradeViewModel(
                         }
                 } catch (error: CancellationException) {
                     throw error
-                } catch (_: Exception) {
+                } catch (error: Exception) {
                     pendingReadFailed = true
+                    val detail = recordFailure(error)
                     mutableUiState.update { state ->
-                        if (state.dialogRequested) state.copy(hasError = true)
-                        else state.copy(approved = false, challenge = null, startupTargetId = null, hasError = true)
+                        if (state.dialogRequested) state.copy(hasError = true, errorDetail = detail)
+                        else state.copy(approved = false, challenge = null, startupTargetId = null,
+                            hasError = true, errorDetail = detail)
                     }
                 }
             }
@@ -97,7 +126,7 @@ internal class SyncProtocolUpgradeViewModel(
 
     fun refreshTargets() {
         mutableUiState.update { state ->
-            if (state.startupRegistrationComplete) state else state.copy(hasError = false)
+            if (state.startupRegistrationComplete) state else state.copy(hasError = false, errorDetail = null)
         }
         reloads.update { it + 1L }
     }
@@ -135,7 +164,7 @@ internal class SyncProtocolUpgradeViewModel(
         mutableUiState.update { state ->
             if (state.isSaving || state.dialogRequested) state
             else state.copy(challenge = challenge, startupTargetId = startup, approved = false,
-                dialogRequested = true, allDevicesUpdated = false, hasError = false)
+                dialogRequested = true, allDevicesUpdated = false, hasError = false, errorDetail = null)
         }
     }
 
@@ -168,12 +197,13 @@ internal class SyncProtocolUpgradeViewModel(
                 retrySync = onRetry
                 mutableUiState.update {
                     it.copy(approved = false, challenge = challenge, startupTargetId = null, dialogRequested = true,
-                        allDevicesUpdated = false, hasError = false)
+                        allDevicesUpdated = false, hasError = false, errorDetail = null)
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
-                mutableUiState.update { it.copy(hasError = true) }
+            } catch (error: Exception) {
+                val detail = recordFailure(error)
+                mutableUiState.update { it.copy(hasError = true, errorDetail = detail) }
             }
         }
     }
@@ -199,7 +229,7 @@ internal class SyncProtocolUpgradeViewModel(
         retrySync = null
         savedChallenge = null
         mutableUiState.update {
-            it.copy(dialogRequested = false, allDevicesUpdated = false, hasError = false)
+            it.copy(dialogRequested = false, allDevicesUpdated = false, hasError = false, errorDetail = null)
         }
         updatePendingState()
         return true
@@ -210,7 +240,7 @@ internal class SyncProtocolUpgradeViewModel(
         if (!state.canConfirm) return
         val targetId = checkNotNull(state.targetId)
         val retry = retrySync
-        mutableUiState.update { it.copy(isSaving = true, hasError = false) }
+        mutableUiState.update { it.copy(isSaving = true, hasError = false, errorDetail = null) }
         if (pendingReadFailed) refreshTargets()
         viewModelScope.launch {
             var canRetry = false
@@ -263,8 +293,43 @@ internal class SyncProtocolUpgradeViewModel(
     private fun handleConfirmationFailure(error: Exception, targetId: String) {
         if (error is SyncProtocolUpgradeRequiredException && error.challenge?.targetId == targetId) {
             replaceChallenge(checkNotNull(error.challenge))
-        } else mutableUiState.update { it.copy(hasError = true) }
+        } else {
+            val detail = recordFailure(error)
+            mutableUiState.update { it.copy(hasError = true, errorDetail = detail) }
+        }
     }
+
+    private fun recordFailure(error: Exception): SyncProtocolUpgradeError? {
+        // 异常正文可能包含服务地址和账号信息，只保留类型和状态码
+        val type = error.javaClass.simpleName
+        val status = when (error) {
+            is WebDavApiException -> error.statusCode
+            is GitHubApiException -> error.statusCode
+            is WebDavAuthException, is TokenExpiredException -> 401
+            is WebDavDirectoryNotFoundException -> 404
+            else -> null
+        }
+        val detail = if (status == null) type else "$type (HTTP $status)"
+        logFailure(detail)
+        val message = failureMessage(error, status) ?: return null
+        return SyncProtocolUpgradeError(message, status)
+    }
+
+    @StringRes
+    private fun failureMessage(error: Exception, status: Int?): Int? {
+        FailureMessages[error.javaClass]?.let { message ->
+            return if (error is WebDavContentConflictException && status == 423)
+                CoreCommonR.string.webdav_sync_locked else message
+        }
+        return when {
+            error is WebDavApiException || error is GitHubApiException -> CoreCommonR.string.sync_request_failed
+            isNetworkFailure(error) -> CoreCommonR.string.comment_error_network
+            else -> null
+        }
+    }
+
+    private fun isNetworkFailure(error: Exception): Boolean = error is UnknownHostException ||
+        error is SocketException || error is SocketTimeoutException || error is SSLException
 
     private fun replaceChallenge(challenge: SyncProtocolUpgradeChallenge) {
         pendingChallenges = pendingChallenges.filterNot { it.targetId == challenge.targetId } + challenge
@@ -272,7 +337,7 @@ internal class SyncProtocolUpgradeViewModel(
         savedChallenge = null
         mutableUiState.update {
             it.copy(approved = false, challenge = challenge, startupTargetId = null, dialogRequested = true,
-                allDevicesUpdated = false, hasError = false)
+                allDevicesUpdated = false, hasError = false, errorDetail = null)
         }
     }
 
@@ -283,12 +348,26 @@ internal class SyncProtocolUpgradeViewModel(
         retrySync = null
         mutableUiState.update {
             it.copy(approved = next == null && startup == null, challenge = next, startupTargetId = startup,
-                dialogRequested = false, allDevicesUpdated = false, hasError = false,
+                dialogRequested = false, allDevicesUpdated = false, hasError = false, errorDetail = null,
                 syncResult = result)
         }
     }
 
     fun clearSyncResult() {
         mutableUiState.update { it.copy(syncResult = null) }
+    }
+
+    private companion object {
+        val FailureMessages = mapOf<Class<out Exception>, Int>(
+            WebDavAuthException::class.java to CoreCommonR.string.webdav_auth_failed,
+            TokenExpiredException::class.java to CoreCommonR.string.github_token_expired_message,
+            WebDavDirectoryNotFoundException::class.java to CoreCommonR.string.webdav_directory_missing,
+            WebDavNotDirectoryException::class.java to CoreCommonR.string.webdav_sync_not_directory,
+            WebDavAccessDeniedException::class.java to CoreCommonR.string.webdav_access_denied,
+            WebDavMissingConcurrencyTokenException::class.java to CoreCommonR.string.webdav_sync_missing_condition,
+            WebDavArchiveLeaseLostException::class.java to CoreCommonR.string.webdav_sync_lock_lost,
+            WebDavContentConflictException::class.java to CoreCommonR.string.sync_remote_changed,
+            GitHubContentConflictException::class.java to CoreCommonR.string.sync_remote_changed
+        )
     }
 }
