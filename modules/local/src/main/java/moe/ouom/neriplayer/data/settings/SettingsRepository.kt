@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.lyrics.offset.normalizeLyricDefaultOffsetMs
@@ -342,6 +343,10 @@ class SettingsRepository(private val context: Context) {
 
     val externalBluetoothTranslationEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.externalBluetoothTranslationEnabledFlow
+
+    val bluetoothMetadataModeFlow: Flow<BluetoothMetadataMode> =
+        settingFlow(AutoSettingsSchema.lyrics.bluetoothMetadataMode)
+            .map(BluetoothMetadataMode::fromStorage)
 
     val dynamicIslandLyricsEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled)
@@ -984,6 +989,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setExternalBluetoothTranslationEnabled(enabled: Boolean) {
         autoSettingsRepository.setExternalBluetoothTranslationEnabled(enabled)
+    }
+
+    suspend fun setBluetoothMetadataMode(mode: BluetoothMetadataMode) {
+        setSetting(AutoSettingsSchema.lyrics.bluetoothMetadataMode, mode.storageValue)
     }
 
     suspend fun setDynamicIslandLyricsEnabled(enabled: Boolean) {

@@ -210,4 +210,11 @@
     <string name="settings_floating_lyrics_show_translation_desc">有翻译歌词时一起显示在第二行</string>
     <string name="settings_floating_lyrics_disable_reveal_animation">关闭逐字切换动画</string>
     <string name="settings_floating_lyrics_disable_reveal_animation_desc">开启后歌词切换时直接显示整句，超长歌词滚动不受影响</string>
+    <string name="settings_bluetooth_metadata_mode">蓝牙车载显示模式</string>
+    <string name="settings_bluetooth_metadata_mode_desc">选择蓝牙标题区域显示歌曲信息或歌词。歌词模式也会影响系统媒体信息；歌词更新与封面显示取决于手机及车机，蓝牙没有独立歌词通道。</string>
+    <string name="settings_bluetooth_mode_lyrics">原有歌词兼容模式</string>
+    <string name="settings_bluetooth_mode_song_info">歌曲信息优先</string>
+    <string name="settings_bluetooth_mode_song_and_lyrics">歌曲与歌词，保留歌手</string>
+    <string name="car_action_shuffle">切换随机播放</string>
+    <string name="car_action_repeat">切换循环模式</string>
 </resources>

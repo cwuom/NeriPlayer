@@ -22,7 +22,8 @@ private const val BILI_CODE_REPLY_CLOSED = 12061
 internal fun parseBiliCommentPage(
     root: JSONObject,
     page: Int,
-    pageSize: Int
+    pageSize: Int,
+    includeReplyTotal: Boolean = false
 ): CommentPage {
     val code = root.optInt("code", -1)
     if (code != 0) {
@@ -67,7 +68,10 @@ internal fun parseBiliCommentPage(
         page = page,
         pageSize = pageSize,
         total = total,
-        hasMore = hasMore
+        hasMore = hasMore,
+        totalIncludingReplies = if (includeReplyTotal) {
+            pageObject.optLong("acount", -1L).takeIf { it >= (total ?: 0L) }
+        } else null
     )
 }
 

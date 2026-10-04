@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 
 internal data class ExternalBluetoothMetadataText(
@@ -89,22 +90,28 @@ internal fun resolveExternalBluetoothMetadataText(
     normalTitle: String,
     normalArtist: String,
     payload: ExternalBluetoothLyricPayload,
-    useBluetoothLyrics: Boolean
+    useBluetoothLyrics: Boolean,
+    normalAlbum: String? = null,
+    mode: BluetoothMetadataMode = BluetoothMetadataMode.SongAndLyrics,
 ): ExternalBluetoothMetadataText {
     val lyric = payload.lyric.sanitizeExternalBluetoothMetadataValue()
     val translation = payload.translation
         .sanitizeExternalBluetoothMetadataValue()
         ?.takeUnless { lyric != null && it == lyric }
     val primaryLine = lyric ?: translation
-    if (!useBluetoothLyrics || primaryLine == null) {
+    if (!useBluetoothLyrics || primaryLine == null || mode == BluetoothMetadataMode.SongInfo) {
         return ExternalBluetoothMetadataText(
             title = normalTitle,
             artist = normalArtist,
-            album = null,
+            album = normalAlbum,
             displayTitle = normalTitle,
             displaySubtitle = normalArtist,
             displayDescription = null
         )
+    }
+
+    if (mode == BluetoothMetadataMode.SongAndLyrics) {
+        return songAndLyricsMetadata(normalTitle, normalArtist, normalAlbum, lyric, translation)
     }
 
     val songInfo = listOf(normalTitle, normalArtist)
@@ -121,6 +128,25 @@ internal fun resolveExternalBluetoothMetadataText(
         displayTitle = primaryLine,
         displaySubtitle = secondaryLine ?: songInfo,
         displayDescription = songInfo.takeIf { secondaryLine != null && it.isNotEmpty() }
+    )
+}
+
+private fun songAndLyricsMetadata(
+    title: String,
+    artist: String,
+    album: String?,
+    lyric: String?,
+    translation: String?,
+): ExternalBluetoothMetadataText {
+    val lines = listOfNotNull(lyric, translation).joinToString(" | ")
+    val combined = "$title | $lines".sanitizeExternalBluetoothMetadataValue().orEmpty()
+    return ExternalBluetoothMetadataText(
+        title = combined,
+        artist = artist,
+        album = album,
+        displayTitle = title,
+        displaySubtitle = artist,
+        displayDescription = lines,
     )
 }
 

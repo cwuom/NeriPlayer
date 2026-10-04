@@ -189,6 +189,12 @@ internal fun SettingsLyricsSection(
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
+                BluetoothMetadataModeSetting(
+                    repository = settingsRepository,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
             }
             if (cardIndex == null) LyricsDetailGap(showHeader)
             if (shouldShowCard(3)) LyricsDetailCard(

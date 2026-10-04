@@ -36,6 +36,12 @@
     <string name="sync_upgrade_lossless_hint">完整保留旧歌词并自动进行无损压缩，减少重复存储和传输。升级完成后，此提示会消失。</string>
     <string name="sync_upgrade_syncing">正在升级并同步，请稍候</string>
     <string name="sync_upgrade_attempt_failed">升级或同步未完成，请检查网络及可用存储空间后重试。</string>
+    <string name="sync_request_failed">同步请求未能完成，请检查服务器状态和访问权限后重试。</string>
+    <string name="sync_remote_changed">云端同步状态发生冲突，请重新同步。</string>
+    <string name="webdav_sync_not_directory">WebDAV 同步路径不是目录，请检查同步路径。</string>
+    <string name="webdav_sync_missing_condition">WebDAV 服务器未提供安全更新所需的 ETag，请检查服务器的条件写入支持。</string>
+    <string name="webdav_sync_locked">WebDAV 同步目录正被占用，请稍后重试。</string>
+    <string name="webdav_sync_lock_lost">WebDAV 同步锁已失效，请重新同步。</string>
     <string name="sync_upgrade_all_devices_updated">我确认所有参与同步的设备都已更新到最新版本</string>
     <string name="sync_upgrade_confirm">升级并立即同步</string>
     <string name="sync_upgrade_defer">暂不升级</string>

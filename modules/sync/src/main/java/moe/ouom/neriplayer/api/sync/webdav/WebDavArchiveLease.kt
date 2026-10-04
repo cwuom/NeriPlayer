@@ -141,7 +141,8 @@ class WebDavArchiveLease internal constructor(
 
         private fun releaseFailedGrant(response: Response, root: HttpUrl, client: OkHttpClient,
             authorization: String, error: Exception): Boolean {
-            if (response.code != 200) return false
+            // 201 可能已创建并锁住普通资源，拒绝目录租约时也要释放自己的锁
+            if (response.code != 200 && response.code != 201) return false
             val token = WebDavArchiveLockResponse.headerToken(response) ?: return false
             return try { unlock(root, token, client, authorization); true }
             catch (cleanup: Exception) { error.addSuppressed(cleanup); false }

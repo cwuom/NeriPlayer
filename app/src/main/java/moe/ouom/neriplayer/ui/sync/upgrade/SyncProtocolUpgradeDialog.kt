@@ -53,9 +53,16 @@ internal fun SyncProtocolUpgradeDialog(
                 )
                 if (state.hasError) {
                     Text(
-                        text = stringResource(CoreCommonR.string.sync_upgrade_attempt_failed),
+                        text = stringResource(state.errorDetail?.messageRes ?: CoreCommonR.string.sync_upgrade_attempt_failed),
                         color = MaterialTheme.colorScheme.error
                     )
+                    state.errorDetail?.httpStatus?.let { status ->
+                        Text(
+                            text = "HTTP $status",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
                 if (state.isSaving) {
                     Row(
