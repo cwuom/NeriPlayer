@@ -122,8 +122,10 @@ internal fun GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublishIm
             state.phase == ManagedLibraryProcessingPhase.REBUILDING_INDEX &&
                 state.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
         is ManagedLibraryProcessingState.WaitingForRetry ->
-            state.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE &&
-                !migrationRequestActive
+            (state.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE &&
+                !migrationRequestActive) ||
+                (state.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE &&
+                    state.phase == ManagedLibraryProcessingPhase.REBUILDING_INDEX)
         ManagedLibraryProcessingState.Idle -> false
     }
 }

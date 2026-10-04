@@ -4,12 +4,33 @@ import android.content.Context
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 
 class ManagedDownloadCoverAssetStoreTest {
+    @Test
+    fun `source probe confirms missing files without treating existing sources as missing`() = runBlocking {
+        val directory = Files.createTempDirectory("neriplayer-cover-source").toFile()
+        val source = directory.resolve("cover.jpg")
+        val context = mock(Context::class.java)
+        try {
+            assertTrue(ManagedDownloadCoverAssetStore.isSourceMissing(context, source.absolutePath))
+            source.writeBytes(byteArrayOf())
+            assertFalse(ManagedDownloadCoverAssetStore.isSourceMissing(context, source.absolutePath))
+            assertTrue(ManagedDownloadCoverAssetStore.isSourceEmpty(context, source.absolutePath))
+            source.writeBytes("cover-bytes".toByteArray())
+            assertFalse(ManagedDownloadCoverAssetStore.isSourceMissing(context, source.absolutePath))
+            assertFalse(ManagedDownloadCoverAssetStore.isSourceEmpty(context, source.absolutePath))
+            assertTrue(source.isFile)
+        } finally {
+            source.delete()
+            directory.delete()
+        }
+    }
+
     @Test
     fun `source cover exactly at 16 MiB is accepted while the next byte is rejected`() = runBlocking {
         val exact = Files.createTempFile("neriplayer-cover-exact", ".bin").toFile()

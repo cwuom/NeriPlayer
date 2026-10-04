@@ -115,9 +115,11 @@ internal object ManagedLibraryProcessingStateMachine {
 
     fun waitingForRetry(
         current: ManagedLibraryProcessingState,
-        operationId: String
+        operationId: String,
+        expectedState: ManagedLibraryProcessingState? = null
     ): ManagedLibraryProcessingState {
         if (current.operationId != operationId) return current
+        if (expectedState != null && current !== expectedState) return current
         val reason = current.reason ?: return current
         return ManagedLibraryProcessingState.WaitingForRetry(
             operationId = operationId,
@@ -131,8 +133,10 @@ internal object ManagedLibraryProcessingStateMachine {
 
     fun complete(
         current: ManagedLibraryProcessingState,
-        operationId: String
+        operationId: String,
+        expectedState: ManagedLibraryProcessingState? = null
     ): ManagedLibraryProcessingState {
+        if (expectedState != null && current !== expectedState) return current
         return if (current.operationId == operationId) {
             ManagedLibraryProcessingState.Idle
         } else {
@@ -443,11 +447,16 @@ object ManagedLibraryProcessingCoordinator {
         resetProgressPersistence(next)
     }
 
-    suspend fun waitingForRetry(context: Context, operationId: String) = mutex.withLock {
+    suspend fun waitingForRetry(
+        context: Context,
+        operationId: String,
+        expectedState: ManagedLibraryProcessingState? = null
+    ) = mutex.withLock {
         val current = mutableState.value
         val next = ManagedLibraryProcessingStateMachine.waitingForRetry(
             current = current,
-            operationId = operationId
+            operationId = operationId,
+            expectedState = expectedState
         )
         if (next != current) {
             persist(context.applicationContext, next)
@@ -479,9 +488,13 @@ object ManagedLibraryProcessingCoordinator {
         next.operationId
     }
 
-    suspend fun complete(context: Context, operationId: String) = mutex.withLock {
+    suspend fun complete(
+        context: Context,
+        operationId: String,
+        expectedState: ManagedLibraryProcessingState? = null
+    ) = mutex.withLock {
         val current = mutableState.value
-        val next = ManagedLibraryProcessingStateMachine.complete(current, operationId)
+        val next = ManagedLibraryProcessingStateMachine.complete(current, operationId, expectedState)
         if (next != current) {
             persist(context.applicationContext, next)
             mutableState.value = next

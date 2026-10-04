@@ -5,6 +5,9 @@ import android.graphics.BitmapFactory
 import androidx.core.net.toUri
 import java.io.File
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +32,42 @@ object ManagedDownloadCoverAssetStore {
         val assetHash: String,
         val fileName: String? = null
     )
+
+    suspend fun isSourceMissing(context: Context, reference: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val target = resolveReference(context, reference) ?: return@withContext false
+            target.localFile?.let { file ->
+                // exists() 无法区分权限失败和文件缺失，只有明确的缺失异常可以结束升级
+                return@withContext try {
+                    Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+                    false
+                } catch (_: NoSuchFileException) {
+                    true
+                }
+            }
+            target.backend.stat(target.reference) == StorageLookupResult.Missing
+        }
+
+    suspend fun isSourceEmpty(context: Context, reference: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val target = resolveReference(context, reference) ?: return@withContext false
+            val declaredSize = target.localFile?.let { file ->
+                Files.readAttributes(file.toPath(), BasicFileAttributes::class.java).size()
+            } ?: when (val stat = target.backend.stat(target.reference)) {
+                is StorageLookupResult.Found -> stat.value.sizeBytes
+                StorageLookupResult.PermissionLost -> throw SecurityException("cover storage permission lost")
+                is StorageLookupResult.ProviderFailure -> throw stat.error
+                else -> return@withContext false
+            }
+            if (declaredSize != null && declaredSize > 0L) return@withContext false
+            // 必须成功打开并读到 EOF，不能把 Provider 的空结果或权限失败当成空文件
+            when (val read = target.backend.read(target.reference) { it.read() == -1 }) {
+                is StorageLookupResult.Found -> read.value
+                StorageLookupResult.PermissionLost -> throw SecurityException("cover storage permission lost")
+                is StorageLookupResult.ProviderFailure -> throw read.error
+                else -> false
+            }
+        }
 
     suspend fun inspect(
         context: Context,
@@ -326,7 +365,7 @@ object ManagedDownloadCoverAssetStore {
                     null
                 } else {
                     try {
-                        val detectedMimeType = validatePixelBudgetOrThrow(spool)
+                        val detectedMimeType = detectCoverMimeType(spool)
                         ReadCover(
                             file = spool,
                             sizeBytes = sizeBytes,
@@ -394,7 +433,8 @@ object ManagedDownloadCoverAssetStore {
         return File.createTempFile(".neriplayer-cover-", ".tmp", directory)
     }
 
-    private fun validatePixelBudgetOrThrow(file: File): String? {
+    private fun detectCoverMimeType(file: File): String? {
+        // 流式复制和指纹计算保留旧图原始字节，像素预算由实际解码入口在采样时控制
         val bounds = runCatching {
             BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { options ->
                 BitmapFactory.decodeFile(file.absolutePath, options)
@@ -402,9 +442,6 @@ object ManagedDownloadCoverAssetStore {
         }.getOrNull() ?: return null
         // 非图片或 Provider 无法提供 bounds 的旧 sidecar 留给下游格式校验
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        if (!isCoverPixelBudgetWithin(bounds.outWidth, bounds.outHeight)) {
-            throw CoverPixelBudgetExceededException(bounds.outWidth, bounds.outHeight)
-        }
         return bounds.outMimeType
     }
 
@@ -428,14 +465,16 @@ object ManagedDownloadCoverAssetStore {
         return file.parentFile?.let { parent ->
             ResolvedReference(
                 backend = FileStorageBackend(parent),
-                reference = StorageReference.FileRef(file.name)
+                reference = StorageReference.FileRef(file.name),
+                localFile = file
             )
         }
     }
 
     private data class ResolvedReference(
         val backend: moe.ouom.neriplayer.core.download.storage.backend.StorageBackend,
-        val reference: StorageReference
+        val reference: StorageReference,
+        val localFile: File? = null
     )
 
     private val COVER_EXTENSIONS = setOf(

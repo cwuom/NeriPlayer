@@ -91,6 +91,48 @@ class ManagedLibraryRebuilderTest {
     }
 
     @Test
+    fun `shipped legacy inline lyrics and remote cover survive without new download sidecars`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val metadata = DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED,
+            coverUrl = "https://example.com/legacy-cover.jpg",
+            matchedLyric = "[00:01.00]preserved original lyrics",
+            matchedTranslatedLyric = "[00:01.00]preserved translated lyrics",
+            matchedRomanizedLyric = "[00:01.00]preserved romanized lyrics"
+        )
+
+        val item = ManagedLibraryRebuilder.plan(snapshot(audio, metadata)).single()
+
+        assertEquals(audio, item.audio)
+        assertEquals(metadata, item.metadata)
+        for (state in listOf(DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            DownloadedAudioEmbeddingState.USER_DISABLED)) {
+            assertEquals(emptyList<ManagedLibraryRebuildItem>(),
+                ManagedLibraryRebuilder.plan(snapshot(audio, metadata.copy(metadataEmbeddingState = state))))
+        }
+    }
+
+    @Test
+    fun `legacy sidecar compatibility never admits unfinished audio or incomplete roots`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val metadata = DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED,
+            matchedLyric = "[00:01.00]preserved legacy lyrics"
+        )
+        val cases = listOf(
+            snapshot(audio, metadata.copy(downloadFinalized = false)),
+            snapshot(audio, metadata.copy(audioPublicationPending = true)),
+            snapshot(audio.copy(name = "song.mp3.npdl_pending.owner.pending"), metadata),
+            snapshot(audio, metadata).copy(rootEntriesComplete = false)
+        )
+        cases.forEach { assertEquals(emptyList<ManagedLibraryRebuildItem>(), ManagedLibraryRebuilder.plan(it)) }
+    }
+
+    @Test
     fun `pending audio never enters library rebuild plan even with finalized metadata`() {
         val audio = audio(lastModifiedMs = 77L).copy(
             name = "song.mp3.npdl_pending.recovery.pending"
