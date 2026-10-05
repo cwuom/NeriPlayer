@@ -69,8 +69,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
@@ -147,6 +145,7 @@ import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.data.model.netease.collection.NeteaseCollectionDetailUiState
@@ -628,27 +627,6 @@ fun DetailScreen(
                                 }
                             },
                             actions = {
-                                HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
-                                    Icon(
-                                        imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                        contentDescription = if (allSelected) {
-                                            stringResource(CoreCommonR.string.action_deselect_all)
-                                        } else {
-                                            stringResource(CoreCommonR.string.action_select_all)
-                                        }
-                                    )
-                                }
-                                HapticIconButton(
-                                    onClick = {
-                                        if (selectedIds.isNotEmpty()) showExportSheet = true
-                                    },
-                                    enabled = selectedIds.isNotEmpty()
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                        contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
-                                    )
-                                }
                                 HapticIconButton(
                                     onClick = {
                                         if (selectedIds.isNotEmpty()) {
@@ -669,6 +647,14 @@ fun DetailScreen(
                                         contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
                                     )
                                 }
+                                PlaylistSelectionMoreMenu(
+                                    allSelected = allSelected,
+                                    onToggleSelectAll = {
+                                        if (allSelected) clearSelection() else selectAll()
+                                    },
+                                    canExport = selectedIds.isNotEmpty(),
+                                    onExport = { showExportSheet = true }
+                                )
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(

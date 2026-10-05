@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
+import moe.ouom.neriplayer.core.startup.legacy.writeLegacyCoverPng
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -23,6 +25,56 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadCoverAssetStoreInstrumentedTest {
+    @Test
+    fun oversizedPixelCoverCanBeFingerprintedAndCopiedWithoutChangingItsBytes() = runBlocking {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val testDirectory = File(baseContext.cacheDir, "cover-large-pixels-${UUID.randomUUID()}").apply { mkdirs() }
+        val externalMusicDirectory = File(testDirectory, "external-music").apply { mkdirs() }
+        val context = object : ContextWrapper(baseContext) {
+            override fun getApplicationContext(): Context = this
+            override fun getExternalFilesDir(type: String?): File = externalMusicDirectory
+        }
+        ManagedDownloadStorage.updateCustomDirectoryUri(null)
+        try {
+            val source = File(testDirectory, "large-original.png").apply { writeLegacyCoverPng(this) }
+            val original = source.readBytes()
+            val expectedHash = ManagedDownloadCoverAssetStore.sha256(original)
+
+            val inspected = ManagedDownloadCoverAssetStore.inspect(context, source.absolutePath)
+            val copied = ManagedDownloadCoverAssetStore.materialize(context, source.absolutePath, "ordinary.png")
+            val legacy = ManagedDownloadCoverAssetStore.materializeLegacyReadable(context, source.absolutePath)
+            val managed = ManagedDownloadCoverAssetStore.materialize(context, legacy?.reference)
+
+            listOf(inspected, copied, legacy, managed).forEach { result ->
+                assertEquals(expectedHash, result?.assetHash)
+                assertTrue(result != null && File(result.reference).readBytes().contentEquals(original))
+            }
+            assertEquals(legacy?.reference, managed?.reference)
+            assertTrue(source.readBytes().contentEquals(original))
+        } finally {
+            testDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun oversizedSourceBytesRemainRejectedByAllCoverAssetEntryPoints() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = File(context.cacheDir, "cover-large-bytes-${UUID.randomUUID()}.png")
+        try {
+            writeLegacyCoverPng(source)
+            RandomAccessFile(source, "rw").use { it.setLength(MAX_SOURCE_COVER_BYTES + 1L) }
+            val failures = listOf(
+                runCatching { ManagedDownloadCoverAssetStore.inspect(context, source.absolutePath) }.exceptionOrNull(),
+                runCatching { ManagedDownloadCoverAssetStore.materialize(context, source.absolutePath) }.exceptionOrNull(),
+                runCatching { ManagedDownloadCoverAssetStore.materializeLegacyReadable(context, source.absolutePath) }.exceptionOrNull()
+            )
+            failures.forEach { failure -> assertTrue("failure=$failure", failure is CoverSourceTooLargeException) }
+            assertEquals(MAX_SOURCE_COVER_BYTES + 1L, source.length())
+        } finally {
+            source.delete()
+        }
+    }
+
     @Test
     fun externalCoverWithoutPreferredNameIsMaterializedOnceWithShortHash() = runBlocking {
         val baseContext = ApplicationProvider.getApplicationContext<Context>()

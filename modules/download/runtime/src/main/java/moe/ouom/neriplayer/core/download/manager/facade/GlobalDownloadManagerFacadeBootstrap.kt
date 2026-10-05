@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoor
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.presentation.shouldHandoffBlockedWifiRecoveryToSharedPump
 import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoverySummary
 import moe.ouom.neriplayer.core.download.policy.runDownloadStartupRecoverySafely
@@ -716,11 +717,16 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
     }
 }
 
-internal suspend fun GlobalDownloadManager.reconcileMaterializedLegacyDownloadsImpl(context: Context) {
+internal suspend fun GlobalDownloadManager.reconcileMaterializedLegacyDownloadsImpl(
+    context: Context
+): ManagedLibraryRefreshOutcome {
     val appContext = context.applicationContext
-    val admissionTicket = downloadAdmissionGate.openTicketOrNull() ?: return
-    startupRecoveryMutex.withLock {
-        if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) return
+    val admissionTicket = downloadAdmissionGate.openTicketOrNull()
+        ?: return ManagedLibraryRefreshOutcome.Preserved(ManagedLibraryRefreshPreserveReason.DOWNLOAD_CLEAR_IN_PROGRESS)
+    return startupRecoveryMutex.withLock {
+        if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
+            return@withLock ManagedLibraryRefreshOutcome.Preserved(ManagedLibraryRefreshPreserveReason.DOWNLOAD_CLEAR_IN_PROGRESS)
+        }
         recoverPendingAudioWritesFromRoot(
             context = appContext,
             admissionTicket = admissionTicket
@@ -737,7 +743,9 @@ internal suspend fun GlobalDownloadManager.reconcileMaterializedLegacyDownloadsI
             context = appContext,
             admissionTicket = admissionTicket
         )
-        if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) return
+        if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
+            return@withLock ManagedLibraryRefreshOutcome.Preserved(ManagedLibraryRefreshPreserveReason.DOWNLOAD_CLEAR_IN_PROGRESS)
+        }
         scanLocalFilesAwait(appContext, forceRefresh = true)
     }
 }

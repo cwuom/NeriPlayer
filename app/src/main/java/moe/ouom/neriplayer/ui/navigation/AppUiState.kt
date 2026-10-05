@@ -24,6 +24,11 @@ package moe.ouom.neriplayer.ui.navigation
  */
 
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 
 val LocalMiniPlayerHeight = compositionLocalOf { 0.dp }
+
+val LocalMiniPlayerBoundsInRoot = compositionLocalOf<Rect?> { null }
+
+val LocalBottomTabBarBoundsInRoot = compositionLocalOf<Rect?> { null }

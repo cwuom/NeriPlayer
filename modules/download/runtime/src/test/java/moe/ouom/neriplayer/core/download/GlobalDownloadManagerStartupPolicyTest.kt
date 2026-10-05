@@ -1091,6 +1091,16 @@ class GlobalDownloadManagerStartupPolicyTest : GlobalDownloadManagerStartupPolic
     fun `scan completion retains migration ownership but settles direct directory retries`() {
         assertTrue(
             GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.WaitingForRetry(
+                    operationId = "legacy-rebuild-retry",
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+                    phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                ),
+                migrationRequestActive = false
+            )
+        )
+        assertTrue(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
                 ManagedLibraryProcessingState.Running(
                     operationId = "legacy",
                     reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,

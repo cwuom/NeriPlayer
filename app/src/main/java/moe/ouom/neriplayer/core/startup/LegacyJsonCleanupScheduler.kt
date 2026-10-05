@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoor
 import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingBusyException
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeCoordinator
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeResult
@@ -58,7 +59,7 @@ internal object LegacyJsonCleanupScheduler {
                         delay((retryDelaysMs[attemptIndex]).milliseconds)
                     }
 
-                    if (upgradeGate.claimAttempt()) {
+                    if (upgradeGate.shouldAttempt()) {
                         lastUpgradeResult = try {
                             runDownloadUpgradeOnce(appContext)
                         } catch (error: CancellationException) {
@@ -70,19 +71,42 @@ internal object LegacyJsonCleanupScheduler {
                             )
                             null
                         }
-                        if ((lastUpgradeResult?.rowsCompleted ?: 0) > 0) {
-                            try {
-                                GlobalDownloadManager.reconcileMaterializedLegacyDownloads(appContext)
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (error: Throwable) {
-                                NPLogger.w(
-                                    TAG,
-                                    "Legacy download finalization pending: ${error.message}"
+                        upgradeGate.recordResult(lastUpgradeResult)
+                    }
+                    val processingState = ManagedLibraryProcessingCoordinator.state.value
+                    if (processingState.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE &&
+                        processingState.phase == ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                    ) {
+                        val operationId = requireNotNull(processingState.operationId)
+                        val refreshOutcome = try {
+                            GlobalDownloadManager.reconcileMaterializedLegacyDownloads(appContext)
+                        } catch (error: CancellationException) {
+                            withContext(NonCancellable) {
+                                ManagedLibraryProcessingCoordinator.waitingForRetry(
+                                    appContext, operationId,
+                                    expectedState = processingState
                                 )
                             }
+                            throw error
+                        } catch (error: Throwable) {
+                            NPLogger.w(
+                                TAG,
+                                "Legacy download finalization pending: ${error.message}"
+                            )
+                            null
+                        }
+                        if (refreshOutcome !is ManagedLibraryRefreshOutcome.Published ||
+                            ManagedLibraryProcessingCoordinator.state.value === processingState
+                        ) {
+                            ManagedLibraryProcessingCoordinator.waitingForRetry(
+                                appContext, operationId,
+                                expectedState = processingState
+                            )
                         }
                     }
+                    val upgradeFinished = lastUpgradeResult?.isSettled == true &&
+                        ManagedLibraryProcessingCoordinator.state.value.reason !=
+                        ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
                     val queueBootstrapSucceeded = runCatching {
                         DownloadLegacyStorageAccess.bootstrapLegacyQueues(appContext)
                         true
@@ -99,7 +123,7 @@ internal object LegacyJsonCleanupScheduler {
                     }
                     val plan = coordinator.buildPlan()
                     if (plan.targets.none { it.exists }) {
-                        if (lastUpgradeResult?.isSettled == true) {
+                        if (upgradeFinished) {
                             return@launchBackgroundIo
                         }
                         continue
@@ -108,7 +132,7 @@ internal object LegacyJsonCleanupScheduler {
                     lastResult = coordinator.execute(plan, confirmed = true)
                     if (
                         lastResult.status == LegacyJsonCleanupStatus.COMPLETED &&
-                        lastUpgradeResult?.isSettled == true
+                        upgradeFinished
                     ) {
                         NPLogger.d(
                             TAG,
@@ -119,7 +143,7 @@ internal object LegacyJsonCleanupScheduler {
                     }
                     if (
                         lastResult.status != LegacyJsonCleanupStatus.PARTIAL_FAILURE &&
-                        lastUpgradeResult?.isUserClearSuppressed == true &&
+                        lastUpgradeResult?.isUserClearSuppressed == true && upgradeFinished &&
                         plan.isBlockedOnlyByUserClearedDownloadQueues
                     ) {
                         return@launchBackgroundIo
@@ -132,7 +156,8 @@ internal object LegacyJsonCleanupScheduler {
                         "Legacy download upgrade pending: rows=${result.rowsPending}, " +
                             "completed=${result.rowsCompleted}, " +
                             "payloadTableCleaned=${result.temporaryTableCleaned}, " +
-                            "legacyTablesCleaned=${result.legacyProjectionTablesCleaned}"
+                            "legacyTablesCleaned=${result.legacyProjectionTablesCleaned}, " +
+                            "statuses=${result.rowResults.groupingBy { it.status }.eachCount()}"
                     )
                 }
                 lastResult?.let { result ->
@@ -176,10 +201,14 @@ internal object LegacyJsonCleanupScheduler {
         }
     }
 
-    suspend fun runDownloadUpgradeOnce(context: Context): LegacyDownloadUpgradeResult {
+    suspend fun runDownloadUpgradeOnce(
+        context: Context,
+        coordinator: LegacyDownloadUpgradeCoordinator =
+            LegacyDownloadUpgradeCoordinator(context.applicationContext)
+    ): LegacyDownloadUpgradeResult {
         val appContext = context.applicationContext
         return downloadUpgradeMutex.withLock {
-            ManagedLibraryProcessingCoordinator.restore(appContext)
+            val restoredState = ManagedLibraryProcessingCoordinator.restore(appContext)
             val operationId = ManagedLibraryProcessingCoordinator.tryBeginExclusive(
                 context = appContext,
                 reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
@@ -189,7 +218,7 @@ internal object LegacyJsonCleanupScheduler {
                 ManagedLibraryProcessingCoordinator.state.value.reason
             )
             try {
-                LegacyDownloadUpgradeCoordinator(appContext).execute { processed, total ->
+                coordinator.execute { processed, total ->
                     ManagedLibraryProcessingCoordinator.updateProgress(
                         context = appContext,
                         operationId = operationId,
@@ -198,9 +227,10 @@ internal object LegacyJsonCleanupScheduler {
                     )
                 }.also { result ->
                         if (result.isSettled) {
-                            if (result.rowsCompleted > 0) {
-                                // database rows are durable now, but the visible
-                                // catalog still needs one complete SAF rebuild
+                            if (result.rowsCompleted > 0 ||
+                                restoredState.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
+                            ) {
+                                // 前一轮可能已经写入 sidecar，恢复旧等待态仍需验证目录发布
                                 ManagedLibraryProcessingCoordinator.advancePhase(
                                     context = appContext,
                                     operationId = operationId,
@@ -243,11 +273,11 @@ internal object LegacyJsonCleanupScheduler {
 }
 
 internal class LegacyDownloadUpgradeDrainGate {
-    private var attempted = false
+    private var settled = false
 
-    fun claimAttempt(): Boolean {
-        if (attempted) return false
-        attempted = true
-        return true
+    fun shouldAttempt(): Boolean = !settled
+
+    fun recordResult(result: LegacyDownloadUpgradeResult?) {
+        if (result?.isSettled == true) settled = true
     }
 }

@@ -6,11 +6,13 @@ import android.content.res.Resources
 import androidx.datastore.preferences.core.emptyPreferences
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,6 +44,33 @@ class SettingsRepositoryTest {
                     repository.playbackControlLayoutPreferencesFlow.first()
                 )
                 assertEquals(repository.defaultLyricFontScales, repository.lyricFontScalesFlow.first())
+            }
+        }
+    }
+
+    @Test
+    fun bluetoothMetadataDefaultsToSongAndLyricsAndPreservesSavedModes() {
+        val filesDir = File.createTempFile("neriplayer-settings-bluetooth", "").apply {
+            delete()
+            mkdirs()
+            deleteOnExit()
+        }
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(filesDir)
+        `when`(context.applicationContext).thenReturn(context)
+        val repository = SettingsRepository(context)
+        val generatedRepository = AutoSettingsRepository(context)
+
+        runBlocking {
+            assertEquals(BluetoothMetadataMode.SongAndLyrics, repository.bluetoothMetadataModeFlow.first())
+            assertEquals("song_and_lyrics", generatedRepository.bluetoothMetadataModeFlow.first())
+            repository.setSetting(AutoSettingsSchema.lyrics.bluetoothMetadataMode, "unknown")
+            assertEquals(BluetoothMetadataMode.SongAndLyrics, repository.bluetoothMetadataModeFlow.first())
+
+            for (mode in BluetoothMetadataMode.entries) {
+                repository.setBluetoothMetadataMode(mode)
+                assertEquals(mode, repository.bluetoothMetadataModeFlow.first())
+                assertEquals(mode.storageValue, generatedRepository.bluetoothMetadataModeFlow.first())
             }
         }
     }

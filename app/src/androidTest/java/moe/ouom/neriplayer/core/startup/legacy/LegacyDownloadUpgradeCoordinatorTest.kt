@@ -2,18 +2,25 @@ package moe.ouom.neriplayer.core.startup.legacy
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.BitmapFactory
+import android.system.Os
+import android.system.OsConstants
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
+import moe.ouom.neriplayer.core.download.storage.metadata.isCoverPixelBudgetWithin
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import org.json.JSONObject
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -233,12 +240,14 @@ class LegacyDownloadUpgradeCoordinatorTest {
             if (differentRoot && !currentAudioReference) {
                 assertFalse("another root's unknown file must not acquire the old identity", metadataFile.exists())
                 assertEquals(0, result.rowsCompleted)
-                assertEquals(1, result.rowsPending)
+                assertTrue(result.isComplete)
+                assertEquals(0, result.rowsPending)
+                assertEquals(1, result.rowsQuarantined)
                 assertEquals(
                     payload,
                     database.openHelper.writableDatabase.query(
-                        "SELECT payload_json FROM legacy_download_upgrade_payload " +
-                            "WHERE stable_key = '1|netease|'"
+                        "SELECT payload_json FROM legacy_download_upgrade_quarantine " +
+                            "WHERE stable_key = '1|netease|' AND reason = 'STORAGE_UNAVAILABLE'"
                     ).use { cursor ->
                         check(cursor.moveToFirst())
                         cursor.getString(0)
@@ -276,6 +285,397 @@ class LegacyDownloadUpgradeCoordinatorTest {
             arrayOf(payload)
         )
         return payload
+    }
+
+    @Test
+    fun emptyExternalCoverDoesNotBlockSongMetadataUpgrade() = runTest {
+        assertEmptyCoverDoesNotBlockUpgrade(managedCover = false)
+    }
+
+    @Test
+    fun emptyManagedCoverDoesNotBlockSongMetadataUpgrade() = runTest {
+        assertEmptyCoverDoesNotBlockUpgrade(managedCover = true)
+    }
+
+    @Test
+    fun oversizedLegacyCoverPreservesOriginalBytesWithoutBlockingSongUpgrade() = runTest {
+        assertOversizedCoverDoesNotBlockUpgrade()
+    }
+
+    @Test
+    fun oversizedExternalCoverWithKnownHashAndMissingFileNameUpgradesLosslessly() = runTest {
+        assertOversizedCoverDoesNotBlockUpgrade(knownCoverHash = true)
+    }
+
+    private suspend fun assertOversizedCoverDoesNotBlockUpgrade(knownCoverHash: Boolean = false) {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            val sourceDirectory = File(fixture.sandbox, "old-covers").apply { mkdirs() }
+            val sourceCover = File(sourceDirectory, "oversized-4500.png")
+            writeLegacyCoverPng(sourceCover)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(sourceCover.absolutePath, bounds)
+            assertEquals(4_500, bounds.outWidth)
+            assertEquals(4_500, bounds.outHeight)
+            assertEquals("image/png", bounds.outMimeType)
+            assertFalse(isCoverPixelBudgetWithin(bounds.outWidth, bounds.outHeight))
+            assertTrue(sourceCover.length() in 1L..MAX_SOURCE_COVER_BYTES)
+            val sourceBytes = sourceCover.readBytes()
+            val expectedHash = MessageDigest.getInstance("SHA-256")
+                .digest(sourceBytes)
+                .joinToString("") { byte -> "%02x".format(byte) }
+            setLegacyCoverPayload(database, sourceCover.absolutePath)
+            val audio = File(fixture.managedRoot, audioName(0))
+            val originalAudio = audio.readBytes()
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            if (knownCoverHash) {
+                val assetRefs = JSONObject()
+                    .put("baselineCoverHash", expectedHash)
+                    .put("currentCoverHash", expectedHash)
+                assertFalse(assetRefs.has("baselineCoverFileName"))
+                assertFalse(assetRefs.has("currentCoverFileName"))
+                metadataFile.writeText(
+                    JSONObject()
+                        .put("stableKey", stableKey(0))
+                        .put("audioFileName", audioName(0))
+                        .put("restorableMetadata", JSONObject()
+                            .put("sourceIdentity", JSONObject().put("stableKey", stableKey(0)))
+                            .put("baseline", JSONObject().put("coverReference", sourceCover.absolutePath))
+                            .put("assetRefs", assetRefs)
+                        )
+                        .toString()
+                )
+            }
+            val coordinator = LegacyDownloadUpgradeCoordinator(fixture.context, database)
+
+            val result = coordinator.execute()
+
+            assertTrue("result=$result", result.isComplete)
+            assertEquals(1, result.rowsCompleted)
+            assertEquals(0, result.rowsPending)
+            assertEquals(0, result.rowsQuarantined)
+            assertFalse(payloadTableExists(database))
+            assertArrayEquals(originalAudio, audio.readBytes())
+            assertArrayEquals(sourceBytes, sourceCover.readBytes())
+            val metadataJson = metadataFile.readText()
+            val restored = JSONObject(metadataJson)
+            assertPreservedCoverFixtureMetadata(restored)
+            val assets = restored.getJSONObject("restorableMetadata").getJSONObject("assetRefs")
+            assertEquals(expectedHash, assets.getString("baselineCoverHash"))
+            assertEquals(expectedHash, assets.getString("currentCoverHash"))
+            val currentFileName = assets.getString("currentCoverFileName")
+            assertEquals(currentFileName, assets.getString("baselineCoverFileName"))
+            val managedCover = File(File(fixture.managedRoot, "Covers"), currentFileName)
+            assertTrue(managedCover.isFile)
+            assertEquals(managedCover.absolutePath, restored.getString("coverPath"))
+            assertArrayEquals(sourceBytes, managedCover.readBytes())
+
+            val repeated = coordinator.execute()
+
+            assertTrue("result=$repeated", repeated.isComplete)
+            assertEquals(0, repeated.rowsPending)
+            assertEquals(0, repeated.rowsSeen)
+            assertEquals(metadataJson, metadataFile.readText())
+            assertArrayEquals(sourceBytes, sourceCover.readBytes())
+            assertArrayEquals(sourceBytes, managedCover.readBytes())
+            assertArrayEquals(originalAudio, audio.readBytes())
+        } finally {
+            database.close()
+            fixture.close()
+        }
+    }
+
+    private suspend fun assertEmptyCoverDoesNotBlockUpgrade(managedCover: Boolean) {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            val coverDirectory = File(
+                if (managedCover) fixture.managedRoot else fixture.sandbox,
+                if (managedCover) "Covers" else "old-covers"
+            ).apply { mkdirs() }
+            val sourceCover = File(coverDirectory, "empty.jpg").apply {
+                writeBytes(byteArrayOf())
+            }
+            setLegacyCoverPayload(database, sourceCover.absolutePath)
+            val audio = File(fixture.managedRoot, audioName(0))
+            val originalAudio = audio.readBytes()
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            val coordinator = LegacyDownloadUpgradeCoordinator(fixture.context, database)
+
+            val result = coordinator.execute()
+
+            assertTrue("result=$result", result.isComplete)
+            assertEquals(1, result.rowsCompleted)
+            assertEquals(0, result.rowsPending)
+            assertEquals(0, result.rowsQuarantined)
+            assertFalse(payloadTableExists(database))
+            assertArrayEquals(originalAudio, audio.readBytes())
+            assertTrue("the original empty cover must remain recoverable", sourceCover.isFile)
+            assertEquals(0L, sourceCover.length())
+            val metadataJson = metadataFile.readText()
+            val restored = JSONObject(metadataJson)
+            assertPreservedCoverFixtureMetadata(restored)
+            assertTrue(restored.optString("coverPath").isBlank())
+            val recoveryReferences = restored.getJSONObject("restorableMetadata")
+                .getJSONObject("assetRefs")
+                .getJSONArray("legacyCoverRecoveryReferences")
+            assertTrue(
+                "the empty cover reference must remain recoverable",
+                (0 until recoveryReferences.length()).any { index ->
+                    recoveryReferences.getString(index) == sourceCover.absolutePath
+                }
+            )
+
+            val repeated = coordinator.execute()
+
+            assertTrue(repeated.isComplete)
+            assertEquals(0, repeated.rowsSeen)
+            assertEquals(metadataJson, metadataFile.readText())
+            assertTrue(sourceCover.isFile)
+            assertArrayEquals(originalAudio, audio.readBytes())
+        } finally {
+            database.close()
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun matchingExternalCoverHashWithoutFileNamesMaterializesRecoverableAssets() = runTest {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            val sourceDirectory = File(fixture.sandbox, "old-covers").apply { mkdirs() }
+            val sourceBytes = "original cover bytes".toByteArray()
+            val sourceCover = File(sourceDirectory, "original.jpg").apply {
+                writeBytes(sourceBytes)
+            }
+            val expectedHash = MessageDigest.getInstance("SHA-256")
+                .digest(sourceBytes)
+                .joinToString("") { byte -> "%02x".format(byte) }
+            setLegacyCoverPayload(database, sourceCover.absolutePath)
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            metadataFile.writeText(
+                JSONObject()
+                    .put("stableKey", stableKey(0))
+                    .put("audioFileName", audioName(0))
+                    .put("restorableMetadata", JSONObject()
+                        .put("sourceIdentity", JSONObject().put("stableKey", stableKey(0)))
+                        .put("baseline", JSONObject().put("coverReference", sourceCover.absolutePath))
+                        .put("assetRefs", JSONObject()
+                            .put("baselineCoverHash", expectedHash)
+                            .put("currentCoverHash", expectedHash)
+                        )
+                    )
+                    .toString()
+            )
+            val audio = File(fixture.managedRoot, audioName(0))
+            val originalAudio = audio.readBytes()
+            val coordinator = LegacyDownloadUpgradeCoordinator(fixture.context, database)
+
+            val result = coordinator.execute()
+
+            assertTrue("result=$result", result.isComplete)
+            assertEquals(1, result.rowsCompleted)
+            assertEquals(0, result.rowsPending)
+            assertEquals(0, result.rowsQuarantined)
+            assertFalse(payloadTableExists(database))
+            assertArrayEquals(originalAudio, audio.readBytes())
+            assertArrayEquals(sourceBytes, sourceCover.readBytes())
+            val metadataJson = metadataFile.readText()
+            val restored = JSONObject(metadataJson)
+            assertPreservedCoverFixtureMetadata(restored)
+            val assets = restored.getJSONObject("restorableMetadata").getJSONObject("assetRefs")
+            assertEquals(expectedHash, assets.getString("baselineCoverHash"))
+            assertEquals(expectedHash, assets.getString("currentCoverHash"))
+            val baselineFileName = assets.getString("baselineCoverFileName")
+            val currentFileName = assets.getString("currentCoverFileName")
+            assertTrue(baselineFileName.isNotBlank())
+            assertEquals(baselineFileName, currentFileName)
+            val managedCover = File(File(fixture.managedRoot, "Covers"), currentFileName)
+            assertTrue(managedCover.isFile)
+            assertEquals(managedCover.absolutePath, restored.getString("coverPath"))
+            assertArrayEquals(sourceBytes, managedCover.readBytes())
+
+            val repeated = coordinator.execute()
+
+            assertTrue(repeated.isComplete)
+            assertEquals(0, repeated.rowsSeen)
+            assertEquals(metadataJson, metadataFile.readText())
+            assertArrayEquals(sourceBytes, sourceCover.readBytes())
+            assertArrayEquals(originalAudio, audio.readBytes())
+        } finally {
+            database.close()
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun mismatchedExternalCoverHashKeepsPayloadAndExistingSidecarUnchanged() = runTest {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            val sourceDirectory = File(fixture.sandbox, "old-covers").apply { mkdirs() }
+            val sourceBytes = "different cover bytes".toByteArray()
+            val sourceCover = File(sourceDirectory, "mismatched.jpg").apply {
+                writeBytes(sourceBytes)
+            }
+            val expectedHash = MessageDigest.getInstance("SHA-256")
+                .digest("expected cover bytes".toByteArray())
+                .joinToString("") { byte -> "%02x".format(byte) }
+            setLegacyCoverPayload(database, sourceCover.absolutePath)
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            val originalMetadata = JSONObject()
+                .put("stableKey", stableKey(0))
+                .put("audioFileName", audioName(0))
+                .put("customName", "Existing user title")
+                .put("matchedLyric", "[00:00.00]Existing user lyrics")
+                .put("restorableMetadata", JSONObject()
+                    .put("sourceIdentity", JSONObject().put("stableKey", stableKey(0)))
+                    .put("baseline", JSONObject().put("coverReference", sourceCover.absolutePath))
+                    .put("assetRefs", JSONObject()
+                        .put("baselineCoverHash", expectedHash)
+                        .put("currentCoverHash", expectedHash)
+                    )
+                )
+                .toString()
+            metadataFile.writeText(originalMetadata)
+            val originalPayload = database.openHelper.writableDatabase.query(
+                "SELECT payload_json FROM legacy_download_upgrade_payload"
+            ).use { cursor ->
+                check(cursor.moveToFirst())
+                cursor.getString(0)
+            }
+            val audio = File(fixture.managedRoot, audioName(0))
+            val originalAudio = audio.readBytes()
+
+            val result = LegacyDownloadUpgradeCoordinator(fixture.context, database).execute()
+
+            assertFalse("result=$result", result.isSettled)
+            assertEquals(0, result.rowsCompleted)
+            assertEquals(1, result.rowsPending)
+            assertEquals(0, result.rowsQuarantined)
+            assertEquals(LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE, result.rowResults.single().status)
+            assertEquals(originalMetadata, metadataFile.readText())
+            assertEquals(
+                originalPayload,
+                database.openHelper.writableDatabase.query(
+                    "SELECT payload_json FROM legacy_download_upgrade_payload"
+                ).use { cursor ->
+                    check(cursor.moveToFirst())
+                    cursor.getString(0)
+                }
+            )
+            assertArrayEquals(sourceBytes, sourceCover.readBytes())
+            assertArrayEquals(originalAudio, audio.readBytes())
+        } finally {
+            database.close()
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun unreadableEmptyExternalCoverKeepsOriginalPayloadRetryable() = runTest {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val sourceDirectory = File(fixture.sandbox, "old-covers").apply { mkdirs() }
+        val sourceCover = File(sourceDirectory, "protected-empty.jpg").apply {
+            writeBytes(byteArrayOf())
+        }
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            setLegacyCoverPayload(database, sourceCover.absolutePath)
+            val originalPayload = database.openHelper.writableDatabase.query(
+                "SELECT payload_json FROM legacy_download_upgrade_payload"
+            ).use { cursor ->
+                check(cursor.moveToFirst())
+                cursor.getString(0)
+            }
+            val audio = File(fixture.managedRoot, audioName(0))
+            val originalAudio = audio.readBytes()
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            Os.chmod(sourceCover.absolutePath, 0)
+            assertEquals(0, Os.stat(sourceCover.absolutePath).st_mode and OsConstants.S_IRWXU)
+
+            val result = LegacyDownloadUpgradeCoordinator(fixture.context, database).execute()
+
+            assertFalse("result=$result", result.isSettled)
+            assertEquals(0, result.rowsCompleted)
+            assertEquals(1, result.rowsPending)
+            assertEquals(0, result.rowsQuarantined)
+            assertEquals(LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE, result.rowResults.single().status)
+            assertFalse("a failed cover read must not publish partial metadata", metadataFile.exists())
+            assertEquals(
+                originalPayload,
+                database.openHelper.writableDatabase.query(
+                    "SELECT payload_json FROM legacy_download_upgrade_payload"
+                ).use { cursor ->
+                    check(cursor.moveToFirst())
+                    cursor.getString(0)
+                }
+            )
+            assertTrue(sourceCover.isFile)
+            assertEquals(0L, sourceCover.length())
+            assertArrayEquals(originalAudio, audio.readBytes())
+        } finally {
+            if (sourceCover.exists()) {
+                Os.chmod(sourceCover.absolutePath, OsConstants.S_IRUSR or OsConstants.S_IWUSR)
+            }
+            database.close()
+            fixture.close()
+        }
+    }
+
+    private fun setLegacyCoverPayload(database: NeriUserDataDatabase, coverReference: String) {
+        val sqliteDatabase = database.openHelper.writableDatabase
+        val payload = sqliteDatabase.query(
+            "SELECT payload_json FROM legacy_download_upgrade_payload"
+        ).use { cursor ->
+            check(cursor.moveToFirst())
+            JSONObject(cursor.getString(0)).apply {
+                put("coverPath", coverReference)
+                put("customName", "Preserved user title")
+                put("matchedLyric", "[00:00.00]Preserved user lyrics")
+                put("userLyricOffsetMs", 350L)
+                getJSONObject("downloaded_song_catalog").put("cover_path", coverReference)
+            }.toString()
+        }
+        sqliteDatabase.execSQL(
+            "UPDATE legacy_download_upgrade_payload SET payload_json = ?",
+            arrayOf(payload)
+        )
+    }
+
+    private fun assertPreservedCoverFixtureMetadata(metadata: JSONObject) {
+        assertEquals(stableKey(0), metadata.getString("stableKey"))
+        assertEquals("Preserved user title", metadata.getString("customName"))
+        assertEquals("[00:00.00]Preserved user lyrics", metadata.getString("matchedLyric"))
+        assertEquals(350L, metadata.getLong("userLyricOffsetMs"))
+        assertTrue(metadata.getBoolean("downloadFinalized"))
     }
 
     @Test

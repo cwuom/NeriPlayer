@@ -20,7 +20,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalMetadataProcessingState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalScanPreviewState
-import org.burnoutcrew.reorderable.ReorderableLazyListState
+import moe.ouom.neriplayer.ui.screen.playlist.reorder.LocalPlaylistReorderState
 import kotlin.reflect.KProperty
 
 internal class LocalPlaylistDetailMutableValue<T>(
@@ -77,7 +77,7 @@ internal class LocalPlaylistDetailModernContentScope(
     val currentSongLookup: SongIdentityLookup,
     val queueIndexBySongKey: Map<String, Int>,
     val canReorderCurrentSongs: Boolean,
-    val reorderState: ReorderableLazyListState,
+    val reorderState: LocalPlaylistReorderState,
     val currentIndexInDisplay: Int,
     val vm: LocalPlaylistDetailViewModel,
     val repo: LocalPlaylistRepository,

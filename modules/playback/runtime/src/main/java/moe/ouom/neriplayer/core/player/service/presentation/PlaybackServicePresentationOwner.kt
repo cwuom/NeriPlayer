@@ -26,6 +26,7 @@ import android.media.AudioAttributes
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
@@ -33,6 +34,11 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
 import moe.ouom.neriplayer.core.player.presentation.widget.playbackWidgetPresentationChanged
 import moe.ouom.neriplayer.core.player.presentation.widget.shouldPartiallyUpdatePlaybackWidgetProgress
+import moe.ouom.neriplayer.core.player.service.car.carQueueItemId
+import moe.ouom.neriplayer.core.player.service.car.CAR_ACTION_TOGGLE_SHUFFLE
+import moe.ouom.neriplayer.core.player.service.car.CAR_ACTION_CYCLE_REPEAT
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 internal data class PlaybackNotificationSnapshot(
     val songKey: String?,
@@ -60,6 +66,10 @@ internal data class PlaybackMetadataSnapshot(
     val durationMs: Long,
     val coverSource: String?,
     val largeIconReady: Boolean,
+    val mediaId: String? = null,
+    val trackNumber: Long = 0L,
+    val numTracks: Long = 0L,
+    val artworkUri: String? = null,
 )
 
 internal fun resolveServicePlaybackState(snapshot: PlaybackServicePlaybackSnapshot): Int = when {
@@ -86,7 +96,13 @@ internal fun mediaSessionPlaybackActions(): Long =
         PlaybackState.ACTION_PLAY_PAUSE or
         PlaybackState.ACTION_SKIP_TO_NEXT or
         PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-        PlaybackState.ACTION_SEEK_TO
+        PlaybackState.ACTION_SEEK_TO or
+        PlaybackState.ACTION_PLAY_FROM_MEDIA_ID or
+        PlaybackState.ACTION_PLAY_FROM_SEARCH or
+        PlaybackState.ACTION_PREPARE or
+        PlaybackState.ACTION_PREPARE_FROM_MEDIA_ID or
+        PlaybackState.ACTION_PREPARE_FROM_SEARCH or
+        PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM
 
 internal fun serviceFavoriteControlFingerprint(canToggleFavorite: Boolean, favorite: Boolean): Int = when {
     !canToggleFavorite -> 0
@@ -110,8 +126,24 @@ internal class PlaybackServicePresentationOwner(
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
     private var lastWidgetState: PlaybackWidgetState? = null
     private var favoriteSongKeys: Set<String> = emptySet()
+    private var bluetoothMode = BluetoothMetadataMode.SongAndLyrics
+    private var metadataModeJob: Job? = null
+    private var lastActiveQueueItemId = MediaSession.QueueItem.UNKNOWN_ID.toLong()
+    private val carArtwork = CarArtworkPublicationOwner(scope, port) {
+        invalidateMetadataSnapshot()
+        updateMetadata()
+    }
 
-    fun initializeSession(callback: MediaSession.Callback) = port.initializeSession(callback)
+    fun initializeSession(callback: MediaSession.Callback) {
+        port.initializeSession(callback)
+        metadataModeJob?.cancel()
+        metadataModeJob = scope.launch {
+            source.bluetoothMetadataModes().collect { mode ->
+                bluetoothMode = mode
+                updateMetadata()
+            }
+        }
+    }
 
     fun sessionOrNull(): MediaSession? = port.sessionOrNull()
 
@@ -241,7 +273,8 @@ internal class PlaybackServicePresentationOwner(
     }
 
     fun updateMetadata() {
-        val song = source.playback().song
+        val playback = source.playback()
+        val song = playback.song
         val artworkSnapshot = artwork.observe(song)
         val metadataInputs = source.metadata()
         val text = serviceMetadataText(
@@ -249,8 +282,14 @@ internal class PlaybackServicePresentationOwner(
             payload = metadataInputs.payload,
             audioDeviceType = metadataInputs.audioDeviceType,
             forceSendLyrics = metadataInputs.forceSendLyrics,
+            mode = bluetoothMode,
+            normalAlbum = metadataInputs.album,
         )
-        val snapshot = serviceMetadataSnapshot(song, text, artworkSnapshot)
+        val snapshot = serviceMetadataSnapshot(
+            song, text, artworkSnapshot, playback.queue.size, playback.queueIndex,
+            carArtwork.observe(song, artworkSnapshot),
+            serviceMetadataMediaId(song, playback.queue, playback.queueIndex),
+        )
         if (snapshot == lastMetadataSnapshot) return
         lastMetadataSnapshot = snapshot
         port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot))
@@ -269,8 +308,11 @@ internal class PlaybackServicePresentationOwner(
             floatingLyricsEnabled = floatingLyricsEnabled,
         )
         val nowMs = port.elapsedRealtime()
-        if (!playbackStateThrottler.shouldDispatch(state, positionMs, speed, fingerprint, nowMs, force)) return
-        port.setPlaybackState(buildPlaybackState(state, positionMs, speed, favorite, canToggleFavorite, floatingLyricsEnabled))
+        val activeQueueId = carQueueItemId(playback.queue, playback.queueIndex)
+        if (activeQueueId == lastActiveQueueItemId &&
+            !playbackStateThrottler.shouldDispatch(state, positionMs, speed, fingerprint, nowMs, force)) return
+        port.setPlaybackState(buildPlaybackState(state, positionMs, speed, favorite, canToggleFavorite, floatingLyricsEnabled, activeQueueId))
+        lastActiveQueueItemId = activeQueueId
         playbackStateThrottler.recordDispatch(state, positionMs, speed, fingerprint, nowMs)
     }
 
@@ -319,12 +361,16 @@ internal class PlaybackServicePresentationOwner(
         favorite: Boolean,
         canToggleFavorite: Boolean,
         floatingLyricsEnabled: Boolean,
+        activeQueueItemId: Long,
     ): PlaybackState {
         val builder = PlaybackState.Builder()
             .setActions(mediaSessionPlaybackActions())
             .setState(state, positionMs, speed)
+            .setActiveQueueItemId(activeQueueItemId)
         if (canToggleFavorite) builder.addCustomAction(favoriteCustomAction(favorite))
         builder.addCustomAction(floatingLyricsCustomAction(floatingLyricsEnabled))
+        builder.addCustomAction(CAR_ACTION_TOGGLE_SHUFFLE, port.localizedString(CoreCommonR.string.car_action_shuffle, null), CoreCommonR.drawable.round_shuffle_24)
+        builder.addCustomAction(CAR_ACTION_CYCLE_REPEAT, port.localizedString(CoreCommonR.string.car_action_repeat, null), CoreCommonR.drawable.round_repeat_24)
         return builder.build()
     }
 

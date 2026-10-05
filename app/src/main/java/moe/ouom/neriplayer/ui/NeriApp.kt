@@ -1789,11 +1789,9 @@ private fun NeriAppContent(
                             { navigateToPlaybackSourceRoute(route) }
                         }
                     ) { _ ->
-                        // Keep the effect on a stable layer outside NavHost transitions
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .captureAdvancedGlassBackdrop(contentGlassBackdrop)
                         ) {
                             MainTabLayerHost(
                                 selectedRoute = selectedMainTabRoute,

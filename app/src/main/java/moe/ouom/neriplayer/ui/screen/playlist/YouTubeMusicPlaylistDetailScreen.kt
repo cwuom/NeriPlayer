@@ -57,8 +57,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -119,6 +117,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
@@ -571,35 +570,6 @@ fun YouTubeMusicPlaylistDetailScreen(
                         }
                     },
                     actions = {
-                        HapticIconButton(onClick = {
-                            if (allSelected) {
-                                clearSelection()
-                            } else if (requestedAllTracksLoaded) {
-                                selectAll()
-                            } else {
-                                showWaitForFullLoadMessage()
-                            }
-                        }) {
-                            Icon(
-                                imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                contentDescription = if (allSelected) {
-                                    stringResource(CoreCommonR.string.action_deselect_all)
-                                } else {
-                                    stringResource(CoreCommonR.string.action_select_all)
-                                }
-                            )
-                        }
-                        HapticIconButton(
-                            onClick = {
-                                if (selectedKeys.isNotEmpty()) showExportSheet = true
-                            },
-                            enabled = selectedKeys.isNotEmpty()
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                contentDescription = stringResource(CoreCommonR.string.cd_export_playlist)
-                            )
-                        }
                         HapticIconButton(
                             onClick = {
                                 if (selectedKeys.isNotEmpty()) {
@@ -616,6 +586,20 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 contentDescription = stringResource(CoreCommonR.string.cd_download_selected)
                             )
                         }
+                        PlaylistSelectionMoreMenu(
+                            allSelected = allSelected,
+                            onToggleSelectAll = {
+                                if (allSelected) {
+                                    clearSelection()
+                                } else if (requestedAllTracksLoaded) {
+                                    selectAll()
+                                } else {
+                                    showWaitForFullLoadMessage()
+                                }
+                            },
+                            canExport = selectedKeys.isNotEmpty(),
+                            onExport = { showExportSheet = true }
+                        )
                     },
                     windowInsets = WindowInsets.statusBars,
                     colors = TopAppBarDefaults.topAppBarColors(

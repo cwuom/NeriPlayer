@@ -14,5 +14,7 @@ data class CommentPage(
     /** 评论总数, 平台未提供时为 null */
     val total: Long?,
     val hasMore: Boolean,
-    val nextCursor: String? = null
+    val nextCursor: String? = null,
+    /** 一级评论及其楼中楼的总数，平台明确提供时用于核对列表是否已读完 */
+    val totalIncludingReplies: Long? = null
 )

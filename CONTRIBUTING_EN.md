@@ -822,6 +822,13 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 6. Original and translated Bluetooth lyrics are independent switches. When both
    are active, update title/artist through one atomic snapshot and keep tests for
    track identity, field bounds, whitespace normalization, and duplicate suppression.
+7. `bluetooth_metadata_mode` applies to actual Bluetooth output and preserves Dynamic Island
+   behavior otherwise. The runtime's `service/car` browser uses a private service binder to
+   share the existing framework session. Browsing must not promote a foreground service or
+   resume playback; an explicit playback action starts the private playback service.
+   Resolve media IDs against the current library. Artwork uses a restricted read-only provider
+   with a bounded JPEG cache; clients cannot supply arbitrary files or remote URLs.
+   Compat is limited to the browse/search bridge for the existing session.
 
 #### 13. Modify Listen Together
 

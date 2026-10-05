@@ -412,6 +412,8 @@ For release build and signing details, see
   mismatched durations fall back to automatic lyrics.
   Remote tracks display cached lyrics first, then try the preferred source in the background.
   A successful match replaces the displayed lyrics; otherwise the cached lyrics remain.
+  When the current source has no romanization, NeriPlayer tries NetEase while keeping the
+  original lyrics and translation. The source's own romanization and manually edited or cleared tracks take precedence.
   Changing either setting clears cached lyrics so the new preference applies immediately.
   The **Lyric Offset** card has separate defaults for NetEase, QQ Music, Kugou,
   LRCLIB, and AMLL TTML, with individual and all-source reset buttons. The last
@@ -525,7 +527,11 @@ For release build and signing details, see
   song that was also manually added appears in both tabs. Removing a manually added song
   only removes its playlist entry, while confirming deletion of a downloaded song also
   removes its managed download files. User playlists support create, rename,
-  delete, reorder, and add-song actions. Playlist or song deletion shows undo
+  delete, reorder, and add-song actions. After a long press, delete and download stay
+  in the top bar while other actions move into More. In reorderable playlists, selected
+  songs can move together to a final position, with artwork and up to five neighboring
+  songs on each side shown in a preview before confirmation. After saving, the list
+  scrolls to the inserted songs and a snackbar offers undo. Playlist or song deletion shows undo
   feedback, and batch export into a local playlist confirms the target and can
   undo newly added items. Each detail shows the total play count, and Favorites
   offers playlist, artist, and Hot categories with playable weekly/monthly playlists
@@ -624,8 +630,18 @@ For release build and signing details, see
   disconnect, and USB exclusive playback toggles. The external lyrics path
   receives the current song, playback state, position, word-level lyrics,
   and translations. Original and translated Bluetooth lyrics have independent
-  switches; when both are enabled, they use separate title and artist fields while
+  switches; in the original lyric compatibility mode, enabling both uses separate title and artist fields while
   track identity remains available through album/description metadata.
+- 🚗 **Car playback**:
+  Bluetooth media metadata includes title, artist, album, duration, track counts, and artwork.
+  Under Lyrics settings, Bluetooth car display offers song information, song with lyrics,
+  or the original lyric compatibility mode. The default combines song and lyrics while preserving
+  the artist; previously saved mode choices remain unchanged.
+  Android Auto and AVRCP browsing clients can browse the queue, local playlists, recent history,
+  and offline songs, search the existing library, select songs, resume the saved queue,
+  and control playback. Connecting the browser does not start playback.
+  AVRCP has no separate lyric field, so lyrics use the title field. Artwork and lyric refresh
+  depend on both the phone and the car. A standalone Android Automotive OS app is not included.
 - 🛠️ **Developer mode and debug tools**:
   tap the version number **7 times** to reveal the `Debug` tab, including
   YouTube / Bili / NetEase / Search / Listen Together probes, log viewer, and
@@ -1344,6 +1360,9 @@ This means:
 - ✍️ An external native contribution is not added to the alternative-license
   scope merely by submitting a PR; the contributor must explicitly record a
   dual-license grant.
+- 📦 The Shizuku/XMSF firewall integration for Xiaomi Super Island lyrics
+  directly ports relevant Capsulyric source, which is released under GPL-3.0;
+  see [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md) for attribution.
 - 📚 See [LICENSE](./LICENSE) for details.
 
 ---

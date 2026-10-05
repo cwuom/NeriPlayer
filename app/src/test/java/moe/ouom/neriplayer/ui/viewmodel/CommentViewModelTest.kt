@@ -204,6 +204,40 @@ class CommentViewModelTest {
     }
 
     @Test
+    fun `a cached terminal page accounts for replies before and after the network check`() = commentTest {
+        val item = comment("root", CommentPlatform.BILIBILI).copy(replyCount = 2L)
+        val cached = pageOf(1, listOf("root"), CommentPlatform.BILIBILI, hasMore = true, total = 3L).copy(
+            comments = listOf(item, item),
+            totalIncludingReplies = 3L
+        )
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI).apply {
+            cachedPage = cached
+            pages[1] = cached.copy(comments = listOf(item))
+            delayMs = 1_000L
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceTimeBy(100.milliseconds)
+            assertTrue(vm.uiState.value.isCheckingCache)
+            assertEquals(listOf("root"), vm.uiState.value.comments.map { it.id })
+            assertEquals(3L, vm.uiState.value.totalIncludingReplies)
+            assertFalse(vm.uiState.value.hasMore)
+
+            advanceUntilIdle()
+            vm.loadMore()
+            advanceUntilIdle()
+            assertEquals(listOf(1), repository.requestedPages)
+            assertFalse(vm.uiState.value.hasMore)
+            assertFalse(vm.uiState.value.isCheckingCache)
+            assertNull(vm.uiState.value.error)
+            assertNull(vm.uiState.value.loadMoreError)
+        } finally {
+            vm.onSheetHidden()
+        }
+    }
+
+    @Test
     fun `cursor-only cache updates stay silent but visible changes with the same id animate`() = commentTest {
         val cached = pageOf(1, listOf("1"), CommentPlatform.NETEASE).copy(nextCursor = "old")
         val repository = FakeCommentRepository(CommentPlatform.NETEASE).apply {
@@ -734,6 +768,65 @@ class CommentViewModelTest {
         assertEquals(listOf(1, 2), repository.requestedPages)
     }
 
+    @Test
+    fun `inclusive totals accumulate distinct roots across pages and survive a missing later total`() = commentTest {
+        val roots = listOf("a", "b", "c").map {
+            comment(it, CommentPlatform.BILIBILI).copy(replyCount = 1L)
+        }
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI).apply {
+            pages[1] = pageOf(1, listOf("a", "b"), platform, hasMore = true, total = 6L).copy(
+                comments = roots.take(2),
+                totalIncludingReplies = 6L
+            )
+            pages[2] = pageOf(2, listOf("b", "c"), platform, hasMore = true).copy(
+                comments = roots.drop(1)
+            )
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.hasMore)
+            vm.loadMore()
+            advanceUntilIdle()
+
+            val state = vm.uiState.value
+            assertEquals(listOf("a", "b", "c"), state.comments.map { it.id })
+            assertEquals(2, state.page)
+            assertEquals(6L, state.total)
+            assertEquals(6L, state.totalIncludingReplies)
+            assertFalse(state.hasMore)
+            assertNull(state.loadMoreError)
+            vm.loadMore()
+            advanceUntilIdle()
+            assertEquals(listOf(1, 2), repository.requestedPages)
+        } finally {
+            vm.onSheetHidden()
+        }
+    }
+
+    @Test
+    fun `refresh does not reuse an inclusive total omitted by the new first page`() = commentTest {
+        val repository = FakeCommentRepository(CommentPlatform.BILIBILI).apply {
+            pages[1] = pageOf(1, listOf("a"), platform, hasMore = true).copy(totalIncludingReplies = 1L)
+        }
+        val vm = CommentViewModel().apply { repositoryFactory = { repository } }
+        try {
+            vm.onSourceChanged(source(repository.platform, 1L))
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.hasMore)
+
+            repository.pages[1] = pageOf(1, listOf("a"), repository.platform, hasMore = true)
+            vm.refresh()
+            advanceUntilIdle()
+            assertNull(vm.uiState.value.totalIncludingReplies)
+            assertTrue(vm.uiState.value.hasMore)
+            assertEquals(listOf(1, 1), repository.requestedPages)
+        } finally {
+            vm.onSheetHidden()
+        }
+    }
+
     /**
      * 连续调用 loadMore 时仅第一个请求生效，飞行中的重复请求被忽略（页码只到 2）。
      */
@@ -987,6 +1080,43 @@ class CommentViewModelTest {
                 listOf(comment("x", CommentPlatform.NETEASE))
             ).map { it.id }
         )
+    }
+
+    @Test
+    fun `inclusive pagination keeps the platform end and requires an exact known total`() {
+        val items = listOf(comment("root", CommentPlatform.BILIBILI).copy(replyCount = 1L))
+        assertFalse(hasMoreComments(false, items, null))
+        assertFalse(hasMoreComments(false, items, 3L))
+        assertTrue(hasMoreComments(true, items, null))
+        assertFalse(hasMoreComments(true, items, 2L))
+        assertTrue(hasMoreComments(true, items, 3L))
+        assertTrue(hasMoreComments(true, items, 1L))
+    }
+
+    @Test
+    fun `unknown reply counts and previews do not inflate the inclusive count`() {
+        val preview = comment("reply", CommentPlatform.BILIBILI).copy(replyCount = 10L)
+        val root = comment("root", CommentPlatform.BILIBILI).copy(previewReplies = listOf(preview))
+        assertTrue(hasMoreComments(true, listOf(root), 2L))
+        assertFalse(hasMoreComments(true, listOf(root), 1L))
+        assertFalse(hasMoreComments(true, listOf(root.copy(replyCount = 1L)), 2L))
+        assertFalse(hasMoreComments(true, listOf(root.copy(replyCount = -1L)), 1L))
+    }
+
+    @Test
+    fun `inclusive pagination handles long limits without treating overflow as completion`() {
+        val root = comment("root", CommentPlatform.BILIBILI)
+        assertFalse(hasMoreComments(true, listOf(root.copy(replyCount = Long.MAX_VALUE - 1L)), Long.MAX_VALUE))
+        assertTrue(hasMoreComments(true, listOf(root.copy(replyCount = Long.MAX_VALUE)), Long.MAX_VALUE))
+        assertFalse(hasMoreComments(true, listOf(
+            root.copy(replyCount = Long.MAX_VALUE - 2L),
+            root.copy(id = "other", replyCount = 0L)
+        ), Long.MAX_VALUE))
+        assertTrue(hasMoreComments(true, listOf(
+            root.copy(replyCount = Long.MAX_VALUE - 2L),
+            root.copy(id = "other", replyCount = 1L)
+        ), Long.MAX_VALUE))
+        assertFalse(hasMoreComments(true, listOf(root.copy(replyCount = Long.MIN_VALUE)), 1L))
     }
 
     /**

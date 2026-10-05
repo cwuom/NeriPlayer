@@ -31,6 +31,29 @@ class NowPlayingLyricsResolutionTest {
     private val localSong = song.copy(album = "__local_files__", mediaUri = "content://media/audio/6")
 
     @Test
+    fun `stored and downloaded embedded romanization precede online fallback and preserve independent clears`() = runTest {
+        val raw = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+            <body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Hello</span>
+            <span ttm:role="x-roman">Halo</span></p></div></body></tt>"""
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun onlineRomanized(song: SongItem): List<LyricEntry> = error("must keep existing romanization")
+        }
+        val originalSources = listOf(
+            inputs(song.copy(matchedLyric = raw)),
+            inputs(localSong, downloaded = ManagedDownloadStorage.DownloadedLyricsBundle(raw, null, null,
+                hasOriginalSidecar = true), managed = true)
+        )
+        for (input in originalSources) {
+            assertFalse(shouldReadNeteaseRomanized(input))
+            val netease = NowPlayingNeteaseFallback("", "[00:01.00]network romaji")
+            assertEquals(listOf("Halo"), resolveBackgroundPhonetic(input, netease, sources).map { it.text })
+            assertNull(buildBackgroundRawLyrics(input, netease).phonetic)
+            val cleared = input.copy(song = input.song?.copy(lyricSyncEdited = true, matchedRomanizedLyric = ""))
+            assertTrue(resolveBackgroundPhonetic(cleared, NowPlayingNeteaseFallback("", ""), sources).isEmpty())
+        }
+    }
+
+    @Test
     fun `confirmed edited variants override local download and word timing refresh including explicit clears`() = runTest {
         val local = LocalLyricsScanMetadata("[00:01.00]local", "[00:01.00]local translation", "[00:01.00]local romanized")
         val downloaded = ManagedDownloadStorage.DownloadedLyricsBundle(

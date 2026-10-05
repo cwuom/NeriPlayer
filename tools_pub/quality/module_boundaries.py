@@ -9,7 +9,7 @@ import sys
 
 PROJECT_REFERENCE = re.compile(r'project\("(:[\w:-]+)"\)')
 CONFIGURED_PROJECT_REFERENCE = re.compile(
-    r'\b(ksp|testImplementation)\s*\(\s*project\("(:[\w:-]+)"\)\s*\)'
+    r'\b(ksp|testImplementation|compileOnly)\s*\(\s*project\("(:[\w:-]+)"\)\s*\)'
 )
 MODULE_INCLUDE = re.compile(r'(?:include|includeOwnedLibrary)\("(:[\w:-]+)"\)')
 OWNED_INCLUDE = re.compile(r'includeOwnedLibrary\("(:[\w:-]+)"\)')
@@ -99,6 +99,7 @@ ALLOWED_DEPENDENCIES = {
     },
 }
 CONFIGURED_DEPENDENCIES = {
+    (":playback:runtime", "compileOnly"): {":hidden-api"},
     (":local", "ksp"): {":ksp-processor"},
     (":download:runtime", "testImplementation"): {":sync"},
 }

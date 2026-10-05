@@ -16,6 +16,32 @@ import org.junit.Test
 
 class ManagedLibraryProcessingStateTest {
     @Test
+    fun `old catalog scan cannot complete or suspend a resumed upgrade with the same id`() {
+        val captured = ManagedLibraryProcessingState.Running(
+            operationId = "legacy-upgrade",
+            reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+        )
+        val resumed = captured.copy(phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE)
+        val rebuiltAgain = resumed.copy(phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX)
+        for (current in listOf(resumed, rebuiltAgain)) {
+            assertEquals(current, ManagedLibraryProcessingStateMachine.complete(
+                current, captured.operationId, expectedState = captured
+            ))
+            assertEquals(current, ManagedLibraryProcessingStateMachine.waitingForRetry(
+                current, captured.operationId, expectedState = captured
+            ))
+        }
+        val waiting = ManagedLibraryProcessingStateMachine.waitingForRetry(
+            captured, captured.operationId, expectedState = captured
+        )
+        assertTrue(waiting is ManagedLibraryProcessingState.WaitingForRetry)
+        assertEquals(ManagedLibraryProcessingState.Idle, ManagedLibraryProcessingStateMachine.complete(
+            waiting, captured.operationId, expectedState = waiting
+        ))
+    }
+
+    @Test
     fun `older operation cannot clear a newer directory rebuild`() {
         val first = ManagedLibraryProcessingStateMachine.begin(
             operationId = "first",

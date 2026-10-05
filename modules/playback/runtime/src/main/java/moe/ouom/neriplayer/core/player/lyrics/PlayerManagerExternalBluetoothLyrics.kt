@@ -15,7 +15,6 @@ import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
@@ -32,6 +31,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     floatingTranslationMatchesByIndex = emptyMap()
     externalBluetoothLyricsSongKey = song?.stableKey()
     clearExternalBluetoothLyricLine()
+    onLiveLyricSongChanged()
 
     if (!shouldProvideExternalLyricLine() || song == null) {
         return
@@ -199,6 +199,8 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
     if (_externalBluetoothLyricPayloadFlow.value != payload) {
         _externalBluetoothLyricPayloadFlow.value = payload
     }
+
+    publishLiveLyricSurfaces(song, positionMs, lyricOffsetMs)
 }
 
 internal fun PlayerManager.clearExternalBluetoothLyricLine() {
@@ -209,6 +211,7 @@ internal fun PlayerManager.clearExternalBluetoothLyricLine() {
     if (_externalBluetoothLyricPayloadFlow.value != ExternalBluetoothLyricPayload()) {
         _externalBluetoothLyricPayloadFlow.value = ExternalBluetoothLyricPayload()
     }
+    clearLiveUpdateLyric()
 }
 
 private fun PlayerManager.clearFloatingTranslatedLyricLine() {
@@ -223,6 +226,8 @@ private fun PlayerManager.shouldProvideExternalLyricLine(): Boolean {
     return externalBluetoothLyricsEnabled ||
         externalBluetoothTranslationEnabled ||
         dynamicIslandLyricsEnabled ||
+        xiaomiSuperIslandLyricEnabled ||
+        liveUpdateLyricEnabled ||
         statusBarLyricsEnable ||
         floatingLyricsEnabled
 }
@@ -232,7 +237,9 @@ private fun PlayerManager.shouldProvideExternalTranslatedLyricLine(): Boolean {
         externalBluetoothTranslationEnabled = externalBluetoothTranslationEnabled,
         floatingLyricsEnabled = floatingLyricsEnabled,
         floatingLyricsShowTranslation = floatingLyricsShowTranslation,
-        dynamicIslandLyricsEnabled = dynamicIslandLyricsEnabled
+        dynamicIslandLyricsEnabled = dynamicIslandLyricsEnabled,
+        xiaomiSuperIslandLyricEnabled = xiaomiSuperIslandLyricEnabled,
+        liveUpdateLyricEnabled = liveUpdateLyricEnabled
     )
 }
 
@@ -240,17 +247,22 @@ internal fun shouldProvideExternalTranslatedLyricLine(
     externalBluetoothTranslationEnabled: Boolean,
     floatingLyricsEnabled: Boolean,
     floatingLyricsShowTranslation: Boolean,
-    dynamicIslandLyricsEnabled: Boolean
+    dynamicIslandLyricsEnabled: Boolean,
+    xiaomiSuperIslandLyricEnabled: Boolean = false,
+    liveUpdateLyricEnabled: Boolean = false
 ): Boolean {
     return externalBluetoothTranslationEnabled ||
         dynamicIslandLyricsEnabled ||
+        xiaomiSuperIslandLyricEnabled ||
+        liveUpdateLyricEnabled ||
         (floatingLyricsEnabled && floatingLyricsShowTranslation)
 }
 
 internal fun PlayerManager.isExternalBluetoothLyricCadenceActive(): Boolean {
     val deviceType = _currentAudioDevice.value?.type
     val hasBluetoothOutput = deviceType != null && isBluetoothOutputType(deviceType)
-    return (dynamicIslandLyricsEnabled || hasBluetoothOutput) &&
-        (externalBluetoothLyricsEnabled || externalBluetoothTranslationEnabled || dynamicIslandLyricsEnabled) &&
+    return (dynamicIslandLyricsEnabled || xiaomiSuperIslandLyricEnabled || liveUpdateLyricEnabled || hasBluetoothOutput) &&
+        (externalBluetoothLyricsEnabled || externalBluetoothTranslationEnabled ||
+            dynamicIslandLyricsEnabled || xiaomiSuperIslandLyricEnabled || liveUpdateLyricEnabled) &&
         externalBluetoothLyrics.isNotEmpty()
 }

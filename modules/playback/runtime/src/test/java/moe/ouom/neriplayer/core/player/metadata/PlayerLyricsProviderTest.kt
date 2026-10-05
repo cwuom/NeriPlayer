@@ -256,7 +256,7 @@ class PlayerLyricsProviderTest {
                 dependencies.netease, dependencies.neteaseCache, dependencies.matcher, true,
                 LyricSourcePreference.Kugou, dependencies.youtubeCache, "bili")
             val romanized = PlayerLyricsProvider.getRomanizedLyrics(base.copy(matchedRomanizedLyric = text), dependencies.application,
-                dependencies.netease, dependencies.neteaseCache, dependencies.matcher, true, LyricSourcePreference.Kugou, "bili")
+                dependencies.netease, dependencies.neteaseCache, dependencies.matcher, true, LyricSourcePreference.Kugou)
             val expected = if (text.isEmpty()) emptyList() else listOf("user")
             assertEquals(expected, original.map { it.text })
             assertEquals(expected, translated.map { it.text })

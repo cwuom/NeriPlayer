@@ -73,6 +73,7 @@ internal fun GlobalDownloadManager.requestLocalScanLocked(
 
     activeRefreshForceRefresh = forceRefresh
     refreshJob = scope.launch {
+        val processingStateAtStart = ManagedLibraryProcessingCoordinator.state.value
         var latestOutcome: ManagedLibraryRefreshOutcome =
             ManagedLibraryRefreshOutcome.Failed("download directory scan did not run")
         try {
@@ -109,14 +110,20 @@ internal fun GlobalDownloadManager.requestLocalScanLocked(
             } else {
                 false
             }
-            if (shouldCompleteProcessingAfterCatalogPublish(retryState, migrationRequestActive)) {
+            val legacyUpgrade = retryState.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
+            if (shouldCompleteProcessingAfterCatalogPublish(retryState, migrationRequestActive) &&
+                (!legacyUpgrade || retryState === processingStateAtStart)
+            ) {
                 retryState.operationId?.let { operationId ->
+                    // 只允许升级完成后开始的扫描收尾，期间重新恢复升级会使旧扫描失效
+                    val expectedState = processingStateAtStart.takeIf { legacyUpgrade }
                     if (latestOutcome is ManagedLibraryRefreshOutcome.Published) {
-                        ManagedLibraryProcessingCoordinator.complete(context, operationId)
+                        ManagedLibraryProcessingCoordinator.complete(context, operationId, expectedState)
                     } else {
                         ManagedLibraryProcessingCoordinator.waitingForRetry(
                             context,
-                            operationId
+                            operationId,
+                            expectedState
                         )
                     }
                 }

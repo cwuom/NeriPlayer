@@ -7,8 +7,10 @@ import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.lyrics.WordTiming
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadStages
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.hasDisplayableContent
@@ -21,6 +23,77 @@ import org.mockito.Mockito
 class NowPlayingLyricsBackgroundStageTest {
     private val context = Mockito.mock(Context::class.java)
     private val remote = SongItem(7L, "Remote", "Artist", "Album", 1L, 60_000L, null)
+
+    @Test
+    fun `refreshed netease word timing confirms source before reusing romanization`() = runTest {
+        var sourceConfirmed = false
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun neteaseOriginal(songId: Long) = "[1000,1000](1000,1000,0)fresh original"
+            override suspend fun onlineOriginal(song: SongItem): List<LyricEntry> {
+                sourceConfirmed = true
+                return listOf(LyricEntry("fresh original", 1_000, 2_000, listOf(WordTiming(1_000, 2_000))))
+            }
+            override suspend fun onlineRomanized(song: SongItem) = listOf(
+                LyricEntry(if (sourceConfirmed) "current romaji" else "old amll romaji", 1_000, 2_000)
+            )
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val input = request(remote.copy(album = "Netease"))
+
+        val loaded = stages.readBackground(input, stages.readFast(input))
+
+        assertEquals(listOf("fresh original"), loaded.lyrics.map { it.text })
+        assertEquals(listOf("current romaji"), loaded.phoneticLyrics.map { it.text })
+        assertTrue(sourceConfirmed)
+    }
+
+    @Test
+    fun `automatic word timed source supplies its romanization before netease fallback`() = runTest {
+        var romanizedReads = 0
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun neteaseOriginal(songId: Long) = "[00:01.00]netease original"
+            override suspend fun neteaseRomanized(songId: Long): String {
+                romanizedReads++
+                return "[00:01.00]netease romaji"
+            }
+            override suspend fun onlineOriginal(song: SongItem) = listOf(
+                LyricEntry("amll original", 1_000, 2_000, listOf(WordTiming(1_000, 2_000)))
+            )
+            override suspend fun onlineRomanized(song: SongItem) = listOf(LyricEntry("amll romaji", 1_000, 2_000))
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val input = request(remote.copy(album = "Netease"))
+
+        val loaded = stages.readBackground(input, stages.readFast(input))
+
+        assertEquals(listOf("amll original"), loaded.lyrics.map { it.text })
+        assertEquals(listOf("amll romaji"), loaded.phoneticLyrics.map { it.text })
+        assertEquals(0, romanizedReads)
+        assertTrue(loaded.rawPhoneticLyrics.isNullOrEmpty())
+    }
+
+    @Test
+    fun `automatic source preserves embedded romanization before netease prefetch`() = runTest {
+        val raw = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+            <body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Hello</span>
+            <span ttm:role="x-roman">Halo</span></p></div></body></tt>"""
+        var romanizedReads = 0
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun neteaseRomanized(songId: Long): String {
+                romanizedReads++
+                return "[00:01.00]network romaji"
+            }
+            override suspend fun onlineRomanized(song: SongItem): List<LyricEntry> = error("existing romanization must win")
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val input = request(remote.copy(album = "Netease", matchedLyric = raw), preferWordTimed = false)
+
+        val loaded = stages.readBackground(input, stages.readFast(input))
+
+        assertEquals(listOf("Halo"), loaded.phoneticLyrics.map { it.text })
+        assertEquals(0, romanizedReads)
+        assertTrue(loaded.rawPhoneticLyrics.isNullOrEmpty())
+    }
 
     @Test
     fun `preferred background hit fills absent tracks and overlays partial edits before returning`() = runTest {
@@ -120,7 +193,7 @@ class NowPlayingLyricsBackgroundStageTest {
             }
         }
         val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
-        val request = request(remote.copy(matchedSongId = "123"), preferWordTimed = false)
+        val request = request(remote.copy(matchedSongId = "123", matchedLyricSource = MusicPlatform.CLOUD_MUSIC), preferWordTimed = false)
         val fast = stages.readFast(request)
         val background = stages.readBackground(request, fast)
         assertEquals(1, originalReads)
@@ -145,7 +218,8 @@ class NowPlayingLyricsBackgroundStageTest {
             }
         }
         val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
-        val request = request(remote.copy(matchedSongId = "123", matchedLyric = "[00:01.00]stored"), preferWordTimed = false)
+        val request = request(remote.copy(matchedSongId = "123", matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+            matchedLyric = "[00:01.00]stored"), preferWordTimed = false)
         val fast = stages.readFast(request)
         val background = stages.readBackground(request, fast)
         assertEquals(0, originalReads)

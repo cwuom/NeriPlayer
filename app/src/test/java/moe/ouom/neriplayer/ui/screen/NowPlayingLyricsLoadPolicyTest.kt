@@ -23,6 +23,15 @@ class NowPlayingLyricsLoadPolicyTest {
     private val song = SongItem(61L, "Song", "Artist", "Album", 1L, 60_000L, null)
 
     @Test
+    fun `netease prefetch rejects ids from other platforms and unclassified matches`() {
+        assertNull(resolvePreferredNeteaseLyricSongId(song.copy(
+            matchedLyricSource = MusicPlatform.QQ_MUSIC, matchedSongId = "123")))
+        assertNull(resolvePreferredNeteaseLyricSongId(song.copy(matchedSongId = "123")))
+        assertNull(resolvePreferredNeteaseLyricSongId(song.copy(
+            album = "Bilibili", matchedLyricSource = MusicPlatform.CLOUD_MUSIC)))
+    }
+
+    @Test
     fun `confirmed original preserves user collapsed content while absent variants retain preferred fallback`() {
         val collapsed = "[00:00.00]one\n[00:00.00]two\n[00:00.00]three"
         val preferred = PreferredLyricSourceResult(listOf(LyricEntry("cache", 1000, 2000)),
@@ -55,9 +64,10 @@ class NowPlayingLyricsLoadPolicyTest {
     fun `netease match id wins and direct source id is used only for tagged song`() {
         assertNull(resolvePreferredNeteaseLyricSongId(null))
         assertNull(resolvePreferredNeteaseLyricSongId(song))
-        assertEquals(123L, resolvePreferredNeteaseLyricSongId(song.copy(matchedSongId = "123")))
+        assertEquals(123L, resolvePreferredNeteaseLyricSongId(song.copy(
+            matchedLyricSource = MusicPlatform.CLOUD_MUSIC, matchedSongId = "123")))
         assertEquals(61L,
-            resolvePreferredNeteaseLyricSongId(song.copy(matchedLyricSource = MusicPlatform.CLOUD_MUSIC))
+            resolvePreferredNeteaseLyricSongId(song.copy(album = "Netease", matchedLyricSource = MusicPlatform.CLOUD_MUSIC))
         )
         assertEquals(61L,
             resolvePreferredNeteaseLyricSongId(song.copy(mediaUri = "https://music.163.com/song"))

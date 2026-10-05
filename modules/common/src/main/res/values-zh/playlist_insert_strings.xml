@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_insert_action">插入到…</string>
+    <string name="playlist_insert_title">插入到指定位置</string>
+    <plurals name="playlist_insert_description">
+        <item quantity="other">将选中的 %1$d 首歌曲按当前顺序整体移动</item>
+    </plurals>
+    <string name="playlist_insert_position_label">最终起始序号</string>
+    <string name="playlist_insert_position_summary">起始位置：第 %1$d 位</string>
+    <string name="playlist_insert_edit_position">修改位置</string>
+    <string name="playlist_insert_position_hint">输入 1 到 %1$d</string>
+    <string name="playlist_insert_position_help">序号以移动后的歌单为准，可选范围 1–%1$d</string>
+    <string name="playlist_insert_invalid_position">请输入 1 到 %1$d 的整数</string>
+    <string name="playlist_insert_preview_action">预览位置</string>
+    <string name="playlist_insert_confirm_action">确认插入</string>
+    <string name="playlist_insert_preview_title">移动后的顺序</string>
+    <string name="playlist_insert_preview_range">选中歌曲将占据第 %1$d–%2$d 位</string>
+    <plurals name="playlist_insert_section_selected">
+        <item quantity="other">本次插入 · %1$d 首</item>
+    </plurals>
+    <string name="playlist_insert_section_before">插入位置之前</string>
+    <string name="playlist_insert_section_after">插入位置之后</string>
+    <string name="playlist_insert_at_start">歌单开头</string>
+    <string name="playlist_insert_at_end">歌单末尾</string>
+    <plurals name="playlist_insert_omitted_before">
+        <item quantity="other">前面还有 %1$d 首</item>
+    </plurals>
+    <plurals name="playlist_insert_omitted_after">
+        <item quantity="other">后面还有 %1$d 首</item>
+    </plurals>
+    <string name="playlist_insert_invalid_selection">选择的歌曲已变化，请关闭弹窗后重新选择</string>
+    <string name="playlist_insert_stale">歌单内容已变化，请重新预览</string>
+    <string name="playlist_insert_failed">插入失败，请重试</string>
+    <string name="playlist_insert_success">已移动到第 %1$d 位</string>
+    <string name="playlist_insert_undone">已撤销移动</string>
+    <string name="playlist_insert_undo_stale">歌单已变化，无法撤销本次移动</string>
+    <string name="playlist_insert_undo_failed">撤销移动失败</string>
+</resources>
