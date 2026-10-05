@@ -149,9 +149,9 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          # Pixel Launcher 的 ANR 弹窗会占用测试窗口焦点，CI 不需要桌面交互
+          # 保留 Launcher 的系统导航服务，用设置页承接构建期间的前台焦点
           script: >-
-            adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher &&
+            adb shell am start -W -a android.settings.SETTINGS &&
             ./gradlew :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest :playback:runtime:connectedDebugAndroidTest :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             --warning-mode all --stacktrace
