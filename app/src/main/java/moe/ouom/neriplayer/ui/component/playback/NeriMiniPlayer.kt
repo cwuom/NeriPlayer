@@ -109,7 +109,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 object NeriMiniPlayerDefaults {
     val Height = 64.dp
-    val TabletHeight = 76.dp
+    val TabletHeight = 72.dp
     internal val TabletProgressHeight = 12.dp
     internal val TabletProgressThickness = 4.dp
     internal val TabletMetadataVerticalPadding = 2.dp

@@ -63,7 +63,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHomePageGroups
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsSearchEntry
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
-import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 internal data class PendingSettingsSearchNavigation(
     val page: SettingsPage,
@@ -152,10 +151,18 @@ internal fun SettingsPageHost(
         AdvancedGlassScene(active = true) {
             content(activePage)
         }
-        return
+    } else {
+        SettingsStackedPageHost(activePage, isolateAdvancedGlassTransitions, content)
     }
+}
 
-    if (LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
+@Composable
+private fun SettingsStackedPageHost(
+    activePage: SettingsPage?,
+    isolateAdvancedGlassTransitions: Boolean,
+    content: @Composable (SettingsPage?) -> Unit
+) {
+    if (shouldUseTabletSettingsTransitions(LocalConfiguration.current.smallestScreenWidthDp)) {
         SettingsPageTransitionHost(
             activePage = activePage,
             isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,

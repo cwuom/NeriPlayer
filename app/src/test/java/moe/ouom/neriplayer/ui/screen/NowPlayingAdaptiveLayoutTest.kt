@@ -8,11 +8,15 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
+import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingBackIcon
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingAdaptiveCoverSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingTopBarButtonSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingPhoneTopActionButtonSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideLayoutSpec
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingWideControlSlot
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideControlPlacement
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideControlOffsets
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideLyricViewport
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingTabletPortrait
@@ -29,16 +33,92 @@ import org.junit.Test
 
 class NowPlayingAdaptiveLayoutTest {
     @Test
+    fun `expanded identity and controls move together while short landscape preserves its top gap`() {
+        listOf(800.dp, 480.dp).forEach { height ->
+            val spec = resolveNowPlayingWideLayoutSpec(1280.dp, height)
+            val previousProgressOffset = if (spec.compactHeight) (-4).dp else (-12).dp
+            val leadingOffset = if (spec.compactHeight) 0.dp else (-12).dp
+            NowPlayingControlPlacement.entries.forEach { placement ->
+                val sections = resolveNowPlayingWideControlPlacement(
+                    placement.placesControlsAtBottom, placement.placesProgressAtBottom, spec.compactHeight
+                )
+                val offsets = resolveNowPlayingWideControlOffsets(spec, sections)
+                if (placement == NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS) {
+                    assertEquals(spec.progressVerticalOffset, offsets.progress)
+                    assertEquals(spec.controlAreaVerticalOffset, offsets.controls)
+                    assertEquals(-previousProgressOffset, offsets.controls - offsets.progress)
+                } else {
+                    assertEquals(previousProgressOffset + leadingOffset, offsets.progress)
+                    assertEquals(
+                        if (spec.compactHeight) 0.dp else 4.dp,
+                        spec.sectionSpacing + offsets.progress - offsets.identity
+                    )
+                    assertEquals(
+                        if (placement == NowPlayingControlPlacement.BOTTOM) spec.controlAreaVerticalOffset else leadingOffset,
+                        offsets.controls
+                    )
+                }
+                assertEquals(leadingOffset, offsets.identity)
+                assertEquals(4.dp, spec.sectionSpacing + offsets.identity)
+                assertEquals(spec.controlAreaVerticalOffset, offsets.toolbar)
+            }
+        }
+        val phoneSpec = resolveNowPlayingWideLayoutSpec(840.dp, 360.dp, phoneLandscape = true)
+        val phoneOffsets = resolveNowPlayingWideControlOffsets(
+            phoneSpec, resolveNowPlayingWideControlPlacement(true, true)
+        )
+        assertEquals(0.dp, phoneOffsets.identity)
+        assertEquals(0.dp, phoneOffsets.progress)
+        assertEquals(0.dp, phoneOffsets.controls)
+        assertEquals(0.dp, phoneOffsets.toolbar)
+    }
+
+    @Test
     fun `tablet landscape lifts progress within the existing gap and phone retains its footer`() {
         val tablet = resolveNowPlayingWideLayoutSpec(1280.dp, 800.dp)
         val shortTablet = resolveNowPlayingWideLayoutSpec(1280.dp, 480.dp)
         val phone = resolveNowPlayingWideLayoutSpec(840.dp, 360.dp, phoneLandscape = true)
-        assertEquals((-12).dp, tablet.progressVerticalOffset)
-        assertEquals((-4).dp, shortTablet.progressVerticalOffset)
+        assertEquals((-24).dp, tablet.progressVerticalOffset)
+        assertEquals((-8).dp, shortTablet.progressVerticalOffset)
         assertEquals(0.dp, phone.progressVerticalOffset)
+        assertEquals((-12).dp, tablet.controlAreaVerticalOffset)
+        assertEquals((-4).dp, shortTablet.controlAreaVerticalOffset)
+        assertEquals(0.dp, phone.controlAreaVerticalOffset)
         listOf(tablet, shortTablet).forEach { spec ->
-            assertTrue(-spec.progressVerticalOffset <= spec.sectionSpacing)
+            assertTrue(spec.controlAreaVerticalOffset - spec.progressVerticalOffset <= spec.sectionSpacing)
+            assertTrue(-spec.controlAreaVerticalOffset <= spec.sectionSpacing)
         }
+    }
+
+    @Test
+    fun `expanded and short tablet keep each persisted placement in the same order`() {
+        val progress = NowPlayingWideControlSlot.PROGRESS
+        val controls = NowPlayingWideControlSlot.CONTROLS
+        val expected = mapOf(
+            NowPlayingControlPlacement.LOWER to (listOf(progress, controls) to emptyList()),
+            NowPlayingControlPlacement.BOTTOM to (listOf(progress) to listOf(controls)),
+            NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS to (emptyList<NowPlayingWideControlSlot>() to listOf(progress, controls))
+        )
+        listOf(false, true).forEach { compactHeight ->
+            expected.forEach { (placement, sections) ->
+                val resolved = resolveNowPlayingWideControlPlacement(
+                    placement.placesControlsAtBottom, placement.placesProgressAtBottom, compactHeight
+                )
+                assertEquals(sections.first, resolved.leading)
+                assertEquals(sections.second, resolved.trailing)
+                assertEquals(listOf(progress, controls), resolved.leading + resolved.trailing)
+            }
+        }
+    }
+
+    @Test
+    fun `independent progress flags retain the legacy expanded and compact behavior`() {
+        val expanded = resolveNowPlayingWideControlPlacement(false, true)
+        val compact = resolveNowPlayingWideControlPlacement(false, true, compactHeight = true)
+        assertEquals(listOf(NowPlayingWideControlSlot.CONTROLS), expanded.leading)
+        assertEquals(listOf(NowPlayingWideControlSlot.PROGRESS), expanded.trailing)
+        assertEquals(expanded.leading, compact.leading)
+        assertTrue(compact.trailing.isEmpty())
     }
 
     @Test

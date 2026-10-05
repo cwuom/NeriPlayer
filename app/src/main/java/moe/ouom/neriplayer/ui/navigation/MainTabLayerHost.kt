@@ -111,6 +111,9 @@ internal fun resolveMainTabLayerSceneTransform(offsetFraction: Float): MainTabLa
     )
 }
 
+internal fun shouldBlockMainTabSceneInput(phase: MainTabLayerScenePhase, offsetFraction: Float): Boolean =
+    phase == MainTabLayerScenePhase.Exiting || abs(offsetFraction) >= 1f
+
 private fun Modifier.blockInactiveMainTabScene(blocked: Boolean): Modifier = if (blocked) {
     // 准备中和退场场景不能响应触摸或无障碍操作
     clearAndSetSemantics { hideFromAccessibility() }.pointerInput(Unit) {
@@ -329,8 +332,7 @@ internal fun MainTabLayerHost(
                     }
                     val blockSceneInput by remember(transitionState, scene) {
                         derivedStateOf(structuralEqualityPolicy()) {
-                            scene.phase == MainTabLayerScenePhase.Exiting ||
-                                abs(transitionState.offsetFractionFor(scene)) >= 1f
+                            shouldBlockMainTabSceneInput(scene.phase, transitionState.offsetFractionFor(scene))
                         }
                     }
                     Box(

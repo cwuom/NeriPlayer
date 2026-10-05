@@ -130,7 +130,7 @@ class NowPlayingAdaptiveLayoutTest {
         assertControlsFit(frame)
         assertTrue(bounds("controls").bottom < bounds("toolbar").top - logicalPixels(24.dp))
         assertTrue(bounds("cover").top >= bounds("topBar").bottom + logicalPixels(28.dp) - 1f)
-        assertTrue(bounds("identity").top >= bounds("cover").bottom + logicalPixels(28.dp) - 1f)
+        assertTrue(bounds("identity").top >= bounds("cover").bottom + logicalPixels(16.dp) - 1f)
         assertTrue(bounds("cover").width >= logicalPixels(350.dp) - 1f)
         assertSquareCover()
     }

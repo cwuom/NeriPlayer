@@ -173,6 +173,8 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.network.rememberOfflineModeState
 import moe.ouom.neriplayer.ui.haptic.syncHapticFeedbackSetting
 import moe.ouom.neriplayer.ui.navigation.AppBottomBarPresentation
+import moe.ouom.neriplayer.ui.navigation.playbackSourceNavigationAction
+import moe.ouom.neriplayer.ui.navigation.shouldSuppressPlaybackNavigation
 import moe.ouom.neriplayer.ui.navigation.AppMiniPlayerPresentation
 import moe.ouom.neriplayer.ui.navigation.AppNavigationGraph
 import moe.ouom.neriplayer.ui.navigation.AppNavigationGraphOwner
@@ -210,6 +212,7 @@ import moe.ouom.neriplayer.ui.playback.visual.rememberPlaybackVisualCoverState
 import moe.ouom.neriplayer.ui.playback.visual.resolveActiveCoverSeedHex
 import moe.ouom.neriplayer.ui.playback.visual.resolveCoverSeedWarmupDelayMillis
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostEnvironment
+import moe.ouom.neriplayer.ui.settings.route.isAppSettingsVisible
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsRoute
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealOverlayHost
@@ -1626,7 +1629,7 @@ private fun NeriAppContent(
                             onBeforeLanguageRestart = clearThemeRevealState,
                             onLanguageChanged = onLanguageChanged,
                             coherentFeedbackEnabled = coherentFeedbackEnabled,
-                            settingsVisible = selectedMainTabRoute == Destinations.Settings.route && !showNowPlaying
+                            settingsVisible = isAppSettingsVisible(selectedMainTabRoute, showNowPlaying)
                         ),
                         onBackgroundImageAlphaPreview = { pendingBackgroundImageAlpha = it },
                         snackbarHostState = snackbarHostState,
@@ -1734,6 +1737,11 @@ private fun NeriAppContent(
                 }
             }
 
+            val onOpenCurrentPlaybackSource = playbackSourceNavigationAction(
+                currentPlaybackSourceRoute,
+                ::navigateToPlaybackSourceRoute
+            )
+
             AdvancedGlassHost(
                 controller = advancedGlassController,
                 backgroundBackdrop = backgroundGlassBackdrop,
@@ -1768,7 +1776,7 @@ private fun NeriAppContent(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
                             currentDestination = backEntry?.destination,
-                            showNowPlaying = showNowPlaying || nowPlayingOverlayMounted,
+                            showNowPlaying = shouldSuppressPlaybackNavigation(showNowPlaying, nowPlayingOverlayMounted),
                             offlineMode = offlineMode,
                             alwaysUseNewTabStyle = alwaysUseNewTabStyle,
                             backgroundImageUri = backgroundImageUri
@@ -1785,9 +1793,7 @@ private fun NeriAppContent(
                         snackbarHostState = snackbarHostState,
                         onMainTabSelected = ::navigateToMainTab,
                         onExpandNowPlaying = { showNowPlaying = true },
-                        onOpenCurrentPlaybackSource = currentPlaybackSourceRoute?.let { route ->
-                            { navigateToPlaybackSourceRoute(route) }
-                        }
+                        onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
                     ) { _ ->
                         Box(
                             modifier = Modifier
@@ -1893,15 +1899,10 @@ private fun NeriAppContent(
                         },
                         onClose = { showNowPlaying = false }
                     ) {
-                        val currentSourceRoute = currentPlaybackSourceRoute
                         NowPlayingScreen(
                             onNavigateUp = { showNowPlaying = false },
                             onPhoneLandscapeBack = onPhoneLandscapeBack,
-                            onOpenCurrentPlaybackSource = currentSourceRoute?.let { route ->
-                                {
-                                    navigateToPlaybackSourceRoute(route)
-                                }
-                            },
+                            onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource,
                             showLyricsScreen = showNowPlayingLyrics,
                             onShowLyricsScreenChange = { showNowPlayingLyrics = it },
                             onEnterAlbum = { album ->

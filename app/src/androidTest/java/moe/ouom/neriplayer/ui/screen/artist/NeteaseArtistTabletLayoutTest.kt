@@ -8,13 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
@@ -66,6 +63,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
@@ -366,8 +364,10 @@ class NeteaseArtistTabletLayoutTest {
                         LocalDensity provides Density(baseDensity.density * scale, fontScale = 1f)
                     ) {
                         var selectedTab by remember { mutableIntStateOf(0) }
-                        Box(
-                            Modifier.requiredSize(width, height)
+                        FittedTestViewport(
+                            width = width,
+                            height = height,
+                            modifier = Modifier
                                 .background(MaterialTheme.colorScheme.background)
                                 .testTag(FIXTURE_ROOT)
                         ) {
@@ -476,10 +476,11 @@ class NeteaseArtistTabletLayoutTest {
                     LocalMiniPlayerHeight provides 0.dp
                 ) {
                     var selectedTab by remember { mutableIntStateOf(0) }
-                    Box(
+                    FittedTestViewport(
+                        width = width,
+                        height = height,
+                        fontScale = fontScale,
                         modifier = Modifier
-                            .requiredSize(width, height)
-                            .consumeWindowInsets(WindowInsets.safeDrawing)
                             .testTag(FIXTURE_ROOT)
                     ) {
                         NeteaseArtistDetailContent(

@@ -1,14 +1,9 @@
 package moe.ouom.neriplayer.ui.onboarding
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -43,6 +38,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.FittedTestViewport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -250,7 +246,7 @@ class StartupOnboardingLayoutTest {
                 CompositionLocalProvider(
                     LocalDensity provides Density(baseDensity.density, fontScale = fontScale)
                 ) {
-                    Box(Modifier.requiredSize(width, height)) {
+                    FittedTestViewport(width, height, fontScale = fontScale) {
                         StartupOnboardingLayout(
                             header = {
                                 Text(
@@ -296,11 +292,7 @@ class StartupOnboardingLayoutTest {
                         fontScale = fontScale
                     )
                 ) {
-                    Box(
-                        Modifier
-                            .requiredSize(width, height)
-                            .consumeWindowInsets(WindowInsets.safeDrawing)
-                    ) {
+                    FittedTestViewport(width, height, fontScale = fontScale) {
                         StartupOnboardingLayout(
                             header = {
                                 Text("引导说明", Modifier.height(160.dp).testTag("intro"))

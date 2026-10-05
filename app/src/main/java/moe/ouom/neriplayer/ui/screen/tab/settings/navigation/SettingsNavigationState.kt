@@ -21,6 +21,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
@@ -33,10 +34,22 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.resolveSettingsSearchHigh
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.searchSettingsEntries
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsSearchScrollAnchor
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import kotlin.math.roundToInt
 
 internal fun initialSettingsPage(splitLayout: Boolean): SettingsPage? =
     if (splitLayout) SettingsPage.General else null
+
+internal fun shouldUseTabletSettingsTransitions(smallestScreenWidthDp: Int): Boolean =
+    smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
+
+internal fun shouldUseSettingsSplitLayout(
+    smallestScreenWidthDp: Int,
+    windowWidth: Dp
+): Boolean = shouldUseTabletSettingsTransitions(smallestScreenWidthDp) && windowWidth >= 840.dp
+
+internal fun shouldShowSettingsDetailHeader(page: SettingsPage): Boolean =
+    page != SettingsPage.Accounts
 
 internal fun ensureSplitSettingsPage(splitLayout: Boolean, page: SettingsPage?): SettingsPage? =
     page ?: initialSettingsPage(splitLayout)
@@ -65,7 +78,9 @@ private fun rememberInitialSettingsPageState(): MutableState<SettingsPage?> =
 @Composable
 private fun settingsSplitLayout(): Boolean {
     // 手机播放页旋转时设置仍在底层组合，不能因此改写当前设置页
-    return LocalConfiguration.current.smallestScreenWidthDp >= 600 && currentWindowWidthDp() >= 840.dp
+    return shouldUseSettingsSplitLayout(
+        LocalConfiguration.current.smallestScreenWidthDp, currentWindowWidthDp()
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

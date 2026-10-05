@@ -113,6 +113,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.rememberSettingsBac
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsLoginExpandedContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.rememberSettingsAccountAuthController
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.shouldLoadSettingsAccountProfiles
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.ObserveSettingsBackupPlaylistCount
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.SettingsBackupRemoteDialogPort
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.rememberSettingsBackupTransferController
@@ -127,6 +128,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageHost
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.rememberSettingsNavigationState
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomePageItems
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowSettingsDetailHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.rememberSettingsQualityPresentation
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.openStorageSystemSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.rememberSettingsStorageDetailsController
@@ -142,7 +144,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageProcess
 internal fun SettingsScreen(
     listState: LazyListState,
     bindings: AppSettingsHostBindings,
-    isActive: Boolean = true,
+    isActive: Boolean,
     onNavigateToDownloadManager: () -> Unit
 ) {
     val appearanceState = bindings.state.appearance
@@ -262,6 +264,9 @@ internal fun SettingsScreen(
     )
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
+    val accountProfilesActive = shouldLoadSettingsAccountProfiles(
+        isActive, environment.settingsVisible, activeSettingsPage
+    )
     val storageDetailsController = rememberSettingsStorageDetailsController(context)
     LaunchedEffect(activeSettingsPage) {
         storageDetailsController.requestIfDetailsPage(activeSettingsPage)
@@ -307,23 +312,10 @@ internal fun SettingsScreen(
             },
             detail = { requestedDetailPage ->
                 val settingsDetailContent: LazyListScope.(SettingsPage) -> Unit = { selectedPage ->
-                    if (selectedPage != SettingsPage.Accounts) {
-                        item(key = "${selectedPage.name}:header") {
-                            MiuixSettingsHeader(
-                                icon = selectedPage.icon,
-                                title = stringResource(selectedPage.titleRes),
-                                description = stringResource(selectedPage.descriptionRes),
-                                modifier = Modifier
-                                    .animateItem()
-                                    .settingsHighlightTarget(
-                                        targetId = "page:${selectedPage.name}",
-                                        highlightTargetId = settingsHighlightTargetId,
-                                        highlightPulse = settingsHighlightPulse,
-                                        onHighlightFinished = onSettingsHighlightFinished
-                                    )
-                            )
-                        }
-                    }
+                    settingsDetailHeaderItem(
+                        selectedPage, settingsHighlightTargetId,
+                        settingsHighlightPulse, onSettingsHighlightFinished
+                    )
 
                     settingsStorageProcessingItem(selectedPage, downloadDirectorySettings)
 
@@ -510,8 +502,7 @@ internal fun SettingsScreen(
                             item(key = "${selectedPage.name}:content") {
                                 SettingsLoginExpandedContent(
                                     accountAuth,
-                                    isActive = isActive && environment.settingsVisible &&
-                                        activeSettingsPage == SettingsPage.Accounts,
+                                    isActive = accountProfilesActive,
                                     highlightTargetId = settingsHighlightTargetId,
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished
@@ -1118,4 +1109,28 @@ internal fun SettingsScreen(
 
     DownloadDirectoryDialogs(controller = downloadDirectorySettings)
 
+}
+
+private fun LazyListScope.settingsDetailHeaderItem(
+    page: SettingsPage,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: () -> Unit
+) {
+    if (!shouldShowSettingsDetailHeader(page)) return
+    item(key = "${page.name}:header") {
+        MiuixSettingsHeader(
+            icon = page.icon,
+            title = stringResource(page.titleRes),
+            description = stringResource(page.descriptionRes),
+            modifier = Modifier
+                .animateItem()
+                .settingsHighlightTarget(
+                    targetId = "page:${page.name}",
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+        )
+    }
 }

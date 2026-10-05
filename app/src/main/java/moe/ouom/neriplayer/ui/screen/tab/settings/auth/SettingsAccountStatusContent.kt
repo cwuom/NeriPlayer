@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 
@@ -41,6 +42,12 @@ internal fun hasValidSavedCookieHealth(state: SavedCookieAuthState): Boolean =
 
 internal fun hasValidYouTubeAuthHealth(state: YouTubeAuthState): Boolean =
     state == YouTubeAuthState.Valid
+
+internal fun shouldLoadSettingsAccountProfiles(
+    screenActive: Boolean,
+    settingsVisible: Boolean,
+    activePage: SettingsPage?
+): Boolean = screenActive && settingsVisible && activePage == SettingsPage.Accounts
 
 @Composable
 internal fun SettingsLoginExpandedContent(
@@ -126,22 +133,8 @@ internal fun SettingsLoginExpandedContent(
             ),
             SettingsAccountCardUiState(platform = SettingsAccountPlatform.QqMusic)
         ),
-        onLogin = { platform ->
-            when (platform) {
-                SettingsAccountPlatform.Netease -> controller.actions.openNeteaseSheet()
-                SettingsAccountPlatform.Bilibili -> controller.actions.openBiliSheet()
-                SettingsAccountPlatform.YouTube -> controller.actions.openYouTubeSheet()
-                SettingsAccountPlatform.QqMusic -> Unit
-            }
-        },
-        onManageSaved = { platform ->
-            when (platform) {
-                SettingsAccountPlatform.Netease -> controller.actions.openNeteaseSavedCookieDialog()
-                SettingsAccountPlatform.Bilibili -> controller.actions.openBiliSavedCookieDialog()
-                SettingsAccountPlatform.YouTube -> controller.actions.openYouTubeSavedCookieDialog()
-                SettingsAccountPlatform.QqMusic -> Unit
-            }
-        },
+        onLogin = controller.actions::openPlatformLogin,
+        onManageSaved = controller.actions::openPlatformSavedAuthorization,
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished

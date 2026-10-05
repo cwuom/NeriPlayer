@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -56,6 +58,23 @@ internal data class NowPlayingCoverToolbarLayoutSpec(
     val compactHeight: Boolean = false
 )
 
+internal fun resolveNowPlayingCoverToolbarLayoutSpec(
+    wideLandscape: Boolean,
+    compactPortrait: Boolean,
+    dockEnabled: Boolean,
+    iconSize: Dp,
+    minimumTouchTarget: Dp,
+    compactHeight: Boolean
+): NowPlayingCoverToolbarLayoutSpec = NowPlayingCoverToolbarLayoutSpec(
+    wideLandscape = wideLandscape,
+    compactPortrait = compactPortrait,
+    // 短横屏把高度留给封面和歌词，不使用增加留白的装饰底座
+    docked = dockEnabled && !compactHeight,
+    iconSize = iconSize,
+    minimumTouchTarget = minimumTouchTarget,
+    compactHeight = compactHeight
+)
+
 internal data class NowPlayingCoverToolbarStatus(
     val sleepTimerActive: Boolean,
     val lyricsAvailable: Boolean,
@@ -71,7 +90,19 @@ internal data class NowPlayingCoverToolbarActions(
     val onAddToPlaylist: () -> Unit
 )
 
-private fun toolbarWidthFraction(spec: NowPlayingCoverToolbarLayoutSpec): Float =
+internal fun resolveNowPlayingLyricsToolbarAction(
+    wideLandscape: Boolean,
+    onAdjust: () -> Unit,
+    onSwitchPage: () -> Unit
+): () -> Unit = if (wideLandscape) onAdjust else onSwitchPage
+
+internal fun nowPlayingLyricsToolbarIcon(wideLandscape: Boolean): ImageVector =
+    if (wideLandscape) Icons.Outlined.Tune else Icons.Outlined.LibraryMusic
+
+internal fun nowPlayingLyricsToolbarDescription(wideLandscape: Boolean): Int =
+    if (wideLandscape) CoreCommonR.string.lyrics_adjust_behavior else CoreCommonR.string.lyrics_title
+
+internal fun toolbarWidthFraction(spec: NowPlayingCoverToolbarLayoutSpec): Float =
     if (spec.wideLandscape && !spec.compactHeight) 0.9f else 1f
 
 private fun toolbarHorizontalInset(spec: NowPlayingCoverToolbarLayoutSpec): Dp =
@@ -243,7 +274,7 @@ private fun NowPlayingCoverToolbarRow(
         )
         NowPlayingCoverLyricsButton(
             status, layout.iconSize, buttonModifier, sharedTransitionScope,
-            animatedVisibilityScope, actions.onLyrics
+            animatedVisibilityScope, actions.onLyrics, spec.wideLandscape
         )
         NowPlayingCoverToolbarButton(
             "btn_add", Icons.AutoMirrored.Outlined.PlaylistAdd, stringResource(CoreCommonR.string.playlist_add_to),
@@ -294,13 +325,14 @@ private fun NowPlayingCoverLyricsButton(
     modifier: Modifier,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    wideLandscape: Boolean
 ) {
     with(sharedTransitionScope) {
         HapticIconButton(
             onClick = onClick,
             enabled = status.lyricsAvailable,
-            modifier = modifier.sharedBounds(
+            modifier = modifier.testTag("nowPlayingLyricsAction").sharedBounds(
                 rememberSharedContentState(key = "btn_lyrics"),
                 animatedVisibilityScope = animatedVisibilityScope,
                 enter = EnterTransition.None,
@@ -309,8 +341,8 @@ private fun NowPlayingCoverLyricsButton(
         ) {
             AnimatedContent(targetState = status.lyricsShowing, label = "lyrics_icon") { showing ->
                 Icon(
-                    imageVector = Icons.Outlined.LibraryMusic,
-                    contentDescription = stringResource(CoreCommonR.string.lyrics_title),
+                    imageVector = nowPlayingLyricsToolbarIcon(wideLandscape),
+                    contentDescription = stringResource(nowPlayingLyricsToolbarDescription(wideLandscape)),
                     tint = toolbarLyricsTint(
                         status.lyricsAvailable, showing, status.activeColor, LocalContentColor.current
                     ),

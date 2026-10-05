@@ -333,6 +333,7 @@ fun EditSongInfoSheet(
                     label = stringResource(CoreCommonR.string.music_edit_title),
                     restoreDescription = stringResource(CoreCommonR.string.music_restore_title),
                     enabled = owner.canEditFields(),
+                    modifier = Modifier,
                     onRestore = {
                         applyOriginalInfo(
                             restoreCover = false,
@@ -348,6 +349,7 @@ fun EditSongInfoSheet(
                     label = stringResource(CoreCommonR.string.music_edit_artist),
                     restoreDescription = stringResource(CoreCommonR.string.music_restore_artist),
                     enabled = owner.canEditFields(),
+                    modifier = Modifier,
                     onRestore = {
                         applyOriginalInfo(
                             restoreCover = false,
@@ -552,69 +554,72 @@ internal fun EditSongInfoLayout(
     actions: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val spacing = if (compactLandscape) 8.dp else 12.dp
-    val insets = if (compactLandscape) {
-        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
-    } else WindowInsets.navigationBars
+    val slots = EditSongLayoutSlots(header, coverUrl, coverPreview, fields, actions)
     BoxWithConstraints(
-        modifier.fillMaxWidth().fillMaxHeight(if (compactLandscape) 1f else 0.9f).testTag("song-edit-layout")
+        modifier.fillMaxWidth().fillMaxHeight(resolveEditSongLayoutChrome(compactLandscape).heightFraction).testTag("song-edit-layout")
     ) {
-        // 键盘挤压时让标题和操作随表单滚动，保证输入框仍能完整显示
-        val inlineHeader = compactLandscape && maxHeight < 240.dp
-        val inlineActions = compactLandscape && maxHeight < 160.dp
+        val presentation = resolveEditSongLayoutPresentation(compactLandscape, maxHeight)
         Column(
-            Modifier.fillMaxSize()
-                .padding(horizontal = if (compactLandscape) 20.dp else 24.dp,
-                    vertical = if (compactLandscape) 8.dp else 16.dp)
-                .windowInsetsPadding(insets),
-            verticalArrangement = Arrangement.spacedBy(spacing)
+            Modifier.fillMaxSize().padding(
+                horizontal = presentation.chrome.horizontalPadding,
+                vertical = presentation.chrome.verticalPadding
+            ).windowInsetsPadding(editSongLayoutInsets(presentation.compact)),
+            verticalArrangement = Arrangement.spacedBy(presentation.chrome.spacing)
         ) {
-            if (!inlineHeader) {
-                Box(Modifier.fillMaxWidth().testTag("song-edit-header")) { header() }
-            }
-            if (compactLandscape) {
+            presentation.fixedHeader.forEach { slots.content.getValue(it)() }
+            if (presentation.compact) {
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).testTag("song-edit-body")) {
-                    val previewSize = maxHeight.coerceIn(0.dp, 96.dp)
+                    val previewSize = resolveCompactEditSongCoverSize(maxHeight)
                     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Box(
                             Modifier.width(previewSize).fillMaxHeight().testTag("song-edit-cover-pane"),
                             contentAlignment = Alignment.Center
-                        ) { coverPreview(previewSize) }
+                        ) { slots.coverPreview(previewSize) }
                         Column(
                             Modifier.weight(1f).fillMaxHeight().testTag("song-edit-fields")
-                                .bottomSheetScrollGuard()
+                                .editSongScrollGuard(presentation, scrollState)
                                 .verticalScroll(scrollState),
-                            verticalArrangement = Arrangement.spacedBy(spacing)
-                        ) {
-                            if (inlineHeader) {
-                                Box(Modifier.fillMaxWidth().testTag("song-edit-header")) { header() }
-                            }
-                            coverUrl()
-                            fields()
-                            if (inlineActions) {
-                                Box(Modifier.fillMaxWidth().testTag("song-edit-actions")) { actions() }
-                            }
-                        }
+                            verticalArrangement = Arrangement.spacedBy(presentation.chrome.spacing)
+                        ) { presentation.scrollingItems.forEach { slots.content.getValue(it)() } }
                     }
                 }
             } else {
                 Column(
                     Modifier.weight(1f).testTag("song-edit-fields")
-                        .bottomSheetScrollGuard { scrollState.value == 0 }
+                        .editSongScrollGuard(presentation, scrollState)
                         .verticalScroll(scrollState),
-                    verticalArrangement = Arrangement.spacedBy(spacing)
-                ) {
-                    coverUrl()
-                    coverPreview(120.dp)
-                    fields()
-                }
+                    verticalArrangement = Arrangement.spacedBy(presentation.chrome.spacing)
+                ) { presentation.scrollingItems.forEach { slots.content.getValue(it)() } }
             }
-            if (!inlineActions) {
-                Box(Modifier.fillMaxWidth().testTag("song-edit-actions")) { actions() }
-            }
+            presentation.fixedActions.forEach { slots.content.getValue(it)() }
         }
     }
 }
+
+private class EditSongLayoutSlots(
+    header: @Composable () -> Unit,
+    coverUrl: @Composable () -> Unit,
+    val coverPreview: @Composable (Dp) -> Unit,
+    fields: @Composable () -> Unit,
+    actions: @Composable () -> Unit
+) {
+    val content: Map<EditSongLayoutItem, @Composable () -> Unit> = mapOf(
+        EditSongLayoutItem.HEADER to { Box(Modifier.fillMaxWidth().testTag("song-edit-header")) { header() } },
+        EditSongLayoutItem.COVER_URL to coverUrl,
+        EditSongLayoutItem.COVER to { coverPreview(120.dp) },
+        EditSongLayoutItem.FIELDS to fields,
+        EditSongLayoutItem.ACTIONS to { Box(Modifier.fillMaxWidth().testTag("song-edit-actions")) { actions() } }
+    )
+}
+
+@Composable
+private fun editSongLayoutInsets(compact: Boolean): WindowInsets = if (compact) {
+    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+} else WindowInsets.navigationBars
+
+private fun Modifier.editSongScrollGuard(presentation: EditSongLayoutPresentation, scrollState: ScrollState): Modifier =
+    if (presentation.compact) bottomSheetScrollGuard()
+    else bottomSheetScrollGuard { presentation.allowsParentDrag(scrollState.value) }
 
 @Composable
 internal fun EditSongActionRow(
@@ -714,7 +719,7 @@ internal fun EditSongEditableTextField(
     restoreDescription: String,
     enabled: Boolean,
     onRestore: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier,
     placeholder: @Composable (() -> Unit)? = null
 ) {
     OutlinedTextField(
@@ -746,6 +751,7 @@ private fun EditSongCoverUrlInput(
         restoreDescription = resources.getString(CoreCommonR.string.music_restore_cover),
         enabled = owner.canEditFields(),
         onRestore = onRestore,
+        modifier = Modifier,
         placeholder = { Text(resources.getString(CoreCommonR.string.music_cover_url_hint)) }
     )
 }

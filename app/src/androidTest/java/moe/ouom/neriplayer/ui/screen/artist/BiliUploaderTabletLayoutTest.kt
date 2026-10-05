@@ -1,11 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
 import android.content.res.Configuration
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
@@ -15,7 +10,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
@@ -37,6 +31,7 @@ import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContentKind
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderVideo
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.artist.BiliUploaderDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.BiliUploaderHeader
@@ -210,7 +205,7 @@ class BiliUploaderTabletLayoutTest {
                     LocalMiniPlayerHeight provides 0.dp
                 ) {
                     var selectedTab by remember { mutableIntStateOf(0) }
-                    Box(Modifier.requiredSize(actualWidth, height).consumeWindowInsets(WindowInsets.safeDrawing)) {
+                    FittedTestViewport(actualWidth, height, fontScale = fontScale) {
                         BiliUploaderContent(
                             ui = ui,
                             followFavorite = createBiliUploaderFavorite(

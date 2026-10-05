@@ -83,7 +83,8 @@ internal data class NowPlayingWideLayoutSpec(
     val paneSpacing: Dp,
     val sectionSpacing: Dp,
     val coverVerticalPadding: Dp,
-    val progressVerticalOffset: Dp
+    val progressVerticalOffset: Dp,
+    val controlAreaVerticalOffset: Dp
 )
 
 internal fun resolveNowPlayingWideLayoutSpec(
@@ -92,6 +93,7 @@ internal fun resolveNowPlayingWideLayoutSpec(
     phoneLandscape: Boolean = false
 ): NowPlayingWideLayoutSpec {
     val compactHeight = phoneLandscape || availableHeight < NowPlayingCompactLandscapeHeight
+    val controlAreaOffset = nowPlayingWideControlAreaOffset(phoneLandscape, compactHeight)
     return NowPlayingWideLayoutSpec(
         compactHeight = compactHeight,
         playerPaneWidth = if (compactHeight) {
@@ -102,11 +104,67 @@ internal fun resolveNowPlayingWideLayoutSpec(
         paneSpacing = if (compactHeight) 16.dp else 40.dp,
         sectionSpacing = if (compactHeight) 4.dp else 16.dp,
         coverVerticalPadding = if (compactHeight) 8.dp else 12.dp,
-        progressVerticalOffset = when {
-            phoneLandscape -> 0.dp
-            compactHeight -> (-4).dp
-            else -> (-12).dp
+        progressVerticalOffset = controlAreaOffset * 2,
+        controlAreaVerticalOffset = controlAreaOffset
+    )
+}
+
+private fun nowPlayingWideControlAreaOffset(phoneLandscape: Boolean, compactHeight: Boolean): Dp = when {
+    phoneLandscape -> 0.dp
+    compactHeight -> (-4).dp
+    else -> (-12).dp
+}
+
+internal enum class NowPlayingWideControlSlot { PROGRESS, CONTROLS }
+
+internal data class NowPlayingWideControlPlacement(
+    val leading: List<NowPlayingWideControlSlot>,
+    val trailing: List<NowPlayingWideControlSlot>
+)
+
+internal fun resolveNowPlayingWideControlPlacement(
+    controlsAtBottom: Boolean,
+    progressAtBottom: Boolean,
+    compactHeight: Boolean = false
+): NowPlayingWideControlPlacement = NowPlayingWideControlPlacement(
+    leading = buildList {
+        if (!progressAtBottom) add(NowPlayingWideControlSlot.PROGRESS)
+        if (!controlsAtBottom) add(NowPlayingWideControlSlot.CONTROLS)
+    },
+    trailing = buildList {
+        if (!compactHeight || controlsAtBottom) {
+            if (progressAtBottom) add(NowPlayingWideControlSlot.PROGRESS)
+            if (controlsAtBottom) add(NowPlayingWideControlSlot.CONTROLS)
         }
+    }
+)
+
+internal data class NowPlayingWideControlOffsets(
+    val identity: Dp,
+    val progress: Dp,
+    val controls: Dp,
+    val toolbar: Dp
+)
+
+internal fun resolveNowPlayingWideControlOffsets(
+    spec: NowPlayingWideLayoutSpec,
+    placement: NowPlayingWideControlPlacement
+): NowPlayingWideControlOffsets {
+    // 宽松横屏把信息和其下控件一起抬高，短横屏顶部没有同样的留白
+    val leadingOffset = if (spec.compactHeight) 0.dp else spec.controlAreaVerticalOffset
+    return NowPlayingWideControlOffsets(
+        identity = leadingOffset,
+        progress = if (NowPlayingWideControlSlot.PROGRESS in placement.trailing) {
+            spec.progressVerticalOffset
+        } else {
+            spec.progressVerticalOffset - spec.controlAreaVerticalOffset + leadingOffset
+        },
+        controls = if (NowPlayingWideControlSlot.CONTROLS in placement.trailing) {
+            spec.controlAreaVerticalOffset
+        } else {
+            leadingOffset
+        },
+        toolbar = spec.controlAreaVerticalOffset
     )
 }
 
@@ -212,57 +270,123 @@ internal fun NowPlayingWideLayout(
     toolbar: @Composable (Boolean) -> Unit,
     lyrics: @Composable (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    phoneLandscape: Boolean = false,
-    phoneTopActions: @Composable () -> Unit = {}
+    phoneLandscape: Boolean,
+    phoneTopActions: @Composable () -> Unit
 ) {
     BoxWithConstraints(modifier.testTag("nowPlayingWideLayout")) {
         val spec = resolveNowPlayingWideLayoutSpec(maxWidth, maxHeight, phoneLandscape)
-        val tabletProgress: @Composable () -> Unit = {
-            // 利用上方已有空白抬高进度区，不挤占封面和歌词的测量高度
-            Box(Modifier.offset(y = spec.progressVerticalOffset)) { progress() }
-        }
         if (phoneLandscape) {
             NowPlayingPhoneLandscape(
                 spec, topBar, cover, identity, phoneTopActions, progress, controls, lyrics
             )
-        } else if (spec.compactHeight) {
-            NowPlayingCompactLandscape(
-                spec, controlsAtBottom, progressAtBottom, topBar, cover,
-                identity, tabletProgress, controls, toolbar, lyrics
-            )
         } else {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(spec.paneSpacing)
-            ) {
-                Column(
-                    modifier = Modifier.width(spec.playerPaneWidth).fillMaxHeight()
-                        .testTag("nowPlayingPlayerPane"),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    topBar()
-                    Spacer(Modifier.height(spec.sectionSpacing))
-                    cover(Modifier.fillMaxWidth().weight(1f).padding(vertical = spec.coverVerticalPadding))
-                    Spacer(Modifier.height(spec.sectionSpacing))
-                    identity(false)
-                    Spacer(Modifier.height(spec.sectionSpacing))
-                    if (!progressAtBottom) tabletProgress()
-                    if (!controlsAtBottom) controls()
-                    // 封面多分到一些高度，同时保留 LOWER 与置底控件之间的空白差别
-                    Spacer(Modifier.weight(NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT))
-                    if (progressAtBottom) tabletProgress()
-                    if (controlsAtBottom) controls()
-                    Spacer(Modifier.height(spec.sectionSpacing))
-                    toolbar(false)
-                }
-                NowPlayingWideLyricPane(
-                    compactHeight = false,
-                    lyrics = lyrics,
-                    modifier = Modifier.weight(1f).fillMaxHeight()
-                )
-            }
+            NowPlayingTabletLandscape(
+                spec, controlsAtBottom, progressAtBottom, topBar, cover,
+                identity, progress, controls, toolbar, lyrics
+            )
         }
     }
+}
+
+@Composable
+private fun NowPlayingTabletLandscape(
+    spec: NowPlayingWideLayoutSpec,
+    controlsAtBottom: Boolean,
+    progressAtBottom: Boolean,
+    topBar: @Composable () -> Unit,
+    cover: @Composable (Modifier) -> Unit,
+    identity: @Composable (Boolean) -> Unit,
+    progress: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+    toolbar: @Composable (Boolean) -> Unit,
+    lyrics: @Composable (Boolean) -> Unit
+) {
+    val placement = resolveNowPlayingWideControlPlacement(
+        controlsAtBottom, progressAtBottom, spec.compactHeight
+    )
+    val offsets = resolveNowPlayingWideControlOffsets(spec, placement)
+    val tabletIdentity: @Composable (Boolean) -> Unit = { compact ->
+        Box(Modifier.offset(y = offsets.identity)) { identity(compact) }
+    }
+    val tabletProgress: @Composable () -> Unit = {
+        // 利用上方已有空白抬高进度区，不挤占封面和歌词的测量高度
+        Box(Modifier.offset(y = offsets.progress)) { progress() }
+    }
+    val tabletControls: @Composable () -> Unit = {
+        Box(Modifier.offset(y = offsets.controls)) { controls() }
+    }
+    val tabletToolbar: @Composable (Boolean) -> Unit = { compact ->
+        Box(Modifier.offset(y = offsets.toolbar)) { toolbar(compact) }
+    }
+    if (spec.compactHeight) {
+        NowPlayingCompactLandscape(
+            spec, placement, topBar, cover, tabletIdentity, tabletProgress, tabletControls, tabletToolbar, lyrics
+        )
+    } else {
+        NowPlayingExpandedLandscape(
+            spec, placement, topBar, cover, tabletIdentity, tabletProgress, tabletControls, tabletToolbar, lyrics
+        )
+    }
+}
+
+@Composable
+private fun NowPlayingExpandedLandscape(
+    spec: NowPlayingWideLayoutSpec,
+    placement: NowPlayingWideControlPlacement,
+    topBar: @Composable () -> Unit,
+    cover: @Composable (Modifier) -> Unit,
+    identity: @Composable (Boolean) -> Unit,
+    progress: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+    toolbar: @Composable (Boolean) -> Unit,
+    lyrics: @Composable (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(spec.paneSpacing)
+    ) {
+        Column(
+            modifier = Modifier.width(spec.playerPaneWidth).fillMaxHeight()
+                .testTag("nowPlayingPlayerPane"),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            topBar()
+            Spacer(Modifier.height(spec.sectionSpacing))
+            cover(Modifier.fillMaxWidth().weight(1f).padding(vertical = spec.coverVerticalPadding))
+            Spacer(Modifier.height(spec.sectionSpacing))
+            identity(false)
+            Spacer(Modifier.height(spec.sectionSpacing))
+            NowPlayingWideControlSection(placement.leading, progress, controls)
+            // 封面多分到一些高度，同时保留 LOWER 与置底控件之间的空白差别
+            Spacer(Modifier.weight(NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT))
+            NowPlayingWideControlSection(placement.trailing, progress, controls)
+            Spacer(Modifier.height(spec.sectionSpacing))
+            toolbar(false)
+        }
+        NowPlayingWideLyricPane(
+            compactHeight = false,
+            lyrics = lyrics,
+            modifier = Modifier.weight(1f).fillMaxHeight()
+        )
+    }
+}
+
+@Composable
+private fun NowPlayingWideControlSection(
+    slots: List<NowPlayingWideControlSlot>,
+    progress: @Composable () -> Unit,
+    controls: @Composable () -> Unit
+) {
+    slots.forEach { slot -> NowPlayingWideControl(slot, progress, controls) }
+}
+
+@Composable
+private fun NowPlayingWideControl(
+    slot: NowPlayingWideControlSlot,
+    progress: @Composable () -> Unit,
+    controls: @Composable () -> Unit
+) {
+    if (slot == NowPlayingWideControlSlot.PROGRESS) progress() else controls()
 }
 
 @Composable
@@ -320,8 +444,7 @@ private fun NowPlayingPhoneLandscape(
 @Composable
 private fun NowPlayingCompactLandscape(
     spec: NowPlayingWideLayoutSpec,
-    controlsAtBottom: Boolean,
-    progressAtBottom: Boolean,
+    placement: NowPlayingWideControlPlacement,
     topBar: @Composable () -> Unit,
     cover: @Composable (Modifier) -> Unit,
     identity: @Composable (Boolean) -> Unit,
@@ -350,8 +473,7 @@ private fun NowPlayingCompactLandscape(
             ) {
                 identity(true)
                 Spacer(Modifier.height(spec.sectionSpacing))
-                if (!progressAtBottom) progress()
-                if (!controlsAtBottom) controls()
+                NowPlayingWideControlSection(placement.leading, progress, controls)
                 NowPlayingWideLyricPane(
                     compactHeight = true,
                     lyrics = lyrics,
@@ -359,19 +481,27 @@ private fun NowPlayingCompactLandscape(
                 )
             }
         }
-        if (controlsAtBottom) {
-            Spacer(Modifier.height(spec.sectionSpacing))
-            Row(
-                modifier = Modifier.fillMaxWidth().testTag("nowPlayingBottomControls"),
-                horizontalArrangement = Arrangement.spacedBy(spec.paneSpacing),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (progressAtBottom) {
-                    Box(Modifier.weight(1f)) { progress() }
-                    Box(Modifier.weight(1f)) { controls() }
-                } else {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { controls() }
-                }
+        if (placement.trailing.isEmpty()) return@Column
+        Spacer(Modifier.height(spec.sectionSpacing))
+        NowPlayingCompactControlFooter(spec, placement.trailing, progress, controls)
+    }
+}
+
+@Composable
+private fun NowPlayingCompactControlFooter(
+    spec: NowPlayingWideLayoutSpec,
+    slots: List<NowPlayingWideControlSlot>,
+    progress: @Composable () -> Unit,
+    controls: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("nowPlayingBottomControls"),
+        horizontalArrangement = Arrangement.spacedBy(spec.paneSpacing),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        slots.forEach { slot ->
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                NowPlayingWideControl(slot, progress, controls)
             }
         }
     }

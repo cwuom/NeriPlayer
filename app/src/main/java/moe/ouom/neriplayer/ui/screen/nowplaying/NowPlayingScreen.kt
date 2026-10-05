@@ -63,7 +63,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
@@ -95,10 +94,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -138,13 +135,10 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
-import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
-import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
-import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.comment.CommentSheet
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
@@ -163,8 +157,6 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsScreen
-import moe.ouom.neriplayer.ui.screen.lyrics.LyricsContentPane
-import moe.ouom.neriplayer.ui.screen.lyrics.LyricsContentViewport
 import moe.ouom.neriplayer.ui.screen.lyrics.isSystemPowerSaveMode
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsSecondaryLineMode
 import moe.ouom.neriplayer.ui.screen.lyrics.hasDisplayableLyricTranslation
@@ -174,21 +166,20 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverActionToolb
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverPreviewHost
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarActions
-import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarLayoutSpec
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverToolbarLayoutSpec
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarStatus
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverTopBar
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverBackButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverTopActions
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingPhoneTopActionButtonSize
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingEmbeddedLyricStyle
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingEmbeddedLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingEmbeddedLyricsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLeadingControls
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLeadingProgress
-import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLyricsPane
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricActions
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricPlayback
-import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricStyle
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingTrailingControls
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingSyncedLyricContent
@@ -196,7 +187,6 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingCoverPanelModifi
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.rememberNowPlayingCoverOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwnerKey
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
-import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldAdvanceNowPlayingLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldShowNowPlayingEmbeddedLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsLoadOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
@@ -621,6 +611,7 @@ fun NowPlayingScreen(
     var animateCoverPageSourceBadge by remember { mutableStateOf(false) }
     var previousLyricsScreenState by remember { mutableStateOf(false) }
     var showMoreOptions by remember { mutableStateOf(false) }
+    var startMoreOptionsWithLyricBehavior by remember { mutableStateOf(false) }
     var showCommentSheet by remember { mutableStateOf(false) }
     var showQualitySwitchDialog by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1353,12 +1344,22 @@ fun NowPlayingScreen(
                             lyricShareInitialLine = entry
                         }
                         val onCoverComment: () -> Unit = { showCommentSheet = true }
-                        val onCoverMoreOptions: () -> Unit = { showMoreOptions = true }
+                        val onCoverMoreOptions: () -> Unit = {
+                            startMoreOptionsWithLyricBehavior = false
+                            showMoreOptions = true
+                        }
                         val coverToolbarActions = NowPlayingCoverToolbarActions(
                             onQueue = { showQueueSheet = true },
                             onSleepTimer = { showSleepTimerDialog = true },
                             onVolume = { showVolumeSheet = true },
-                            onLyrics = { onShowLyricsScreenChange(!showLyricsScreen) },
+                            onLyrics = resolveNowPlayingLyricsToolbarAction(
+                                wideLandscape = useWideLandscapeLayout,
+                                onAdjust = {
+                                    startMoreOptionsWithLyricBehavior = true
+                                    showMoreOptions = true
+                                },
+                                onSwitchPage = { onShowLyricsScreenChange(!showLyricsScreen) }
+                            ),
                             onAddToPlaylist = { showAddSheet = true }
                         )
 
@@ -1451,10 +1452,10 @@ fun NowPlayingScreen(
                         }
                         val coverToolbar: @Composable (Boolean) -> Unit = { compactHeight ->
                             NowPlayingCoverActionToolbar(
-                                spec = NowPlayingCoverToolbarLayoutSpec(
+                                spec = resolveNowPlayingCoverToolbarLayoutSpec(
                                     wideLandscape = useWideLandscapeLayout,
                                     compactPortrait = useCompactPortraitLayout,
-                                    docked = useNowPlayingToolbarDock && !compactHeight,
+                                    dockEnabled = useNowPlayingToolbarDock,
                                     iconSize = nowPlayingToolbarIconSize,
                                     minimumTouchTarget = nowPlayingToolbarMinimumTouchTarget,
                                     compactHeight = compactHeight
@@ -1539,178 +1540,39 @@ fun NowPlayingScreen(
 
                         if (useWideLandscapeLayout) {
                             val wideLyricsContent: @Composable (Boolean) -> Unit = { compactHeight ->
-                                BoxWithConstraints(Modifier.fillMaxSize()) {
-                                    val lyricViewport = resolveNowPlayingWideLyricViewport(maxHeight)
-                                    if (isLyricsMode) {
-                                        LyricsContentPane(
-                                            lyrics = lyrics,
-                                            plainLyrics = plainLyrics,
-                                            plainTranslatedLyrics = plainTranslatedLyrics,
-                                            translatedLyrics = translatedLyrics,
-                                            phoneticLyrics = phoneticLyrics,
-                                            playbackSessionKey = currentSong?.stableKey(),
-                                            previewPositionOverrideMs = previewPositionOverrideMs,
-                                            advancedLyricsEnabled = advancedLyricsEnabled,
-                                            showLyricTranslation = showSecondaryLyrics,
-                                            lyricTranslationUsePhonetic = usePhoneticTranslation,
-                                            lyricFontScale = lyricFontScales.lyricsPageLyric,
-                                            translationFontScale = lyricFontScales.lyricsPageTranslation,
-                                            lyricOffsetMs = totalOffset,
-                                            lyricBlurEnabled = lyricBlurEnabled,
-                                            lyricBlurAmount = lyricBlurAmount,
-                                            textColor = MaterialTheme.colorScheme.onBackground,
-                                            rawLyrics = rawLyricsText,
-                                            rawTranslatedLyrics = rawTranslatedLyricsText,
-                                            playbackSpeed = playbackSoundState.speed,
-                                            isPlaying = isPlaying,
-                                            lowPowerRendering = lowPowerLyricsRendering,
-                                            useTabletLayout = !phoneLandscape && windowWidthDp >= 720.dp,
-                                            onLyricLongClick = { line -> lyricShareInitialLine = line },
-                                            onSeekTo = { position ->
-                                                seekToLyricSafely(
-                                                    positionMs = position,
-                                                    playbackDurationMs = durationMs,
-                                                    songDurationMs = currentSong?.durationMs ?: 0L
-                                                )
-                                            },
-                                            viewport = LyricsContentViewport(
-                                                baseFontSizeSp = if (compactHeight) 18f else 24f,
-                                                offset = lyricViewport.offset,
-                                                topFadeLength = lyricViewport.topFadeLength,
-                                                bottomFadeLength = lyricViewport.bottomFadeLength,
-                                                bottomContentInset = if (compactHeight) 8.dp else 24.dp
-                                            )
+                                NowPlayingWideLyrics(
+                                    fullPage = isLyricsMode,
+                                    compactHeight = compactHeight,
+                                    phoneLandscape = phoneLandscape,
+                                    availableWidth = windowWidthDp,
+                                    content = NowPlayingWideLyricsContent(
+                                        lyrics = lyrics,
+                                        translatedLyrics = translatedLyrics,
+                                        phoneticLyrics = phoneticLyrics,
+                                        plainTranslatedLyrics = plainTranslatedLyrics,
+                                        rawLyrics = rawLyricsText,
+                                        rawTranslatedLyrics = rawTranslatedLyricsText,
+                                        synced = embeddedLyricContent
+                                    ),
+                                    preferences = NowPlayingWideLyricsPreferences(
+                                        advancedEnabled = advancedLyricsEnabled,
+                                        showSecondary = showSecondaryLyrics,
+                                        usePhonetic = usePhoneticTranslation,
+                                        fontScales = lyricFontScales,
+                                        blurEnabled = lyricBlurEnabled,
+                                        blurAmount = lyricBlurAmount
+                                    ),
+                                    playback = embeddedLyricPlayback,
+                                    lowPowerRendering = lowPowerLyricsRendering,
+                                    actions = embeddedLyricActions,
+                                    onSeekTo = { position ->
+                                        seekToLyricSafely(
+                                            positionMs = position,
+                                            playbackDurationMs = durationMs,
+                                            songDurationMs = currentSong?.durationMs ?: 0L
                                         )
-                                    } else when (
-                                        resolveNowPlayingWideLyricsMode(
-                                            hasLyrics = lyrics.isNotEmpty(),
-                                            advancedLyricsEnabled = advancedLyricsEnabled
-                                        )
-                                    ) {
-                                        NowPlayingWideLyricsMode.ADVANCED -> {
-                                            val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
-                                            val effectiveLyricTimeMs =
-                                                previewPositionOverrideMs ?: currentPosition
-                                            AdvancedLyricsView(
-                                                lyrics = lyrics,
-                                                currentTimeMs = effectiveLyricTimeMs,
-                                                modifier = Modifier.fillMaxSize(),
-                                                textColor = MaterialTheme.colorScheme.onBackground,
-                                                lyricFontScale = coverLyricFontScale,
-                                                translationFontScale = coverTranslationFontScale,
-                                                baseFontSizeSp = if (compactHeight) 18f else 24f,
-                                                lyricOffsetMs = totalOffset,
-                                                rawLyrics = rawLyricsText,
-                                                rawTranslatedLyrics = rawTranslatedLyricsText.takeUnless {
-                                                    usePhoneticTranslation
-                                                },
-                                                translatedLyrics = if (showSecondaryLyrics) {
-                                                    if (usePhoneticTranslation) phoneticLyrics else translatedLyrics
-                                                } else {
-                                                    null
-                                                },
-                                                showLyricTranslation = showSecondaryLyrics,
-                                                showPhoneticAsTranslation = usePhoneticTranslation,
-                                                lyricBlurEnabled = lyricBlurEnabled,
-                                                lyricBlurAmount = lyricBlurAmount,
-                                                isPlaying = isPlaying,
-                                                animateViewportScroll = previewPositionOverrideMs != null,
-                                                offset = lyricViewport.offset,
-                                                keepAliveZone = 128.dp,
-                                                playedLyricViewportFraction = 0.36f,
-                                                topFadeLength = lyricViewport.topFadeLength,
-                                                bottomFadeLength = lyricViewport.bottomFadeLength,
-                                                bottomContentInset = if (compactHeight) 8.dp else 24.dp,
-                                                onLyricLongClick = { line ->
-                                                    lyricShareInitialLine = line
-                                                },
-                                                onSeekTo = { position ->
-                                                    seekToLyricSafely(
-                                                        positionMs = position,
-                                                        playbackDurationMs = durationMs,
-                                                        songDurationMs = currentSong?.durationMs
-                                                            ?: 0L
-                                                    )
-                                                }
-                                            )
-                                        }
-
-                                        NowPlayingWideLyricsMode.SYNCED -> {
-                                            NowPlayingLyricsPane(
-                                                content = buildNowPlayingSyncedLyricContent(
-                                                    plainLyrics,
-                                                    secondaryPlainLyrics,
-                                                    showSecondaryLyrics,
-                                                    usePhoneticTranslation,
-                                                    currentSong,
-                                                    totalOffset
-                                                ),
-                                                playback = NowPlayingSyncedLyricPlayback(
-                                                    positionFlow = PlayerManager.playbackPositionFlow,
-                                                    previewPositionMs = previewPositionOverrideMs,
-                                                    isPlaying = shouldAdvanceNowPlayingLyrics(
-                                                        isPlaying, previewPositionOverrideMs
-                                                    ),
-                                                    speed = playbackSoundState.speed
-                                                ),
-                                                style = NowPlayingSyncedLyricStyle(
-                                                    textColor = MaterialTheme.colorScheme.onBackground,
-                                                    fontSize = scaledLyricFontSize(
-                                                        if (compactHeight) 18f else 22f,
-                                                        coverLyricFontScale
-                                                    ).sp,
-                                                    translationFontSize = scaledLyricFontSize(
-                                                        14f,
-                                                        coverTranslationFontScale
-                                                    ).sp,
-                                                    visualSpec = LyricVisualSpec(),
-                                                    blurEnabled = lyricBlurEnabled,
-                                                    blurAmount = lyricBlurAmount
-                                                ),
-                                                actions = NowPlayingSyncedLyricActions(
-                                                    onClick = { entry ->
-                                                        seekToLyricSafely(
-                                                            positionMs = entry.startTimeMs,
-                                                            playbackDurationMs = durationMs,
-                                                            songDurationMs = currentSong?.durationMs
-                                                                ?: 0L
-                                                        )
-                                                    },
-                                                    onLongClick = { entry ->
-                                                        lyricShareInitialLine = entry
-                                                    }
-                                                ),
-                                                modifier = Modifier.fillMaxSize(),
-                                            )
-                                        }
-
-                                        NowPlayingWideLyricsMode.NO_LYRICS -> {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .padding(horizontal = 28.dp),
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.LibraryMusic,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                                        alpha = 0.72f
-                                                    ),
-                                                    modifier = Modifier.size(36.dp)
-                                                )
-                                                Spacer(Modifier.height(12.dp))
-                                                Text(
-                                                    text = stringResource(CoreCommonR.string.lyrics_no_lyrics),
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    textAlign = TextAlign.Center
-                                                )
-                                            }
-                                        }
                                     }
-                                }
+                                )
                             }
                             Box(modifier = contentModifier) {
                                 NowPlayingWideLayout(
@@ -1777,7 +1639,8 @@ fun NowPlayingScreen(
                                     onShowSongDetails = { detailSong = it },
                                     onEnterAlbum = onEnterAlbum,
                                     onNavigateUp = onNavigateUp,
-                                    onShowQualitySwitch = { showQualitySwitchDialog = true }
+                                    onShowQualitySwitch = { showQualitySwitchDialog = true },
+                                    startWithLyricBehavior = startMoreOptionsWithLyricBehavior
                                 ),
                                 snackbarHostState = snackbarHostState,
                                 fontSettings = MoreOptionsFontSettings(

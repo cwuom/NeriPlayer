@@ -7,7 +7,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -105,11 +104,9 @@ internal fun TabletMiniPlayerContent(
     metadata: @Composable (Modifier) -> Unit,
     playPauseIcon: @Composable () -> Unit
 ) {
-    Column {
-        TabletMiniPlayerProgress(controls)
+    Box(Modifier.fillMaxWidth().height(NeriMiniPlayerDefaults.TabletHeight)) {
         BoxWithConstraints(
-            Modifier.fillMaxWidth()
-                .height(NeriMiniPlayerDefaults.TabletHeight - NeriMiniPlayerDefaults.TabletProgressHeight)
+            Modifier.fillMaxSize()
                 .padding(horizontal = 12.dp)
         ) {
             val layout = tabletMiniPlayerLayout(maxWidth)
@@ -216,6 +213,8 @@ internal fun TabletMiniPlayerContent(
                 }
             }
         }
+        // 进度命中区域叠在顶部，避免它的高度把信息和控件向下挤
+        TabletMiniPlayerProgress(controls)
     }
 }
 

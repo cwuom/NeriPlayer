@@ -1,18 +1,12 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
 import android.content.res.Configuration
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -37,6 +31,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -198,7 +193,7 @@ class LocalArtistTabletLayoutTest {
                     LocalDensity provides Density(baseDensity.density * 0.5f, fontScale),
                     LocalMiniPlayerHeight provides 0.dp
                 ) {
-                    Box(Modifier.requiredSize(actualWidth, height).consumeWindowInsets(WindowInsets.safeDrawing)) {
+                    FittedTestViewport(actualWidth, height, fontScale = fontScale) {
                         LocalArtistDetailContent(
                             title = title,
                             headerCover = null,

@@ -89,6 +89,19 @@ class LyricFontScaleTest {
     }
 
     @Test
+    fun resolveLyricFontScales_normalizesBothInheritedAndExplicitValues() {
+        val defaults = LyricFontScales(0.1f, 2f, 0.8f, 1.1f)
+        assertEquals(
+            LyricFontScales(MIN_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE, 0.8f, 1.1f),
+            resolveLyricFontScales(null, null, null, null, null, defaults)
+        )
+        assertEquals(
+            LyricFontScales(MIN_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE, 0.9f),
+            resolveLyricFontScales(2f, 0.1f, null, null, 0.9f, defaults)
+        )
+    }
+
+    @Test
     fun lyricFontScales_resolvesSeparateTargetsForEachPage() {
         val scales = LyricFontScales(
             coverLyric = 0.9f,

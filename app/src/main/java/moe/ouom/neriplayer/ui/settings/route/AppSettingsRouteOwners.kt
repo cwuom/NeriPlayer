@@ -40,7 +40,7 @@ private fun rememberInitialSettingsRouteState(
     playback: PlaybackPreferenceSnapshot,
     blurQuality: AdvancedBlurQuality,
     lyricFontScales: LyricFontScales
-): AppSettingsRouteState = remember(theme, playback, blurQuality, lyricFontScales) {
+): AppSettingsRouteState = remember(listOf(theme, playback, blurQuality, lyricFontScales)) {
     initialAppSettingsRouteState(theme, playback, blurQuality, lyricFontScales)
 }
 

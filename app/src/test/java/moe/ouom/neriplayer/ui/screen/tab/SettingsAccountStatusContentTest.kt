@@ -8,6 +8,8 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountEntryActio
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.accountStatusText
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.hasValidSavedCookieHealth
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.hasValidYouTubeAuthHealth
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.shouldLoadSettingsAccountProfiles
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -18,6 +20,15 @@ import org.mockito.Mockito.`when`
 
 class SettingsAccountStatusContentTest {
     private val resources = mock(Resources::class.java)
+
+    @Test
+    fun `account profiles load only while the visible account page owns the active screen`() {
+        assertTrue(shouldLoadSettingsAccountProfiles(true, true, SettingsPage.Accounts))
+        assertFalse(shouldLoadSettingsAccountProfiles(false, true, SettingsPage.Accounts))
+        assertFalse(shouldLoadSettingsAccountProfiles(true, false, SettingsPage.Accounts))
+        assertFalse(shouldLoadSettingsAccountProfiles(true, true, SettingsPage.General))
+        assertFalse(shouldLoadSettingsAccountProfiles(true, true, null))
+    }
 
     @Test
     fun `valid account shows supplied relative saved time`() {

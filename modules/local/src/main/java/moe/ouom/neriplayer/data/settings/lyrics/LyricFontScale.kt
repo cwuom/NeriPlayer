@@ -35,6 +35,9 @@ fun normalizeLyricFontScale(scale: Float): Float =
 fun scaledLyricFontSize(baseSizeSp: Float, scale: Float): Float =
     baseSizeSp * normalizeLyricFontScale(scale)
 
+private fun resolveLyricFontScale(explicitScale: Float?, fallbackScale: Float): Float =
+    normalizeLyricFontScale(explicitScale ?: fallbackScale)
+
 fun resolveLyricFontScales(
     legacyScale: Float?,
     coverLyric: Float?,
@@ -44,13 +47,15 @@ fun resolveLyricFontScales(
     defaults: LyricFontScales = defaultLyricFontScales(smallestScreenWidthDp = 0)
 ): LyricFontScales {
     // 旧版统一字号只有实际保存时才优先于设备默认
-    val fallback = legacyScale?.let(::normalizeLyricFontScale)
+    val fallback = legacyScale?.let { scale ->
+        LyricFontScales(scale, scale, scale, scale)
+    } ?: defaults
     return LyricFontScales(
-        coverLyric = normalizeLyricFontScale(coverLyric ?: fallback ?: defaults.coverLyric),
-        coverTranslation = normalizeLyricFontScale(coverTranslation ?: fallback ?: defaults.coverTranslation),
-        lyricsPageLyric = normalizeLyricFontScale(lyricsPageLyric ?: fallback ?: defaults.lyricsPageLyric),
-        lyricsPageTranslation = normalizeLyricFontScale(
-            lyricsPageTranslation ?: fallback ?: defaults.lyricsPageTranslation
+        coverLyric = resolveLyricFontScale(coverLyric, fallback.coverLyric),
+        coverTranslation = resolveLyricFontScale(coverTranslation, fallback.coverTranslation),
+        lyricsPageLyric = resolveLyricFontScale(lyricsPageLyric, fallback.lyricsPageLyric),
+        lyricsPageTranslation = resolveLyricFontScale(
+            lyricsPageTranslation, fallback.lyricsPageTranslation
         )
     )
 }

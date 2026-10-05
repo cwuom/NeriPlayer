@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.ui.navigation.shouldApplyPersistedStartupDestination
 import moe.ouom.neriplayer.ui.navigation.shouldDispatchMainTabNavigation
 import moe.ouom.neriplayer.ui.navigation.shouldUseInstantBiliUploaderPlaylistTransition
 import moe.ouom.neriplayer.ui.navigation.shouldUseMainTabScaleTransition
+import moe.ouom.neriplayer.ui.navigation.shouldBlockMainTabSceneInput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -31,6 +32,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NeriAppMainTabTransitionPolicyTest {
+    @Test
+    fun `exiting and fully hidden tab scenes cannot receive input`() {
+        assertTrue(shouldBlockMainTabSceneInput(MainTabLayerScenePhase.Exiting, 0f))
+        assertTrue(shouldBlockMainTabSceneInput(MainTabLayerScenePhase.Exiting, 0.5f))
+        assertTrue(shouldBlockMainTabSceneInput(MainTabLayerScenePhase.Entering, 1f))
+        assertTrue(shouldBlockMainTabSceneInput(MainTabLayerScenePhase.Entering, -1f))
+        assertFalse(shouldBlockMainTabSceneInput(MainTabLayerScenePhase.Entering, 0.5f))
+        assertFalse(shouldBlockMainTabSceneInput(MainTabLayerScenePhase.Settled, 0f))
+    }
+
     @Test
     fun `instant detail handoff starts visible without changing restored detail behavior`() {
         assertFalse(

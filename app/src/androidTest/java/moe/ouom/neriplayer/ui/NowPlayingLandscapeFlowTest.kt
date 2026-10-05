@@ -81,6 +81,7 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
+import moe.ouom.neriplayer.testutil.performNativeClick
 import moe.ouom.neriplayer.testutil.playbackRuntimePermissions
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import org.junit.Assert.assertTrue
@@ -237,7 +238,7 @@ class NowPlayingLandscapeFlowTest {
             // 触摸真实迷你播放器，保留系统选择菜单在进入前的状态
             // 动态背景持续请求帧，播放阶段由测试推进时钟，避免等待动画永久空闲
             composeRule.mainClock.autoAdvance = false
-            composeRule.onNodeWithText(songName).performTouchInput { click() }
+            composeRule.onNodeWithText(songName, useUnmergedTree = true).performNativeClick()
             composeRule.mainClock.advanceTimeBy(500L)
             composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
                 composeRule.mainClock.advanceTimeBy(64L)
@@ -267,6 +268,7 @@ class NowPlayingLandscapeFlowTest {
             }
             assertPlaybackInformationVisible(!phone, "nowPlayingLandscapeCoverPage")
             capture(context, "player")
+            if (!phone) verifyLandscapeLyricsAction(context, "nowPlayingLandscapeCoverPage")
             verifyLandscapeLyricsPage(context, phone)
 
             if (phone) {
@@ -402,12 +404,45 @@ class NowPlayingLandscapeFlowTest {
             lines.fetchSemanticsNodes().indices.any { lines[it].isDisplayed() }
         }
         assertPlaybackInformationVisible(!phone, "nowPlayingLandscapeLyricsPage")
+        if (!phone) verifyLandscapeLyricsAction(context, "nowPlayingLandscapeLyricsPage")
         capture(context, "lyrics-page")
         composeRule.onNodeWithTag("nowPlayingPlayerPane", useUnmergedTree = true)
             .performTouchInput { swipeRight() }
         waitForLandscapePage("nowPlayingLandscapeCoverPage", "nowPlayingLandscapeLyricsPage")
         assertPlaybackInformationVisible(!phone, "nowPlayingLandscapeCoverPage")
         capture(context, "cover-return")
+    }
+
+    private fun verifyLandscapeLyricsAction(context: Context, pageTag: String) {
+        val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
+        val title = localized.getString(CoreCommonR.string.lyrics_adjust_behavior)
+        val translation = localized.getString(CoreCommonR.string.settings_show_lyric_translation)
+        val phonetics = localized.getString(CoreCommonR.string.lyrics_translation_use_phonetic)
+        val doneText = localized.getString(CoreCommonR.string.action_done)
+        val page = composeRule.onNodeWithTag(pageTag, useUnmergedTree = true)
+        val pageBounds = page.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithTag("nowPlayingLyricsAction")
+            .assertContentDescriptionEquals(title).assertIsDisplayed().performClick()
+        composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+            composeRule.mainClock.advanceTimeBy(64L)
+            listOf(title, translation, phonetics, doneText).all { label ->
+                val nodes = composeRule.onAllNodesWithText(label)
+                nodes.fetchSemanticsNodes().indices.any { nodes[it].isDisplayed() }
+            }
+        }
+        composeRule.onNodeWithText(translation).assertIsDisplayed()
+        composeRule.onNodeWithText(phonetics).assertIsDisplayed()
+        val done = composeRule.onNodeWithText(doneText)
+        done.assertIsDisplayed()
+        capture(context, "lyrics-adjust-$pageTag")
+        done.performClick()
+        composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+            composeRule.mainClock.advanceTimeBy(64L)
+            composeRule.onAllNodesWithText(title).fetchSemanticsNodes().isEmpty()
+        }
+        assertEquals("调整歌词不能切换当前播放页", pageBounds, page.assertIsDisplayed().fetchSemanticsNode().boundsInRoot)
+        composeRule.onNodeWithTag(if (pageTag == "nowPlayingLandscapeCoverPage") "nowPlayingLandscapeLyricsPage"
+            else "nowPlayingLandscapeCoverPage", useUnmergedTree = true).assertDoesNotExist()
     }
 
     private fun assertPlaybackInformationVisible(visible: Boolean, pageTag: String? = null) {
@@ -628,7 +663,7 @@ class NowPlayingLandscapeFlowTest {
         }
         composeRule.onNodeWithText("lyrics").assertIsDisplayed()
         assertRequestedOrientation(scenario, ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-        composeRule.onNodeWithText(songName).performTouchInput { click() }
+        composeRule.onNodeWithText(songName, useUnmergedTree = true).performNativeClick()
         composeRule.mainClock.advanceTimeBy(500L)
         composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
             composeRule.mainClock.advanceTimeBy(64L)
@@ -670,6 +705,19 @@ class NowPlayingLandscapeFlowTest {
             }
             assertPlaybackInformationVisible(true)
             capture(context, "tablet-portrait-player")
+            val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
+        composeRule.onNodeWithTag("nowPlayingLyricsAction")
+                .assertContentDescriptionEquals(localized.getString(CoreCommonR.string.lyrics_title)).performClick()
+            composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                composeRule.onAllNodesWithTag("lyricsScreen", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
+                    composeRule.onAllNodesWithTag("nowPlayingTabletPortraitLayout", useUnmergedTree = true)
+                        .fetchSemanticsNodes().isEmpty()
+            }
+            composeRule.onNodeWithTag("lyricsScreen", useUnmergedTree = true).assertIsDisplayed()
+            composeRule.onNodeWithText(localized.getString(CoreCommonR.string.lyrics_adjust_behavior)).assertDoesNotExist()
+            Espresso.pressBack()
+            waitForTabletPortrait(songName)
             scenario.recreate()
             waitForNativeOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
             waitForTabletPortrait(songName)
@@ -826,6 +874,10 @@ class NowPlayingLandscapeFlowTest {
                 if (index == 3) LYRIC_LINE else "Local landscape lyric ${index + 1}"
         }
         File(directory, "${audio.nameWithoutExtension}.lrc").writeText(lyric, Charsets.UTF_8)
+        val translation = lyric.replace("Local landscape lyric", "本地译文").replace(LYRIC_LINE, "为音乐留多一点空间")
+        val phonetic = lyric.replace("Local landscape lyric", "Synthetic phonetic").replace(LYRIC_LINE, "Synthetic phonetic line")
+        File(directory, "${audio.nameWithoutExtension}_trans.lrc").writeText(translation, Charsets.UTF_8)
+        File(directory, "${audio.nameWithoutExtension}_roma.lrc").writeText(phonetic, Charsets.UTF_8)
         val cover = File(directory, "${audio.nameWithoutExtension}.png")
         val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
         try {
@@ -843,6 +895,9 @@ class NowPlayingLandscapeFlowTest {
         return LocalMediaSupport.toSongItem(LocalMediaSupport.inspect(context, Uri.fromFile(audio))).also {
             check(it.localFilePath == audio.absolutePath && it.mediaUri == audio.absolutePath)
             check(it.matchedLyric == lyric) { "真实本地探测未读取合成 LRC 侧车" }
+            check(it.matchedTranslatedLyric == translation && it.matchedRomanizedLyric == phonetic) {
+                "真实本地探测未读取合成翻译及音译侧车"
+            }
             check(!it.coverUrl.isNullOrBlank()) { "真实本地探测未读取合成封面" }
         }
     }

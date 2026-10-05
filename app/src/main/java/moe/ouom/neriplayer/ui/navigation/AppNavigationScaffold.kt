@@ -114,10 +114,23 @@ internal data class AppMiniPlayerPresentation(
 internal fun shouldShowMiniPlayer(hasSong: Boolean, showNowPlaying: Boolean): Boolean =
     hasSong && !showNowPlaying
 
-private fun reservedMiniPlayerHeight(hasSong: Boolean, showNowPlaying: Boolean, tablet: Boolean) =
+internal fun shouldSuppressPlaybackNavigation(playbackOpen: Boolean, overlayMounted: Boolean): Boolean =
+    playbackOpen || overlayMounted
+
+internal fun playbackSourceNavigationAction(
+    sourceRoute: String?,
+    navigate: (String) -> Unit
+): (() -> Unit)? = sourceRoute?.let { route -> { navigate(route) } }
+
+internal fun reservedMiniPlayerHeight(hasSong: Boolean, showNowPlaying: Boolean, smallestScreenWidthDp: Int) =
     if (shouldShowMiniPlayer(hasSong, showNowPlaying)) {
-        if (tablet) NeriMiniPlayerDefaults.TabletHeight else NeriMiniPlayerDefaults.Height
+        if (smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
+            NeriMiniPlayerDefaults.TabletHeight
+        } else NeriMiniPlayerDefaults.Height
     } else 0.dp
+
+internal fun appSnackbarStartInset(useNavigationRail: Boolean, playbackOverlayVisible: Boolean) =
+    if (useNavigationRail && !playbackOverlayVisible) AppNavigationRailWidth else 0.dp
 
 private fun positiveBottomBarHeight(nextHeight: Int, previousHeight: Int): Int =
     if (nextHeight > 0) nextHeight else previousHeight
@@ -138,7 +151,7 @@ internal fun AppNavigationScaffold(
     val reservedMiniPlayerHeight = reservedMiniPlayerHeight(
         miniPlayer.hasSong,
         bottomBar.showNowPlaying,
-        configuration.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
+        configuration.smallestScreenWidthDp
     )
     CompositionLocalProvider(LocalMiniPlayerHeight provides reservedMiniPlayerHeight) {
         AppFeedbackHostEffect(snackbarHostState)
@@ -155,7 +168,7 @@ internal fun AppNavigationScaffold(
                     NeriSnackbarHost(
                         hostState = snackbarHostState,
                         modifier = Modifier.padding(
-                            start = if (useNavigationRail && !bottomBar.showNowPlaying) AppNavigationRailWidth else 0.dp
+                            start = appSnackbarStartInset(useNavigationRail, bottomBar.showNowPlaying)
                         ),
                         bottomPadding = LocalMiniPlayerHeight.current
                     )

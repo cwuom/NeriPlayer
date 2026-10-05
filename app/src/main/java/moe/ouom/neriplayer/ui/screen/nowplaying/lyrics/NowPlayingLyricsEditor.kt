@@ -31,10 +31,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -55,6 +57,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardActionScope
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -559,9 +562,14 @@ private val LyricsEditorMinTextHeight = 128.dp
 private val LyricsEditorCompactHeight = 480.dp
 private val LyricsEditorContentMaxWidth = 720.dp
 
+internal enum class LyricsEditorSection { HEADER, SONG_INFO, TABS, INPUT, ACTIONS }
+
 internal data class LyricsEditorLayoutSpec(
     val compactHeader: Boolean,
-    val scrollWholeContent: Boolean
+    val scrollWholeContent: Boolean,
+    val spacing: Dp,
+    val horizontalPadding: Dp,
+    val sections: List<LyricsEditorSection>
 )
 
 internal fun resolveLyricsEditorLayoutSpec(
@@ -575,7 +583,16 @@ internal fun resolveLyricsEditorLayoutSpec(
     return LyricsEditorLayoutSpec(
         compactHeader = compactHeader,
         // 键盘或大字体压缩视窗时让整页滚动，避免固定工具栏把输入区挤到零高度
-        scrollWholeContent = availableHeight < chromeHeight + LyricsEditorMinTextHeight
+        scrollWholeContent = availableHeight < chromeHeight + LyricsEditorMinTextHeight,
+        spacing = if (compactHeader) 8.dp else 12.dp,
+        horizontalPadding = if (compactHeader) 16.dp else 24.dp,
+        sections = buildList {
+            add(LyricsEditorSection.HEADER)
+            if (!compactHeader) add(LyricsEditorSection.SONG_INFO)
+            add(LyricsEditorSection.TABS)
+            add(LyricsEditorSection.INPUT)
+            add(LyricsEditorSection.ACTIONS)
+        }
     )
 }
 
@@ -592,6 +609,7 @@ internal fun LyricsEditorContent(
     val scrollState = rememberScrollState()
     val fontScale = LocalDensity.current.fontScale
     val isSaving by owner.isSavingState
+    val actions = LyricsEditorChromeActions(owner::clearSelectedText, onPaste, onSave, onDismiss, onMatch)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -601,80 +619,109 @@ internal fun LyricsEditorContent(
             .imePadding()
     ) {
         val layout = resolveLyricsEditorLayoutSpec(maxHeight, fontScale)
-        val spacing = if (layout.compactHeader) 8.dp else 12.dp
-        val contentModifier = Modifier
-            .align(Alignment.TopCenter)
+        val slots = LyricsEditorContentSlots(originalSong, owner, layout, isSaving, actions)
+        val contentModifier = Modifier.align(Alignment.TopCenter)
             .widthIn(max = LyricsEditorContentMaxWidth)
             .fillMaxWidth()
             .fillMaxHeight()
             .testTag("lyrics-editor-content")
-            .then(if (layout.scrollWholeContent) Modifier.verticalScroll(scrollState) else Modifier)
-            .padding(horizontal = if (layout.compactHeader) 16.dp else 24.dp, vertical = spacing)
-        Column(contentModifier, verticalArrangement = Arrangement.spacedBy(spacing)) {
-            LyricsEditorHeader(
-                song = originalSong.takeIf { layout.compactHeader },
-                isSaving = isSaving,
-                onDismiss = onDismiss,
-                onMatch = onMatch
-            )
-            if (!layout.compactHeader) {
-                LyricsEditorSongInfo(originalSong, isSaving, onMatch)
-            }
-            LyricsEditorTabs(owner)
-            LyricsEditorTextInput(
-                owner,
-                modifier = Modifier.fillMaxWidth().then(
-                    if (layout.scrollWholeContent) Modifier.height(LyricsEditorMinTextHeight)
-                    else Modifier.weight(1f).heightIn(min = LyricsEditorMinTextHeight)
-                )
-            )
-            LyricsEditorActions(owner, onPaste, onSave)
+            .lyricsEditorScrollModifier(layout, scrollState)
+            .padding(horizontal = layout.horizontalPadding, vertical = layout.spacing)
+        Column(contentModifier, verticalArrangement = Arrangement.spacedBy(layout.spacing)) {
+            layout.sections.forEach { slots.content.getValue(it)(this) }
         }
     }
 }
 
-@Composable
-private fun LyricsEditorHeader(
-    song: SongItem?,
+private class LyricsEditorChromeActions(
+    val onClear: () -> Unit,
+    val onPaste: () -> Unit,
+    val onSave: () -> Unit,
+    val onDismiss: () -> Unit,
+    val onMatch: () -> Unit
+)
+
+private class LyricsEditorContentSlots(
+    song: SongItem,
+    owner: NowPlayingLyricsEditorOwner,
+    layout: LyricsEditorLayoutSpec,
     isSaving: Boolean,
-    onDismiss: () -> Unit,
-    onMatch: () -> Unit
+    actions: LyricsEditorChromeActions
 ) {
+    private val header = resolveLyricsEditorHeaderPresentation(song.takeIf { layout.compactHeader }, isSaving)
+    private val identity = resolveLyricsEditorSongIdentityPresentation(song)
+    private val actionPresentation = resolveLyricsEditorActionPresentation(isSaving)
+    val content: Map<LyricsEditorSection, @Composable ColumnScope.() -> Unit> = mapOf(
+        LyricsEditorSection.HEADER to { LyricsEditorHeader(header, actions) },
+        LyricsEditorSection.SONG_INFO to { LyricsEditorSongInfo(identity, isSaving, actions.onMatch) },
+        LyricsEditorSection.TABS to { LyricsEditorTabs(owner) },
+        LyricsEditorSection.INPUT to { LyricsEditorTextInput(owner, Modifier.lyricsEditorInputModifier(layout, this)) },
+        LyricsEditorSection.ACTIONS to { LyricsEditorActions(actionPresentation, actions) }
+    )
+}
+
+private fun Modifier.lyricsEditorScrollModifier(layout: LyricsEditorLayoutSpec, scrollState: androidx.compose.foundation.ScrollState): Modifier =
+    if (layout.scrollWholeContent) verticalScroll(scrollState) else this
+
+private fun Modifier.lyricsEditorInputModifier(layout: LyricsEditorLayoutSpec, columnScope: ColumnScope): Modifier = with(columnScope) {
+    this@lyricsEditorInputModifier.fillMaxWidth().then(
+        if (layout.scrollWholeContent) Modifier.height(LyricsEditorMinTextHeight)
+        else Modifier.weight(1f).heightIn(min = LyricsEditorMinTextHeight)
+    )
+}
+
+@Composable
+private fun LyricsEditorHeader(presentation: LyricsEditorHeaderPresentation, actions: LyricsEditorChromeActions) {
     Row(
         modifier = Modifier.fillMaxWidth().testTag("lyrics-editor-header"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = stringResource(CoreCommonR.string.music_edit_lyrics),
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (song != null) {
-                Text(
-                    text = "${song.customName ?: song.name} · ${song.customArtist ?: song.artist}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        val identity = presentation.songIdentity
+        if (identity != null) {
+            LyricsEditorCompactHeaderIdentity(identity, presentation.saving, actions.onMatch)
+        } else {
+            Column(Modifier.weight(1f)) { LyricsEditorHeaderTitle() }
         }
-        if (song != null) LyricsEditorMatchButton(isSaving, onMatch)
         HapticTextButton(
-            onClick = onDismiss,
-            enabled = !isSaving,
+            onClick = actions.onDismiss,
+            enabled = presentation.actionsEnabled,
             modifier = Modifier.testTag("lyrics-editor-cancel")
-        ) {
-            Text(stringResource(CoreCommonR.string.action_cancel), maxLines = 1)
-        }
+        ) { Text(stringResource(CoreCommonR.string.action_cancel), maxLines = 1) }
     }
 }
 
 @Composable
-private fun LyricsEditorSongInfo(song: SongItem, isSaving: Boolean, onMatch: () -> Unit) {
+private fun RowScope.LyricsEditorCompactHeaderIdentity(
+    identity: LyricsEditorSongIdentityPresentation,
+    isSaving: Boolean,
+    onMatch: () -> Unit
+) {
+    Column(Modifier.weight(1f)) {
+        LyricsEditorHeaderTitle()
+        Text(
+            text = identity.summary,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+    LyricsEditorMatchButton(isSaving, onMatch)
+}
+
+@Composable
+private fun LyricsEditorHeaderTitle() {
+    Text(
+        text = stringResource(CoreCommonR.string.music_edit_lyrics),
+        style = MaterialTheme.typography.titleMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+private fun LyricsEditorSongInfo(identity: LyricsEditorSongIdentityPresentation, isSaving: Boolean, onMatch: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -687,13 +734,13 @@ private fun LyricsEditorSongInfo(song: SongItem, isSaving: Boolean, onMatch: () 
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = song.customName ?: song.name,
+                text = identity.title,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = song.customArtist ?: song.artist,
+                text = identity.artist,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -719,34 +766,33 @@ private fun LyricsEditorMatchButton(isSaving: Boolean, onMatch: () -> Unit) {
 }
 
 @Composable
-private fun LyricsEditorActions(owner: NowPlayingLyricsEditorOwner, onPaste: () -> Unit, onSave: () -> Unit) {
-    val isSaving by owner.isSavingState
+private fun LyricsEditorActions(presentation: LyricsEditorActionPresentation, actions: LyricsEditorChromeActions) {
     Row(
         modifier = Modifier.fillMaxWidth().testTag("lyrics-editor-actions"),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         HapticTextButton(
-            onClick = owner::clearSelectedText,
-            enabled = !isSaving,
+            onClick = actions.onClear,
+            enabled = presentation.enabled,
             modifier = Modifier.weight(1f).testTag("lyrics-editor-clear")
         ) { Text(stringResource(CoreCommonR.string.action_clear), maxLines = 1, overflow = TextOverflow.Ellipsis) }
         HapticTextButton(
-            onClick = onPaste,
-            enabled = !isSaving,
+            onClick = actions.onPaste,
+            enabled = presentation.enabled,
             modifier = Modifier.weight(1f).testTag("lyrics-editor-paste")
         ) { Text(stringResource(CoreCommonR.string.action_paste), maxLines = 1, overflow = TextOverflow.Ellipsis) }
         HapticTextButton(
-            onClick = onSave,
-            enabled = !isSaving,
+            onClick = actions.onSave,
+            enabled = presentation.enabled,
             modifier = Modifier.weight(1f).testTag("lyrics-editor-save")
-        ) {
-            if (isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            } else {
-                Text(stringResource(CoreCommonR.string.music_save_changes), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
+        ) { LyricsEditorSaveLabel(presentation.saving) }
     }
+}
+
+@Composable
+private fun LyricsEditorSaveLabel(saving: Boolean) {
+    if (saving) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+    else Text(stringResource(CoreCommonR.string.music_save_changes), maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 internal fun editableLyricMatchFailureDescription(error: Throwable): String =
@@ -876,8 +922,10 @@ internal fun LyricMatchResultsContent(
     val compactListState = rememberLazyListState()
     val resultListState = rememberLazyListState()
     val fontScale = LocalDensity.current.fontScale
-    val showEmpty = !isLoading && hasSearched && errorMessage == null && results.isEmpty()
-    val hasFeedback = isLoading || errorMessage != null || showEmpty
+    val queryPresentation = resolveLyricMatchQueryPresentation(query, isLoading, selectedSources)
+    val queryActions = LyricMatchQueryActions(onQueryChange, onSearch, query)
+    val feedback = resolveLyricMatchFeedbackPresentation(isLoading, errorMessage, hasSearched, results.isEmpty())
+    val hasFeedback = feedback.items.isNotEmpty()
     BoxWithConstraints(
         modifier = modifier.fillMaxSize().testTag("lyrics-match-layout")
             .bottomSheetScrollGuard(allowDownwardToParent = { false })
@@ -896,8 +944,8 @@ internal fun LyricMatchResultsContent(
             ) {
                 item(key = "header") { LyricMatchHeader(onDismiss) }
                 item(key = "sources") { LyricMatchSources(selectedSources, isLoading, onSourceToggle) }
-                item(key = "query") { LyricMatchQuery(query, onQueryChange, isLoading, selectedSources, onSearch) }
-                if (hasFeedback) item(key = "feedback") { LyricMatchFeedback(isLoading, errorMessage, showEmpty) }
+                item(key = "query") { LyricMatchQuery(queryPresentation, queryActions) }
+                if (hasFeedback) item(key = "feedback") { LyricMatchFeedback(feedback) }
                 items(results, key = ::lyricMatchResultKey) { result ->
                     LyricMatchResultCard(result, onClick = { onApply(result) })
                 }
@@ -909,8 +957,8 @@ internal fun LyricMatchResultsContent(
             ) {
                 LyricMatchHeader(onDismiss)
                 LyricMatchSources(selectedSources, isLoading, onSourceToggle)
-                LyricMatchQuery(query, onQueryChange, isLoading, selectedSources, onSearch)
-                if (hasFeedback) LyricMatchFeedback(isLoading, errorMessage, showEmpty)
+                LyricMatchQuery(queryPresentation, queryActions)
+                if (hasFeedback) LyricMatchFeedback(feedback)
                 LazyColumn(
                     modifier = Modifier.weight(1f).testTag("lyrics-match-results"),
                     state = resultListState,
@@ -978,33 +1026,37 @@ private fun LyricMatchSources(
     }
 }
 
-@Composable
-private fun LyricMatchQuery(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    isLoading: Boolean,
-    selectedSources: Set<EditableLyricMatchSource>,
-    onSearch: (String) -> Unit
+private class LyricMatchQueryActions(
+    val onQueryChange: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    query: String
 ) {
+    val onSubmit: () -> Unit = { onSearch(query) }
+    // IME 提交由匹配 owner 校验，不能套用按钮禁用规则
+    val onImeSubmit: KeyboardActionScope.() -> Unit = { onSubmit() }
+}
+
+@Composable
+private fun LyricMatchQuery(presentation: LyricMatchQueryPresentation, actions: LyricMatchQueryActions) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
+            value = presentation.query,
+            onValueChange = actions.onQueryChange,
             modifier = Modifier.weight(1f).testTag("lyrics-match-query"),
             label = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword)) },
             placeholder = { Text(stringResource(CoreCommonR.string.lyrics_match_keyword_hint)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch(query) })
+            keyboardActions = KeyboardActions(onSearch = actions.onImeSubmit)
         )
         HapticTextButton(
-            onClick = { onSearch(query) },
+            onClick = actions.onSubmit,
             modifier = Modifier.testTag("lyrics-match-search"),
-            enabled = !isLoading && query.isNotBlank() && selectedSources.isNotEmpty(),
+            enabled = presentation.searchEnabled,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1015,9 +1067,16 @@ private fun LyricMatchQuery(
 }
 
 @Composable
-private fun LyricMatchFeedback(isLoading: Boolean, errorMessage: String?, showEmpty: Boolean) {
+private fun LyricMatchFeedback(presentation: LyricMatchFeedbackPresentation) {
+    val slots = LyricMatchFeedbackSlots(presentation.errorMessage)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (isLoading) {
+        presentation.items.forEach { slots.content.getValue(it)() }
+    }
+}
+
+private class LyricMatchFeedbackSlots(errorMessage: String?) {
+    val content: Map<LyricMatchFeedbackKind, @Composable () -> Unit> = mapOf(
+        LyricMatchFeedbackKind.LOADING to {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             Text(
                 text = stringResource(CoreCommonR.string.lyrics_match_loading),
@@ -1025,16 +1084,16 @@ private fun LyricMatchFeedback(isLoading: Boolean, errorMessage: String?, showEm
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("lyrics-match-loading")
             )
-        }
-        if (errorMessage != null) {
-            Text(errorMessage, style = MaterialTheme.typography.bodySmall,
+        },
+        LyricMatchFeedbackKind.ERROR to {
+            Text(checkNotNull(errorMessage), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("lyrics-match-error"))
-        }
-        if (showEmpty) {
+        },
+        LyricMatchFeedbackKind.EMPTY to {
             Text(stringResource(CoreCommonR.string.lyrics_match_empty), style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.testTag("lyrics-match-empty"))
         }
-    }
+    )
 }
 
 @Composable

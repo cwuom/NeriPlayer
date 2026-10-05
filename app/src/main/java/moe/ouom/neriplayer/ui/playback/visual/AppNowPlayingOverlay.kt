@@ -17,9 +17,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.SoftwareKeyboardController
+import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.unit.dp
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
@@ -70,6 +73,17 @@ internal data class NowPlayingOverlayBackground(
     val offlineMode: Boolean
 )
 
+internal fun releaseNowPlayingInputSession(
+    focusManager: FocusManager,
+    textToolbar: TextToolbar,
+    keyboardController: SoftwareKeyboardController?
+) {
+    // 先结束底层输入会话，再关闭独立的系统选择菜单和键盘
+    focusManager.clearFocus(force = true)
+    textToolbar.hide()
+    keyboardController?.hide()
+}
+
 @Composable
 internal fun AppNowPlayingOverlay(
     visible: Boolean,
@@ -87,10 +101,7 @@ internal fun AppNowPlayingOverlay(
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(visible) {
         if (visible) {
-            // 系统选择菜单独立于播放覆盖层，进入时结束底层输入会话
-            focusManager.clearFocus(force = true)
-            textToolbar.hide()
-            keyboardController?.hide()
+            releaseNowPlayingInputSession(focusManager, textToolbar, keyboardController)
         }
     }
     AnimatedVisibility(

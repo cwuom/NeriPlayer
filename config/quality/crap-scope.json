@@ -83,6 +83,8 @@
     "moe/ouom/neriplayer/ui/screen/tab/settings/listentogether/SettingsListenTogetherController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/listentogether/SettingsListenTogetherDialogs.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/listentogether/SettingsListenTogetherSection.kt",
+    "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingAdaptiveLayout.kt",
+    "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingWideLyrics.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingPlaybackControls.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/NowPlayingSecondaryActions.kt",
     "moe/ouom/neriplayer/core/player/service/artwork/PlaybackArtworkOwner.kt",
@@ -130,6 +132,7 @@
     "moe/ouom/neriplayer/data/model/youtube/playback/YouTubePlayableAudio.kt",
     "moe/ouom/neriplayer/platform/youtube/api/parser/YouTubeMusicResponseParser.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsEditor.kt",
+    "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/LyricsEditorPresentation.kt",
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionOpenGate.kt",
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionResources.kt",
     "moe/ouom/neriplayer/core/player/usb/session/UsbExclusiveSessionReusePolicy.kt",
@@ -163,6 +166,7 @@
     "moe/ouom/neriplayer/ui/screen/tab/settings/auth/SettingsAccountAuthController.kt",
     "moe/ouom/neriplayer/ui/screen/tab/settings/auth/SettingsAccountStatusContent.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/edit/NowPlayingSongEditSheet.kt",
+    "moe/ouom/neriplayer/ui/screen/nowplaying/edit/EditSongLayoutPresentation.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/edit/NowPlayingSongEditOwner.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/edit/NowPlayingSongEditPlaybackPort.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/edit/NowPlayingSongEditPolicy.kt",
@@ -540,15 +544,15 @@
       "class": "moe.ouom.neriplayer.ui.NeriAppKt",
       "methods": [
         "NeriAppContent",
-        "NeriAppContent$lambda$167",
-        "NeriAppContent$lambda$167$RenderMainTabRoute",
-        "NeriAppContent$lambda$167$RenderMainTabRoute$38",
-        "NeriAppContent$lambda$167$RenderMainTabRoute$39",
-        "NeriAppContent$lambda$167$RenderMainTabRoute$40",
-        "NeriAppContent$lambda$167$RenderMainTabRoute$41",
-        "NeriAppContent$lambda$167$RenderMainTabRoute$42",
-        "NeriAppContent$lambda$167$RenderMainTabRoute$42$1",
-        "NeriAppContent$lambda$167$47"
+        "NeriAppContent$lambda$173",
+        "NeriAppContent$lambda$173$RenderMainTabRoute",
+        "NeriAppContent$lambda$173$RenderMainTabRoute$38",
+        "NeriAppContent$lambda$173$RenderMainTabRoute$39",
+        "NeriAppContent$lambda$173$RenderMainTabRoute$40",
+        "NeriAppContent$lambda$173$RenderMainTabRoute$41",
+        "NeriAppContent$lambda$173$RenderMainTabRoute$42",
+        "NeriAppContent$lambda$173$RenderMainTabRoute$42$1",
+        "NeriAppContent$lambda$173$48"
       ]
     },
     {
@@ -1094,8 +1098,26 @@
       "class": "moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreenKt",
       "methods": [
         "NowPlayingScreen",
-        "NowPlayingScreen$lambda$148$0$0$1",
-        "NowPlayingScreen$lambda$148$0$0$1$17"
+        "NowPlayingScreen$lambda$152$1$0$1",
+        "NowPlayingScreen$lambda$152$1$0$1$20",
+        "NowPlayingScreen$lambda$152$1$0$1$21",
+        "NowPlayingScreen$lambda$152$1$0$1$22",
+        "NowPlayingScreen$lambda$152$1$0$1$23",
+        "NowPlayingScreen$lambda$152$1$0$1$24",
+        "NowPlayingScreen$lambda$152$1$0$1$25",
+        "NowPlayingScreen$lambda$152$1$0$1$26",
+        "NowPlayingScreen$lambda$152$1$0$1$27",
+        "NowPlayingScreen$lambda$152$1$0$1$22$0"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/ui/navigation/MainTabLayerHost.kt",
+      "class": "moe.ouom.neriplayer.ui.navigation.MainTabLayerHostKt",
+      "methods": [
+        "shouldUseMainTabScaleTransition",
+        "resolveMainTabLayerSceneTransform",
+        "shouldBlockMainTabSceneInput",
+        "blockInactiveMainTabScene"
       ]
     }
   ]

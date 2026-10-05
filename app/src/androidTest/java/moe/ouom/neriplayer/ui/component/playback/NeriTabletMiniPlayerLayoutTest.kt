@@ -377,7 +377,7 @@ class NeriTabletMiniPlayerLayoutTest {
 
     private fun assertLayout(layout: TabletMiniPlayerLayout) {
         val player = bounds(PlayerTag)
-        assertEquals(76f * pixelsPerDp, player.height, 1f)
+        assertEquals(72f * pixelsPerDp, player.height, 1f)
         composeRule.onNodeWithText(Title, useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText(Artist, useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("00:30 / 02:00", useUnmergedTree = true).assertIsDisplayed()
@@ -398,8 +398,8 @@ class NeriTabletMiniPlayerLayoutTest {
         }
         val metadata = bounds(MetadataTag)
         assertTrue("歌曲信息空间不足: $metadata", metadata.width >= 120f * pixelsPerDp - 1f)
-        val bodyCenterY = player.top + (12f + 64f / 2f) * pixelsPerDp
-        assertEquals("歌曲信息未在主体内上下居中", bodyCenterY, metadata.center.y, 1f)
+        val bodyCenterY = player.center.y
+        assertEquals("歌曲信息未在整个玻璃区域内上下居中", bodyCenterY, metadata.center.y, 1f)
         val direct = Action.entries.filter { isDirect(it, layout) }
         Action.entries.forEach { action ->
             if (action in direct) {
@@ -408,7 +408,7 @@ class NeriTabletMiniPlayerLayoutTest {
                 assertContained(control, player)
                 assertEquals(48f * pixelsPerDp, control.width, 1f)
                 assertEquals(48f * pixelsPerDp, control.height, 1f)
-                assertEquals("按钮未在主体内上下居中", bodyCenterY, control.center.y, 1f)
+                assertEquals("按钮未在整个玻璃区域内上下居中", bodyCenterY, control.center.y, 1f)
             } else composeRule.onNodeWithTag(action.tag).assertDoesNotExist()
         }
         val firstControl = direct.minOf { bounds(it.tag).left }
@@ -439,7 +439,7 @@ class NeriTabletMiniPlayerLayoutTest {
         val playerBounds = bounds(PlayerTag)
         val progressBounds = bounds(ProgressTag)
         val viewportBounds = bounds(ViewportTag)
-        assertEquals(76f * pixelsPerDp, playerBounds.height, 1f)
+        assertEquals(72f * pixelsPerDp, playerBounds.height, 1f)
         assertEquals(12f * pixelsPerDp, progressBounds.height, 1f)
         assertEquals(playerBounds.top, progressBounds.top, 1f)
         assertEquals(playerBounds.left, progressBounds.left, 1f)

@@ -44,6 +44,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.testutil.UiFailureDiagnostics
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.testutil.performNativeClick
+import moe.ouom.neriplayer.testutil.sendNativeSoftKeyboardText
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
@@ -177,16 +179,23 @@ class OverlayWindowNavigationBarPolicyTest {
             val window = awaitDialogWindow()
             awaitNavigationPolicy(window, hidden = true, stage = "${overlay.name.lowercase()}-before-ime")
             try {
-                composeRule.onNodeWithTag(INPUT).performClick()
+                composeRule.onNodeWithTag(INPUT).performNativeClick()
                 composeRule.runOnIdle {
                     WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.ime())
                 }
                 awaitWindowInsets(window, "弹窗必须打开真实 IME") { insets ->
                     insets.isVisible(WindowInsetsCompat.Type.ime()) && dialogView.get()?.let { view ->
-                        composeRule.activity.getSystemService(InputMethodManager::class.java).isActive(view)
+                        val input = composeRule.activity.getSystemService(InputMethodManager::class.java)
+                        view.isInTouchMode && view.hasWindowFocus() && input.isActive(view) && input.isAcceptingText
                     } == true
                 }
-                instrumentation.sendStringSync(DRAFT)
+                composeRule.onNodeWithTag(INPUT).assertIsFocused()
+                sendNativeSoftKeyboardText(DRAFT)
+                UiFailureDiagnostics.onFailure("overlay-${overlay.name.lowercase()}-ime-input") {
+                    composeRule.waitUntil(conditionDescription = "原生软键盘输入应写入弹窗草稿", timeoutMillis = 5_000) {
+                        draft.value == DRAFT
+                    }
+                }
                 composeRule.onNodeWithTag(INPUT).assertTextEquals(DRAFT).assertIsFocused()
                 composeRule.runOnIdle {
                     WindowInsetsControllerCompat(window, window.decorView).apply {

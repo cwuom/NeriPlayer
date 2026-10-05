@@ -1,17 +1,12 @@
 package moe.ouom.neriplayer.ui.screen
 
 import android.graphics.Bitmap
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.geometry.Offset
@@ -19,11 +14,11 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -37,13 +32,13 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongLyricsDraft
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricsEditorContent
@@ -239,8 +234,9 @@ class NowPlayingLyricsEditorLayoutTest {
 
     private fun scrollTo(tag: String): androidx.compose.ui.test.SemanticsNodeInteraction {
         val node = composeRule.onNodeWithTag(tag)
-        if (composeRule.onNodeWithTag("lyrics-editor-content").fetchSemanticsNode()
-                .config.contains(SemanticsProperties.VerticalScrollAxisRange)) node.performScrollTo()
+        var ancestor = node.fetchSemanticsNode().parent
+        while (ancestor != null && !ancestor.config.contains(SemanticsActions.ScrollBy)) ancestor = ancestor.parent
+        if (ancestor != null) node.performScrollTo()
         return node.assertIsDisplayed()
     }
 
@@ -272,35 +268,31 @@ class NowPlayingLyricsEditorLayoutTest {
                     focusManager = currentFocusManager
                     keyboardController = currentKeyboardController
                 }
-                BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    val density = LocalDensity.current
-                    val scale = minOf(maxWidth.value / width.value.value, maxHeight.value / height.value.value)
-                    CompositionLocalProvider(LocalDensity provides Density(density.density * scale, fontScale)) {
-                        val parentConnection = remember {
-                            object : NestedScrollConnection {
-                                override fun onPostScroll(consumed: Offset, available: Offset,
-                                    source: NestedScrollSource): Offset {
-                                    if (available.y != 0f) parentMotionCount++
-                                    return available
-                                }
-                                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                                    if (available.y != 0f) parentMotionCount++
-                                    return available
-                                }
+                FittedTestViewport(width.value, height.value, fontScale = fontScale, layoutOnlyTextInput = true) {
+                    val parentConnection = remember {
+                        object : NestedScrollConnection {
+                            override fun onPostScroll(consumed: Offset, available: Offset,
+                                source: NestedScrollSource): Offset {
+                                if (available.y != 0f) parentMotionCount++
+                                return available
+                            }
+                            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                                if (available.y != 0f) parentMotionCount++
+                                return available
                             }
                         }
-                        androidx.compose.foundation.layout.Box(
-                            Modifier.requiredSize(width.value, height.value).testTag("lyrics-editor-fixture")
-                                .nestedScroll(parentConnection)
-                        ) {
-                            LyricsEditorContent(song, owner,
-                                onDismiss = { cancels++ },
-                                onMatch = { matches++ },
-                                onPaste = { owner.pasteSelectedText("粘贴到标签${owner.selectedTabState.intValue}") },
-                                onSave = {
-                                    owner.save(false, { draft -> savedDrafts += draft; true }, {}, { saved++ })
-                                })
-                        }
+                    }
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.testTag("lyrics-editor-fixture")
+                            .nestedScroll(parentConnection)
+                    ) {
+                        LyricsEditorContent(song, owner,
+                            onDismiss = { cancels++ },
+                            onMatch = { matches++ },
+                            onPaste = { owner.pasteSelectedText("粘贴到标签${owner.selectedTabState.intValue}") },
+                            onSave = {
+                                owner.save(false, { draft -> savedDrafts += draft; true }, {}, { saved++ })
+                            })
                     }
                 }
             }

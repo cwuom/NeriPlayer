@@ -2,24 +2,14 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,7 +20,6 @@ import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
@@ -49,13 +38,13 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.testutil.FittedTestViewport
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongActionRow
@@ -304,80 +293,71 @@ class NowPlayingSongEditLayoutTest {
         height.value = initialHeight
         composeRule.setContent {
             MaterialTheme {
-                BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                FittedTestViewport(width.value, height.value, fontScale = fontScale, layoutOnlyTextInput = true) {
                     val currentFocusManager = LocalFocusManager.current
                     val currentKeyboardController = LocalSoftwareKeyboardController.current
                     SideEffect {
                         focusManager = currentFocusManager
                         keyboardController = currentKeyboardController
                     }
-                    val density = LocalDensity.current
-                    val scale = minOf(maxWidth.value / width.value.value, maxHeight.value / height.value.value)
-                    CompositionLocalProvider(LocalDensity provides Density(density.density * scale, fontScale)) {
-                        val parentConnection = remember {
-                            object : NestedScrollConnection {
-                                override fun onPostScroll(consumed: Offset, available: Offset,
-                                    source: NestedScrollSource): Offset {
-                                    if (available.y != 0f) parentMotionCount++
-                                    return available
-                                }
-                                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                                    if (available.y != 0f) parentMotionCount++
-                                    return available
-                                }
+                    val parentConnection = remember {
+                        object : NestedScrollConnection {
+                            override fun onPostScroll(consumed: Offset, available: Offset,
+                                source: NestedScrollSource): Offset {
+                                if (available.y != 0f) parentMotionCount++
+                                return available
+                            }
+                            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                                if (available.y != 0f) parentMotionCount++
+                                return available
                             }
                         }
-                        val systemInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Bottom)
-                        val fixtureInsets = if (keyboardRemaining) Modifier.consumeWindowInsets(systemInsets)
-                            else Modifier.windowInsetsPadding(systemInsets)
-                        Column(Modifier.requiredSize(width.value, height.value).testTag("fixtureEditViewport")
-                            .nestedScroll(parentConnection)
-                            .then(fixtureInsets)) {
-                            if (!keyboardRemaining) {
-                                Box(Modifier.fillMaxWidth().testTag("fixtureHandle"),
-                                    contentAlignment = Alignment.Center) { BottomSheetDefaults.DragHandle() }
-                            }
-                            val scrollState = rememberScrollState()
-                            EditSongInfoLayout(
-                                compactLandscape = shouldUseCompactEditSongLayout(smallestScreenWidthDp,
-                                    width.value > height.value, height.value),
-                                scrollState = scrollState,
-                                header = {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(resource(CoreCommonR.string.music_edit_info), Modifier.weight(1f),
-                                            style = MaterialTheme.typography.titleMedium)
-                                        HapticTextButton(onClick = { cancels++ }) { Text("Cancel") }
-                                    }
-                                },
-                                coverUrl = {
-                                    EditSongEditableTextField(
-                                        value = "content://fixture/cover", onValueChange = {}, label = "Cover URL",
-                                        restoreDescription = "Restore cover", enabled = true, onRestore = { restores++ },
-                                        modifier = Modifier.testTag("fixtureCoverUrl")
-                                    )
-                                },
-                                coverPreview = { size ->
-                                    EditSongCoverPreview(EditSongCoverPreviewState("", true, true, true), size) { coverClicks++ }
-                                },
-                                fields = {
-                                    EditSongEditableTextField(
-                                        value = title.value, onValueChange = { title.value = it }, label = "Title",
-                                        restoreDescription = "Restore title", enabled = true, onRestore = { restores++ },
-                                        modifier = Modifier.testTag("fixtureTitle")
-                                    )
-                                    EditSongEditableTextField(
-                                        value = artist.value, onValueChange = { artist.value = it }, label = "Artist",
-                                        restoreDescription = "Restore artist", enabled = true, onRestore = { restores++ },
-                                        modifier = Modifier.testTag("fixtureArtist")
-                                    )
-                                    EditSongLyricsButton(false, true) { lyricClicks++ }
-                                },
-                                actions = {
-                                    EditSongActionRow(false, false, false,
-                                        onSearch = { searches++ }, onRestoreAll = { restores++ }, onSave = { saves++ })
-                                }
-                            )
+                    }
+                    Column(Modifier.testTag("fixtureEditViewport").nestedScroll(parentConnection)) {
+                        if (!keyboardRemaining) {
+                            Box(Modifier.fillMaxWidth().testTag("fixtureHandle"),
+                                contentAlignment = Alignment.Center) { BottomSheetDefaults.DragHandle() }
                         }
+                        val scrollState = rememberScrollState()
+                        EditSongInfoLayout(
+                            compactLandscape = shouldUseCompactEditSongLayout(smallestScreenWidthDp,
+                                width.value > height.value, height.value),
+                            scrollState = scrollState,
+                            header = {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(resource(CoreCommonR.string.music_edit_info), Modifier.weight(1f),
+                                        style = MaterialTheme.typography.titleMedium)
+                                    HapticTextButton(onClick = { cancels++ }) { Text("Cancel") }
+                                }
+                            },
+                            coverUrl = {
+                                EditSongEditableTextField(
+                                    value = "content://fixture/cover", onValueChange = {}, label = "Cover URL",
+                                    restoreDescription = "Restore cover", enabled = true, onRestore = { restores++ },
+                                    modifier = Modifier.testTag("fixtureCoverUrl")
+                                )
+                            },
+                            coverPreview = { size ->
+                                EditSongCoverPreview(EditSongCoverPreviewState("", true, true, true), size) { coverClicks++ }
+                            },
+                            fields = {
+                                EditSongEditableTextField(
+                                    value = title.value, onValueChange = { title.value = it }, label = "Title",
+                                    restoreDescription = "Restore title", enabled = true, onRestore = { restores++ },
+                                    modifier = Modifier.testTag("fixtureTitle")
+                                )
+                                EditSongEditableTextField(
+                                    value = artist.value, onValueChange = { artist.value = it }, label = "Artist",
+                                    restoreDescription = "Restore artist", enabled = true, onRestore = { restores++ },
+                                    modifier = Modifier.testTag("fixtureArtist")
+                                )
+                                EditSongLyricsButton(false, true) { lyricClicks++ }
+                            },
+                            actions = {
+                                EditSongActionRow(false, false, false,
+                                    onSearch = { searches++ }, onRestoreAll = { restores++ }, onSave = { saves++ })
+                            }
+                        )
                     }
                 }
             }
