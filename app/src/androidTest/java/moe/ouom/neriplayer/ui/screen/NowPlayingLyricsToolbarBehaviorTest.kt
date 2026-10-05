@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.test.espresso.Espresso
@@ -37,11 +38,13 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsFontSettings
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsLyricContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsSheetNavigation
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverActionToolbar
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarActions
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarLayoutSpec
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarStatus
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldAdjustNowPlayingLyricsBehavior
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -107,6 +110,39 @@ class NowPlayingLyricsToolbarBehaviorTest {
     }
 
     @Test
+    fun narrowTabletLandscapeToolbarUsesAdjustmentAndDoneKeepsTheCoverSelected() {
+        render(
+            wideLandscape = false,
+            lyricsShowing = false,
+            isLandscape = true,
+            smallestScreenWidthDp = 600,
+            width = 400.dp,
+            height = 300.dp
+        )
+        openLyricBehavior()
+        assertLyricBehaviorOptions(expectedPage = CoverPage)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.action_done))
+            .assertIsDisplayed().performClick()
+        assertSheetDismissed(expectedPage = CoverPage)
+    }
+
+    @Test
+    fun narrowTabletLandscapeToolbarUsesAdjustmentAndBackKeepsLyricsSelected() {
+        render(
+            wideLandscape = false,
+            lyricsShowing = true,
+            isLandscape = true,
+            smallestScreenWidthDp = 600,
+            width = 400.dp,
+            height = 300.dp
+        )
+        openLyricBehavior()
+        assertLyricBehaviorOptions(expectedPage = LyricsPage)
+        Espresso.pressBack()
+        assertSheetDismissed(expectedPage = LyricsPage)
+    }
+
+    @Test
     fun portraitLyricsActionSwitchesPagesWithoutOpeningTheSheet() {
         render(wideLandscape = false, lyricsShowing = false)
         val lyricsDescription = context.getString(CoreCommonR.string.lyrics_title)
@@ -121,7 +157,18 @@ class NowPlayingLyricsToolbarBehaviorTest {
         assertPortraitPage(expectedPage = CoverPage, expectedSwitches = 2)
     }
 
-    private fun render(wideLandscape: Boolean, lyricsShowing: Boolean) {
+    private fun render(
+        wideLandscape: Boolean,
+        lyricsShowing: Boolean,
+        isLandscape: Boolean = wideLandscape,
+        smallestScreenWidthDp: Int = if (wideLandscape) 800 else 360,
+        width: Dp = if (wideLandscape) 1280.dp else 360.dp,
+        height: Dp = if (wideLandscape) 800.dp else 840.dp
+    ) {
+        val lyricsAdjustBehavior = shouldAdjustNowPlayingLyricsBehavior(
+            isLandscape,
+            isNowPlayingPhoneLandscape(isLandscape, smallestScreenWidthDp)
+        )
         currentPage.intValue = if (lyricsShowing) LyricsPage else CoverPage
         val song = SongItem(
             id = -493_101L,
@@ -144,7 +191,7 @@ class NowPlayingLyricsToolbarBehaviorTest {
             onSleepTimer = {},
             onVolume = {},
             onLyrics = resolveNowPlayingLyricsToolbarAction(
-                wideLandscape = wideLandscape,
+                lyricsAdjustBehavior = lyricsAdjustBehavior,
                 onAdjust = {
                     adjustmentRequests++
                     sheetVisible.value = true
@@ -159,8 +206,8 @@ class NowPlayingLyricsToolbarBehaviorTest {
         composeRule.setContent {
             MaterialTheme {
                 FittedTestViewport(
-                    width = if (wideLandscape) 1280.dp else 360.dp,
-                    height = if (wideLandscape) 800.dp else 840.dp,
+                    width = width,
+                    height = height,
                     layoutOnlyTextInput = true
                 ) {
                     Box(Modifier.fillMaxSize()) {
@@ -176,7 +223,8 @@ class NowPlayingLyricsToolbarBehaviorTest {
                                         compactPortrait = false,
                                         docked = true,
                                         iconSize = 24.dp,
-                                        minimumTouchTarget = 48.dp
+                                        minimumTouchTarget = 48.dp,
+                                        lyricsAdjustBehavior = lyricsAdjustBehavior
                                     ),
                                     status = NowPlayingCoverToolbarStatus(
                                         sleepTimerActive = false,

@@ -167,6 +167,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverPreviewHost
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarActions
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverToolbarLayoutSpec
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldAdjustNowPlayingLyricsBehavior
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarStatus
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverTopBar
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverBackButton
@@ -952,6 +953,7 @@ fun NowPlayingScreen(
     val windowHeightDp = with(density) { windowInfo.containerSize.height.toDp() }
     val isWideLayout = windowWidthDp >= 480.dp
     val useWideLandscapeLayout = isLandscape && (isWideLayout || phoneLandscape)
+    val lyricsAdjustBehavior = shouldAdjustNowPlayingLyricsBehavior(isLandscape, phoneLandscape)
     val useCompactPortraitLayout = !tabletPortrait && shouldUseCompactNowPlayingPortraitLayout(
         isLandscape = isLandscape,
         availableHeightDp = windowHeightDp.value,
@@ -1089,7 +1091,8 @@ fun NowPlayingScreen(
                             lyricTranslationUsePhonetic = lyricTranslationUsePhonetic,
                             sharedTransitionScope = this@SharedTransitionLayout,
                             animatedContentScope = this@AnimatedContent,
-                            offlineMode = offlineMode
+                            offlineMode = offlineMode,
+                            lyricsAdjustBehavior = lyricsAdjustBehavior
                         )
                     } else {
                         // 播放页面
@@ -1353,7 +1356,7 @@ fun NowPlayingScreen(
                             onSleepTimer = { showSleepTimerDialog = true },
                             onVolume = { showVolumeSheet = true },
                             onLyrics = resolveNowPlayingLyricsToolbarAction(
-                                wideLandscape = useWideLandscapeLayout,
+                                lyricsAdjustBehavior = lyricsAdjustBehavior,
                                 onAdjust = {
                                     startMoreOptionsWithLyricBehavior = true
                                     showMoreOptions = true
@@ -1458,7 +1461,8 @@ fun NowPlayingScreen(
                                     dockEnabled = useNowPlayingToolbarDock,
                                     iconSize = nowPlayingToolbarIconSize,
                                     minimumTouchTarget = nowPlayingToolbarMinimumTouchTarget,
-                                    compactHeight = compactHeight
+                                    compactHeight = compactHeight,
+                                    lyricsAdjustBehavior = lyricsAdjustBehavior
                                 ),
                                 status = NowPlayingCoverToolbarStatus(
                                     sleepTimerActive = sleepTimerState.isActive,

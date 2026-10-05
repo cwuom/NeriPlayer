@@ -71,6 +71,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -580,7 +581,11 @@ internal fun EditSongInfoLayout(
                                 .editSongScrollGuard(presentation, scrollState)
                                 .verticalScroll(scrollState),
                             verticalArrangement = Arrangement.spacedBy(presentation.chrome.spacing)
-                        ) { presentation.scrollingItems.forEach { slots.content.getValue(it)() } }
+                        ) {
+                            presentation.scrollingItems.forEach { item ->
+                                key(item) { slots.content.getValue(item)() }
+                            }
+                        }
                     }
                 }
             } else {
@@ -589,7 +594,11 @@ internal fun EditSongInfoLayout(
                         .editSongScrollGuard(presentation, scrollState)
                         .verticalScroll(scrollState),
                     verticalArrangement = Arrangement.spacedBy(presentation.chrome.spacing)
-                ) { presentation.scrollingItems.forEach { slots.content.getValue(it)() } }
+                ) {
+                    presentation.scrollingItems.forEach { item ->
+                        key(item) { slots.content.getValue(item)() }
+                    }
+                }
             }
             presentation.fixedActions.forEach { slots.content.getValue(it)() }
         }

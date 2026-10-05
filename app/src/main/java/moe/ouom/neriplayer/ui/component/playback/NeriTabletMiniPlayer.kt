@@ -107,7 +107,7 @@ internal fun TabletMiniPlayerContent(
     Box(Modifier.fillMaxWidth().height(NeriMiniPlayerDefaults.TabletHeight)) {
         BoxWithConstraints(
             Modifier.fillMaxSize()
-                .padding(horizontal = 12.dp)
+                .padding(start = 12.dp, end = 12.dp, top = NeriMiniPlayerDefaults.TabletProgressThickness)
         ) {
             val layout = tabletMiniPlayerLayout(maxWidth)
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {

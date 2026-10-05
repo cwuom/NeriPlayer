@@ -83,7 +83,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
@@ -199,6 +198,9 @@ import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import moe.ouom.neriplayer.ui.screen.playback.resolveLyricPreviewTimeMs
 import moe.ouom.neriplayer.ui.screen.playback.shouldReleaseLyricSeekPreview
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarDescription
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarIcon
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 
 internal data class LyricsTabletPortraitWidths(
@@ -250,6 +252,7 @@ fun LyricsScreen(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedContentScope: AnimatedContentScope? = null,
     offlineMode: Boolean = false,
+    lyricsAdjustBehavior: Boolean = false,
 ) {
     // 处理返回键
     BackHandler(onBack = onNavigateBack)
@@ -329,6 +332,8 @@ fun LyricsScreen(
 
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
+    var showMoreOptions by remember { mutableStateOf(false) }
+    var startMoreOptionsWithLyricBehavior by remember { mutableStateOf(false) }
     var detailSong by remember { mutableStateOf<SongItem?>(null) }
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
@@ -659,9 +664,11 @@ fun LyricsScreen(
             }
 
             // 更多按钮
-            var showMoreOptions by remember { mutableStateOf(false) }
             HapticIconButton(
-                onClick = { showMoreOptions = true },
+                onClick = {
+                    startMoreOptionsWithLyricBehavior = false
+                    showMoreOptions = true
+                },
                 modifier = Modifier.size(lyricsTopActionButtonSize)
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -703,7 +710,8 @@ fun LyricsScreen(
                         },
                         onShowSongDetails = { detailSong = it },
                         onEnterAlbum = onEnterAlbum,
-                        onNavigateUp = onExitNowPlaying
+                        onNavigateUp = onExitNowPlaying,
+                        startWithLyricBehavior = startMoreOptionsWithLyricBehavior
                     ),
                     snackbarHostState = snackbarHostState,
                     fontSettings = MoreOptionsFontSettings(
@@ -1131,10 +1139,18 @@ fun LyricsScreen(
                 )
             }
 
-            // 歌词按钮 (返回封面页, 高亮显示)
+            // 横屏调整歌词行为，竖屏保留返回封面页入口
             @SuppressLint("UnusedContentLambdaTargetStateParameter")
-            HapticIconButton(onClick = onNavigateBack,
-                modifier = toolbarActionModifier.then(
+            HapticIconButton(
+                onClick = resolveNowPlayingLyricsToolbarAction(
+                    lyricsAdjustBehavior = lyricsAdjustBehavior,
+                    onAdjust = {
+                        startMoreOptionsWithLyricBehavior = true
+                        showMoreOptions = true
+                    },
+                    onSwitchPage = onNavigateBack
+                ),
+                modifier = toolbarActionModifier.testTag("nowPlayingLyricsAction").then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
@@ -1154,8 +1170,10 @@ fun LyricsScreen(
                     label = "lyrics_icon"
                 ) { _ ->
                     Icon(
-                        imageVector = Icons.Outlined.LibraryMusic,
-                        contentDescription = stringResource(CoreCommonR.string.lyrics_back_to_cover),
+                        imageVector = nowPlayingLyricsToolbarIcon(lyricsAdjustBehavior),
+                        contentDescription = stringResource(nowPlayingLyricsToolbarDescription(
+                            lyricsAdjustBehavior, CoreCommonR.string.lyrics_back_to_cover
+                        )),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(toolbarLayout.iconSize)
                     )

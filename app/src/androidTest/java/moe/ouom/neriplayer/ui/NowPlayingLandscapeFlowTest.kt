@@ -50,6 +50,8 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.unit.toSize
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -132,6 +134,8 @@ class NowPlayingLandscapeFlowTest {
                 settings.setDefaultStartDestination(Destinations.Settings.route)
                 settings.setUiDensityScale(1f)
                 settings.setAdvancedLyricsEnabled(false)
+                settings.setShowLyricTranslation(true)
+                settings.setLyricTranslationUsePhonetic(false)
                 settings.setDynamicColor(true)
                 settings.setNowPlayingDynamicBackgroundEnabled(true)
                 settings.setNowPlayingCoverBlurBackgroundEnabled(false)
@@ -238,7 +242,23 @@ class NowPlayingLandscapeFlowTest {
             // 触摸真实迷你播放器，保留系统选择菜单在进入前的状态
             // 动态背景持续请求帧，播放阶段由测试推进时钟，避免等待动画永久空闲
             composeRule.mainClock.autoAdvance = false
-            composeRule.onNodeWithText(songName, useUnmergedTree = true).performNativeClick()
+            if (phone) {
+                // 手机键盘覆盖迷你播放器，先收起键盘但保留焦点和系统选择菜单
+                scenario.onActivity { activity ->
+                    WindowInsetsControllerCompat(activity.window, activity.window.decorView)
+                        .hide(WindowInsetsCompat.Type.ime())
+                }
+                composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+                    composeRule.mainClock.advanceTimeBy(64L)
+                    automation.windows.none { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+                }
+                search.assertIsFocused()
+                assertTrue(!search.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange].collapsed)
+                assertTrue(nativeSelectionMenuShown(setOf(copyLabel, cutLabel)))
+                capture(context, "settings-selection-keyboard-hidden")
+            }
+            composeRule.onNodeWithText(songName, useUnmergedTree = true)
+                .assertIsDisplayed().performNativeClick()
             composeRule.mainClock.advanceTimeBy(500L)
             composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
                 composeRule.mainClock.advanceTimeBy(64L)
@@ -432,6 +452,24 @@ class NowPlayingLandscapeFlowTest {
         }
         composeRule.onNodeWithText(translation).assertIsDisplayed()
         composeRule.onNodeWithText(phonetics).assertIsDisplayed()
+        if (pageTag == "nowPlayingLandscapeCoverPage") {
+            val settings = SettingsRepository(context)
+            composeRule.onNodeWithText(translation).performClick()
+            composeRule.waitUntil(5_000L) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                !runBlocking { settings.showLyricTranslationFlow.first() }
+            }
+            composeRule.onNodeWithText(translation).performClick()
+            composeRule.waitUntil(5_000L) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                runBlocking { settings.showLyricTranslationFlow.first() }
+            }
+            composeRule.onNodeWithText(phonetics).performClick()
+            composeRule.waitUntil(5_000L) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                runBlocking { settings.lyricTranslationUsePhoneticFlow.first() }
+            }
+        }
         val done = composeRule.onNodeWithText(doneText)
         done.assertIsDisplayed()
         capture(context, "lyrics-adjust-$pageTag")
@@ -443,6 +481,18 @@ class NowPlayingLandscapeFlowTest {
         assertEquals("调整歌词不能切换当前播放页", pageBounds, page.assertIsDisplayed().fetchSemanticsNode().boundsInRoot)
         composeRule.onNodeWithTag(if (pageTag == "nowPlayingLandscapeCoverPage") "nowPlayingLandscapeLyricsPage"
             else "nowPlayingLandscapeCoverPage", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("nowPlayingLyricsAction").performClick()
+        composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+            composeRule.mainClock.advanceTimeBy(64L)
+            composeRule.onAllNodesWithText(doneText).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.mainClock.advanceTimeBy(500L)
+        Espresso.pressBack()
+        composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+            composeRule.mainClock.advanceTimeBy(64L)
+            composeRule.onAllNodesWithText(title).fetchSemanticsNodes().isEmpty()
+        }
+        assertEquals("返回应只关闭歌词调整", pageBounds, page.assertIsDisplayed().fetchSemanticsNode().boundsInRoot)
     }
 
     private fun assertPlaybackInformationVisible(visible: Boolean, pageTag: String? = null) {
@@ -513,7 +563,7 @@ class NowPlayingLandscapeFlowTest {
         capture(context, "phone-edit-sheet")
         val titleField = composeRule.onNode(hasSetTextAction() and hasText(titleLabel))
         scrollPausedEditorIntoView(titleField, "song-edit-fields")
-            .performClick().performTextReplacement("$songName draft")
+            .assertIsDisplayed().performNativeClick().performTextReplacement("$songName draft")
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
             composeRule.mainClock.advanceTimeBy(64L)
@@ -558,7 +608,8 @@ class NowPlayingLandscapeFlowTest {
         }
         composeRule.mainClock.advanceTimeBy(500L)
         val input = composeRule.onNodeWithTag("lyrics-editor-input")
-        scrollPausedEditorIntoView(input, "lyrics-editor-content").performClick().assertIsFocused()
+        scrollPausedEditorIntoView(input, "lyrics-editor-content")
+            .assertIsDisplayed().performNativeClick().assertIsFocused()
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
             composeRule.mainClock.advanceTimeBy(64L)
@@ -921,6 +972,8 @@ class NowPlayingLandscapeFlowTest {
         val startDestination: String,
         val densityScale: Float,
         val advancedLyrics: Boolean,
+        val showLyricTranslation: Boolean,
+        val lyricTranslationUsePhonetic: Boolean,
         val dynamicColor: Boolean,
         val dynamicBackground: Boolean,
         val coverBlur: Boolean,
@@ -935,6 +988,8 @@ class NowPlayingLandscapeFlowTest {
             settings.setDefaultStartDestination(startDestination)
             settings.setUiDensityScale(densityScale)
             settings.setAdvancedLyricsEnabled(advancedLyrics)
+            settings.setShowLyricTranslation(showLyricTranslation)
+            settings.setLyricTranslationUsePhonetic(lyricTranslationUsePhonetic)
             settings.setDynamicColor(dynamicColor)
             settings.setNowPlayingDynamicBackgroundEnabled(dynamicBackground)
             settings.setNowPlayingCoverBlurBackgroundEnabled(coverBlur)
@@ -949,7 +1004,8 @@ class NowPlayingLandscapeFlowTest {
                 settings.disclaimerAcceptedFlow.filterNotNull().first(),
                 settings.startupOnboardingCompletedFlow.filterNotNull().first(),
                 settings.defaultStartDestinationFlow.first(), settings.uiDensityScaleFlow.first(),
-                settings.advancedLyricsEnabledFlow.first(), settings.dynamicColorFlow.first(),
+                settings.advancedLyricsEnabledFlow.first(), settings.showLyricTranslationFlow.first(),
+                settings.lyricTranslationUsePhoneticFlow.first(), settings.dynamicColorFlow.first(),
                 settings.nowPlayingDynamicBackgroundEnabledFlow.first(),
                 settings.nowPlayingCoverBlurBackgroundEnabledFlow.first(),
                 settings.nowPlayingCoverLyricsEnabledFlow.first(),

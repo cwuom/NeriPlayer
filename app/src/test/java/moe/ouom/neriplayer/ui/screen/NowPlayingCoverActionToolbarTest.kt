@@ -10,6 +10,7 @@ import org.junit.Assert.assertSame
 import org.junit.Test
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingCoverToolbarLayoutSpec
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.toolbarPreferredPadding
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.toolbarRowArrangement
@@ -19,6 +20,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarIco
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverToolbarLayoutSpec
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.toolbarWidthFraction
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldAdjustNowPlayingLyricsBehavior
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 
@@ -64,7 +66,7 @@ class NowPlayingCoverActionToolbarTest {
     fun `landscape lyrics action opens adjustment without changing the selected page`() {
         val calls = mutableListOf<String>()
         val action = resolveNowPlayingLyricsToolbarAction(
-            wideLandscape = true,
+            lyricsAdjustBehavior = true,
             onAdjust = { calls += "adjust" },
             onSwitchPage = { calls += "page" }
         )
@@ -78,13 +80,82 @@ class NowPlayingCoverActionToolbarTest {
     fun `portrait lyrics action keeps the original page switch and description`() {
         val calls = mutableListOf<String>()
         resolveNowPlayingLyricsToolbarAction(
-            wideLandscape = false,
+            lyricsAdjustBehavior = false,
             onAdjust = { calls += "adjust" },
             onSwitchPage = { calls += "page" }
         )()
         assertEquals(listOf("page"), calls)
         assertSame(Icons.Outlined.LibraryMusic, nowPlayingLyricsToolbarIcon(false))
         assertEquals(CoreCommonR.string.lyrics_title, nowPlayingLyricsToolbarDescription(false))
+        assertEquals(
+            CoreCommonR.string.lyrics_back_to_cover,
+            nowPlayingLyricsToolbarDescription(false, CoreCommonR.string.lyrics_back_to_cover)
+        )
+        assertEquals(
+            CoreCommonR.string.lyrics_adjust_behavior,
+            nowPlayingLyricsToolbarDescription(true, CoreCommonR.string.lyrics_back_to_cover)
+        )
+    }
+
+    @Test
+    fun `lyric adjustment requires tablet landscape regardless of current window width`() {
+        listOf(360, 599, 600, 800).forEach { smallestWidth ->
+            val phoneLandscape = isNowPlayingPhoneLandscape(true, smallestWidth)
+            assertEquals(
+                smallestWidth >= 600,
+                shouldAdjustNowPlayingLyricsBehavior(isLandscape = true, phoneLandscape = phoneLandscape)
+            )
+            assertFalse(shouldAdjustNowPlayingLyricsBehavior(
+                isLandscape = false,
+                phoneLandscape = isNowPlayingPhoneLandscape(false, smallestWidth)
+            ))
+        }
+    }
+
+    @Test
+    fun `narrow tablet adjustment preserves the original toolbar geometry`() {
+        val narrow = resolveNowPlayingCoverToolbarLayoutSpec(
+            wideLandscape = false,
+            compactPortrait = false,
+            dockEnabled = false,
+            iconSize = 20.dp,
+            minimumTouchTarget = 48.dp,
+            compactHeight = false,
+            lyricsAdjustBehavior = shouldAdjustNowPlayingLyricsBehavior(
+                isLandscape = true,
+                phoneLandscape = isNowPlayingPhoneLandscape(true, 600)
+            )
+        )
+        assertFalse(narrow.wideLandscape)
+        assertTrue(narrow.lyricsAdjustBehavior)
+        assertEquals(1f, toolbarWidthFraction(narrow), 0f)
+        assertEquals(6.dp, toolbarPreferredPadding(narrow))
+        assertEquals(8.dp, toolbarRowVerticalPadding(narrow))
+        assertSame(Arrangement.SpaceBetween, toolbarRowArrangement(layout(), narrow))
+        assertSame(Icons.Outlined.Tune, nowPlayingLyricsToolbarIcon(narrow.lyricsAdjustBehavior))
+        assertEquals(
+            CoreCommonR.string.lyrics_adjust_behavior,
+            nowPlayingLyricsToolbarDescription(narrow.lyricsAdjustBehavior)
+        )
+        val calls = mutableListOf<String>()
+        resolveNowPlayingLyricsToolbarAction(
+            lyricsAdjustBehavior = narrow.lyricsAdjustBehavior,
+            onAdjust = { calls += "adjust" },
+            onSwitchPage = { calls += "page" }
+        )()
+        assertEquals(listOf("adjust"), calls)
+    }
+
+    @Test
+    fun `legacy toolbar callers inherit their previous lyric action semantics`() {
+        assertTrue(spec(wide = true).lyricsAdjustBehavior)
+        assertFalse(spec().lyricsAdjustBehavior)
+        assertTrue(resolveNowPlayingCoverToolbarLayoutSpec(
+            true, false, false, 20.dp, 48.dp, false
+        ).lyricsAdjustBehavior)
+        assertFalse(resolveNowPlayingCoverToolbarLayoutSpec(
+            false, false, false, 20.dp, 48.dp, false
+        ).lyricsAdjustBehavior)
     }
 
     @Test

@@ -55,7 +55,8 @@ internal data class NowPlayingCoverToolbarLayoutSpec(
     val docked: Boolean,
     val iconSize: Dp,
     val minimumTouchTarget: Dp,
-    val compactHeight: Boolean = false
+    val compactHeight: Boolean = false,
+    val lyricsAdjustBehavior: Boolean = wideLandscape
 )
 
 internal fun resolveNowPlayingCoverToolbarLayoutSpec(
@@ -64,7 +65,8 @@ internal fun resolveNowPlayingCoverToolbarLayoutSpec(
     dockEnabled: Boolean,
     iconSize: Dp,
     minimumTouchTarget: Dp,
-    compactHeight: Boolean
+    compactHeight: Boolean,
+    lyricsAdjustBehavior: Boolean = wideLandscape
 ): NowPlayingCoverToolbarLayoutSpec = NowPlayingCoverToolbarLayoutSpec(
     wideLandscape = wideLandscape,
     compactPortrait = compactPortrait,
@@ -72,7 +74,8 @@ internal fun resolveNowPlayingCoverToolbarLayoutSpec(
     docked = dockEnabled && !compactHeight,
     iconSize = iconSize,
     minimumTouchTarget = minimumTouchTarget,
-    compactHeight = compactHeight
+    compactHeight = compactHeight,
+    lyricsAdjustBehavior = lyricsAdjustBehavior
 )
 
 internal data class NowPlayingCoverToolbarStatus(
@@ -91,16 +94,23 @@ internal data class NowPlayingCoverToolbarActions(
 )
 
 internal fun resolveNowPlayingLyricsToolbarAction(
-    wideLandscape: Boolean,
+    lyricsAdjustBehavior: Boolean,
     onAdjust: () -> Unit,
     onSwitchPage: () -> Unit
-): () -> Unit = if (wideLandscape) onAdjust else onSwitchPage
+): () -> Unit = if (lyricsAdjustBehavior) onAdjust else onSwitchPage
 
-internal fun nowPlayingLyricsToolbarIcon(wideLandscape: Boolean): ImageVector =
-    if (wideLandscape) Icons.Outlined.Tune else Icons.Outlined.LibraryMusic
+internal fun shouldAdjustNowPlayingLyricsBehavior(
+    isLandscape: Boolean,
+    phoneLandscape: Boolean
+): Boolean = isLandscape && !phoneLandscape
 
-internal fun nowPlayingLyricsToolbarDescription(wideLandscape: Boolean): Int =
-    if (wideLandscape) CoreCommonR.string.lyrics_adjust_behavior else CoreCommonR.string.lyrics_title
+internal fun nowPlayingLyricsToolbarIcon(lyricsAdjustBehavior: Boolean): ImageVector =
+    if (lyricsAdjustBehavior) Icons.Outlined.Tune else Icons.Outlined.LibraryMusic
+
+internal fun nowPlayingLyricsToolbarDescription(
+    lyricsAdjustBehavior: Boolean,
+    pageSwitchDescription: Int = CoreCommonR.string.lyrics_title
+): Int = if (lyricsAdjustBehavior) CoreCommonR.string.lyrics_adjust_behavior else pageSwitchDescription
 
 internal fun toolbarWidthFraction(spec: NowPlayingCoverToolbarLayoutSpec): Float =
     if (spec.wideLandscape && !spec.compactHeight) 0.9f else 1f
@@ -274,7 +284,7 @@ private fun NowPlayingCoverToolbarRow(
         )
         NowPlayingCoverLyricsButton(
             status, layout.iconSize, buttonModifier, sharedTransitionScope,
-            animatedVisibilityScope, actions.onLyrics, spec.wideLandscape
+            animatedVisibilityScope, actions.onLyrics, spec.lyricsAdjustBehavior
         )
         NowPlayingCoverToolbarButton(
             "btn_add", Icons.AutoMirrored.Outlined.PlaylistAdd, stringResource(CoreCommonR.string.playlist_add_to),
@@ -326,7 +336,7 @@ private fun NowPlayingCoverLyricsButton(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onClick: () -> Unit,
-    wideLandscape: Boolean
+    lyricsAdjustBehavior: Boolean
 ) {
     with(sharedTransitionScope) {
         HapticIconButton(
@@ -341,8 +351,8 @@ private fun NowPlayingCoverLyricsButton(
         ) {
             AnimatedContent(targetState = status.lyricsShowing, label = "lyrics_icon") { showing ->
                 Icon(
-                    imageVector = nowPlayingLyricsToolbarIcon(wideLandscape),
-                    contentDescription = stringResource(nowPlayingLyricsToolbarDescription(wideLandscape)),
+                    imageVector = nowPlayingLyricsToolbarIcon(lyricsAdjustBehavior),
+                    contentDescription = stringResource(nowPlayingLyricsToolbarDescription(lyricsAdjustBehavior)),
                     tint = toolbarLyricsTint(
                         status.lyricsAvailable, showing, status.activeColor, LocalContentColor.current
                     ),

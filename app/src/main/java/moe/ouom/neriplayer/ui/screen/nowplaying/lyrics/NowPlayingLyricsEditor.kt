@@ -81,6 +81,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -628,7 +629,9 @@ internal fun LyricsEditorContent(
             .lyricsEditorScrollModifier(layout, scrollState)
             .padding(horizontal = layout.horizontalPadding, vertical = layout.spacing)
         Column(contentModifier, verticalArrangement = Arrangement.spacedBy(layout.spacing)) {
-            layout.sections.forEach { slots.content.getValue(it)(this) }
+            layout.sections.forEach { section ->
+                key(section) { slots.content.getValue(section)(this) }
+            }
         }
     }
 }

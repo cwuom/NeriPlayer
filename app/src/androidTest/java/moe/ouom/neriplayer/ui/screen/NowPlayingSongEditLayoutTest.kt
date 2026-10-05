@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -135,6 +136,29 @@ class NowPlayingSongEditLayoutTest {
         cancel.assertIsDisplayed().assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals(1, cancels) }
         capture("song-edit-keyboard-remaining")
+    }
+
+    @Test
+    fun keyboardHeightChangesKeepTitleFocusedWhileHeaderAndActionsMoveIntoTheForm() {
+        render(840.dp, 400.dp, fontScale = 1.3f, keyboardRemaining = true)
+        val draft = "键盘缩小视窗时保留焦点的歌曲草稿"
+        val field = composeRule.onNodeWithTag("fixtureTitle")
+        field.performScrollTo().assertIsDisplayed().performClick().performTextReplacement(draft)
+        field.assertIsFocused()
+
+        for (availableHeight in listOf(220.dp, 150.dp, 400.dp)) {
+            composeRule.runOnIdle { height.value = availableHeight }
+            composeRule.waitForIdle()
+            // 不主动清焦点或再次点击输入框，直接检查布局重排后的原输入会话
+            field.assertIsFocused()
+            assertEquals(draft, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+            composeRule.runOnIdle { assertEquals(draft, title.value) }
+        }
+
+        field.performScrollTo().assertIsDisplayed().assertIsFocused()
+            .performTextReplacement("恢复高度后继续编辑")
+        field.assertIsFocused()
+        composeRule.runOnIdle { assertEquals("恢复高度后继续编辑", title.value) }
     }
 
     @Test

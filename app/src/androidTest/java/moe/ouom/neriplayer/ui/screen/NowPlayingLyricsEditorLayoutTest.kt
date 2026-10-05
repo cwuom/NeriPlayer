@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -134,6 +135,36 @@ class NowPlayingLyricsEditorLayoutTest {
     }
 
     @Test
+    fun keyboardHeightChangesKeepLyricsFocusedWhenSongInfoAndScrollingChromeChange() {
+        render(840.dp, 640.dp, 1.3f)
+        composeRule.onNodeWithTag("lyrics-editor-song").assertIsDisplayed()
+        composeRule.onNodeWithTag("lyrics-editor-tab-2").performClick()
+        val draft = "歌词输入区跨高度阈值后保留的罗马字草稿"
+        val input = composeRule.onNodeWithTag("lyrics-editor-input")
+        input.assertIsDisplayed().performClick().performTextReplacement(draft)
+        input.assertIsFocused()
+
+        for (availableHeight in listOf(360.dp, 180.dp, 640.dp)) {
+            composeRule.runOnIdle { height.value = availableHeight }
+            composeRule.waitForIdle()
+            // 切换紧凑标题及整页滚动时，不重新获取焦点掩盖输入节点被重建的问题
+            input.assertIsFocused()
+            assertEquals(draft, editableText())
+            composeRule.runOnIdle {
+                assertEquals(2, owner.selectedTabState.intValue)
+                assertEquals(draft, owner.romanizedLyricsTextState.value)
+                assertEquals(LongOriginal, owner.lyricsTextState.value)
+                assertEquals("初始译文", owner.translatedLyricsTextState.value)
+            }
+        }
+
+        composeRule.onNodeWithTag("lyrics-editor-song").assertIsDisplayed()
+        input.assertIsDisplayed().assertIsFocused().performTextReplacement("恢复高度后继续歌词编辑")
+        input.assertIsFocused()
+        assertEquals("恢复高度后继续歌词编辑", editableText())
+    }
+
+    @Test
     fun portraitPhoneLongLyricsScrollInsideInputWhileHeaderAndActionsStayFixed() {
         render(360.dp, 840.dp, 1.3f)
         assertFixedChromeAndInnerTextScroll()
@@ -226,7 +257,11 @@ class NowPlayingLyricsEditorLayoutTest {
         val viewport = composeRule.onNodeWithTag("lyrics-editor-fixture").getUnclippedBoundsInRoot()
         val content = composeRule.onNodeWithTag("lyrics-editor-content").getUnclippedBoundsInRoot()
         assertTrue((content.right - content.left).value / (viewport.right - viewport.left).value <= 720f / width.value.value + 0.01f)
-        assertEquals((viewport.left + viewport.right).value / 2f, (content.left + content.right).value / 2f, 1f)
+        val viewportNode = composeRule.onNodeWithTag("lyrics-editor-fixture").fetchSemanticsNode()
+        val contentNode = composeRule.onNodeWithTag("lyrics-editor-content").fetchSemanticsNode()
+        // 虚拟密度会放大亚像素舍入，居中误差按真实像素检查
+        assertEquals(viewportNode.positionInRoot.x + viewportNode.size.width / 2f,
+            contentNode.positionInRoot.x + contentNode.size.width / 2f, 1f)
     }
 
     private fun outerScrollRange() = composeRule.onNodeWithTag("lyrics-editor-content")
