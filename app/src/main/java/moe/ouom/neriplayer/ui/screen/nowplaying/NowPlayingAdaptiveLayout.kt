@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,6 +32,7 @@ import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 private val NowPlayingCompactLandscapeHeight = 520.dp
 private val NowPlayingExpandedPlayerPaneMaxWidth = 500.dp
 private val NowPlayingCompactPlayerPaneMaxWidth = 340.dp
+private val NowPlayingPhoneLandscapeMinimumContentHeight = 240.dp
 private val NowPlayingTabletPortraitFixedContentReserve = 480.dp
 private val NowPlayingTabletPortraitCoverMaxSize = 336.dp
 private const val NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT = 0.12f
@@ -79,6 +82,8 @@ internal fun resolveNowPlayingControlBaseSizes(
 
 internal data class NowPlayingWideLayoutSpec(
     val compactHeight: Boolean,
+    val contentHeight: Dp,
+    val scrollEnabled: Boolean,
     val playerPaneWidth: Dp,
     val paneSpacing: Dp,
     val sectionSpacing: Dp,
@@ -93,9 +98,12 @@ internal fun resolveNowPlayingWideLayoutSpec(
     phoneLandscape: Boolean = false
 ): NowPlayingWideLayoutSpec {
     val compactHeight = phoneLandscape || availableHeight < NowPlayingCompactLandscapeHeight
+    val contentHeight = nowPlayingWideContentHeight(availableHeight, phoneLandscape)
     val controlAreaOffset = nowPlayingWideControlAreaOffset(phoneLandscape, compactHeight)
     return NowPlayingWideLayoutSpec(
         compactHeight = compactHeight,
+        contentHeight = contentHeight,
+        scrollEnabled = contentHeight > availableHeight,
         playerPaneWidth = if (compactHeight) {
             minOf(availableWidth * 0.40f, NowPlayingCompactPlayerPaneMaxWidth)
         } else {
@@ -108,6 +116,9 @@ internal fun resolveNowPlayingWideLayoutSpec(
         controlAreaVerticalOffset = controlAreaOffset
     )
 }
+
+private fun nowPlayingWideContentHeight(availableHeight: Dp, phoneLandscape: Boolean): Dp =
+    if (phoneLandscape) maxOf(availableHeight, NowPlayingPhoneLandscapeMinimumContentHeight) else availableHeight
 
 private fun nowPlayingWideControlAreaOffset(phoneLandscape: Boolean, compactHeight: Boolean): Dp = when {
     phoneLandscape -> 0.dp
@@ -277,7 +288,8 @@ internal fun NowPlayingWideLayout(
         val spec = resolveNowPlayingWideLayoutSpec(maxWidth, maxHeight, phoneLandscape)
         if (phoneLandscape) {
             NowPlayingPhoneLandscape(
-                spec, topBar, cover, identity, phoneTopActions, progress, controls, lyrics
+                spec, topBar, cover, identity, phoneTopActions,
+                progress, controls, toolbar, lyrics
             )
         } else {
             NowPlayingTabletLandscape(
@@ -398,44 +410,52 @@ private fun NowPlayingPhoneLandscape(
     topActions: @Composable () -> Unit,
     progress: @Composable () -> Unit,
     controls: @Composable () -> Unit,
+    toolbar: @Composable (Boolean) -> Unit,
     lyrics: @Composable (Boolean) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(spec.paneSpacing)
-    ) {
-        Column(
-            modifier = Modifier.width(spec.playerPaneWidth).fillMaxHeight()
-                .testTag("nowPlayingPlayerPane"),
-            horizontalAlignment = Alignment.CenterHorizontally
+    // 极短横屏保留封面和操作入口的空间，内容可滚动到完整底栏
+    val scrollState = rememberScrollState()
+    val viewportModifier = Modifier.fillMaxSize().verticalScroll(scrollState, enabled = spec.scrollEnabled)
+    Column(viewportModifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .height(spec.contentHeight),
+            horizontalArrangement = Arrangement.spacedBy(spec.paneSpacing)
         ) {
-            backBar()
-            cover(Modifier.fillMaxWidth().weight(1f).padding(vertical = spec.coverVerticalPadding))
-        }
-        Column(
-            modifier = Modifier.weight(1f).fillMaxHeight().testTag("nowPlayingDetailsPane"),
-            horizontalAlignment = Alignment.Start
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().testTag("nowPlayingPhoneHeader"),
-                verticalAlignment = Alignment.Top
-            ) {
-                Box(Modifier.weight(1f).padding(end = 8.dp)) { identity(true) }
-                Box(Modifier.testTag("nowPlayingTopActions")) { topActions() }
-            }
-            Spacer(Modifier.height(spec.sectionSpacing))
-            NowPlayingWideLyricPane(
-                compactHeight = true,
-                lyrics = lyrics,
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
-            Spacer(Modifier.height(spec.sectionSpacing))
             Column(
-                modifier = Modifier.fillMaxWidth().testTag("nowPlayingBottomControls"),
+                modifier = Modifier.width(spec.playerPaneWidth).fillMaxHeight()
+                    .testTag("nowPlayingPlayerPane"),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                progress()
-                controls()
+                backBar()
+                cover(Modifier.fillMaxWidth().weight(1f).padding(vertical = spec.coverVerticalPadding))
+                Box(Modifier.fillMaxWidth().testTag("nowPlayingPhoneAuxiliaryActions")) { toolbar(true) }
+            }
+            Column(
+                modifier = Modifier.weight(1f).fillMaxHeight().testTag("nowPlayingDetailsPane"),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().testTag("nowPlayingPhoneHeader"),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Box(Modifier.weight(1f).padding(end = 8.dp)) { identity(true) }
+                    Box(Modifier.testTag("nowPlayingTopActions")) { topActions() }
+                }
+                Spacer(Modifier.height(spec.sectionSpacing))
+                NowPlayingWideLyricPane(
+                    compactHeight = true,
+                    lyrics = lyrics,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                )
+                Spacer(Modifier.height(spec.sectionSpacing))
+                Column(
+                    modifier = Modifier.fillMaxWidth().testTag("nowPlayingBottomControls"),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    progress()
+                    controls()
+                }
             }
         }
     }

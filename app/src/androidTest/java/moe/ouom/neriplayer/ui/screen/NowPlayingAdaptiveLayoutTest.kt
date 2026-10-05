@@ -177,9 +177,9 @@ class NowPlayingAdaptiveLayoutTest {
 
         assertControlsFit(bounds("viewport"))
         assertPhoneLandscapeArrangement(180.dp)
-        assertTrue(bounds("cover").height >= logicalPixels(260.dp))
+        assertTrue(bounds("cover").height >= logicalPixels(220.dp))
         assertTrue(bounds("cover").top >= bounds("topBar").bottom + logicalPixels(8.dp) - 1f)
-        assertTrue(bounds("cover").bottom <= bounds("viewport").bottom - logicalPixels(8.dp) + 1f)
+        assertTrue(bounds("cover").bottom <= bounds("toolbar").top - logicalPixels(8.dp) + 1f)
         assertSquareCover()
     }
 
@@ -368,8 +368,8 @@ class NowPlayingAdaptiveLayoutTest {
     }
 
     private fun assertControlsFit(frame: Rect) {
-        val controlTags = listOf("topBar", "cover", "identity", "progress", "controls", "nowPlayingLyricPane") +
-            if (phoneLandscapeFixture) listOf("topActions") else listOf("toolbar")
+        val controlTags = listOf("topBar", "cover", "identity", "progress", "controls", "toolbar", "nowPlayingLyricPane") +
+            if (phoneLandscapeFixture) listOf("topActions") else emptyList()
         controlTags.forEach { tag ->
             val child = bounds(tag)
             assertTrue("$tag has no measured size", child.width > 0f && child.height > 0f)
@@ -413,7 +413,10 @@ class NowPlayingAdaptiveLayoutTest {
         assertEquals(frame.bottom, footer.bottom, 1f)
         assertEquals(progress.bottom, controls.top, 1f)
         assertTrue(progress.left >= details.left && controls.left >= details.left)
-        composeRule.onNodeWithTag("toolbar").assertDoesNotExist()
+        val toolbar = bounds("toolbar")
+        assertTrue(toolbar.left >= player.left && toolbar.right <= player.right)
+        assertTrue(toolbar.top >= bounds("cover").bottom)
+        assertEquals(frame.bottom, toolbar.bottom, 1f)
     }
 
     private fun assertSquareCover() {

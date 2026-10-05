@@ -56,6 +56,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
@@ -249,6 +250,44 @@ class SettingsAccountCardsTest {
         composeRule.runOnIdle { active.value = false }
         composeRule.runOnIdle { active.value = true }
         composeRule.runOnIdle { assertEquals(1, loads) }
+    }
+
+    @Test
+    fun profileOwnerRetriesFailuresOnlyWhenReactivatedAndCachesTheSuccessfulResult() {
+        val request = mutableStateOf(SettingsAccountProfileRequest(true, 100, "fixture-a"))
+        val active = mutableStateOf(true)
+        var loads = 0
+        renderOwner(request, active) {
+            loads += 1
+            when (loads) {
+                1 -> throw IOException("fixture temporarily unavailable")
+                2 -> null
+                else -> SettingsAccountProfile("Fixture recovered account", null)
+            }
+        }
+        composeRule.onNodeWithTag("settingsAccountNickname:bilibili", true)
+            .assertTextEquals(string(CoreCommonR.string.settings_account_profile_unavailable))
+        composeRule.onNodeWithTag("settingsAccountAuthorization:bilibili", true)
+            .assertTextEquals(string(CoreCommonR.string.settings_account_authorization_saved))
+        composeRule.mainClock.advanceTimeBy(1_000)
+        composeRule.runOnIdle { assertEquals(1, loads) }
+
+        composeRule.runOnIdle { active.value = false }
+        composeRule.runOnIdle { active.value = true }
+        composeRule.onNodeWithTag("settingsAccountNickname:bilibili", true)
+            .assertTextEquals(string(CoreCommonR.string.settings_account_profile_unavailable))
+        composeRule.mainClock.advanceTimeBy(1_000)
+        composeRule.runOnIdle { assertEquals(2, loads) }
+
+        composeRule.runOnIdle { active.value = false }
+        composeRule.runOnIdle { active.value = true }
+        composeRule.onNodeWithTag("settingsAccountNickname:bilibili", true)
+            .assertTextEquals("Fixture recovered account")
+        composeRule.runOnIdle { active.value = false }
+        composeRule.runOnIdle { active.value = true }
+        composeRule.runOnIdle { assertEquals(3, loads) }
+        composeRule.onNodeWithTag("settingsAccountNickname:bilibili", true)
+            .assertTextEquals("Fixture recovered account")
     }
 
     @Test

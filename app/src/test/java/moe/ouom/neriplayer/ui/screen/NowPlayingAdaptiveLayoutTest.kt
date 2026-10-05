@@ -33,6 +33,21 @@ import org.junit.Test
 
 class NowPlayingAdaptiveLayoutTest {
     @Test
+    fun `only short phone landscape grows a scrollable viewport while normal windows keep exit gestures`() {
+        val shortPhone = resolveNowPlayingWideLayoutSpec(560.dp, 180.dp, phoneLandscape = true)
+        assertEquals(240.dp, shortPhone.contentHeight)
+        assertTrue(shortPhone.scrollEnabled)
+        listOf(240.dp, 360.dp).forEach { height ->
+            val phone = resolveNowPlayingWideLayoutSpec(840.dp, height, phoneLandscape = true)
+            assertEquals(height, phone.contentHeight)
+            assertFalse(phone.scrollEnabled)
+        }
+        val tablet = resolveNowPlayingWideLayoutSpec(600.dp, 180.dp)
+        assertEquals(180.dp, tablet.contentHeight)
+        assertFalse(tablet.scrollEnabled)
+    }
+
+    @Test
     fun `expanded identity and controls move together while short landscape preserves its top gap`() {
         listOf(800.dp, 480.dp).forEach { height ->
             val spec = resolveNowPlayingWideLayoutSpec(1280.dp, height)

@@ -112,7 +112,7 @@ internal fun rememberSettingsAccountProfile(
             val profile = loadSettingsAccountProfileSafely(currentLoader)
             currentCoroutineContext().ensureActive()
             state = SettingsAccountProfileState(profile = profile)
-            loaded = true
+            loaded = profile != null
         } finally {
             if (activeLoad === loadToken) {
                 activeLoad = null

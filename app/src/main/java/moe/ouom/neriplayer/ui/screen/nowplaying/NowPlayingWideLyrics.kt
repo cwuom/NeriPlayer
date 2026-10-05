@@ -278,7 +278,7 @@ private fun NowPlayingAdvancedWideLyrics(
         showPhoneticAsTranslation = preferences.usePhonetic,
         lyricBlurEnabled = preferences.blurEnabled,
         lyricBlurAmount = preferences.blurAmount,
-        isPlaying = playback.isPlaying,
+        isPlaying = shouldAdvanceNowPlayingLyrics(playback.isPlaying, playback.previewPositionMs),
         animateViewportScroll = playback.previewPositionMs != null,
         offset = viewport.offset,
         keepAliveZone = 128.dp,

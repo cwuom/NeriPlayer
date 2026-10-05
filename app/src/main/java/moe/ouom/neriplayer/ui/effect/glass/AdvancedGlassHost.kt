@@ -141,8 +141,7 @@ internal fun AdvancedGlassHost(
                     backdropScaleInWindow = contentBackdrop.scaleInWindow
                 ),
                 hasNavigationSceneRegion = renderedRegions.any { region ->
-                    region.role != AdvancedGlassRole.MiniPlayer &&
-                        region.role != AdvancedGlassRole.BottomNavigation
+                    !isGlobalAdvancedGlassNavigation(region.role)
                 },
                 backgroundMasksHidden = renderedRegions.isNotEmpty() &&
                     renderedRegions.none { it.opacity > 0f },

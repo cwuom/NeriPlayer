@@ -35,7 +35,9 @@ class NowPlayingCoverLyricsTest {
         assertEquals(500L, resolveNowPlayingLyricsPosition(null, 500L))
         assertTrue(shouldAdvanceNowPlayingLyrics(true, null))
         assertFalse(shouldAdvanceNowPlayingLyrics(true, 125L))
+        assertFalse(shouldAdvanceNowPlayingLyrics(true, 0L))
         assertFalse(shouldAdvanceNowPlayingLyrics(false, null))
+        assertFalse(shouldAdvanceNowPlayingLyrics(false, 125L))
     }
 
     @Test
