@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
 
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavConcurrencyToken
+import moe.ouom.neriplayer.data.model.sync.transport.WebDavRemoteFileSnapshot
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackDatasetStore
@@ -153,7 +154,7 @@ internal class WebDavSyncBackend(
         data: SyncDataset,
         version: Version
     ): Result<Version> {
-        if (!canSafelyPublish(version)) {
+        if (!canSafelyPublish(version) && version.lastKnownFingerprint == null) {
             return Result.failure(WebDavMissingConcurrencyTokenException(
                 "WebDAV sync requires a strong ETag to prevent concurrent data loss"
             ))
@@ -166,11 +167,34 @@ internal class WebDavSyncBackend(
     private suspend fun uploadWithLease(prepared: SyncPreparedArchive, version: Version): Result<Version> {
         var published: Version? = null
         val result = withArchiveLease({}) { lease ->
+            if (lease == null && !canSafelyPublish(version)) {
+                throw WebDavMissingConcurrencyTokenException("WebDAV sync requires a strong ETag to prevent concurrent data loss")
+            }
+            if (lease != null) requireUnchangedManifest(version, lease)
             uploadPrepared(prepared, version, lease).onSuccess { published = it }
         }
         val completed = published ?: return result
         val releaseFailure = result.exceptionOrNull() ?: return result
         return reconcilePublication(completed, releaseFailure)
+    }
+
+    private fun requireUnchangedManifest(version: Version, lease: WebDavArchiveLease) {
+        // rclone 不检查 PUT 的 ETag 条件，重新持锁后必须确认合并所用的版本
+        val current = readFile(manifestUrl, lease).getOrElse { error ->
+            if (error is WebDavFileNotFoundException) {
+                if (version.createOnly) return
+                throw WebDavContentConflictException(412, "WebDAV archive disappeared before publication")
+            }
+            throw error
+        }
+        requireMatchingManifest(version, current)
+    }
+
+    private fun requireMatchingManifest(version: Version, current: WebDavRemoteFileSnapshot) {
+        if (version.createOnly || canSafelyPublish(version) && current.version.etag != version.token?.etag ||
+            version.lastKnownFingerprint != null && current.fingerprint != version.lastKnownFingerprint) {
+            throw WebDavContentConflictException(412, "WebDAV archive changed before publication")
+        }
     }
 
     private suspend fun reconcilePublication(published: Version, releaseFailure: Throwable): Result<Version> {
@@ -334,7 +358,9 @@ internal class WebDavSyncBackend(
 
     private fun writeFile(url: String, bytes: ByteArray, lease: WebDavArchiveLease?, token: WebDavConcurrencyToken? = null, createOnly: Boolean = false) =
         if (lease == null) apiClient.updateFileContent(url, bytes, expectedVersion = token, createOnly = createOnly)
-        else apiClient.updateFileContentLocked(url, bytes, lease, expectedVersion = token, createOnly = createOnly)
+        // 有效目录锁内允许按已核对的内容指纹发布，弱或缺失的 ETag 不用于条件写入
+        else apiClient.updateFileContentLocked(url, bytes, lease,
+            expectedVersion = token?.takeIf { it.etag?.let(WebDavArchiveListing::isStrongETag) == true }, createOnly = createOnly)
 
     private fun canSafelyPublish(version: Version): Boolean {
         if (version.createOnly) return true
