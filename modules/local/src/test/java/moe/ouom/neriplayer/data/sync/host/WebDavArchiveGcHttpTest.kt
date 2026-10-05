@@ -79,6 +79,114 @@ class WebDavArchiveGcHttpTest {
     }
 
     @Test
+    fun `a fresh lease rejects stale updates even when the server ignores ETag write conditions`() = runTest {
+        for (constantETag in listOf(false, true)) {
+            val fixture = Fixture()
+            fixture.ignoreWriteConditions = true
+            fixture.constantETag = constantETag
+            fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+                fixture.backend.upload(data, first).getOrThrow()
+                val current = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME).copyOf()
+                fixture.requests.clear()
+                val stale = fixture.backend.upload(data, first)
+                assertTrue(stale.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+                assertTrue(current.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
+                assertTrue(fixture.requests.none { it.method == "PUT" })
+                assertFalse(fixture.locked)
+            }
+        }
+    }
+
+    @Test
+    fun `a fresh lease rejects duplicate first publication even when the server ignores create only`() = runTest {
+        val fixture = Fixture()
+        fixture.ignoreWriteConditions = true
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            val current = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME).copyOf()
+            fixture.requests.clear()
+            val stale = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true))
+            assertTrue(stale.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+            assertTrue(current.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
+            assertTrue(fixture.requests.none { it.method == "PUT" })
+            assertFalse(fixture.locked)
+        }
+    }
+
+    @Test
+    fun `finite leases use observed fingerprints when publication ETags are absent or weak`() = runTest {
+        for (etag in listOf(null, "W/\"weak\"", "unquoted-etag")) {
+            val fixture = Fixture()
+            fixture.manifestWriteETag = { etag }
+            fixture.manifestReadETag = { etag }
+            fixture.ignoreWriteConditions = true
+            fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+                val second = fixture.backend.upload(data, first).getOrThrow()
+                assertTrue(first.lastKnownFingerprint != second.lastKnownFingerprint)
+                assertTrue(fixture.backend.upload(data, first).exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+                assertTrue(fixture.requests.none { it.method == "DELETE" })
+                assertFalse(fixture.locked)
+            }
+        }
+    }
+
+    @Test
+    fun `a fingerprint without a finite lease cannot replace strong ETag concurrency protection`() = runTest {
+        val fixture = Fixture()
+        fixture.lockStatus = 405
+        fixture.manifestWriteETag = { null }
+        fixture.manifestReadETag = { null }
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            fixture.requests.clear()
+            val unsafe = fixture.backend.upload(data, first)
+            assertTrue(unsafe.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException)
+            assertTrue(fixture.requests.none { it.method == "PUT" })
+        }
+    }
+
+    @Test
+    fun `a fresh lease refuses to recreate a deleted archive from a stale version`() = runTest {
+        val fixture = Fixture()
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            fixture.files.remove(SyncArchiveRepository.MANIFEST_FILE_NAME)
+            fixture.requests.clear()
+            assertTrue(fixture.backend.upload(data, first).exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+            assertFalse(fixture.files.containsKey(SyncArchiveRepository.MANIFEST_FILE_NAME))
+            assertTrue(fixture.requests.none { it.method == "PUT" })
+        }
+    }
+
+    @Test
+    fun `a locked ETag only version detects another publication without a saved fingerprint`() = runTest {
+        val fixture = Fixture()
+        fixture.ignoreWriteConditions = true
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            val etagOnly = WebDavSyncBackend.Version(first.token, false)
+            fixture.backend.upload(data, etagOnly).getOrThrow()
+            assertTrue(fixture.backend.upload(data, etagOnly).exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+        }
+    }
+
+    @Test
+    fun `an unreadable manifest preserves the verification error and prevents uploads`() = runTest {
+        val fixture = Fixture()
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            val failure = IOException("manifest verification failed")
+            fixture.beforeRequest = { if (it.method == "GET" && it.url.toString() == fixture.manifestUrl) throw failure }
+            fixture.requests.clear()
+            assertSame(failure, fixture.backend.upload(data, first).exceptionOrNull())
+            assertTrue(fixture.requests.none { it.method == "PUT" })
+            assertFalse(fixture.locked)
+        }
+    }
+
+    @Test
     fun `object upload and manifest publication share one exclusive collection lease`() = runTest {
         val fixture = Fixture()
         fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
@@ -965,6 +1073,7 @@ class WebDavArchiveGcHttpTest {
         var savedRemoteFingerprint: String? = null
         val maintenanceScopes = arrayListOf<String>()
         var constantETag = false
+        var ignoreWriteConditions = false
         var manifestWriteETag: (String) -> String? = { it }
         var manifestReadETag: (String) -> String? = { it }
         var manifestWriteStatus: Int? = null
@@ -1017,7 +1126,8 @@ class WebDavArchiveGcHttpTest {
                     else if (request.header("If-Match") != etag(current)) response(request, 412)
                     else { files.remove(name); response(request, 204) }
                 }
-                "PROPFIND" -> response(request, 207, (if (badListing) "<bad/>" else directoryListing()).toByteArray())
+                "PROPFIND" -> response(request, 207, (if (request.header("Depth") == "0") directoryResponse
+                    else if (badListing) "<bad/>" else directoryListing()).toByteArray())
                 else -> files[name]?.let {
                     val read = response(request, 200, it).newBuilder()
                     val tag = if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestReadETag(etag(it)) else etag(it)
@@ -1035,8 +1145,8 @@ class WebDavArchiveGcHttpTest {
             if (locked && request.header("If")?.contains(TOKEN) != true) return response(request, 423)
             if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestWriteStatus?.let { return response(request, it) }
             val previous = files[name]
-            if (request.header("If-None-Match") == "*" && previous != null) return response(request, 412)
-            if (request.header("If-Match") != null && request.header("If-Match") != previous?.let(::etag)) return response(request, 412)
+            if (!ignoreWriteConditions && request.header("If-None-Match") == "*" && previous != null) return response(request, 412)
+            if (!ignoreWriteConditions && request.header("If-Match") != null && request.header("If-Match") != previous?.let(::etag)) return response(request, 412)
             val bytes = Buffer().use { request.body!!.writeTo(it); it.readByteArray() }
             files[name] = bytes
             val writtenETag = if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestWriteETag(etag(bytes)) else etag(bytes)
