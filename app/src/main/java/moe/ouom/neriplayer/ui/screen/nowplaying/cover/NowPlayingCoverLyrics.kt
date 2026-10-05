@@ -104,6 +104,23 @@ internal fun ColumnScope.NowPlayingEmbeddedLyrics(
 ) {
     if (!visible) return
     Spacer(Modifier.weight(1f))
+    NowPlayingEmbeddedLyricsContent(
+        content = content,
+        style = style,
+        playback = playback,
+        actions = actions,
+        modifier = Modifier.fillMaxWidth().weight(8f)
+    )
+}
+
+@Composable
+internal fun NowPlayingEmbeddedLyricsContent(
+    content: NowPlayingSyncedLyricContent,
+    style: NowPlayingEmbeddedLyricStyle,
+    playback: NowPlayingSyncedLyricPlayback,
+    actions: NowPlayingSyncedLyricActions,
+    modifier: Modifier
+) {
     NowPlayingLyricsPane(
         content = content,
         playback = playback.copy(
@@ -111,7 +128,7 @@ internal fun ColumnScope.NowPlayingEmbeddedLyrics(
                 playback.isPlaying, playback.previewPositionMs
             )
         ),
-        modifier = Modifier.fillMaxWidth().weight(8f),
+        modifier = modifier,
         style = NowPlayingSyncedLyricStyle(
             textColor = MaterialTheme.colorScheme.onBackground,
             fontSize = scaledLyricFontSize(18f, style.fontScale).sp,

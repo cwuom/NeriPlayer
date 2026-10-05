@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.comment
 
+import android.content.res.Configuration
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -40,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -59,12 +66,14 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -123,12 +132,9 @@ internal fun CommentSheet(
         onDispose { viewModel.onSheetHidden() }
     }
 
-    ModalBottomSheet(
+    CommentSheetSurface(
         onDismissRequest = hideSheet,
-        sheetState = sheetState,
-        // 勾柄改由 CommentSheetContent 自己渲染在内容最顶部: 包装组件原本把勾柄放在内容之外,
-        // 在勾柄上拖动进不了面板的手势, 所以表现为「按住上方往上拖, 拖不动」(真机反馈 #7)
-        dragHandle = null
+        sheetState = sheetState
     ) {
         CommentSheetContent(
             ui = ui,
@@ -150,12 +156,39 @@ internal fun CommentSheet(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CommentSheetSurface(
+    onDismissRequest: () -> Unit,
+    sheetState: SheetState,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val configuration = LocalConfiguration.current
+    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val windowWidth = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        modifier = Modifier.testTag("comment-sheet-surface"),
+        sheetState = sheetState,
+        sheetMaxWidth = if (landscape) (windowWidth - 32.dp).coerceIn(0.dp, 960.dp)
+            else BottomSheetDefaults.SheetMaxWidth,
+        // 竖屏把手仍由内容负责，横屏省下把手高度并保留系统遮罩关闭手势
+        dragHandle = null,
+        contentWindowInsets = {
+            if (landscape) WindowInsets.safeDrawing
+            else WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Bottom)
+        },
+        content = content
+    )
+}
+
 /**
  * 评论面板的完整内容: 可拖拽的勾柄与标题条 (总数 / 排序入口 / 全屏按钮)、排序加载进度条、
  * 评论列表 (含展开的楼中楼与底部状态行)、底部错误提示条、底部输入框。
  *
- * 面板高度由内部手势维护, 在半屏 (72% / 上限 620dp) 与全屏之间连续变化: 横条上滑进全屏、
+ * 竖屏面板高度由内部手势维护, 在半屏 (72% / 上限 620dp) 与全屏之间连续变化: 横条上滑进全屏、
  * 下滑回半屏、比半屏再低 96dp 触发 [onDismiss]; 列表触底且没有任何在途请求时自动调 [onLoadMore]。
+ * 横屏直接铺满可用高度, 使用单行标题和紧凑输入框给列表保留空间。
  * 所有数据与状态都来自 [ui], 本组件不直接发起请求。
  *
  * @param ui 面板的完整 UI 状态
@@ -194,6 +227,9 @@ internal fun CommentSheetContent(
     onDismiss: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val tablet = configuration.smallestScreenWidthDp >= 600
     val sortLoadingDescription = stringResource(CoreCommonR.string.comment_sort_loading)
     val listState = rememberLazyListState()
     var replyFocusRequest by remember(ui.source) { mutableIntStateOf(0) }
@@ -208,8 +244,18 @@ internal fun CommentSheetContent(
     // 否则全屏档位下列表下拉会被降档吃掉, 刷新永远触发不了 (真机反馈 #1)。
     // 关闭档由 [onDismiss] (sheet 自身的收起动画) 承担, 这里只维护「半屏 / 全屏」两档之间的连续高度。
     val density = LocalDensity.current
-    val halfHeightPx = with(density) { (windowHeight * 0.72f).coerceAtMost(620.dp).toPx() }
-    val fullHeightPx = with(density) { windowHeight.toPx() }
+    val safeDrawing = WindowInsets.safeDrawing
+    // 平板评论面板与状态栏之间留一点空间，短手机横屏仍优先保留列表高度
+    val availableHeight = if (tablet) {
+        (windowHeight - with(density) {
+            (safeDrawing.getTop(this) + safeDrawing.getBottom(this)).toDp()
+        } - 24.dp).coerceAtLeast(0.dp)
+    } else windowHeight
+    // 横屏直接使用可用高度，避免标题和输入框挤掉评论列表
+    val halfHeightPx = with(density) {
+        (if (landscape) availableHeight else (availableHeight * 0.72f).coerceAtMost(620.dp)).toPx()
+    }
+    val fullHeightPx = with(density) { availableHeight.toPx() }
     // 半屏档位再下拉这么多才进入「关闭」档: 48dp 太容易误关, 按真机反馈加大到 96dp
     val dismissDistancePx = with(density) { 96.dp.toPx() }
     // 不能用 Animatable: awaitEachGesture 的 block 是受限挂起作用域, 里面调不了 snapTo / animateTo。
@@ -285,7 +331,9 @@ internal fun CommentSheetContent(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .pointerInput(fullHeightPx, halfHeightPx) {
+                .testTag("comment-header")
+                .pointerInput(fullHeightPx, halfHeightPx, landscape) {
+                    if (landscape) return@pointerInput
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val startHeight = panelHeightPx
@@ -320,7 +368,7 @@ internal fun CommentSheetContent(
                 }
         ) {
             // 勾柄: 外观与原来一致 (BottomSheetDefaults.DragHandle), 点击仍然关闭面板
-            Box(
+            if (!landscape) Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(
@@ -335,23 +383,34 @@ internal fun CommentSheetContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                    .padding(horizontal = if (landscape) 16.dp else 20.dp,
+                        vertical = if (landscape) 4.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(CoreCommonR.string.comment_title),
-                        style = MaterialTheme.typography.headlineSmall
-                    )
-                    Text(
-                        text = ui.total?.let { stringResource(CoreCommonR.string.comment_total_format, formatPlayCount(context, it)) }
-                            ?: stringResource(CoreCommonR.string.comment_loading),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                val totalText = ui.total?.let {
+                    stringResource(CoreCommonR.string.comment_total_format, formatPlayCount(context, it))
+                } ?: stringResource(CoreCommonR.string.comment_loading)
+                if (landscape) {
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(CoreCommonR.string.comment_title),
+                            style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                        Text(totalText, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                } else {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(CoreCommonR.string.comment_title),
+                            style = MaterialTheme.typography.headlineSmall)
+                        Text(totalText, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 CommentSortMenu(ui, onSort)
-                HapticIconButton(onClick = {
+                if (landscape) HapticIconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, stringResource(CoreCommonR.string.action_close))
+                } else HapticIconButton(onClick = {
                     settlePanel(if (isFullScreen) halfHeightPx else fullHeightPx)
                 }) {
                     Icon(
@@ -380,6 +439,7 @@ internal fun CommentSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .testTag("comment-list-viewport")
             // 这里不再挂「列表下拉降档」手势: 全屏 / 半屏档位下列表下拉都要能刷新评论 (真机反馈 #1),
             // 档位切换交给横条拖拽与标题栏的全屏按钮
         ) {
@@ -398,6 +458,7 @@ internal fun CommentSheetContent(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
+                        .testTag("comment-list")
                         // 半屏 / 全屏都放行「列表滑到顶继续下拉」→ PullToRefreshBox 刷新 (真机反馈 #1)。
                         // 显式传 lambda 而不是默认值: 启用玻璃过滚动时默认的 null 会让 guard 整个不安装,
                         // 下拉会继续上传给 sheet → 直接关闭面板; 传 lambda 保证拦截一定装上
@@ -519,7 +580,8 @@ internal fun CommentSheetContent(
             }
         }
 
-        CommentComposer(ui, offlineMode, onDraft, requestReply, onSend, replyFocusRequest)
+        CommentComposer(ui, offlineMode, onDraft, requestReply, onSend, replyFocusRequest,
+            compact = landscape)
     }
 }
 

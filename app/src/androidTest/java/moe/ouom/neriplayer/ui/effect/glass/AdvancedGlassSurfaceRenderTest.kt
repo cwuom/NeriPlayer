@@ -105,6 +105,7 @@ class AdvancedGlassSurfaceRenderTest {
                 "uniform float4 cornerRadii[$ADVANCED_GLASS_MAX_REGIONS];"
             )
         )
+        assertTrue(source.contains("uniform float regionOpacity[$ADVANCED_GLASS_MAX_REGIONS];"))
         assertTrue(
             source.contains(
                 "for (int index = 0; index < $ADVANCED_GLASS_MAX_REGIONS; index++)"

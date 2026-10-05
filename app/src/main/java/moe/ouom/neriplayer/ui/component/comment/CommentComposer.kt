@@ -44,7 +44,8 @@ internal fun CommentComposer(
     onDraft: (String) -> Unit,
     onReply: (CommentReplyTarget?) -> Unit,
     onSend: () -> Unit,
-    focusRequest: Int = 0
+    focusRequest: Int = 0,
+    compact: Boolean = false
 ) {
     val source = ui.source ?: return
     val limit = source.platform.commentLengthLimit()
@@ -68,7 +69,8 @@ internal fun CommentComposer(
     LaunchedEffect(ui.sendSucceeded) {
         if (ui.sendSucceeded) focusManager.clearFocus()
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    Column(Modifier.fillMaxWidth().testTag("comment-composer")
+        .padding(horizontal = 16.dp, vertical = if (compact) 4.dp else 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ui.replyTarget?.let { target ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -89,10 +91,21 @@ internal fun CommentComposer(
                 modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("comment-draft"),
                 enabled = !ui.isSending,
                 shape = MaterialTheme.shapes.extraLarge,
-                placeholder = { Text(stringResource(CoreCommonR.string.comment_write_hint)) },
-                maxLines = 3,
+                placeholder = {
+                    Text(stringResource(CoreCommonR.string.comment_write_hint),
+                        maxLines = if (compact) 1 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
+                },
+                maxLines = if (compact) 1 else 3,
                 isError = ui.draft.length > limit,
-                supportingText = if (ui.draft.isNotEmpty()) {
+                trailingIcon = if (compact && ui.draft.isNotEmpty()) {
+                    {
+                        Text(stringResource(CoreCommonR.string.comment_length_format, ui.draft.length, limit),
+                            Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall,
+                            color = if (ui.draft.length > limit) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else null,
+                supportingText = if (!compact && ui.draft.isNotEmpty()) {
                     { Text(stringResource(CoreCommonR.string.comment_length_format, ui.draft.length, limit)) }
                 } else null
             )

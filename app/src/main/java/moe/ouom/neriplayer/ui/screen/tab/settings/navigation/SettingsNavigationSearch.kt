@@ -22,8 +22,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
  * File: moe.ouom.neriplayer.ui.screen.tab.settings.navigation/SettingsNavigationSearch
  */
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -49,16 +47,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
-import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageGroupCard
@@ -154,32 +151,29 @@ internal fun SettingsPageHost(
         AdvancedGlassScene(active = true) {
             content(activePage)
         }
-        return
+    } else {
+        SettingsStackedPageHost(activePage, isolateAdvancedGlassTransitions, content)
     }
+}
 
-    AnimatedContent(
-        targetState = activePage,
-        modifier = Modifier.fillMaxSize(),
-        label = "settings_page_switch",
-        transitionSpec = {
-            isolatedAdvancedGlassHorizontalTransition(
-                forward = isForwardSettingsPageTransition(initialState, targetState)
-            ).using(SizeTransform(clip = true))
-        }
-    ) { selectedPage ->
-        AdvancedGlassNavigationHandoff(
-            enabled = shouldHandoffGlass(isolateAdvancedGlassTransitions, transition.isRunning)
-        ) {
-            AdvancedGlassScene(
-                active = shouldShowActiveGlassScene(
-                    isolateAdvancedGlassTransitions,
-                    selectedPage,
-                    activePage
-                )
-            ) {
-                content(selectedPage)
-            }
-        }
+@Composable
+private fun SettingsStackedPageHost(
+    activePage: SettingsPage?,
+    isolateAdvancedGlassTransitions: Boolean,
+    content: @Composable (SettingsPage?) -> Unit
+) {
+    if (shouldUseTabletSettingsTransitions(LocalConfiguration.current.smallestScreenWidthDp)) {
+        SettingsPageTransitionHost(
+            activePage = activePage,
+            isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            content = content
+        )
+    } else {
+        PhoneSettingsPageTransitionHost(
+            activePage = activePage,
+            isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            content = content
+        )
     }
 }
 

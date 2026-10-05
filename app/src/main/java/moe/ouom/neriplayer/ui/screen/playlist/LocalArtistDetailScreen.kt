@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,7 +23,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
@@ -89,6 +93,7 @@ import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailAdaptiveLayout
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
@@ -223,6 +228,7 @@ fun LocalArtistDetailScreen(
     val searchFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val listState = rememberLazyListState()
     val displayedSongs = rememberPlaylistSearchResults(
         query = searchQuery,
         items = baseSongs,
@@ -484,94 +490,33 @@ fun LocalArtistDetailScreen(
                 return@Scaffold
             }
 
-            Column(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
-            ) {
-                AnimatedVisibility(showSearch && !selectionMode) {
-                    PlaylistModernVisualColorsProvider(
-                        coverUrl = headerCover,
-                        offlineMode = offlineMode
-                    ) {
-                        PlaylistModernDockedSearchField(
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            placeholder = stringResource(CoreCommonR.string.search_artist_songs),
-                            focusRequester = searchFocusRequester
-                        )
+            LocalArtistDetailContent(
+                title = title,
+                headerCover = headerCover,
+                songCount = songs.size,
+                durationMs = resolvedArtistSnapshot.totalDurationMs,
+                displayedSongs = displayedSongs,
+                listState = listState,
+                showSearch = showSearch,
+                searchQuery = searchQuery,
+                searchFocusRequester = searchFocusRequester,
+                selectionMode = selectionMode,
+                selectedKeys = selectedKeys,
+                downloadPresenceVersion = downloadPresenceVersion,
+                onQueryChange = { searchQuery = it },
+                onSongClick = onSongClick,
+                onToggleSelect = ::toggleSelect,
+                onLongClick = { song ->
+                    if (!selectionMode) {
+                        selectionMode = true
+                        selectedKeys = setOf(song.stableKey())
+                    } else {
+                        toggleSelect(song)
                     }
-                }
-
-                LazyColumn(
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 12.dp,
-                        bottom = 12.dp + LocalMiniPlayerHeight.current
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    item(key = "local_artist_header") {
-                        LocalArtistDetailHeader(
-                            title = title,
-                            coverUrl = headerCover,
-                            songCount = songs.size,
-                            durationMs = resolvedArtistSnapshot.totalDurationMs,
-                            offlineMode = offlineMode
-                        )
-                    }
-
-                    if (displayedSongs.isEmpty()) {
-                        item(key = "local_artist_search_empty") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = stringResource(CoreCommonR.string.search_no_match),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    itemsIndexed(
-                        items = displayedSongs,
-                        key = { _, song -> song.stableKey() }
-                    ) { index, song ->
-                        LocalArtistSongRow(
-                            index = index + 1,
-                            song = song,
-                            selectionMode = selectionMode,
-                            selected = song.stableKey() in selectedKeys,
-                            downloaded = remember(downloadPresenceVersion, song) {
-                                hasCachedLocalArtistDownload(song)
-                            },
-                            onClick = {
-                                if (selectionMode) {
-                                    toggleSelect(song)
-                                } else {
-                                    onSongClick(displayedSongs, index)
-                                }
-                            },
-                            onLongClick = {
-                                if (!selectionMode) {
-                                    selectionMode = true
-                                    selectedKeys = setOf(song.stableKey())
-                                } else {
-                                    toggleSelect(song)
-                                }
-                            },
-                            onToggleSelect = { toggleSelect(song) },
-                            offlineMode = offlineMode
-                        )
-                    }
-                }
-            }
+                },
+                offlineMode = offlineMode,
+                modifier = Modifier.padding(padding)
+            )
         }
 
         if (showExportSheet) {
@@ -635,14 +580,177 @@ fun LocalArtistDetailScreen(
 }
 
 @Composable
+internal fun LocalArtistDetailContent(
+    title: String,
+    headerCover: String?,
+    songCount: Int,
+    durationMs: Long,
+    displayedSongs: List<SongItem>,
+    listState: LazyListState,
+    showSearch: Boolean,
+    searchQuery: String,
+    searchFocusRequester: FocusRequester,
+    selectionMode: Boolean,
+    selectedKeys: Set<String>,
+    downloadPresenceVersion: Int,
+    onQueryChange: (String) -> Unit,
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    onToggleSelect: (SongItem) -> Unit,
+    onLongClick: (SongItem) -> Unit,
+    offlineMode: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+    CreatorDetailAdaptiveLayout(
+        tabletDevice = LocalConfiguration.current.smallestScreenWidthDp >= 600,
+        miniPlayerHeight = miniPlayerHeight,
+        modifier = modifier,
+        profile = {
+            LocalArtistDetailHeader(
+                title = title,
+                coverUrl = headerCover,
+                songCount = songCount,
+                durationMs = durationMs,
+                offlineMode = offlineMode,
+                tabletProfile = true
+            )
+        }
+    ) { tabletLayout ->
+        Column(modifier = Modifier.fillMaxSize()) {
+            AnimatedVisibility(showSearch && !selectionMode) {
+                PlaylistModernVisualColorsProvider(
+                    coverUrl = headerCover,
+                    offlineMode = offlineMode
+                ) {
+                    PlaylistModernDockedSearchField(
+                        query = searchQuery,
+                        onQueryChange = onQueryChange,
+                        placeholder = stringResource(CoreCommonR.string.search_artist_songs),
+                        focusRequester = searchFocusRequester
+                    )
+                }
+            }
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 12.dp,
+                    bottom = if (tabletLayout) 12.dp else 12.dp + miniPlayerHeight
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            ) {
+                item(key = "local_artist_header") {
+                    if (!tabletLayout) LocalArtistDetailHeader(
+                        title = title,
+                        coverUrl = headerCover,
+                        songCount = songCount,
+                        durationMs = durationMs,
+                        offlineMode = offlineMode
+                    )
+                }
+                if (displayedSongs.isEmpty()) {
+                    item(key = "local_artist_search_empty") {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(CoreCommonR.string.search_no_match),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                itemsIndexed(
+                    items = displayedSongs,
+                    key = { _, song -> song.stableKey() }
+                ) { index, song ->
+                    LocalArtistSongRow(
+                        index = index + 1,
+                        song = song,
+                        selectionMode = selectionMode,
+                        selected = song.stableKey() in selectedKeys,
+                        downloaded = remember(downloadPresenceVersion, song) {
+                            hasCachedLocalArtistDownload(song)
+                        },
+                        onClick = {
+                            if (selectionMode) onToggleSelect(song)
+                            else onSongClick(displayedSongs, index)
+                        },
+                        onLongClick = { onLongClick(song) },
+                        onToggleSelect = { onToggleSelect(song) },
+                        offlineMode = offlineMode
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LocalArtistDetailHeader(
     title: String,
     coverUrl: String?,
     songCount: Int,
     durationMs: Long,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    tabletProfile: Boolean = false
 ) {
     val context = LocalContext.current
+    val coverModifier = (if (tabletProfile) {
+        Modifier.fillMaxWidth().aspectRatio(1f)
+    } else {
+        Modifier.size(96.dp)
+    }).clip(RoundedCornerShape(18.dp))
+    val cover: @Composable () -> Unit = {
+        if (!coverUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = offlineCachedImageRequest(
+                    context = context,
+                    data = coverUrl,
+                    sizePx = if (tabletProfile) 512 else 256,
+                    allowHardware = false,
+                    offlineMode = offlineMode
+                ),
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = coverModifier
+            )
+        } else {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = coverModifier
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.AccountCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(if (tabletProfile) 72.dp else 52.dp)
+                )
+            }
+        }
+    }
+    val identity: @Composable () -> Unit = {
+        Text(
+            text = title,
+            maxLines = if (tabletProfile) 3 else 2,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.headlineSmall
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(
+                CoreCommonR.string.local_artist_total_duration,
+                formatTotalDuration(context, durationMs),
+                songCount
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
@@ -651,60 +759,20 @@ private fun LocalArtistDetailHeader(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
+        if (tabletProfile) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                cover()
+                Spacer(Modifier.height(20.dp))
+                identity()
+            }
+        } else Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(16.dp)
         ) {
-            if (!coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
-                        context = context,
-                        data = coverUrl,
-                        sizePx = 256,
-                        allowHardware = false,
-                        offlineMode = offlineMode
-                    ),
-                    contentDescription = title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(96.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                )
-            } else {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(96.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.AccountCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(52.dp)
-                    )
-                }
-            }
-
+            cover()
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = stringResource(
-                        CoreCommonR.string.local_artist_total_duration,
-                        formatTotalDuration(context, durationMs),
-                        songCount
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                identity()
             }
         }
     }

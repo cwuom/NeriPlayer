@@ -22,6 +22,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties.SelectableGroup
 import androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange
@@ -80,6 +84,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -102,6 +107,7 @@ class LocalPlaylistReorderBottomBoundaryTest {
     private var dragSlopPx = 0f
     private var tabSelectionCount = 0
     private var miniPlayerExpansionCount = 0
+    private val receivedSystemPointer = AtomicReference<ReceivedSystemPointer?>(null)
     private val ownedArtworkFiles = mutableListOf<File>()
     private lateinit var glassContentBackdrop: AdvancedGlassBackdrop
     private lateinit var glassBackgroundBackdrop: AdvancedGlassBackdrop
@@ -184,7 +190,7 @@ class LocalPlaylistReorderBottomBoundaryTest {
         systemInput: Boolean = false,
         reverseAfterBottomHold: Boolean = false
     ) {
-        val songs = createAndShowPlaylist(baseBlurRequested, withMiniPlayer)
+        val songs = createAndShowPlaylist(baseBlurRequested, withMiniPlayer, observeSystemInput = systemInput)
         val originalOrder = songs.map { it.id }
         val heldSong = songs[DraggedSongIndex]
         playlistList().performScrollToIndex(FirstVisibleSongIndex + FixedHeaderCount)
@@ -225,10 +231,12 @@ class LocalPlaylistReorderBottomBoundaryTest {
         )
         val insideControls = aboveControls.copy(y = lowerControlsBounds.bottom - oneDpPx - rootBounds.top)
         val belowControls = aboveControls.copy(y = lowerControlsBounds.bottom + 4f * oneDpPx - rootBounds.top)
-        val diagnostics = "glass=$baseBlurRequested, mini=$withMiniPlayer, systemInput=$systemInput, " +
+        val fixtureDiagnostics = "glass=$baseBlurRequested, mini=$withMiniPlayer, systemInput=$systemInput, " +
             "tabs=$tabBounds, list=${playlistList().fetchSemanticsNode().boundsInRoot}, " +
             "miniBounds=$miniPlayerBounds, rootInWindow=$rootOriginInWindow, windowOnScreen=$windowOriginOnScreen, " +
             "above=$aboveControls, inside=$insideControls, below=$belowControls"
+        val nativeInputTrace = mutableListOf<String>()
+        var diagnostics = fixtureDiagnostics
         assertTrue("the control bottom is outside the touchable root: $diagnostics", belowControls.y < rootBounds.height)
         composeRule.waitUntil(UiTimeoutMs) {
             coverPixelCount(initialCardBounds.top, initialCardBounds.bottom) >= MinimumCoverPixels
@@ -237,12 +245,17 @@ class LocalPlaylistReorderBottomBoundaryTest {
         var pointerDown = false
         var downTime = 0L
         var lastPointer = start
-        fun injectTouch(action: Int, pointer: Offset) {
+        fun injectTouch(action: Int, pointer: Offset): Offset {
             val inWindow = pointer + rootOriginInWindow
             val onScreen = inWindow + windowOriginOnScreen
+            val previousReceivedPointer = receivedSystemPointer.get()
+            val eventTime = SystemClock.uptimeMillis()
+            val traceIndex = nativeInputTrace.size
+            nativeInputTrace += "action=$action, injected=$pointer@$eventTime"
+            diagnostics = "$fixtureDiagnostics, nativeInputs=$nativeInputTrace"
             val event = MotionEvent.obtain(
                 downTime,
-                SystemClock.uptimeMillis(),
+                eventTime,
                 action,
                 onScreen.x,
                 onScreen.y,
@@ -256,11 +269,27 @@ class LocalPlaylistReorderBottomBoundaryTest {
             } finally {
                 event.recycle()
             }
+            if (action == MotionEvent.ACTION_CANCEL) return pointer
+            composeRule.waitUntil(UiTimeoutMs) {
+                val received = receivedSystemPointer.get()
+                received != null && received !== previousReceivedPointer && received.uptimeMillis >= eventTime &&
+                    received.pressed == (action != MotionEvent.ACTION_UP)
+            }
+            val received = requireNotNull(receivedSystemPointer.get())
+            val actualPointer = received.positionInRoot - rootBounds.topLeft
+            nativeInputTrace[traceIndex] += ", received=$actualPointer@${received.uptimeMillis}"
+            diagnostics = "$fixtureDiagnostics, nativeInputs=$nativeInputTrace"
+            return actualPointer
         }
-        fun movePointer(pointer: Offset) {
-            if (systemInput) injectTouch(MotionEvent.ACTION_MOVE, pointer)
-            else root.performTouchInput { moveTo(pointer, delayMillis = 16) }
+        fun movePointer(pointer: Offset): Offset {
+            val actualPointer = if (systemInput) {
+                injectTouch(MotionEvent.ACTION_MOVE, pointer)
+            } else {
+                root.performTouchInput { moveTo(pointer, delayMillis = 16) }
+                pointer
+            }
             lastPointer = pointer
+            return actualPointer
         }
         fun finishPointer(cancelled: Boolean) {
             if (systemInput) {
@@ -272,17 +301,25 @@ class LocalPlaylistReorderBottomBoundaryTest {
         }
         try {
             downTime = SystemClock.uptimeMillis()
-            if (systemInput) injectTouch(MotionEvent.ACTION_DOWN, start)
-            else root.performTouchInput { down(start) }
-            pointerDown = true
-            movePointer(activationPointer)
+            if (systemInput) {
+                pointerDown = true
+                injectTouch(MotionEvent.ACTION_DOWN, start)
+            } else {
+                root.performTouchInput { down(start) }
+                pointerDown = true
+            }
+            val actualActivationPointer = movePointer(activationPointer)
             advanceFrames(2)
             val activatedCardBounds = rawSongBounds(heldSong)
             val activatedCover = captureCover(activatedCardBounds.top, activatedCardBounds.bottom)
             assertTrue("the activated card cover was not drawn", activatedCover.pixelCount >= MinimumCoverPixels)
             val activatedCoverBounds = requireNotNull(activatedCover.bounds)
             val beforeHold = scrollPosition()
-            movePointer(aboveControls)
+            val actualAboveControls = movePointer(aboveControls)
+            if (systemInput) assertTrue(
+                "Android delivered the above-control hold inside the playback controls: $diagnostics",
+                actualAboveControls.y + rootBounds.top < lowerControlsBounds.top
+            )
             advanceFrames(90)
             assertEquals(
                 "drag scrolled before reaching the playback controls: $diagnostics",
@@ -290,12 +327,16 @@ class LocalPlaylistReorderBottomBoundaryTest {
                 scrollPosition(),
                 ScrollTolerance
             )
-            assertCardFollowsPointer(heldSong, activatedCardBounds, activationPointer, aboveControls, diagnostics)
-            assertCoverFollowsPointer(activatedCoverBounds, activationPointer, aboveControls, diagnostics)
+            assertCardFollowsPointer(heldSong, activatedCardBounds, actualActivationPointer, actualAboveControls, diagnostics)
+            assertCoverFollowsPointer(activatedCoverBounds, actualActivationPointer, actualAboveControls, diagnostics)
             assertEquals("hold persisted before release", originalOrder, currentOrder())
             if (reverseAfterBottomHold) saveDragScreenshot("above-controls")
 
-            movePointer(insideControls)
+            val actualInsideControls = movePointer(insideControls)
+            if (systemInput) assertTrue(
+                "Android delivered the control-interior hold outside the playback controls: $diagnostics",
+                actualInsideControls.y + rootBounds.top in lowerControlsBounds.top..lowerControlsBounds.bottom
+            )
             advanceFrames(90)
             assertEquals(
                 "drag scrolled while the finger was still inside the playback controls: $diagnostics",
@@ -306,15 +347,19 @@ class LocalPlaylistReorderBottomBoundaryTest {
             assertEquals("control-interior hold persisted before release", originalOrder, currentOrder())
             assertEquals("dragging across the tabs selected a navigation tab", 0, tabSelectionCount)
             assertEquals("dragging over the MiniPlayer expanded playback", 0, miniPlayerExpansionCount)
-            assertCardFollowsPointer(heldSong, activatedCardBounds, activationPointer, insideControls, diagnostics)
+            assertCardFollowsPointer(heldSong, activatedCardBounds, actualActivationPointer, actualInsideControls, diagnostics)
             assertControlsStayAboveDraggedCard(tabBounds, miniPlayerBounds, diagnostics)
 
-            movePointer(belowControls)
+            val actualBelowControls = movePointer(belowControls)
+            if (systemInput) assertTrue(
+                "Android delivered the below-control hold inside the playback controls: $diagnostics",
+                actualBelowControls.y + rootBounds.top > lowerControlsBounds.bottom
+            )
             val samples = mutableListOf(scrollPosition())
             repeat(2) {
                 advanceFrames(60)
                 samples += scrollPosition()
-                assertCardFollowsPointer(heldSong, activatedCardBounds, activationPointer, belowControls, diagnostics)
+                assertCardFollowsPointer(heldSong, activatedCardBounds, actualActivationPointer, actualBelowControls, diagnostics)
                 assertTrue(
                     "the held card stopped following below the playback controls: $diagnostics",
                     rawSongBounds(heldSong).bottom > lowerControlsBounds.bottom
@@ -389,7 +434,11 @@ class LocalPlaylistReorderBottomBoundaryTest {
         }
     }
 
-    private fun createAndShowPlaylist(baseBlurRequested: Boolean, withMiniPlayer: Boolean): List<SongItem> {
+    private fun createAndShowPlaylist(
+        baseBlurRequested: Boolean,
+        withMiniPlayer: Boolean,
+        observeSystemInput: Boolean = false
+    ): List<SongItem> {
         val token = UUID.randomUUID().toString().take(8)
         val baseId = System.currentTimeMillis() * 1_000L
         val draggedCover = createOwnedCover(token)
@@ -412,6 +461,24 @@ class LocalPlaylistReorderBottomBoundaryTest {
         }
         ownedPlaylistId = playlist.id
         screenVisible.value = true
+        var observerOriginInRoot = Offset.Zero
+        val systemInputObserver = if (observeSystemInput) Modifier
+            .onGloballyPositioned { observerOriginInRoot = it.positionInRoot() }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        event.changes.firstOrNull()?.let { change ->
+                            // 原生输入可能经过坐标外推，断言基准必须使用实际送达的位置
+                            receivedSystemPointer.set(
+                                ReceivedSystemPointer(
+                                    change.position + observerOriginInRoot, change.uptimeMillis, change.pressed
+                                )
+                            )
+                        }
+                    }
+                }
+            } else Modifier
         composeRule.setContent {
             val glassController = remember(baseBlurRequested) {
                 AdvancedGlassController(
@@ -439,7 +506,7 @@ class LocalPlaylistReorderBottomBoundaryTest {
                         contentBackdrop = contentBackdrop
                     ) {
                         glassRegionRegistry = requireNotNull(LocalAdvancedGlassBackdrops.current).regionRegistry
-                        Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxSize().then(systemInputObserver)) {
                             Box(
                                 Modifier.fillMaxSize().captureAdvancedGlassBackdrop(backgroundBackdrop)
                                     .background(MaterialTheme.colorScheme.background)
@@ -659,6 +726,12 @@ class LocalPlaylistReorderBottomBoundaryTest {
     }
 
     private data class CoverSample(val bounds: Rect?, val pixelCount: Int)
+
+    private data class ReceivedSystemPointer(
+        val positionInRoot: Offset,
+        val uptimeMillis: Long,
+        val pressed: Boolean
+    )
 
     private fun saveDragScreenshot(name: String) {
         val screenshot = composeRule.onRoot().captureToImage().asAndroidBitmap()

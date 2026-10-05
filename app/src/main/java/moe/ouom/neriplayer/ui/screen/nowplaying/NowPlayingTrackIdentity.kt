@@ -19,6 +19,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +52,21 @@ internal data class NowPlayingTrackDisplay(
 
 internal fun resolveNowPlayingTrackDisplay(song: SongItem?): NowPlayingTrackDisplay =
     NowPlayingTrackDisplay(song?.displayName(), song?.displayArtist())
+
+internal data class NowPlayingTrackIdentityPresentation(
+    val titleStyle: TextStyle,
+    val artistStyle: TextStyle,
+    val horizontalAlignment: Alignment.Horizontal
+)
+
+internal fun resolveNowPlayingTrackIdentityPresentation(
+    compact: Boolean,
+    typography: Typography
+): NowPlayingTrackIdentityPresentation = if (compact) {
+    NowPlayingTrackIdentityPresentation(typography.titleLarge, typography.bodyMedium, Alignment.Start)
+} else {
+    NowPlayingTrackIdentityPresentation(typography.headlineSmall, typography.bodyLarge, Alignment.CenterHorizontally)
+}
 
 internal class NowPlayingTrackIdentityOwner {
     private data class CopyContext(val clipboard: Clipboard, val scope: CoroutineScope)
@@ -94,12 +111,14 @@ internal fun NowPlayingTrackIdentity(
     titleColor: Color,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    onArtistClick: () -> Unit
+    onArtistClick: () -> Unit,
+    compact: Boolean = false
 ) {
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val owner = remember { NowPlayingTrackIdentityOwner() }
     owner.bindCopyContext(clipboard, clipboardScope)
+    val presentation = resolveNowPlayingTrackIdentityPresentation(compact, MaterialTheme.typography)
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically(
@@ -107,13 +126,13 @@ internal fun NowPlayingTrackIdentity(
             initialOffsetY = { it / 4 }
         ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 150))
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(horizontalAlignment = presentation.horizontalAlignment) {
             NowPlayingTrackTitle(
-                display.name, marqueeEnabled, titleColor, owner
+                display.name, marqueeEnabled, titleColor, owner, presentation.titleStyle
             )
             NowPlayingTrackArtist(
                 display.artist, sharedTransitionScope, animatedVisibilityScope,
-                onArtistClick, owner
+                onArtistClick, owner, presentation.artistStyle
             )
         }
     }
@@ -125,13 +144,14 @@ private fun NowPlayingTrackTitle(
     displayName: String?,
     marqueeEnabled: Boolean,
     titleColor: Color,
-    owner: NowPlayingTrackIdentityOwner
+    owner: NowPlayingTrackIdentityOwner,
+    titleStyle: TextStyle
 ) {
     BoxWithConstraints {
         NowPlayingSongTitle(
             text = displayName.orEmpty(),
             marqueeEnabled = marqueeEnabled,
-            style = MaterialTheme.typography.headlineSmall,
+            style = titleStyle,
             color = titleColor,
             modifier = Modifier
                 .widthIn(max = maxWidth)
@@ -157,12 +177,13 @@ private fun NowPlayingTrackArtist(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onArtistClick: () -> Unit,
-    owner: NowPlayingTrackIdentityOwner
+    owner: NowPlayingTrackIdentityOwner,
+    artistStyle: TextStyle
 ) {
     Box {
         Text(
             text = displayArtist.orEmpty(),
-            style = MaterialTheme.typography.bodyLarge,
+            style = artistStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

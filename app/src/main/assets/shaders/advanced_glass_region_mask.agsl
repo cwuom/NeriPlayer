@@ -2,6 +2,7 @@ uniform shader child;
 uniform float regionCount;
 uniform float4 regionBounds[32];
 uniform float4 cornerRadii[32];
+uniform float regionOpacity[32];
 uniform float invertMask;
 
 float roundedRectDistance(float2 position, float4 bounds, float4 radii) {
@@ -27,7 +28,10 @@ half4 main(float2 position) {
             regionBounds[index],
             cornerRadii[index]
         );
-        coverage = max(coverage, clamp(0.5 - distance, 0.0, 1.0));
+        coverage = max(
+            coverage,
+            clamp(0.5 - distance, 0.0, 1.0) * regionOpacity[index]
+        );
     }
     float resolvedCoverage = mix(coverage, 1.0 - coverage, invertMask);
     return child.eval(position) * half(resolvedCoverage);

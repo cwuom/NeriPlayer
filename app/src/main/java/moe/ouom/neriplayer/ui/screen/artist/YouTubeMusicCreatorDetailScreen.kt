@@ -60,6 +60,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,7 +86,6 @@ import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
-import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailViewModel
@@ -189,7 +190,7 @@ fun YouTubeMusicCreatorDetailScreen(
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val isTabletLayout = currentWindowWidthDp() >= 720.dp
+    val isTabletLayout = LocalConfiguration.current.smallestScreenWidthDp >= 600
     val listState = rememberSaveable(creator.browseId, saver = LazyListState.Saver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
@@ -309,89 +310,106 @@ internal fun YouTubeMusicCreatorDetailContent(
                 }
             }
             else -> {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .widthIn(max = 1080.dp)
-                        .fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = if (isTabletLayout) 36.dp else 20.dp,
-                        end = if (isTabletLayout) 36.dp else 20.dp,
-                        top = 4.dp,
-                        bottom = 40.dp + miniPlayerHeight
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                if (uiState.loading) {
-                    item(key = "creator-loading") {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                CreatorDetailAdaptiveLayout(
+                    tabletDevice = isTabletLayout,
+                    miniPlayerHeight = miniPlayerHeight,
+                    profile = {
+                        YouTubeMusicCreatorHeader(
+                            detail = detail,
+                            offlineMode = offlineMode,
+                            isTabletLayout = true,
+                            followFavorite = followFavorite
+                        )
                     }
-                }
-                item(key = "creator-header") {
-                    YouTubeMusicCreatorHeader(
-                        detail = detail,
-                        offlineMode = offlineMode,
-                        isTabletLayout = isTabletLayout,
-                        followFavorite = followFavorite
-                    )
-                }
-                if (!uiState.error.isNullOrBlank()) {
-                    item(key = "creator-error") {
-                        Row(
-                            modifier = Modifier.padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = uiState.error,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            HapticTextButton(onClick = onRetry) {
-                                Text(stringResource(CoreCommonR.string.action_retry))
+                ) { splitLayout ->
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .widthIn(max = 1080.dp)
+                            .fillMaxSize()
+                            .testTag("youtubeCreatorWorksList"),
+                        contentPadding = PaddingValues(
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = if (splitLayout) 8.dp else 4.dp,
+                            bottom = if (splitLayout) 20.dp else 40.dp + miniPlayerHeight
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (uiState.loading) {
+                            item(key = "creator-loading") {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
                         }
-                    }
-                }
-                if (detail.sections.isEmpty() && uiState.detail != null) {
-                    item(key = "creator-empty") {
-                        Text(
-                            text = stringResource(CoreCommonR.string.youtube_creator_sections_empty),
-                            modifier = Modifier.padding(vertical = 28.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                } else {
-                    itemsIndexed(
-                        items = detail.sections,
-                        key = { index, section -> "creator-section-$index-${section.title}" }
-                    ) { sectionIndex, section ->
-                        YouTubeMusicCreatorSection(
-                            section = section,
-                            creatorBrowseId = creatorBrowseId,
-                            sectionIndex = sectionIndex,
-                            stateHolder = sectionStateHolder,
-                            offlineMode = offlineMode,
-                            isPlaybackQueueLoading =
-                                uiState.playbackQueueLoadingSectionKey ==
-                                    youtubeMusicCreatorSectionKey(section),
-                            playbackQueueError = uiState.playbackQueueError.takeIf {
-                                uiState.playbackQueueErrorSectionKey ==
-                                    youtubeMusicCreatorSectionKey(section)
-                            },
-                            onSongClick = onSongClick,
-                            onSectionSongClick = onSectionSongClick,
-                            onPlaylistClick = onPlaylistClick,
-                            onCreatorClick = onCreatorClick,
-                            onSectionMoreClick = onSectionMoreClick
-                        )
+                        item(key = "creator-header") {
+                            if (!splitLayout) {
+                                YouTubeMusicCreatorHeader(
+                                    detail = detail,
+                                    offlineMode = offlineMode,
+                                    isTabletLayout = false,
+                                    followFavorite = followFavorite
+                                )
+                            }
+                        }
+                        if (!uiState.error.isNullOrBlank()) {
+                            item(key = "creator-error") {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = uiState.error,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    HapticTextButton(onClick = onRetry) {
+                                        Text(stringResource(CoreCommonR.string.action_retry))
+                                    }
+                                }
+                            }
+                        }
+                        if (detail.sections.isEmpty() && uiState.detail != null) {
+                            item(key = "creator-empty") {
+                                Text(
+                                    text = stringResource(CoreCommonR.string.youtube_creator_sections_empty),
+                                    modifier = Modifier.padding(vertical = 28.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        } else {
+                            itemsIndexed(
+                                items = detail.sections,
+                                key = { index, section -> "creator-section-$index-${section.title}" }
+                            ) { sectionIndex, section ->
+                                YouTubeMusicCreatorSection(
+                                    section = section,
+                                    creatorBrowseId = creatorBrowseId,
+                                    sectionIndex = sectionIndex,
+                                    stateHolder = sectionStateHolder,
+                                    offlineMode = offlineMode,
+                                    isPlaybackQueueLoading =
+                                        uiState.playbackQueueLoadingSectionKey ==
+                                            youtubeMusicCreatorSectionKey(section),
+                                    playbackQueueError = uiState.playbackQueueError.takeIf {
+                                        uiState.playbackQueueErrorSectionKey ==
+                                            youtubeMusicCreatorSectionKey(section)
+                                    },
+                                    onSongClick = onSongClick,
+                                    onSectionSongClick = onSectionSongClick,
+                                    onPlaylistClick = onPlaylistClick,
+                                    onCreatorClick = onCreatorClick,
+                                    onSectionMoreClick = onSectionMoreClick,
+                                    tabletLayout = splitLayout
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
-}
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -402,11 +420,15 @@ private fun YouTubeMusicCreatorHeader(
     isTabletLayout: Boolean,
     followFavorite: FavoritePlaylist?
 ) {
+    if (isTabletLayout) {
+        YouTubeMusicCreatorTabletProfile(detail.header, offlineMode, followFavorite)
+        return
+    }
     val context = LocalContext.current
     val header = detail.header
     val coverUrl = header.coverUrl.takeIf { it.isNotBlank() }
-    val heroHeight = if (isTabletLayout) 260.dp else 210.dp
-    val avatarSize = if (isTabletLayout) 82.dp else 64.dp
+    val heroHeight = 210.dp
+    val avatarSize = 64.dp
     val backdropRequest = remember(context, coverUrl, offlineMode) {
         offlineCachedImageRequest(
             context = context,
@@ -563,7 +585,8 @@ private fun YouTubeMusicCreatorSection(
     onSectionSongClick: (YouTubeMusicCreatorSection, YouTubeMusicCreatorItem) -> Unit,
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
-    onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit
+    onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit,
+    tabletLayout: Boolean
 ) {
     val playableItems = section.items.mapNotNull { item ->
         item.toCreatorSongItem()?.let { item to it }
@@ -654,7 +677,8 @@ private fun YouTubeMusicCreatorSection(
                             offlineMode = offlineMode,
                             onSongClick = onSongClick,
                             onPlaylistClick = onPlaylistClick,
-                            onCreatorClick = onCreatorClick
+                            onCreatorClick = onCreatorClick,
+                            tabletLayout = tabletLayout
                         )
                     }
                 }
@@ -747,7 +771,8 @@ private fun CreatorSectionCard(
     offlineMode: Boolean,
     onSongClick: (List<SongItem>, Int) -> Unit,
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
-    onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit
+    onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
+    tabletLayout: Boolean
 ) {
     val context = LocalContext.current
     val onClick: () -> Unit = {
@@ -771,7 +796,7 @@ private fun CreatorSectionCard(
     }
     Column(
         modifier = Modifier
-            .width(148.dp)
+            .width(if (tabletLayout) 176.dp else 148.dp)
             .clickable(onClick = onClick)
     ) {
         Box(

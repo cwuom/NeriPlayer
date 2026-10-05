@@ -17,7 +17,8 @@ internal data class AdvancedGlassRenderRegion(
     val top: Float,
     val right: Float,
     val bottom: Float,
-    val cornerRadiiPx: AdvancedGlassCornerRadii
+    val cornerRadiiPx: AdvancedGlassCornerRadii,
+    val opacity: Float = 1f
 )
 
 internal fun isAdvancedGlassBackendSupported(sdkInt: Int): Boolean =
@@ -121,6 +122,7 @@ private object AdvancedGlassRuntimeShaderBackend {
         ): AdvancedGlassRegionUniforms {
             val regionBounds = FloatArray(ADVANCED_GLASS_MAX_REGIONS * RegionComponentCount)
             val cornerRadii = FloatArray(ADVANCED_GLASS_MAX_REGIONS * RegionComponentCount)
+            val opacity = FloatArray(ADVANCED_GLASS_MAX_REGIONS)
             regions.forEachIndexed { index, region ->
                 val offset = index * RegionComponentCount
                 regionBounds[offset] = region.left
@@ -131,11 +133,13 @@ private object AdvancedGlassRuntimeShaderBackend {
                 cornerRadii[offset + 1] = region.cornerRadiiPx.topRight.coerceAtLeast(0f)
                 cornerRadii[offset + 2] = region.cornerRadiiPx.bottomRight.coerceAtLeast(0f)
                 cornerRadii[offset + 3] = region.cornerRadiiPx.bottomLeft.coerceAtLeast(0f)
+                opacity[index] = region.opacity.coerceIn(0f, 1f)
             }
             return AdvancedGlassRegionUniforms(
                 count = regions.size,
                 bounds = regionBounds,
-                cornerRadii = cornerRadii
+                cornerRadii = cornerRadii,
+                opacity = opacity
             )
         }
 
@@ -173,7 +177,7 @@ private object AdvancedGlassRuntimeShaderBackend {
             return AndroidRenderEffect.createBlendModeEffect(
                 outsideOriginalEffect,
                 maskedBlurEffect,
-                BlendMode.SRC_OVER
+                BlendMode.PLUS
             ).asComposeRenderEffect()
         }
 
@@ -184,13 +188,15 @@ private object AdvancedGlassRuntimeShaderBackend {
             setFloatUniform(RegionCountUniform, regionUniforms.count.toFloat())
             setFloatUniform(RegionBoundsUniform, regionUniforms.bounds)
             setFloatUniform(CornerRadiiUniform, regionUniforms.cornerRadii)
+            setFloatUniform(RegionOpacityUniform, regionUniforms.opacity)
             setFloatUniform(InvertMaskUniform, if (invertMask) 1f else 0f)
         }
 
         private class AdvancedGlassRegionUniforms(
             val count: Int,
             val bounds: FloatArray,
-            val cornerRadii: FloatArray
+            val cornerRadii: FloatArray,
+            val opacity: FloatArray
         )
     }
 
@@ -199,5 +205,6 @@ private object AdvancedGlassRuntimeShaderBackend {
     private const val RegionCountUniform = "regionCount"
     private const val RegionBoundsUniform = "regionBounds"
     private const val CornerRadiiUniform = "cornerRadii"
+    private const val RegionOpacityUniform = "regionOpacity"
     private const val InvertMaskUniform = "invertMask"
 }

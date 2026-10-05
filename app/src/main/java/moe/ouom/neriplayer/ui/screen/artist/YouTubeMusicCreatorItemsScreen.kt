@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -45,6 +46,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,7 +64,6 @@ import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
-import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorItemsUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorItemsViewModel
@@ -148,14 +150,14 @@ fun YouTubeMusicCreatorItemsScreen(
                 onLoadMore = viewModel::loadMore,
                 onSongClick = viewModel::playSong,
                 offlineMode = offlineMode,
-                isTabletLayout = currentWindowWidthDp() >= 720.dp
+                isTabletLayout = LocalConfiguration.current.smallestScreenWidthDp >= 600
             )
         }
     }
 }
 
 @Composable
-private fun YouTubeMusicCreatorItemsContent(
+internal fun YouTubeMusicCreatorItemsContent(
     uiState: YouTubeMusicCreatorItemsUiState,
     listState: LazyListState,
     onRetry: () -> Unit,
@@ -169,132 +171,147 @@ private fun YouTubeMusicCreatorItemsContent(
     }
     val songs = playableItems.map { (_, song) -> song }
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.navigationBars),
         contentAlignment = Alignment.TopCenter
     ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .widthIn(max = 1080.dp)
-                .fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = if (isTabletLayout) 36.dp else 20.dp,
-                end = if (isTabletLayout) 36.dp else 20.dp,
-                top = 4.dp,
-                bottom = 40.dp + miniPlayerHeight
-            ),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        val tabletLayout = useCreatorDetailSplitLayout(isTabletLayout, maxWidth.value)
+        Surface(
+            modifier = Modifier.widthIn(max = if (tabletLayout) 1000.dp else 1080.dp)
+                .fillMaxSize()
+                .padding(
+                    horizontal = if (tabletLayout) 24.dp else 0.dp,
+                    vertical = if (tabletLayout) 8.dp else 0.dp
+                )
+                .padding(bottom = if (tabletLayout) miniPlayerHeight else 0.dp)
+                .testTag("youtubeCreatorItemsPane"),
+            shape = RoundedCornerShape(if (tabletLayout) 28.dp else 0.dp),
+            color = if (tabletLayout) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent
         ) {
-            if ((uiState.loading || uiState.playbackQueueLoading) && songs.isNotEmpty()) {
-                item(key = "creator-items-loading") {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            }
-            if (uiState.loading && songs.isEmpty()) {
-                item(key = "creator-items-first-loading") {
-                    CreatorItemsLoadingBlock()
-                }
-                return@LazyColumn
-            }
-            if (uiState.error != null && songs.isEmpty()) {
-                item(key = "creator-items-error") {
-                    CreatorItemsErrorBlock(
-                        message = uiState.error,
-                        onRetry = onRetry
-                    )
-                }
-                return@LazyColumn
-            }
-            if (uiState.error != null) {
-                item(key = "creator-items-stale-error") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = uiState.error,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        HapticTextButton(onClick = onRetry) {
-                            Text(stringResource(CoreCommonR.string.action_retry))
-                        }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .widthIn(max = 1080.dp)
+                    .fillMaxSize()
+                    .testTag("youtubeCreatorItemsList"),
+                contentPadding = PaddingValues(
+                    start = if (tabletLayout) 24.dp else 20.dp,
+                    end = if (tabletLayout) 24.dp else 20.dp,
+                    top = if (tabletLayout) 12.dp else 4.dp,
+                    bottom = if (tabletLayout) 20.dp else 40.dp + miniPlayerHeight
+                ),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if ((uiState.loading || uiState.playbackQueueLoading) && songs.isNotEmpty()) {
+                    item(key = "creator-items-loading") {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
-            }
-            if (uiState.playbackQueueError != null) {
-                item(key = "creator-items-playback-error") {
-                    Text(
-                        text = uiState.playbackQueueError,
-                        modifier = Modifier.padding(vertical = 4.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-            if (songs.isEmpty()) {
-                item(key = "creator-items-empty") {
-                    Text(
-                        text = stringResource(CoreCommonR.string.youtube_creator_items_empty),
-                        modifier = Modifier.padding(vertical = 28.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            } else {
-                itemsIndexed(
-                    playableItems,
-                    key = { _, pair -> pair.second.id }
-                ) { index, pair ->
-                    val (item, song) = pair
-                    CreatorItemsSongRow(
-                        song = song,
-                        index = index + 1,
-                        offlineMode = offlineMode,
-                        enabled = !uiState.playbackQueueLoading && !uiState.loadingMore,
-                        onClick = { onSongClick(item) }
-                    )
-                }
-            }
-            if (uiState.loadMoreError != null) {
-                item(key = "creator-items-load-more-error") {
-                    Row(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = uiState.loadMoreError,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        HapticTextButton(onClick = onLoadMore) {
-                            Text(stringResource(CoreCommonR.string.action_retry))
-                        }
+                if (uiState.loading && songs.isEmpty()) {
+                    item(key = "creator-items-first-loading") {
+                        CreatorItemsLoadingBlock()
                     }
+                    return@LazyColumn
                 }
-            }
-            if (uiState.continuation != null) {
-                item(key = "creator-items-load-more") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        TextButton(
-                            onClick = onLoadMore,
-                            enabled = !uiState.loadingMore && !uiState.playbackQueueLoading
-                        ) {
-                            if (uiState.loadingMore) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(Modifier.width(8.dp))
+                if (uiState.error != null && songs.isEmpty()) {
+                    item(key = "creator-items-error") {
+                        CreatorItemsErrorBlock(
+                            message = uiState.error,
+                            onRetry = onRetry
+                        )
+                    }
+                    return@LazyColumn
+                }
+                if (uiState.error != null) {
+                    item(key = "creator-items-stale-error") {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = uiState.error,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            HapticTextButton(onClick = onRetry) {
+                                Text(stringResource(CoreCommonR.string.action_retry))
                             }
-                            Text(stringResource(CoreCommonR.string.youtube_creator_load_more))
+                        }
+                    }
+                }
+                if (uiState.playbackQueueError != null) {
+                    item(key = "creator-items-playback-error") {
+                        Text(
+                            text = uiState.playbackQueueError,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+                if (songs.isEmpty()) {
+                    item(key = "creator-items-empty") {
+                        Text(
+                            text = stringResource(CoreCommonR.string.youtube_creator_items_empty),
+                            modifier = Modifier.padding(vertical = 28.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else {
+                    itemsIndexed(
+                        playableItems,
+                        key = { _, pair -> pair.second.id }
+                    ) { index, pair ->
+                        val (item, song) = pair
+                        CreatorItemsSongRow(
+                            song = song,
+                            index = index + 1,
+                            offlineMode = offlineMode,
+                            enabled = !uiState.playbackQueueLoading && !uiState.loadingMore,
+                            onClick = { onSongClick(item) }
+                        )
+                    }
+                }
+                if (uiState.loadMoreError != null) {
+                    item(key = "creator-items-load-more-error") {
+                        Row(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = uiState.loadMoreError,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            HapticTextButton(onClick = onLoadMore) {
+                                Text(stringResource(CoreCommonR.string.action_retry))
+                            }
+                        }
+                    }
+                }
+                if (uiState.continuation != null) {
+                    item(key = "creator-items-load-more") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            TextButton(
+                                onClick = onLoadMore,
+                                enabled = !uiState.loadingMore && !uiState.playbackQueueLoading
+                            ) {
+                                if (uiState.loadingMore) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(stringResource(CoreCommonR.string.youtube_creator_load_more))
+                            }
                         }
                     }
                 }

@@ -102,6 +102,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -146,6 +147,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
@@ -381,6 +383,8 @@ fun HomeScreen(
     var wasOffline by remember { mutableStateOf(offlineMode) }
     val windowWidthDp = currentWindowWidthDp()
     val isTabletLayout = windowWidthDp >= 720.dp
+    val isTabletDevice =
+        LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
     val pageHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
     val gridMinCellSize = if (isTabletLayout) 156.dp else 120.dp
     val gridContentPadding = if (isTabletLayout) 14.dp else 8.dp
@@ -431,6 +435,7 @@ fun HomeScreen(
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .padding(top = if (isTabletDevice) 8.dp else 0.dp)
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
         ) {
             LargeTopAppBar(

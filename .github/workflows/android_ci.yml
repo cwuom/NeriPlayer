@@ -149,7 +149,11 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # 保留 Launcher 的系统导航服务，用设置页承接构建期间的前台焦点
+          # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
           script: >-
+            adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&
+            adb shell am start -W -a android.settings.SETTINGS &&
             ./gradlew :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest :playback:runtime:connectedDebugAndroidTest :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             --warning-mode all --stacktrace

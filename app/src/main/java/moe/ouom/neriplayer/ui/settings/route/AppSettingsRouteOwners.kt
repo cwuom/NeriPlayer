@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -37,9 +38,10 @@ private fun rememberInitialAdvancedBlurQuality() = remember {
 private fun rememberInitialSettingsRouteState(
     theme: ThemePreferenceSnapshot,
     playback: PlaybackPreferenceSnapshot,
-    blurQuality: AdvancedBlurQuality
-): AppSettingsRouteState = remember(Triple(theme, playback, blurQuality)) {
-    initialAppSettingsRouteState(theme, playback, blurQuality)
+    blurQuality: AdvancedBlurQuality,
+    lyricFontScales: LyricFontScales
+): AppSettingsRouteState = remember(listOf(theme, playback, blurQuality, lyricFontScales)) {
+    initialAppSettingsRouteState(theme, playback, blurQuality, lyricFontScales)
 }
 
 @Composable
@@ -54,7 +56,7 @@ internal fun rememberAppSettingsRouteState(
     playback: PlaybackPreferenceSnapshot
 ): AppSettingsRouteState {
     val initialState = rememberInitialSettingsRouteState(
-        theme, playback, rememberInitialAdvancedBlurQuality()
+        theme, playback, rememberInitialAdvancedBlurQuality(), repo.defaultLyricFontScales
     )
     return rememberSettingsRouteFlow(repo).collectAsStateWithLifecycle(
         initialValue = initialState

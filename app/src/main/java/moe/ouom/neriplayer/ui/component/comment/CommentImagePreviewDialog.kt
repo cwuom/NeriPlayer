@@ -41,6 +41,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.comments.CommentImage
+import moe.ouom.neriplayer.ui.component.overlay.ApplyOverlayWindowNavigationBarPolicy
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
@@ -106,6 +107,7 @@ internal fun CommentImagePreviewDialog(
             decorFitsSystemWindows = false
         )
     ) {
+        ApplyOverlayWindowNavigationBarPolicy()
         Box(
             modifier = Modifier
                 .fillMaxSize()

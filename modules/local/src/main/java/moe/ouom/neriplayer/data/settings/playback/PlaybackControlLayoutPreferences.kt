@@ -7,14 +7,15 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPre
 internal fun resolvePlaybackControlLayoutPreferences(
     nowPlayingPlacementValue: Int?,
     nowPlayingSizeValue: Int?,
-    lyricsSizeValue: Int?
+    lyricsSizeValue: Int?,
+    defaults: PlaybackControlLayoutPreferences = PlaybackControlLayoutPreferences()
 ): PlaybackControlLayoutPreferences {
     return PlaybackControlLayoutPreferences(
         nowPlayingPlacement = NowPlayingControlPlacement.entries
-            .getOrElse(nowPlayingPlacementValue ?: -1) { NowPlayingControlPlacement.LOWER },
+            .getOrElse(nowPlayingPlacementValue ?: -1) { defaults.nowPlayingPlacement },
         nowPlayingSize = PlaybackControlSize.entries
-            .getOrElse(nowPlayingSizeValue ?: -1) { PlaybackControlSize.MEDIUM },
+            .getOrElse(nowPlayingSizeValue ?: -1) { defaults.nowPlayingSize },
         lyricsSize = PlaybackControlSize.entries
-            .getOrElse(lyricsSizeValue ?: -1) { PlaybackControlSize.MEDIUM }
+            .getOrElse(lyricsSizeValue ?: -1) { defaults.lyricsSize }
     )
 }

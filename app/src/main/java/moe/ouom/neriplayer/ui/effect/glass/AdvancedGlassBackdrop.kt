@@ -21,6 +21,7 @@ import androidx.compose.ui.layout.positionInWindow
 @Stable
 internal class AdvancedGlassBackdrop internal constructor() {
     internal var positionInWindow: Offset by mutableStateOf(Offset.Unspecified)
+    internal var scaleInWindow: Offset by mutableStateOf(Offset(1f, 1f))
     internal var renderEffect: RenderEffect? by mutableStateOf(null)
     internal var localBlurPlan: AdvancedGlassLocalBlurPlan? by mutableStateOf(null)
     internal var freezeLocalBlurFrame: Boolean by mutableStateOf(false)
@@ -73,6 +74,7 @@ internal fun Modifier.captureAdvancedGlassBackdrop(
 ): Modifier = this
     .onGloballyPositioned { coordinates ->
         backdrop.positionInWindow = coordinates.attachedPositionInWindow()
+        backdrop.scaleInWindow = coordinates.advancedGlassScaleInWindow()
     }
     .graphicsLayer {
         val effect = backdrop.renderEffect
@@ -104,6 +106,17 @@ private fun LayoutCoordinates.attachedPositionInWindow(): Offset = if (isAttache
     positionInWindow()
 } else {
     Offset.Unspecified
+}
+
+internal fun LayoutCoordinates.advancedGlassScaleInWindow(): Offset {
+    if (!isAttached || size.width <= 0 || size.height <= 0) return Offset.Unspecified
+    val origin = localToWindow(Offset.Zero)
+    val horizontalEnd = localToWindow(Offset(size.width.toFloat(), 0f))
+    val verticalEnd = localToWindow(Offset(0f, size.height.toFloat()))
+    return Offset(
+        x = (horizontalEnd.x - origin.x) / size.width,
+        y = (verticalEnd.y - origin.y) / size.height
+    )
 }
 
 private const val NoLocalBlurRendererCacheKey = Int.MIN_VALUE

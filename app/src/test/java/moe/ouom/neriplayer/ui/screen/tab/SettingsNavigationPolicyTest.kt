@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -18,6 +19,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomeSelecte
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsSearchResultsState
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldHandoffGlass
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowActiveGlassScene
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowSettingsDetailHeader
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldUseSettingsSplitLayout
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldUseTabletSettingsTransitions
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsSearchEntry
 import org.junit.Assert.assertEquals
@@ -28,6 +32,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsNavigationPolicyTest {
+    @Test
+    fun `phone landscape retains phone transitions and never becomes split settings`() {
+        assertFalse(shouldUseTabletSettingsTransitions(599))
+        assertFalse(shouldUseSettingsSplitLayout(599, 1200.dp))
+        assertTrue(shouldUseTabletSettingsTransitions(600))
+        assertTrue(shouldUseTabletSettingsTransitions(840))
+    }
+
+    @Test
+    fun `tablet settings use split panes only when the current window fits`() {
+        assertFalse(shouldUseSettingsSplitLayout(600, 839.dp))
+        assertTrue(shouldUseSettingsSplitLayout(600, 840.dp))
+        assertTrue(shouldUseSettingsSplitLayout(800, 1200.dp))
+        assertFalse(shouldUseSettingsSplitLayout(800, 600.dp))
+    }
+
+    @Test
+    fun `account cards own their introduction while other detail pages keep their header`() {
+        assertFalse(shouldShowSettingsDetailHeader(SettingsPage.Accounts))
+        SettingsPage.entries.filterNot { it == SettingsPage.Accounts }.forEach { page ->
+            assertTrue(shouldShowSettingsDetailHeader(page))
+        }
+    }
+
     @Test
     fun `split navigation restores the general page without replacing an open detail`() {
         assertNull(initialSettingsPage(false))

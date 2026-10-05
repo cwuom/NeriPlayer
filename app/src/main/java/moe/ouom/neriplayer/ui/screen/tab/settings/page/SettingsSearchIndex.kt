@@ -197,6 +197,7 @@ internal fun settingsSearchScrollAnchor(
     }
 
     return when (page) {
+        SettingsPage.Accounts -> SettingsSearchScrollAnchor(itemIndex = 0)
         SettingsPage.Theme -> when (targetId) {
             "manual:theme_mode" -> SettingsSearchScrollAnchor(itemIndex = 1)
             "manual:theme_palette_style" -> SettingsSearchScrollAnchor(itemIndex = 3)

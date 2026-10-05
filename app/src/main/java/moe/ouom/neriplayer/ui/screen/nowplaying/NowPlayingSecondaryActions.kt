@@ -18,8 +18,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -28,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -38,7 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.NonRestartableComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +89,7 @@ import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.MoreOptionsMainContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongInfoSheet
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.isCompactEditSongLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricBehaviorSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricFontSizeSheet
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
@@ -330,6 +336,9 @@ internal enum class MoreOptionsPage {
     PLAYBACK_SOUND
 }
 
+internal fun resolveMoreOptionsInitialPage(startWithLyricBehavior: Boolean): MoreOptionsPage =
+    if (startWithLyricBehavior) MoreOptionsPage.LYRIC_BEHAVIOR else MoreOptionsPage.MAIN
+
 internal class MoreOptionsBiliTargetOwner(
     private val resolveTarget: (SongItem) -> BiliVideoSkipTarget?
 ) {
@@ -350,16 +359,20 @@ internal class MoreOptionsBiliTargetOwner(
 internal class MoreOptionsSheetOwner(
     private val scope: CoroutineScope,
     private val hide: suspend () -> Unit,
+    private val expand: suspend () -> Unit,
+    private val initialPage: MoreOptionsPage = MoreOptionsPage.MAIN,
     private val onDismiss: () -> Unit
 ) {
     val biliTargetOwner = MoreOptionsBiliTargetOwner { song ->
         BiliVideoSkipPlaybackController.activeTargetFor(song)
     }
-    var page by mutableStateOf(MoreOptionsPage.MAIN)
+    var page by mutableStateOf(initialPage)
         private set
     var isDismissing by mutableStateOf(false)
         private set
     var isEditSongSaving by mutableStateOf(false)
+        private set
+    var sheetImeVisible by mutableStateOf(false)
         private set
 
     val sheetGesturesEnabled: Boolean
@@ -374,11 +387,24 @@ internal class MoreOptionsSheetOwner(
     }
 
     fun back() {
-        if (!isEditSongSaving) page = MoreOptionsPage.MAIN
+        if (isEditSongSaving) return
+        if (page == initialPage && initialPage != MoreOptionsPage.MAIN) dismiss()
+        else page = MoreOptionsPage.MAIN
     }
 
     fun setEditSaving(saving: Boolean) {
         isEditSongSaving = saving
+    }
+
+    fun updateSheetImeVisibility(visible: Boolean) {
+        sheetImeVisible = visible
+    }
+
+    fun windowPresentation(compactLandscape: Boolean): MoreOptionsSheetPresentation =
+        resolveMoreOptionsSheetPresentation(page, compactLandscape, sheetImeVisible, sheetGesturesEnabled)
+
+    fun expansionEffect(presentation: MoreOptionsSheetPresentation): suspend CoroutineScope.() -> Unit = {
+        if (presentation.expandToFit) expand()
     }
 
     fun dismiss() = dismiss({})
@@ -512,19 +538,25 @@ class MoreOptionsSheetNavigation(
     val onShowSongDetails: (SongItem) -> Unit,
     val onEnterAlbum: (AlbumSummary) -> Unit,
     val onNavigateUp: () -> Unit,
-    val onShowQualitySwitch: () -> Unit = {}
+    val onShowQualitySwitch: () -> Unit = {},
+    val startWithLyricBehavior: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun rememberMoreOptionsSheetSession(onDismiss: () -> Unit): MoreOptionsSheetSession {
+private fun rememberMoreOptionsSheetSession(
+    navigation: MoreOptionsSheetNavigation
+): MoreOptionsSheetSession {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
-    val latestOnDismiss = rememberUpdatedState(onDismiss)
+    val latestOnDismiss = rememberUpdatedState(navigation.onDismiss)
     return remember(sheetState, coroutineScope) {
         MoreOptionsSheetSession(
             sheetState,
-            MoreOptionsSheetOwner(coroutineScope, sheetState::hide) { latestOnDismiss.value() }
+            MoreOptionsSheetOwner(
+                coroutineScope, sheetState::hide, sheetState::expand,
+                initialPage = resolveMoreOptionsInitialPage(navigation.startWithLyricBehavior)
+            ) { latestOnDismiss.value() }
         )
     }
 }
@@ -564,7 +596,7 @@ private fun MoreOptionsSheetContent(
     currentPlaybackAudioInfo: PlaybackAudioInfo?,
     offlineMode: Boolean
 ) {
-    val session = rememberMoreOptionsSheetSession(navigation.onDismiss)
+    val session = rememberMoreOptionsSheetSession(navigation)
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val actualSong = resolveMoreOptionsSong(currentSong, originalSong)
     val isLocalSong = actualSong.isLocalSong()
@@ -640,7 +672,7 @@ private fun MoreOptionsPages(
     MoreOptionsPlaybackSoundPage(targetState, viewModel, owner)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun MoreOptionsSheetSurface(
     owner: MoreOptionsSheetOwner,
@@ -648,16 +680,50 @@ private fun MoreOptionsSheetSurface(
     snackbarHostState: SnackbarHostState,
     content: @Composable () -> Unit
 ) {
+    val presentation = owner.windowPresentation(isCompactEditSongLandscape())
+    LaunchedEffect(presentation.expandToFit, sheetState, block = owner.expansionEffect(presentation))
     ModalBottomSheet(
         onDismissRequest = owner.onDismissRequest,
         sheetState = sheetState,
-        sheetGesturesEnabled = owner.sheetGesturesEnabled,
+        sheetGesturesEnabled = presentation.gesturesEnabled,
+        dragHandle = if (presentation.showDragHandle) {
+            { BottomSheetDefaults.DragHandle() }
+        } else null,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
+        // Sheet 使用独立窗口，键盘可见性应从它自己的 composition 读取
+        val imeVisible = WindowInsets.isImeVisible
+        SideEffect { owner.updateSheetImeVisibility(imeVisible) }
         MoreOptionsBackHandlers(owner)
         MoreOptionsSheetBody(owner.page, snackbarHostState, content)
     }
 }
+
+internal data class MoreOptionsSheetPresentation(
+    val expandToFit: Boolean,
+    val showDragHandle: Boolean,
+    val gesturesEnabled: Boolean
+)
+
+internal fun resolveMoreOptionsSheetPresentation(
+    page: MoreOptionsPage,
+    compactLandscape: Boolean,
+    imeVisible: Boolean,
+    ownerGesturesEnabled: Boolean
+): MoreOptionsSheetPresentation {
+    val compactEditSheet = isCompactMoreOptionsEditSheet(page, compactLandscape)
+    return MoreOptionsSheetPresentation(
+        expandToFit = compactEditSheet,
+        showDragHandle = !shouldHideCompactEditSongHandle(compactEditSheet, imeVisible),
+        gesturesEnabled = ownerGesturesEnabled && !compactEditSheet
+    )
+}
+
+internal fun isCompactMoreOptionsEditSheet(page: MoreOptionsPage, compactLandscape: Boolean): Boolean =
+    compactLandscape && page == MoreOptionsPage.EDIT_INFO
+
+internal fun shouldHideCompactEditSongHandle(compactEditSheet: Boolean, imeVisible: Boolean): Boolean =
+    compactEditSheet && imeVisible
 
 @Composable
 private fun MoreOptionsBackHandlers(owner: MoreOptionsSheetOwner) {

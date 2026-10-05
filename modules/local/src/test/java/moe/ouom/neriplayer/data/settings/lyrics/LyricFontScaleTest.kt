@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.settings.lyrics
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
+import moe.ouom.neriplayer.data.settings.defaultLyricFontScales
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -40,6 +41,38 @@ class LyricFontScaleTest {
     }
 
     @Test
+    fun resolveLyricFontScales_usesLargerTabletDefaultsOnlyWhenSettingsAreMissing() {
+        assertEquals(
+            LyricFontScales(1.0f, 1.0f, 1.0f, 1.0f),
+            resolveLyricFontScales(null, null, null, null, null, defaultLyricFontScales(599))
+        )
+        assertEquals(
+            LyricFontScales(1.25f, 1.15f, 1.25f, 1.15f),
+            resolveLyricFontScales(null, null, null, null, null, defaultLyricFontScales(600))
+        )
+    }
+
+    @Test
+    fun resolveLyricFontScales_keepsAnExplicitLegacyDefaultOnTablets() {
+        assertEquals(
+            LyricFontScales(1.0f, 1.0f, 1.0f, 1.0f),
+            resolveLyricFontScales(1.0f, null, null, null, null, defaultLyricFontScales(800))
+        )
+    }
+
+    @Test
+    fun resolveLyricFontScales_keepsEachExplicitTabletChoiceAndFillsOnlyMissingTargets() {
+        assertEquals(
+            LyricFontScales(1.0f, 1.15f, 0.8f, 1.15f),
+            resolveLyricFontScales(null, 1.0f, null, 0.8f, null, defaultLyricFontScales(600))
+        )
+        assertEquals(
+            LyricFontScales(1.0f, 0.9f, 1.3f, 1.3f),
+            resolveLyricFontScales(1.3f, 1.0f, 0.9f, null, null, defaultLyricFontScales(600))
+        )
+    }
+
+    @Test
     fun resolveLyricFontScales_keepsEachPageAndTranslationScaleIndependent() {
         val scales = resolveLyricFontScales(
             legacyScale = 1.0f,
@@ -53,6 +86,19 @@ class LyricFontScaleTest {
         assertEquals(0.8f, scales.scaleFor(LyricFontScaleTarget.COVER_TRANSLATION), 0.0001f)
         assertEquals(1.3f, scales.scaleFor(LyricFontScaleTarget.LYRICS_PAGE_LYRIC), 0.0001f)
         assertEquals(MAX_LYRIC_FONT_SCALE, scales.scaleFor(LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION), 0.0001f)
+    }
+
+    @Test
+    fun resolveLyricFontScales_normalizesBothInheritedAndExplicitValues() {
+        val defaults = LyricFontScales(0.1f, 2f, 0.8f, 1.1f)
+        assertEquals(
+            LyricFontScales(MIN_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE, 0.8f, 1.1f),
+            resolveLyricFontScales(null, null, null, null, null, defaults)
+        )
+        assertEquals(
+            LyricFontScales(MIN_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE, 0.9f),
+            resolveLyricFontScales(2f, 0.1f, null, null, 0.9f, defaults)
+        )
     }
 
     @Test
