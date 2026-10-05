@@ -36,11 +36,23 @@ class AppPlaybackNavigationPresentationTest {
     }
 
     @Test
-    fun `navigation remains suppressed throughout playback entry and exit`() {
-        assertFalse(shouldSuppressPlaybackNavigation(playbackOpen = false, overlayMounted = false))
-        assertTrue(shouldSuppressPlaybackNavigation(playbackOpen = true, overlayMounted = false))
-        assertTrue(shouldSuppressPlaybackNavigation(playbackOpen = true, overlayMounted = true))
-        assertTrue(shouldSuppressPlaybackNavigation(playbackOpen = false, overlayMounted = true))
+    fun `phone navigation starts returning while the player exit is still mounted`() {
+        for (width in listOf(360, 599)) {
+            assertFalse(shouldSuppressPlaybackNavigation(false, false, width))
+            assertTrue(shouldSuppressPlaybackNavigation(true, false, width))
+            assertTrue(shouldSuppressPlaybackNavigation(true, true, width))
+            assertFalse(shouldSuppressPlaybackNavigation(false, true, width))
+        }
+    }
+
+    @Test
+    fun `tablet navigation remains suppressed throughout playback entry and exit`() {
+        for (width in listOf(600, 800)) {
+            assertFalse(shouldSuppressPlaybackNavigation(false, false, width))
+            assertTrue(shouldSuppressPlaybackNavigation(true, false, width))
+            assertTrue(shouldSuppressPlaybackNavigation(true, true, width))
+            assertTrue(shouldSuppressPlaybackNavigation(false, true, width))
+        }
     }
 
     @Test

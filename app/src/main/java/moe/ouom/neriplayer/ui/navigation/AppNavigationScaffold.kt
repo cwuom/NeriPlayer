@@ -114,8 +114,13 @@ internal data class AppMiniPlayerPresentation(
 internal fun shouldShowMiniPlayer(hasSong: Boolean, showNowPlaying: Boolean): Boolean =
     hasSong && !showNowPlaying
 
-internal fun shouldSuppressPlaybackNavigation(playbackOpen: Boolean, overlayMounted: Boolean): Boolean =
-    playbackOpen || overlayMounted
+internal fun shouldSuppressPlaybackNavigation(
+    playbackOpen: Boolean,
+    overlayMounted: Boolean,
+    smallestScreenWidthDp: Int
+): Boolean =
+    // 手机底栏与播放页退出同时开始恢复，避免两段动画串联等待
+    playbackOpen || (smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP && overlayMounted)
 
 internal fun playbackSourceNavigationAction(
     sourceRoute: String?,

@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
@@ -1776,7 +1777,10 @@ private fun NeriAppContent(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
                             currentDestination = backEntry?.destination,
-                            showNowPlaying = shouldSuppressPlaybackNavigation(showNowPlaying, nowPlayingOverlayMounted),
+                            showNowPlaying = shouldSuppressPlaybackNavigation(
+                                showNowPlaying, nowPlayingOverlayMounted,
+                                LocalConfiguration.current.smallestScreenWidthDp
+                            ),
                             offlineMode = offlineMode,
                             alwaysUseNewTabStyle = alwaysUseNewTabStyle,
                             backgroundImageUri = backgroundImageUri
