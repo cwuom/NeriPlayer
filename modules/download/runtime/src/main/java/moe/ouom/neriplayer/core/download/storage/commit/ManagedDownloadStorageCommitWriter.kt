@@ -127,7 +127,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 )
                 if (parents.isEmpty()) return false
                 parents.forEach { parent ->
-                    val target = parent.findFile(copied.copiedEntry.name)
+                    val target = findTreeChild(context, parent, copied.copiedEntry.name)
                     val targetEntry = target?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
                     if (isRestoredMigrationReplacementTarget(
                             expectedTarget = copied.copiedEntry,
@@ -152,7 +152,7 @@ internal class ManagedDownloadStorageCommitWriter(
                             return@forEach
                         }
                     }
-                    val backupDocument = parent.findFile(backup.name)
+                    val backupDocument = findTreeChild(context, parent, backup.name)
                     val backupEntry = backupDocument?.let(
                         ManagedDownloadStoredEntryMapper::fromDocumentFile
                     )
@@ -311,6 +311,17 @@ internal class ManagedDownloadStorageCommitWriter(
             is StorageRenameResult.ProviderFailure,
             is StorageRenameResult.Unsupported -> false
         }
+    }
+
+    /**
+     * DocumentFile.findFile 列出子项后还会为每个子项单独查询名称，迁移大目录时每个文件放大成
+     * 上千次 Provider 查询；这里用一次子项查询定位，匹配规则与 findFile 相同
+     */
+    private fun findTreeChild(context: Context, parent: DocumentFile, displayName: String): DocumentFile? {
+        val child = treeChildRegistry.queryTreeChildren(context, parent)
+            .firstOrNull { it.name == displayName }
+            ?: return null
+        return treeChildRegistry.toDocumentFile(context, parent, child)
     }
 
     private fun safDocumentUri(entry: ManagedDownloadStorage.StoredEntry): android.net.Uri? {
@@ -757,8 +768,8 @@ internal class ManagedDownloadStorageCommitWriter(
             context,
             parentDocumentCache = safParentDocumentCache
         )
-        val existingTarget = parent.findFile(displayName)
-        val existingBackup = parent.findFile(plan.backupName)
+        val existingTarget = findTreeChild(context, parent, displayName)
+        val existingBackup = findTreeChild(context, parent, plan.backupName)
         var backupEntry = existingBackup?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
         var target = existingTarget
         val expectedTarget = expectedTargetEntry ?: plan.targetEntry
