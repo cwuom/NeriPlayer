@@ -134,6 +134,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -1365,7 +1366,7 @@ internal fun LyricsContentPane(
         return
     }
 
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition
     val isPreviewingSeek = previewPositionOverrideMs != null
     val shouldAnimateFromPlayback = isPlaying && !isPreviewingSeek
@@ -1472,7 +1473,7 @@ private fun LyricsProgressSection(
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
     val lyricSeekHaptic = rememberLyricSeekHapticFeedback(
         lyrics = lyrics,
