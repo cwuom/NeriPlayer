@@ -51,38 +51,41 @@ import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 /**
  * 自定义 RenderersFactory:
  * - 注入 TeeAudioProcessor 将 PCM 能量送入 AudioReactive, 供可视化/背景特效使用
- * - 仅对 FLAC 优先使用内置 FFmpeg, 避免部分设备的平台解码器将有效比特流过早标记为结束
+ * - 仅对 FLAC/ALAC 优先使用内置 FFmpeg, 避免部分设备的平台解码器将有效比特流过早标记为结束,
+ *   或像 c2.qti.alac.sw.decoder 那样声明支持却在送入数据时解码失败
  */
 @UnstableApi
 class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
     private var forceFfmpegPcm16Output = true
 
     init {
-        val ffmpegCanDecodeFlac = runCatching {
-            FfmpegLibrary.isAvailable() && FfmpegLibrary.supportsFormat(MimeTypes.AUDIO_FLAC)
-        }.getOrElse { error ->
-            NPLogger.w(
-                "NERI-Player",
-                "FFmpeg FLAC decoder probe failed; keep platform decoder",
-                error
-            )
-            false
+        val ffmpegPreferredMimeTypes = FFMPEG_PREFERRED_AUDIO_MIME_TYPES.filterTo(linkedSetOf()) { mimeType ->
+            runCatching {
+                FfmpegLibrary.isAvailable() && FfmpegLibrary.supportsFormat(mimeType)
+            }.getOrElse { error ->
+                NPLogger.w(
+                    "NERI-Player",
+                    "FFmpeg $mimeType decoder probe failed; keep platform decoder",
+                    error
+                )
+                false
+            }
         }
-        if (ffmpegCanDecodeFlac) {
+        if (ffmpegPreferredMimeTypes.isNotEmpty()) {
             setMediaCodecSelector(
-                FfmpegFlacMediaCodecSelector(
+                FfmpegPreferredMediaCodecSelector(
                     delegate = MediaCodecSelector.DEFAULT,
-                    shouldPreferFfmpegForFlac = true
+                    ffmpegPreferredMimeTypes = ffmpegPreferredMimeTypes
                 )
             )
             NPLogger.i(
                 "NERI-Player",
-                "FLAC decoder policy: prefer bundled FFmpeg over platform MediaCodec"
+                "Decoder policy: prefer bundled FFmpeg over platform MediaCodec for $ffmpegPreferredMimeTypes"
             )
         } else {
             NPLogger.w(
                 "NERI-Player",
-                "Bundled FFmpeg cannot decode FLAC; keep platform MediaCodec"
+                "Bundled FFmpeg cannot decode FLAC or ALAC; keep platform MediaCodec"
             )
         }
     }
@@ -165,19 +168,18 @@ internal class FfmpegPcm16AudioSink(
     }
 }
 
+internal val FFMPEG_PREFERRED_AUDIO_MIME_TYPES = listOf(MimeTypes.AUDIO_FLAC, MimeTypes.AUDIO_ALAC)
+
 @UnstableApi
-internal class FfmpegFlacMediaCodecSelector(
+internal class FfmpegPreferredMediaCodecSelector(
     private val delegate: MediaCodecSelector,
-    private val shouldPreferFfmpegForFlac: Boolean
+    private val ffmpegPreferredMimeTypes: Set<String>
 ) : MediaCodecSelector {
     override fun getDecoderInfos(
         mimeType: String,
         requiresSecureDecoder: Boolean,
         requiresTunnelingDecoder: Boolean
-    ) = if (
-        shouldPreferFfmpegForFlac &&
-        mimeType.equals(MimeTypes.AUDIO_FLAC, ignoreCase = true)
-    ) {
+    ) = if (ffmpegPreferredMimeTypes.any { it.equals(mimeType, ignoreCase = true) }) {
         emptyList()
     } else {
         delegate.getDecoderInfos(

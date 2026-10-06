@@ -7,48 +7,54 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class FfmpegFlacMediaCodecSelectorTest {
+class FfmpegPreferredMediaCodecSelectorTest {
 
     @Test
-    fun `enabled FFmpeg FLAC policy does not query platform decoder`() {
+    fun `FFmpeg preferred lossless formats do not query platform decoders`() {
         val delegate = RecordingMediaCodecSelector()
-        val selector = FfmpegFlacMediaCodecSelector(
+        val selector = FfmpegPreferredMediaCodecSelector(
             delegate = delegate,
-            shouldPreferFfmpegForFlac = true
+            ffmpegPreferredMimeTypes = FFMPEG_PREFERRED_AUDIO_MIME_TYPES.toSet()
         )
 
         assertTrue(selector.getDecoderInfos(MimeTypes.AUDIO_FLAC, false, false).isEmpty())
+        assertTrue(selector.getDecoderInfos(MimeTypes.AUDIO_ALAC, false, false).isEmpty())
+        assertTrue(selector.getDecoderInfos("AUDIO/ALAC", false, false).isEmpty())
         assertTrue(delegate.requests.isEmpty())
     }
 
     @Test
-    fun `disabled FFmpeg FLAC policy delegates to platform decoder`() {
+    fun `format without FFmpeg support delegates to platform decoder`() {
         val delegate = RecordingMediaCodecSelector()
-        val selector = FfmpegFlacMediaCodecSelector(
+        val selector = FfmpegPreferredMediaCodecSelector(
             delegate = delegate,
-            shouldPreferFfmpegForFlac = false
+            ffmpegPreferredMimeTypes = setOf(MimeTypes.AUDIO_FLAC)
         )
 
-        selector.getDecoderInfos(MimeTypes.AUDIO_FLAC, true, true)
+        selector.getDecoderInfos(MimeTypes.AUDIO_ALAC, true, true)
 
         assertEquals(
-            listOf(DecoderRequest(MimeTypes.AUDIO_FLAC, true, true)),
+            listOf(DecoderRequest(MimeTypes.AUDIO_ALAC, true, true)),
             delegate.requests
         )
     }
 
     @Test
-    fun `non FLAC formats retain the platform decoder selection`() {
+    fun `lossy formats retain the platform decoder selection`() {
         val delegate = RecordingMediaCodecSelector()
-        val selector = FfmpegFlacMediaCodecSelector(
+        val selector = FfmpegPreferredMediaCodecSelector(
             delegate = delegate,
-            shouldPreferFfmpegForFlac = true
+            ffmpegPreferredMimeTypes = FFMPEG_PREFERRED_AUDIO_MIME_TYPES.toSet()
         )
 
         selector.getDecoderInfos(MimeTypes.AUDIO_MPEG, false, true)
+        selector.getDecoderInfos(MimeTypes.AUDIO_AAC, false, false)
 
         assertEquals(
-            listOf(DecoderRequest(MimeTypes.AUDIO_MPEG, false, true)),
+            listOf(
+                DecoderRequest(MimeTypes.AUDIO_MPEG, false, true),
+                DecoderRequest(MimeTypes.AUDIO_AAC, false, false)
+            ),
             delegate.requests
         )
     }
