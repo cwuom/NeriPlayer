@@ -113,7 +113,8 @@ object LyriconManager {
         if (!enabled && isPlaying) return
         try {
             provider?.player?.setPlaybackState(isPlaying)
-            if (isPlaying) {
+            // provider 初始化失败时没有接收方，空转的 200ms 循环只会持续唤醒主线程
+            if (isPlaying && provider != null) {
                 startFeedLoop()
             } else {
                 stopFeedLoop()
@@ -345,11 +346,9 @@ object LyriconManager {
         feedJob = scope.launch {
             try {
                 while (isActive) {
-                    val activeProvider = provider
-                    if (activeProvider == null || !enabled) {
-                        delay(LYRICON_FEED_INTERVAL_MS.milliseconds)
-                        continue
-                    }
+                    // 重新启用或重新初始化后会由 setPlaybackState 再次启动
+                    val activeProvider = provider ?: return@launch
+                    if (!enabled) return@launch
                     val mediaPositionMs = resolveLyriconFeedPosition(
                         anchor = positionAnchor,
                         nowElapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos(),
