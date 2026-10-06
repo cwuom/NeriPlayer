@@ -60,6 +60,29 @@ class ThemePreferenceSnapshotCacheTest {
     }
 
     @Test
+    fun `main thread warm up keeps an explicit follow system choice`() = runTest {
+        IsolatedSettingsDataStore.withEmptySettings(
+            context,
+            seed = { it[SettingsKeys.FOLLOW_SYSTEM_DARK] = false }
+        ) {
+            val cache = preferences[THEME_CACHE]
+            cache.edit().putBoolean("force_dark", true).commit()
+            val warmed = CountDownLatch(1)
+            cache.registerOnSharedPreferenceChangeListener { _, key ->
+                if (key == "follow_system_dark") warmed.countDown()
+            }
+
+            assertEquals(ThemePreferenceSnapshot(), readThemePreferenceSnapshotSync(context))
+
+            assertTrue(warmed.await(30, TimeUnit.SECONDS))
+            assertEquals(
+                mapOf("force_dark" to false, "dynamic_color" to true, "follow_system_dark" to false),
+                cache.snapshot()
+            )
+        }
+    }
+
+    @Test
     fun `background read loads explicit settings and persists them`() = runTest {
         IsolatedSettingsDataStore.withEmptySettings(
             context,
