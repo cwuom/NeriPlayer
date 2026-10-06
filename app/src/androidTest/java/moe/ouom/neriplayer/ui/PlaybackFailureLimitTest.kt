@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player
+package moe.ouom.neriplayer.ui
 
 import android.net.Uri
 import android.os.SystemClock
@@ -21,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
