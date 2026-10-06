@@ -1927,6 +1927,7 @@ private fun PlayerManager.cancelPrefetchForQueueStop() {
 }
 
 private fun PlayerManager.stopPlayerForQueuePreservation() {
+    runCatching { player.playWhenReady = false }
     runCatching { player.stop() }
     runCatching { player.clearMediaItems() }
     _isPlayingFlow.value = false
