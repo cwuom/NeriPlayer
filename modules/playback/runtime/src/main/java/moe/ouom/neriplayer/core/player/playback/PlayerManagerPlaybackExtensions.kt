@@ -704,7 +704,6 @@ internal fun PlayerManager.playAtIndex(
                         stopCurrentPlaybackForListenTogetherAwaitingStream()
                         return@withContext
                     }
-                    consecutivePlayFailures = 0
                     result.noticeMessage?.let { message ->
                         if (shouldShowListenTogetherPreviewClipNotice(
                                 isPreviewClip = result.isPreviewClip,
@@ -1767,6 +1766,8 @@ private fun PlayerManager.reportFirstProgressAdvanceIfDetected() {
     if (!isPlaybackActuallyAdvancing()) return
     playbackProgressAdvanceReported = true
     startupStallRecoveryAttempts = 0
+    // 解析成功不代表能解码，只有真正出声才结束连续失败计数
+    consecutivePlayFailures = 0
     cancelPlaybackStartupWatchdog(reason = "position_advanced")
     PlaybackTransitionWakeLock.release(playbackRequestToken, "position_advanced")
     recordPlaybackRuntimeProgress(player.currentPosition)
