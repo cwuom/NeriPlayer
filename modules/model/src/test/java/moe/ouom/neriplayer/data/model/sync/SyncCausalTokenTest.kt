@@ -55,4 +55,11 @@ class SyncCausalTokenTest {
             tokens.normalizedSyncCausalTokens()
         )
     }
+
+    @Test
+    fun `missing token lists normalise to empty`() {
+        val missing: Iterable<SyncCausalToken>? = null
+
+        assertEquals(emptyList<SyncCausalToken>(), missing.normalizedSyncCausalTokens())
+    }
 }
