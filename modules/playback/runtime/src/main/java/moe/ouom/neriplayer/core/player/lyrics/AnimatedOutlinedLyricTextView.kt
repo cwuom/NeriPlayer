@@ -39,6 +39,7 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
     private var targetAlignmentFactor = 0.5f
     private var scrollOffset = 0f
     private var playbackActive = false
+    private var screenOn = true
     private var renderStyle = FLOATING_LYRICS_RENDER_STYLE_SHADOW
     private var shadowBlurRadiusPx = 0f
     private var shadowOffsetYPx = 0f
@@ -199,13 +200,26 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         if (active) {
             val animator = scrollAnimator
             if (animator?.isPaused == true) {
-                animator.resume()
+                if (screenOn) animator.resume()
             } else {
                 restartScrollAfterLayout()
             }
         } else {
             scrollStartRequestId += 1
             scrollAnimator?.takeIf { it.isStarted }?.pause()
+        }
+    }
+
+    // 熄屏时悬浮歌词不可见，无限滚动动画仍会逐帧重绘；亮屏后从暂停位置继续，可见效果不变
+    override fun onScreenStateChanged(screenState: Int) {
+        super.onScreenStateChanged(screenState)
+        screenOn = screenState != SCREEN_STATE_OFF
+        val animator = scrollAnimator
+        when {
+            !screenOn -> animator?.takeIf { it.isStarted }?.pause()
+            !playbackActive -> Unit
+            animator == null -> restartScrollAfterLayout()
+            animator.isPaused -> animator.resume()
         }
     }
 
@@ -377,7 +391,7 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
     }
 
     private fun startScrollIfNeeded() {
-        if (!playbackActive || width <= 0 || lyricText.isBlank()) {
+        if (!playbackActive || !screenOn || width <= 0 || lyricText.isBlank()) {
             return
         }
         val contentWidth = (width - paddingLeft - paddingRight - outlinePaint.strokeWidth * 2f)
