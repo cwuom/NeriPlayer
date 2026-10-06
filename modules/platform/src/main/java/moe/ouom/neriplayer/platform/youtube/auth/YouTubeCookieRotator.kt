@@ -26,6 +26,8 @@ package moe.ouom.neriplayer.platform.youtube.auth
 import android.content.Context
 import android.content.SharedPreferences
 import java.util.concurrent.TimeUnit
+import moe.ouom.neriplayer.platform.youtube.api.transport.YOUTUBE_TEXT_RESPONSE_MAX_BYTES
+import moe.ouom.neriplayer.platform.youtube.api.transport.readTextWithLimit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -384,7 +386,7 @@ class YouTubeCookieRotator(
         return try {
             val outcome = rotationClient.newCall(request).awaitResponse { response ->
                 val setCookieHeaders = response.headers("Set-Cookie")
-                val body = response.body.string()
+                val body = response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
                 Triple(response.code, setCookieHeaders, body)
             }
             val (code, setCookieHeaders, body) = outcome
