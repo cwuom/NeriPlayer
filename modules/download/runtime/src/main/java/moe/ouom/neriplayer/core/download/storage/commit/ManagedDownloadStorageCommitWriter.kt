@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.storage.tree.query.ManagedDownloadTreeChildQuery
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
@@ -311,17 +312,6 @@ internal class ManagedDownloadStorageCommitWriter(
             is StorageRenameResult.ProviderFailure,
             is StorageRenameResult.Unsupported -> false
         }
-    }
-
-    /**
-     * DocumentFile.findFile 列出子项后还会为每个子项单独查询名称，迁移大目录时每个文件放大成
-     * 上千次 Provider 查询；这里用一次子项查询定位，匹配规则与 findFile 相同
-     */
-    private fun findTreeChild(context: Context, parent: DocumentFile, displayName: String): DocumentFile? {
-        val child = treeChildRegistry.queryTreeChildren(context, parent)
-            .firstOrNull { it.name == displayName }
-            ?: return null
-        return treeChildRegistry.toDocumentFile(context, parent, child)
     }
 
     private fun safDocumentUri(entry: ManagedDownloadStorage.StoredEntry): android.net.Uri? {
@@ -746,6 +736,27 @@ internal class ManagedDownloadStorageCommitWriter(
             sourceAuthoritative = true,
             targetContentMatchesSource = true
         )
+    }
+
+    /**
+     * DocumentFile.findFile 列出子项后还会为每个子项单独查询名称，迁移大目录时每个文件放大成
+     * 上千次 Provider 查询。这里只在一次完整的子项查询里按同样的规则匹配；查询失败、未完整或
+     * 无法转换时退回 findFile，不能把"没查到"当成目标不存在
+     */
+    private fun findTreeChild(context: Context, parent: DocumentFile, displayName: String): DocumentFile? {
+        val listing = try {
+            ManagedDownloadTreeChildQuery.queryChildrenNow(context, parent)
+        } catch (_: Exception) {
+            null
+        }
+        if (listing?.isComplete != true) return parent.findFile(displayName)
+        val child = listing.children.firstOrNull { it.name == displayName } ?: return null
+        val document = try {
+            treeChildRegistry.toDocumentFile(context, parent, child)
+        } catch (_: Exception) {
+            null
+        }
+        return document ?: parent.findFile(displayName)
     }
 
     private fun writeTreeReplacementStream(
