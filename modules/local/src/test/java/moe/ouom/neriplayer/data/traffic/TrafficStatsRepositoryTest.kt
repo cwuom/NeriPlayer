@@ -319,6 +319,33 @@ class TrafficStatsRepositoryTest {
         assertEquals(1, fixture.writes.size)
     }
 
+    @Test
+    fun `continuous traffic is still persisted within the maximum deferral`() = runTest {
+        val fixture = fixture()
+        repeat(10) {
+            fixture.repository.recordCacheHitBytes(1L)
+            runCurrent()
+            advanceTimeBy(4_000L)
+            fixture.clock.addAndGet(4_000L)
+            runCurrent()
+        }
+
+        val deferredWrite = fixture.writes.first().next.single()
+        assertEquals(8L, deferredWrite.cacheHitBytes)
+        advanceTimeBy(5_000L)
+        runCurrent()
+        assertEquals(10L, fixture.writes.last().next.single().cacheHitBytes)
+    }
+
+    @Test
+    fun `persist delay shrinks to the remaining deferral budget`() {
+        assertEquals(5_000L, trafficPersistDelayMs(pendingForMs = 0L))
+        assertEquals(4_000L, trafficPersistDelayMs(pendingForMs = 26_000L))
+        assertEquals(0L, trafficPersistDelayMs(pendingForMs = 30_000L))
+        assertEquals(0L, trafficPersistDelayMs(pendingForMs = 45_000L))
+        assertEquals(5_000L, trafficPersistDelayMs(pendingForMs = -60_000L))
+    }
+
     private suspend fun TestScope.fixture(
         initial: List<TrafficStatsBucket>? = emptyList(),
         prepare: suspend Fixture.() -> Unit = {}
