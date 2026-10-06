@@ -45,6 +45,19 @@ class PlaybackStatsOwner(
         persist(snapshot, writesEnabled)
     }
 
+    /**
+     * 引擎出声状态变化：停止总是结束计时；恢复只在本次播放已确认推进过进度后才重新计时，
+     * 启动卡顿不计入时长，但中途缓冲、拖动或短暂失去焦点后要继续累计
+     */
+    fun onEnginePlayingChanged(isPlaying: Boolean, progressConfirmed: Boolean, writesEnabled: Boolean) {
+        if (isPlaying && !progressConfirmed) return
+        onPlayingChanged(
+            playing = isPlaying,
+            reason = if (isPlaying) "exo_is_playing_resumed" else "exo_is_playing_changed",
+            writesEnabled = writesEnabled
+        )
+    }
+
     fun onTrackEnded(writesEnabled: Boolean) = pendingWrites.collect(this) {
         if (!canSample(writesEnabled)) {
             tracker.resetUntrackedPlayCycle()

@@ -905,12 +905,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
             logPlaybackStateTransition("is_playing_changed:$isPlaying")
             _isPlayingFlow.value = isPlaying
             LyriconManager.setPlaybackState(isPlaying)
-            if (!isPlaying) {
-                syncPlaybackStatsPlayingState(
-                    playing = false,
-                    reason = "exo_is_playing_changed"
-                )
-            }
+            syncPlaybackStatsEnginePlayingState(isPlaying)
             if (isPlaying) {
                 startProgressUpdates()
                 schedulePlaybackStartupWatchdog(reason = "is_playing_true")

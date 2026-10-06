@@ -1458,6 +1458,10 @@ object PlayerManager {
         playbackStatsOwner.onPlayingChanged(playing, reason, writesEnabled = initialized)
     }
 
+    internal fun syncPlaybackStatsEnginePlayingState(isPlaying: Boolean) {
+        playbackStatsOwner.onEnginePlayingChanged(isPlaying, playbackProgressAdvanceReported, writesEnabled = initialized)
+    }
+
     internal fun drainPlaybackStatsPersistJobBlocking(reason: String) {
         playbackStatsOwner.drainBlocking(reason, writesEnabled = initialized)
     }
