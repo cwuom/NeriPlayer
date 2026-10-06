@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.preferencesOf
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.common.storage.VolatileSharedPreferences
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
@@ -301,6 +303,19 @@ class SyncProtocolUpgradeRepositoryTest {
 
             assertEquals(setOf(githubId), readConfiguredTargets(githubConfiguration(), webDav))
         }
+    }
+
+    @Test fun `degraded secure storage is never registered as an unconfigured target`() {
+        val github = SecureTokenStorage::class.java.getConstructor(
+            SharedPreferences::class.java, File::class.java, Function1::class.java
+        ).newInstance(VolatileSharedPreferences.shared("degraded-github-${UUID.randomUUID()}"), null, null)
+        val webDav = WebDavStorage::class.java.getConstructor(SharedPreferences::class.java)
+            .newInstance(readOnlyPreferences(webDavConfiguration()))
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            SyncProtocolUpgradeRepository.configuredTargetIds(github, webDav)
+        }
+        assertEquals("Secure sync storage is unavailable", failure.message)
     }
 
     private fun githubConfiguration(): Map<String, Any> = mapOf(

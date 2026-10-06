@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal object EncryptedSyncPreferences {
     fun open(context: Context, name: String, tag: String, recoverOnFailure: Boolean = true): SharedPreferences = SyncPreferenceRecovery.open(
+        name = name,
         create = { create(context, name) },
         delete = { context.deleteSharedPreferences(name) },
         onOpenFailure = {
