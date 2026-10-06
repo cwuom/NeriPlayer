@@ -211,6 +211,7 @@ class ConfigFileManagerStartupRegistrationTest {
         val syncInput = """{"kind":"moe.ouom.neriplayer.config","formatVersion":1,"listenTogether":{},"neteaseAuth":{},"biliAuth":{},"youTubeAuth":{},"gitHubSync":{"token":"imported","repoOwner":"new-owner","repoName":"new-repo","autoSyncEnabled":false},"webDavSync":{"serverUrl":"https://new.example","basePath":"new-backup","username":"new-user","password":"imported","autoSyncEnabled":false},"syncPreferences":{}}"""
         var input = syncInput
         private val githubConstruction = mockConstruction(SecureTokenStorage::class.java) { storage, _ ->
+            `when`(storage.isPersistent).thenReturn(true)
             `when`(storage.isConfigured()).thenAnswer { github.token.isNotBlank() && github.repoOwner.isNotBlank() && github.repoName.isNotBlank() }
             `when`(storage.snapshot()).thenAnswer { github }
             `when`(storage.getRepoOwner()).thenAnswer { github.repoOwner }
@@ -219,6 +220,7 @@ class ConfigFileManagerStartupRegistrationTest {
                 .restore(any(GitHubSyncConfigSnapshot::class.java) ?: importedGithub)
         }
         private val webDavConstruction = mockConstruction(WebDavStorage::class.java) { storage, _ ->
+            `when`(storage.isPersistent).thenReturn(true)
             `when`(storage.isConfigured()).thenAnswer { webDav.serverUrl.isNotBlank() && webDav.username.isNotBlank() && webDav.password.isNotBlank() }
             `when`(storage.snapshot()).thenAnswer { webDav }
             `when`(storage.getServerUrl()).thenAnswer { webDav.serverUrl }
