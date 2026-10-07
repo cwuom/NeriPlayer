@@ -87,6 +87,21 @@ class CustomSongRemoteCoverExtensionTest {
     }
 
     @Test
+    fun `remote cover extensions come only from the last path segment`() = runTest {
+        val expected = linkedMapOf(
+            "https://img.example/cover" to "jpg",
+            "https://lh3.googleusercontent.com/AbCd=w544-h544-l90-rj" to "jpg",
+            "https://img.example/cover?v=1.2" to "jpg",
+            "https://img.example/art/cover.png#v1.0" to "png",
+            "https://i0.hdslb.com/bfs/archive/abc.jpg@100w_100h_1c.webp" to "webp",
+        )
+
+        val actual = expected.keys.associateWith { source -> persist(source).extension }
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
     fun `dot segment urls are fetched normalized but mapped under the original url`() = runTest {
         val source = "http://localhost/covers/./front"
 
