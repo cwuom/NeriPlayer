@@ -14,6 +14,7 @@ include(cmake/NeriNativeCompileOptions.cmake)
 add_subdirectory(third_party/libusb)
 add_subdirectory(usb)
 add_subdirectory(crash)
+add_subdirectory(dsp)
 
 # jni methods have no native callers, so include every bridge object explicitly
 add_library(
@@ -21,6 +22,7 @@ add_library(
     SHARED
     $<TARGET_OBJECTS:neri_crash>
     $<TARGET_OBJECTS:neri_usb_android>
+    $<TARGET_OBJECTS:neri_dsp_android>
 )
 set_target_properties(neri_native PROPERTIES OUTPUT_NAME "_neri")
 
@@ -31,6 +33,7 @@ target_link_libraries(
     neri_native
     PRIVATE
     neri_usb_core
+    neri_dsp_core
     neri_libusb
     android
     ${NERI_LOG_LIBRARY}

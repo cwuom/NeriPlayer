@@ -255,7 +255,7 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/playback/`
   - `NeriMiniPlayer.kt`: bottom Mini Player, play/pause, and horizontal swipe for previous/next.
-    Playback sound and sleep-timer sheets also live here.
+    The sleep-timer sheet also lives here; the audio effects & speed settings page lives in `ui/screen/tab/settings/audio/`.
   - Same-named files in the `ui/component/` root are primarily legacy package
     compatibility entry points. New implementations belong in responsibility-based
     subpackages such as `lyrics/`, `playback/`, `download/`, and `navigation/`.
@@ -301,7 +301,12 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   - `service/AudioPlayerService.kt`: foreground playback service, media notification,
     MediaSession, and media button handling.
   - Downloads belong to `:download:runtime`; playback uses the `PlayerDownloadAccess` interface.
-  - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
+  - `effects/PlaybackEffectsController.kt`: speed and pitch.
+  - `audio/effects/`: `AudioEffectsAudioSink` sits in front of the USB/system output sink and runs
+    the `:native` `dsp/` engine on 16/24/32-bit integer and float PCM. Off or neutral settings pass
+    audio through unchanged and keep offload available; USB exclusive output bypasses it by default to
+    stay bit-perfect. Effect settings, built-in presets, codecs, and DSP parameter mapping live in
+    `:model` under `playback/effects`; parameter indices must match `dsp/neri_dsp_params.h`.
   - `engine/`: Media3 renderers and data sources. PCM normalization, channel balance,
     and reactive audio signals belong to `:playback:logic` under `audio/processing` and `audio/reactive`.
   - `runtime/stats`, `runtime/progress`, `runtime/transport`, and `runtime/quality`

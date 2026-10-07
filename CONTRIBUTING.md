@@ -230,7 +230,7 @@
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/playback/`
   - `NeriMiniPlayer.kt` 负责底部迷你播放器、播放暂停和横向滑动切歌；
-    播放音效与睡眠定时器面板也在该目录。
+    睡眠定时器面板也在该目录；音效与倍速设置页位于 `ui/screen/tab/settings/audio/`。
   - `ui/component/` 根目录中的同名文件主要是旧包兼容入口，新增实现应放入
     `lyrics/`、`playback/`、`download/`、`navigation/` 等职责子包。
 
@@ -272,7 +272,11 @@
     负责音源解析、播放队列、缓存、状态恢复、失败重试和播放策略。
   - `service/AudioPlayerService.kt`：前台播放服务、媒体通知、MediaSession 和媒体按钮。
   - 下载执行实现归 `:download:runtime`；播放器只消费 `host/PlayerDownloadAccess.kt`，下载状态契约位于 `:model` 的 `playback/storage`。
-  - `effects/PlaybackEffectsController.kt`：倍速、音调、响度增强和均衡器。
+  - `effects/PlaybackEffectsController.kt`：倍速和音调。
+  - `audio/effects/`：`AudioEffectsAudioSink` 位于 USB/系统输出 sink 之前，调用 `:native` 的
+    `dsp/` 引擎处理 16/24/32-bit 整数与 float PCM；中性或关闭时原样旁路并允许 offload，
+    USB 独占默认旁路以保持 bit-perfect。音效配置、内置音效、编解码与 DSP 参数映射位于
+    `:model` 的 `playback/effects`，参数下标必须与 `dsp/neri_dsp_params.h` 保持一致。
   - `engine/`：Media3 渲染器与数据源组装；PCM 声道平衡、响度归一化和音频可视化位于 `:playback:logic` 的 `audio/processing` 和 `audio/reactive`。
   - `:playback:logic` 的 `runtime/stats`、`runtime/progress`、`runtime/transport` 和 `runtime/quality` 分别维护统计采集、播放进度、传输及音质控制；宿主通过对应 Port 提供副作用。
     播放命令与队列推进仍在 `playback/PlayerManagerPlaybackExtensions.kt`。

@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Page -->
+    <string name="settings_audio_effects_title">Audio Effects &amp; Speed</string>
+    <string name="settings_audio_effects_desc">Sound presets, equalizer, speaker tuning, soundstage and speed</string>
+
+    <!-- Overview -->
+    <string name="audio_effects_master">Enable sound effects</string>
+    <string name="audio_effects_master_desc">Process audio with the settings below. When off, playback is left untouched.</string>
+    <string name="audio_effects_route_format">Output: %1$s</string>
+    <string name="audio_effects_editing_route">Editing the sound for %1$s</string>
+    <string name="audio_effects_route_speaker">Phone speaker</string>
+    <string name="audio_effects_route_wired">Wired headphones</string>
+    <string name="audio_effects_route_bluetooth">Bluetooth</string>
+    <string name="audio_effects_route_usb">USB audio</string>
+    <string name="audio_effects_route_other">Other device</string>
+    <string name="audio_effects_status_active">Processing · about %1$s of one CPU core</string>
+    <string name="audio_effects_status_active_rate">Processing · %1$s · about %2$s of one CPU core</string>
+    <string name="audio_effects_status_disabled">Effects are off, so the system can use low-power hardware playback.</string>
+    <string name="audio_effects_status_neutral">Your settings match the original sound, so processing is skipped to save power.</string>
+    <string name="audio_effects_status_usb">USB exclusive is playing bit-perfect, so effects are skipped.</string>
+    <string name="audio_effects_status_unsupported">This audio format (for example multichannel) is not supported, playing the original sound.</string>
+    <string name="audio_effects_status_native_unavailable">The effects engine failed to load, playing the original sound.</string>
+    <string name="audio_effects_status_limiter">The clipping guard just pulled peaks down by %1$s</string>
+    <string name="audio_effects_off">Off</string>
+    <string name="audio_effects_auto">Auto</string>
+
+    <!-- Presets -->
+    <string name="audio_effects_presets_title">Sound presets</string>
+    <string name="audio_effects_presets_desc">One tap for a sound that suits the music or situation. You can keep fine-tuning afterwards, and headphone correction is kept.</string>
+    <string name="audio_effects_preset_tab_style">Genre</string>
+    <string name="audio_effects_preset_tab_tone">Tone</string>
+    <string name="audio_effects_preset_tab_scene">Scene</string>
+    <string name="audio_effects_preset_tab_device">Device</string>
+    <string name="audio_effects_preset_tab_mine">Mine</string>
+    <string name="audio_effects_current_preset">Current: %1$s</string>
+    <string name="audio_effects_preset_custom">Custom</string>
+    <string name="audio_effects_preset_flat">Original</string>
+    <string name="audio_effects_preset_pop">Pop</string>
+    <string name="audio_effects_preset_rock">Rock</string>
+    <string name="audio_effects_preset_classical">Classical</string>
+    <string name="audio_effects_preset_jazz">Jazz</string>
+    <string name="audio_effects_preset_electronic">Electronic</string>
+    <string name="audio_effects_preset_hip_hop">Hip-hop</string>
+    <string name="audio_effects_preset_rnb">R&amp;B</string>
+    <string name="audio_effects_preset_folk">Folk</string>
+    <string name="audio_effects_preset_metal">Metal</string>
+    <string name="audio_effects_preset_acg">Anime &amp; games</string>
+    <string name="audio_effects_preset_piano">Piano</string>
+    <string name="audio_effects_preset_vocal_boost">Vocal boost</string>
+    <string name="audio_effects_preset_bass_boost">Bass boost</string>
+    <string name="audio_effects_preset_deep_bass">Deep bass</string>
+    <string name="audio_effects_preset_treble_boost">Treble boost</string>
+    <string name="audio_effects_preset_warm">Warm vinyl</string>
+    <string name="audio_effects_preset_live">Live concert</string>
+    <string name="audio_effects_preset_concert_hall">Concert hall</string>
+    <string name="audio_effects_preset_cinema">Cinema</string>
+    <string name="audio_effects_preset_surround_3d">3D surround</string>
+    <string name="audio_effects_preset_karaoke">Karaoke</string>
+    <string name="audio_effects_preset_night">Night mode</string>
+    <string name="audio_effects_preset_spoken">Podcasts &amp; audiobooks</string>
+    <string name="audio_effects_preset_loudness_max">Maximum loudness</string>
+    <string name="audio_effects_preset_headphone_hifi">Headphone Hi-Fi</string>
+    <string name="audio_effects_preset_studio">Studio monitor</string>
+    <string name="audio_effects_preset_car">In the car</string>
+    <string name="audio_effects_preset_small_speaker">Small speaker</string>
+    <string name="audio_effects_user_presets_empty">No saved sounds yet. When you like how it sounds, tap \"Save as my sound\".</string>
+    <string name="audio_effects_save_preset">Save as my sound</string>
+    <string name="audio_effects_save_preset_name">Name</string>
+    <string name="audio_effects_save_preset_hint">For example: Commute earbuds</string>
+    <string name="audio_effects_preset_saved">Saved \"%1$s\"</string>
+    <string name="audio_effects_import_preset">Import share code</string>
+    <string name="audio_effects_import_preset_hint">Paste a sound code someone shared with you</string>
+    <string name="audio_effects_import_failed">This sound code could not be read</string>
+    <string name="audio_effects_share_preset">Copy share code</string>
+    <string name="audio_effects_share_copied">Sound share code copied</string>
+    <string name="audio_effects_delete_preset">Delete</string>
+    <string name="audio_effects_delete_preset_confirm">Delete \"%1$s\"?</string>
+
+    <!-- Equalizer -->
+    <string name="audio_effects_eq_title">Equalizer</string>
+    <string name="audio_effects_eq_desc">Drag the dots up or down to change each range: bass on the left, vocals in the middle, treble on the right. Double-tap a dot to reset it.</string>
+    <string name="audio_effects_eq_enabled">Use the 10-band equalizer</string>
+    <string name="audio_effects_preamp">Overall level (preamp)</string>
+    <string name="audio_effects_preamp_desc">If boosted bands start to distort, turn this down a little</string>
+    <string name="audio_effects_auto_headroom">Automatic headroom</string>
+    <string name="audio_effects_auto_headroom_desc">Leaves room for your boosts automatically to avoid clipping. Recommended.</string>
+    <string name="audio_effects_eq_reset">Reset equalizer</string>
+
+    <!-- Headphone correction -->
+    <string name="audio_effects_peq_title">Headphone correction (parametric EQ)</string>
+    <string name="audio_effects_peq_desc">Import a curve made for your headphone model, for example from AutoEq, so it sounds closer to neutral. It is kept when you switch presets.</string>
+    <string name="audio_effects_peq_enabled">Enable headphone correction</string>
+    <string name="audio_effects_peq_empty">No correction bands yet. Import AutoEq text or add bands by hand.</string>
+    <string name="audio_effects_peq_import">Import AutoEq text</string>
+    <string name="audio_effects_peq_import_hint">Paste the contents of ParametricEQ.txt or GraphicEQ</string>
+    <string name="audio_effects_peq_import_done">Imported %1$d correction bands</string>
+    <string name="audio_effects_peq_import_skipped">Imported %1$d correction bands and skipped %2$d unsupported ones</string>
+    <string name="audio_effects_peq_import_graphic_done">The 10-band equalizer now follows the curve</string>
+    <string name="audio_effects_peq_import_failed">No usable filters were found. Check the pasted text.</string>
+    <string name="audio_effects_peq_add">Add band</string>
+    <string name="audio_effects_peq_clear">Clear</string>
+    <string name="audio_effects_peq_edit">Edit band</string>
+    <string name="audio_effects_peq_band_enabled">Use this band</string>
+    <string name="audio_effects_peq_band_summary">%1$s · %2$s · Q %3$s</string>
+    <string name="audio_effects_peq_frequency">Frequency</string>
+    <string name="audio_effects_peq_gain">Gain</string>
+    <string name="audio_effects_peq_q">Width Q (higher is narrower)</string>
+    <string name="audio_effects_filter_peak">Peak</string>
+    <string name="audio_effects_filter_low_shelf">Low shelf</string>
+    <string name="audio_effects_filter_high_shelf">High shelf</string>
+    <string name="audio_effects_filter_low_pass">Low-pass (cut highs)</string>
+    <string name="audio_effects_filter_high_pass">High-pass (cut lows)</string>
+    <string name="audio_effects_filter_notch">Notch (remove one frequency)</string>
+    <string name="audio_effects_filter_band_pass">Band-pass (keep one range)</string>
+
+    <!-- Tone -->
+    <string name="audio_effects_tone_title">Bass &amp; treble</string>
+    <string name="audio_effects_tone_desc">The simplest way to tune: add bass for punch, add treble for sparkle.</string>
+    <string name="audio_effects_bass">Bass</string>
+    <string name="audio_effects_bass_frequency">Bass range</string>
+    <string name="audio_effects_bass_frequency_desc">Lower values target deep rumble, higher values target the kick drum</string>
+    <string name="audio_effects_treble">Treble</string>
+    <string name="audio_effects_treble_frequency">Treble range</string>
+    <string name="audio_effects_virtual_bass">Virtual bass</string>
+    <string name="audio_effects_virtual_bass_desc">Uses harmonics so your ear hears deep bass even on small earbuds or the phone speaker</string>
+    <string name="audio_effects_virtual_bass_frequency">Virtual bass frequency</string>
+
+    <!-- Character -->
+    <string name="audio_effects_color_title">Sound character</string>
+    <string name="audio_effects_color_desc">Adds a bit of flavor. A little goes a long way.</string>
+    <string name="audio_effects_warmth">Warmth</string>
+    <string name="audio_effects_warmth_desc">Tube and vinyl style warmth that softens harshness</string>
+    <string name="audio_effects_clarity">Clarity</string>
+    <string name="audio_effects_clarity_desc">Brings back detail and air lost to compression</string>
+    <string name="audio_effects_clarity_frequency">Clarity range</string>
+    <string name="audio_effects_vocal">Vocal focus</string>
+    <string name="audio_effects_vocal_desc">Lifts the centered vocals and leaves the backing alone</string>
+    <string name="audio_effects_vocal_removal">Remove vocals (karaoke)</string>
+    <string name="audio_effects_vocal_removal_desc">Reduces centered vocals so you can sing along. Results vary by song.</string>
+
+    <!-- Space -->
+    <string name="audio_effects_space_title">Soundstage &amp; space</string>
+    <string name="audio_effects_space_desc">Changes how wide and how far away the sound feels</string>
+    <string name="audio_effects_width">Stereo width</string>
+    <string name="audio_effects_width_desc" formatted="false">100% is the original width, 0% is mono, higher is wider</string>
+    <string name="audio_effects_surround">3D surround</string>
+    <string name="audio_effects_surround_desc">Spreads the sound beyond your head for an enveloping feel</string>
+    <string name="audio_effects_crossfeed">Headphone crossfeed</string>
+    <string name="audio_effects_crossfeed_desc">Makes headphones sound more like speakers in front of you, less tiring over time</string>
+    <string name="audio_effects_reverb">Reverb</string>
+    <string name="audio_effects_reverb_desc">Adds room echo. Higher sounds like a bigger hall.</string>
+    <string name="audio_effects_reverb_room">Room size</string>
+    <string name="audio_effects_reverb_brightness">Echo brightness</string>
+    <string name="audio_effects_reverb_predelay">Echo delay</string>
+    <string name="audio_effects_mono_bass">Centered bass</string>
+    <string name="audio_effects_mono_bass_desc">Merges bass below this frequency into the center for tighter, stronger bass</string>
+    <string name="audio_effects_mono">Mono</string>
+    <string name="audio_effects_mono_desc">For listening with one earbud or a single speaker</string>
+    <string name="audio_effects_swap">Swap left and right</string>
+
+    <!-- Dynamics -->
+    <string name="audio_effects_dynamics_title">Loudness &amp; dynamics</string>
+    <string name="audio_effects_dynamics_desc">Evens out the volume and prevents clipping</string>
+    <string name="audio_effects_compressor">Dynamic compression</string>
+    <string name="audio_effects_compressor_desc">Quiet parts get clearer and loud parts gentler. Great at night, on the go or in noisy places.</string>
+    <string name="audio_effects_compressor_advanced">Show advanced parameters</string>
+    <string name="audio_effects_compressor_threshold">Level where compression starts (threshold)</string>
+    <string name="audio_effects_compressor_ratio">Strength (ratio)</string>
+    <string name="audio_effects_compressor_attack">Reaction speed (attack)</string>
+    <string name="audio_effects_compressor_release">Recovery speed (release)</string>
+    <string name="audio_effects_compressor_knee">Smoothness (knee)</string>
+    <string name="audio_effects_compressor_makeup">Make-up gain</string>
+    <string name="audio_effects_output_gain">Extra volume</string>
+    <string name="audio_effects_output_gain_desc">Add a little if it is too quiet. The clipping guard keeps you safe.</string>
+    <string name="audio_effects_limiter">Clipping guard (limiter)</string>
+    <string name="audio_effects_limiter_desc">Pulls peaks down automatically to avoid distortion</string>
+    <string name="audio_effects_limiter_ceiling">Peak ceiling</string>
+    <string name="audio_effects_limiter_release">Recovery time</string>
+
+    <!-- Speaker -->
+    <string name="audio_effects_speaker_title">Speaker optimization</string>
+    <string name="audio_effects_speaker_desc">Only works on the built-in speaker. It turns off automatically with headphones or Bluetooth.</string>
+    <string name="audio_effects_speaker_enabled">Enable speaker optimization</string>
+    <string name="audio_effects_speaker_inactive">You are not playing through the speaker, so this is paused</string>
+    <string name="audio_effects_speaker_size">Speaker type</string>
+    <string name="audio_effects_speaker_size_phone">Phone</string>
+    <string name="audio_effects_speaker_size_tablet">Tablet</string>
+    <string name="audio_effects_speaker_size_large">Large speaker</string>
+    <string name="audio_effects_speaker_bass">Bass enhancement</string>
+    <string name="audio_effects_speaker_bass_desc">Rebuilds bass that tiny speakers cannot play, using harmonics</string>
+    <string name="audio_effects_speaker_loudness">Loudness</string>
+    <string name="audio_effects_speaker_loudness_desc">Multiband compression for a louder, fuller sound without distortion</string>
+    <string name="audio_effects_speaker_clarity">Clarity</string>
+    <string name="audio_effects_speaker_expand">Stereo expansion</string>
+    <string name="audio_effects_speaker_protection">Low-frequency protection</string>
+    <string name="audio_effects_speaker_protection_desc">Filters out deep bass the speaker cannot reproduce, reducing distortion and rattling</string>
+
+    <!-- Speed -->
+    <string name="audio_effects_speed_title">Speed &amp; pitch</string>
+    <string name="audio_effects_speed_desc">Change playback speed and pitch independently</string>
+    <string name="audio_effects_speed">Speed</string>
+    <string name="audio_effects_pitch">Pitch</string>
+    <string name="audio_effects_pitch_semitones">%1$s semitones</string>
+    <string name="audio_effects_speed_pitch_linked">Pitch follows speed (vinyl style)</string>
+    <string name="audio_effects_speed_pitch_linked_desc">Speeding up raises the pitch and slowing down lowers it, Nightcore style</string>
+    <string name="audio_effects_speed_reset">Reset speed and pitch</string>
+    <string name="audio_effects_speed_usb_note">Speed and pitch do not apply during USB exclusive playback</string>
+
+    <!-- Advanced -->
+    <string name="audio_effects_advanced_title">Advanced &amp; power</string>
+    <string name="audio_effects_power_note">When effects are off or match the original sound, processing is skipped so the system can use power-efficient hardware playback.</string>
+    <string name="audio_effects_power_mode">Processing mode</string>
+    <string name="audio_effects_power_eco">Power saver</string>
+    <string name="audio_effects_power_balanced">Balanced</string>
+    <string name="audio_effects_power_high">High quality</string>
+    <string name="audio_effects_power_eco_desc">Lighter reverb and compression, no dither. Good for long days out.</string>
+    <string name="audio_effects_power_balanced_desc">A recommended balance of quality and battery</string>
+    <string name="audio_effects_power_high_desc">Finer parameter changes and noise-shaped dither on 16-bit output. Uses slightly more battery.</string>
+    <string name="audio_effects_per_output">Separate sound per device</string>
+    <string name="audio_effects_per_output_desc">Speaker, wired, Bluetooth and USB each keep their own sound and switch automatically</string>
+    <string name="audio_effects_usb_apply">Use effects in USB exclusive mode</string>
+    <string name="audio_effects_usb_apply_desc">Off by default to stay bit-perfect. Still skipped while bit-perfect volume is on.</string>
+    <string name="audio_effects_reset_all">Reset current sound</string>
+    <string name="audio_effects_reset_all_confirm">Restore the original sound and clear adjustments for the current device? Sounds saved under Mine are kept.</string>
+</resources>

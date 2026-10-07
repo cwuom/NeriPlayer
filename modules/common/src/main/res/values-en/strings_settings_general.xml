@@ -136,6 +136,9 @@
     <string name="settings_usb_exclusive_background_behavior">USB exclusive background playback</string>
     <string name="settings_usb_exclusive_background_behavior_allowed">Allowed</string>
     <string name="settings_usb_exclusive_background_behavior_restricted">Allow background activity in system settings</string>
+    <string name="settings_usb_exclusive_floating_keep_alive">Floating window keep-alive</string>
+    <string name="settings_usb_exclusive_floating_keep_alive_desc">Shows an invisible 1-pixel floating window during background playback, which helps on systems that freeze apps after the screen turns off and drop the DAC connection</string>
+    <string name="settings_usb_exclusive_floating_keep_alive_permission">Needs the \"Display over other apps\" permission. Tap to grant.</string>
     <string name="settings_usb_exclusive_page_desc">USB exclusive output settings</string>
     <string name="settings_usb_exclusive_state_enabled">On</string>
     <string name="settings_usb_exclusive_state_disabled">Off</string>

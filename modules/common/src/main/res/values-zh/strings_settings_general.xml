@@ -136,6 +136,9 @@
     <string name="settings_usb_exclusive_background_behavior">USB 独占后台运行</string>
     <string name="settings_usb_exclusive_background_behavior_allowed">已允许</string>
     <string name="settings_usb_exclusive_background_behavior_restricted">需要在系统设置中允许后台运行</string>
+    <string name="settings_usb_exclusive_floating_keep_alive">后台悬浮窗保活</string>
+    <string name="settings_usb_exclusive_floating_keep_alive_desc">后台播放时挂一个看不见的 1 像素悬浮窗，减少部分系统息屏后冻结应用导致的 DAC 断联</string>
+    <string name="settings_usb_exclusive_floating_keep_alive_permission">需要「显示在其他应用上层」权限，点此授权</string>
     <string name="settings_usb_exclusive_page_desc">USB 独占输出设置</string>
     <string name="settings_usb_exclusive_state_enabled">已开启</string>
     <string name="settings_usb_exclusive_state_disabled">已关闭</string>

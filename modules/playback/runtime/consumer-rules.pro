@@ -11,6 +11,11 @@
     native <methods>;
 }
 
+# 音效 DSP 同样使用静态 JNI 绑定
+-keepclasseswithmembernames,includedescriptorclasses class moe.ouom.neriplayer.core.player.audio.effects.AudioEffectsNativeBridge {
+    native <methods>;
+}
+
 # FFmpeg 从 native 回调私有缓冲区扩容方法
 -keep,allowoptimization,allowobfuscation class androidx.media3.decoder.ffmpeg.FfmpegAudioDecoder {
     private java.nio.ByteBuffer growOutputBuffer(

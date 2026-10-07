@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Page -->
+    <string name="settings_audio_effects_title">音效与倍速</string>
+    <string name="settings_audio_effects_desc">预设音效、均衡器、扬声器优化、声场与倍速</string>
+
+    <!-- Overview -->
+    <string name="audio_effects_master">启用音效</string>
+    <string name="audio_effects_master_desc">开启后按下方设置处理声音；关闭时完全原声输出</string>
+    <string name="audio_effects_route_format">当前输出：%1$s</string>
+    <string name="audio_effects_editing_route">正在编辑「%1$s」专属的音效</string>
+    <string name="audio_effects_route_speaker">手机扬声器</string>
+    <string name="audio_effects_route_wired">有线耳机</string>
+    <string name="audio_effects_route_bluetooth">蓝牙</string>
+    <string name="audio_effects_route_usb">USB 音频</string>
+    <string name="audio_effects_route_other">其他设备</string>
+    <string name="audio_effects_status_active">正在处理 · 单核占用约 %1$s</string>
+    <string name="audio_effects_status_active_rate">正在处理 · %1$s · 单核占用约 %2$s</string>
+    <string name="audio_effects_status_disabled">音效已关闭，系统可以使用硬件低功耗播放</string>
+    <string name="audio_effects_status_neutral">当前设置与原声相同，已自动跳过处理来省电</string>
+    <string name="audio_effects_status_usb">USB 独占正在比特完美输出，音效已跳过</string>
+    <string name="audio_effects_status_unsupported">当前音频格式（如多声道）暂不支持音效，已原声播放</string>
+    <string name="audio_effects_status_native_unavailable">音效引擎加载失败，已原声播放</string>
+    <string name="audio_effects_status_limiter">防破音保护刚刚压低了 %1$s 的峰值</string>
+    <string name="audio_effects_off">关闭</string>
+    <string name="audio_effects_auto">自动</string>
+
+    <!-- Presets -->
+    <string name="audio_effects_presets_title">预设音效</string>
+    <string name="audio_effects_presets_desc">一键切换适合不同音乐和场景的声音，选好后还能继续微调；耳机校正会被保留</string>
+    <string name="audio_effects_preset_tab_style">风格</string>
+    <string name="audio_effects_preset_tab_tone">音色</string>
+    <string name="audio_effects_preset_tab_scene">场景</string>
+    <string name="audio_effects_preset_tab_device">设备</string>
+    <string name="audio_effects_preset_tab_mine">我的</string>
+    <string name="audio_effects_current_preset">当前：%1$s</string>
+    <string name="audio_effects_preset_custom">自定义</string>
+    <string name="audio_effects_preset_flat">原声</string>
+    <string name="audio_effects_preset_pop">流行</string>
+    <string name="audio_effects_preset_rock">摇滚</string>
+    <string name="audio_effects_preset_classical">古典</string>
+    <string name="audio_effects_preset_jazz">爵士</string>
+    <string name="audio_effects_preset_electronic">电子</string>
+    <string name="audio_effects_preset_hip_hop">嘻哈</string>
+    <string name="audio_effects_preset_rnb">R&amp;B</string>
+    <string name="audio_effects_preset_folk">民谣</string>
+    <string name="audio_effects_preset_metal">金属</string>
+    <string name="audio_effects_preset_acg">二次元</string>
+    <string name="audio_effects_preset_piano">钢琴</string>
+    <string name="audio_effects_preset_vocal_boost">人声增强</string>
+    <string name="audio_effects_preset_bass_boost">低音增强</string>
+    <string name="audio_effects_preset_deep_bass">超重低音</string>
+    <string name="audio_effects_preset_treble_boost">高音增强</string>
+    <string name="audio_effects_preset_warm">温暖黑胶</string>
+    <string name="audio_effects_preset_live">现场演唱会</string>
+    <string name="audio_effects_preset_concert_hall">音乐厅</string>
+    <string name="audio_effects_preset_cinema">影院</string>
+    <string name="audio_effects_preset_surround_3d">3D 环绕</string>
+    <string name="audio_effects_preset_karaoke">K 歌伴奏</string>
+    <string name="audio_effects_preset_night">深夜模式</string>
+    <string name="audio_effects_preset_spoken">有声书 / 播客</string>
+    <string name="audio_effects_preset_loudness_max">响度最大化</string>
+    <string name="audio_effects_preset_headphone_hifi">耳机 Hi-Fi</string>
+    <string name="audio_effects_preset_studio">录音棚监听</string>
+    <string name="audio_effects_preset_car">车载</string>
+    <string name="audio_effects_preset_small_speaker">小音箱</string>
+    <string name="audio_effects_user_presets_empty">还没有保存的音效。把声音调到满意后，点「保存为我的音效」</string>
+    <string name="audio_effects_save_preset">保存为我的音效</string>
+    <string name="audio_effects_save_preset_name">名称</string>
+    <string name="audio_effects_save_preset_hint">例如：通勤耳机</string>
+    <string name="audio_effects_preset_saved">已保存「%1$s」</string>
+    <string name="audio_effects_import_preset">导入分享码</string>
+    <string name="audio_effects_import_preset_hint">粘贴别人分享给你的音效代码</string>
+    <string name="audio_effects_import_failed">无法识别这段音效代码</string>
+    <string name="audio_effects_share_preset">复制分享码</string>
+    <string name="audio_effects_share_copied">已复制音效分享码</string>
+    <string name="audio_effects_delete_preset">删除</string>
+    <string name="audio_effects_delete_preset_confirm">删除「%1$s」？</string>
+
+    <!-- Equalizer -->
+    <string name="audio_effects_eq_title">均衡器</string>
+    <string name="audio_effects_eq_desc">上下拖动圆点调整各频段音量：左边是低音，中间是人声，右边是高音；双击圆点可以归零</string>
+    <string name="audio_effects_eq_enabled">使用十段均衡器</string>
+    <string name="audio_effects_preamp">整体音量（前级）</string>
+    <string name="audio_effects_preamp_desc">均衡器提升太多出现破音时，在这里整体调低一点</string>
+    <string name="audio_effects_auto_headroom">自动防破音余量</string>
+    <string name="audio_effects_auto_headroom_desc">根据你的提升量自动预留空间，避免爆音，推荐开启</string>
+    <string name="audio_effects_eq_reset">均衡器归零</string>
+
+    <!-- Headphone correction -->
+    <string name="audio_effects_peq_title">耳机校正（参数均衡）</string>
+    <string name="audio_effects_peq_desc">导入 AutoEq 等网站为你的耳机型号生成的曲线，让耳机声音更接近标准；切换风格预设时会保留</string>
+    <string name="audio_effects_peq_enabled">启用耳机校正</string>
+    <string name="audio_effects_peq_empty">还没有校正频段，可以导入 AutoEq 文本或手动添加</string>
+    <string name="audio_effects_peq_import">导入 AutoEq 文本</string>
+    <string name="audio_effects_peq_import_hint">粘贴 ParametricEQ.txt 或 GraphicEQ 的内容</string>
+    <string name="audio_effects_peq_import_done">已导入 %1$d 个校正频段</string>
+    <string name="audio_effects_peq_import_skipped">已导入 %1$d 个校正频段，跳过 %2$d 个不支持的</string>
+    <string name="audio_effects_peq_import_graphic_done">已按曲线设置十段均衡器</string>
+    <string name="audio_effects_peq_import_failed">没有找到可用的滤波器，请检查粘贴的内容</string>
+    <string name="audio_effects_peq_add">添加频段</string>
+    <string name="audio_effects_peq_clear">清空</string>
+    <string name="audio_effects_peq_edit">编辑频段</string>
+    <string name="audio_effects_peq_band_enabled">启用这个频段</string>
+    <string name="audio_effects_peq_band_summary">%1$s · %2$s · Q %3$s</string>
+    <string name="audio_effects_peq_frequency">频率</string>
+    <string name="audio_effects_peq_gain">增益</string>
+    <string name="audio_effects_peq_q">影响范围 Q（越大越窄）</string>
+    <string name="audio_effects_filter_peak">峰值调节</string>
+    <string name="audio_effects_filter_low_shelf">低频整体</string>
+    <string name="audio_effects_filter_high_shelf">高频整体</string>
+    <string name="audio_effects_filter_low_pass">低通（去掉高频）</string>
+    <string name="audio_effects_filter_high_pass">高通（去掉低频）</string>
+    <string name="audio_effects_filter_notch">陷波（去掉一个频率）</string>
+    <string name="audio_effects_filter_band_pass">带通（只留一段）</string>
+
+    <!-- Tone -->
+    <string name="audio_effects_tone_title">低音与高音</string>
+    <string name="audio_effects_tone_desc">最简单的调音方式：想要更有力就加低音，想要更明亮就加高音</string>
+    <string name="audio_effects_bass">低音量感</string>
+    <string name="audio_effects_bass_frequency">低音范围</string>
+    <string name="audio_effects_bass_frequency_desc">数值越低越偏向下潜的“轰”，越高越偏向鼓点的“咚”</string>
+    <string name="audio_effects_treble">高音亮度</string>
+    <string name="audio_effects_treble_frequency">高音范围</string>
+    <string name="audio_effects_virtual_bass">虚拟低音</string>
+    <string name="audio_effects_virtual_bass_desc">用谐波让耳朵“脑补”出低音，小耳机和手机外放也能听出下潜</string>
+    <string name="audio_effects_virtual_bass_frequency">虚拟低音频率</string>
+
+    <!-- Character -->
+    <string name="audio_effects_color_title">音色润色</string>
+    <string name="audio_effects_color_desc">给声音加一点“味道”，少量使用效果最好</string>
+    <string name="audio_effects_warmth">温暖度</string>
+    <string name="audio_effects_warmth_desc">模拟电子管和黑胶的柔和厚实感，减少刺耳</string>
+    <string name="audio_effects_clarity">清晰度</string>
+    <string name="audio_effects_clarity_desc">补回压缩音质丢失的细节和空气感</string>
+    <string name="audio_effects_clarity_frequency">清晰度范围</string>
+    <string name="audio_effects_vocal">人声突出</string>
+    <string name="audio_effects_vocal_desc">只加强位于中间的人声，伴奏保持不变</string>
+    <string name="audio_effects_vocal_removal">消除人声（伴奏模式）</string>
+    <string name="audio_effects_vocal_removal_desc">削弱中间的人声方便跟唱，不同歌曲效果有差异</string>
+
+    <!-- Space -->
+    <string name="audio_effects_space_title">声场与空间</string>
+    <string name="audio_effects_space_desc">改变声音的宽度和距离感</string>
+    <string name="audio_effects_width">立体声宽度</string>
+    <string name="audio_effects_width_desc" formatted="false">100% 为原始宽度，0% 为单声道，更高会更宽</string>
+    <string name="audio_effects_surround">3D 环绕</string>
+    <string name="audio_effects_surround_desc">让声音延伸到头部以外，更有包围感</string>
+    <string name="audio_effects_crossfeed">耳机交叉馈送</string>
+    <string name="audio_effects_crossfeed_desc">让耳机听起来像面前的音箱，长时间听更不累</string>
+    <string name="audio_effects_reverb">混响</string>
+    <string name="audio_effects_reverb_desc">加入房间回声，数值越大越像身处大厅</string>
+    <string name="audio_effects_reverb_room">房间大小</string>
+    <string name="audio_effects_reverb_brightness">回声明亮度</string>
+    <string name="audio_effects_reverb_predelay">回声延迟</string>
+    <string name="audio_effects_mono_bass">低频居中</string>
+    <string name="audio_effects_mono_bass_desc">把这个频率以下的低音合到中间，低音更集中有力</string>
+    <string name="audio_effects_mono">单声道</string>
+    <string name="audio_effects_mono_desc">只戴一只耳机或只有一个扬声器时使用</string>
+    <string name="audio_effects_swap">左右声道互换</string>
+
+    <!-- Dynamics -->
+    <string name="audio_effects_dynamics_title">音量与动态</string>
+    <string name="audio_effects_dynamics_desc">让音量更均匀，并防止破音</string>
+    <string name="audio_effects_compressor">动态压缩</string>
+    <string name="audio_effects_compressor_desc">让小声更清楚、大声不刺耳，适合夜间、通勤和嘈杂环境</string>
+    <string name="audio_effects_compressor_advanced">显示专业参数</string>
+    <string name="audio_effects_compressor_threshold">开始压缩的音量（阈值）</string>
+    <string name="audio_effects_compressor_ratio">压缩强度（比率）</string>
+    <string name="audio_effects_compressor_attack">反应速度（启动）</string>
+    <string name="audio_effects_compressor_release">恢复速度（释放）</string>
+    <string name="audio_effects_compressor_knee">过渡柔和度（拐点）</string>
+    <string name="audio_effects_compressor_makeup">补回音量</string>
+    <string name="audio_effects_output_gain">额外音量</string>
+    <string name="audio_effects_output_gain_desc">声音太小时可以加一点，防破音会自动保护</string>
+    <string name="audio_effects_limiter">防破音（限幅器）</string>
+    <string name="audio_effects_limiter_desc">峰值超过上限时自动压低，避免爆音</string>
+    <string name="audio_effects_limiter_ceiling">峰值上限</string>
+    <string name="audio_effects_limiter_release">恢复时间</string>
+
+    <!-- Speaker -->
+    <string name="audio_effects_speaker_title">扬声器优化</string>
+    <string name="audio_effects_speaker_desc">只在手机自带扬声器外放时生效，插上耳机或连接蓝牙会自动停用</string>
+    <string name="audio_effects_speaker_enabled">启用外放优化</string>
+    <string name="audio_effects_speaker_inactive">当前不是扬声器输出，优化暂不生效</string>
+    <string name="audio_effects_speaker_size">扬声器类型</string>
+    <string name="audio_effects_speaker_size_phone">手机</string>
+    <string name="audio_effects_speaker_size_tablet">平板</string>
+    <string name="audio_effects_speaker_size_large">大音箱</string>
+    <string name="audio_effects_speaker_bass">低音补偿</string>
+    <string name="audio_effects_speaker_bass_desc">用谐波补回小喇叭发不出的低音</string>
+    <string name="audio_effects_speaker_loudness">响亮度</string>
+    <string name="audio_effects_speaker_loudness_desc">分频段压缩，声音更大更饱满且不容易破音</string>
+    <string name="audio_effects_speaker_clarity">清晰度</string>
+    <string name="audio_effects_speaker_expand">立体声扩展</string>
+    <string name="audio_effects_speaker_protection">低频保护</string>
+    <string name="audio_effects_speaker_protection_desc">滤掉扬声器发不出的超低频，减少破音和振动杂音</string>
+
+    <!-- Speed -->
+    <string name="audio_effects_speed_title">倍速与音调</string>
+    <string name="audio_effects_speed_desc">改变播放速度和音高，两者可以分开调节</string>
+    <string name="audio_effects_speed">播放速度</string>
+    <string name="audio_effects_pitch">音调</string>
+    <string name="audio_effects_pitch_semitones">%1$s 个半音</string>
+    <string name="audio_effects_speed_pitch_linked">变调跟随倍速（唱片效果）</string>
+    <string name="audio_effects_speed_pitch_linked_desc">开启后加速声音会变尖、减速会变低沉，适合 Nightcore</string>
+    <string name="audio_effects_speed_reset">恢复正常速度与音调</string>
+    <string name="audio_effects_speed_usb_note">USB 独占播放时倍速与音调暂不生效</string>
+
+    <!-- Advanced -->
+    <string name="audio_effects_advanced_title">高级与功耗</string>
+    <string name="audio_effects_power_note">音效全部关闭或等于原声时会自动跳过处理，系统可以改用硬件解码，最省电</string>
+    <string name="audio_effects_power_mode">处理模式</string>
+    <string name="audio_effects_power_eco">省电</string>
+    <string name="audio_effects_power_balanced">均衡</string>
+    <string name="audio_effects_power_high">高音质</string>
+    <string name="audio_effects_power_eco_desc">混响和压缩使用简化算法，不加抖动，适合长时间外出</string>
+    <string name="audio_effects_power_balanced_desc">音质和耗电平衡，推荐使用</string>
+    <string name="audio_effects_power_high_desc">参数变化更细腻，16 位输出使用降噪整形抖动，耗电略高</string>
+    <string name="audio_effects_per_output">按设备分别保存</string>
+    <string name="audio_effects_per_output_desc">扬声器、有线耳机、蓝牙和 USB 各记住一套音效，切换设备时自动更换</string>
+    <string name="audio_effects_usb_apply">USB 独占时也使用音效</string>
+    <string name="audio_effects_usb_apply_desc">默认关闭以保持比特完美；开启「比特完美音量」时仍会跳过</string>
+    <string name="audio_effects_reset_all">重置当前音效</string>
+    <string name="audio_effects_reset_all_confirm">恢复为原声并清除当前设备的所有调整？「我的音效」中保存的内容不会删除</string>
+</resources>

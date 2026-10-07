@@ -10,6 +10,9 @@ import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_PITCH
 import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_SPEED
 import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsPresetIds
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,6 +29,22 @@ class PlaybackPreferenceSnapshotTest {
 
         assertTrue(snapshot.playbackHighResolutionOutputEnabled)
         assertTrue(snapshot.amllLyricsEnabled)
+    }
+
+    @Test
+    fun `stored audio effects json takes precedence over legacy equalizer keys`() {
+        val stored = AudioEffectsSettingsCodec.encode(AudioEffectsSettings(powerMode = "eco"))
+        val preferences = preferencesOf(
+            SettingsKeys.AUDIO_EFFECTS_SETTINGS to stored,
+            SettingsKeys.PLAYBACK_EQUALIZER_ENABLED to true,
+            SettingsKeys.PLAYBACK_EQUALIZER_PRESET to PlaybackEqualizerPresetId.ROCK
+        )
+
+        assertEquals(stored, preferences.toPlaybackPreferenceSnapshot().audioEffectsSettingsJson)
+        val effects = preferences.toAudioEffectsSettings()
+        assertFalse(effects.main.enabled)
+        assertEquals("eco", effects.powerMode)
+        assertTrue(preferencesOf(SettingsKeys.PLAYBACK_EQUALIZER_ENABLED to true).toAudioEffectsSettings().main.enabled)
     }
 
     @Test
@@ -128,7 +147,7 @@ class PlaybackPreferenceSnapshotTest {
     }
 
     @Test
-    fun `toPlaybackSoundConfig preserves equalizer settings`() {
+    fun `legacy equalizer settings migrate into audio effects while playback parameters stay`() {
         val snapshot = PlaybackPreferenceSnapshot(
             playbackSpeed = 1.25f,
             playbackPitch = 0.95f,
@@ -144,12 +163,17 @@ class PlaybackPreferenceSnapshotTest {
 
         assertEquals(1.25f, config.speed, 0.0001f)
         assertEquals(0.95f, config.pitch, 0.0001f)
-        assertEquals(500, config.loudnessGainMb)
         assertEquals(-0.35f, config.volumeBalance, 0.0001f)
         assertTrue(config.volumeNormalizationEnabled)
-        assertTrue(config.equalizerEnabled)
-        assertEquals(PlaybackEqualizerPresetId.POP, config.presetId)
-        assertEquals(listOf(100, -50, 25), config.customBandLevelsMb)
+
+        val effects = snapshot.toAudioEffectsSettings()
+        assertTrue(effects.main.enabled)
+        assertEquals(AudioEffectsPresetIds.CUSTOM, effects.main.presetId)
+        assertEquals(-1f, effects.main.sound.equalizerBandsDb.first(), 0.01f)
+        assertEquals(5f, effects.main.sound.outputGainDb, 0.001f)
+
+        val stored = snapshot.copy(audioEffectsSettingsJson = AudioEffectsSettingsCodec.encode(AudioEffectsSettings()))
+        assertFalse(stored.toAudioEffectsSettings().main.enabled)
     }
 
     @Test

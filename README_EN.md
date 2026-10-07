@@ -199,10 +199,12 @@ Current positioning:
   retain directional horizontal transitions. Both retain outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
   discontinuities during rapid switching. Long-pressing the Now Playing artwork
   opens an immersive preview with pinch-to-zoom, panning, and a download action.
-- **Sound controls are tied to the active audio session**:
-  `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
-  `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
-  loudness gain, per-track real-time normalization, fade/crossfade, pause on
+- **Fine-grained sound controls**:
+  a native DSP sits in front of the Media3 audio output instead of relying on the
+  Android `Equalizer`. **Settings → Audio effects & speed** provides 29 built-in
+  sound presets, a 10-band EQ, parametric EQ, AutoEQ import, bass/treble, virtual
+  bass, vocal, space, reverb, compression, speaker optimization, a clipping guard,
+  and per-output-device profiles. Per-track real-time normalization, fade/crossfade, pause on
   Bluetooth disconnect, channel balance, 32-bit high-resolution system output,
   USB exclusive playback, and audio-focus behavior are all available. Native USB
   exclusive playback currently targets **UAC1.0** and compatible
@@ -449,13 +451,17 @@ For release build and signing details, see
   resolution retries missing DASH audio and can fall back to html5/mp4 progressive
   streams; repeated failures skip or stop playback to avoid getting stuck.
 - 🎚️ **Playback sound controls**:
-  Now Playing includes speed, pitch, loudness enhancer, Android system equalizer
-  presets, and manual EQ bands. Playback settings also provide per-track
-  real-time loudness normalization, channel balance, and 32-bit high-resolution
-  system output. Loudness normalization is bypassed during USB exclusive playback;
-  high-resolution system output keeps the high-precision pipeline where possible
-  and bypasses loudness normalization, channel balance, audio visualization, and
-  in-app speed processing.
+  **Settings → Audio effects & speed** manages effects, speed, and pitch in one
+  place. The DSP processes regular and 32-bit high-resolution output in float
+  precision and offers style, tone, scene, and device presets, a draggable 10-band
+  EQ, parametric EQ with AutoEQ import, shareable custom presets, speaker
+  optimization, and Eco/Balanced/High processing modes. When effects are off or
+  every control is neutral, the DSP is fully bypassed and adds no power cost. USB
+  exclusive output stays bit-perfect by default; an advanced option can apply
+  effects there as well. Playback settings also provide per-track real-time
+  loudness normalization, channel balance, and 32-bit high-resolution system
+  output; high-resolution system output bypasses loudness normalization, channel
+  balance, audio visualization, and in-app speed processing.
 - 🎛️ **Fine-grained playback behavior**:
   keep last playback progress, restore playback mode, fade-in/fade-out,
   crossfade-next, pause on Bluetooth disconnect, USB exclusive playback,
@@ -469,7 +475,10 @@ For release build and signing details, see
   supports **UAC1.0** and compatible **UAC2.0 Type I PCM** USB DAC devices, with
   device selection, sample-rate/bit-depth/buffer policies, compatibility toggles,
   and background-playback guidance. It also handles 32-bit PCM and software
-  conversion from PCM float into the selected device format. When following the
+  conversion from PCM float into the selected device format. An optional floating
+  keep-alive shows an invisible, non-touchable 1-pixel overlay during USB exclusive
+  playback once overlay permission is granted, which lowers the chance that some
+  systems freeze the background process and drop the DAC. When following the
   track sample rate, native exclusive output tries the exact source rate against
   USB descriptors first, then tries a reported compatible rate when the exact
   format is unavailable and compatibility fallback is enabled. Handling of Android's

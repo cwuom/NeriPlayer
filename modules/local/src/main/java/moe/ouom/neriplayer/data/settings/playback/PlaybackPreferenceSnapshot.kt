@@ -80,6 +80,8 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
+import moe.ouom.neriplayer.data.model.playback.effects.resolveAudioEffectsSettings
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
@@ -122,6 +124,7 @@ private const val PLAYBACK_HIGH_RESOLUTION_OUTPUT_KEY =
 private const val PLAYBACK_EQUALIZER_ENABLED_KEY = "playback_equalizer_enabled"
 private const val PLAYBACK_EQUALIZER_PRESET_KEY = "playback_equalizer_preset"
 private const val PLAYBACK_EQUALIZER_LEVELS_KEY = "playback_equalizer_custom_band_levels"
+private const val PLAYBACK_AUDIO_EFFECTS_SETTINGS_KEY = "audio_effects_settings"
 private const val PLAYBACK_STOP_ON_BLUETOOTH_KEY = "stop_on_bluetooth_disconnect"
 private const val PLAYBACK_USB_EXCLUSIVE_KEY = "usb_exclusive_playback"
 private const val PLAYBACK_USB_EXCLUSIVE_DEVICE_KEY = "usb_exclusive_device_key"
@@ -286,6 +289,10 @@ fun persistPlaybackPreferenceSnapshot(
                     normalizedSnapshot.playbackEqualizerPreset
                 )
                 .putString(PLAYBACK_EQUALIZER_LEVELS_KEY, encodedBandLevels)
+                .putString(
+                    PLAYBACK_AUDIO_EFFECTS_SETTINGS_KEY,
+                    normalizedSnapshot.audioEffectsSettingsJson
+                )
                 .putBoolean(
                     PLAYBACK_STOP_ON_BLUETOOTH_KEY,
                     normalizedSnapshot.stopOnBluetoothDisconnect
@@ -399,6 +406,7 @@ fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {
         playbackEqualizerCustomBandLevels = decodePlaybackEqualizerBandLevels(
             this[SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS]
         ),
+        audioEffectsSettingsJson = this[SettingsKeys.AUDIO_EFFECTS_SETTINGS].orEmpty(),
         stopOnBluetoothDisconnect = this[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true,
         usbExclusivePlayback = this[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false,
         usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(
@@ -570,6 +578,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         playbackEqualizerCustomBandLevels = decodePlaybackEqualizerBandLevels(
             prefs.getString(PLAYBACK_EQUALIZER_LEVELS_KEY, null)
         ),
+        audioEffectsSettingsJson = prefs.getString(PLAYBACK_AUDIO_EFFECTS_SETTINGS_KEY, null).orEmpty(),
         stopOnBluetoothDisconnect = prefs.getBoolean(PLAYBACK_STOP_ON_BLUETOOTH_KEY, true),
         usbExclusivePlayback = prefs.getBoolean(PLAYBACK_USB_EXCLUSIVE_KEY, false),
         usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(
@@ -707,16 +716,30 @@ fun PlaybackPreferenceSnapshot.sanitized(): PlaybackPreferenceSnapshot {
     )
 }
 
+fun PlaybackPreferenceSnapshot.toAudioEffectsSettings(): AudioEffectsSettings = resolveAudioEffectsSettings(
+    raw = audioEffectsSettingsJson,
+    legacyEqualizerEnabled = playbackEqualizerEnabled,
+    legacyPresetId = playbackEqualizerPreset,
+    legacyCustomBandLevelsMb = playbackEqualizerCustomBandLevels,
+    legacyLoudnessGainMb = playbackLoudnessGainMb
+)
+
+fun Preferences.toAudioEffectsSettings(): AudioEffectsSettings = resolveAudioEffectsSettings(
+    raw = this[SettingsKeys.AUDIO_EFFECTS_SETTINGS],
+    legacyEqualizerEnabled = this[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] ?: false,
+    legacyPresetId = this[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] ?: PlaybackEqualizerPresetId.FLAT,
+    legacyCustomBandLevelsMb = decodePlaybackEqualizerBandLevels(
+        this[SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS]
+    ),
+    legacyLoudnessGainMb = this[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] ?: DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+)
+
 fun PlaybackPreferenceSnapshot.toPlaybackSoundConfig(): PlaybackSoundConfig {
     val normalizedSnapshot = sanitized()
     return PlaybackSoundConfig(
         speed = normalizedSnapshot.playbackSpeed,
         pitch = normalizedSnapshot.playbackPitch,
-        loudnessGainMb = normalizedSnapshot.playbackLoudnessGainMb,
         volumeBalance = normalizedSnapshot.playbackVolumeBalance,
-        volumeNormalizationEnabled = normalizedSnapshot.playbackVolumeNormalizationEnabled,
-        equalizerEnabled = normalizedSnapshot.playbackEqualizerEnabled,
-        presetId = normalizedSnapshot.playbackEqualizerPreset,
-        customBandLevelsMb = normalizedSnapshot.playbackEqualizerCustomBandLevels
+        volumeNormalizationEnabled = normalizedSnapshot.playbackVolumeNormalizationEnabled
     )
 }

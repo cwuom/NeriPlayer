@@ -633,14 +633,11 @@
         "changeCurrentPlaybackQuality",
         "setPlaybackSpeed",
         "setPlaybackPitch",
-        "setPlaybackLoudnessGain",
         "setPlaybackVolumeBalance",
         "setPlaybackVolumeNormalizationEnabled",
         "setPlaybackHighResolutionOutputEnabled",
-        "setPlaybackEqualizerEnabled",
-        "selectPlaybackEqualizerPreset",
-        "updatePlaybackEqualizerBandLevel",
-        "resetPlaybackSoundSettings",
+        "resetPlaybackSpeedAndPitch",
+        "updateAudioEffects",
         "applyPlaybackSoundConfig$runtime",
         "schedulePlaybackSoundConfigApply$runtime",
         "applyPlaybackSoundConfigIfChanged$runtime",
@@ -674,13 +671,6 @@
       "methods": [
         "previousSongForLongFormProgress",
         "localPlaylistIdForSong"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/core/player/lifecycle/PlayerManagerLifecycleExtensions.kt",
-      "class": "moe.ouom.neriplayer.core.player.lifecycle.PlayerManagerLifecycleExtensionsKt$initializePlaybackEngine$4",
-      "methods": [
-        "onAudioSessionIdChanged"
       ]
     },
     {

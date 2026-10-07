@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
+import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -84,6 +86,8 @@ internal fun UsbExclusiveSettingsSection(
     onForegroundBufferMsChange: (Int) -> Unit,
     onBackgroundBufferMsChange: (Int) -> Unit,
     onVolumeRiskThresholdDbfsChange: (Int) -> Unit,
+    floatingKeepAliveEnabled: Boolean,
+    onFloatingKeepAliveChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current.applicationContext
@@ -125,6 +129,8 @@ internal fun UsbExclusiveSettingsSection(
             )
             SettingsDivider()
             UsbExclusiveBackgroundBehaviorItem()
+            SettingsDivider()
+            UsbExclusiveFloatingKeepAliveItem(floatingKeepAliveEnabled, onFloatingKeepAliveChange)
         }
 
         MiuixSettingsSectionCard {
@@ -335,6 +341,55 @@ private fun UsbExclusiveBackgroundBehaviorItem() {
             }
         } else {
             null
+        },
+        colors = transparentListItemColors()
+    )
+}
+
+@Composable
+private fun UsbExclusiveFloatingKeepAliveItem(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    val context = LocalContext.current.applicationContext
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var permitted by remember(context) { mutableStateOf(FloatingLyricsOverlayManager.hasOverlayPermission(context)) }
+    // 从系统授权页返回后重新读取权限
+    LaunchedEffect(context, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            permitted = FloatingLyricsOverlayManager.hasOverlayPermission(context)
+        }
+    }
+    val toggle: (Boolean) -> Unit = { next ->
+        onEnabledChange(next)
+        if (next && !permitted) FloatingLyricsOverlayManager.openOverlayPermissionSettings(context)
+    }
+    ListItem(
+        modifier = Modifier.settingsItemClickable { toggle(!enabled) },
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.PictureInPictureAlt,
+                contentDescription = stringResource(CoreCommonR.string.settings_usb_exclusive_floating_keep_alive),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_floating_keep_alive))
+        },
+        supportingContent = {
+            Text(
+                stringResource(
+                    if (enabled && !permitted) {
+                        CoreCommonR.string.settings_usb_exclusive_floating_keep_alive_permission
+                    } else {
+                        CoreCommonR.string.settings_usb_exclusive_floating_keep_alive_desc
+                    }
+                )
+            )
+        },
+        trailingContent = {
+            MiuixSettingsSwitch(checked = enabled, onCheckedChange = toggle)
         },
         colors = transparentListItemColors()
     )

@@ -8,7 +8,9 @@ import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
+import moe.ouom.neriplayer.core.player.policy.usb.keepalive.shouldShowUsbExclusiveFloatingKeepAlive
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchor
+import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveFloatingKeepAlive
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 
 internal interface UsbExclusiveKeepAliveServiceHost {
@@ -38,9 +40,17 @@ internal class AndroidUsbExclusiveKeepAlivePort(
 
     override fun startAnchor(reason: String) {
         UsbExclusiveBackgroundAudioAnchor.start(context, reason)
+        val showFloating = shouldShowUsbExclusiveFloatingKeepAlive(
+            preferenceEnabled = PlayerManager.usbExclusiveFloatingKeepAliveEnabled,
+            overlayPermitted = UsbExclusiveFloatingKeepAlive.canDrawOverlays(context)
+        )
+        UsbExclusiveFloatingKeepAlive.update(context, showFloating, reason)
     }
 
-    override fun stopAnchor(reason: String) = UsbExclusiveBackgroundAudioAnchor.stop(reason)
+    override fun stopAnchor(reason: String) {
+        UsbExclusiveBackgroundAudioAnchor.stop(reason)
+        UsbExclusiveFloatingKeepAlive.hide(reason)
+    }
 
     override fun refreshNative() = UsbExclusiveSessionController.refresh(context)
 
@@ -54,7 +64,8 @@ internal class AndroidUsbExclusiveKeepAlivePort(
 
     override fun wakeLockHeld(): Boolean = UsbExclusiveWakeLock.isHeld()
 
-    override fun anchorDiagnostic(): String = UsbExclusiveBackgroundAudioAnchor.diagnosticSummary()
+    override fun anchorDiagnostic(): String =
+        "${UsbExclusiveBackgroundAudioAnchor.diagnosticSummary()} floating=${UsbExclusiveFloatingKeepAlive.isShowing()}"
 
     override fun usbPlaybackEnabled(): Boolean = PlayerManager.usbExclusivePlaybackEnabled
 

@@ -53,6 +53,7 @@ data class PlaybackPreferenceSnapshot(
     val playbackEqualizerEnabled: Boolean = false,
     val playbackEqualizerPreset: String = PlaybackEqualizerPresetId.FLAT,
     val playbackEqualizerCustomBandLevels: List<Int> = emptyList(),
+    val audioEffectsSettingsJson: String = "",
     val stopOnBluetoothDisconnect: Boolean = true,
     val usbExclusivePlayback: Boolean = false,
     val usbExclusiveDeviceKey: String = DEFAULT_USB_EXCLUSIVE_DEVICE_KEY,

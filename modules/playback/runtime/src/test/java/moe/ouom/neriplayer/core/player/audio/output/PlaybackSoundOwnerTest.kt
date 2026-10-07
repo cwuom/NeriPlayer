@@ -32,21 +32,17 @@ class PlaybackSoundOwnerTest {
     }
 
     @Test
-    fun `new equalizer request supersedes older delayed effect`() = runTest {
+    fun `newer sound request supersedes one that has not been applied yet`() = runTest {
         val port = RecordingPort()
         val engine = RecordingEngine()
         val owner = PlaybackSoundOwner(backgroundScope, backgroundScope, port, engine)
 
-        owner.setEqualizerEnabled(true, persist = false)
-        runCurrent()
-        advanceTimeBy(24L)
-        owner.setEqualizerEnabled(false, persist = false)
-        runCurrent()
-        advanceTimeBy(48L)
+        owner.setVolumeNormalizationEnabled(true, persist = false)
+        owner.setVolumeNormalizationEnabled(false, persist = false)
         runCurrent()
 
         assertEquals(1, engine.applied.size)
-        assertFalse(engine.applied.single().equalizerEnabled)
+        assertFalse(engine.applied.single().volumeNormalizationEnabled)
     }
 
     @Test
@@ -92,19 +88,22 @@ class PlaybackSoundOwnerTest {
     }
 
     @Test
-    fun `equalizer band edits validate index and replace custom levels`() = runTest {
+    fun `speed and pitch reset keeps balance and normalization`() = runTest {
         val engine = RecordingEngine()
         val owner = PlaybackSoundOwner(backgroundScope, backgroundScope, RecordingPort(), engine)
-        owner.updateEqualizerBandLevel(-1, 250, persist = false)
-        assertTrue(engine.applied.isEmpty())
+        owner.setSpeed(1.5f, persist = false)
+        owner.setPitch(0.8f, persist = false)
+        owner.setVolumeBalance(0.3f, persist = false)
+        owner.setVolumeNormalizationEnabled(true, persist = false)
 
-        owner.updateEqualizerBandLevel(0, 250, persist = false)
-        advanceTimeBy(48L)
+        owner.resetSpeedAndPitch(persist = false)
         runCurrent()
 
-        assertTrue(owner.config.equalizerEnabled)
-        assertEquals(250, owner.config.customBandLevelsMb.first())
-        assertEquals(1, engine.applied.size)
+        assertEquals(1f, owner.config.speed, 0.0001f)
+        assertEquals(1f, owner.config.pitch, 0.0001f)
+        assertEquals(0.3f, owner.config.volumeBalance, 0.0001f)
+        assertTrue(owner.config.volumeNormalizationEnabled)
+        assertEquals(owner.config, engine.applied.last())
     }
 
     @Test
@@ -112,8 +111,7 @@ class PlaybackSoundOwnerTest {
         val port = RecordingPort()
         val engine = RecordingEngine()
         val owner = PlaybackSoundOwner(backgroundScope, backgroundScope, port, engine)
-        owner.setEqualizerEnabled(true, persist = true)
-        runCurrent()
+        owner.setVolumeNormalizationEnabled(true, persist = true)
         owner.rebindScopes(backgroundScope, backgroundScope)
         advanceTimeBy(200L)
         runCurrent()
@@ -139,28 +137,25 @@ class PlaybackSoundOwnerTest {
     }
 
     @Test
-    fun `every heavy sound effect change uses delayed engine apply`() = runTest {
+    fun `every applied sound change reaches the engine once settled`() = runTest {
         val engine = RecordingEngine()
         val owner = PlaybackSoundOwner(backgroundScope, backgroundScope, RecordingPort(), engine)
-        val effectChanges = listOf(
-            owner.config.copy(equalizerEnabled = true),
-            owner.config.copy(presetId = "rock"),
-            owner.config.copy(customBandLevelsMb = listOf(100)),
-            owner.config.copy(loudnessGainMb = 100)
+        val changes = listOf(
+            owner.config.copy(speed = 1.5f),
+            owner.config.copy(pitch = 1.2f),
+            owner.config.copy(volumeBalance = -0.4f),
+            owner.config.copy(volumeNormalizationEnabled = true)
         )
-        effectChanges.forEach { next ->
+        changes.forEach { next ->
             owner.applyConfig(next, persist = false)
             runCurrent()
-            advanceTimeBy(48L)
-            runCurrent()
         }
-        assertEquals(effectChanges.size, engine.applied.size)
+        assertEquals(changes, engine.applied)
     }
 
     private class RecordingEngine : PlaybackSoundEngine {
         val applied = mutableListOf<PlaybackSoundConfig>()
         override fun attachPlayer(player: ExoPlayer?): PlaybackSoundState = PlaybackSoundState()
-        override fun onAudioSessionIdChanged(audioSessionId: Int?): PlaybackSoundState = PlaybackSoundState()
         override fun updateConfig(config: PlaybackSoundConfig): PlaybackSoundState {
             applied += config
             return PlaybackSoundState()

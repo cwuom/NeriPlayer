@@ -116,6 +116,8 @@ internal class UsbExclusiveAudioSink(
     private fun syncVolumeRoute() {
         volumeOwner.setNativeHandle(if (usingNative) nativeHandle else 0L)
     }
+
+    fun isNativeOutputActive(): Boolean = usingNative
     private var fallbackConfigured = false
     private var configuredFormat: Format? = null
     private var configuredBufferSize = 0
@@ -975,8 +977,6 @@ internal class UsbExclusiveAudioSink(
             listenTogetherSyncPlaybackRate = PlayerManager.listenTogetherSyncPlaybackRate,
             usbExclusivePlaybackEnabled = true
         )
-        if (soundConfig.equalizerEnabled) return "equalizer_requires_system_audio_session"
-        if (soundConfig.loudnessGainMb > 0) return "loudness_requires_system_audio_session"
         if (
             abs(soundConfig.speed - 1f) > PARAMETER_EPSILON ||
             abs(soundConfig.pitch - 1f) > PARAMETER_EPSILON ||
