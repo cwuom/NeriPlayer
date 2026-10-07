@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.startup.legacy
 
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.policy.publication.isAcceptedDownloadedAudioEmbeddingState
 import org.json.JSONObject
@@ -100,6 +101,8 @@ internal object LegacyDownloadUpgradeMetadataMerger {
             payload.optString("stableKey")
         )
         stableKey?.let { result.put("stableKey", it) }
+        // v15 目录把界面文案“本地文件”存成了专辑，新元数据只保留真实专辑
+        if (LocalSongSupport.isPlaceholderAlbum(result.optString("album"))) result.remove("album")
 
         val effectiveAudioName = audioFileName.trim().takeIf(String::isNotBlank)
         effectiveAudioName?.let { result.put("audioFileName", it) }

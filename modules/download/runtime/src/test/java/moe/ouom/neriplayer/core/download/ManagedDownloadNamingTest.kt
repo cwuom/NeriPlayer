@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_FILE_NAME_U
 import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.naming.managedDownloadIdentityHash
+import moe.ouom.neriplayer.core.download.naming.normalizeManagedDownloadAlbumName
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.identity.identity
@@ -19,6 +20,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManagedDownloadNamingTest {
+
+    @Test
+    fun `album names drop source tags and placeholders`() {
+        assertEquals(
+            listOf(null, null, "茫", null, null, null, null, "叶惠美"),
+            listOf(" ", "Netease", "Netease茫", "Bilibili", "bilibili|BV1xx", "本地文件", "local", " 叶惠美 ")
+                .map(::normalizeManagedDownloadAlbumName)
+        )
+    }
 
     @Test
     fun `renderManagedDownloadBaseName uses readable default template`() {
@@ -163,6 +173,26 @@ class ManagedDownloadNamingTest {
             listOf("歌曲", "歌手", null, "netease"),
             listOf(parsedCurrent?.title, parsedCurrent?.artist, parsedCurrent?.album, parsedCurrent?.source)
         )
+    }
+
+    @Test
+    fun `catalog fallback albums never become a file name segment`() {
+        listOf("本地文件", "Local Files", "__local_files__", "local").forEach { placeholder ->
+            val song = SongItem(
+                id = 123L,
+                name = "歌曲",
+                artist = "歌手",
+                album = placeholder,
+                albumId = 0L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                channelId = "netease",
+                audioId = "123"
+            )
+
+            assertEquals("album=$placeholder", "歌曲 - 歌手 - netease", renderManagedDownloadBaseName(song))
+            assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 - $placeholder - netease"))
+        }
     }
 
     @Test

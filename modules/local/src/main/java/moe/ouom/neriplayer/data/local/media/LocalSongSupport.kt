@@ -33,6 +33,14 @@ import java.util.Locale
 object LocalSongSupport {
     const val LOCAL_ALBUM_IDENTITY = "__local_files__"
 
+    /** “本地文件”这类兜底专辑只用于显示，持久化、命名和校验都按无专辑处理 */
+    fun isPlaceholderAlbum(album: String?): Boolean {
+        val normalized = album?.trim()
+        return normalized.isNullOrBlank() ||
+            normalized == LOCAL_ALBUM_IDENTITY ||
+            LocalFilesPlaylist.matches(normalized)
+    }
+
     fun isLocalSong(song: SongItem, context: Context? = null): Boolean {
         return !song.localFilePath.isNullOrBlank() ||
             isLocalMediaUri(song.mediaUri) ||

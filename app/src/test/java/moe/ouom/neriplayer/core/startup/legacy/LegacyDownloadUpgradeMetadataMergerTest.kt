@@ -44,6 +44,31 @@ class LegacyDownloadUpgradeMetadataMergerTest {
     }
 
     @Test
+    fun localFilesAlbumLabelFromVersion15CatalogIsNotCarriedIntoNewMetadata() {
+        listOf("本地文件", "Local Files").forEach { label ->
+            val merged = LegacyDownloadUpgradeMetadataMerger.merge(
+                payload = JSONObject()
+                    .put("stableKey", "7|netease|")
+                    .put("name", "Song")
+                    .put("artist", "Artist")
+                    .put("album", label)
+                    .put("downloadTime", 1234L),
+                existing = null,
+                audioFileName = "song.mp3"
+            )
+
+            assertFalse("label=$label", merged.has("album"))
+            assertFalse(merged.getJSONObject("restorableMetadata").getJSONObject("baseline").has("album"))
+        }
+        val real = LegacyDownloadUpgradeMetadataMerger.merge(
+            payload = JSONObject().put("stableKey", "7|netease|").put("album", "Parklife").put("downloadTime", 1234L),
+            existing = null,
+            audioFileName = "song.mp3"
+        )
+        assertEquals("Parklife", real.getString("album"))
+    }
+
+    @Test
     fun existingMetadataWinsForUserOverridesButPayloadFillsMissingFields() {
         val merged = LegacyDownloadUpgradeMetadataMerger.merge(
             payload = JSONObject(

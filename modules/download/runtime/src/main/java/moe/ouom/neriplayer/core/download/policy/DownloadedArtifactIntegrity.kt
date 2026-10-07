@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadedArtifactIntegrityResult
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import kotlin.math.abs
 import kotlin.math.max
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -70,7 +71,7 @@ internal fun verifyDownloadedArtifactIntegrity(
         required = song.artist.isNotBlank()
     )
     addOptionalExactIssue(
-        expected = song.album,
+        expected = song.album.takeUnless(LocalSongSupport::isPlaceholderAlbum),
         actual = metadata.album,
         issue = DownloadedArtifactIntegrityIssue.ALBUM_MISMATCH,
         issues = issues

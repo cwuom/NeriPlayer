@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.policy.verifyDownloadedArtifactIntegrity
 import moe.ouom.neriplayer.core.download.manager.catalog.buildSongFromDurableMetadata
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.data.model.SongItem
@@ -275,6 +276,34 @@ class DownloadedArtifactIntegrityTest {
         )
 
         assertTrue(result.isValid)
+    }
+
+    @Test
+    fun `catalog fallback album is not an integrity requirement but a real album is`() {
+        listOf("本地文件", "Local Files", "__local_files__").forEach { placeholder ->
+            val song = remoteSong().copy(album = placeholder)
+            val result = verifyDownloadedArtifactIntegrity(
+                song = song,
+                metadata = completeMetadata(song).copy(album = null),
+                references = readableReferences(),
+                expectCover = true,
+                expectOriginalLyric = true,
+                expectTranslatedLyric = true,
+                expectRomanizedLyric = true
+            )
+            assertFalse("album=$placeholder ${result.issues}", DownloadedArtifactIntegrityIssue.ALBUM_MISMATCH in result.issues)
+        }
+        val real = remoteSong().copy(album = "Parklife")
+        val mismatch = verifyDownloadedArtifactIntegrity(
+            song = real,
+            metadata = completeMetadata(real).copy(album = null),
+            references = readableReferences(),
+            expectCover = true,
+            expectOriginalLyric = true,
+            expectTranslatedLyric = true,
+            expectRomanizedLyric = true
+        )
+        assertTrue(DownloadedArtifactIntegrityIssue.ALBUM_MISMATCH in mismatch.issues)
     }
 
     private fun remoteSong(): SongItem {
