@@ -82,6 +82,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val PENDING_AUDIO_RECOVERY_PARALLELISM = 8
@@ -729,6 +730,7 @@ internal fun GlobalDownloadManager.repairFinalizedDownloadedCoversFromRoot(
                 return@launch
             }
             val nextCandidateIndex = AtomicInteger(0)
+            val coverRepaired = AtomicBoolean(false)
             coroutineScope {
                 List(
                     size = minOf(METADATA_POST_PROCESSING_PARALLELISM, candidates.size)
@@ -757,14 +759,21 @@ internal fun GlobalDownloadManager.repairFinalizedDownloadedCoversFromRoot(
                                     if (!isFinalizedDownloadedMetadata(currentMetadata)) {
                                         return@withSongExecutionLock
                                     }
-                                    val beforeRepair =
-                                        buildOptimisticDownloadedSong(song, audio)
+                                    // 启动时内存目录可能尚未恢复，封面以 sidecar 记录为准；
+                                    // 否则每次启动都会把全部封面当成缺失，重写所有 sidecar 并整库重扫
+                                    val beforeRepair = buildOptimisticDownloadedSong(song, audio)
+                                        .let { optimistic ->
+                                            optimistic.copy(
+                                                coverPath = optimistic.coverPath ?: currentMetadata.coverPath
+                                            )
+                                        }
                                     val repaired = repairDownloadedCoverIfMissing(
                                         context = appContext,
                                         song = song,
                                         downloadedSong = beforeRepair
                                     )
                                     if (repaired.coverPath != beforeRepair.coverPath) {
+                                        coverRepaired.set(true)
                                         publishOptimisticDownloadedSongs(
                                             appContext,
                                             listOf(repaired)
@@ -780,7 +789,8 @@ internal fun GlobalDownloadManager.repairFinalizedDownloadedCoversFromRoot(
                 }.awaitAll()
             }
             if (
-                !isDownloadAdmissionTicketCurrent(appContext, admissionTicket)
+                !coverRepaired.get() ||
+                    !isDownloadAdmissionTicketCurrent(appContext, admissionTicket)
             ) {
                 return@launch
             }

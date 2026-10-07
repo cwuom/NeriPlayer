@@ -477,6 +477,7 @@ internal class DownloadedAudioMetadataStore(
             coverAssetFileName = materialized?.fileName
         )
             ?: return false
+        if (patchedPayload == raw) return true
         var lastError: Throwable? = null
         repeat(writeAttempts) { attempt ->
             val result = try {
