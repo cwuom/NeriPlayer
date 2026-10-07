@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.identity
 
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -43,6 +45,7 @@ import java.util.Locale
 private const val YOUTUBE_MUSIC_IDENTITY_ALBUM = "youtube_music"
 
 fun SongItem.identity(): SongIdentity {
+    ServerSongRef.from(this)?.let { return SongIdentity(it.numericId, ServerSongRef.CHANNEL, it.mediaUri) }
     normalizedSourceStableIdentity()?.let { return it }
     normalizedRemoteIdentity()?.let { return it }
     return SongIdentity(

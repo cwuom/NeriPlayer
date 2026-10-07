@@ -1,5 +1,13 @@
 package moe.ouom.neriplayer.core.di
 
+import moe.ouom.neriplayer.platform.subsonic.repository.SubsonicRepository
+
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicResourceInterceptor
+
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicClient
+
+import moe.ouom.neriplayer.platform.subsonic.auth.SubsonicAccounts
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -245,6 +253,9 @@ object AppContainer {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private const val YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS = 20_000L
 
+    val subsonicAccounts by lazy { SubsonicAccounts(application) }
+    val subsonicRepository by lazy { SubsonicRepository(subsonicAccounts, SubsonicClient(sharedOkHttpClient)) }
+
     // 基础 Repo
     val settingsRepo by lazy { SettingsRepository(application) }
     val listenTogetherPreferences by lazy { ListenTogetherPreferences(application) }
@@ -298,6 +309,7 @@ object AppContainer {
     val sharedOkHttpClient by lazy {
         val clientBuilder = OkHttpClient.Builder()
             .proxySelector(DynamicProxySelector)
+            .addInterceptor(SubsonicResourceInterceptor { subsonicAccounts })
             .addInterceptor { chain ->
                 val request = chain.request()
                 val host = request.url.host.lowercase()

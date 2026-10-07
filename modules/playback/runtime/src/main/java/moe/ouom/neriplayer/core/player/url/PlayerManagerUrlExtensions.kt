@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.core.player.url
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
+
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.host.PlayerDownloadAccess
 import moe.ouom.neriplayer.core.player.runtime.source.retrySongUrlResolution
@@ -168,6 +170,16 @@ internal suspend fun PlayerManager.resolveSongUrl(
     playbackRequestTokenOverride: Long? = null,
     shouldApplyCacheMutation: () -> Boolean = { true }
 ): SongUrlResult {
+    if (song.isServerSong()) {
+        val result = PlayerDependencies.repositories.subsonicRepository?.playback(song) ?: SongUrlResult.Failure
+        if (result == SongUrlResult.RequiresLogin) {
+            sideEffects.emitError {
+                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable)))
+            }
+            return SongUrlResult.Failure
+        }
+        return result
+    }
     NPLogger.d(
         "NERI-PlayerManager",
         "resolveSongUrl: song=${song.name}, source=${song.album}, forceRefresh=$forceRefresh, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"

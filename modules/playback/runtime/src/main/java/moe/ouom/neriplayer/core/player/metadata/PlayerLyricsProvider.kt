@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.metadata
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -161,7 +163,7 @@ fun resolveLyricTextForPlayback(
 }
 
 internal fun shouldLoadRemoteLyrics(song: SongItem): Boolean {
-    return !song.isLocalSong()
+    return !song.isLocalSong() && !song.isServerSong()
 }
 
 fun shouldReadManagedDownloadLyrics(
@@ -1177,6 +1179,15 @@ object PlayerLyricsProvider {
                         return@withContext emptyList()
                     }
                     return@withContext entries
+                }
+            }
+            if (song.isServerSong()) {
+                return@withContext try {
+                    PlayerDependencies.repositories.subsonicRepository?.lyrics(song).orEmpty()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    emptyList()
                 }
             }
             if (song.isLocalSong()) {

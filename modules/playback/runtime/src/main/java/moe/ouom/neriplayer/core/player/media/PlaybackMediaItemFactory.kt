@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.core.player.media
 
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
+
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import android.content.Context
@@ -31,6 +33,7 @@ internal object PlaybackMediaItemFactory {
         biliQuality: () -> String,
         neteaseQuality: () -> String
     ): String {
+        ServerSongRef.from(song)?.let { return it.cacheKey }
         if (LocalSongSupport.isLocalSong(song, context)) return "local-${song.stableKey().hashCode()}"
         if (isYouTubeSource(song)) {
             return youtubeSongCacheKey(song, youtubeQualityOverride, youtubePreferM4a, youtubeQuality)

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_my_music">我的音乐</string>
+    <string name="server_manage">音乐服务器</string>
+    <string name="server_empty">添加音乐服务器，浏览和播放自己的曲库。</string>
+    <string name="server_search_hint">搜索歌曲或歌手</string>
+    <string name="server_search">搜索</string>
+    <string name="server_back_albums">返回专辑列表</string>
+    <string name="server_retry">重试</string>
+    <string name="server_no_results">暂无结果</string>
+    <string name="server_more">加载更多</string>
+    <string name="server_close">关闭</string>
+    <string name="server_remove">移除</string>
+    <string name="server_label">名称（可选）</string>
+    <string name="server_address">服务器地址</string>
+    <string name="server_username">用户名</string>
+    <string name="server_password">密码</string>
+    <string name="server_address_help">填写完整地址，例如 https://music.example.com/navidrome/；可带端口和子路径。HTTP 连接不加密。移除后，已有歌曲将无法连接此账号。</string>
+    <string name="server_connect">连接并添加</string>
+    <string name="server_unavailable">音乐服务器账号不可用，请在“我的音乐”中检查服务器配置</string>
+</resources>

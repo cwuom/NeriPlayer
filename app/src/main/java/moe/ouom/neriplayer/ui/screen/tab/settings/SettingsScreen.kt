@@ -831,6 +831,7 @@ internal fun SettingsScreen(
 
                         SettingsPage.PlaybackSource to {
                             miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
+                                moe.ouom.neriplayer.ui.screen.server.MusicServerEntry()
                                 YouTubePlaybackSourceSetting(
                                     repository = repository,
                                     highlightTargetId = settingsHighlightTargetId,
