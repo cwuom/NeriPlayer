@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import moe.ouom.neriplayer.data.model.download.DownloadFailureReason
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.data.model.download.DownloadTaskSummary
@@ -465,7 +466,8 @@ internal class DownloadTaskStore(
         songs: List<SongItem>,
         status: DownloadStatus = DownloadStatus.QUEUED,
         durableAttemptIds: Map<String, Long> = emptyMap(),
-        statusesBySongKey: Map<String, DownloadStatus> = emptyMap()
+        statusesBySongKey: Map<String, DownloadStatus> = emptyMap(),
+        failureReasonsBySongKey: Map<String, DownloadFailureReason> = emptyMap()
     ): Map<String, Long> {
         if (songs.isEmpty()) {
             return emptyMap()
@@ -477,6 +479,8 @@ internal class DownloadTaskStore(
             songs.distinctBy { it.stableKey() }.forEach { song ->
                 val songKey = song.stableKey()
                 val initialStatus = statusesBySongKey[songKey] ?: status
+                val initialFailureReason = failureReasonsBySongKey[songKey]
+                    ?.takeIf { initialStatus == DownloadStatus.FAILED }
                 if (isClearKeyBlockedLocked(songKey)) return@forEach
                 val existingIndex = existingIndexesBySongKey[songKey]
                 val existingTask = existingIndex?.let(updatedTasks::get)
@@ -498,7 +502,8 @@ internal class DownloadTaskStore(
                     attemptIds[songKey] = existingTask.attemptId
                     updatedTasks[requireNotNull(existingIndex)] = existingTask.copy(
                         song = song,
-                        status = initialStatus
+                        status = initialStatus,
+                        failureReason = initialFailureReason
                     )
                     return@forEach
                 }
@@ -509,7 +514,8 @@ internal class DownloadTaskStore(
                     song = song,
                     progress = null,
                     status = initialStatus,
-                    attemptId = attemptId
+                    attemptId = attemptId,
+                    failureReason = initialFailureReason
                 )
                 if (existingIndex == null) {
                     existingIndexesBySongKey[songKey] = updatedTasks.size
@@ -544,18 +550,14 @@ internal class DownloadTaskStore(
     fun updateTaskStatus(
         songKey: String,
         status: DownloadStatus,
-        expectedAttemptId: Long? = null
+        expectedAttemptId: Long? = null,
+        failureReason: DownloadFailureReason? = null
     ): Boolean {
-        val retainedProgress = status == DownloadStatus.WAITING_NETWORK
-        if (!retainedProgress) {
+        if (status != DownloadStatus.WAITING_NETWORK) {
             clearProgressPublishState(songKey)
         }
         return updateTask(songKey, expectedAttemptId) { task ->
-            val nextProgress = if (retainedProgress) task.progress else null
-            if (task.status == status && task.progress == nextProgress) {
-                return@updateTask task
-            }
-            task.copy(status = status, progress = nextProgress)
+            task.withStatus(status, failureReason)
         }
     }
 
@@ -837,3 +839,13 @@ internal class DownloadTaskStore(
         return updatedTasks
     }
 }
+
+/** 只有等待网络保留进度，只有失败保留原因 */
+internal fun DownloadTask.withStatus(
+    status: DownloadStatus,
+    failureReason: DownloadFailureReason?
+): DownloadTask = copy(
+    status = status,
+    progress = progress.takeIf { status == DownloadStatus.WAITING_NETWORK },
+    failureReason = failureReason.takeIf { status == DownloadStatus.FAILED }
+)

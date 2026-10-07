@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadStage
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.manager.runtime.POST_CORE_DOWNLOAD_OPERATION_STATES
+import moe.ouom.neriplayer.data.model.download.DownloadFailureReason
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import kotlinx.coroutines.CancellationException
@@ -476,8 +477,26 @@ internal fun resolveRecoveredDownloadProgress(
 
 internal data class RecoveredDownloadTaskPresentation(
     val status: DownloadStatus,
-    val stage: DownloadStage
+    val stage: DownloadStage,
+    val failureReason: DownloadFailureReason? = null
 )
+
+internal fun downloadSourceUnavailableErrorCode(reason: DownloadFailureReason): String =
+    when (reason) {
+        DownloadFailureReason.PREVIEW_ONLY ->
+            GlobalDownloadManager.DOWNLOAD_SOURCE_PREVIEW_ONLY_ERROR_CODE
+        DownloadFailureReason.SOURCE_UNAVAILABLE ->
+            GlobalDownloadManager.DOWNLOAD_SOURCE_UNAVAILABLE_ERROR_CODE
+    }
+
+internal fun downloadFailureReasonForErrorCode(errorCode: String?): DownloadFailureReason? =
+    when (errorCode?.trim()) {
+        GlobalDownloadManager.DOWNLOAD_SOURCE_PREVIEW_ONLY_ERROR_CODE ->
+            DownloadFailureReason.PREVIEW_ONLY
+        GlobalDownloadManager.DOWNLOAD_SOURCE_UNAVAILABLE_ERROR_CODE ->
+            DownloadFailureReason.SOURCE_UNAVAILABLE
+        else -> null
+    }
 
 internal fun recoveredDownloadTaskPresentation(
     operationState: String,
@@ -493,7 +512,8 @@ internal fun recoveredDownloadTaskPresentation(
     if (operationState == "INVALID" || operationState == "METADATA_ACTION_REQUIRED") {
         return RecoveredDownloadTaskPresentation(
             status = DownloadStatus.FAILED,
-            stage = DownloadStage.WAITING_RETRY
+            stage = DownloadStage.WAITING_RETRY,
+            failureReason = downloadFailureReasonForErrorCode(lastErrorCode)
         )
     }
     val normalizedErrorCode = lastErrorCode?.trim()?.takeIf(String::isNotBlank)

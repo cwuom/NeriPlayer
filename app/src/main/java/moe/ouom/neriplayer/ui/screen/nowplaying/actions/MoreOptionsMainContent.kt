@@ -65,6 +65,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.presentation.downloadFailureReasonMessageRes
 import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -359,7 +360,11 @@ internal fun DownloadProgressContent(task: DownloadTask?) {
                 }
             }
         }
-        task?.status == DownloadStatus.FAILED -> Text(stringResource(CoreCommonR.string.download_failed))
+        task?.status == DownloadStatus.FAILED -> Text(
+            stringResource(
+                task?.let(::downloadFailureReasonMessageRes) ?: CoreCommonR.string.download_failed
+            )
+        )
     }
 }
 

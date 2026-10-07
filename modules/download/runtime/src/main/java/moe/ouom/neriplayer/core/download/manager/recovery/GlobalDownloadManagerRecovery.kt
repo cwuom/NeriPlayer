@@ -1163,7 +1163,12 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                 durableAttemptIds = durableAttemptIds,
                 statusesBySongKey = restorableEntries.associate {
                     it.request.song.stableKey() to presentationsByEntry.getValue(it).status
-                }
+                },
+                failureReasonsBySongKey = restorableEntries.mapNotNull { entry ->
+                    presentationsByEntry.getValue(entry).failureReason?.let { reason ->
+                        entry.request.song.stableKey() to reason
+                    }
+                }.toMap()
             )
             restorableEntries.forEach { entry ->
                 if (entry.request.attemptId == null) {

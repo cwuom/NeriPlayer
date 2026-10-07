@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
 import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadFailureReason
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.data.model.download.DownloadTaskSummary
@@ -122,6 +123,7 @@ import java.util.concurrent.atomic.AtomicLong
 object GlobalDownloadManager {
     internal const val TAG = "GlobalDownloadManager"
     internal const val DOWNLOAD_SOURCE_UNAVAILABLE_ERROR_CODE = "DOWNLOAD_SOURCE_UNAVAILABLE"
+    internal const val DOWNLOAD_SOURCE_PREVIEW_ONLY_ERROR_CODE = "DOWNLOAD_SOURCE_PREVIEW_ONLY"
     internal const val DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE = "NETWORK_UNAVAILABLE"
     internal const val DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE = "DOWNLOAD_TRANSIENT_FAILURE"
     internal const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v4.json"
@@ -1337,9 +1339,17 @@ object GlobalDownloadManager {
         status: DownloadStatus,
         expectedAttemptId: Long? = null,
         settleBatchPresentation: Boolean = true,
-        operationId: String? = null
+        operationId: String? = null,
+        failureReason: DownloadFailureReason? = null
     ) {
-        return this.updateTaskStatusImpl(songKey, status, expectedAttemptId, settleBatchPresentation, operationId)
+        return this.updateTaskStatusImpl(
+            songKey,
+            status,
+            expectedAttemptId,
+            settleBatchPresentation,
+            operationId,
+            failureReason
+        )
     }
 
     fun removeDownloadTask(songKey: String, expectedAttemptId: Long? = null) {
