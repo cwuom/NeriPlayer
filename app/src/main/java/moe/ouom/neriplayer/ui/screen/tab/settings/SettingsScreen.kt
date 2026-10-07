@@ -517,7 +517,10 @@ internal fun SettingsScreen(
 
                         SettingsPage.Accounts to {
                             miuixSettingsSectionCardItem("${selectedPage.name}:content") {
-                                SettingsLoginExpandedContent(accountAuth)
+                                SettingsLoginExpandedContent(
+                                    controller = accountAuth,
+                                    onOpenMusicServers = { navigation.activePage = SettingsPage.MusicServers }
+                                )
                             }
                         },
 
@@ -829,9 +832,14 @@ internal fun SettingsScreen(
                             }
                         },
 
+                        SettingsPage.MusicServers to {
+                            miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
+                                moe.ouom.neriplayer.ui.screen.server.MusicServerSettingsContent()
+                            }
+                        },
+
                         SettingsPage.PlaybackSource to {
                             miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
-                                moe.ouom.neriplayer.ui.screen.server.MusicServerEntry()
                                 YouTubePlaybackSourceSetting(
                                     repository = repository,
                                     highlightTargetId = settingsHighlightTargetId,

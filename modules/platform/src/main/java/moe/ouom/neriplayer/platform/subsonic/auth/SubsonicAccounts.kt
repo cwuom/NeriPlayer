@@ -12,6 +12,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicFailureKind
 import java.util.UUID
 
 /** Public configuration deliberately excludes authentication material. */
@@ -20,8 +22,13 @@ data class SubsonicProfile(
     val label: String,
     val baseUrl: String,
     val username: String,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val revision: Long = 0L
 )
+
+class SubsonicCredentials(val profile: SubsonicProfile, val password: String) {
+    override fun toString(): String = "SubsonicCredentials(profileId=${profile.id})"
+}
 
 /** Separate encrypted store, following the existing platform account repositories. */
 class SubsonicAccounts(context: Context) {
@@ -36,24 +43,37 @@ class SubsonicAccounts(context: Context) {
     }
     private val state = MutableStateFlow<List<SubsonicProfile>>(emptyList())
     val profiles = state.asStateFlow()
+    @Volatile private var snapshot: List<SubsonicProfile>? = null
 
     suspend fun load() = withContext(Dispatchers.IO) {
-        synchronized(this@SubsonicAccounts) { publish() }
-    }
-
-    fun profile(id: String): SubsonicProfile? = synchronized(this) {
-        readProfiles().firstOrNull { it.id == id && it.enabled }
-    }
-
-    fun password(id: String): String = preferences.getString("password:$id", null)
-        ?: throw IllegalStateException("服务器账号需要重新登录")
-
-    suspend fun save(profile: SubsonicProfile, password: String) = withContext(Dispatchers.IO) {
         synchronized(this@SubsonicAccounts) {
-            val all = readProfiles().filterNot { it.id == profile.id } + profile
+            if (snapshot == null) publish(readProfiles())
+        }
+    }
+
+    /** Memory only: safe for composition and lyric first-frame reads. */
+    fun profile(id: String): SubsonicProfile? = snapshot?.firstOrNull { it.id == id && it.enabled }
+
+    /** Blocking encrypted storage access; only call from an IO worker/interceptor. */
+    fun credentials(id: String): SubsonicCredentials = synchronized(this) {
+        if (snapshot == null) publish(readProfiles())
+        val profile = profile(id) ?: throw IllegalStateException("音乐服务器账号不可用")
+        SubsonicCredentials(profile, preferences.getString("password:$id", null)
+            ?: throw IllegalStateException("服务器账号需要重新登录"))
+    }
+
+    suspend fun save(profile: SubsonicProfile, password: String, expectedRevision: Long? = null) = withContext(Dispatchers.IO) {
+        synchronized(this@SubsonicAccounts) {
+            val current = readProfiles()
+            if (expectedRevision != null) {
+                if (current.none { it.id == profile.id && it.revision == expectedRevision && it.username == profile.username }) {
+                    throw SubsonicException(-1, "Configuration changed", SubsonicFailureKind.CONFIG_CHANGED)
+                }
+            }
+            val all = current.filterNot { it.id == profile.id } + profile
             check(preferences.edit().putString("profiles", serialize(all))
                 .putString("password:${profile.id}", password).commit()) { "无法保存服务器账号" }
-            state.value = all
+            publish(all)
         }
     }
 
@@ -62,25 +82,29 @@ class SubsonicAccounts(context: Context) {
             val all = readProfiles().filterNot { it.id == id }
             check(preferences.edit().putString("profiles", serialize(all))
                 .remove("password:$id").commit()) { "无法移除服务器账号" }
-            state.value = all
+            publish(all)
         }
     }
 
-    private fun publish() { state.value = readProfiles() }
+    private fun publish(profiles: List<SubsonicProfile>) {
+        snapshot = profiles
+        state.value = profiles
+    }
 
     private fun readProfiles(): List<SubsonicProfile> {
         val data = JSONArray(preferences.getString("profiles", "[]"))
         return List(data.length()) { index ->
             val item = data.getJSONObject(index)
             SubsonicProfile(item.getString("id"), item.getString("label"),
-                item.getString("baseUrl"), item.getString("username"), item.optBoolean("enabled", true))
+                item.getString("baseUrl"), item.getString("username"), item.optBoolean("enabled", true), item.optLong("revision", 0L))
         }
     }
 
     private fun serialize(profiles: List<SubsonicProfile>): String = JSONArray().apply {
         profiles.forEach { profile -> put(JSONObject().put("id", profile.id)
             .put("label", profile.label).put("baseUrl", profile.baseUrl)
-            .put("username", profile.username).put("enabled", profile.enabled)) }
+            .put("username", profile.username).put("enabled", profile.enabled)
+            .put("revision", profile.revision)) }
     }.toString()
 
     companion object {

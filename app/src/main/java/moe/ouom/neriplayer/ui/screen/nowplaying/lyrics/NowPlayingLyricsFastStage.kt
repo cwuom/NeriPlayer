@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.lyrics.parser.resolveStoredLyricText
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
 
 internal data class NowPlayingFastLyricsResult(
     val state: LoadedLyricsState,
@@ -55,7 +56,8 @@ internal class NowPlayingLyricsLoadStages(
         val cached = request.cachedPreferredLyrics ?: request.song?.let { song ->
             sources.cachedPreferred(song, request.defaultLyricSource, request.preferWordTimedLyrics)
         }
-        return NowPlayingInitialLyricsResult(cached, buildNowPlayingInitialLyricsState(request.song, cached))
+        val initial = buildNowPlayingInitialLyricsState(request.song, cached)
+        return NowPlayingInitialLyricsResult(cached, withCachedOriginal(request, initial))
     }
 
     override suspend fun readFast(request: NowPlayingLyricsLoadRequest): NowPlayingFastLyricsResult =
@@ -68,8 +70,22 @@ internal class NowPlayingLyricsLoadStages(
         val canReadDownloaded = canReadDownloadedLyrics(song, managed)
         val downloaded = readFastDownloaded(request, canReadDownloaded)
         val local = readFastLocal(request, managed)
-        val state = resolveFastState(request, managed, local, downloaded)
+        val state = withCachedOriginal(request, resolveFastState(request, managed, local, downloaded))
         return NowPlayingFastLyricsResult(state, local, downloaded, managed, canReadDownloaded)
+    }
+
+    private fun withCachedOriginal(
+        request: NowPlayingLyricsLoadRequest,
+        state: LoadedLyricsState
+    ): LoadedLyricsState {
+        if (request.defaultLyricSource != LyricSourcePreference.Automatic ||
+            state.rawLyrics != null || state.lyrics.isNotEmpty() || state.preferredSource != null) return state
+        val song = request.song ?: return state
+        val cached = sources.cachedOriginal(song)?.takeIf { it.isNotEmpty() } ?: return state
+        return overlayConfirmedUserLyrics(song, state.copy(
+            lyrics = cached,
+            plainLyrics = cached.flattenWordTimedEntries()
+        ))
     }
 
     private fun isManagedLocalLyricSong(song: SongItem?): Boolean =

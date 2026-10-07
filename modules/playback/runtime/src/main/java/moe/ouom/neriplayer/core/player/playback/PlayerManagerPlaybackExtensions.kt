@@ -2,6 +2,8 @@
 
 package moe.ouom.neriplayer.core.player.playback
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
+
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 
@@ -569,6 +571,7 @@ internal fun PlayerManager.playAtIndex(
     }
 
     val song = currentPlaylist[index]
+    serverRecoveryPosition = null
     var keepTransitionWakeLockUntilPlaybackProgress = false
     val resolvedResumePositionMs = resolveRememberedLongFormPlaybackStartPosition(
         song = song,
@@ -875,6 +878,18 @@ internal fun PlayerManager.playAtIndex(
                 }
             }
             is SongUrlResult.Failure -> {
+                if (song.isServerSong()) {
+                    withContext(Dispatchers.Main) {
+                        if (shouldApplyResolvedMedia(requestToken, playbackRequestToken)) {
+                            stopPlaybackPreservingQueue(clearMediaUrl = true)
+                            _playbackPositionMs.value = resolvedResumePositionMs
+                            setRestoredPlayback(resolvedResumePositionMs, shouldResume = false)
+                            serverRecoveryPosition = AppQueueSongIdentity.stableKey(song) to resolvedResumePositionMs
+                            scheduleStatePersist(positionMs = resolvedResumePositionMs, shouldResumePlayback = false)
+                        }
+                    }
+                    return@launch
+                }
                 if (
                     shouldAwaitListenTogetherSharedStreamFallback(
                         song = song,
@@ -1158,10 +1173,13 @@ internal fun PlayerManager.playImpl(
             )
         }
         currentPlaylist.isNotEmpty() && currentIndex != -1 -> {
+            val serverRetryPosition = song?.let { current ->
+                serverRecoveryPosition?.takeIf { it.first == AppQueueSongIdentity.stableKey(current) }?.second
+            }
             val manualResumeDecision = resolveManualResumePlaybackDecision(
-                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
-                restoredResumePositionMs = restoredResumePositionMs,
-                persistedPlaybackPositionMs = _playbackPositionMs.value,
+                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled || serverRetryPosition != null,
+                restoredResumePositionMs = serverRetryPosition ?: restoredResumePositionMs,
+                persistedPlaybackPositionMs = serverRetryPosition ?: _playbackPositionMs.value,
                 isPlayerPrepared = preparedInPlayer,
                 currentMediaUrlResolvedAtMs = currentMediaUrlResolvedAtMs
             )
@@ -1876,6 +1894,7 @@ private fun PlayerManager.maybePersistPlaybackStatsProgress() {
 }
 
 internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolean = false) {
+    serverRecoveryPosition = null
     logQueueStopStart(clearMediaUrl)
     cancelPendingPauseRequest(resetVolumeToFull = true)
     clearPlaybackDemandCacheKey(reason = "stop_playback_preserving_queue")

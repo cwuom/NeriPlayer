@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -100,7 +103,10 @@ private fun accountStatusCopy(
 )
 
 @Composable
-internal fun SettingsLoginExpandedContent(controller: SettingsAccountAuthController) {
+internal fun SettingsLoginExpandedContent(
+    controller: SettingsAccountAuthController,
+    onOpenMusicServers: () -> Unit
+) {
     val biliVm = controller.biliVm
     val youtubeVm = controller.youtubeVm
     val neteaseVm = controller.neteaseVm
@@ -154,6 +160,23 @@ internal fun SettingsLoginExpandedContent(controller: SettingsAccountAuthControl
             onOpenSheet = controller.actions.openNeteaseSheet
         )
         SettingsQqAccountRow()
+        ListItem(
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.LibraryMusic,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(CoreCommonR.string.server_manage)) },
+            supportingContent = { Text(stringResource(CoreCommonR.string.server_settings_desc)) },
+            trailingContent = {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+            },
+            modifier = Modifier.settingsItemClickable(onClick = onOpenMusicServers),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
     }
 }
 

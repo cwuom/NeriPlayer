@@ -1182,13 +1182,8 @@ object PlayerLyricsProvider {
                 }
             }
             if (song.isServerSong()) {
-                return@withContext try {
-                    PlayerDependencies.repositories.subsonicRepository?.lyrics(song).orEmpty()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    emptyList()
-                }
+                // Server failures must reach the existing lyric load owner, not look like no lyrics.
+                return@withContext PlayerDependencies.repositories.subsonicRepository?.lyrics(song).orEmpty()
             }
             if (song.isLocalSong()) {
                 return@withContext emptyList()

@@ -361,6 +361,7 @@ internal fun resolveNowPlayingPlaybackSourceType(
     if (isLocalSong || isNeteaseLocalFallback) return PlaybackSourceType.LOCAL
 
     when (playbackAudioSource) {
+        PlaybackAudioSource.SUBSONIC -> return PlaybackSourceType.SUBSONIC
         PlaybackAudioSource.NETEASE -> return PlaybackSourceType.NETEASE
         PlaybackAudioSource.BILIBILI -> return PlaybackSourceType.BILIBILI
         PlaybackAudioSource.YOUTUBE_MUSIC -> return PlaybackSourceType.YOUTUBE_MUSIC
@@ -713,6 +714,15 @@ fun NowPlayingScreen(
     )
     val loadedLyricsState = lyricsLoadOwner.state
     val secondaryLyricsResolved = lyricsLoadOwner.secondaryResolved
+    LaunchedEffect(lyricsLoadOwner, lyricsLoadOwner.errorMessage) {
+        val message = lyricsLoadOwner.errorMessage ?: return@LaunchedEffect
+        val result = snackbarHostState.showNeriSnackbar(
+            message = context.getString(CoreCommonR.string.server_lyrics_error, message),
+            actionLabel = context.getString(CoreCommonR.string.server_retry),
+            withDismissAction = true
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) lyricsLoadOwner.retry()
+    }
     val lyrics = loadedLyricsState.lyrics
     val translatedLyrics = loadedLyricsState.translatedLyrics
     val rawLyricsText = loadedLyricsState.rawLyrics

@@ -37,6 +37,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
@@ -240,6 +242,11 @@ internal fun SettingsSearchField(
                     }
                 }
             )
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange(""); focusManager.clearFocus() }) {
+                    Icon(Icons.Outlined.Close, contentDescription = stringResource(CoreCommonR.string.settings_search_clear_query))
+                }
+            }
         }
     }
 }
@@ -251,6 +258,11 @@ internal fun SettingsSearchResultsCard(
     modifier: Modifier = Modifier
 ) {
     MiuixSettingsSectionCard(modifier = modifier) {
+        Text(
+            stringResource(CoreCommonR.string.settings_search_results_title),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleSmall
+        )
         if (results.isEmpty()) {
             Text(
                 text = stringResource(CoreCommonR.string.settings_search_empty),
@@ -286,7 +298,9 @@ private fun SettingsSearchResultRow(
         },
         headlineContent = { Text(entry.title) },
         supportingContent = {
-            Text(stringResource(entry.page.titleRes))
+            val parent = entry.page.backTargetPage()
+            val pageTitle = stringResource(entry.page.titleRes)
+            Text(if (parent == null) pageTitle else "${stringResource(parent.titleRes)} → $pageTitle")
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )

@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.player.runtime.prefetch.resolveGenericUrlPrefetc
 import moe.ouom.neriplayer.core.player.runtime.prefetch.resolveGenericMediaPrefetchBytes
 import moe.ouom.neriplayer.core.player.runtime.prefetch.resolveGenericMediaPrefetchCacheKey
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
 import android.os.SystemClock
 import androidx.media3.common.Player
 import kotlinx.coroutines.CancellationException
@@ -37,7 +38,9 @@ internal fun PlayerManager.prefetchNextGenericTrackUrl() {
         else -> -1
     }
     val nextSong = currentPlaylist.getOrNull(nextIndex)
+    // Enable server media prefetch after bounded cancellation and bandwidth arbitration are verified.
     if (nextSong == null ||
+        nextSong.isServerSong() ||
         isLocalSong(nextSong) ||
         isYouTubeMusicTrack(nextSong) ||
         isDirectStreamUrl(nextSong.streamUrl)

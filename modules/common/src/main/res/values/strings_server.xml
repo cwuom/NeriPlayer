@@ -2,7 +2,7 @@
 <resources>
     <string name="server_my_music">我的音乐</string>
     <string name="server_manage">音乐服务器</string>
-    <string name="server_empty">添加音乐服务器，浏览和播放自己的曲库。</string>
+    <string name="server_empty">请在设置 → 第三方平台登录 → 音乐服务器中添加服务器。</string>
     <string name="server_search_hint">搜索歌曲或歌手</string>
     <string name="server_search">搜索</string>
     <string name="server_back_albums">返回专辑列表</string>
@@ -17,5 +17,32 @@
     <string name="server_password">密码</string>
     <string name="server_address_help">填写完整地址，例如 https://music.example.com/navidrome/；可带端口和子路径。HTTP 连接不加密。移除后，已有歌曲将无法连接此账号。</string>
     <string name="server_connect">连接并添加</string>
-    <string name="server_unavailable">音乐服务器账号不可用，请在“我的音乐”中检查服务器配置</string>
+    <string name="server_unavailable">音乐服务器账号不可用，请在设置 → 第三方平台登录 → 音乐服务器中检查配置</string>
+    <string name="server_settings_desc">添加、编辑或重新登录 Navidrome / OpenSubsonic 音乐服务器。</string>
+    <string name="server_add">添加音乐服务器</string>
+    <string name="server_edit">编辑与重新登录</string>
+    <string name="server_save">验证并保存</string>
+    <string name="server_cancel">取消</string>
+    <string name="server_edit_help">密码留空则保持原密码。此处用于修改同一服务器的名称、地址或密码，已有歌曲关联会保留；更换服务器实例或账号请新增配置。</string>
+    <string name="server_remove_warning">移除“%1$s”后，已有歌曲将无法连接此账号。服务器上的音乐不会删除。</string>
+    <string name="server_quality_original">原始</string>
+    <string name="server_source">音乐服务器</string>
+    <string name="server_timeout">音乐服务器响应超时，请重试</string>
+    <string name="server_request_failed">音乐服务器请求失败，请检查连接和资源</string>
+    <string name="server_error_auth">服务器账号或密码不可用，请重新登录</string>
+    <string name="server_error_forbidden">该账号没有访问权限</string>
+    <string name="server_error_missing">服务器资源或接口不存在</string>
+    <string name="server_error_rate_limit">服务器请求过于频繁，请稍后重试</string>
+    <string name="server_error_service">音乐服务器暂时不可用</string>
+    <string name="server_error_network">音乐服务器连接中断，请检查网络后重试</string>
+    <string name="server_error_tls">音乐服务器安全连接失败</string>
+    <string name="server_error_protocol">音乐服务器协议版本不兼容</string>
+    <string name="server_error_response">音乐服务器返回的数据无效</string>
+    <string name="server_error_input">请检查地址、用户名和密码；地址不能包含认证参数</string>
+    <string name="server_error_config_changed">服务器配置已变化，请重新打开编辑页面</string>
+    <string name="server_error_load_accounts">无法读取音乐服务器配置，请重试</string>
+    <string name="server_error_remove_account">无法移除服务器配置，请重试</string>
+    <string name="server_lyrics_error">歌词加载失败：%1$s</string>
+    <string name="settings_search_results_title">搜索结果</string>
+    <string name="settings_search_clear_query">清空搜索</string>
 </resources>

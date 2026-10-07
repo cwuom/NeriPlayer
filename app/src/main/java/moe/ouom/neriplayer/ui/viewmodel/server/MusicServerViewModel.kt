@@ -12,6 +12,8 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
+import moe.ouom.neriplayer.platform.subsonic.api.subsonicErrorMessageRes
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.platform.subsonic.repository.ServerAlbum
 
 data class MusicServerState(
@@ -22,29 +24,45 @@ data class MusicServerState(
     val songs: List<SongItem> = emptyList(),
     val loading: Boolean = false,
     val hasMore: Boolean = false,
-    val error: String? = null
+    val error: Int? = null,
+    val accountsLoading: Boolean = false,
+    val accountsError: Int? = null
 )
 
 class MusicServerViewModel : ViewModel() {
     private val repository = AppContainer.subsonicRepository
     val accounts = repository.accounts
     val profiles = accounts.profiles
-    private val mutableState = MutableStateFlow(MusicServerState())
+    private val mutableState = MutableStateFlow(MusicServerState(accountsLoading = true))
     val state = mutableState.asStateFlow()
     private var request: Job? = null
     private var offset = 0
+    private var selectedRevision: Long? = null
+    private var accountsRequest: Job? = null
 
-    init {
-        viewModelScope.launch {
+    init { reloadAccounts() }
+
+    fun reloadAccounts() {
+        accountsRequest?.cancel()
+        accountsRequest = viewModelScope.launch {
+            mutableState.update { it.copy(accountsLoading = true, accountsError = null) }
             try { accounts.load() }
-            catch (_: Exception) { mutableState.update { it.copy(error = "无法读取音乐服务器配置") } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                mutableState.update { it.copy(accountsLoading = false, accountsError = CoreCommonR.string.server_error_load_accounts) }
+                return@launch
+            }
+            mutableState.update { it.copy(accountsLoading = false) }
             profiles.collect { list ->
-                if (list.none { it.id == state.value.profileId }) select(list.firstOrNull()?.id)
+                val selected = list.firstOrNull { it.id == state.value.profileId }
+                if (selected == null) select(list.firstOrNull()?.id)
+                else if (selectedRevision != selected.revision) select(selected.id)
             }
         }
     }
 
     fun select(id: String?) {
+        selectedRevision = id?.let { accounts.profile(it)?.revision }
         request?.cancel()
         mutableState.value = MusicServerState(profileId = id)
         load()
@@ -101,15 +119,7 @@ class MusicServerViewModel : ViewModel() {
         repository.addAccount(label, url, username, password)
 
     companion object {
-        fun userError(error: Exception, accountInput: Boolean = false): String = when (error) {
-            is TimeoutCancellationException -> "连接超时，请检查地址或网络后重试"
-            is SubsonicException -> error.message ?: "服务器请求失败"
-            is IllegalArgumentException -> if (accountInput) {
-                "请检查服务器地址、用户名和密码；地址不能包含认证参数"
-            } else {
-                "无法处理服务器请求或数据，请重试；如果持续出现，请反馈此问题"
-            }
-            else -> "连接失败，请检查服务器地址、网络和账号设置"
-        }
+        fun userError(error: Exception, accountInput: Boolean = false): Int =
+            subsonicErrorMessageRes(error, accountInput)
     }
 }

@@ -92,7 +92,7 @@ class ConditionalHttpDataSourceFactory(
     }
 
     override fun createDataSource(): HttpDataSource {
-        val dataSource = ResumableChunkedHttpDataSource(
+        val dataSource = ServerAwareHttpDataSource(ResumableChunkedHttpDataSource(
             upstreamFactory = baseFactory,
             transformDataSpec = { dataSpec ->
                 when {
@@ -108,7 +108,7 @@ class ConditionalHttpDataSourceFactory(
                     else -> dataSpec
                 }
             }
-        )
+        ))
         val statsRepository = trafficStatsRepository
         return if (statsRepository != null) {
             TrafficCountingHttpDataSource(

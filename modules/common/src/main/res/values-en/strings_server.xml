@@ -2,7 +2,7 @@
 <resources>
     <string name="server_my_music">My music</string>
     <string name="server_manage">Music servers</string>
-    <string name="server_empty">Add a music server to browse and play your library.</string>
+    <string name="server_empty">Add a server in Settings → Third-party Sign-in → Music servers.</string>
     <string name="server_search_hint">Search songs or artists</string>
     <string name="server_search">Search</string>
     <string name="server_back_albums">Back to albums</string>
@@ -17,5 +17,32 @@
     <string name="server_password">Password</string>
     <string name="server_address_help">Enter the full address, e.g. https://music.example.com/navidrome/. Ports and subpaths are supported. HTTP is unencrypted. Removing an account disconnects its existing tracks.</string>
     <string name="server_connect">Connect and add</string>
-    <string name="server_unavailable">Music server account unavailable. Check the server configuration in My music.</string>
+    <string name="server_unavailable">Music server account unavailable. Check Settings → Third-party Sign-in → Music servers.</string>
+    <string name="server_settings_desc">Add, edit or sign in again to a Navidrome / OpenSubsonic music server.</string>
+    <string name="server_add">Add music server</string>
+    <string name="server_edit">Edit or sign in again</string>
+    <string name="server_save">Verify and save</string>
+    <string name="server_cancel">Cancel</string>
+    <string name="server_edit_help">Leave the password empty to keep it. Edit the name, address or password of the same server here to retain existing tracks. Add a separate configuration for a different server or account.</string>
+    <string name="server_remove_warning">Removing “%1$s” disconnects its existing tracks. Music on the server will not be deleted.</string>
+    <string name="server_quality_original">Original</string>
+    <string name="server_source">Music server</string>
+    <string name="server_timeout">Music server response timed out. Please retry.</string>
+    <string name="server_request_failed">Music server request failed. Check the connection and resource.</string>
+    <string name="server_error_auth">The server credentials are invalid. Please sign in again.</string>
+    <string name="server_error_forbidden">This account does not have access.</string>
+    <string name="server_error_missing">The server resource or endpoint was not found.</string>
+    <string name="server_error_rate_limit">Too many server requests. Please try again later.</string>
+    <string name="server_error_service">The music server is temporarily unavailable.</string>
+    <string name="server_error_network">The music server connection was interrupted. Check your network and retry.</string>
+    <string name="server_error_tls">A secure connection to the music server could not be established.</string>
+    <string name="server_error_protocol">The music server protocol version is incompatible.</string>
+    <string name="server_error_response">The music server returned invalid data.</string>
+    <string name="server_error_input">Check the address, username and password. The address must not contain authentication parameters.</string>
+    <string name="server_error_config_changed">The server configuration changed. Reopen the editor.</string>
+    <string name="server_error_load_accounts">Could not load music server accounts. Please retry.</string>
+    <string name="server_error_remove_account">Could not remove the server account. Please retry.</string>
+    <string name="server_lyrics_error">Could not load lyrics: %1$s</string>
+    <string name="settings_search_results_title">Search results</string>
+    <string name="settings_search_clear_query">Clear search</string>
 </resources>

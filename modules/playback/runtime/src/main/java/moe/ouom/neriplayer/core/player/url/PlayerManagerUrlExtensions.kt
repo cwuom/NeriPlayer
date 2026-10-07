@@ -3,6 +3,10 @@
 package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.data.model.server.isServerSong
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
+import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
+import moe.ouom.neriplayer.platform.subsonic.api.subsonicErrorMessageRes
+import kotlinx.coroutines.TimeoutCancellationException
 
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.host.PlayerDownloadAccess
@@ -170,15 +174,20 @@ internal suspend fun PlayerManager.resolveSongUrl(
     playbackRequestTokenOverride: Long? = null,
     shouldApplyCacheMutation: () -> Boolean = { true }
 ): SongUrlResult {
-    if (song.isServerSong()) {
-        val result = PlayerDependencies.repositories.subsonicRepository?.playback(song) ?: SongUrlResult.Failure
-        if (result == SongUrlResult.RequiresLogin) {
-            sideEffects.emitError {
-                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable)))
-            }
+    val serverSong = song.isServerSong()
+    if (serverSong) {
+        val accounts = PlayerDependencies.repositories.subsonicRepository?.accounts
+        try { accounts?.load() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable))) }
             return SongUrlResult.Failure
         }
-        return result
+        val ref = ServerSongRef.from(song)
+        if (ref == null || accounts?.profile(ref.profileId) == null) {
+            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable))) }
+            return SongUrlResult.Failure
+        }
     }
     NPLogger.d(
         "NERI-PlayerManager",
@@ -254,7 +263,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
     if (
-        shouldUseDirectStreamShortcut(
+        !serverSong && shouldUseDirectStreamShortcut(
             forceRefresh = forceRefresh,
             hasListenTogetherFallback = initialListenTogetherFallback != null
         ) && isDirectStreamUrl(song.streamUrl)
@@ -351,6 +360,30 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 listenTogetherFallback = initialListenTogetherFallback,
                 preferredQualityKey = listenTogetherPreferredQualityKey(song)
             )
+        }
+    }
+    if (serverSong) {
+        return try {
+            val result = PlayerDependencies.repositories.subsonicRepository
+                ?.playback(song, forceRefresh) ?: SongUrlResult.Failure
+            if (result is SongUrlResult.Success) {
+                result.copy(audioInfo = result.audioInfo?.copy(
+                    qualityLabel = getLocalizedString(CoreCommonR.string.server_quality_original)))
+            } else {
+                sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable))) }
+                SongUrlResult.Failure
+            }
+        } catch (_: TimeoutCancellationException) {
+            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_timeout))) }
+            SongUrlResult.Failure
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: SubsonicException) {
+            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(subsonicErrorMessageRes(error)))) }
+            SongUrlResult.Failure
+        } catch (_: Exception) {
+            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_request_failed))) }
+            SongUrlResult.Failure
         }
     }
     val resolverSideEffects = if (

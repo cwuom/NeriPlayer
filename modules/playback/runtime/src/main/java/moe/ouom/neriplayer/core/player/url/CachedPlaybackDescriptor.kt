@@ -151,7 +151,8 @@ internal fun CachedPlaybackDescriptor.toPlaybackAudioInfo(
             qualityLabelForCachedSource(source, it, getLocalizedString)
         },
         qualityOptions = options,
-        codecLabel = codecLabel,
+        codecLabel = if (source == PlaybackAudioSource.SUBSONIC &&
+            mimeType in setOf("audio/mp4", "audio/m4a", "audio/x-m4a")) "M4A" else codecLabel,
         mimeType = mimeType,
         bitrateKbps = bitrateKbps,
         sampleRateHz = sampleRateHz,
@@ -169,6 +170,7 @@ private fun qualityLabelForCachedSource(
         PlaybackAudioSource.NETEASE -> qualityLabelForNetease(key, getLocalizedString)
         PlaybackAudioSource.BILIBILI -> qualityLabelForBili(key, getLocalizedString)
         PlaybackAudioSource.YOUTUBE_MUSIC -> qualityLabelForYouTube(key, getLocalizedString)
+        PlaybackAudioSource.SUBSONIC -> getLocalizedString(moe.ouom.neriplayer.common.R.string.server_quality_original)
         PlaybackAudioSource.LOCAL -> key
     }
 }

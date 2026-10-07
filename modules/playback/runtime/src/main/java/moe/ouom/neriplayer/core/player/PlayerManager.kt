@@ -522,6 +522,8 @@ object PlayerManager {
     internal var lastUrlRefreshAtMs: Long = 0L
     internal var currentMediaUrlResolvedAtMs: Long = 0L
     internal var currentPlaybackDemandCacheKey: String? = null
+    // One-shot retry position for the current server track, independent of restart preferences.
+    internal var serverRecoveryPosition: Pair<String, Long>? = null
     private val restoredPlayback = AtomicReference<RestoredPlaybackState>(RestoredPlaybackState.None)
     internal val restoredResumePositionMs: Long
         get() = restoredPlayback.get().positionMs
@@ -1769,6 +1771,13 @@ object PlayerManager {
         song: SongItem,
         preference: LyricSourcePreference
     ): PreferredLyricSourceResult? = getPreferredLyricSourceResultImpl(song, preference)
+
+    fun getCachedOriginalLyrics(song: SongItem): List<LyricEntry>? {
+        if (song.channelId != moe.ouom.neriplayer.data.model.server.ServerSongRef.CHANNEL &&
+            song.mediaUri?.startsWith("neri-server://") != true) return null
+        if (!PlayerDependencies.isInitialized()) return null
+        return PlayerDependencies.repositories.subsonicRepository?.cachedLyrics(song)
+    }
 
     fun getCachedPreferredLyricSourceResult(
         song: SongItem,

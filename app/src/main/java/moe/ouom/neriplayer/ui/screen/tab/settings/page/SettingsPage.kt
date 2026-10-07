@@ -71,6 +71,11 @@ internal enum class SettingsPage(
         descriptionRes = CoreCommonR.string.settings_playback_source_desc,
         icon = Icons.Outlined.LibraryMusic
     ),
+    MusicServers(
+        titleRes = CoreCommonR.string.server_manage,
+        descriptionRes = CoreCommonR.string.server_settings_desc,
+        icon = Icons.Outlined.LibraryMusic
+    ),
     AudioQuality(
         AutoSettingsSchema.audioQuality.metadata,
         Icons.Filled.Audiotrack
@@ -144,6 +149,7 @@ internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
 )
 
 internal fun SettingsPage.backTargetPage(): SettingsPage? = when (this) {
+    SettingsPage.MusicServers -> SettingsPage.Accounts
     SettingsPage.UsbExclusive -> SettingsPage.Playback
     SettingsPage.StorageCacheDetails -> SettingsPage.Storage
     else -> null

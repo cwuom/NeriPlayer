@@ -13,6 +13,8 @@ import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 
 internal interface NowPlayingLyricsSources {
+    fun cachedOriginal(song: SongItem): List<LyricEntry>? = null
+
     fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
         preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? = null
 
@@ -30,6 +32,9 @@ internal interface NowPlayingLyricsSources {
 }
 
 internal object PlatformNowPlayingLyricsSources : NowPlayingLyricsSources {
+    override fun cachedOriginal(song: SongItem): List<LyricEntry>? =
+        PlayerManager.getCachedOriginalLyrics(song)
+
     override fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
         preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? =
         PlayerManager.getCachedPreferredLyricSourceResult(song, source, preferWordTimedLyrics)
