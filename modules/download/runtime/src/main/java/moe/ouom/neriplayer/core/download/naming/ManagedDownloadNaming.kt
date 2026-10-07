@@ -228,7 +228,8 @@ private fun renderManagedDownloadBaseNameExact(
     template: String
 ): String {
     val rendered = if (template == DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE) {
-        listOf(title, artist, album, source)
+        // 空专辑省略整段；空作者仍保留空位，否则 "标题 - 专辑 - 来源" 会被解析成作者
+        listOfNotNull(title, artist, album.takeIf(String::isNotBlank), source)
             .joinToString(" - ")
     } else {
         template
@@ -411,6 +412,12 @@ private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
                     album = album,
                     source = source
                 )
+            )
+        )
+        // #396 起到这里之前的版本给空专辑也留了空位
+        addHistoricalManagedDownloadBaseName(
+            truncateManagedDownloadBaseName(
+                sanitizeManagedDownloadFileName(listOf(title, artist, album, source).joinToString(" - "))
             )
         )
     }

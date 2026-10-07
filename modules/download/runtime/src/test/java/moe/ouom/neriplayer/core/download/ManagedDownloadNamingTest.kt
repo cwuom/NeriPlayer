@@ -143,7 +143,7 @@ class ManagedDownloadNamingTest {
             audioId = "123"
         )
 
-        assertEquals("歌曲 - 歌手 -  - netease", renderManagedDownloadBaseName(song))
+        assertEquals("歌曲 - 歌手 - netease", renderManagedDownloadBaseName(song))
         assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 - netease"))
         assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 -  - netease"))
         assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 - netease"))
@@ -158,6 +158,11 @@ class ManagedDownloadNamingTest {
         assertEquals("歌手", parsed?.artist)
         assertNull(parsed?.album)
         assertEquals("netease", parsed?.source)
+        val parsedCurrent = parseManagedDownloadBaseName(renderManagedDownloadBaseName(song))
+        assertEquals(
+            listOf("歌曲", "歌手", null, "netease"),
+            listOf(parsedCurrent?.title, parsedCurrent?.artist, parsedCurrent?.album, parsedCurrent?.source)
+        )
     }
 
     @Test
@@ -175,6 +180,11 @@ class ManagedDownloadNamingTest {
         assertNull(parsed?.artist)
         assertEquals("专辑", parsed?.album)
         assertEquals("netease", parsed?.source)
+
+        val withoutArtistOrAlbum = renderManagedDownloadBaseName(title = "歌曲", artist = "", album = "", source = "netease")
+        assertEquals("歌曲 -  - netease", withoutArtistOrAlbum)
+        val parsedWithoutBoth = parseManagedDownloadBaseName(withoutArtistOrAlbum)
+        assertEquals(listOf("歌曲", null, "netease"), listOf(parsedWithoutBoth?.title, parsedWithoutBoth?.artist, parsedWithoutBoth?.source))
     }
 
     @Test
