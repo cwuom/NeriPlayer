@@ -137,6 +137,7 @@ private suspend fun GlobalDownloadManager.recoverPostCoreDownloadsWindow(
     var completedWindows = 0
     val observedOperationIds = linkedSetOf<String>()
     val database = NeriUserDataDatabase.getInstance(appContext)
+    reopenUnsupportedContainerMetadataActions(appContext, database)
     suspend fun result(): PostCoreDownloadRecoveryResult {
         val dao = database.downloadOperationDao()
         if (!dao.hasPostCoreBacklog(POST_CORE_DOWNLOAD_OPERATION_STATES)) return PostCoreDownloadRecoveryResult.SETTLED
@@ -260,6 +261,31 @@ private suspend fun GlobalDownloadManager.recoverPostCoreDownloadsWindow(
     return result()
 }
 
+/** 旧版本把写不了内嵌标签的下载停在 METADATA_ACTION_REQUIRED，现在收尾会以 sidecar 完成，需放回收尾队列 */
+internal suspend fun GlobalDownloadManager.reopenUnsupportedContainerMetadataActions(
+    context: Context,
+    database: NeriUserDataDatabase
+): Int {
+    val reopened = try {
+        val operationIds = database.downloadOperationDao()
+            .findOperationIdsByState(METADATA_ACTION_REQUIRED_OPERATION_STATE)
+        DownloadExecutionRoomStore.readOperationHeaders(context, operationIds, database).values
+            .filter { it.lastErrorCode == METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR }
+            .count { header ->
+                DownloadExecutionRoomStore.updateState(
+                    context, header.operationId, "ASSETS_ENRICHING", database = database
+                )
+            }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        NPLogger.w(TAG, "重新打开等待元信息处理的旧下载失败，保留下次恢复: ${error.message}", error)
+        0
+    }
+    if (reopened > 0) NPLogger.i(TAG, "已重新打开写不了内嵌标签的旧下载收尾: count=$reopened")
+    return reopened
+}
+
 private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
     context: Context,
     entries: Collection<DownloadExecutionRoomStore.StateEntry>,
@@ -287,30 +313,6 @@ private suspend fun GlobalDownloadManager.settlePostCoreRecoveryAttempts(
                 settleBatchPresentation = false,
                 operationId = operationId
             )
-            return@forEach
-        }
-        if (
-            currentEntry.lastErrorCode == METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR &&
-                isMetadataEmbeddingActionRequired(
-                    context = context,
-                    operationId = operationId,
-                    songKey = currentEntry.request.song.stableKey()
-                )
-        ) {
-            val actionPersisted = DownloadExecutionRoomStore.updateState(
-                context = context,
-                operationId = operationId,
-                state = METADATA_ACTION_REQUIRED_OPERATION_STATE,
-                errorCode = METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
-            )
-            if (actionPersisted) {
-                updateTaskStatus(
-                    songKey = currentEntry.request.song.stableKey(),
-                    status = DownloadStatus.FAILED,
-                    expectedAttemptId = currentEntry.request.attemptId,
-                    operationId = operationId
-                )
-            }
             return@forEach
         }
         val retryRecord = DownloadExecutionRoomStore.recordPostCoreRetryFailure(

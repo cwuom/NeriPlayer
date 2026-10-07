@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadedAudioMetadata
 /** 标签后处理一次尝试后的收尾动作 */
 internal enum class TagPostProcessingAction {
     FINALIZE_TAGGED,
+    FINALIZE_UNTAGGED,
     RETRY,
     PRESERVE_UNFINALIZED
 }
@@ -22,7 +23,8 @@ internal enum class TagPostProcessingAction {
  *
  * 标签写入失败时必须保留音频, 但不能把可写标签的容器伪装成已完成
  * - SUCCESS: 标签已写入, 按带标签完成
- * - UNSUPPORTED_CONTAINER: 容器天生写不了 (如 WebM) , 保留未最终化音频供诊断
+ * - UNSUPPORTED_CONTAINER: 容器天生写不了 (如 WebM、HLS 落盘的 ADTS AAC) , 重试没有意义,
+ *   元信息只保存在 sidecar, 按无内嵌标签完成 (#223)
  * - FAILED / 未知: 可能瞬时失败, 仍有重试次数则重试; 重试耗尽后保留未最终确认文件
  *   等待后续元数据收尾重试, 不删除音频也不发布完成状态
  */
@@ -31,7 +33,7 @@ internal fun tagPostProcessingAction(
     hasRemainingAttempts: Boolean
 ): TagPostProcessingAction = when (outcome) {
     DownloadedAudioTagWriteOutcome.SUCCESS -> TagPostProcessingAction.FINALIZE_TAGGED
-    DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.PRESERVE_UNFINALIZED
+    DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.FINALIZE_UNTAGGED
     DownloadedAudioTagWriteOutcome.FAILED, null ->
         if (hasRemainingAttempts) TagPostProcessingAction.RETRY
         else TagPostProcessingAction.PRESERVE_UNFINALIZED

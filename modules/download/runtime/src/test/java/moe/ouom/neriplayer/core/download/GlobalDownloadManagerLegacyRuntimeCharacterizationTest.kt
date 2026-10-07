@@ -351,12 +351,10 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         ).readText()
         val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
         val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
-        val unsupportedBody = methodBody(source, "preserveUnsupportedMetadataEmbedding")
         val settleBody = methodBody(source, "settlePostCoreEnrichmentFailure")
 
         assertTrue(coreBody.contains("settlePostCoreEnrichmentFailure"))
         assertTrue(enrichmentBody.contains("settlePostCoreEnrichmentFailure"))
-        assertTrue(unsupportedBody.contains("settlePostCoreEnrichmentFailure"))
         assertTrue(settleBody.contains("resolvePostCoreEnrichmentTaskStatus"))
         assertTrue(settleBody.contains("DownloadStatus.QUEUED"))
         assertTrue(
@@ -364,7 +362,6 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         )
         assertTrue(settleBody.contains("schedulePostCoreEnrichmentRetry"))
         assertFalse(enrichmentBody.contains("DownloadStatus.FAILED"))
-        assertFalse(unsupportedBody.contains("DownloadStatus.FAILED"))
     }
 
     @Test

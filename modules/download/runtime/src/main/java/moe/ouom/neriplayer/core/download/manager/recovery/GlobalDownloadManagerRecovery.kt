@@ -27,7 +27,6 @@ import moe.ouom.neriplayer.core.download.manager.catalog.hasBlockingActiveDownlo
 import moe.ouom.neriplayer.core.download.manager.catalog.waitForActiveDownloadJobsToSettle
 import moe.ouom.neriplayer.core.download.manager.catalog.waitForQueuedTasksToAttachToBatch
 import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownload
-import moe.ouom.neriplayer.core.download.manager.commit.isDownloadMetadataPostProcessingEnabled
 import moe.ouom.neriplayer.core.download.manager.commit.publishFinalizedDownload
 import moe.ouom.neriplayer.core.download.manager.commit.schedulePersistedTerminalTemporaryWriteCleanup
 import moe.ouom.neriplayer.core.download.manager.runtime.POST_CORE_DOWNLOAD_OPERATION_STATES
@@ -41,7 +40,6 @@ import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPu
 import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
 import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
-import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.presentation.downloadProgressFraction
 import moe.ouom.neriplayer.data.model.download.execution.FinalizedDownloadPublicationResult
 import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoverySummary
@@ -176,7 +174,6 @@ internal suspend fun GlobalDownloadManager.recoverPendingAudioWritesFromRoot(
             }
         }
     }
-    val metadataPostProcessingEnabled = isDownloadMetadataPostProcessingEnabled(context)
     val pendingScan = runCatching {
         ManagedDownloadStorage.scanPendingAudioWrites(
             context = context,
@@ -393,19 +390,6 @@ internal suspend fun GlobalDownloadManager.recoverPendingAudioWritesFromRoot(
                                 }
                                 val currentMetadata = readDownloadedMetadata(context, pendingAudio)
                                     ?: return@withSongExecutionLock
-                                if (
-                                    metadataPostProcessingEnabled &&
-                                        !directoryMutationLeaseOwned &&
-                                        currentMetadata.metadataEmbeddingState ==
-                                            DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
-                                ) {
-                                    NPLogger.d(
-                                        TAG,
-                                        "跳过不支持内嵌标签的 pending 音频自动恢复: " +
-                                            "song=${song.name}, file=${pendingAudio.name}"
-                                    )
-                                    return@withSongExecutionLock
-                                }
                                 if (isFinalizedDownloadedMetadata(currentMetadata)) {
                                     val publicationLease =
                                         prepareFinalizedPublicationArtifactLease(
@@ -525,7 +509,6 @@ internal suspend fun GlobalDownloadManager.recoverUnfinalizedPublishedAudioFromR
     ) {
         return
     }
-    val metadataPostProcessingEnabled = isDownloadMetadataPostProcessingEnabled(context)
     val snapshot = runCatching {
         ManagedDownloadStorage.buildDownloadLibrarySnapshot(
             context = context,
@@ -571,18 +554,6 @@ internal suspend fun GlobalDownloadManager.recoverUnfinalizedPublishedAudioFromR
                         context, currentMetadata.operationId
                     )
                 ) return@withSongExecutionLock
-                if (
-                    metadataPostProcessingEnabled &&
-                        currentMetadata.metadataEmbeddingState ==
-                            DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
-                ) {
-                    NPLogger.d(
-                        TAG,
-                        "跳过不支持内嵌标签的已发布音频自动恢复: " +
-                            "song=${song.name}, file=${audio.name}"
-                    )
-                    return@withSongExecutionLock
-                }
                 val operationState = currentMetadata.operationId
                     ?.let { operationId -> DownloadExecutionRoomStore.state(context, operationId) }
                 val artifactState = managedDownloadArtifactCoordinator.currentState(context, song)

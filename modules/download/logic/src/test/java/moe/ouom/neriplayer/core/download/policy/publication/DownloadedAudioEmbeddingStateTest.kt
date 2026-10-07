@@ -99,11 +99,21 @@ class DownloadedAudioEmbeddingStateTest {
                 metadata = verifiedMetadata
             )
         )
+        assertTrue(
+            isFinalizedDownloadedAudioEntry(
+                rootEntriesComplete = true,
+                isPendingAudioWrite = false,
+                metadata = verifiedMetadata.copy(
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                )
+            )
+        )
         assertFalse(
             isFinalizedDownloadedAudioEntry(
                 rootEntriesComplete = true,
                 isPendingAudioWrite = false,
                 metadata = verifiedMetadata.copy(
+                    downloadFinalized = false,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
                 )
             )

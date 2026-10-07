@@ -13,7 +13,6 @@ import moe.ouom.neriplayer.core.download.manager.admission.scheduleStartupArtifa
 import moe.ouom.neriplayer.core.download.manager.batch.forgetPendingDownloadQueueEntriesForOperation
 import moe.ouom.neriplayer.core.download.manager.batch.isCancellationCleanupStillCurrent
 import moe.ouom.neriplayer.core.download.manager.batch.scheduleCompletedTaskRemoval
-import moe.ouom.neriplayer.core.download.manager.catalog.markDownloadArtifactRepairRequired
 import moe.ouom.neriplayer.core.download.manager.runtime.cleanupUnfinalizedDownloadForRetry
 import moe.ouom.neriplayer.core.download.manager.runtime.publishCompletedDownloadOptimistically
 import moe.ouom.neriplayer.core.download.manager.recovery.invalidCoreAudioReason
@@ -60,9 +59,7 @@ import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecution
 import moe.ouom.neriplayer.core.download.execution.recovery.isArtifactRecoveryAllowed
 import moe.ouom.neriplayer.core.download.execution.clear.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
-import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
 import moe.ouom.neriplayer.core.download.execution.clear.ManagedDownloadDirectoryMutationFence
-import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTrace
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTracePhase
 import moe.ouom.neriplayer.core.download.observability.DownloadOperationTraceToken
@@ -291,19 +288,8 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
                     MetadataPostProcessingResult.EMBEDDED_VERIFIED ->
                         DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
 
-                    MetadataPostProcessingResult.UNSUPPORTED_CONTAINER -> {
-                        preserveUnsupportedMetadataEmbedding(
-                            context = context,
-                            song = song,
-                            storedAudio = enrichmentAudio,
-                            sidecarReferences = sidecarReferences,
-                            operationId = operationId,
-                            artifactLeaseId = artifactLeaseId,
-                            expectedAttemptId = expectedAttemptId,
-                            admissionTicket = admissionTicket
-                        )
-                        return
-                    }
+                    MetadataPostProcessingResult.UNSUPPORTED_CONTAINER ->
+                        DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
 
                     MetadataPostProcessingResult.RETRYABLE_FAILURE ->
                         error("embedded metadata post-processing failed")
@@ -586,176 +572,6 @@ internal suspend fun GlobalDownloadManager.enrichCoreCommittedDownload(
         }
         directoryCommitLease?.close()
     }
-}
-
-internal suspend fun GlobalDownloadManager.preserveUnsupportedMetadataEmbedding(
-    context: Context,
-    song: SongItem,
-    storedAudio: ManagedDownloadStorage.StoredEntry,
-    sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences,
-    operationId: String,
-    artifactLeaseId: String?,
-    expectedAttemptId: Long?,
-    admissionTicket: Long?
-) {
-    if (
-        admissionTicket != null &&
-            !isDownloadAdmissionTicketCurrent(
-                context = context,
-                admissionTicket = admissionTicket,
-                stableKey = song.stableKey(),
-                operationId = operationId
-            )
-    ) {
-        NPLogger.d(
-            TAG,
-            "不支持内嵌元信息收尾票据已失效，保留 core 凭据: " +
-                "song=${song.name}, operationId=$operationId"
-        )
-        return
-    }
-    NPLogger.w(
-        TAG,
-        "下载容器不支持内嵌元信息，保留待处理文件: " +
-            "song=${song.name}, file=${storedAudio.name}"
-    )
-    if (
-        admissionTicket != null &&
-            !isDownloadAdmissionTicketCurrent(
-                context = context,
-                admissionTicket = admissionTicket,
-                stableKey = song.stableKey(),
-                operationId = operationId
-            )
-    ) {
-        return
-    }
-    val metadataPersisted = runCatching {
-        persistDownloadedMetadata(
-            context = context,
-            audio = storedAudio,
-            song = song,
-            sidecarReferences = sidecarReferences,
-            downloadFinalized = false,
-            metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER,
-            resolveExistingSidecars = false,
-            operationId = operationId
-        )
-    }.getOrElse { error ->
-        NPLogger.w(
-            TAG,
-            "记录不支持内嵌元信息状态失败，保留可重试文件: " +
-                "file=${storedAudio.name}, error=${error.message}"
-        )
-        false
-    }
-    if (!metadataPersisted) {
-        if (
-            admissionTicket != null &&
-                !isDownloadAdmissionTicketCurrent(
-                    context = context,
-                    admissionTicket = admissionTicket,
-                    stableKey = song.stableKey(),
-                    operationId = operationId
-                )
-        ) {
-            return
-        }
-        markDownloadArtifactRepairRequired(
-            context = context,
-            song = song,
-            leaseId = artifactLeaseId,
-            errorCode = "METADATA_EMBEDDING_STATE_WRITE_FAILED"
-        )
-        runCatching {
-            DownloadExecutionRoomStore.updateState(
-                context = context,
-                operationId = operationId,
-                state = "DEGRADED_COMPLETE",
-                errorCode = "METADATA_EMBEDDING_STATE_WRITE_FAILED"
-            )
-        }.onFailure { error ->
-            NPLogger.w(
-                TAG,
-                "记录元信息状态失败后的 operation 降级状态写入失败: " +
-                    "song=${song.name}, operationId=$operationId, " +
-                    "error=${error.message}",
-                error
-            )
-        }
-        if (
-            admissionTicket != null &&
-                !isDownloadAdmissionTicketCurrent(
-                    context = context,
-                    admissionTicket = admissionTicket,
-                    stableKey = song.stableKey(),
-                    operationId = operationId
-                )
-        ) {
-            return
-        }
-        settlePostCoreEnrichmentFailure(
-            context = context,
-            song = song,
-            operationId = operationId,
-            expectedAttemptId = expectedAttemptId,
-            errorCode = "METADATA_EMBEDDING_STATE_WRITE_FAILED",
-            scheduleRetry = true,
-            admissionTicket = admissionTicket
-        )
-        return
-    }
-    if (
-        admissionTicket != null &&
-            !isDownloadAdmissionTicketCurrent(
-                context = context,
-                admissionTicket = admissionTicket,
-                stableKey = song.stableKey(),
-                operationId = operationId
-            )
-    ) {
-        return
-    }
-    runCatching {
-        managedDownloadArtifactCoordinator.markDegradedComplete(
-            context = context,
-            song = song,
-            expectedLeaseId = artifactLeaseId,
-            errorCode = METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
-        )
-    }.onFailure { error ->
-        NPLogger.w(TAG, "记录不支持内嵌元信息 artifact 状态失败: ${error.message}")
-    }
-    if (
-        admissionTicket != null &&
-            !isDownloadAdmissionTicketCurrent(
-                context = context,
-                admissionTicket = admissionTicket,
-                stableKey = song.stableKey(),
-                operationId = operationId
-            )
-    ) {
-        return
-    }
-    runCatching {
-        DownloadExecutionRoomStore.updateState(
-            context = context,
-            operationId = operationId,
-            state = "DEGRADED_COMPLETE",
-            errorCode = METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
-        )
-    }.onFailure { error ->
-        NPLogger.w(TAG, "记录不支持内嵌元信息 operation 状态失败: ${error.message}")
-    }
-    settlePostCoreEnrichmentFailure(
-        context = context,
-        song = song,
-        operationId = operationId,
-        expectedAttemptId = expectedAttemptId,
-        errorCode = METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR,
-        scheduleRetry = false,
-        admissionTicket = admissionTicket
-    )
 }
 
 internal suspend fun GlobalDownloadManager.verifyFinalizedDownloadedArtifactForPublication(
@@ -1481,6 +1297,9 @@ internal suspend fun GlobalDownloadManager.runDownloadedAudioMetadataPostProcess
                 TagPostProcessingAction.FINALIZE_TAGGED -> {
                     return MetadataPostProcessingResult.EMBEDDED_VERIFIED
                 }
+                TagPostProcessingAction.FINALIZE_UNTAGGED -> {
+                    return MetadataPostProcessingResult.UNSUPPORTED_CONTAINER
+                }
                 TagPostProcessingAction.RETRY -> {
                     val lastError = writeResult.exceptionOrNull()
                         ?: IllegalStateException(
@@ -1505,14 +1324,7 @@ internal suspend fun GlobalDownloadManager.runDownloadedAudioMetadataPostProcess
                             "${audio.name}, stage=tag_post_process, reason=$reason",
                         writeResult.exceptionOrNull()
                     )
-                    return if (
-                        writeResult.getOrNull() ==
-                            DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
-                    ) {
-                        MetadataPostProcessingResult.UNSUPPORTED_CONTAINER
-                    } else {
-                        MetadataPostProcessingResult.RETRYABLE_FAILURE
-                    }
+                    return MetadataPostProcessingResult.RETRYABLE_FAILURE
                 }
             }
         }

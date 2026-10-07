@@ -27,10 +27,17 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.artifact.DownloadCorePublicationCoordinator
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
+import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
+import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadOperation
+import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadsForWorkerImpl
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import moe.ouom.neriplayer.data.model.download.execution.METADATA_ACTION_REQUIRED_OPERATION_STATE
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.operation.content.promoteFileTargetWithoutReplacement
 import moe.ouom.neriplayer.core.download.storage.operation.content.publicationFileIdentity
@@ -270,6 +277,86 @@ class DownloadCorePublicationInstrumentedTest {
         withStorage(saf, fileName = "Intro - ラブリーサマーちゃん - #ラブリーミュージック - netease.mp3") {
             val pending = commit()
             assertTaggedPublication(pending)
+        }
+    }
+
+    @Test
+    fun privateUntaggableContainerCompletesWithSidecarMetadata() = assertUntaggableContainerCompletes(false)
+
+    @Test
+    fun safUntaggableContainerCompletesWithSidecarMetadata() = assertUntaggableContainerCompletes(true)
+
+    private fun assertUntaggableContainerCompletes(saf: Boolean) = runBlocking {
+        withStorage(saf, fileName = "Memories of Kindness.webm") {
+            val pending = commit()
+            val original = read(pending.reference)
+            withPostCoreOperation("CORE_COMMITTED") { request ->
+                GlobalDownloadManager.recoverPostCoreDownloadOperation(
+                    context, song, operationId, request.attemptId,
+                    requireNotNull(GlobalDownloadManager.downloadAdmissionGate.openTicketOrNull())
+                )
+                assertUntaggableCompletion(original)
+            }
+        }
+    }
+
+    @Test
+    fun legacyUntaggableActionRequiredOperationCompletesOnPostCoreRecovery() = runBlocking {
+        withStorage(false, fileName = "Memories of Kindness.webm") {
+            val pending = commit()
+            val original = read(pending.reference)
+            assertTrue(DownloadedAudioMetadataStore(1, 0L, "PublicationTest").persist(
+                context, pending, song, downloadFinalized = false,
+                metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER,
+                resolveExistingSidecars = false, operationId = operationId
+            ))
+            withPostCoreOperation("DEGRADED_COMPLETE") {
+                assertTrue(DownloadExecutionRoomStore.updateState(
+                    context, operationId, METADATA_ACTION_REQUIRED_OPERATION_STATE,
+                    METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
+                ))
+                GlobalDownloadManager.recoverPostCoreDownloadsForWorkerImpl(context)
+                assertUntaggableCompletion(original)
+            }
+        }
+    }
+
+    private suspend fun Fixture.assertUntaggableCompletion(original: ByteArray) {
+        assertTrue(GlobalDownloadManager.assetEnrichmentCoordinator.awaitCompletion(setOf(operationId), 10_000L))
+        val audio = ManagedDownloadStorage.findDownloadedAudio(context, song, forceRefresh = true)
+        val metadata = audio?.let { ManagedDownloadStorage.findMetadataForAudio(context, it) }
+            ?.let { JSONObject(read(it.reference).toString(Charsets.UTF_8)) }
+        assertEquals(
+            listOf("published=true", "finalized=true", "embedding=UNSUPPORTED_CONTAINER"),
+            listOf(
+                "published=${audio?.isPendingAudioWrite == false && finalNames().contains(fileName)}",
+                "finalized=${metadata?.optBoolean("downloadFinalized")}",
+                "embedding=${metadata?.optString("metadataEmbeddingState")}"
+            )
+        )
+        assertTrue(
+            "operation must leave the action-required path",
+            DownloadExecutionRoomStore.state(context, operationId) in setOf("FINALIZED", "COMPLETED")
+        )
+        assertArrayEquals(original, read(requireNotNull(audio).reference))
+    }
+
+    private suspend fun Fixture.withPostCoreOperation(
+        state: String,
+        block: suspend (DownloadExecutionRequest) -> Unit
+    ) {
+        val request = DownloadExecutionRequest(operationId = operationId, song = song, requiresWifiNetwork = false)
+        DownloadExecutionRoomStore.upsert(context, request, state)
+        try {
+            block(request)
+        } finally {
+            GlobalDownloadManager.taskStore.removeDownloadTask(song.stableKey())
+            DownloadExecutionRoomStore.delete(context, operationId)
+            val dao = NeriUserDataDatabase.getInstance(context).managedDownloadArtifactDao()
+            dao.findAllByStableKey(song.stableKey()).forEach { artifact ->
+                dao.deleteIfUnchanged(artifact.rootKey, artifact.stableKey, artifact.state,
+                    artifact.leaseId, artifact.updatedAtMs)
+            }
         }
     }
 

@@ -1234,33 +1234,6 @@ object GlobalDownloadManager {
         return this.shouldRestartPostCoreOperationForFreshTransferImpl(operationState, artifactClaim)
     }
 
-    internal suspend fun isMetadataEmbeddingActionRequired(
-        context: Context,
-        operationId: String,
-        songKey: String
-    ): Boolean = runCatching {
-        val request = DownloadExecutionRoomStore.read(context, operationId)
-            ?.takeIf { it.song.stableKey() == songKey }
-            ?: return@runCatching false
-        val storedAudio = findPendingAudioForFinalization(
-            context = context,
-            song = request.song,
-            operationId = operationId,
-            preferredAudioName = null
-        ) ?: resolveStoredAudio(context, request.song)
-            ?: ManagedDownloadStorage.findDownloadedAudio(context, request.song, forceRefresh = true)
-            ?: return@runCatching false
-        readDownloadedMetadata(context, storedAudio)?.metadataEmbeddingState ==
-            DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
-    }.getOrElse { error ->
-        NPLogger.w(
-            TAG,
-            "读取元信息嵌入待处理状态失败，保留可重试 operation: " +
-                "operationId=$operationId, error=${error.message}"
-        )
-        false
-    }
-
     internal fun stopDownloadOperation(
         context: Context,
         songKey: String,
