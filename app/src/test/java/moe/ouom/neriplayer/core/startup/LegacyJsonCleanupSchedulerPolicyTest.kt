@@ -4,6 +4,9 @@ import moe.ouom.neriplayer.core.download.integration.legacy.DownloadLegacyStorag
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupPlan
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupTarget
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeResult
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeRowResult
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeRowStatus
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,6 +29,27 @@ class LegacyJsonCleanupSchedulerPolicyTest {
         assertTrue(gate.shouldAttempt())
         gate.recordResult(upgradeResult(rowsPending = 0))
         repeat(5) { assertFalse(gate.shouldAttempt()) }
+    }
+
+    @Test
+    fun `pending upgrade diagnostics name only the rows that keep it unsettled`() {
+        val result = upgradeResult(rowsPending = 2).copy(
+            rowResults = listOf(
+                LegacyDownloadUpgradeRowResult("1|netease|", LegacyDownloadUpgradeRowStatus.COMPLETED),
+                LegacyDownloadUpgradeRowResult("2|netease|", LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE, "cover"),
+                LegacyDownloadUpgradeRowResult("3|netease|", LegacyDownloadUpgradeRowStatus.QUARANTINED),
+                LegacyDownloadUpgradeRowResult("4|netease|", LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE, "write")
+            )
+        )
+
+        assertEquals(
+            "[2|netease|=PROVIDER_FAILURE:cover, 4|netease|=PROVIDER_FAILURE:write]",
+            LegacyJsonCleanupScheduler.describePendingLegacyRows(result)
+        )
+        assertEquals(
+            "[2|netease|=PROVIDER_FAILURE:cover]",
+            LegacyJsonCleanupScheduler.describePendingLegacyRows(result, limit = 1)
+        )
     }
 
     @Test

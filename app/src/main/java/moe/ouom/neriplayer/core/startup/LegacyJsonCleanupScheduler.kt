@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadRebuildBudget
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeCoordinator
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeResult
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeRowStatus
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupCoordinator
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupResult
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupStatus
@@ -168,15 +169,25 @@ internal object LegacyJsonCleanupScheduler {
                 }
 
                 lastUpgradeResult?.takeUnless(LegacyDownloadUpgradeResult::isSettled)?.let { result ->
-                    NPLogger.d(
+                    NPLogger.w(
                         TAG,
                         "Legacy download upgrade pending: rows=${result.rowsPending}, " +
                             "completed=${result.rowsCompleted}, " +
                             "payloadTableCleaned=${result.temporaryTableCleaned}, " +
                             "legacyTablesCleaned=${result.legacyProjectionTablesCleaned}, " +
-                            "statuses=${result.rowResults.groupingBy { it.status }.eachCount()}"
+                            "statuses=${result.rowResults.groupingBy { it.status }.eachCount()}, " +
+                            "failures=${describePendingLegacyRows(result)}"
                     )
                 }
+                ManagedLibraryProcessingCoordinator.state.value
+                    .takeIf { state -> state.reason == ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE }
+                    ?.let { state ->
+                        NPLogger.w(
+                            TAG,
+                            "Legacy download upgrade still waiting: phase=${state.phase}, " +
+                                "processed=${state.processed}/${state.total}"
+                        )
+                    }
                 lastResult?.let { result ->
                     NPLogger.d(
                         TAG,
@@ -193,6 +204,16 @@ internal object LegacyJsonCleanupScheduler {
             }
         }
     }
+
+    internal fun describePendingLegacyRows(result: LegacyDownloadUpgradeResult, limit: Int = 5): String =
+        result.rowResults.asSequence()
+            .filter { row ->
+                row.status != LegacyDownloadUpgradeRowStatus.COMPLETED &&
+                    row.status != LegacyDownloadUpgradeRowStatus.QUARANTINED &&
+                    row.status != LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED
+            }
+            .take(limit)
+            .joinToString(prefix = "[", postfix = "]") { row -> "${row.stableKey}=${row.status}:${row.detail}" }
 
     private suspend fun isRebuildBudgetExhausted(context: Context, operationId: String): Boolean =
         try {
