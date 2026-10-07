@@ -1,0 +1,37 @@
+name: Install Android NDK
+description: Install the NDK version pinned in build-logic before Gradle configures :native.
+
+runs:
+  using: composite
+  steps:
+    - name: Install pinned NDK
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="$(sed -n 's/.*defaultNdkVersion = "\([^"]*\)".*/\1/p' build-logic/convention/src/main/kotlin/Version.kt)"
+        if [ -z "$version" ]; then
+          echo "::error::defaultNdkVersion not found in build-logic/convention/src/main/kotlin/Version.kt"
+          exit 1
+        fi
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        if [ -f "$sdk/ndk/$version/source.properties" ]; then
+          echo "NDK $version is already installed"
+          exit 0
+        fi
+        sdkmanager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+        # 管道结束时 yes 会以 SIGPIPE 退出，在 pipefail 下不能用它的状态判断安装结果
+        yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+        # AGP 在配置阶段自动下载 NDK 时没有重试，下载包损坏会直接让构建失败
+        for attempt in 1 2 3; do
+          if "$sdkmanager" --install "ndk;$version" > /tmp/ndk-install.log 2>&1 \
+            && [ -f "$sdk/ndk/$version/source.properties" ]; then
+            echo "Installed NDK $version"
+            exit 0
+          fi
+          tail -n 20 /tmp/ndk-install.log
+          rm -rf "$sdk/ndk/$version"
+          echo "::warning::NDK $version install attempt $attempt failed"
+          sleep $((attempt * 15))
+        done
+        echo "::error::Failed to install NDK $version"
+        exit 1

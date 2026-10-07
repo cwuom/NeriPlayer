@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
@@ -32,6 +33,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
@@ -135,6 +137,29 @@ class NowPlayingLyricsMatchLayoutTest {
     }
 
     @Test
+    fun focusedQueryKeepsItsEditingSessionWhenAKeyboardSizedViewportSwitchesLayouts() {
+        render(360.dp, 840.dp, 1f)
+        val queryField = composeRule.onNodeWithTag("lyrics-match-query")
+        queryField.performClick()
+        // 收起软键盘，只让下面的视窗高度决定布局，键盘自身的 inset 不能提前切换
+        composeRule.runOnIdle { keyboardController?.hide() }
+        composeRule.waitUntil(5_000) { !hasWholeContentScroll() }
+        queryField.assertIsFocused()
+
+        // 停靠键盘把视窗压到固定控件高度以下，焦点不能随布局切换丢失（#496）
+        composeRule.runOnIdle { height.value = 420.dp }
+        composeRule.waitUntil(5_000) { hasWholeContentScroll() }
+        queryField.assertIsFocused()
+
+        composeRule.runOnIdle { height.value = 840.dp }
+        composeRule.waitUntil(5_000) { !hasWholeContentScroll() }
+        queryField.assertIsFocused()
+        queryField.performTextInput("继续")
+        composeRule.runOnIdle { assertTrue(query.value, query.value.contains("继续")) }
+        clearFocus()
+    }
+
+    @Test
     fun shortLargeFontKeepsLoadingEmptyErrorAndCancelReachable() {
         loading.value = true
         results.value = emptyList()
@@ -183,6 +208,9 @@ class NowPlayingLyricsMatchLayoutTest {
         }
         return composeRule.onNodeWithTag(tag).assertIsDisplayed()
     }
+
+    private fun hasWholeContentScroll(): Boolean =
+        composeRule.onAllNodesWithTag("lyrics-match-scroll").fetchSemanticsNodes().isNotEmpty()
 
     private fun clearFocus() {
         composeRule.runOnIdle {

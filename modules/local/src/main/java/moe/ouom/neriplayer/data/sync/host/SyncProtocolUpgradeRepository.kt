@@ -276,13 +276,16 @@ class SyncProtocolUpgradeRepository(
         private const val ApprovalPrefix = "approved_legacy_"
         private const val ObservedProtocolPrefix = "observed_protocol_"
 
-        fun configuredTargetIds(context: Context): Set<String> = buildSet {
-            val github = SecureTokenStorage(context)
+        fun configuredTargetIds(context: Context): Set<String> =
+            configuredTargetIds(SecureTokenStorage(context), WebDavStorage(context))
+
+        internal fun configuredTargetIds(github: SecureTokenStorage, webDav: WebDavStorage): Set<String> = buildSet {
+            // 降级的内存存储读不到已保存的地址，登记结果会被持久化，不能把它当成“未配置”
+            check(github.isPersistent && webDav.isPersistent) { "Secure sync storage is unavailable" }
             if (github.isConfigured()) {
                 val configuration = github.snapshot()
                 add(githubTargetHash(configuration.repoOwner, configuration.repoName))
             }
-            val webDav = WebDavStorage(context)
             if (webDav.isConfigured()) {
                 val configuration = webDav.snapshot()
                 add(webDavTargetHash(configuration.serverUrl, configuration.basePath, configuration.username))

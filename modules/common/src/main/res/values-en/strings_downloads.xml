@@ -8,6 +8,9 @@
     <string name="download_progress">Download Progress</string>
     <string name="download_failed">Download Failed</string>
     <string name="download_failed_tasks_summary">These downloads have stopped retrying automatically. Use the button beside a song to try again.</string>
+    <string name="download_failed_preview_only">Only a preview clip is available. Sign in or upgrade your membership, then retry.</string>
+    <string name="download_failed_source_unavailable">The platform doesn\'t offer this song right now (it may not be licensed).</string>
+    <string name="download_legacy_preview_clip">An older version only saved a preview clip. Sign in or upgrade your membership, then download again for the full song.</string>
     <string name="download_no_tasks">No Download Tasks</string>
     <string name="download_loading_tasks">Reading download tasks…</string>
     <string name="download_loading_tasks_recovering">Unable to read download tasks. Retrying…</string>

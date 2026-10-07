@@ -7,6 +7,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import moe.ouom.neriplayer.api.sync.http.startOnLoopback
 import okhttp3.Call
 import okhttp3.EventListener
 import okhttp3.Headers
@@ -333,7 +334,7 @@ class GitHubStagingRecoveryHttpTest {
         for (differentOrigin in listOf(false, true)) {
             for (rateResponse in listOf(false, true)) {
                 MockWebServer().use { redirectServer ->
-                    redirectServer.start()
+                    redirectServer.startOnLoopback()
                     val body = if (rateResponse) """{"errors":[{"type":"RATE_LIMITED","message":"rate limit"}]}"""
                         else """{"data":{"updateRefs":{"clientMutationId":"commit"}}}"""
                     val code = if (rateResponse) 429 else 200
@@ -666,7 +667,7 @@ class GitHubStagingRecoveryHttpTest {
                     return respond(request)
                 }
             }
-            start()
+            startOnLoopback()
         }
 
         fun transport(checkpointEnabled: Boolean = true, apiPath: String = "/"): GitHubRepositorySyncTransport = GitHubRepositorySyncTransport(

@@ -213,6 +213,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSE
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.ltw.mapping.buildStableTrackKey
 import moe.ouom.neriplayer.core.player.ltw.resolvedAudioId
@@ -1457,6 +1458,10 @@ object PlayerManager {
         playbackStatsOwner.onPlayingChanged(playing, reason, writesEnabled = initialized)
     }
 
+    internal fun syncPlaybackStatsEnginePlayingState(isPlaying: Boolean) {
+        playbackStatsOwner.onEnginePlayingChanged(isPlaying, playbackProgressAdvanceReported, writesEnabled = initialized)
+    }
+
     internal fun drainPlaybackStatsPersistJobBlocking(reason: String) {
         playbackStatsOwner.drainBlocking(reason, writesEnabled = initialized)
     }
@@ -1568,8 +1573,9 @@ object PlayerManager {
     internal fun cancelPendingPauseRequest(resetVolumeToFull: Boolean = false) =
         this.cancelPendingPauseRequestImpl(resetVolumeToFull)
 
-    fun initialize(app: Application, maxCacheSize: Long = 1024L * 1024 * 1024) =
-        initializeImpl(app, maxCacheSize)
+    /** 未预读偏好的入口同样要遵循用户的缓存上限，包括 0 表示关闭缓存 */
+    fun initialize(app: Application) =
+        initializePreloaded(app, readPlaybackPreferenceSnapshotSync(app))
 
     fun initializePreloaded(
         app: Application,

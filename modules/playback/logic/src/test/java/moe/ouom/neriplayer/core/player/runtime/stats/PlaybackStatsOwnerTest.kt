@@ -181,6 +181,42 @@ class PlaybackStatsOwnerTest {
     }
 
     @Test
+    fun `engine resume after confirmed progress keeps counting listened time`() = runTest {
+        var now = 0L
+        val writes = RecordingPort()
+        val owner = owner(backgroundScope, writes, PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { now }))
+        owner.onSongChanged(song(1L), null, writesEnabled = true)
+        owner.onEnginePlayingChanged(isPlaying = true, progressConfirmed = false, writesEnabled = true)
+        now = 5_000L
+        owner.onPlayingChanged(true, "progress_position_advanced", writesEnabled = true)
+        now = 15_000L
+        // 中途缓冲：引擎短暂停止出声后恢复
+        owner.onEnginePlayingChanged(isPlaying = false, progressConfirmed = true, writesEnabled = true)
+        now = 18_000L
+        owner.onEnginePlayingChanged(isPlaying = true, progressConfirmed = true, writesEnabled = true)
+        now = 38_000L
+        owner.onTrackEnded(writesEnabled = true)
+        runCurrent()
+
+        assertEquals(listOf(10_000L, 20_000L), writes.records.map { it.listenedMs })
+        assertEquals(1, writes.records.sumOf { it.playCountIncrement })
+    }
+
+    @Test
+    fun `engine playing before confirmed progress does not count a startup stall`() = runTest {
+        var now = 0L
+        val writes = RecordingPort()
+        val owner = owner(backgroundScope, writes, PlaybackStatsTracker(songKey = { it.id.toString() }, nowElapsedMs = { now }))
+        owner.onSongChanged(song(1L), null, writesEnabled = true)
+        owner.onEnginePlayingChanged(isPlaying = true, progressConfirmed = false, writesEnabled = true)
+        now = 8_000L
+        owner.onSongChanged(song(2L), null, writesEnabled = true)
+        runCurrent()
+
+        assertEquals(0L, writes.records.sumOf { it.listenedMs })
+    }
+
+    @Test
     fun `track end and progress wrap both enter ordered persistence`() = runTest {
         var now = 0L
         val writes = RecordingPort()

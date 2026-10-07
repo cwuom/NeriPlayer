@@ -25,6 +25,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -84,16 +87,20 @@ internal fun UsbExclusiveSettingsSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current.applicationContext
+    val lifecycleOwner = LocalLifecycleOwner.current
     val nativeState by UsbExclusiveSessionController.state.collectAsState()
     var snapshot by remember(context) {
         mutableStateOf(UsbExclusiveDiagnostics.snapshot(context))
     }
 
-    LaunchedEffect(context) {
-        while (currentCoroutineContext().isActive) {
-            delay(USB_STATUS_REFRESH_INTERVAL_MS.milliseconds)
-            UsbExclusiveSessionController.refresh(context)
-            snapshot = UsbExclusiveDiagnostics.snapshot(context)
+    // 页面不可见时停止逐秒的 JNI 刷新和设备查询，回到前台后立即继续
+    LaunchedEffect(context, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (currentCoroutineContext().isActive) {
+                delay(USB_STATUS_REFRESH_INTERVAL_MS.milliseconds)
+                UsbExclusiveSessionController.refresh(context)
+                snapshot = UsbExclusiveDiagnostics.snapshot(context)
+            }
         }
     }
     LaunchedEffect(nativeState, usbExclusivePlayback) {

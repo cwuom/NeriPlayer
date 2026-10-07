@@ -166,41 +166,11 @@ class SleepTimerManager(
     /**
      * 格式化剩余时间为可读字符串
      */
-    fun formatRemainingTime(): String {
-        val state = _timerState.value
-        if (!state.isActive || !state.mode.isCountdownMode()) {
-            return ""
-        }
-
-        val totalSeconds = state.remainingMillis / 1000
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
-        val seconds = totalSeconds % 60
-
-        return when {
-            hours > 0 -> String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
-            else -> String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
-        }
-    }
+    fun formatRemainingTime(): String = formatSleepTimerRemaining(_timerState.value)
 
     // 通知专用: > 60s 时只显示分钟, 减少通知重建频率
-    fun formatRemainingTimeForNotification(): String {
-        val state = _timerState.value
-        if (!state.isActive || !state.mode.isCountdownMode()) {
-            return ""
-        }
-
-        val totalSeconds = state.remainingMillis / 1000
-        if (totalSeconds <= 60) {
-            return formatRemainingTime()
-        }
-        val hours = totalSeconds / 3600
-        val displayMinutes = ((totalSeconds % 3600) + 59) / 60
-        return when {
-            hours > 0 -> String.format(Locale.ROOT, "%d:%02d:00", hours, displayMinutes.coerceAtMost(59))
-            else -> String.format(Locale.ROOT, "%d:00", displayMinutes)
-        }
-    }
+    fun formatRemainingTimeForNotification(): String =
+        formatSleepTimerNotificationRemaining(_timerState.value)
 
     private fun updateTimerState(
         state: SleepTimerState,
@@ -212,6 +182,43 @@ class SleepTimerManager(
         }
     }
 }
+
+internal fun formatSleepTimerRemaining(state: SleepTimerState): String {
+    if (!state.isActive || !state.mode.isCountdownMode()) {
+        return ""
+    }
+
+    val totalSeconds = state.remainingMillis / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+
+    return when {
+        hours > 0 -> String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
+        else -> String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
+    }
+}
+
+internal fun formatSleepTimerNotificationRemaining(state: SleepTimerState): String {
+    if (!state.isActive || !state.mode.isCountdownMode()) {
+        return ""
+    }
+
+    val totalSeconds = state.remainingMillis / 1000
+    if (totalSeconds <= 60) {
+        return formatSleepTimerRemaining(state)
+    }
+    val hours = totalSeconds / 3600
+    val displayMinutes = ((totalSeconds % 3600) + 59) / 60
+    return when {
+        hours > 0 -> String.format(Locale.ROOT, "%d:%02d:00", hours, displayMinutes.coerceAtMost(59))
+        else -> String.format(Locale.ROOT, "%d:00", displayMinutes)
+    }
+}
+
+/** 服务按通知上可见的剩余时间去重，计时器逐秒推进时不必逐秒重建通知快照和查询小组件 */
+internal fun sleepTimerNotificationKey(state: SleepTimerState): Pair<SleepTimerState, String> =
+    state.copy(remainingMillis = 0L) to formatSleepTimerNotificationRemaining(state)
 
 private fun SleepTimerMode.isCountdownMode(): Boolean {
     return this == SleepTimerMode.COUNTDOWN ||

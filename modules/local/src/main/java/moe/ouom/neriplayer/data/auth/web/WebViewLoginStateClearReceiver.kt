@@ -22,6 +22,8 @@ internal abstract class WebViewLoginStateClearReceiver(
             "Received WebView state clear request for $platform"
         )
         val pendingResult = goAsync()
+        // 请求方按接收器类名确认完成；协程体内的 javaClass 指向的是协程对象
+        val receiverName = javaClass.name
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).launch {
             val succeeded = runCatching {
                 // 每个登录接收器都有独立的 WebView 数据目录，因此可以完整清理
@@ -43,7 +45,7 @@ internal abstract class WebViewLoginStateClearReceiver(
                     Intent(ACTION_WEBVIEW_LOGIN_STATE_CLEARED)
                         .setPackage(context.packageName)
                         .putExtra(EXTRA_WEBVIEW_CLEAR_REQUEST_ID, requestId)
-                        .putExtra(EXTRA_WEBVIEW_CLEAR_RECEIVER, javaClass.name)
+                        .putExtra(EXTRA_WEBVIEW_CLEAR_RECEIVER, receiverName)
                         .putExtra(EXTRA_WEBVIEW_CLEAR_SUCCEEDED, succeeded)
                 )
             } finally {

@@ -1,9 +1,16 @@
 package moe.ouom.neriplayer.core.download.observability
 
+import android.content.Context
+import android.content.SharedPreferences
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionHostTestSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.mock
 
 class DownloadStartupRecoveryJournalTest {
     @Test
@@ -65,6 +72,64 @@ class DownloadStartupRecoveryJournalTest {
     }
 
     @Test
+    fun `journal codec omits absent optional boundaries`() {
+        val blocked = DownloadStartupRecoveryJournalRecord(
+            generation = 2L,
+            phase = DownloadStartupDeadlineTracker.Phase.BLOCKED,
+            recordedAtWallMs = 0L,
+            t0ToT1Ns = null,
+            t1ToT2Ns = null,
+            t0ToT2Ns = null,
+            withinDeadline = null,
+            blockedReason = "storage locked"
+        )
+
+        val encoded = DownloadStartupRecoveryJournalCodec.encode(blocked)
+
+        assertEquals(
+            mapOf(
+                "generation" to 2L,
+                "phase" to "BLOCKED",
+                "recorded_at_wall_ms" to 0L,
+                "blocked_reason" to "storage locked"
+            ),
+            encoded
+        )
+        assertEquals(blocked, DownloadStartupRecoveryJournalCodec.decode(encoded))
+    }
+
+    @Test
+    fun `journal read restores the persisted boundary and tolerates unavailable preferences`() {
+        val record = DownloadStartupRecoveryJournalRecord(
+            generation = 3L,
+            phase = DownloadStartupDeadlineTracker.Phase.QUEUE_READY,
+            recordedAtWallMs = 10L,
+            t0ToT1Ns = 5L,
+            t1ToT2Ns = null,
+            t0ToT2Ns = null,
+            withinDeadline = null,
+            blockedReason = null
+        )
+        val preferences = DownloadExecutionHostTestSupport.StatefulSharedPreferences().apply {
+            values.putAll(DownloadStartupRecoveryJournalCodec.encode(record))
+        }
+        val unreadable = mock(SharedPreferences::class.java)
+        `when`(unreadable.all).thenThrow(IllegalStateException("preferences corrupted"))
+        val unavailable = journalContext(null)
+        `when`(unavailable.getSharedPreferences(anyString(), anyInt()))
+            .thenThrow(IllegalStateException("user locked"))
+
+        assertEquals(record, DownloadStartupRecoveryJournal.read(journalContext(preferences)))
+        assertNull(
+            DownloadStartupRecoveryJournal.read(
+                journalContext(DownloadExecutionHostTestSupport.StatefulSharedPreferences())
+            )
+        )
+        assertNull(DownloadStartupRecoveryJournal.read(journalContext(unreadable)))
+        assertNull(DownloadStartupRecoveryJournal.read(unavailable))
+    }
+
+    @Test
     fun `new process generation stays ahead of persisted generation`() {
         val tracker = DownloadStartupDeadlineTracker(nowNs = { 1L })
 
@@ -75,5 +140,13 @@ class DownloadStartupRecoveryJournalTest {
         assertEquals(42L, first.generation)
         assertEquals(43L, second.generation)
         assertEquals(44L, restoredFromOlderProcess.generation)
+    }
+
+    private fun journalContext(preferences: SharedPreferences?): Context {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.getSharedPreferences("download_startup_recovery_journal", Context.MODE_PRIVATE))
+            .thenReturn(preferences)
+        return context
     }
 }

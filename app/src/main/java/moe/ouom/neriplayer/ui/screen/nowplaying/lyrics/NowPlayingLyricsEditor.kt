@@ -922,7 +922,7 @@ internal fun LyricMatchResultsContent(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val compactListState = rememberLazyListState()
+    val wholeContentScrollState = rememberScrollState()
     val resultListState = rememberLazyListState()
     val fontScale = LocalDensity.current.fontScale
     val queryPresentation = resolveLyricMatchQueryPresentation(query, isLoading, selectedSources)
@@ -935,33 +935,35 @@ internal fun LyricMatchResultsContent(
             .windowInsetsPadding(WindowInsets.navigationBars)
             .imePadding()
     ) {
-        val contentModifier = Modifier.align(Alignment.TopCenter)
-            .widthIn(max = LyricsEditorContentMaxWidth).fillMaxSize()
-        if (shouldScrollWholeLyricMatchContent(maxHeight, fontScale) || errorMessage != null) {
-            // 短视窗共用一个列表，让来源和查询区也能滚动，长错误信息不会挤掉候选结果
-            LazyColumn(
-                modifier = contentModifier.testTag("lyrics-match-scroll"),
-                state = compactListState,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item(key = "header") { LyricMatchHeader(onDismiss) }
-                item(key = "sources") { LyricMatchSources(selectedSources, isLoading, onSourceToggle) }
-                item(key = "query") { LyricMatchQuery(queryPresentation, queryActions) }
-                if (hasFeedback) item(key = "feedback") { LyricMatchFeedback(feedback) }
-                items(results, key = ::lyricMatchResultKey) { result ->
-                    LyricMatchResultCard(result, onClick = { onApply(result) })
+        // 短视窗或长错误信息时整页滚动，来源和查询区也能滚到；停靠键盘压缩视窗会切换这两种布局，
+        // 查询框必须保持同一组合位置，否则输入框被重建、焦点丢失，键盘弹出后立即收起（#496）
+        val scrollWholeContent = shouldScrollWholeLyricMatchContent(maxHeight, fontScale) || errorMessage != null
+        Column(
+            modifier = Modifier.align(Alignment.TopCenter)
+                .widthIn(max = LyricsEditorContentMaxWidth).fillMaxSize()
+                .then(
+                    if (scrollWholeContent) {
+                        Modifier.testTag("lyrics-match-scroll").verticalScroll(wholeContentScrollState)
+                    } else Modifier
+                )
+                .padding(
+                    horizontal = if (scrollWholeContent) 16.dp else 24.dp,
+                    vertical = if (scrollWholeContent) 8.dp else 16.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            LyricMatchHeader(onDismiss)
+            LyricMatchSources(selectedSources, isLoading, onSourceToggle)
+            LyricMatchQuery(queryPresentation, queryActions)
+            if (hasFeedback) LyricMatchFeedback(feedback)
+            if (scrollWholeContent) {
+                // 候选数量有上限，整页滚动时直接排进同一列；懒列表无法在无界高度内测量
+                results.forEach { result ->
+                    key(lyricMatchResultKey(result)) {
+                        LyricMatchResultCard(result, onClick = { onApply(result) })
+                    }
                 }
-            }
-        } else {
-            Column(
-                modifier = contentModifier.padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                LyricMatchHeader(onDismiss)
-                LyricMatchSources(selectedSources, isLoading, onSourceToggle)
-                LyricMatchQuery(queryPresentation, queryActions)
-                if (hasFeedback) LyricMatchFeedback(feedback)
+            } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f).testTag("lyrics-match-results"),
                     state = resultListState,

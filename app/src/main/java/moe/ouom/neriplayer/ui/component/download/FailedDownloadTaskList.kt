@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.download.DownloadTask
+import moe.ouom.neriplayer.core.download.presentation.downloadFailureReasonMessageRes
 import moe.ouom.neriplayer.core.download.presentation.visibleFailedDownloadTasks
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
@@ -109,6 +110,13 @@ internal fun FailedDownloadTaskList(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            downloadFailureReasonMessageRes(task)?.let { reasonRes ->
+                                Text(
+                                    text = stringResource(reasonRes),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                         HapticIconButton(
                             onClick = { onRetry(task.song.stableKey()) }

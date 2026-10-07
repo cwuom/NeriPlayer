@@ -8,6 +8,9 @@
     <string name="download_progress">下载进度</string>
     <string name="download_failed">下载失败</string>
     <string name="download_failed_tasks_summary">这些歌曲已停止自动重试，可点击歌曲旁的按钮再次尝试</string>
+    <string name="download_failed_preview_only">仅能获取试听片段，登录或开通会员后可重试</string>
+    <string name="download_failed_source_unavailable">平台暂未提供这首歌的音源（可能没有版权）</string>
+    <string name="download_legacy_preview_clip">旧版本只下载到了试听片段，登录或开通会员后重新下载可获取完整版</string>
     <string name="download_no_tasks">暂无下载任务</string>
     <string name="download_loading_tasks">正在读取下载任务…</string>
     <string name="download_loading_tasks_recovering">暂时无法读取下载任务，正在重试…</string>

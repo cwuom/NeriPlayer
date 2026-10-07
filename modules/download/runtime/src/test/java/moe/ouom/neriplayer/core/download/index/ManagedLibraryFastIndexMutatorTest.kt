@@ -231,6 +231,94 @@ class ManagedLibraryFastIndexMutatorTest {
     }
 
     @Test
+    fun `update in a shared shard replaces only the matching entry`() = runTest {
+        val stableKey = "edited-song"
+        val shard = ManagedLibraryFastIndex.shardFor(stableKey)
+        val neighbour = entry(keyInShard(shard, excluded = setOf(stableKey)))
+        val storage = FakeShardStorage().apply {
+            put(FILE_ROOT, shard, payload(shard, listOf(neighbour, entry(stableKey))))
+        }
+
+        val result = ManagedLibraryFastIndexMutator(generatedAtMs = { 42L }).updateExistingEntry(
+            rootIdentity = FILE_ROOT,
+            libraryId = LIBRARY_ID,
+            stableKey = stableKey,
+            storage = storage
+        ) { existing ->
+            existing.copy(title = "new title")
+        }
+
+        assertEquals(ManagedLibraryFastIndexMutationResult.Updated(shard, 2), result)
+        assertEquals(
+            mapOf(
+                neighbour.stableKey to neighbour,
+                stableKey to entry(stableKey).copy(title = "new title")
+            ),
+            storage.decodedEntries(FILE_ROOT, shard).associateBy(ManagedLibraryIndexEntry::stableKey)
+        )
+    }
+
+    @Test
+    fun `update reports missing entries and refuses to change the stable key`() = runTest {
+        val stableKey = "edited-song"
+        val shard = ManagedLibraryFastIndex.shardFor(stableKey)
+        val originalPayload = payload(shard, listOf(entry(stableKey)))
+        val storage = FakeShardStorage().apply {
+            put(FILE_ROOT, shard, originalPayload)
+        }
+        val mutator = ManagedLibraryFastIndexMutator(generatedAtMs = { 42L })
+
+        val missing = mutator.updateExistingEntry(
+            rootIdentity = FILE_ROOT,
+            libraryId = LIBRARY_ID,
+            stableKey = keyInShard(shard, excluded = setOf(stableKey)),
+            storage = storage
+        ) { existing ->
+            existing.copy(title = "unused")
+        }
+        val renamed = mutator.updateExistingEntry(
+            rootIdentity = FILE_ROOT,
+            libraryId = LIBRARY_ID,
+            stableKey = stableKey,
+            storage = storage
+        ) { existing ->
+            existing.copy(stableKey = "renamed-song")
+        }
+
+        assertEquals(ManagedLibraryFastIndexMutationResult.EntryMissing(shard), missing)
+        assertEquals(
+            "fast index update cannot change stable key",
+            (renamed as ManagedLibraryFastIndexMutationResult.Failed).error.message
+        )
+        assertTrue(storage.writes.isEmpty())
+        assertEquals(originalPayload, storage.payload(FILE_ROOT, shard))
+    }
+
+    @Test
+    fun `mutations require a root identity and library id before touching storage`() = runTest {
+        val storage = FakeShardStorage()
+        val mutator = ManagedLibraryFastIndexMutator()
+
+        val blankRoot = mutator.upsertCompleteEntry(
+            rootIdentity = " ",
+            libraryId = LIBRARY_ID,
+            entry = entry("song"),
+            storage = storage
+        )
+        val blankLibrary = mutator.remove(
+            rootIdentity = FILE_ROOT,
+            libraryId = "",
+            stableKey = "song",
+            storage = storage
+        )
+
+        assertEquals(ManagedLibraryFastIndex.shardFor("song"), blankRoot.shard)
+        assertEquals("root identity is blank", (blankRoot as ManagedLibraryFastIndexMutationResult.Failed).error.message)
+        assertEquals("library id is blank", (blankLibrary as ManagedLibraryFastIndexMutationResult.Failed).error.message)
+        assertTrue(storage.reads.isEmpty())
+    }
+
+    @Test
     fun `provider read failure does not attempt a shard write`() = runTest {
         val stableKey = "provider-read-failure"
         val shard = ManagedLibraryFastIndex.shardFor(stableKey)

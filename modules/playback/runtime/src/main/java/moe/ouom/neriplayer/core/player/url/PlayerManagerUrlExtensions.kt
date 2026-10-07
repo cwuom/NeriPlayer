@@ -1071,7 +1071,7 @@ private suspend fun PlayerManager.handleRefreshResult(
                     resumePlaybackAfterRefresh = semantics.resumePlaybackAfterRefresh
                 )
                 if (!applied) return@withContext
-                if (!gate.runMutation { consecutivePlayFailures = 0 }) return@withContext
+                if (!gate.runMutation {}) return@withContext
                 val resumedCommandSource = semantics.resumedPlaybackCommandSource
                 if (
                     semantics.resumePlaybackAfterRefresh &&

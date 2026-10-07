@@ -20,6 +20,18 @@ import moe.ouom.neriplayer.data.sync.store.state.*
 import moe.ouom.neriplayer.data.sync.store.state.lyrics.SyncLyricOverrideStore
 import moe.ouom.neriplayer.data.sync.store.state.lyrics.SyncLyricOverrideLookup
 import moe.ouom.neriplayer.data.sync.store.secure.EncryptedSyncPreferences
+import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
+import java.util.UUID
+
+private val volatileDeletionSession = UUID.randomUUID().toString()
+
+/**
+ * 删除记录会清理偏好未引用的代际文件，降级到内存偏好时必须使用独立的临时目录，
+ * 否则空偏好会把持久目录里的代际文件当成孤儿删除
+ */
+internal fun syncDeletionDirectory(preferences: SharedPreferences, persistentRoot: File, cacheRoot: File): File =
+    if (SecurePreferencesOpener.isPersistent(preferences)) File(persistentRoot, "sync-deletions")
+    else File(cacheRoot, "sync-deletions-volatile/$volatileDeletionSession")
 
 class SecureTokenStorage internal constructor(
     encryptedPrefs: SharedPreferences,
@@ -28,12 +40,20 @@ class SecureTokenStorage internal constructor(
 ) {
     constructor(context: Context) : this(
         EncryptedSyncPreferences.open(context, GITHUB_PREFS_NAME, "NERI-SecureTokenStorage", recoverOnFailure = false),
-        File(context.noBackupFilesDir, "sync-deletions"),
+        context
+    )
+
+    private constructor(encryptedPrefs: SharedPreferences, context: Context) : this(
+        encryptedPrefs,
+        syncDeletionDirectory(encryptedPrefs, context.noBackupFilesDir, context.cacheDir),
         { path ->
             val descriptor = Os.open(path.path, OsConstants.O_RDONLY, 0)
             try { Os.fsync(descriptor) } finally { Os.close(descriptor) }
         }
     )
+
+    /** Keystore 不可用时同步元数据只在本进程内存中，不能据此做持久决策 */
+    val isPersistent: Boolean = SecurePreferencesOpener.isPersistent(encryptedPrefs)
 
     private val deletionFiles = if (syncDirectory == null) SyncDeletionStateStorage(encryptedPrefs, directory)
         else SyncDeletionStateStorage(encryptedPrefs, directory, syncDirectory)

@@ -27,7 +27,6 @@ import moe.ouom.neriplayer.core.download.manager.catalog.hasBlockingActiveDownlo
 import moe.ouom.neriplayer.core.download.manager.catalog.waitForActiveDownloadJobsToSettle
 import moe.ouom.neriplayer.core.download.manager.catalog.waitForQueuedTasksToAttachToBatch
 import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownload
-import moe.ouom.neriplayer.core.download.manager.commit.isDownloadMetadataPostProcessingEnabled
 import moe.ouom.neriplayer.core.download.manager.commit.publishFinalizedDownload
 import moe.ouom.neriplayer.core.download.manager.commit.schedulePersistedTerminalTemporaryWriteCleanup
 import moe.ouom.neriplayer.core.download.manager.runtime.POST_CORE_DOWNLOAD_OPERATION_STATES
@@ -41,7 +40,6 @@ import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPu
 import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
 import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
-import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.presentation.downloadProgressFraction
 import moe.ouom.neriplayer.data.model.download.execution.FinalizedDownloadPublicationResult
 import moe.ouom.neriplayer.core.download.policy.PendingDownloadRecoverySummary
@@ -84,6 +82,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val PENDING_AUDIO_RECOVERY_PARALLELISM = 8
@@ -176,7 +175,6 @@ internal suspend fun GlobalDownloadManager.recoverPendingAudioWritesFromRoot(
             }
         }
     }
-    val metadataPostProcessingEnabled = isDownloadMetadataPostProcessingEnabled(context)
     val pendingScan = runCatching {
         ManagedDownloadStorage.scanPendingAudioWrites(
             context = context,
@@ -393,19 +391,6 @@ internal suspend fun GlobalDownloadManager.recoverPendingAudioWritesFromRoot(
                                 }
                                 val currentMetadata = readDownloadedMetadata(context, pendingAudio)
                                     ?: return@withSongExecutionLock
-                                if (
-                                    metadataPostProcessingEnabled &&
-                                        !directoryMutationLeaseOwned &&
-                                        currentMetadata.metadataEmbeddingState ==
-                                            DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
-                                ) {
-                                    NPLogger.d(
-                                        TAG,
-                                        "跳过不支持内嵌标签的 pending 音频自动恢复: " +
-                                            "song=${song.name}, file=${pendingAudio.name}"
-                                    )
-                                    return@withSongExecutionLock
-                                }
                                 if (isFinalizedDownloadedMetadata(currentMetadata)) {
                                     val publicationLease =
                                         prepareFinalizedPublicationArtifactLease(
@@ -525,7 +510,6 @@ internal suspend fun GlobalDownloadManager.recoverUnfinalizedPublishedAudioFromR
     ) {
         return
     }
-    val metadataPostProcessingEnabled = isDownloadMetadataPostProcessingEnabled(context)
     val snapshot = runCatching {
         ManagedDownloadStorage.buildDownloadLibrarySnapshot(
             context = context,
@@ -571,18 +555,6 @@ internal suspend fun GlobalDownloadManager.recoverUnfinalizedPublishedAudioFromR
                         context, currentMetadata.operationId
                     )
                 ) return@withSongExecutionLock
-                if (
-                    metadataPostProcessingEnabled &&
-                        currentMetadata.metadataEmbeddingState ==
-                            DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
-                ) {
-                    NPLogger.d(
-                        TAG,
-                        "跳过不支持内嵌标签的已发布音频自动恢复: " +
-                            "song=${song.name}, file=${audio.name}"
-                    )
-                    return@withSongExecutionLock
-                }
                 val operationState = currentMetadata.operationId
                     ?.let { operationId -> DownloadExecutionRoomStore.state(context, operationId) }
                 val artifactState = managedDownloadArtifactCoordinator.currentState(context, song)
@@ -758,6 +730,7 @@ internal fun GlobalDownloadManager.repairFinalizedDownloadedCoversFromRoot(
                 return@launch
             }
             val nextCandidateIndex = AtomicInteger(0)
+            val coverRepaired = AtomicBoolean(false)
             coroutineScope {
                 List(
                     size = minOf(METADATA_POST_PROCESSING_PARALLELISM, candidates.size)
@@ -786,14 +759,21 @@ internal fun GlobalDownloadManager.repairFinalizedDownloadedCoversFromRoot(
                                     if (!isFinalizedDownloadedMetadata(currentMetadata)) {
                                         return@withSongExecutionLock
                                     }
-                                    val beforeRepair =
-                                        buildOptimisticDownloadedSong(song, audio)
+                                    // 启动时内存目录可能尚未恢复，封面以 sidecar 记录为准；
+                                    // 否则每次启动都会把全部封面当成缺失，重写所有 sidecar 并整库重扫
+                                    val beforeRepair = buildOptimisticDownloadedSong(song, audio)
+                                        .let { optimistic ->
+                                            optimistic.copy(
+                                                coverPath = optimistic.coverPath ?: currentMetadata.coverPath
+                                            )
+                                        }
                                     val repaired = repairDownloadedCoverIfMissing(
                                         context = appContext,
                                         song = song,
                                         downloadedSong = beforeRepair
                                     )
                                     if (repaired.coverPath != beforeRepair.coverPath) {
+                                        coverRepaired.set(true)
                                         publishOptimisticDownloadedSongs(
                                             appContext,
                                             listOf(repaired)
@@ -809,7 +789,8 @@ internal fun GlobalDownloadManager.repairFinalizedDownloadedCoversFromRoot(
                 }.awaitAll()
             }
             if (
-                !isDownloadAdmissionTicketCurrent(appContext, admissionTicket)
+                !coverRepaired.get() ||
+                    !isDownloadAdmissionTicketCurrent(appContext, admissionTicket)
             ) {
                 return@launch
             }
@@ -1182,7 +1163,12 @@ internal suspend fun GlobalDownloadManager.restorePersistedDownloadProgress(
                 durableAttemptIds = durableAttemptIds,
                 statusesBySongKey = restorableEntries.associate {
                     it.request.song.stableKey() to presentationsByEntry.getValue(it).status
-                }
+                },
+                failureReasonsBySongKey = restorableEntries.mapNotNull { entry ->
+                    presentationsByEntry.getValue(entry).failureReason?.let { reason ->
+                        entry.request.song.stableKey() to reason
+                    }
+                }.toMap()
             )
             restorableEntries.forEach { entry ->
                 if (entry.request.attemptId == null) {

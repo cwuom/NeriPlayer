@@ -22,16 +22,16 @@ class DownloadTagPostProcessingPolicyTest {
     }
 
     @Test
-    fun `unsupported container after tag embedding stays unfinalized without retrying`() {
+    fun `unsupported container finalizes without embedded tags or retries`() {
         assertEquals(
-            TagPostProcessingAction.PRESERVE_UNFINALIZED,
+            TagPostProcessingAction.FINALIZE_UNTAGGED,
             tagPostProcessingAction(
                 DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER,
                 hasRemainingAttempts = true
             )
         )
         assertEquals(
-            TagPostProcessingAction.PRESERVE_UNFINALIZED,
+            TagPostProcessingAction.FINALIZE_UNTAGGED,
             tagPostProcessingAction(
                 DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER,
                 hasRemainingAttempts = false

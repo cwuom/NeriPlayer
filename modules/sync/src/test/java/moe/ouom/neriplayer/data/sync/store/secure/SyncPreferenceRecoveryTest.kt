@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.data.sync.store.secure
 
 import android.content.SharedPreferences
+import java.security.KeyStoreException
+import java.util.UUID
+import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -14,6 +18,7 @@ class SyncPreferenceRecoveryTest {
         val original = IllegalStateException("corrupt")
         val failure = assertThrows(IllegalStateException::class.java) {
             SyncPreferenceRecovery.open(
+                name = uniqueName(),
                 create = { events += "create"; throw original },
                 delete = { throw AssertionError("sync metadata must not be deleted") },
                 onOpenFailure = { events += "open failure" },
@@ -26,9 +31,32 @@ class SyncPreferenceRecoveryTest {
     }
 
     @Test
+    fun `unusable keystore keeps sync metadata on disk and degrades for this process`() {
+        val events = mutableListOf<String>()
+        val opened = SyncPreferenceRecovery.open(
+            name = uniqueName(),
+            create = { events += "create"; throw KeyStoreException("the master key exists but is unusable") },
+            delete = { throw AssertionError("sync metadata must not be deleted") },
+            onOpenFailure = { events += "open:${it.message}" },
+            onDeleteFailure = { throw AssertionError("unexpected delete failure") },
+            recoverOnFailure = false
+        )
+        assertFalse(SecurePreferencesOpener.isPersistent(opened))
+        assertEquals(
+            listOf(
+                "create",
+                "open:the master key exists but is unusable",
+                "open:the master key exists but is unusable"
+            ),
+            events
+        )
+    }
+
+    @Test
     fun `healthy preferences never clear storage`() {
         val preferences = mock(SharedPreferences::class.java)
         assertSame(preferences, SyncPreferenceRecovery.open(
+            name = uniqueName(),
             create = { preferences },
             delete = { throw AssertionError("unexpected delete") },
             onOpenFailure = { throw AssertionError("unexpected open failure", it) },
@@ -42,6 +70,7 @@ class SyncPreferenceRecoveryTest {
         val events = mutableListOf<String>()
         var attempts = 0
         assertSame(preferences, SyncPreferenceRecovery.open(
+            name = uniqueName(),
             create = { events += "create"; if (attempts++ == 0) error("corrupt"); preferences },
             delete = { events += "delete" },
             onOpenFailure = { events += "open:${it.message}" },
@@ -51,18 +80,22 @@ class SyncPreferenceRecoveryTest {
     }
 
     @Test
-    fun `delete failure is reported and failed recreation reaches caller`() {
+    fun `delete failure is reported and failed recreation degrades instead of crashing`() {
         val events = mutableListOf<String>()
         var attempts = 0
-        val error = assertThrows(IllegalStateException::class.java) {
-            SyncPreferenceRecovery.open(
-                create = { events += "create"; error(if (attempts++ == 0) "corrupt" else "unavailable") },
-                delete = { events += "delete"; error("denied") },
-                onOpenFailure = { events += "open:${it.message}" },
-                onDeleteFailure = { events += "delete:${it.message}" }
-            )
-        }
-        assertEquals("unavailable", error.message)
-        assertEquals(listOf("create", "open:corrupt", "delete", "delete:denied", "create"), events)
+        val opened = SyncPreferenceRecovery.open(
+            name = uniqueName(),
+            create = { events += "create"; error(if (attempts++ == 0) "corrupt" else "unavailable") },
+            delete = { events += "delete"; error("denied") },
+            onOpenFailure = { events += "open:${it.message}" },
+            onDeleteFailure = { events += "delete:${it.message}" }
+        )
+        assertFalse(SecurePreferencesOpener.isPersistent(opened))
+        assertEquals(
+            listOf("create", "open:corrupt", "delete", "delete:denied", "create", "open:unavailable"),
+            events
+        )
     }
+
+    private fun uniqueName() = "sync-recovery-test-${UUID.randomUUID()}"
 }

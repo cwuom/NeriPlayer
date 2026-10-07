@@ -98,6 +98,14 @@ class DownloadedAudioCompletionPolicyTest {
                 )
             )
         )
+        assertFalse(
+            isUnfinalizedDownloadedMetadata(
+                DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                )
+            )
+        )
         assertTrue(isUnfinalizedDownloadedMetadata(null))
     }
 
@@ -127,10 +135,18 @@ class DownloadedAudioCompletionPolicyTest {
                 )
             )
         )
-        assertFalse(
+        assertTrue(
             isFinalizedDownloadedMetadata(
                 DownloadedAudioMetadata(
                     downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                )
+            )
+        )
+        assertFalse(
+            isFinalizedDownloadedMetadata(
+                DownloadedAudioMetadata(
+                    downloadFinalized = null,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
                 )
             )

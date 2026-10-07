@@ -93,6 +93,7 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import moe.ouom.neriplayer.core.player.timer.sleepTimerNotificationKey
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1116,10 +1117,11 @@ class AudioPlayerService : Service() {
         }
 
         serviceScope.launch {
-            PlayerManager.sleepTimerManager.timerState.collectSafely("sleepTimerState") {
-                updateNotification()
-                refreshIdleShutdown("sleep_timer")
-            }
+            PlayerManager.sleepTimerManager.timerState.map(::sleepTimerNotificationKey).distinctUntilChanged()
+                .collectSafely("sleepTimerState") {
+                    updateNotification()
+                    refreshIdleShutdown("sleep_timer")
+                }
         }
 
         serviceScope.launch {

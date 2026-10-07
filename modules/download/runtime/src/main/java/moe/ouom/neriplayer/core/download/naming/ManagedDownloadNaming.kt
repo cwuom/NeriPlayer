@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.naming
 
 import moe.ouom.neriplayer.data.model.download.naming.ParsedManagedDownloadFileName
 
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadFileNameTemplate as normalizeDownloadFileNameTemplatePreference
@@ -84,6 +85,10 @@ internal fun normalizeManagedDownloadAlbumName(album: String): String? {
         normalized.equals(SongSourceTags.BILIBILI, ignoreCase = true) ||
         normalized.startsWith("${SongSourceTags.BILIBILI}|", ignoreCase = true)
     ) {
+        return null
+    }
+    // 从下载目录重建的歌曲会带“本地文件”或 local 兜底值，不能写进文件名
+    if (LocalSongSupport.isPlaceholderAlbum(normalized) || normalized.equals("local", ignoreCase = true)) {
         return null
     }
     return normalized
@@ -228,7 +233,8 @@ private fun renderManagedDownloadBaseNameExact(
     template: String
 ): String {
     val rendered = if (template == DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE) {
-        listOf(title, artist, album, source)
+        // 空专辑省略整段；空作者仍保留空位，否则 "标题 - 专辑 - 来源" 会被解析成作者
+        listOfNotNull(title, artist, album.takeIf(String::isNotBlank), source)
             .joinToString(" - ")
     } else {
         template
@@ -411,6 +417,12 @@ private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
                     album = album,
                     source = source
                 )
+            )
+        )
+        // #396 起到这里之前的版本给空专辑也留了空位
+        addHistoricalManagedDownloadBaseName(
+            truncateManagedDownloadBaseName(
+                sanitizeManagedDownloadFileName(listOf(title, artist, album, source).joinToString(" - "))
             )
         )
     }

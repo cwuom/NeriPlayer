@@ -369,7 +369,7 @@ object CustomSongCoverStorage {
         }
 
         val contentHash = sha256(bytes)
-        val extension = contentTypeExtension(sourceUrl, request.url.toString())
+        val extension = request.url.pathSegments.last().substringAfterLast('.', "")
         // 网络封面先保存为应用内输入, 最终本体由音频旁的 Covers 侧载承载
         val directory = File(context.filesDir, DIRECTORY_NAME)
         if (!directory.exists() && !directory.mkdirs()) return null
@@ -403,22 +403,6 @@ object CustomSongCoverStorage {
         } finally {
             if (temporary.exists()) temporary.delete()
         }
-    }
-
-    private fun contentTypeExtension(sourceUrl: String, normalizedUrl: String): String {
-        return normalizedUrl.substringAfterLast('.', "")
-            .substringBefore('?')
-            .lowercase(Locale.ROOT)
-            .filter { it.isLetterOrDigit() }
-            .take(8)
-            .takeIf { it.isNotBlank() }
-            ?: sourceUrl.substringAfterLast('.', "")
-                .substringBefore('?')
-                .lowercase(Locale.ROOT)
-                .filter { it.isLetterOrDigit() }
-                .take(8)
-                .takeIf { it.isNotBlank() }
-                ?: "jpg"
     }
 
     private fun resolveExtension(

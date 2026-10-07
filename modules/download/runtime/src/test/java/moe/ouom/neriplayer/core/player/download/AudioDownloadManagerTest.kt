@@ -1093,9 +1093,15 @@ class AudioDownloadManagerTest : AudioDownloadManagerTestSupport() {
             )
         )
         assertFalse(canExposeManagedDownloadForPlayback(snapshot(true, null), audio))
-        assertFalse(
+        assertTrue(
             canExposeManagedDownloadForPlayback(
                 snapshot(true, DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER),
+                audio
+            )
+        )
+        assertFalse(
+            canExposeManagedDownloadForPlayback(
+                snapshot(false, DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER),
                 audio
             )
         )

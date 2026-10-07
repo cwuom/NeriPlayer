@@ -299,7 +299,7 @@ class YouTubeMusicClient(
             runCatching {
                 okHttpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@use null
-                    parseYouTubeMusicVideoMetadata(response.body.string())
+                    parseYouTubeMusicVideoMetadata(response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES))
                 }
             }.getOrNull()
         }

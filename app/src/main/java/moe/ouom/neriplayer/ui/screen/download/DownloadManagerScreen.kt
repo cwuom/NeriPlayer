@@ -528,6 +528,7 @@ private fun DownloadedSongsList(
     offlineMode: Boolean
 ) {
     val downloadedSongs by viewModel.downloadedSongs.collectAsStateWithLifecycle()
+    val legacyPreviewClips by viewModel.legacyPreviewClips.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
@@ -589,6 +590,7 @@ private fun DownloadedSongsList(
                 items(filteredSongs, key = { it.deletionIdentity() }) { song ->
                     DownloadedSongItem(
                         song = song,
+                        isLegacyPreviewClip = legacyPreviewClips[song.filePath] == song.fileSize,
                         isSelected = selectedSongKeys.contains(song.deletionIdentity()),
                         selectionMode = selectionMode,
                         onPlay = { viewModel.playDownloadedSong(song) },
@@ -627,6 +629,7 @@ private fun DownloadedSongsList(
 @Composable
 private fun DownloadedSongItem(
     song: DownloadedSong,
+    isLegacyPreviewClip: Boolean,
     isSelected: Boolean,
     selectionMode: Boolean,
     onPlay: () -> Unit,
@@ -752,6 +755,13 @@ private fun DownloadedSongItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (isLegacyPreviewClip) {
+                    Text(
+                        text = stringResource(CoreCommonR.string.download_legacy_preview_clip),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))

@@ -440,7 +440,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
         val result = AudioDownloadSourceResolver.parseNeteaseDownloadLookup(
             """{"code":200,"data":[{"url":"https://example.com/preview.mp3","freeTrialInfo":{"start":0,"end":30}}]}"""
         )
-        assertEquals(AudioDownloadSourceResolver.NeteaseDownloadLookup.ExplicitlyUnavailable, result)
+        assertEquals(AudioDownloadSourceResolver.NeteaseDownloadLookup.PreviewOnly, result)
     }
 
     @Test

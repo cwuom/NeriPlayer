@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingAudioWri
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingDownloadsForStartup
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverPendingResumableDownloads
 import moe.ouom.neriplayer.core.download.manager.recovery.recoverUnfinalizedPublishedAudioFromRoot
+import moe.ouom.neriplayer.core.download.manager.recovery.markLegacyPreviewClipsFromRoot
 import moe.ouom.neriplayer.core.download.manager.recovery.repairFinalizedDownloadedCoversFromRoot
 import moe.ouom.neriplayer.core.download.manager.recovery.repairPersistedPostCoreBatchCompletions
 import moe.ouom.neriplayer.core.download.manager.recovery.restorePersistedBatchDownloadPresentations
@@ -637,6 +638,10 @@ internal fun GlobalDownloadManager.initializeImpl(context: Context) {
                 context = appContext,
                 admissionTicket = startupAdmissionTicket
             )
+            markLegacyPreviewClipsFromRoot(
+                context = appContext,
+                admissionTicket = startupAdmissionTicket
+            )
             moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests.schedule(
                 appContext,
                 "download-startup"
@@ -746,7 +751,12 @@ internal suspend fun GlobalDownloadManager.reconcileMaterializedLegacyDownloadsI
         if (!isDownloadAdmissionTicketCurrent(appContext, admissionTicket)) {
             return@withLock ManagedLibraryRefreshOutcome.Preserved(ManagedLibraryRefreshPreserveReason.DOWNLOAD_CLEAR_IN_PROGRESS)
         }
-        scanLocalFilesAwait(appContext, forceRefresh = true)
+        scanLocalFilesAwait(appContext, forceRefresh = true).also {
+            markLegacyPreviewClipsFromRoot(
+                context = appContext,
+                admissionTicket = admissionTicket
+            )
+        }
     }
 }
 

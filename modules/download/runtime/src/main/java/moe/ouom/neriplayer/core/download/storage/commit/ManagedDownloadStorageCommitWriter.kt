@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.storage.tree.query.ManagedDownloadTreeChildQuery
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
@@ -127,7 +128,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 )
                 if (parents.isEmpty()) return false
                 parents.forEach { parent ->
-                    val target = parent.findFile(copied.copiedEntry.name)
+                    val target = findTreeChild(context, parent, copied.copiedEntry.name)
                     val targetEntry = target?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
                     if (isRestoredMigrationReplacementTarget(
                             expectedTarget = copied.copiedEntry,
@@ -152,7 +153,7 @@ internal class ManagedDownloadStorageCommitWriter(
                             return@forEach
                         }
                     }
-                    val backupDocument = parent.findFile(backup.name)
+                    val backupDocument = findTreeChild(context, parent, backup.name)
                     val backupEntry = backupDocument?.let(
                         ManagedDownloadStoredEntryMapper::fromDocumentFile
                     )
@@ -737,6 +738,27 @@ internal class ManagedDownloadStorageCommitWriter(
         )
     }
 
+    /**
+     * DocumentFile.findFile 列出子项后还会为每个子项单独查询名称，迁移大目录时每个文件放大成
+     * 上千次 Provider 查询。这里只在一次完整的子项查询里按同样的规则匹配；查询失败、未完整或
+     * 无法转换时退回 findFile，不能把"没查到"当成目标不存在
+     */
+    private fun findTreeChild(context: Context, parent: DocumentFile, displayName: String): DocumentFile? {
+        val listing = try {
+            ManagedDownloadTreeChildQuery.queryChildrenNow(context, parent)
+        } catch (_: Exception) {
+            null
+        }
+        if (listing?.isComplete != true) return parent.findFile(displayName)
+        val child = listing.children.firstOrNull { it.name == displayName } ?: return null
+        val document = try {
+            treeChildRegistry.toDocumentFile(context, parent, child)
+        } catch (_: Exception) {
+            null
+        }
+        return document ?: parent.findFile(displayName)
+    }
+
     private fun writeTreeReplacementStream(
         context: Context,
         parent: DocumentFile,
@@ -757,8 +779,8 @@ internal class ManagedDownloadStorageCommitWriter(
             context,
             parentDocumentCache = safParentDocumentCache
         )
-        val existingTarget = parent.findFile(displayName)
-        val existingBackup = parent.findFile(plan.backupName)
+        val existingTarget = findTreeChild(context, parent, displayName)
+        val existingBackup = findTreeChild(context, parent, plan.backupName)
         var backupEntry = existingBackup?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
         var target = existingTarget
         val expectedTarget = expectedTargetEntry ?: plan.targetEntry

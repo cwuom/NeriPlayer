@@ -7,6 +7,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import moe.ouom.neriplayer.api.sync.http.startOnLoopback
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavArchiveEntry
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -302,7 +303,7 @@ class WebDavArchiveLeaseTest {
             val client = OkHttpClient()
             try {
                 MockWebServer().use { server ->
-                    server.start()
+                    server.startOnLoopback()
                     val lockedRoot = server.url("/dav/")
                     server.dispatcher = object : Dispatcher() {
                         override fun dispatch(request: RecordedRequest): MockResponse {

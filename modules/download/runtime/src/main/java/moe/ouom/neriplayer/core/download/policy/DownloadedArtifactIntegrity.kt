@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.model.download.DownloadedArtifactIntegrityResult
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import kotlin.math.abs
 import kotlin.math.max
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -70,7 +71,7 @@ internal fun verifyDownloadedArtifactIntegrity(
         required = song.artist.isNotBlank()
     )
     addOptionalExactIssue(
-        expected = song.album,
+        expected = song.album.takeUnless(LocalSongSupport::isPlaceholderAlbum),
         actual = metadata.album,
         issue = DownloadedArtifactIntegrityIssue.ALBUM_MISMATCH,
         issues = issues
@@ -199,7 +200,9 @@ private fun verifyAudioDuration(
 internal fun hasDownloadedAudioDurationMismatch(expectedMs: Long, actualMs: Long?): Boolean {
     if (expectedMs <= 0L || actualMs == null || actualMs <= 0L) return false
     val toleranceMs = max(1_000L, expectedMs / 200L).coerceAtMost(2_000L)
-    return abs(actualMs - expectedMs) > toleranceMs
+    // Bilibili 等来源只给整秒时长且取整方式未知，真实音轨可能相差接近 1 秒
+    val precisionMs = if (expectedMs % 1_000L == 0L) 1_000L else 0L
+    return abs(actualMs - expectedMs) > toleranceMs + precisionMs
 }
 
 internal fun expectedDownloadedAudioDurationMs(

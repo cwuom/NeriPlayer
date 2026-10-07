@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.presentation
 
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.download.DownloadFailureReason
 import moe.ouom.neriplayer.data.model.download.DownloadProgress
 import moe.ouom.neriplayer.data.model.download.DownloadStage
 
@@ -592,6 +594,16 @@ fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<DownloadTask> 
 /** terminal failures stay visible for manual retry without becoming pending work */
 fun visibleFailedDownloadTasks(tasks: List<DownloadTask>): List<DownloadTask> {
     return tasks.filter { task -> task.status == DownloadStatus.FAILED }
+}
+
+/** null means the failure has no user-actionable reason beyond the generic label */
+fun downloadFailureReasonMessageRes(task: DownloadTask): Int? {
+    if (task.status != DownloadStatus.FAILED) return null
+    return when (task.failureReason) {
+        DownloadFailureReason.PREVIEW_ONLY -> CoreCommonR.string.download_failed_preview_only
+        DownloadFailureReason.SOURCE_UNAVAILABLE -> CoreCommonR.string.download_failed_source_unavailable
+        null -> null
+    }
 }
 
 /**

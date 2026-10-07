@@ -28,7 +28,6 @@ import moe.ouom.neriplayer.core.download.manager.catalog.awaitDownloadedSongDele
 import moe.ouom.neriplayer.core.download.manager.catalog.deferDownloadForDeleteCleanup
 import moe.ouom.neriplayer.core.download.manager.catalog.scheduleDeleteCleanupRetry
 import moe.ouom.neriplayer.core.download.manager.commit.finalizeCompletedDownload
-import moe.ouom.neriplayer.core.download.manager.commit.isDownloadMetadataPostProcessingEnabled
 import moe.ouom.neriplayer.core.download.manager.recovery.invalidCoreAudioReason
 import moe.ouom.neriplayer.core.download.manager.recovery.requeueInvalidCoreAudio
 import moe.ouom.neriplayer.core.download.manager.recovery.requeueConfirmedMissingCoreAudio
@@ -196,14 +195,7 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
                 return@admission
             }
             if (operationState == METADATA_ACTION_REQUIRED_OPERATION_STATE) {
-                if (isDownloadMetadataPostProcessingEnabled(appContext)) {
-                    NPLogger.w(
-                        TAG,
-                        "下载容器需要关闭内嵌元信息后才能继续: " +
-                            "song=${song.name}, operationId=$operationId"
-                    )
-                    return@admission
-                }
+                // 旧版本把写不了内嵌标签的下载停在这里；现在收尾会直接以 sidecar 完成
                 val reopened = DownloadExecutionRoomStore.updateState(
                     context = appContext,
                     operationId = operationId,
@@ -212,7 +204,7 @@ internal fun GlobalDownloadManager.scheduleUserDownload(
                 if (!reopened) {
                     NPLogger.w(
                         TAG,
-                        "无法在关闭内嵌元信息后恢复下载收尾: " +
+                        "无法重新打开等待元信息处理的下载收尾: " +
                             "song=${song.name}, operationId=$operationId"
                     )
                     return@admission
@@ -708,12 +700,7 @@ internal suspend fun GlobalDownloadManager.executionResultForOperation(
         WAITING_STORAGE_MUTATION_OPERATION_STATE,
         "CORE_COMMITTED",
         "ASSETS_ENRICHING" -> return DownloadExecutionResult.AlreadyHandled
-        "DEGRADED_COMPLETE" -> {
-            if (isMetadataEmbeddingActionRequired(context, operationId, songKey)) {
-                return DownloadExecutionResult.UserActionRequired
-            }
-            return DownloadExecutionResult.Retry
-        }
+        "DEGRADED_COMPLETE" -> return DownloadExecutionResult.Retry
         null -> return DownloadExecutionResult.MissingOperation
     }
     val task = taskStore.findTask(songKey)

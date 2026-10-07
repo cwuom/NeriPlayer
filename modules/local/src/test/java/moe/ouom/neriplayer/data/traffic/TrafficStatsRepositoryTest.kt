@@ -6,6 +6,10 @@ import java.io.File
 import java.util.Calendar
 import java.util.GregorianCalendar
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
@@ -24,6 +28,7 @@ import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito.`when`
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
@@ -73,22 +78,61 @@ class TrafficStatsRepositoryTest {
     }
 
     @Test
-    fun `successful legacy promotion restores Room writes after a Room read failure`() = runTest {
+    fun `Room read failure never promotes legacy JSON or writes over stored data`() = runTest {
         val legacy = listOf(TrafficStatsBucket(dayStartAt = 100L, mobileBytes = 50L))
         val fixture = fixture {
             file.writeText(Gson().toJson(legacy))
             doThrow(IllegalStateException("read failed")).`when`(room).readIfRoomPrimary()
         }
 
-        assertEquals(legacy, fixture.stats)
+        assertTrue(fixture.stats.isEmpty())
         fixture.repository.recordCacheHitBytes(7L)
         runCurrent()
         advanceTimeBy(5_000L)
         runCurrent()
 
-        assertEquals(legacy, fixture.writes.single().previous)
-        assertEquals(fixture.stats, fixture.writes.single().next)
+        assertEquals(7L, fixture.stats.single().cacheHitBytes)
+        assertTrue(fixture.imports.isEmpty())
+        assertTrue(fixture.writes.isEmpty())
         assertEquals(legacy, fixture.diskStats())
+        verify(fixture.room, times(0)).markLegacyJsonPrimary(anyLong())
+    }
+
+    @Test
+    fun `activity during an in flight Room write keeps Room as the store`() = runTest {
+        var suspendedWrite: Continuation<Unit>? = null
+        val fixture = fixture {
+            doAnswer { invocation ->
+                writes += SnapshotWrite(invocation.getArgument(0), invocation.getArgument(1))
+                if (suspendedWrite != null) return@doAnswer Unit
+                // Mockito 只在 rawArguments 中保留 suspend 函数的 Continuation
+                @Suppress("UNCHECKED_CAST")
+                suspendedWrite = invocation.rawArguments.last() as Continuation<Unit>
+                COROUTINE_SUSPENDED
+            }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+        }
+        fixture.repository.recordCacheHitBytes(10L)
+        runCurrent()
+        advanceTimeBy(5_000L)
+        runCurrent()
+        val write = requireNotNull(suspendedWrite)
+
+        fixture.repository.recordCacheHitBytes(20L)
+        runCurrent()
+        // 与 Room 事务一致：所属协程被取消时以 CancellationException 结束
+        val cancelled = write.context[Job]?.isCancelled == true
+        write.resumeWith(
+            if (cancelled) Result.failure(CancellationException("transaction cancelled"))
+            else Result.success(Unit)
+        )
+        runCurrent()
+        advanceTimeBy(5_000L)
+        runCurrent()
+
+        assertEquals(2, fixture.writes.size)
+        assertEquals(30L, fixture.writes.last().next.single().cacheHitBytes)
+        assertFalse(fixture.file.exists())
+        verify(fixture.room, times(0)).markLegacyJsonPrimary(anyLong())
     }
 
     @Test
@@ -273,6 +317,33 @@ class TrafficStatsRepositoryTest {
         advanceTimeBy(10_000L)
         runCurrent()
         assertEquals(1, fixture.writes.size)
+    }
+
+    @Test
+    fun `continuous traffic is still persisted within the maximum deferral`() = runTest {
+        val fixture = fixture()
+        repeat(10) {
+            fixture.repository.recordCacheHitBytes(1L)
+            runCurrent()
+            advanceTimeBy(4_000L)
+            fixture.clock.addAndGet(4_000L)
+            runCurrent()
+        }
+
+        val deferredWrite = fixture.writes.first().next.single()
+        assertEquals(8L, deferredWrite.cacheHitBytes)
+        advanceTimeBy(5_000L)
+        runCurrent()
+        assertEquals(10L, fixture.writes.last().next.single().cacheHitBytes)
+    }
+
+    @Test
+    fun `persist delay shrinks to the remaining deferral budget`() {
+        assertEquals(5_000L, trafficPersistDelayMs(pendingForMs = 0L))
+        assertEquals(4_000L, trafficPersistDelayMs(pendingForMs = 26_000L))
+        assertEquals(0L, trafficPersistDelayMs(pendingForMs = 30_000L))
+        assertEquals(0L, trafficPersistDelayMs(pendingForMs = 45_000L))
+        assertEquals(5_000L, trafficPersistDelayMs(pendingForMs = -60_000L))
     }
 
     private suspend fun TestScope.fixture(

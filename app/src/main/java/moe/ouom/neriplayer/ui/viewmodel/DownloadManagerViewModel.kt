@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 class DownloadManagerViewModel(application: Application) : AndroidViewModel(application) {
 
     val downloadedSongs = GlobalDownloadManager.downloadedSongs
+    val legacyPreviewClips = GlobalDownloadManager.legacyPreviewClips
     val isRefreshing = GlobalDownloadManager.isRefreshing
     val downloadedSongDeleteProgress = GlobalDownloadManager.downloadedSongDeleteProgress
     val downloadedSongDeleteFailureDismissed =
