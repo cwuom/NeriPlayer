@@ -66,6 +66,7 @@ class WebViewLoginStateClearReceiverReplyTest {
         verify(webStorage).deleteAllData()
         verify(reply).setPackage(PACKAGE)
         verify(reply).putExtra(EXTRA_WEBVIEW_CLEAR_REQUEST_ID, REQUEST_ID)
+        verify(reply).putExtra(EXTRA_WEBVIEW_CLEAR_RECEIVER, BiliWebViewLoginStateClearReceiver::class.java.name)
         verify(reply).putExtra(EXTRA_WEBVIEW_CLEAR_SUCCEEDED, true)
         val order = inOrder(context, pendingResult)
         order.verify(context).sendBroadcast(reply)
@@ -81,6 +82,7 @@ class WebViewLoginStateClearReceiverReplyTest {
 
         verify(webStorage, never()).deleteAllData()
         verify(reply).putExtra(EXTRA_WEBVIEW_CLEAR_REQUEST_ID, REQUEST_ID)
+        verify(reply).putExtra(EXTRA_WEBVIEW_CLEAR_RECEIVER, NeteaseWebViewLoginStateClearReceiver::class.java.name)
         verify(reply).putExtra(EXTRA_WEBVIEW_CLEAR_SUCCEEDED, false)
         val order = inOrder(context, pendingResult)
         order.verify(context).sendBroadcast(reply)
