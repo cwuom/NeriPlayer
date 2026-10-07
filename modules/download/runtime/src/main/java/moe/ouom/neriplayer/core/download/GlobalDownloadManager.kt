@@ -546,6 +546,9 @@ object GlobalDownloadManager {
 
     internal val downloadedSongsMutable = MutableStateFlow<List<DownloadedSong>>(emptyList())
     val downloadedSongs: StateFlow<List<DownloadedSong>> = downloadedSongsMutable.asStateFlow()
+    internal val legacyPreviewClipsMutable = MutableStateFlow<Map<String, Long>>(emptyMap())
+    /** 旧版保存的试听片段：音频引用到文件大小，大小不一致说明已重新下载 */
+    val legacyPreviewClips: StateFlow<Map<String, Long>> = legacyPreviewClipsMutable.asStateFlow()
     internal val downloadPresenceVersionMutable = MutableStateFlow(0)
     val downloadPresenceVersion: StateFlow<Int> = downloadPresenceVersionMutable.asStateFlow()
 
@@ -669,6 +672,7 @@ object GlobalDownloadManager {
     internal var finalizationRecoverySnapshotCache: FinalizationRecoverySnapshotCache? = null
     internal val startupArtifactRecoveryActive = AtomicBoolean(false)
     internal val finalizedCoverRepairActive = AtomicBoolean(false)
+    internal val legacyPreviewClipCheckActive = AtomicBoolean(false)
     internal val activeBatchDownloadJobs = Collections.newSetFromMap(ConcurrentHashMap<Job, Boolean>())
     /** 磁盘确实耗尽时只启动一轮全局取消，避免多个并发 operation 重复建清空栅栏 */
     internal val storageExhaustionCancellationScheduled = AtomicBoolean(false)

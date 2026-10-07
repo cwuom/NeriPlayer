@@ -27,6 +27,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.artifact.DownloadCorePublicationCoordinator
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
+import moe.ouom.neriplayer.core.download.catalog.preview.LegacyPreviewClipCheck
+import moe.ouom.neriplayer.core.download.catalog.preview.LegacyPreviewClipCheckCodec
+import moe.ouom.neriplayer.core.download.manager.recovery.markLegacyPreviewClipsFromRoot
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.persistence.METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
 import moe.ouom.neriplayer.core.download.manager.runtime.recoverPostCoreDownloadOperation
@@ -357,6 +360,83 @@ class DownloadCorePublicationInstrumentedTest {
                 dao.deleteIfUnchanged(artifact.rootKey, artifact.stableKey, artifact.state,
                     artifact.leaseId, artifact.updatedAtMs)
             }
+        }
+    }
+
+    @Test
+    fun privateLegacyNeteasePreviewClipIsMarkedWithoutTouchingFiles() = runBlocking {
+        withStorage(false) { assertLegacyPreviewClipMark(catalogDurationMs = 233_000L, expectedMarked = true) }
+    }
+
+    @Test
+    fun safLegacyNeteasePreviewClipIsMarkedWithoutTouchingFiles() = runBlocking {
+        withStorage(true) { assertLegacyPreviewClipMark(catalogDurationMs = 233_000L, expectedMarked = true) }
+    }
+
+    @Test
+    fun privateLegacyNeteaseCompleteSongIsNotMarked() = runBlocking {
+        withStorage(false) { assertLegacyPreviewClipMark(catalogDurationMs = song.durationMs, expectedMarked = false) }
+    }
+
+    private suspend fun Fixture.assertLegacyPreviewClipMark(catalogDurationMs: Long, expectedMarked: Boolean) {
+        val root = ManagedDownloadStorage.resolveRootBlocking(context)
+        val audio = requireNotNull(ManagedDownloadStorage.promotePendingAudio(context, root, commit())).also {
+            ManagedDownloadStorage.sealAudioPublicationReceipt(context, root, it)
+        }
+        ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName)
+        val legacyMetadata = JSONObject()
+            .put("stableKey", song.stableKey())
+            .put("songId", song.id)
+            .put("name", song.name)
+            .put("artist", song.artist)
+            .put("album", song.album)
+            .put("identityAlbum", "netease")
+            .put("audioFileName", audio.name)
+            .put("durationMs", catalogDurationMs)
+            .put("downloadFinalized", true)
+            .put("metadataEmbeddingState", "LEGACY_V15_FINALIZED")
+            .put("createdAtSource", "LEGACY_V15")
+        assertTrue(ManagedDownloadStorage.saveMetadata(context, audio, legacyMetadata.toString()))
+        ManagedDownloadStorage.snapshotCacheStore.invalidate()
+        val metadataReference = requireNotNull(ManagedDownloadStorage.findMetadataForAudio(context, audio)).reference
+        val audioBefore = read(audio.reference)
+        val metadataBefore = read(metadataReference)
+        val dao = NeriUserDataDatabase.getInstance(context).syncMetadataDao()
+        val previousChecks = dao.getMigrationMetadata(LegacyPreviewClipCheckCodec.METADATA_KEY)
+        try {
+            val check = awaitLegacyPreviewClipCheck(audio.reference)
+            assertTrue(
+                "duration must come from the audio file: $check",
+                (check.audioDurationMs ?: 0L) in 1L..5_000L
+            )
+            assertEquals(
+                if (expectedMarked) audio.sizeBytes else null,
+                GlobalDownloadManager.legacyPreviewClips.value[audio.reference]
+            )
+            assertArrayEquals(audioBefore, read(audio.reference))
+            assertArrayEquals(metadataBefore, read(metadataReference))
+        } finally {
+            if (previousChecks == null) {
+                dao.deleteMigrationMetadata(listOf(LegacyPreviewClipCheckCodec.METADATA_KEY))
+            } else {
+                dao.upsertMigrationMetadata(previousChecks)
+            }
+        }
+    }
+
+    private suspend fun Fixture.awaitLegacyPreviewClipCheck(reference: String): LegacyPreviewClipCheck {
+        val dao = NeriUserDataDatabase.getInstance(context).syncMetadataDao()
+        return withTimeout(30_000L) {
+            var check: LegacyPreviewClipCheck? = null
+            while (check == null) {
+                while (GlobalDownloadManager.legacyPreviewClipCheckActive.get()) delay(20L)
+                GlobalDownloadManager.markLegacyPreviewClipsFromRoot(context)
+                while (GlobalDownloadManager.legacyPreviewClipCheckActive.get()) delay(20L)
+                check = LegacyPreviewClipCheckCodec.decode(
+                    dao.getMigrationMetadata(LegacyPreviewClipCheckCodec.METADATA_KEY)?.value
+                )[reference]
+            }
+            check
         }
     }
 
