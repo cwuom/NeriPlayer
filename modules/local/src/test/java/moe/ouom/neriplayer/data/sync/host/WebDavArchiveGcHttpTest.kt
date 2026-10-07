@@ -958,7 +958,7 @@ class WebDavArchiveGcHttpTest {
         val backend: WebDavSyncBackend
 
         init {
-            server.start()
+            server.startOnLoopback()
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests += request

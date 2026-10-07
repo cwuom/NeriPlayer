@@ -28,7 +28,7 @@ class SyncDownloadBudgetHttpTest {
         val calls = CopyOnWriteArrayList<Call>()
         val client = clientRecordingCalls(calls)
         MockWebServer().use { server ->
-            server.start()
+            server.startOnLoopback()
             try {
                 val github = GitHubApiClient("test-token", client, "expired", server.url("/").toString().trimEnd('/'))
                 val webdav = WebDavApiClient("test-user", "test-password", client, "auth")
@@ -59,7 +59,7 @@ class SyncDownloadBudgetHttpTest {
         val calls = CopyOnWriteArrayList<Call>()
         val client = clientRecordingCalls(calls)
         MockWebServer().use { server ->
-            server.start()
+            server.startOnLoopback()
             try {
                 val github = GitHubApiClient("test-token", client, "expired", server.url("/").toString().trimEnd('/'))
                 val webdav = WebDavApiClient("test-user", "test-password", client, "auth")
@@ -86,7 +86,7 @@ class SyncDownloadBudgetHttpTest {
         val calls = CopyOnWriteArrayList<Call>()
         val client = clientRecordingCalls(calls)
         MockWebServer().use { server ->
-            server.start()
+            server.startOnLoopback()
             try {
                 val github = GitHubApiClient("test-token", client, "expired", server.url("/").toString().trimEnd('/'))
                 val webdav = WebDavApiClient("test-user", "test-password", client, "auth")
@@ -117,7 +117,7 @@ class SyncDownloadBudgetHttpTest {
         val calls = CopyOnWriteArrayList<Call>()
         val client = clientRecordingCalls(calls)
         MockWebServer().use { server ->
-            server.start()
+            server.startOnLoopback()
             try {
                 val github = GitHubApiClient("test-token", client, "expired", server.url("/").toString().trimEnd('/'))
                 val webdav = WebDavApiClient("test-user", "test-password", client, "auth")
@@ -147,7 +147,7 @@ class SyncDownloadBudgetHttpTest {
         val calls = CopyOnWriteArrayList<Call>()
         val client = clientRecordingCalls(calls)
         MockWebServer().use { server ->
-            server.start()
+            server.startOnLoopback()
             try {
                 val github = GitHubApiClient("test-token", client, "expired", server.url("/").toString().trimEnd('/'))
                 val webdav = WebDavApiClient("test-user", "test-password", client, "auth")
