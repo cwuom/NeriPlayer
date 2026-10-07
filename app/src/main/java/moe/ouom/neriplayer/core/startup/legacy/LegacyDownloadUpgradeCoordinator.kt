@@ -36,6 +36,7 @@ internal enum class LegacyDownloadUpgradeRowStatus {
     AUDIO_NOT_FOUND,
     STORAGE_UNAVAILABLE,
     PROVIDER_FAILURE,
+    PROVIDER_FAILURE_EXHAUSTED,
     INVALID_PAYLOAD,
     CONFLICT,
     QUEUE_IMPORT_SUPPRESSED
@@ -341,7 +342,8 @@ internal fun selectLegacyRestorableCoverReference(
 internal class LegacyDownloadUpgradeCoordinator(
     private val context: Context,
     private val database: NeriUserDataDatabase =
-        NeriUserDataDatabase.getInstance(context.applicationContext)
+        NeriUserDataDatabase.getInstance(context.applicationContext),
+    private val launchCounter: LegacyUpgradeLaunchCounter = LegacyUpgradeLaunchCounter()
 ) {
     suspend fun execute(
         onProgress: suspend (processed: Int, total: Int) -> Unit = { _, _ -> }
@@ -390,6 +392,7 @@ internal class LegacyDownloadUpgradeCoordinator(
         var managedSnapshot: ManagedDownloadStorage.DownloadLibrarySnapshot? = null
         var managedLookup: LegacyManagedRootLookup? = null
         var snapshotFailure: Throwable? = null
+        val providerFailures = readProviderFailureRecords(sqliteDatabase)
         while (true) {
             val rows = readRowBatch(
                 database = sqliteDatabase,
@@ -447,7 +450,10 @@ internal class LegacyDownloadUpgradeCoordinator(
                                         needsSnapshot = snapshotRequirements[index],
                                         snapshot = managedSnapshot,
                                         lookup = managedLookup,
-                                        snapshotFailure = snapshotFailure
+                                        snapshotFailure = snapshotFailure,
+                                        relaxedCovers = launchCounter.failedLaunchesBeforeThisProcess(
+                                            providerFailures[preparedRows[index].row.stableKey]
+                                        ) >= RELAX_COVERS_AFTER_FAILED_LAUNCHES
                                     )
                                 )
                             }
@@ -492,13 +498,14 @@ internal class LegacyDownloadUpgradeCoordinator(
                     result
                 }
             }
+            val budgetedResults = applyProviderFailureBudget(persistedResults, providerFailures)
             val quarantinedKeys = quarantineTerminalPayloadRows(
                 database = sqliteDatabase,
                 rows = rows,
-                results = persistedResults
+                results = budgetedResults
             )
             rowsQuarantined += quarantinedKeys.size
-            val settledResults = persistedResults.map { result ->
+            val settledResults = budgetedResults.map { result ->
                 if (result.stableKey in quarantinedKeys) {
                     result.copy(status = LegacyDownloadUpgradeRowStatus.QUARANTINED)
                 } else {
@@ -514,6 +521,17 @@ internal class LegacyDownloadUpgradeCoordinator(
                     }
                     .map(LegacyDownloadUpgradeRowResult::stableKey)
                     .toList()
+            )
+            forgetProviderFailures(
+                settledResults.asSequence()
+                    .filter { result ->
+                        result.status == LegacyDownloadUpgradeRowStatus.COMPLETED ||
+                            result.status == LegacyDownloadUpgradeRowStatus.QUARANTINED
+                    }
+                    .map(LegacyDownloadUpgradeRowResult::stableKey)
+                    .filter(providerFailures::containsKey)
+                    .toList(),
+                providerFailures
             )
             rowsSeen += rows.size
             rowResults += settledResults
@@ -565,7 +583,8 @@ internal class LegacyDownloadUpgradeCoordinator(
         needsSnapshot: Boolean,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
         lookup: LegacyManagedRootLookup?,
-        snapshotFailure: Throwable?
+        snapshotFailure: Throwable?,
+        relaxedCovers: Boolean = false
     ): LegacyDownloadUpgradeRowResult {
         val payload = prepared.payload ?: return LegacyDownloadUpgradeRowResult(
             stableKey = prepared.row.stableKey,
@@ -590,7 +609,8 @@ internal class LegacyDownloadUpgradeCoordinator(
             row = prepared.row,
             payload = payload,
             snapshot = if (needsSnapshot) snapshot else null,
-            lookup = if (needsSnapshot) lookup else null
+            lookup = if (needsSnapshot) lookup else null,
+            relaxedCovers = relaxedCovers
         )
     }
 
@@ -743,7 +763,8 @@ internal class LegacyDownloadUpgradeCoordinator(
         row: PayloadRow,
         payload: JSONObject,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
-        lookup: LegacyManagedRootLookup?
+        lookup: LegacyManagedRootLookup?,
+        relaxedCovers: Boolean = false
     ): LegacyDownloadUpgradeRowResult {
         val payloadStableKey = payload.optString("stableKey")
             .trim()
@@ -887,7 +908,8 @@ internal class LegacyDownloadUpgradeCoordinator(
                     audio = audio,
                     stableKey = effectiveStableKey,
                     snapshot = resolvedSnapshot,
-                    lookup = resolvedLookup
+                    lookup = resolvedLookup,
+                    relaxedCovers = relaxedCovers
                 )
                 if (
                     cachedCoverResult.complete &&
@@ -912,7 +934,8 @@ internal class LegacyDownloadUpgradeCoordinator(
                 audio = audio,
                 stableKey = effectiveStableKey,
                 snapshot = resolvedSnapshot,
-                lookup = resolvedLookup
+                lookup = resolvedLookup,
+                relaxedCovers = relaxedCovers
             )
             if (!coverResult.complete) {
                 return LegacyDownloadUpgradeRowResult(
@@ -963,7 +986,8 @@ internal class LegacyDownloadUpgradeCoordinator(
         audio: ManagedDownloadStorage.StoredEntry,
         stableKey: String,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
-        lookup: LegacyManagedRootLookup
+        lookup: LegacyManagedRootLookup,
+        relaxedCovers: Boolean = false
     ): LegacyCoverMaterializationResult {
         val merged = LegacyDownloadUpgradeMetadataMerger.merge(
             payload = payload,
@@ -977,11 +1001,53 @@ internal class LegacyDownloadUpgradeCoordinator(
                 put("localFilePath", audio.localFilePath)
             }
         }
+        if (!relaxedCovers) {
+            return materializeLegacyCoverAssets(
+                metadata = merged,
+                snapshot = snapshot,
+                lookup = lookup
+            )
+        }
+        val strict = try {
+            materializeLegacyCoverAssets(JSONObject(merged.toString()), snapshot, lookup)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+        if (strict?.complete == true) return strict
+        // 上一次启动已整轮重试过；仍无法物化的本地旧封面只保留为恢复引用，不再阻塞歌曲元数据
+        releaseLocalCoverReferences(merged)
         return materializeLegacyCoverAssets(
             metadata = merged,
             snapshot = snapshot,
             lookup = lookup
         )
+    }
+
+    private fun releaseLocalCoverReferences(metadata: JSONObject) {
+        val restorable = metadata.optJSONObject("restorableMetadata")
+            ?: JSONObject().also { created -> metadata.put("restorableMetadata", created) }
+        val assets = restorable.optJSONObject("assetRefs")
+            ?: JSONObject().also { created -> restorable.put("assetRefs", created) }
+        val recoveryReferences = assets.optJSONArray("legacyCoverRecoveryReferences")
+            ?: JSONArray().also { created -> assets.put("legacyCoverRecoveryReferences", created) }
+        val containers = listOfNotNull(
+            metadata to listOf("coverPath", "coverUrl", "customCoverUrl", "originalCoverUrl"),
+            restorable.optJSONObject("baseline")?.let { baseline -> baseline to listOf("coverReference") },
+            restorable.optJSONObject("overrides")?.let { overrides -> overrides to listOf("coverReference") }
+        )
+        containers.forEach { (container, keys) ->
+            keys.forEach { key ->
+                val reference = container.optString(key).takeIf(::isMaterializableReference)
+                    ?: return@forEach
+                val alreadyStored = (0 until recoveryReferences.length()).any { index ->
+                    recoveryReferences.optString(index) == reference
+                }
+                if (!alreadyStored) recoveryReferences.put(reference)
+                container.remove(key)
+            }
+        }
     }
 
     private suspend fun persistLegacyOperation(
@@ -1477,6 +1543,70 @@ internal class LegacyDownloadUpgradeCoordinator(
         }
     }
 
+    private fun readProviderFailureRecords(
+        database: androidx.sqlite.db.SupportSQLiteDatabase
+    ): MutableMap<String, String> {
+        return database.query(
+            "SELECT key, value FROM migration_metadata WHERE substr(key, 1, ?) = ?",
+            arrayOf<Any>(PROVIDER_FAILURE_METADATA_KEY_PREFIX.length, PROVIDER_FAILURE_METADATA_KEY_PREFIX)
+        ).use { cursor ->
+            val records = mutableMapOf<String, String>()
+            while (cursor.moveToNext()) {
+                records[cursor.getString(0).removePrefix(PROVIDER_FAILURE_METADATA_KEY_PREFIX)] =
+                    cursor.getString(1).orEmpty()
+            }
+            records
+        }
+    }
+
+    /** 跨启动仍然失败的行先放宽封面，再转入隔离表，避免一个旧资源让升级永远停在等待重试 */
+    private suspend fun applyProviderFailureBudget(
+        results: List<LegacyDownloadUpgradeRowResult>,
+        records: MutableMap<String, String>
+    ): List<LegacyDownloadUpgradeRowResult> {
+        val nowMs = System.currentTimeMillis()
+        return results.map { result ->
+            if (result.status != LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE) return@map result
+            val persisted = records[result.stableKey]
+            if (launchCounter.failedLaunchesBeforeThisProcess(persisted) >= QUARANTINE_AFTER_FAILED_LAUNCHES) {
+                return@map result.copy(status = LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE_EXHAUSTED)
+            }
+            val next = launchCounter.recordFailure(persisted) ?: return@map result
+            try {
+                database.syncMetadataDao().upsertMigrationMetadata(
+                    MigrationMetadataEntity(
+                        key = PROVIDER_FAILURE_METADATA_KEY_PREFIX + result.stableKey,
+                        value = next,
+                        updatedAt = nowMs
+                    )
+                )
+                records[result.stableKey] = next
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // 计数写不进去时按未计处理，下一次启动仍从严格模式重试
+            }
+            result
+        }
+    }
+
+    private suspend fun forgetProviderFailures(
+        stableKeys: List<String>,
+        records: MutableMap<String, String>
+    ) {
+        if (stableKeys.isEmpty()) return
+        try {
+            database.syncMetadataDao().deleteMigrationMetadata(
+                stableKeys.map { stableKey -> PROVIDER_FAILURE_METADATA_KEY_PREFIX + stableKey }
+            )
+            stableKeys.forEach(records::remove)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            // 计数只影响放宽时机，清理失败不能把已完成的行重新变成待处理
+        }
+    }
+
     private suspend fun isLegacyQueueImportSuppressed(): Boolean {
         return database.syncMetadataDao()
             .getMigrationMetadata(DownloadLegacyStorageAccess.PENDING_QUEUE_CUTOVER_STATE_KEY)
@@ -1625,8 +1755,10 @@ internal class LegacyDownloadUpgradeCoordinator(
     private fun readQuarantinedPayloadRows(
         database: androidx.sqlite.db.SupportSQLiteDatabase
     ): List<PayloadRow> {
+        // 重试耗尽的行重新排队只会再次失败，并让每次目录发布都重新弹出升级横幅
         return database.query(
-            "SELECT stable_key, payload_json FROM $QUARANTINE_TABLE ORDER BY id ASC"
+            "SELECT stable_key, payload_json FROM $QUARANTINE_TABLE WHERE reason != ? ORDER BY id ASC",
+            arrayOf(LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE_EXHAUSTED.name)
         ).use { cursor ->
             val stableKeyIndex = cursor.getColumnIndexOrThrow("stable_key")
             val payloadIndex = cursor.getColumnIndexOrThrow("payload_json")
@@ -1662,10 +1794,19 @@ internal class LegacyDownloadUpgradeCoordinator(
     }
 
     private fun cleanTemporaryTable(database: androidx.sqlite.db.SupportSQLiteDatabase): Boolean {
-        return runCatching {
+        val dropped = runCatching {
             database.execSQL("DROP TABLE IF EXISTS $PAYLOAD_TABLE")
             true
         }.getOrDefault(false)
+        if (dropped) {
+            runCatching {
+                database.execSQL(
+                    "DELETE FROM migration_metadata WHERE substr(key, 1, ?) = ?",
+                    arrayOf<Any>(PROVIDER_FAILURE_METADATA_KEY_PREFIX.length, PROVIDER_FAILURE_METADATA_KEY_PREFIX)
+                )
+            }
+        }
+        return dropped
     }
 
     private fun cleanLegacyProjectionTables(
@@ -1691,8 +1832,13 @@ internal class LegacyDownloadUpgradeCoordinator(
             LegacyDownloadUpgradeRowStatus.INVALID_PAYLOAD,
             LegacyDownloadUpgradeRowStatus.CONFLICT,
             LegacyDownloadUpgradeRowStatus.AUDIO_NOT_FOUND,
-            LegacyDownloadUpgradeRowStatus.STORAGE_UNAVAILABLE
+            LegacyDownloadUpgradeRowStatus.STORAGE_UNAVAILABLE,
+            LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE_EXHAUSTED
         )
+        private const val PROVIDER_FAILURE_METADATA_KEY_PREFIX =
+            "legacy_download_upgrade_provider_failures:"
+        private const val RELAX_COVERS_AFTER_FAILED_LAUNCHES = 1
+        private const val QUARANTINE_AFTER_FAILED_LAUNCHES = 2
         private val LEGACY_DOWNLOAD_PROJECTION_TABLES = listOf(
             "download_pending_queue",
             "download_cancelled_key",

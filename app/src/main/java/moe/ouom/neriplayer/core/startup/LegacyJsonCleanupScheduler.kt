@@ -19,7 +19,9 @@ import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingReason
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadRebuildBudget
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeCoordinator
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.core.startup.legacy.LegacyDownloadUpgradeResult
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupCoordinator
 import moe.ouom.neriplayer.core.startup.legacy.LegacyJsonCleanupResult
@@ -98,10 +100,25 @@ internal object LegacyJsonCleanupScheduler {
                         if (refreshOutcome !is ManagedLibraryRefreshOutcome.Published ||
                             ManagedLibraryProcessingCoordinator.state.value === processingState
                         ) {
-                            ManagedLibraryProcessingCoordinator.waitingForRetry(
-                                appContext, operationId,
-                                expectedState = processingState
-                            )
+                            if (isRebuildBudgetExhausted(appContext, operationId)) {
+                                NPLogger.w(
+                                    TAG,
+                                    "Legacy download index did not publish for several launches, " +
+                                        "finishing upgrade: outcome=$refreshOutcome"
+                                )
+                                ManagedLibraryProcessingCoordinator.complete(
+                                    appContext, operationId,
+                                    expectedState = processingState
+                                )
+                                forgetRebuildFailures(appContext, operationId)
+                            } else {
+                                ManagedLibraryProcessingCoordinator.waitingForRetry(
+                                    appContext, operationId,
+                                    expectedState = processingState
+                                )
+                            }
+                        } else {
+                            forgetRebuildFailures(appContext, operationId)
                         }
                     }
                     val upgradeFinished = lastUpgradeResult?.isSettled == true &&
@@ -174,6 +191,28 @@ internal object LegacyJsonCleanupScheduler {
                     schedule(appContext, nextReason)
                 }
             }
+        }
+    }
+
+    private suspend fun isRebuildBudgetExhausted(context: Context, operationId: String): Boolean =
+        try {
+            LegacyDownloadRebuildBudget(NeriUserDataDatabase.getInstance(context).syncMetadataDao())
+                .recordFailureAndCheckExhausted(operationId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.w(TAG, "Legacy download rebuild budget unavailable: ${error.message}")
+            false
+        }
+
+    private suspend fun forgetRebuildFailures(context: Context, operationId: String) {
+        try {
+            LegacyDownloadRebuildBudget(NeriUserDataDatabase.getInstance(context).syncMetadataDao())
+                .forget(operationId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.w(TAG, "Legacy download rebuild budget cleanup pending: ${error.message}")
         }
     }
 
