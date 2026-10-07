@@ -39,6 +39,9 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
+
       - name: Prepare release metadata
         id: meta
         run: |

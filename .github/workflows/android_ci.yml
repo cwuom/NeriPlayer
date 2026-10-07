@@ -43,6 +43,9 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
+
       - name: Run unit tests, CRAP gate and lint
         run: >-
           ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
@@ -91,6 +94,9 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
+
       - name: Install Worker dependencies
         run: npm ci --prefix np-submodule/NeriPlayer-LTW
 
@@ -134,6 +140,9 @@ jobs:
 
       - name: Grant execute permission
         run: chmod +x gradlew
+
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
 
       - name: Enable KVM
         run: |
@@ -226,6 +235,9 @@ jobs:
 
       - name: Grant execute permission
         run: chmod +x gradlew
+
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
 
       - name: Verify Native USB behavior before packaging
         run: |

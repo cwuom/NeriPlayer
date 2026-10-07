@@ -126,6 +126,9 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
+
       - name: Build Android Native Debug libraries
         run: |
           ./gradlew :native:externalNativeBuildDebug \
