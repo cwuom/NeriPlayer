@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.core.download.storage.metadata
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ManagedDownloadMetadataCodecTest {
@@ -56,5 +58,54 @@ class ManagedDownloadMetadataCodecTest {
             listOf("abcdef", "abc"),
             prepared.map(ManagedMetadataReferenceReplacement::from)
         )
+    }
+
+    @Test
+    fun `reference rewrite keeps raw json without replacements and follows restorable cover sections`() {
+        val raw = "not json"
+        assertEquals(raw, ManagedDownloadMetadataCodec.rewriteManagedMetadataReferences(raw, emptyMap()))
+
+        val references = mapOf("/old/cover.jpg" to "/new/cover.jpg")
+        val baselineOnly = JSONObject(
+            ManagedDownloadMetadataCodec.rewriteManagedMetadataReferences(
+                restorableJson(baseline = true, overrides = false),
+                references
+            )
+        ).getJSONObject("restorableMetadata")
+        val overridesOnly = JSONObject(
+            ManagedDownloadMetadataCodec.rewriteManagedMetadataReferences(
+                restorableJson(baseline = false, overrides = true),
+                references
+            )
+        ).getJSONObject("restorableMetadata")
+
+        assertEquals("/new/cover.jpg", baselineOnly.getString("coverReference"))
+        assertEquals("/new/cover.jpg", baselineOnly.getJSONObject("baseline").getString("coverReference"))
+        assertFalse(baselineOnly.has("overrides"))
+        assertEquals("/new/cover.jpg", overridesOnly.getJSONObject("overrides").getString("coverReference"))
+        assertFalse(overridesOnly.has("baseline"))
+    }
+
+    @Test
+    fun `finalized metadata requires an accepted embedding state`() {
+        val finalized = ManagedDownloadMetadataCodec.finalizedDownloadedMetadataJson(
+            """{"metadataEmbeddingState":"embedded_verified","name":"Song"}"""
+        )
+
+        assertEquals(true, JSONObject(requireNotNull(finalized)).getBoolean("downloadFinalized"))
+        assertEquals("Song", JSONObject(finalized).getString("name"))
+        assertNull(ManagedDownloadMetadataCodec.finalizedDownloadedMetadataJson("""{"metadataEmbeddingState":null}"""))
+        assertNull(ManagedDownloadMetadataCodec.finalizedDownloadedMetadataJson("""{"name":"Song"}"""))
+        assertNull(ManagedDownloadMetadataCodec.finalizedDownloadedMetadataJson("{broken"))
+    }
+
+    private fun restorableJson(baseline: Boolean, overrides: Boolean): String {
+        val restorable = JSONObject().put("coverReference", "/old/cover.jpg")
+        if (baseline) restorable.put("baseline", JSONObject().put("coverReference", "/old/cover.jpg"))
+        if (overrides) restorable.put("overrides", JSONObject().put("coverReference", "/old/cover.jpg"))
+        return JSONObject()
+            .put("coverPath", "/old/cover.jpg")
+            .put("restorableMetadata", restorable)
+            .toString()
     }
 }

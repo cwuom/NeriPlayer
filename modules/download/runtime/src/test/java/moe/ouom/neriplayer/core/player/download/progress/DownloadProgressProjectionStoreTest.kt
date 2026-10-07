@@ -88,6 +88,48 @@ class DownloadProgressProjectionStoreTest {
         assertEquals(emptyMap<String, DownloadProgress>(), store.snapshot.value)
     }
 
+    @Test
+    fun `progress without operation id is keyed by song and attempt`() {
+        val store = DownloadProgressProjectionStore(snapshotIntervalNs = 0L)
+        val anonymous = progress(bytesRead = 10L).copy(songKey = "song", operationId = null, attemptId = null)
+        val blankOperation = progress(attemptId = 5L, bytesRead = 20L).copy(songKey = "song", operationId = " ")
+
+        store.record(anonymous, nowNs = 0L)
+        store.record(blankOperation, nowNs = 1L)
+
+        assertEquals(anonymous, store.latest("song#0"))
+        assertEquals(blankOperation, store.latest(" song#5 "))
+        assertNull(store.latest(null))
+        assertNull(store.latest("  "))
+        store.remove(null)
+        store.remove("  ")
+        store.remove("missing")
+        assertEquals(setOf("song#0", "song#5"), store.snapshot.value.keys)
+        store.remove(" song#0 ")
+        assertEquals(setOf("song#5"), store.snapshot.value.keys)
+    }
+
+    @Test
+    fun `throttled snapshots still publish new operations after the interval and completed transfers`() {
+        val store = DownloadProgressProjectionStore(snapshotIntervalNs = 100L)
+        val unknownSize = progress(operationId = "a", bytesRead = 1L).copy(totalBytes = 0L)
+        store.record(unknownSize, nowNs = 0L)
+        store.record(progress(operationId = "b", bytesRead = 1L), nowNs = 10L)
+
+        assertEquals(setOf("a"), store.snapshot.value.keys)
+        assertEquals(setOf("a", "b"), store.snapshotValues().map { it.operationId }.toSet())
+
+        store.record(progress(operationId = "c", bytesRead = 1L), nowNs = 100L)
+        assertEquals(setOf("a", "b", "c"), store.snapshot.value.keys)
+
+        store.record(unknownSize.copy(bytesRead = 50L), nowNs = 110L)
+        assertEquals(1L, store.snapshot.value.getValue("a").bytesRead)
+
+        store.record(progress(operationId = "b", bytesRead = 100L), nowNs = 120L)
+        assertEquals(100L, store.snapshot.value.getValue("b").bytesRead)
+        assertEquals(50L, store.snapshot.value.getValue("a").bytesRead)
+    }
+
     private fun progress(
         operationId: String = "operation",
         attemptId: Long = 1L,

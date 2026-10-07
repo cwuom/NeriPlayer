@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.model.download.storage.StorageTarget
 
 import android.content.Context
 import android.net.Uri
+import java.io.File
 import java.io.FileNotFoundException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -270,5 +271,28 @@ class ManagedTemporaryWriteJournalTest {
                 ?.single()
                 ?.requestedDisplayName
         )
+    }
+
+    @Test
+    fun `corrupt journal refuses display name updates without overwriting it`() {
+        val context = mock(Context::class.java)
+        val temporaryUri = mock(Uri::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.filesDir).thenReturn(temporaryFolder.root)
+        `when`(temporaryUri.toString()).thenReturn("content://provider/temp-opaque-id")
+        val journal = File(temporaryFolder.root, "managed_temporary_writes_v1.json").apply {
+            writeText("{corrupt")
+        }
+
+        assertFalse(
+            PersistentManagedTemporaryWriteJournal.recordActualDisplayName(
+                context = context,
+                temporaryUri = temporaryUri,
+                requestedDisplayName = "requested",
+                actualDisplayName = "actual"
+            )
+        )
+        assertEquals(null, PersistentManagedTemporaryWriteJournal.snapshotForTest(context))
+        assertEquals("{corrupt", journal.readText())
     }
 }

@@ -495,6 +495,29 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `delete planner ignores songs without a local playback reference`() {
+        val remoteOnly = downloadedSong(id = 7L, name = "remote").copy(
+            filePath = "https://example.invalid/remote.mp3",
+            mediaUri = null
+        )
+        val downloaded = downloadedSong(id = 42L, name = "managed")
+        val emptySnapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+
+        assertFalse(
+            requiresManagedDownloadDeleteSnapshotRefresh(
+                snapshot = emptySnapshot,
+                songs = listOf(remoteOnly)
+            )
+        )
+        assertTrue(
+            requiresManagedDownloadDeleteSnapshotRefresh(
+                snapshot = emptySnapshot,
+                songs = listOf(remoteOnly, downloaded)
+            )
+        )
+    }
+
+    @Test
     fun `full-library artifact fallback includes managed audio absent from catalog`() {
         val catalogAudio = ManagedDownloadStorage.StoredEntry(
             name = "catalog.mp3",
