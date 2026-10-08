@@ -713,7 +713,7 @@ internal fun PlayerManager.playAtIndex(
                                     isListenTogetherAuthoritativeStreamConfirmedUnavailable(song)
                             )
                         ) {
-                            postPlayerEvent(PlayerEvent.ShowError(message))
+                            postPlayerEvent(PlayerEvent.ShowNotice(message))
                         }
                     }
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)

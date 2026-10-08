@@ -783,16 +783,14 @@ class MainActivity : ComponentActivity() {
                                         LaunchedEffect(lifecycleOwner.lifecycle) {
                                             lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                                                 PlayerManager.playerEventFlow.collect { event ->
-                                                    when (event) {
-                                                        is PlayerEvent.ShowLoginPrompt -> {
-                                                            dialogMessage = event.message
+                                                    when (val presentation = playerEventPresentation(event)) {
+                                                        is PlayerEventPresentation.Dialog -> {
+                                                            dialogMessage = presentation.message
                                                             showDialog = true
                                                         }
 
-                                                        is PlayerEvent.ShowError -> {
-                                                            dialogMessage = event.message
-                                                            showDialog = true
-                                                        }
+                                                        is PlayerEventPresentation.Notice ->
+                                                            AppFeedback.show(this@MainActivity, presentation.message)
                                                     }
                                                 }
                                             }
