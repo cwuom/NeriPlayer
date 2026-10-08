@@ -23,156 +23,34 @@ package moe.ouom.neriplayer.ui.screen.debug
  * Created: 2025/1/11
  */
 
-import android.annotation.SuppressLint
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import android.content.Context
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Error
-import androidx.compose.material3.*
-import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
-import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@SuppressLint("LocalContextResourcesRead")
 fun CrashLogListScreen(
     onBack: () -> Unit,
     onLogFileClick: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val showClearConfirmDialog = remember { mutableStateOf(false) }
-
-    val crashLogFilesState = remember {
-        mutableStateOf(
-            run {
-                val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-                val crashDir = File(baseDir, "crashes")
-                crashDir.listFiles { file ->
-                    file.isFile && file.name.endsWith(".txt")
-                }?.sortedByDescending { it.lastModified() } ?: emptyList()
-            }
-        )
-    }
-
-    if (showClearConfirmDialog.value) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirmDialog.value = false },
-            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_clear)) },
-            text = { Text(stringResource(CoreCommonR.string.crash_log_clear_confirm)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearConfirmDialog.value = false
-                        coroutineScope.launch {
-                            val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-                            val crashDir = File(baseDir, "crashes")
-                            var clearedCount = 0
-                            withContext(Dispatchers.IO) {
-                                crashDir.listFiles { file ->
-                                    file.isFile && file.name.endsWith(".txt")
-                                }?.forEach {
-                                    if (it.delete()) {
-                                        clearedCount++
-                                    }
-                                }
-                            }
-                            crashLogFilesState.value = emptyList()
-                            snackbarHostState.showNeriSnackbar(
-                                context.resources.getQuantityString(
-                                    CoreCommonR.plurals.crash_log_cleared,
-                                    clearedCount,
-                                    clearedCount
-                                )
-                            )
-                        }
-                    }
-                ) {
-                    Text(stringResource(CoreCommonR.string.common_clear_all), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirmDialog.value = false }) {
-                    Text(stringResource(CoreCommonR.string.action_cancel))
-                }
-            }
-        )
-    }
-
-    Scaffold(
-        snackbarHost = {
-            val miniH = LocalMiniPlayerHeight.current
-            NeriSnackbarHost(
-                hostState = snackbarHostState,
-                bottomPadding = miniH
-            )
-        },
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(CoreCommonR.string.crash_log_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
-                    }
-                },
-                actions = {
-                    if (crashLogFilesState.value.isNotEmpty()) {
-                        IconButton(onClick = { showClearConfirmDialog.value = true }) {
-                            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(CoreCommonR.string.log_clear))
-                        }
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        val miniH = LocalMiniPlayerHeight.current
-
-        LazyColumn(modifier = Modifier
-            .padding(padding)
-            .padding(bottom = miniH)
-        ) {
-            if (crashLogFilesState.value.isEmpty()) {
-                item {
-                    ListItem(
-                        headlineContent = { Text(stringResource(CoreCommonR.string.crash_log_no_file)) },
-                        supportingContent = { Text(stringResource(CoreCommonR.string.crash_log_hint)) }
-                    )
-                }
-            } else {
-                items(crashLogFilesState.value) { file ->
-                    ListItem(
-                        headlineContent = { Text(file.name) },
-                        supportingContent = { Text(formatFileMeta(file)) },
-                        leadingContent = { Icon(Icons.Outlined.Error, null, tint = MaterialTheme.colorScheme.error) },
-                        modifier = Modifier.clickable { onLogFileClick(file.absolutePath) }
-                    )
-                }
-            }
-        }
-    }
+    TextLogFileListScreen(
+        titleRes = CoreCommonR.string.crash_log_title,
+        clearConfirmRes = CoreCommonR.string.crash_log_clear_confirm,
+        clearedCountRes = CoreCommonR.plurals.crash_log_cleared,
+        emptyTitleRes = CoreCommonR.string.crash_log_no_file,
+        emptyHintRes = CoreCommonR.string.crash_log_hint,
+        resolveDirectory = { crashLogDirectory(context) },
+        onBack = onBack,
+        onLogFileClick = onLogFileClick,
+        fileIcon = { Icon(Icons.Outlined.Error, null, tint = MaterialTheme.colorScheme.error) }
+    )
 }
 
-private fun formatFileMeta(file: File): String {
-    val date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
-    val size = file.length() / 1024 // KB
-    return "$date - ${size}KB"
-}
+internal fun crashLogDirectory(context: Context): File =
+    File(context.getExternalFilesDir(null) ?: context.filesDir, "crashes")
