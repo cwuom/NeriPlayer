@@ -37,6 +37,22 @@ class UsbExclusiveServiceKeepAliveOwnerTest {
     }
 
     @Test
+    fun `background health ticks every second but reasserts and redraws every five`() = runTest {
+        val port = FakePort()
+        val owner = UsbExclusiveServiceKeepAliveOwner(backgroundScope, port)
+
+        owner.update("started")
+        runCurrent()
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertEquals(10, port.refreshCalls)
+        assertEquals(2, port.presentationCalls)
+        assertEquals(2, port.reassertReasons.count { it == "usb_keepalive" })
+        owner.close()
+    }
+
+    @Test
     fun `repeated activation keeps one watchdog loop`() = runTest {
         val port = FakePort()
         val owner = UsbExclusiveServiceKeepAliveOwner(backgroundScope, port)
