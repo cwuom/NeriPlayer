@@ -515,8 +515,8 @@ internal fun LocalMediaSupport.parseId3Metadata(bytes: ByteArray): ContainerMeta
         if (frameSize <= 0) break
 
         val frameDataStart = offset + frameHeaderSize
+        if (frameSize > limit - frameDataStart) break
         val frameDataEnd = frameDataStart + frameSize
-        if (frameDataEnd > limit) break
 
         val frameData = bytes.copyOfRange(frameDataStart, frameDataEnd)
         val value = decodeId3TextFrame(frameData)
