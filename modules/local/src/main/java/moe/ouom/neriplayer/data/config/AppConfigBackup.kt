@@ -10,6 +10,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -37,17 +38,17 @@ internal data class AppConfigBackupSections(
     val hasSyncSection: Boolean
         get() = gitHubSync || webDavSync || syncPreferences
 
-    fun hasAnySection(): Boolean {
-        return settings ||
-            listenTogether ||
-            language ||
-            neteaseAuth ||
-            biliAuth ||
-            youTubeAuth ||
-            gitHubSync ||
-            webDavSync ||
-            syncPreferences
-    }
+    fun hasAnySection(): Boolean = listOf(
+        settings,
+        listenTogether,
+        language,
+        neteaseAuth,
+        biliAuth,
+        youTubeAuth,
+        gitHubSync,
+        webDavSync,
+        syncPreferences
+    ).any { it }
 }
 
 internal data class DecodedAppConfigBackup(
@@ -64,10 +65,7 @@ object AppConfigBackupCodec {
 
     internal fun decodeForImport(raw: String): DecodedAppConfigBackup {
         val root = parseRootObject(raw)
-        val kind = root["kind"]?.jsonPrimitive?.contentOrNull
-        require(kind == CONFIG_KIND) { "Not a NeriPlayer config backup" }
-
-        val formatVersion = root["formatVersion"]?.jsonPrimitive?.intOrNull
+        val formatVersion = root.configFormatVersionOrNull()
         require(formatVersion != null) { "Not a NeriPlayer config backup" }
         require(formatVersion in 1..CONFIG_FORMAT_VERSION) {
             "Unsupported config backup format: $formatVersion"
@@ -89,6 +87,11 @@ object AppConfigBackupCodec {
         return configJson.parseToJsonElement(raw) as? JsonObject
             ?: throw IllegalArgumentException("Not a NeriPlayer config backup")
     }
+
+    private fun JsonObject.configFormatVersionOrNull(): Int? =
+        if (primitive("kind")?.contentOrNull == CONFIG_KIND) primitive("formatVersion")?.intOrNull else null
+
+    private fun JsonObject.primitive(name: String): JsonPrimitive? = this[name]?.jsonPrimitive
 
     private fun JsonObject.detectSections(): AppConfigBackupSections {
         return AppConfigBackupSections(

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.config
 import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
 
 import android.content.Context
+import android.net.Uri
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
@@ -82,49 +83,11 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
     ): LinkedHashMap<String, Float> {
         val result = linkedMapOf<String, Float>()
         source.forEach { (name, value) ->
-            if (name !in SETTINGS_FLOAT_KEY_NAMES) {
+            if (name !in SETTINGS_FLOAT_KEY_NAMES || !value.isFinite()) {
                 onAdjusted()
                 return@forEach
             }
-            if (value.isNaN() || value.isInfinite()) {
-                onAdjusted()
-                return@forEach
-            }
-            val normalized = when (name) {
-                SettingsKeys.LYRIC_FONT_SCALE.name,
-                SettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE.name,
-                SettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE.name,
-                SettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE.name,
-                SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE.name ->
-                    normalizeLyricFontScale(value)
-                SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP.name -> normalizeFloatingLyricsFontSizeSp(value)
-                SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP.name ->
-                    normalizeFloatingLyricsOutlineWidthDp(value)
-                SettingsKeys.FLOATING_LYRICS_LYRIC_ALPHA.name ->
-                    normalizeFloatingLyricsAlpha(value, fallback = 1f)
-                SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP.name ->
-                    normalizeFloatingLyricsOutlineWidthDp(value)
-                SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA.name ->
-                    normalizeFloatingLyricsAlpha(value)
-                SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP.name -> normalizeFloatingLyricsMaxWidthDp(value)
-                SettingsKeys.FLOATING_LYRICS_POSITION_X.name,
-                SettingsKeys.FLOATING_LYRICS_POSITION_Y.name,
-                SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X.name,
-                SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y.name ->
-                    normalizeFloatingLyricsPosition(value)
-                SettingsKeys.UI_DENSITY_SCALE.name -> value.coerceIn(UI_DENSITY_SCALE_RANGE)
-                SettingsKeys.BACKGROUND_IMAGE_BLUR.name -> value.coerceIn(BACKGROUND_IMAGE_BLUR_RANGE)
-                SettingsKeys.BACKGROUND_IMAGE_ALPHA.name -> value.coerceIn(BACKGROUND_IMAGE_ALPHA_RANGE)
-                SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT.name ->
-                    value.coerceIn(NOW_PLAYING_COVER_BLUR_AMOUNT_RANGE)
-                SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN.name ->
-                    value.coerceIn(NOW_PLAYING_COVER_BLUR_DARKEN_RANGE)
-                SettingsKeys.LYRIC_BLUR_AMOUNT.name -> value.coerceIn(LYRIC_BLUR_AMOUNT_RANGE)
-                SettingsKeys.PLAYBACK_SPEED.name -> normalizePlaybackSpeed(value)
-                SettingsKeys.PLAYBACK_PITCH.name -> normalizePlaybackPitch(value)
-                SettingsKeys.PLAYBACK_VOLUME_BALANCE.name -> normalizePlaybackVolumeBalance(value)
-                else -> value
-            }
+            val normalized = FLOAT_SETTING_NORMALIZERS[name]?.invoke(value) ?: value
             if (normalized != value) {
                 onAdjusted()
             }
@@ -170,22 +133,7 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 onAdjusted()
                 return@forEach
             }
-            val normalized = when (name) {
-                SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name,
-                SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS.name,
-                SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS.name,
-                SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS.name,
-                SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS.name ->
-                    normalizeLyricDefaultOffsetMs(value)
-                SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS.name,
-                SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS.name,
-                SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS.name,
-                SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS.name ->
-                    value.coerceIn(PLAYBACK_FADE_DURATION_RANGE_MS)
-                SettingsKeys.MAX_CACHE_SIZE_BYTES.name ->
-                    CacheSizePolicy.normalizeCacheSizeBytes(value)
-                else -> value
-            }
+            val normalized = LONG_SETTING_NORMALIZERS[name]?.invoke(value) ?: value
             if (normalized != value) {
                 onAdjusted()
             }
@@ -318,48 +266,50 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         warnings: MutableList<String>,
         onAdjusted: () -> Unit
     ) {
-        val downloadDirectoryKey = SettingsKeys.DOWNLOAD_DIRECTORY_URI.name
-        val downloadDirectoryLabelKey = SettingsKeys.DOWNLOAD_DIRECTORY_LABEL.name
-        val downloadDirectoryUri = strings[downloadDirectoryKey]
-        val normalizedDownloadDirectoryUri = ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(
-            downloadDirectoryUri
-        )
-        val persistedTreeAccess = normalizedDownloadDirectoryUri
-            ?.let(::inspectPersistedTreeAccess)
+        strings[DOWNLOAD_DIRECTORY_KEY]?.let { importDownloadDirectory(strings, it, warnings, onAdjusted) }
+        dropUnusableDownloadDirectoryLabel(strings, onAdjusted)
+    }
+
+    private fun importDownloadDirectory(
+        strings: MutableMap<String, String>,
+        rawDirectoryUri: String,
+        warnings: MutableList<String>,
+        onAdjusted: () -> Unit
+    ) {
+        val normalized = ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(rawDirectoryUri)
+        if (normalized.isNullOrBlank()) {
+            strings.removeDownloadDirectory()
+            onAdjusted()
+            return
+        }
+        val access = inspectPersistedTreeAccess(normalized)
         when {
-            downloadDirectoryUri == null -> Unit
-            normalizedDownloadDirectoryUri.isNullOrBlank() -> {
-                strings.remove(downloadDirectoryKey)
-                strings.remove(downloadDirectoryLabelKey)
-                onAdjusted()
-            }
-            shouldClearImportedDownloadDirectory(
-                persistedTreeAccess ?: PersistedTreeAccess.NoPersistedPermission
-            ) -> {
-                strings.remove(downloadDirectoryKey)
-                strings.remove(downloadDirectoryLabelKey)
+            shouldClearImportedDownloadDirectory(access) -> {
+                strings.removeDownloadDirectory()
                 warnings += context.getString(CoreCommonR.string.config_import_warning_download_directory)
             }
-            shouldWarnImportedDownloadDirectory(
-                persistedTreeAccess ?: PersistedTreeAccess.NoPersistedPermission
-            ) -> {
+            shouldWarnImportedDownloadDirectory(access) -> {
                 warnings += context.getString(CoreCommonR.string.config_import_warning_download_directory)
             }
-            normalizedDownloadDirectoryUri != downloadDirectoryUri -> {
-                strings[downloadDirectoryKey] = normalizedDownloadDirectoryUri
+            normalized != rawDirectoryUri -> {
+                strings[DOWNLOAD_DIRECTORY_KEY] = normalized
                 onAdjusted()
             }
         }
+    }
 
-        val downloadDirectoryLabel = strings[downloadDirectoryLabelKey]
+    private fun dropUnusableDownloadDirectoryLabel(
+        strings: MutableMap<String, String>,
+        onAdjusted: () -> Unit
+    ) {
+        val downloadDirectoryLabel = strings[DOWNLOAD_DIRECTORY_LABEL_KEY]
         if (downloadDirectoryLabel != null && downloadDirectoryLabel.isBlank()) {
-            strings.remove(downloadDirectoryLabelKey)
+            strings.remove(DOWNLOAD_DIRECTORY_LABEL_KEY)
             onAdjusted()
         }
 
-        if (strings[downloadDirectoryKey].isNullOrBlank() && strings.containsKey(downloadDirectoryLabelKey)) {
-            strings.remove(downloadDirectoryKey)
-            strings.remove(downloadDirectoryLabelKey)
+        if (strings[DOWNLOAD_DIRECTORY_KEY].isNullOrBlank() && strings.containsKey(DOWNLOAD_DIRECTORY_LABEL_KEY)) {
+            strings.removeDownloadDirectory()
             onAdjusted()
         }
     }
@@ -374,22 +324,25 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
     private fun inspectPersistedTreeAccess(uriString: String): PersistedTreeAccess {
         val uri = runCatching { uriString.toUri() }.getOrNull()
             ?: return PersistedTreeAccess.NoPersistedPermission
-        val hasPersistedPermission = context.contentResolver.persistedUriPermissions.any { permission ->
-            permission.uri == uri && (permission.isReadPermission || permission.isWritePermission)
-        }
-        if (!hasPersistedPermission) {
+        if (!hasPersistedTreePermission(uri)) {
             return PersistedTreeAccess.NoPersistedPermission
         }
-        return when (ManagedDownloadReferenceIo.inspectDirectory(context, uri)) {
-            ManagedDownloadReferenceIo.AccessResult.Accessible -> PersistedTreeAccess.Accessible
-            ManagedDownloadReferenceIo.AccessResult.Missing -> PersistedTreeAccess.Missing
-            ManagedDownloadReferenceIo.AccessResult.PermissionLost -> PersistedTreeAccess.PermissionLost
-            is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> {
-                PersistedTreeAccess.ProviderFailure
-            }
-        }
+        return persistedTreeAccessOf(ManagedDownloadReferenceIo.inspectDirectory(context, uri))
     }
+
+    private fun hasPersistedTreePermission(uri: Uri): Boolean =
+        context.contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == uri && (permission.isReadPermission || permission.isWritePermission)
+        }
 }
+
+internal fun persistedTreeAccessOf(result: ManagedDownloadReferenceIo.AccessResult): PersistedTreeAccess =
+    when (result) {
+        ManagedDownloadReferenceIo.AccessResult.Accessible -> PersistedTreeAccess.Accessible
+        ManagedDownloadReferenceIo.AccessResult.Missing -> PersistedTreeAccess.Missing
+        ManagedDownloadReferenceIo.AccessResult.PermissionLost -> PersistedTreeAccess.PermissionLost
+        is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> PersistedTreeAccess.ProviderFailure
+    }
 
 internal enum class PersistedTreeAccess {
     Accessible,
@@ -442,6 +395,56 @@ private val NOW_PLAYING_COVER_BLUR_AMOUNT_RANGE = 0f..500f
 private val NOW_PLAYING_COVER_BLUR_DARKEN_RANGE = 0f..0.8f
 private val LYRIC_BLUR_AMOUNT_RANGE = 0f..8f
 private val PLAYBACK_FADE_DURATION_RANGE_MS = 0L..3000L
+private val DOWNLOAD_DIRECTORY_KEY = SettingsKeys.DOWNLOAD_DIRECTORY_URI.name
+private val DOWNLOAD_DIRECTORY_LABEL_KEY = SettingsKeys.DOWNLOAD_DIRECTORY_LABEL.name
+
+private val FLOAT_SETTING_NORMALIZERS: Map<String, (Float) -> Float> = buildMap {
+    listOf(
+        SettingsKeys.LYRIC_FONT_SCALE,
+        SettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE,
+        SettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE,
+        SettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE,
+        SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE
+    ).forEach { key -> put(key.name) { normalizeLyricFontScale(it) } }
+    listOf(
+        SettingsKeys.FLOATING_LYRICS_POSITION_X,
+        SettingsKeys.FLOATING_LYRICS_POSITION_Y,
+        SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X,
+        SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y
+    ).forEach { key -> put(key.name) { normalizeFloatingLyricsPosition(it) } }
+    put(SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP.name) { normalizeFloatingLyricsFontSizeSp(it) }
+    put(SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP.name) { normalizeFloatingLyricsOutlineWidthDp(it) }
+    put(SettingsKeys.FLOATING_LYRICS_LYRIC_ALPHA.name) { normalizeFloatingLyricsAlpha(it, fallback = 1f) }
+    put(SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP.name) { normalizeFloatingLyricsOutlineWidthDp(it) }
+    put(SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA.name) { normalizeFloatingLyricsAlpha(it) }
+    put(SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP.name) { normalizeFloatingLyricsMaxWidthDp(it) }
+    put(SettingsKeys.UI_DENSITY_SCALE.name) { it.coerceIn(UI_DENSITY_SCALE_RANGE) }
+    put(SettingsKeys.BACKGROUND_IMAGE_BLUR.name) { it.coerceIn(BACKGROUND_IMAGE_BLUR_RANGE) }
+    put(SettingsKeys.BACKGROUND_IMAGE_ALPHA.name) { it.coerceIn(BACKGROUND_IMAGE_ALPHA_RANGE) }
+    put(SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT.name) { it.coerceIn(NOW_PLAYING_COVER_BLUR_AMOUNT_RANGE) }
+    put(SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN.name) { it.coerceIn(NOW_PLAYING_COVER_BLUR_DARKEN_RANGE) }
+    put(SettingsKeys.LYRIC_BLUR_AMOUNT.name) { it.coerceIn(LYRIC_BLUR_AMOUNT_RANGE) }
+    put(SettingsKeys.PLAYBACK_SPEED.name) { normalizePlaybackSpeed(it) }
+    put(SettingsKeys.PLAYBACK_PITCH.name) { normalizePlaybackPitch(it) }
+    put(SettingsKeys.PLAYBACK_VOLUME_BALANCE.name) { normalizePlaybackVolumeBalance(it) }
+}
+
+private val LONG_SETTING_NORMALIZERS: Map<String, (Long) -> Long> = buildMap {
+    listOf(
+        SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS,
+        SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS,
+        SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS,
+        SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS,
+        SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS
+    ).forEach { key -> put(key.name) { normalizeLyricDefaultOffsetMs(it) } }
+    listOf(
+        SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS,
+        SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS,
+        SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS,
+        SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS
+    ).forEach { key -> put(key.name) { it.coerceIn(PLAYBACK_FADE_DURATION_RANGE_MS) } }
+    put(SettingsKeys.MAX_CACHE_SIZE_BYTES.name) { CacheSizePolicy.normalizeCacheSizeBytes(it) }
+}
 private const val DEFAULT_NETEASE_AUDIO_QUALITY = "exhigh"
 private const val DEFAULT_YOUTUBE_AUDIO_QUALITY = "high"
 private const val DEFAULT_BILI_AUDIO_QUALITY = "high"
@@ -483,6 +486,11 @@ private val DEFAULT_START_DESTINATION_ROUTES = setOf(
 private val PLAYBACK_EQUALIZER_PRESET_IDS =
     PlaybackEqualizerPresets.map { it.id }.toSet() + PlaybackEqualizerPresetId.CUSTOM
 private val HEX_COLOR_REGEX = Regex("^[0-9A-F]{6}$")
+
+private fun MutableMap<String, String>.removeDownloadDirectory() {
+    remove(DOWNLOAD_DIRECTORY_KEY)
+    remove(DOWNLOAD_DIRECTORY_LABEL_KEY)
+}
 
 private fun <T> filterKnownSettings(
     source: Map<String, T>,
