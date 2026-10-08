@@ -241,16 +241,15 @@ internal fun LocalMediaSupport.resolveEditableMediaExtension(song: SongItem, sou
         song.localFilePath,
         sourcePathSegment,
         song.mediaUri?.substringBefore('?')?.substringBefore('#')
-    ).firstNotNullOfOrNull { reference ->
-        reference
-            ?.substringAfterLast('/')
-            ?.substringAfterLast('.', "")
-            ?.lowercase(Locale.ROOT)
-            ?.takeIf { extension ->
-                extension.length in 1..10 && extension.all { it in 'a'..'z' || it in '0'..'9' }
-            }
-    }
-        ?: "bin"
+    ).firstNotNullOfOrNull(::editableMediaExtensionOf) ?: "bin"
+}
+
+private val EDITABLE_MEDIA_EXTENSION = Regex("[a-z0-9]{1,10}")
+
+private fun editableMediaExtensionOf(reference: String?): String? {
+    reference ?: return null
+    val extension = reference.substringAfterLast('/').substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return extension.takeIf { it.matches(EDITABLE_MEDIA_EXTENSION) }
 }
 
 internal fun LocalMediaSupport.writeEditableMetadataDirectTransaction(

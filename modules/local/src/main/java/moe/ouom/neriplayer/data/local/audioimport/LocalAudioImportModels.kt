@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.model.download.DownloadLibraryEntry
 import moe.ouom.neriplayer.data.model.download.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 
@@ -255,19 +256,29 @@ internal fun songSourceTimestamp(song: SongItem): Long {
     return validSongTimestamp(song.logicalCreatedAtMs ?: song.addedAt)
 }
 
+private val SONG_CREATION_CONFIDENCE_RANKS = mapOf(
+    "EXACT" to 3,
+    "PROVIDER_REPORTED" to 2,
+    "INFERRED" to 1
+)
+
+private val MODIFICATION_TIMESTAMP_SOURCES = setOf(
+    "SAF_LAST_MODIFIED",
+    "MTIME",
+    "MTIME_FALLBACK",
+    "MEDIASTORE_DATE_MODIFIED"
+)
+
+private val NON_CREATION_TIMESTAMP_SOURCES = MODIFICATION_TIMESTAMP_SOURCES + "MEDIASTORE_DATE_ADDED"
+
 internal fun songCreationConfidence(song: SongItem): Int {
-    return when (song.createdAtConfidence?.uppercase(Locale.ROOT)) {
-        "EXACT" -> 3
-        "PROVIDER_REPORTED" -> 2
-        "INFERRED" -> 1
-        else -> 0
-    }
+    return SONG_CREATION_CONFIDENCE_RANKS[song.createdAtConfidence?.uppercase(Locale.ROOT)] ?: 0
 }
 
-internal fun isNonCreationTimestampSource(source: String?): Boolean = when (source?.trim()?.uppercase(Locale.ROOT)) {
-    "SAF_LAST_MODIFIED", "MTIME", "MTIME_FALLBACK", "MEDIASTORE_DATE_MODIFIED", "MEDIASTORE_DATE_ADDED" -> true
-    else -> false
-}
+private fun normalizedTimestampSource(source: String?): String = source?.trim()?.uppercase(Locale.ROOT).orEmpty()
+
+internal fun isNonCreationTimestampSource(source: String?): Boolean =
+    normalizedTimestampSource(source) in NON_CREATION_TIMESTAMP_SOURCES
 
 fun hasStableSongCreationEvidence(song: SongItem): Boolean {
     if (isNonCreationTimestampSource(song.createdAtSource)) {
@@ -297,10 +308,8 @@ fun localSongSourceModificationComparator(): Comparator<SongItem> =
     }
         .thenBy { it.sourceStableKey.orEmpty() }
 
-internal fun isModificationTimestampSource(source: String?): Boolean = when (source?.trim()?.uppercase(Locale.ROOT)) {
-    "SAF_LAST_MODIFIED", "MTIME", "MTIME_FALLBACK", "MEDIASTORE_DATE_MODIFIED" -> true
-    else -> false
-}
+internal fun isModificationTimestampSource(source: String?): Boolean =
+    normalizedTimestampSource(source) in MODIFICATION_TIMESTAMP_SOURCES
 
 /** 已加入本地歌单的歌曲优先按加入时间，同一批次再看来源创建时间 */
 fun localSongNewestFirstComparator(): Comparator<SongItem> {
@@ -354,19 +363,20 @@ fun selectHydratedLocalCoverReference(
     val fallback = metadataFallbackCover.normalizeImportedCoverReference()
 
     // 仍可直接使用的侧车封面保持原有权威性, 避免被远端候选替换
-    if (sidecar != null && !isPotentiallyStaleSafCoverReference(sidecar)) {
-        return sidecar
-    }
-    rebound?.let { return it }
-    if (existing != null && !sameImportedCoverReference(existing, sidecar)) {
-        // 扫描结果可能是新的 SAF URI, 不能因为它不是 MediaStore URI 就丢掉
-        return existing
-    }
-    if (fallback != null && !isPotentiallyStaleSafCoverReference(fallback)) {
-        return fallback
-    }
-    return fallback ?: existing ?: sidecar
+    return usableSidecarCoverReference(sidecar)
+        ?: rebound
+        ?: rescannedCoverReference(existing, sidecar)
+        ?: fallback
+        ?: existing
+        ?: sidecar
 }
+
+private fun usableSidecarCoverReference(sidecar: String?): String? =
+    sidecar?.takeUnless(::isPotentiallyStaleSafCoverReference)
+
+// 扫描结果可能是新的 SAF URI, 不能因为它不是 MediaStore URI 就丢掉
+private fun rescannedCoverReference(existing: String?, sidecar: String?): String? =
+    existing?.takeUnless { sameImportedCoverReference(it, sidecar) }
 
 internal data class LocalCoverHydrationResult(
     val song: SongItem,
@@ -1091,23 +1101,27 @@ class ManagedDownloadCandidatePublicationGate(
     private val snapshot: DownloadLibrarySnapshot?,
     private val treeDocumentId: String?
 ) {
-    internal val audioByName = snapshot
-        ?.audioEntries
-        ?.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
-        .orEmpty()
-    internal val audioByReference = snapshot
-        ?.audioEntries
-        ?.flatMap { entry ->
-            listOf(entry.reference, entry.mediaUri, entry.localFilePath)
-                .mapNotNull { reference -> reference?.takeIf(String::isNotBlank) }
+    internal val audioByName = indexAudioByName(snapshot?.audioEntries.orEmpty())
+    internal val audioByReference = indexAudioByReference(snapshot?.audioEntries.orEmpty())
+    private val pendingAudioNames = pendingAudioLookupNames(snapshot)
+
+    private fun indexAudioByName(entries: List<DownloadLibraryEntry>): Map<String, DownloadLibraryEntry> {
+        return entries.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
+    }
+
+    private fun indexAudioByReference(entries: List<DownloadLibraryEntry>): Map<String, DownloadLibraryEntry> {
+        return entries.flatMap { entry ->
+            listOfNotNull(entry.reference, entry.mediaUri, entry.localFilePath)
+                .filter(String::isNotBlank)
                 .map { reference -> reference to entry }
-        }
-        ?.toMap()
-        .orEmpty()
-    private val pendingAudioNames = snapshot?.let { current ->
-        (current.pendingAudioEntries + current.audioEntries.filter { it.isPendingAudioWrite })
+        }.toMap()
+    }
+
+    private fun pendingAudioLookupNames(snapshot: DownloadLibrarySnapshot?): Set<String> {
+        snapshot ?: return emptySet()
+        return (snapshot.pendingAudioEntries + snapshot.audioEntries.filter { it.isPendingAudioWrite })
             .mapTo(hashSetOf()) { ManagedDownloadTreeNaming.canonicalLookupName(it.logicalName) }
-    }.orEmpty()
+    }
 
     fun evaluateRelativePath(
         relativePath: String?,
@@ -1175,6 +1189,9 @@ class ManagedDownloadCandidatePublicationGate(
     }
 }
 
+private fun lyricSidecarSuffix(sourceName: String, sourceBase: String): String? =
+    sourceName.removePrefix(sourceBase).takeIf { it.startsWith('.') || it.startsWith('_') }
+
 fun buildNearbySidecarCopyPlans(
     sourceFile: File,
     targetFile: File,
@@ -1202,10 +1219,7 @@ fun buildNearbySidecarCopyPlans(
 
         fun addSelectedLyricSidecar(source: File?) {
             source ?: return
-            val suffix = source.name
-                .removePrefix(sourceBase)
-                .takeIf { it.startsWith('.') || it.startsWith('_') }
-                ?: return
+            val suffix = lyricSidecarSuffix(source.name, sourceBase) ?: return
             addIfExists(source, File(targetDir, "$targetBase$suffix"))
         }
 

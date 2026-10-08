@@ -59,7 +59,7 @@ class SyncProtocolUpgradeRepository(
         .distinctUntilChanged()
 
     fun versionFlow(targetId: String): Flow<Int> = verifiedFlow.map { preferences ->
-        val storedVersion = storedProtocolVersion(preferences)
+        val storedVersion = targetProtocolVersion(preferences, targetId)
         if (storedVersion > CURRENT_PROTOCOL_VERSION) storedVersion
         else migrationForTarget(preferences, targetId)?.fromVersion
             ?: observedVersion(preferences, targetId)
@@ -101,10 +101,11 @@ class SyncProtocolUpgradeRepository(
     suspend fun requireLegacyMigration(challenge: SyncProtocolUpgradeChallenge) {
         ensureSupportedChallenge(challenge)
         currentCoroutineContext().ensureActive()
-        ensureSupported(verifiedPreferences())
+        checkReadable(verifiedPreferences())
         dataStore.edit { preferences ->
             currentCoroutineContext().ensureActive()
-            ensureSupported(preferences)
+            checkReadable(preferences)
+            reclaimFromNewerApp(preferences, challenge.targetId)
             preferences[observedKey(challenge.targetId)] = challenge.fromVersion
             if (preferences[approvalKey(challenge.targetId)] != encodeChallenge(challenge)) {
                 preferences[pendingKey(challenge.targetId)] = encodeChallenge(challenge)
@@ -112,7 +113,7 @@ class SyncProtocolUpgradeRepository(
             }
         }
         val preferences = verifiedPreferences()
-        ensureSupported(preferences)
+        ensureTargetSupported(preferences, challenge.targetId)
         if (preferences[approvalKey(challenge.targetId)] != encodeChallenge(challenge)) {
             throw SyncProtocolUpgradeRequiredException(requiredMessage(), challenge)
         }
@@ -153,10 +154,11 @@ class SyncProtocolUpgradeRepository(
         require(targetId.matches(TargetHash)) { "Invalid sync target" }
         require(version == 3 || version == CURRENT_PROTOCOL_VERSION) { "Unsupported observed sync protocol" }
         currentCoroutineContext().ensureActive()
-        ensureSupported(verifiedPreferences())
+        checkReadable(verifiedPreferences())
         dataStore.edit { preferences ->
             currentCoroutineContext().ensureActive()
-            ensureSupported(preferences)
+            checkReadable(preferences)
+            reclaimFromNewerApp(preferences, targetId)
             preferences[observedKey(targetId)] = version
             if (version == CURRENT_PROTOCOL_VERSION) {
                 preferences.remove(pendingKey(targetId))
@@ -164,21 +166,34 @@ class SyncProtocolUpgradeRepository(
                 preferences[StartupLegacyTargets] = startupTargets(preferences) - targetId
             }
         }
-        ensureSupported(verifiedPreferences())
+        ensureTargetSupported(verifiedPreferences(), targetId)
     }
 
     suspend fun canSyncTarget(targetId: String): Boolean {
         val preferences = verifiedPreferences()
-        return supported(preferences) && targetId !in startupTargets(preferences) && preferences[pendingKey(targetId)] == null
+        // 新版本留下的状态本地无法判断，交给同步时重新读取的远端归档决定
+        if (targetProtocolVersion(preferences, targetId) > CURRENT_PROTOCOL_VERSION) return true
+        return targetId !in startupTargets(preferences) && preferences[pendingKey(targetId)] == null
     }
 
     suspend fun <T> executeIfApproved(action: suspend () -> Result<T>): Result<T> = try {
         currentCoroutineContext().ensureActive()
-        ensureSupported(verifiedPreferences())
-        val result = action()
+        checkReadable(verifiedPreferences())
+        val result = runAction(action)
         val error = result.exceptionOrNull()
         if (error is CancellationException) throw error
-        result
+        // 远端仍读不懂时新版本的标记保留下来，失败按需要更新应用报告
+        if (error != null && !supported(verifiedPreferences())) {
+            Result.failure(SyncProtocolUpgradeRequiredException(requiredMessage()).apply { initCause(error) })
+        } else result
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
+    private suspend fun <T> runAction(action: suspend () -> Result<T>): Result<T> = try {
+        action()
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -196,6 +211,41 @@ class SyncProtocolUpgradeRepository(
         storedMigrationProtocolVersion(preferences),
         storedObservedProtocolVersion(preferences)
     )
+
+    private fun checkReadable(preferences: Preferences) {
+        storedProtocolVersion(preferences)
+    }
+
+    private fun targetProtocolVersion(preferences: Preferences, targetId: String): Int {
+        // 先完整解析，其他目标的损坏记录也必须拒绝
+        checkReadable(preferences)
+        return maxOf(
+            preferences[ApprovedProtocolVersion] ?: CURRENT_PROTOCOL_VERSION,
+            preferences[StartupRegistrationVersion] ?: CURRENT_PROTOCOL_VERSION,
+            targetMigrationRecords(preferences, targetId).maxOfOrNull { it.toVersion } ?: CURRENT_PROTOCOL_VERSION,
+            preferences[observedKey(targetId)] ?: CURRENT_PROTOCOL_VERSION
+        )
+    }
+
+    private fun ensureTargetSupported(preferences: Preferences, targetId: String) {
+        if (targetProtocolVersion(preferences, targetId) > CURRENT_PROTOCOL_VERSION) {
+            throw SyncProtocolUpgradeRequiredException(requiredMessage())
+        }
+    }
+
+    // 本版本刚读懂了该目标的远端，新版本留下的全局标记和该目标的记录不再代表现状
+    private fun reclaimFromNewerApp(preferences: MutablePreferences, targetId: String) {
+        for (key in listOf(ApprovedProtocolVersion, StartupRegistrationVersion)) {
+            if ((preferences[key] ?: CURRENT_PROTOCOL_VERSION) > CURRENT_PROTOCOL_VERSION) preferences[key] = CURRENT_PROTOCOL_VERSION
+        }
+        for (key in listOf(pendingKey(targetId), approvalKey(targetId))) {
+            val record = preferences[key]?.let { decodeChallenge(targetId, it) } ?: continue
+            if (record.toVersion > CURRENT_PROTOCOL_VERSION) preferences.remove(key)
+        }
+    }
+
+    private fun targetMigrationRecords(preferences: Preferences, targetId: String): List<SyncProtocolUpgradeChallenge> =
+        listOfNotNull(preferences[pendingKey(targetId)], preferences[approvalKey(targetId)]).map { decodeChallenge(targetId, it) }
 
     private fun storedMigrationProtocolVersion(preferences: Preferences): Int =
         migrationRecords(preferences).maxOfOrNull { it.toVersion } ?: CURRENT_PROTOCOL_VERSION

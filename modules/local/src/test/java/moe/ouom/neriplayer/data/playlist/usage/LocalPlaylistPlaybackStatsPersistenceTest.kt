@@ -4,7 +4,12 @@ import android.content.Context
 import com.google.gson.Gson
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
 import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
@@ -488,6 +493,34 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
         assertEquals(replacement, repository(room).statsFlow.value)
     }
 
+    @Test
+    fun `construction does not wait for the Room read and an early play merges into it`() = runTest {
+        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val writes = mutableListOf<List<LocalPlaylistPlaybackStat>>()
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            readStarted.countDown()
+            releaseRead.await()
+            listOf(original())
+        }
+        doAnswer { writes += it.getArgument<List<LocalPlaylistPlaybackStat>>(1); Unit }
+            .`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+
+        val repository = repository(room, awaitInitialLoad = false)
+        assertTrue(readStarted.await(5, TimeUnit.SECONDS))
+        assertTrue(repository.statsFlow.value.isEmpty())
+        val early = launch(Dispatchers.IO) { repository.recordPlayNow(1, playedAt = 200) }
+        releaseRead.countDown()
+        early.join()
+
+        val stat = repository.statsFlow.value.single()
+        assertEquals(2L, stat.totalPlayCount)
+        assertEquals(100L to 200L, stat.firstPlayedAt to stat.lastPlayedAt)
+        assertEquals(listOf(repository.statsFlow.value), writes)
+        assertTrue(repository.awaitInitialized())
+    }
+
     private fun assertCancellation(expected: CancellationException, actual: Throwable?) {
         assertTrue(actual is CancellationException)
         assertEquals(expected.message, actual?.message)
@@ -497,13 +530,18 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
         doAnswer { throw IOException("Room write failed") }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
     }
 
-    private fun repository(room: LocalPlaylistPlaybackRoomStore): LocalPlaylistPlaybackStatsRepository {
+    private fun repository(
+        room: LocalPlaylistPlaybackRoomStore,
+        awaitInitialLoad: Boolean = true
+    ): LocalPlaylistPlaybackStatsRepository {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         `when`(context.filesDir).thenReturn(temporary.root)
         val constructor = LocalPlaylistPlaybackStatsRepository::class.java.getDeclaredConstructor(Context::class.java, LocalPlaylistPlaybackRoomStore::class.java)
         constructor.isAccessible = true
-        return constructor.newInstance(context, room)
+        return constructor.newInstance(context, room).also { repository ->
+            if (awaitInitialLoad) runBlocking { repository.awaitInitialLoad() }
+        }
     }
 
     private fun original() = LocalPlaylistPlaybackStat(1, totalPlayCount = 1, firstPlayedAt = 100, lastPlayedAt = 100)

@@ -127,18 +127,20 @@ class SyncProtocolUpgradeRepositoryTest {
         detect(repository, first)
     }
 
-    @Test fun `future approval cannot be read synced migrated or downgraded`() = runTest {
+    @Test fun `future approval reports update required and survives while the remote stays unreadable`() = runTest {
         val future = SyncProtocolUpgradeRepository.CURRENT_PROTOCOL_VERSION + 1
         val file = File(temporary.root, "future.preferences_pb")
+        val unreadableRemote = IllegalArgumentException("Unsupported sync archive version")
         withFileStore(file) { store ->
             store.edit { it[ApprovedVersion] = future }
             val repository = SyncProtocolUpgradeRepository(store)
             assertFalse(repository.approvedFlow.first())
             assertEquals(future, repository.versionFlow(first.targetId).first())
-            assertTrue(repository.executeIfApproved<String> { error("must not sync") }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
-            assertTrue(runCatching { repository.requireLegacyMigration(first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+            assertTrue(repository.canSyncTarget(first.targetId))
+            val failure = repository.executeIfApproved<String> { Result.failure(unreadableRemote) }.exceptionOrNull()
+            assertTrue(failure is SyncProtocolUpgradeRequiredException)
+            assertSame(unreadableRemote, failure?.cause)
             assertTrue(runCatching { repository.confirmAllDevicesUpdated(true, first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
-            assertTrue(runCatching { repository.markCurrent(first.targetId) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
             assertTrue(runCatching { repository.pendingChallengeFlow.first() }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
         }
         withFileStore(file) { store -> assertEquals(future, store.data.first()[ApprovedVersion]) }

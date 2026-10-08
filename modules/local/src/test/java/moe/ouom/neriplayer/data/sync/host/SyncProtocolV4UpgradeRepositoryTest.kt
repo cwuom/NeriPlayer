@@ -109,7 +109,7 @@ class SyncProtocolV4UpgradeRepositoryTest {
         }
     }
 
-    @Test fun `future observed state cannot be synced or overwritten after reopening`() = runTest {
+    @Test fun `future observed state is kept and reported while the remote stays unreadable after reopening`() = runTest {
         val file = File(temporary.root, "future-observed.preferences_pb")
         withStore(file) { store ->
             store.edit { it[intPreferencesKey("observed_protocol_$target")] = 5 }
@@ -117,14 +117,15 @@ class SyncProtocolV4UpgradeRepositoryTest {
         withStore(file) { store ->
             val repository = SyncProtocolUpgradeRepository(store)
             assertEquals(5, repository.versionFlow(target).first())
-            assertFalse(repository.canSyncTarget(target))
-            assertTrue(runCatching { repository.markCurrent(target) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+            assertTrue(repository.canSyncTarget(target))
+            val failure = repository.executeIfApproved<Unit> { Result.failure(IOException("Unsupported sync archive version")) }
+            assertTrue(failure.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
             assertTrue(runCatching { repository.initializeStartupTargets(setOf(target)) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
             assertEquals(5, store.data.first()[intPreferencesKey("observed_protocol_$target")])
         }
     }
 
-    @Test fun `future startup and migration state blocks every target without changing saved state`() = runTest {
+    @Test fun `future startup and migration state is never downgraded by an unreadable remote`() = runTest {
         val states = mapOf<String, (MutablePreferences) -> Unit>(
             "startup" to { it[intPreferencesKey("startup_registration_version")] = 5 },
             "pending" to { it[stringPreferencesKey("pending_legacy_$other")] = "3:5:$fingerprint" },
@@ -140,24 +141,13 @@ class SyncProtocolV4UpgradeRepositoryTest {
             repeat(2) {
                 withStore(file) { store ->
                     val repository = SyncProtocolUpgradeRepository(store)
-                    assertEquals(5, repository.versionFlow(target).first())
                     assertEquals(5, repository.versionFlow(other).first())
                     assertFalse(repository.approvedFlow.first())
-                    assertFalse(repository.canSyncTarget(target))
-                    assertFalse(repository.canSyncTarget(other))
-                    var executed = false
-                    val failure = repository.executeIfApproved {
-                        executed = true
-                        Result.success(Unit)
+                    assertTrue(repository.canSyncTarget(other))
+                    val failure = repository.executeIfApproved<Unit> {
+                        Result.failure(IOException("Unsupported sync archive version"))
                     }.exceptionOrNull()
-                    assertFalse(executed)
                     assertTrue(failure is SyncProtocolUpgradeRequiredException)
-                    assertTrue(runCatching {
-                        repository.markCurrent(target)
-                    }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
-                    assertTrue(runCatching {
-                        repository.requireLegacyMigration(challenge)
-                    }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
                     assertTrue(runCatching {
                         repository.confirmAllDevicesUpdated(true, challenge)
                     }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
@@ -170,7 +160,7 @@ class SyncProtocolV4UpgradeRepositoryTest {
         }
     }
 
-    @Test fun `multiple migration and observed versions use the highest owned version`() = runTest {
+    @Test fun `migration and observed versions are reported per target and future ones never leak to others`() = runTest {
         withStore(File(temporary.root, "multiple-versions.preferences_pb")) { store ->
             store.edit {
                 it[intPreferencesKey("approved_protocol_version")] = 4
@@ -182,11 +172,11 @@ class SyncProtocolV4UpgradeRepositoryTest {
                 it[intPreferencesKey("unrelated_setting")] = 999
             }
             val repository = SyncProtocolUpgradeRepository(store)
-            assertEquals(7, repository.versionFlow(target).first())
+            assertEquals(3, repository.versionFlow(target).first())
             assertFalse(repository.canSyncTarget(target))
+            assertEquals(7, repository.versionFlow(other).first())
             store.edit { it[intPreferencesKey("observed_protocol_$other")] = 4 }
-            assertEquals(6, repository.versionFlow(target).first())
-            assertFalse(repository.canSyncTarget(target))
+            assertEquals(6, repository.versionFlow(other).first())
             store.edit { it[stringPreferencesKey("approved_legacy_$other")] = "0:4:$fingerprint" }
             assertEquals(3, repository.versionFlow(target).first())
             assertEquals(0, repository.versionFlow(other).first())

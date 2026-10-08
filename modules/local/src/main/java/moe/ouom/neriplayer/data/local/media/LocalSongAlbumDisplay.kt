@@ -34,24 +34,10 @@ internal fun normalizeLocalAlbumIdentity(
     stripManagedSourcePrefix: Boolean = false
 ): String {
     val normalized = album?.trim().orEmpty()
-    if (normalized.isBlank()) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
-    if (usesFallbackAlbum) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
+    if (normalized.isBlank() || usesFallbackAlbum) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
 
     // 只有带受管下载来源身份的歌曲才清理历史来源前缀
-    val withoutSourcePrefix = if (
-        stripManagedSourcePrefix &&
-        normalized.length >= LOCAL_SOURCE_ALBUM_PREFIX.length &&
-            normalized.regionMatches(
-                0,
-                LOCAL_SOURCE_ALBUM_PREFIX,
-                0,
-                LOCAL_SOURCE_ALBUM_PREFIX.length,
-                ignoreCase = true
-            ) && (
-                normalized.length == LOCAL_SOURCE_ALBUM_PREFIX.length ||
-                    !normalized[LOCAL_SOURCE_ALBUM_PREFIX.length].isWhitespace()
-                )
-    ) {
+    val withoutSourcePrefix = if (stripManagedSourcePrefix && hasLegacySourceAlbumPrefix(normalized)) {
         normalized.substring(LOCAL_SOURCE_ALBUM_PREFIX.length)
             .trim()
             .trimStart('-', ':', '_', '|')
@@ -59,21 +45,19 @@ internal fun normalizeLocalAlbumIdentity(
     } else {
         normalized
     }
-    return withoutSourcePrefix.takeIf { it.isNotBlank() }
-        ?: LocalSongSupport.LOCAL_ALBUM_IDENTITY
+    return withoutSourcePrefix.ifBlank { LocalSongSupport.LOCAL_ALBUM_IDENTITY }
 }
 
+private fun hasLegacySourceAlbumPrefix(album: String): Boolean =
+    album.startsWith(LOCAL_SOURCE_ALBUM_PREFIX, ignoreCase = true) &&
+        album.getOrNull(LOCAL_SOURCE_ALBUM_PREFIX.length)?.isWhitespace() != true
+
 internal fun isNeteaseManagedSourceStableKey(sourceStableKey: String?): Boolean {
-    val normalized = sourceStableKey?.trim()?.takeIf(String::isNotBlank) ?: return false
-    val firstSeparator = normalized.indexOf('|')
-    if (firstSeparator <= 0 || normalized.substring(0, firstSeparator).toLongOrNull() == null) {
-        return false
-    }
-    val secondSeparator = normalized.indexOf('|', firstSeparator + 1)
-    if (secondSeparator <= firstSeparator + 1) return false
-    val sourceAlbum = normalized.substring(firstSeparator + 1, secondSeparator)
-    val sourceUri = normalized.substring(secondSeparator + 1)
-    return sourceAlbum.equals("netease", ignoreCase = true) && sourceUri.isBlank()
+    val parts = sourceStableKey.orEmpty().trim().split('|', limit = 3)
+    return parts.size == 3 &&
+        parts[0].toLongOrNull() != null &&
+        parts[1].equals("netease", ignoreCase = true) &&
+        parts[2].isBlank()
 }
 
 fun SongItem.displayAlbum(context: Context): String {

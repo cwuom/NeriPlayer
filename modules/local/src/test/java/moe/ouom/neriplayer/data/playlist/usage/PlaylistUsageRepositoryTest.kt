@@ -21,8 +21,13 @@ import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -704,7 +709,49 @@ class PlaylistUsageRepositoryTest {
         )
     }
 
-    private fun createRepository(context: Context): PlaylistUsageRepository {
+    @Test
+    fun `construction does not wait for usage loading and early mutations replay in order`() = runTest {
+        val stored = listOf(
+            UsageEntry(1, "stored", null, 3, "netease", lastOpened = 100, openCount = 1),
+            UsageEntry(2, "gone", null, 3, "netease", lastOpened = 90, openCount = 4)
+        )
+        val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val room = mock(PlaylistUsageRoomStore::class.java)
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            readStarted.countDown()
+            releaseRead.await()
+            stored
+        }
+        val reference = createRepository(mockContext(), roomReturning(stored))
+        val repository = createRepository(mockContext(), room, awaitInitialLoad = false)
+        assertTrue(readStarted.await(5, TimeUnit.SECONDS))
+
+        listOf(reference, repository).forEach { usage ->
+            usage.recordOpen(1, "renamed", null, 3, source = "netease", now = 300)
+            usage.removeEntry(2, "netease")
+            usage.updateInfo(3, "added", null, 5, source = "netease", now = 400)
+        }
+        assertTrue(repository.frequentPlaylistsFlow.value.isEmpty())
+        releaseRead.countDown()
+        repository.awaitInitialLoad()
+
+        val entries = repository.frequentPlaylistsFlow.value
+        assertEquals(reference.frequentPlaylistsFlow.value, entries)
+        assertEquals(listOf(3L to "added", 1L to "renamed"), entries.map { it.id to it.name })
+    }
+
+    private suspend fun roomReturning(entries: List<UsageEntry>): PlaylistUsageRoomStore {
+        return mock(PlaylistUsageRoomStore::class.java).also { room ->
+            `when`(room.readIfRoomPrimary()).thenReturn(entries)
+        }
+    }
+
+    private fun createRepository(
+        context: Context,
+        room: PlaylistUsageRoomStore? = null,
+        awaitInitialLoad: Boolean = true
+    ): PlaylistUsageRepository {
         val removals = mutableMapOf<String, Long>()
         val storage = mock(SecureTokenStorage::class.java)
         `when`(storage.getOrCreateDeviceId()).thenReturn("usage-fixture-device")
@@ -720,9 +767,10 @@ class PlaylistUsageRepositoryTest {
             removals.remove(it.getArgument<String>(0))
             Unit
         }.`when`(storage).removePlaylistUsageDeletion(anyString(), anyBoolean())
-        val repository = PlaylistUsageRepository(context)
+        val repository = PlaylistUsageRepository(context, room)
         PlaylistUsageRepository::class.java.getDeclaredField("syncStorage\$delegate")
             .also { it.isAccessible = true }.set(repository, lazy { storage })
+        if (awaitInitialLoad) runBlocking { repository.awaitInitialLoad() }
         val scope = PlaylistUsageRepository::class.java.getDeclaredField("scope")
             .also { it.isAccessible = true }.get(repository) as CoroutineScope
         ownedScopes.add(scope)

@@ -62,6 +62,28 @@ class LocalSongAlbumDisplayTest {
     }
 
     @Test
+    fun `blank albums and unprefixed names ignore the managed source flag`() {
+        assertEquals(LocalSongSupport.LOCAL_ALBUM_IDENTITY, normalizeLocalAlbumIdentity(null, false))
+        assertEquals(LocalSongSupport.LOCAL_ALBUM_IDENTITY, normalizeLocalAlbumIdentity("  ", false, stripManagedSourcePrefix = true))
+        assertEquals("Album", normalizeLocalAlbumIdentity(" Album ", false, stripManagedSourcePrefix = true))
+        assertEquals("Netease Album", normalizeLocalAlbumIdentity("Netease Album", false, stripManagedSourcePrefix = true))
+        assertEquals("专辑", normalizeLocalAlbumIdentity("netease_专辑", false, stripManagedSourcePrefix = true))
+    }
+
+    @Test
+    fun `netease managed keys need a numeric id an empty uri and three parts`() {
+        assertEquals(true, isNeteaseManagedSourceStableKey(" 123|NetEase| "))
+        assertEquals(false, isNeteaseManagedSourceStableKey(null))
+        assertEquals(false, isNeteaseManagedSourceStableKey("  "))
+        assertEquals(false, isNeteaseManagedSourceStableKey("123|netease"))
+        assertEquals(false, isNeteaseManagedSourceStableKey("|netease|"))
+        assertEquals(false, isNeteaseManagedSourceStableKey("abc|netease|"))
+        assertEquals(false, isNeteaseManagedSourceStableKey("123||"))
+        assertEquals(false, isNeteaseManagedSourceStableKey("123|netease|https://cdn.example.com/a"))
+        assertEquals(false, isNeteaseManagedSourceStableKey("123|netease|a|b"))
+    }
+
+    @Test
     fun `fallback album remains the local identity`() {
         assertEquals(
             LocalSongSupport.LOCAL_ALBUM_IDENTITY,
