@@ -20,6 +20,8 @@ class SongIdentityExtensionsTest {
         val named = localSong(localFileName = " A.MP3 ", originalName = " Tïtle ", artist = "Some   Artist", channelId = "local", audioId = "0")
         val fromUri = localSong(localFilePath = "/music/dir/", mediaUri = "content://media/external/audio/Caf%C3%A9.mp3", name = "x")
         val mediaOnly = localSong(localFilePath = null, mediaUri = "content://media/external/audio/media/42")
+        val authorityOnly = localSong(localFilePath = "/music/dir/", mediaUri = "content://media")
+        val emptyPath = localSong(localFilePath = "/music/dir/", mediaUri = "file:///")
         val anonymous = localSong(localFilePath = "/", name = " ", artist = " ")
 
         assertEquals("song:${stream.stableKey()}", stream.playbackVisualKey())
@@ -28,6 +30,8 @@ class SongIdentityExtensionsTest {
         assertEquals(listOf("local:a.mp3|tïtle|some artist"), named.playbackVisualKeyAliases())
         assertEquals("local:café.mp3|x|artist", fromUri.playbackVisualKey())
         assertEquals("local:42|song|artist", mediaOnly.playbackVisualKey())
+        assertEquals("local:media|song|artist", authorityOnly.playbackVisualKey())
+        assertEquals("local:song|artist", emptyPath.playbackVisualKey())
         assertEquals("local-id:9", anonymous.playbackVisualKey())
         assertEquals(listOf("local-id:9"), anonymous.playbackVisualKeyAliases())
     }

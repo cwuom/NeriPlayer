@@ -117,8 +117,11 @@ private fun isVolatileLocalSourceKey(sourceKey: String): Boolean {
 
 private fun localVisualFileName(song: SongItem): String? =
     song.localFileName.trimmedOrNull()
-        ?: song.localFilePath.trimmedOrNull()?.substringAfterLast('/')?.takeIf(String::isNotBlank)
+        ?: pathFileName(song.localFilePath)
         ?: song.mediaUri.trimmedOrNull()?.let(::uriFileName)
+
+private fun pathFileName(path: String?): String? =
+    path.trimmedOrNull()?.substringAfterLast('/')?.takeIf(String::isNotBlank)
 
 private fun uriFileName(reference: String): String? {
     val pathSegment = runCatching { reference.toUri().lastPathSegment }.getOrNull()
