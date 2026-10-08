@@ -708,7 +708,7 @@ private val TEXT_DECODING_CHARSETS: List<Charset> by lazy {
     ).distinct()
 }
 
-private fun supportedCharsetOrNull(name: String): Charset? = runCatching { Charset.forName(name) }.getOrNull()
+internal fun supportedCharsetOrNull(name: String): Charset? = runCatching { Charset.forName(name) }.getOrNull()
 
 private fun LocalMediaSupport.decodeTextWithBestScoringCharset(bytes: ByteArray): String? {
     return TEXT_DECODING_CHARSETS

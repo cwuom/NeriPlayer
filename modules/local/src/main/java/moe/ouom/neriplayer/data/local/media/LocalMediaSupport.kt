@@ -1744,9 +1744,9 @@ object LocalMediaSupport {
             StandardCharsets.UTF_8,
             StandardCharsets.UTF_16LE,
             StandardCharsets.UTF_16BE,
-            runCatching { Charset.forName("GB18030") }.getOrNull(),
-            runCatching { Charset.forName("GBK") }.getOrNull(),
-            runCatching { Charset.forName("windows-1252") }.getOrNull(),
+            supportedCharsetOrNull("GB18030"),
+            supportedCharsetOrNull("GBK"),
+            supportedCharsetOrNull("windows-1252"),
             StandardCharsets.ISO_8859_1
         ).distinct()
     }
