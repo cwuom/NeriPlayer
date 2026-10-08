@@ -33,6 +33,12 @@ std::vector<FeatureUnitControl> findPlaybackFeatureUnitControls(
  */
 int16_t unityVolumeWithinRange(int16_t minimum, int16_t maximum);
 
+/**
+ * 关闭时给静音控制写回的值。音量键拉到 0 时会补静音，原本没静音也得写回 0；
+ * 读不到原值时同样写回 0，与打开后解除静音的状态一致
+ */
+uint8_t muteRestoreValue(bool originalKnown, uint8_t original);
+
 struct FeatureUnitVolume {
     FeatureUnitControl control;
     int16_t minimum = 0;

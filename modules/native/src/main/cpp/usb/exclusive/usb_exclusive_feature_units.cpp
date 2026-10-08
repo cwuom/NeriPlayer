@@ -145,7 +145,7 @@ void applyMute(UsbExclusiveHandle* handle, const FeatureUnitControl& control, Ap
         return;
     }
     result->mutes.push_back(control);
-    if (known && current != 0) state.restore.push_back(FeatureUnitRestoreEntry { control, current });
+    state.restore.push_back(FeatureUnitRestoreEntry { control, neri::usb::control::muteRestoreValue(known, current) });
 }
 
 void applyVolume(UsbExclusiveHandle* handle, const FeatureUnitControl& control, ApplyResult* result) {

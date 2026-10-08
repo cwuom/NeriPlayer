@@ -137,6 +137,10 @@ int16_t unityVolumeWithinRange(int16_t minimum, int16_t maximum) {
     return std::clamp<int16_t>(0, low, high);
 }
 
+uint8_t muteRestoreValue(bool originalKnown, uint8_t original) {
+    return originalKnown && original != 0 ? 1 : 0;
+}
+
 std::vector<FeatureUnitVolume> selectHardwareVolumeControls(const std::vector<FeatureUnitVolume>& volumes) {
     for (const auto& candidate : volumes) {
         if (!usableVolumeRange(candidate)) continue;
