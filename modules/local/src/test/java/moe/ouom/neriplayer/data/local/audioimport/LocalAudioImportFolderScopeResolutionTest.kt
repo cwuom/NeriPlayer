@@ -5,7 +5,9 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
@@ -74,6 +76,35 @@ class LocalAudioImportFolderScopeResolutionTest {
             documents.verify { DocumentsContract.getTreeDocumentId(unresolvable) }
             documents.verify { DocumentsContract.getDocumentId(unresolvable) }
         }
+    }
+
+    @Test
+    fun `document ids map known volumes and normalize their folder path`() {
+        val volumes = setOf("1234-ABCD")
+
+        assertEquals(
+            ExternalStorageFolderMediaStoreScope(volumeName = "1234-ABCD", relativePath = "Music/Live/"),
+            LocalAudioImportManager.parseExternalStorageFolderMediaStoreScope("1234-abcd: /Music/Live// ", volumes)
+        )
+        assertEquals(
+            ExternalStorageFolderMediaStoreScope(volumeName = "external_primary", relativePath = ""),
+            LocalAudioImportManager.parseExternalStorageFolderMediaStoreScope("PRIMARY:/", volumes)
+        )
+        assertNull(LocalAudioImportManager.parseExternalStorageFolderMediaStoreScope(":Music", volumes))
+        assertNull(LocalAudioImportManager.parseExternalStorageFolderMediaStoreScope("Music", volumes))
+        assertNull(LocalAudioImportManager.parseExternalStorageFolderMediaStoreScope("  :Music", volumes))
+        assertNull(LocalAudioImportManager.parseExternalStorageFolderMediaStoreScope("9999-0000:Music", volumes))
+    }
+
+    @Test
+    fun `media store rows belong to the selected folder or its children`() {
+        assertTrue(LocalAudioImportManager.isMediaStoreRowInFolderScope("Music/Live/", "Music/Live"))
+        assertTrue(LocalAudioImportManager.isMediaStoreRowInFolderScope(" Music\\Live\\2024 ", "/Music/Live/"))
+        assertFalse(LocalAudioImportManager.isMediaStoreRowInFolderScope("Music/Lively/", "Music/Live"))
+        assertFalse(LocalAudioImportManager.isMediaStoreRowInFolderScope(null, "Music"))
+        assertTrue(LocalAudioImportManager.isMediaStoreRowInFolderScope(null, " / "))
+        assertTrue(LocalAudioImportManager.isMediaStoreRowInFolderScope("/", ""))
+        assertFalse(LocalAudioImportManager.isMediaStoreRowInFolderScope("Music/", ""))
     }
 
     private fun documentUri(authority: String): Uri = mock(Uri::class.java).also { uri ->

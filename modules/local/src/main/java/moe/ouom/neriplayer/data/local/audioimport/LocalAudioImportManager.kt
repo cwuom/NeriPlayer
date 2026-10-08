@@ -352,50 +352,35 @@ object LocalAudioImportManager {
         if (separatorIndex <= 0) {
             return null
         }
-        val volumeId = documentId.substring(0, separatorIndex)
-            .trim()
-            .takeIf(String::isNotBlank)
+        val volumeName = mediaStoreVolumeNameFor(documentId.substring(0, separatorIndex).trim(), knownVolumeNames)
             ?: return null
-        val volumeName = if (volumeId.equals(EXTERNAL_STORAGE_PRIMARY_VOLUME_ID, ignoreCase = true)) {
-            MediaStore.VOLUME_EXTERNAL_PRIMARY
-        } else {
-            knownVolumeNames.firstOrNull { knownName ->
-                knownName.equals(volumeId, ignoreCase = true)
-            }
-        } ?: return null
-        val relativePath = documentId
-            .substring(separatorIndex + 1)
-            .trim()
-            .trim('/')
-            .takeIf(String::isNotBlank)
-            ?.plus('/')
-            .orEmpty()
         return ExternalStorageFolderMediaStoreScope(
             volumeName = volumeName,
-            relativePath = relativePath
+            relativePath = relativeFolderPath(documentId.substring(separatorIndex + 1))
         )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun mediaStoreVolumeNameFor(volumeId: String, knownVolumeNames: Set<String>): String? {
+        if (volumeId.isBlank()) return null
+        if (volumeId.equals(EXTERNAL_STORAGE_PRIMARY_VOLUME_ID, ignoreCase = true)) {
+            return MediaStore.VOLUME_EXTERNAL_PRIMARY
+        }
+        return knownVolumeNames.firstOrNull { knownName -> knownName.equals(volumeId, ignoreCase = true) }
+    }
+
+    private fun relativeFolderPath(path: String): String {
+        val trimmed = path.trim().trim('/')
+        return if (trimmed.isBlank()) "" else "$trimmed/"
     }
 
     fun isMediaStoreRowInFolderScope(
         rowRelativePath: String?,
         selectedRelativePath: String
     ): Boolean {
-        fun normalize(path: String?): String {
-            return path
-                ?.trim()
-                ?.replace('\\', '/')
-                ?.trim('/')
-                ?.takeIf(String::isNotBlank)
-                ?.plus('/')
-                .orEmpty()
-        }
-        val selected = normalize(selectedRelativePath)
-        val row = normalize(rowRelativePath)
-        return if (selected.isBlank()) {
-            row.isBlank()
-        } else {
-            row == selected || row.startsWith(selected)
-        }
+        val selected = relativeFolderPath(selectedRelativePath.replace('\\', '/'))
+        val row = relativeFolderPath(rowRelativePath.orEmpty().replace('\\', '/'))
+        return if (selected.isBlank()) row.isBlank() else row.startsWith(selected)
     }
 
 
