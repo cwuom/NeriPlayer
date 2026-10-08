@@ -80,12 +80,10 @@
     <!-- Equalizer -->
     <string name="audio_effects_eq_title">Equalizer</string>
     <string name="audio_effects_eq_desc">Drag the dots up or down to change each range: bass on the left, vocals in the middle, treble on the right. Double-tap a dot to reset it.</string>
-    <string name="audio_effects_eq_enabled">Use the 10-band equalizer</string>
     <string name="audio_effects_preamp">Overall level (preamp)</string>
     <string name="audio_effects_preamp_desc">If boosted bands start to distort, turn this down a little</string>
     <string name="audio_effects_auto_headroom">Automatic headroom</string>
     <string name="audio_effects_auto_headroom_desc">Leaves room for your boosts automatically to avoid clipping. Recommended.</string>
-    <string name="audio_effects_eq_reset">Reset equalizer</string>
 
     <!-- Headphone correction -->
     <string name="audio_effects_peq_title">Headphone correction (parametric EQ)</string>
@@ -204,7 +202,6 @@
     <string name="audio_effects_pitch_semitones">%1$s semitones</string>
     <string name="audio_effects_speed_pitch_linked">Pitch follows speed (vinyl style)</string>
     <string name="audio_effects_speed_pitch_linked_desc">Speeding up raises the pitch and slowing down lowers it, Nightcore style</string>
-    <string name="audio_effects_speed_reset">Reset speed and pitch</string>
     <string name="audio_effects_speed_usb_note">Speed and pitch do not apply during USB exclusive playback</string>
 
     <!-- Advanced -->
@@ -223,4 +220,33 @@
     <string name="audio_effects_usb_apply_desc">Off by default to stay bit-perfect. Still skipped while bit-perfect volume is on.</string>
     <string name="audio_effects_reset_all">Reset current sound</string>
     <string name="audio_effects_reset_all_confirm">Restore the original sound and clear adjustments for the current device? Sounds saved under Mine are kept.</string>
+    <string name="audio_effects_tab_presets">Presets</string>
+    <string name="audio_effects_tab_equalizer">EQ</string>
+    <string name="audio_effects_tab_tone">Tone</string>
+    <string name="audio_effects_tab_space">Space</string>
+    <string name="audio_effects_tab_dynamics">Dynamics</string>
+    <string name="audio_effects_tab_speaker">Speaker</string>
+    <string name="audio_effects_tab_speed">Speed</string>
+    <string name="audio_effects_tab_advanced">Advanced</string>
+    <string name="audio_effects_section_reset">Reset this section</string>
+    <string name="audio_effects_section_reset_confirm">Restore everything in %1$s to defaults?</string>
+    <string name="audio_effects_input_edit">Enter a value</string>
+    <string name="audio_effects_input_range">Allowed range: %1$s to %2$s</string>
+    <string name="audio_effects_input_invalid">Enter a valid number</string>
+    <string name="audio_effects_eq_hint">Drag a dot up or down to adjust it. Tap a band to fine-tune it with the buttons below, or tap the value to type it.</string>
+    <string name="audio_effects_eq_band_previous">Previous band</string>
+    <string name="audio_effects_eq_band_next">Next band</string>
+    <string name="audio_effects_eq_band_decrease">Lower by 0.5 dB</string>
+    <string name="audio_effects_eq_band_increase">Raise by 0.5 dB</string>
+    <string name="audio_effects_speed_pitch_linked_note">Pitch moves with speed, like a turntable running faster or slower. Turn this off to set pitch separately.</string>
+    <string name="audio_effects_section_switch_equalizer">Enable equalizer</string>
+    <string name="audio_effects_section_switch_tone">Enable tone shaping</string>
+    <string name="audio_effects_section_switch_space">Enable spatial effects</string>
+    <string name="audio_effects_section_switch_dynamics">Enable dynamics</string>
+    <string name="audio_effects_section_switch_speed">Enable speed and pitch</string>
+    <string name="audio_effects_section_switch_desc">When off, this section plays as original. Your adjustments are kept.</string>
+    <string name="audio_effects_section_switch_dynamics_desc">When off, compression and output gain play as original. The default clipping guard stays on.</string>
+    <string name="audio_effects_section_switch_speed_desc">When off, playback runs at normal speed. Turning it back on restores your speed and pitch.</string>
+    <string name="audio_effects_status_limiter_idle">Clipping guard standing by</string>
+    <string name="audio_effects_status_limiter_off">Clipping guard is off</string>
 </resources>

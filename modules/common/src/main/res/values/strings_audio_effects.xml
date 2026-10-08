@@ -80,12 +80,10 @@
     <!-- Equalizer -->
     <string name="audio_effects_eq_title">均衡器</string>
     <string name="audio_effects_eq_desc">上下拖动圆点调整各频段音量：左边是低音，中间是人声，右边是高音；双击圆点可以归零</string>
-    <string name="audio_effects_eq_enabled">使用十段均衡器</string>
     <string name="audio_effects_preamp">整体音量（前级）</string>
     <string name="audio_effects_preamp_desc">均衡器提升太多出现破音时，在这里整体调低一点</string>
     <string name="audio_effects_auto_headroom">自动防破音余量</string>
     <string name="audio_effects_auto_headroom_desc">根据你的提升量自动预留空间，避免爆音，推荐开启</string>
-    <string name="audio_effects_eq_reset">均衡器归零</string>
 
     <!-- Headphone correction -->
     <string name="audio_effects_peq_title">耳机校正（参数均衡）</string>
@@ -204,7 +202,6 @@
     <string name="audio_effects_pitch_semitones">%1$s 个半音</string>
     <string name="audio_effects_speed_pitch_linked">变调跟随倍速（唱片效果）</string>
     <string name="audio_effects_speed_pitch_linked_desc">开启后加速声音会变尖、减速会变低沉，适合 Nightcore</string>
-    <string name="audio_effects_speed_reset">恢复正常速度与音调</string>
     <string name="audio_effects_speed_usb_note">USB 独占播放时倍速与音调暂不生效</string>
 
     <!-- Advanced -->
@@ -223,4 +220,33 @@
     <string name="audio_effects_usb_apply_desc">默认关闭以保持比特完美；开启「比特完美音量」时仍会跳过</string>
     <string name="audio_effects_reset_all">重置当前音效</string>
     <string name="audio_effects_reset_all_confirm">恢复为原声并清除当前设备的所有调整？「我的音效」中保存的内容不会删除</string>
+    <string name="audio_effects_tab_presets">音效</string>
+    <string name="audio_effects_tab_equalizer">均衡器</string>
+    <string name="audio_effects_tab_tone">音色</string>
+    <string name="audio_effects_tab_space">空间</string>
+    <string name="audio_effects_tab_dynamics">动态</string>
+    <string name="audio_effects_tab_speaker">扬声器</string>
+    <string name="audio_effects_tab_speed">倍速</string>
+    <string name="audio_effects_tab_advanced">高级</string>
+    <string name="audio_effects_section_reset">重置此分区</string>
+    <string name="audio_effects_section_reset_confirm">将「%1$s」里的所有调节恢复为默认值？</string>
+    <string name="audio_effects_input_edit">输入数值</string>
+    <string name="audio_effects_input_range">可输入 %1$s 到 %2$s</string>
+    <string name="audio_effects_input_invalid">请输入有效的数字</string>
+    <string name="audio_effects_eq_hint">按住圆点上下拖动即可调节；点选频段后可用下方按钮微调，或点数值直接输入</string>
+    <string name="audio_effects_eq_band_previous">上一个频段</string>
+    <string name="audio_effects_eq_band_next">下一个频段</string>
+    <string name="audio_effects_eq_band_decrease">降低 0.5 dB</string>
+    <string name="audio_effects_eq_band_increase">提高 0.5 dB</string>
+    <string name="audio_effects_speed_pitch_linked_note">音调会随倍速一起变化，就像唱片转快或转慢；关闭后可单独调节音调</string>
+    <string name="audio_effects_section_switch_equalizer">启用均衡器</string>
+    <string name="audio_effects_section_switch_tone">启用音色调节</string>
+    <string name="audio_effects_section_switch_space">启用空间效果</string>
+    <string name="audio_effects_section_switch_dynamics">启用动态处理</string>
+    <string name="audio_effects_section_switch_speed">启用倍速与音调</string>
+    <string name="audio_effects_section_switch_desc">关闭后这一分区按原声处理，已有的调节会保留</string>
+    <string name="audio_effects_section_switch_dynamics_desc">关闭后压缩和输出增益按原声处理，仍保留默认的防破音保护</string>
+    <string name="audio_effects_section_switch_speed_desc">关闭后按正常速度播放，再次打开会恢复之前的倍速和音调</string>
+    <string name="audio_effects_status_limiter_idle">防破音保护待命中</string>
+    <string name="audio_effects_status_limiter_off">防破音保护已关闭</string>
 </resources>

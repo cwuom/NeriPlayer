@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.model.playback.effects.AudioOutputRoute
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -87,6 +88,22 @@ class AudioEffectsPresentationTest {
         assertEquals(20f, geometry.dbY(30f), 0.01f)
         assertEquals(6f, geometry.yDb(geometry.dbY(6f)), 0.01f)
         assertEquals(0f, geometry.yDb(121f), 0.01f)
+    }
+
+    @Test
+    fun `only touches near a dot grab a band and drags move relative to the finger`() {
+        val geometry = EqualizerGraphGeometry(width = 1_030f, height = 240f, left = 30f, top = 20f, bottom = 20f)
+        val bands = List(10) { 0f }.toMutableList().apply { this[2] = 6f }
+
+        assertEquals(0, geometry.handleAt(80f, 120f, bands, radius = 20f))
+        assertEquals(2, geometry.handleAt(282f, geometry.dbY(6f) + 10f, bands, radius = 20f))
+        assertNull(geometry.handleAt(282f, geometry.dbY(0f), bands, radius = 20f))
+        assertNull(geometry.handleAt(130f, 120f, bands, radius = 20f))
+
+        assertEquals(6f, geometry.dragGain(6f, 0f), 0.001f)
+        assertEquals(7f, geometry.dragGain(6f, 200f / 24f), 0.001f)
+        assertEquals(12f, geometry.dragGain(6f, 10_000f), 0.001f)
+        assertEquals(0f, geometry.dragGain(0.5f, -4f), 0.001f)
     }
 
     @Test

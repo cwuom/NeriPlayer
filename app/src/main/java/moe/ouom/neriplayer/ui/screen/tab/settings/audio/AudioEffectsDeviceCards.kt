@@ -35,35 +35,25 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedBut
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
-private val SpeedQuickValues = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+private val SpeedQuickValues = listOf(0.5f, 0.75f, 0.85f, 0.95f, 1f, 1.05f, 1.1f, 1.25f, 1.5f, 2f)
 private val PitchQuickSemitones = listOf(-3f, -1f, 0f, 1f, 3f)
 private const val MIN_SPEED_SLIDER = 0.25f
 private const val MAX_SPEED_SLIDER = 3f
 
 @Composable
-internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, route: AudioOutputRoute, editor: AudioEffectsEditor) {
+internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, editor: AudioEffectsEditor) {
     val speaker = settings.speaker
+    val active = LocalAudioEffectsSectionEnabled.current
     AudioEffectsCardIntro(
         title = stringResource(CoreCommonR.string.audio_effects_speaker_title),
         description = stringResource(CoreCommonR.string.audio_effects_speaker_desc)
     )
-    AudioEffectsSwitchRow(
-        title = stringResource(CoreCommonR.string.audio_effects_speaker_enabled),
-        description = if (speaker.enabled && route != AudioOutputRoute.SPEAKER) {
-            stringResource(CoreCommonR.string.audio_effects_speaker_inactive)
-        } else {
-            null
-        },
-        checked = speaker.enabled,
-        onCheckedChange = { enabled -> editor.speaker { it.copy(enabled = enabled) } }
-    )
-    if (!speaker.enabled) return
     val sizes = SpeakerSize.entries
     AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_speaker_size))
     MiuixSettingsSegmentedTabs(
         labels = sizes.map { stringResource(it.labelRes()) },
         selectedIndex = sizes.indexOf(SpeakerSize.fromStorageValue(speaker.size)),
-        onSelectedIndexChange = { index -> editor.speaker { it.copy(size = sizes[index].storageValue) } },
+        onSelectedIndexChange = { index -> if (active) editor.speaker { it.copy(size = sizes[index].storageValue) } },
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
     )
     AudioEffectsSliderRow(
@@ -73,6 +63,7 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, route: Audi
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.speaker { it.copy(bassHarmonics = value) } }
     )
     AudioEffectsSliderRow(
@@ -82,6 +73,7 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, route: Audi
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.speaker { it.copy(loudness = value) } }
     )
     AudioEffectsSliderRow(
@@ -90,6 +82,7 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, route: Audi
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.speaker { it.copy(clarity = value) } }
     )
     AudioEffectsSliderRow(
@@ -98,6 +91,7 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, route: Audi
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.speaker { it.copy(stereoExpand = value) } }
     )
     val auto = stringResource(CoreCommonR.string.audio_effects_auto)
@@ -111,6 +105,7 @@ internal fun AudioEffectsSpeakerCard(settings: AudioEffectsSettings, route: Audi
             if (value < 40f) "$auto · ${formatFrequency(speaker.copy(protectionHz = 0f).effectiveProtectionHz())}"
             else formatFrequency(value)
         },
+        input = AudioEffectsInputs.Hz,
         onValueChange = { value -> editor.speaker { it.copy(protectionHz = if (value < 40f) 0f else value) } }
     )
 }
@@ -124,9 +119,15 @@ internal fun AudioEffectsSpeedCard(
     editor: AudioEffectsEditor
 ) {
     val linked = settings.speedPitchLinked
+    val active = LocalAudioEffectsSectionEnabled.current
+    val shownSpeed = if (settings.speedEnabled) soundState.speed else settings.storedSpeed
+    val shownPitch = if (settings.speedEnabled) soundState.pitch else settings.storedPitch
     val applySpeed: (Float) -> Unit = { speed ->
-        PlayerManager.setPlaybackSpeed(speed)
-        if (linked) PlayerManager.setPlaybackPitch(speed.coerceIn(MIN_PLAYBACK_PITCH, MAX_PLAYBACK_PITCH))
+        if (linked) {
+            PlayerManager.setPlaybackSpeedAndPitch(speed, speed.coerceIn(MIN_PLAYBACK_PITCH, MAX_PLAYBACK_PITCH))
+        } else {
+            PlayerManager.setPlaybackSpeed(speed)
+        }
     }
     AudioEffectsCardIntro(
         title = stringResource(CoreCommonR.string.audio_effects_speed_title),
@@ -135,19 +136,22 @@ internal fun AudioEffectsSpeedCard(
     if (usbExclusive) AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_speed_usb_note))
     AudioEffectsSliderRow(
         title = stringResource(CoreCommonR.string.audio_effects_speed),
-        value = soundState.speed,
+        value = shownSpeed,
         valueRange = MIN_SPEED_SLIDER..MAX_SPEED_SLIDER,
         step = 0.05f,
         formatValue = ::formatMultiplier,
+        input = AudioEffectsInputs.Multiplier,
+        commitOnRelease = true,
         onValueChange = applySpeed
     )
     QuickChips(
         values = SpeedQuickValues,
-        selected = { kotlin.math.abs(soundState.speed - it) < 0.001f },
+        selected = { kotlin.math.abs(shownSpeed - it) < 0.001f },
         label = ::formatMultiplier,
+        enabled = active,
         onClick = applySpeed
     )
-    val semitones = pitchToSemitoneOffset(soundState.pitch)
+    val semitones = pitchToSemitoneOffset(shownPitch)
     val resources = LocalResources.current
     AudioEffectsSliderRow(
         title = stringResource(CoreCommonR.string.audio_effects_pitch),
@@ -156,6 +160,8 @@ internal fun AudioEffectsSpeedCard(
         step = 0.5f,
         enabled = !linked,
         formatValue = { resources.getString(CoreCommonR.string.audio_effects_pitch_semitones, formatSemitones(it)) },
+        input = AudioEffectsInputs.Semitones,
+        commitOnRelease = true,
         onValueChange = { value -> PlayerManager.setPlaybackPitch(semitoneOffsetToPitch(value)) }
     )
     if (!linked) {
@@ -163,6 +169,7 @@ internal fun AudioEffectsSpeedCard(
             values = PitchQuickSemitones,
             selected = { kotlin.math.abs(semitones - it) < 0.25f },
             label = ::formatSemitones,
+            enabled = active,
             onClick = { PlayerManager.setPlaybackPitch(semitoneOffsetToPitch(it)) }
         )
     }
@@ -172,20 +179,11 @@ internal fun AudioEffectsSpeedCard(
         checked = linked,
         onCheckedChange = { enabled ->
             editor.settings { it.copy(speedPitchLinked = enabled) }
-            val pitch = if (enabled) soundState.speed.coerceIn(MIN_PLAYBACK_PITCH, MAX_PLAYBACK_PITCH) else 1f
+            val pitch = if (enabled) shownSpeed.coerceIn(MIN_PLAYBACK_PITCH, MAX_PLAYBACK_PITCH) else 1f
             PlayerManager.setPlaybackPitch(pitch)
         }
     )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.End
-    ) {
-        MiuixSettingsOutlinedButton(onClick = { PlayerManager.resetPlaybackSpeedAndPitch() }) {
-            Text(stringResource(CoreCommonR.string.audio_effects_speed_reset))
-        }
-    }
+    if (linked) AudioEffectsNote(stringResource(CoreCommonR.string.audio_effects_speed_pitch_linked_note))
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -194,6 +192,7 @@ private fun QuickChips(
     values: List<Float>,
     selected: (Float) -> Boolean,
     label: (Float) -> String,
+    enabled: Boolean,
     onClick: (Float) -> Unit
 ) {
     FlowRow(
@@ -206,6 +205,7 @@ private fun QuickChips(
             FilterChip(
                 selected = selected(value),
                 onClick = { onClick(value) },
+                enabled = enabled,
                 label = { Text(label(value)) }
             )
         }

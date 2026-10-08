@@ -26,6 +26,7 @@ internal fun AudioEffectsToneCard(sound: AudioEffectsSound, editor: AudioEffects
         valueRange = -12f..12f,
         step = 0.5f,
         formatValue = ::formatSignedDb,
+        input = AudioEffectsInputs.Db,
         onValueChange = { value -> editor.sound { it.copy(bassDb = value) } }
     )
     AudioEffectsSliderRow(
@@ -35,6 +36,7 @@ internal fun AudioEffectsToneCard(sound: AudioEffectsSound, editor: AudioEffects
         valueRange = 40f..250f,
         step = 5f,
         formatValue = ::formatFrequency,
+        input = AudioEffectsInputs.Hz,
         onValueChange = { value -> editor.sound { it.copy(bassFrequencyHz = value) } }
     )
     AudioEffectsSliderRow(
@@ -43,6 +45,7 @@ internal fun AudioEffectsToneCard(sound: AudioEffectsSound, editor: AudioEffects
         valueRange = -12f..12f,
         step = 0.5f,
         formatValue = ::formatSignedDb,
+        input = AudioEffectsInputs.Db,
         onValueChange = { value -> editor.sound { it.copy(trebleDb = value) } }
     )
     AudioEffectsSliderRow(
@@ -51,6 +54,7 @@ internal fun AudioEffectsToneCard(sound: AudioEffectsSound, editor: AudioEffects
         valueRange = 2_000f..14_000f,
         step = 250f,
         formatValue = ::formatFrequency,
+        input = AudioEffectsInputs.Hz,
         onValueChange = { value -> editor.sound { it.copy(trebleFrequencyHz = value) } }
     )
     AudioEffectsSliderRow(
@@ -60,6 +64,7 @@ internal fun AudioEffectsToneCard(sound: AudioEffectsSound, editor: AudioEffects
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(virtualBass = value) } }
     )
     if (sound.virtualBass > 0f) {
@@ -69,6 +74,7 @@ internal fun AudioEffectsToneCard(sound: AudioEffectsSound, editor: AudioEffects
             valueRange = 50f..200f,
             step = 5f,
             formatValue = ::formatFrequency,
+            input = AudioEffectsInputs.Hz,
             onValueChange = { value -> editor.sound { it.copy(virtualBassFrequencyHz = value) } }
         )
     }
@@ -87,6 +93,7 @@ internal fun AudioEffectsCharacterCard(sound: AudioEffectsSound, editor: AudioEf
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(warmth = value) } }
     )
     AudioEffectsSliderRow(
@@ -96,6 +103,7 @@ internal fun AudioEffectsCharacterCard(sound: AudioEffectsSound, editor: AudioEf
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(clarity = value) } }
     )
     if (sound.clarity > 0f) {
@@ -105,6 +113,7 @@ internal fun AudioEffectsCharacterCard(sound: AudioEffectsSound, editor: AudioEf
             valueRange = 2_000f..10_000f,
             step = 250f,
             formatValue = ::formatFrequency,
+            input = AudioEffectsInputs.Hz,
             onValueChange = { value -> editor.sound { it.copy(clarityFrequencyHz = value) } }
         )
     }
@@ -115,6 +124,7 @@ internal fun AudioEffectsCharacterCard(sound: AudioEffectsSound, editor: AudioEf
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(vocal = value) } }
     )
     AudioEffectsSliderRow(
@@ -124,6 +134,7 @@ internal fun AudioEffectsCharacterCard(sound: AudioEffectsSound, editor: AudioEf
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(vocalRemoval = value) } }
     )
 }
@@ -141,6 +152,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
         valueRange = 0f..2f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(stereoWidth = value) } }
     )
     AudioEffectsSliderRow(
@@ -150,6 +162,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(surround = value) } }
     )
     AudioEffectsSliderRow(
@@ -159,6 +172,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(crossfeed = value) } }
     )
     AudioEffectsSliderRow(
@@ -168,6 +182,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.copy(reverb = value) } }
     )
     AnimatedVisibility(visible = sound.reverb > 0f) {
@@ -178,6 +193,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
                 valueRange = 0f..1f,
                 step = 0.05f,
                 formatValue = ::formatPercent,
+                input = AudioEffectsInputs.Percent,
                 onValueChange = { value -> editor.sound { it.copy(reverbRoom = value) } }
             )
             AudioEffectsSliderRow(
@@ -186,6 +202,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
                 valueRange = 0f..1f,
                 step = 0.05f,
                 formatValue = ::formatPercent,
+                input = AudioEffectsInputs.Percent,
                 onValueChange = { value -> editor.sound { it.copy(reverbDamping = 1f - value) } }
             )
             AudioEffectsSliderRow(
@@ -194,6 +211,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
                 valueRange = 0f..100f,
                 step = 1f,
                 formatValue = ::formatMilliseconds,
+                input = AudioEffectsInputs.Ms,
                 onValueChange = { value -> editor.sound { it.copy(reverbPreDelayMs = value) } }
             )
         }
@@ -206,6 +224,7 @@ internal fun AudioEffectsSpaceCard(sound: AudioEffectsSound, editor: AudioEffect
         valueRange = 0f..250f,
         step = 10f,
         formatValue = { if (it < 40f) monoBassOff else formatFrequency(it) },
+        input = AudioEffectsInputs.Hz,
         onValueChange = { value -> editor.sound { it.copy(monoBassHz = if (value < 40f) 0f else value) } }
     )
     AudioEffectsSwitchRow(
@@ -236,6 +255,7 @@ internal fun AudioEffectsDynamicsCard(sound: AudioEffectsSound, editor: AudioEff
         valueRange = 0f..1f,
         step = 0.05f,
         formatValue = ::formatPercent,
+        input = AudioEffectsInputs.Percent,
         onValueChange = { value -> editor.sound { it.withCompressorAmount(value) } }
     )
     if (sound.compressorEnabled) {
@@ -256,6 +276,7 @@ internal fun AudioEffectsDynamicsCard(sound: AudioEffectsSound, editor: AudioEff
         valueRange = -12f..12f,
         step = 0.5f,
         formatValue = ::formatSignedDb,
+        input = AudioEffectsInputs.Db,
         onValueChange = { value -> editor.sound { it.copy(outputGainDb = value) } }
     )
     AudioEffectsSwitchRow(
@@ -271,6 +292,7 @@ internal fun AudioEffectsDynamicsCard(sound: AudioEffectsSound, editor: AudioEff
             valueRange = -6f..0f,
             step = 0.1f,
             formatValue = ::formatSignedDb,
+            input = AudioEffectsInputs.Db,
             onValueChange = { value -> editor.sound { it.copy(limiterCeilingDb = value) } }
         )
         AudioEffectsSliderRow(
@@ -279,6 +301,7 @@ internal fun AudioEffectsDynamicsCard(sound: AudioEffectsSound, editor: AudioEff
             valueRange = 20f..500f,
             step = 10f,
             formatValue = ::formatMilliseconds,
+            input = AudioEffectsInputs.Ms,
             onValueChange = { value -> editor.sound { it.copy(limiterReleaseMs = value) } }
         )
     }
@@ -293,6 +316,7 @@ private fun CompressorAdvancedControls(sound: AudioEffectsSound, editor: AudioEf
             valueRange = -50f..0f,
             step = 0.5f,
             formatValue = ::formatSignedDb,
+            input = AudioEffectsInputs.Db,
             onValueChange = { value -> editor.sound { it.copy(compressorThresholdDb = value) } }
         )
         AudioEffectsSliderRow(
@@ -301,6 +325,7 @@ private fun CompressorAdvancedControls(sound: AudioEffectsSound, editor: AudioEf
             valueRange = 1f..20f,
             step = 0.1f,
             formatValue = ::formatRatio,
+            input = AudioEffectsInputs.Ratio,
             onValueChange = { value -> editor.sound { it.copy(compressorRatio = value) } }
         )
         AudioEffectsSliderRow(
@@ -309,6 +334,7 @@ private fun CompressorAdvancedControls(sound: AudioEffectsSound, editor: AudioEf
             valueRange = 0.5f..100f,
             step = 0.5f,
             formatValue = ::formatMilliseconds,
+            input = AudioEffectsInputs.Ms,
             onValueChange = { value -> editor.sound { it.copy(compressorAttackMs = value) } }
         )
         AudioEffectsSliderRow(
@@ -317,6 +343,7 @@ private fun CompressorAdvancedControls(sound: AudioEffectsSound, editor: AudioEf
             valueRange = 20f..1_000f,
             step = 10f,
             formatValue = ::formatMilliseconds,
+            input = AudioEffectsInputs.Ms,
             onValueChange = { value -> editor.sound { it.copy(compressorReleaseMs = value) } }
         )
         AudioEffectsSliderRow(
@@ -325,6 +352,7 @@ private fun CompressorAdvancedControls(sound: AudioEffectsSound, editor: AudioEf
             valueRange = 0f..18f,
             step = 0.5f,
             formatValue = { "${(it * 10f).roundToInt() / 10f} dB" },
+            input = AudioEffectsInputs.Db,
             onValueChange = { value -> editor.sound { it.copy(compressorKneeDb = value) } }
         )
         AudioEffectsSliderRow(
@@ -333,6 +361,7 @@ private fun CompressorAdvancedControls(sound: AudioEffectsSound, editor: AudioEf
             valueRange = 0f..18f,
             step = 0.5f,
             formatValue = ::formatSignedDb,
+            input = AudioEffectsInputs.Db,
             onValueChange = { value -> editor.sound { it.copy(compressorMakeupDb = value) } }
         )
     }
