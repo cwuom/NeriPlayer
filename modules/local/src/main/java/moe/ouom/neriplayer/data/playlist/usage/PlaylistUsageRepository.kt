@@ -297,25 +297,7 @@ class PlaylistUsageRepository internal constructor(
     }
 
     private suspend fun recoverBaselineLocked(): Boolean = try {
-        if (!baselineTrusted) {
-            // 保存锁内重读实际主存，已提交后通知取消的事务不能继续沿用旧基线
-            val roomEntries = roomStore?.readIfRoomPrimary()
-            val actual = roomEntries?.let(::normalizeUsageEntries) ?: loadLegacyEntries()
-            currentCoroutineContext().ensureActive()
-            synchronized(mutationLock) {
-                val write = pendingWrite
-                if (write != null) {
-                    // 取消前可能已提交，只把尚未进入实际主存的 UI 变化重放一次
-                    val previous = if (actual == write.next) write.previousVisible else write.previousPersisted
-                    _flow.value = rebaseUiEntriesLocked(previous, actual)
-                    pendingUiChanges = _flow.value != actual
-                }
-                persistedEntries = actual
-                roomStorageEnabled = roomEntries != null
-                baselineTrusted = true
-                pendingWrite = null
-            }
-        }
+        if (!baselineTrusted) reloadTrustedBaseline()
         synchronized(mutationLock) {
             if (!pendingUiChanges) _flow.value = persistedEntries
         }
@@ -325,6 +307,27 @@ class PlaylistUsageRepository internal constructor(
         initialLoadFailure = error
         NPLogger.e("PlaylistUsageRepo", "Usage authority unavailable; refusing an uncertain baseline", error)
         false
+    }
+
+    private suspend fun reloadTrustedBaseline() {
+        // 保存锁内重读实际主存，已提交后通知取消的事务不能继续沿用旧基线
+        val roomEntries = roomStore?.readIfRoomPrimary()
+        val actual = roomEntries?.let(::normalizeUsageEntries) ?: loadLegacyEntries()
+        currentCoroutineContext().ensureActive()
+        synchronized(mutationLock) {
+            pendingWrite?.let { write -> replayPendingWriteLocked(write, actual) }
+            persistedEntries = actual
+            roomStorageEnabled = roomEntries != null
+            baselineTrusted = true
+            pendingWrite = null
+        }
+    }
+
+    private fun replayPendingWriteLocked(write: UsageWriteSnapshot, actual: List<UsageEntry>) {
+        // 取消前可能已提交，只把尚未进入实际主存的 UI 变化重放一次
+        val previous = if (actual == write.next) write.previousVisible else write.previousPersisted
+        _flow.value = rebaseUiEntriesLocked(previous, actual)
+        pendingUiChanges = _flow.value != actual
     }
 
     private fun publishUiEntries(entries: List<UsageEntry>) {
