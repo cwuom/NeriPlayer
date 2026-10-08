@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.model.download.DownloadLibraryEntry
 import moe.ouom.neriplayer.data.model.download.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 
@@ -937,12 +938,22 @@ fun LocalMediaSupport.selectCachedEditableMetadataReference(
     displayName: String
 ): String? {
     if (snapshot?.rootEntriesComplete != true) return null
-    val audio = snapshot.audioEntriesByLookupKey[sourceReference] ?: return null
-    if (audio.isPendingAudioWrite || audio.name != displayName ||
-        sourceReference != audio.reference && sourceReference != audio.mediaUri
-    ) return null
-    val metadata = snapshot.metadataEntriesByAudioName[displayName] ?: return null
-    if (metadata.name != displayName + LOCAL_METADATA_SUFFIX) return null
+    val audio = snapshot.audioEntriesByLookupKey[sourceReference]
+    if (audio == null || !isCachedEditableAudio(audio, sourceReference, displayName)) return null
+    return contentMetadataReference(snapshot.metadataEntriesByAudioName[displayName], displayName)
+}
+
+private fun isCachedEditableAudio(
+    audio: DownloadLibraryEntry,
+    sourceReference: String,
+    displayName: String
+): Boolean {
+    return !audio.isPendingAudioWrite && audio.name == displayName &&
+        (sourceReference == audio.reference || sourceReference == audio.mediaUri)
+}
+
+private fun contentMetadataReference(metadata: DownloadLibraryEntry?, displayName: String): String? {
+    if (metadata == null || metadata.name != displayName + LOCAL_METADATA_SUFFIX) return null
     return metadata.reference.takeIf { it.startsWith("content://", ignoreCase = true) }
 }
 
