@@ -85,9 +85,9 @@ class CarMediaMetadataTest {
         }.use { builders ->
             serviceMediaMetadata(current.copy(album = null, displayDescription = null, artworkUri = null), stale)
             serviceMediaMetadata(current, ready)
+            serviceMediaMetadata(current, ready, includeBitmaps = false)
             val staleBuilder = builders.constructed()[0]
             verify(staleBuilder).putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, null)
-            verify(staleBuilder).putBitmap(MediaMetadata.METADATA_KEY_ART, null)
             verify(staleBuilder).putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, null)
             verify(staleBuilder, never()).putString(eq(MediaMetadata.METADATA_KEY_ALBUM), nullable(String::class.java))
             verify(staleBuilder, never()).putString(eq(MediaMetadata.METADATA_KEY_ALBUM_ART_URI), nullable(String::class.java))
@@ -97,12 +97,18 @@ class CarMediaMetadataTest {
             verify(currentBuilder).putString(MediaMetadata.METADATA_KEY_ALBUM, "Album")
             verify(currentBuilder).putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "song-id")
             verify(currentBuilder).putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 2L)
-            verify(currentBuilder).putBitmap(MediaMetadata.METADATA_KEY_ART, bitmap)
             verify(currentBuilder).putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bitmap)
             verify(currentBuilder).putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, bitmap)
             verify(currentBuilder).putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "content://local/art")
             verify(currentBuilder).putString(MediaMetadata.METADATA_KEY_ART_URI, "content://local/art")
             verify(currentBuilder).putString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, "content://local/art")
+            val uriOnlyBuilder = builders.constructed()[2]
+            verify(uriOnlyBuilder).putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, null)
+            verify(uriOnlyBuilder).putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, null)
+            verify(uriOnlyBuilder).putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "content://local/art")
+            for (builder in builders.constructed()) {
+                verify(builder, never()).putBitmap(eq(MediaMetadata.METADATA_KEY_ART), nullable(Bitmap::class.java))
+            }
         }
     }
 

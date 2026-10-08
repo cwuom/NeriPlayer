@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
+import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.runtime.service.MediaSessionPlaybackStateThrottler
 import moe.ouom.neriplayer.core.player.runtime.service.buildMediaSessionControlFingerprint
 import moe.ouom.neriplayer.core.player.service.notification.ServiceWidgetInputs
@@ -124,6 +125,9 @@ internal class PlaybackServicePresentationOwner(
     private val playbackStateThrottler = MediaSessionPlaybackStateThrottler()
     private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
+    // 会话拒收过位图的封面, 同一封面后续只发布 URI, 避免每行歌词都重复失败的 Binder 事务
+    private var rejectedArtworkCoverSource: String? = null
+    private var metadataFailureLogged = false
     private var lastWidgetState: PlaybackWidgetState? = null
     private var favoriteSongKeys: Set<String> = emptySet()
     private var bluetoothMode = BluetoothMetadataMode.SongAndLyrics
@@ -292,7 +296,27 @@ internal class PlaybackServicePresentationOwner(
         )
         if (snapshot == lastMetadataSnapshot) return
         lastMetadataSnapshot = snapshot
-        port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot))
+        publishMetadata(snapshot, artworkSnapshot)
+    }
+
+    private fun publishMetadata(snapshot: PlaybackMetadataSnapshot, artworkSnapshot: PlaybackArtworkSnapshot) {
+        if (snapshot.coverSource == null || snapshot.coverSource != rejectedArtworkCoverSource) {
+            val failure = runCatching { port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot)) }
+                .exceptionOrNull() ?: return
+            rejectedArtworkCoverSource = snapshot.coverSource
+            logMetadataFailureOnce("media session rejected artwork metadata, retry without bitmaps", failure)
+        }
+        runCatching { port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot, includeBitmaps = false)) }
+            .onFailure { failure ->
+                lastMetadataSnapshot = null
+                logMetadataFailureOnce("media session rejected metadata without bitmaps", failure)
+            }
+    }
+
+    private fun logMetadataFailureOnce(message: String, failure: Throwable) {
+        if (metadataFailureLogged) return
+        metadataFailureLogged = true
+        NPLogger.w("NERI-APS", message, failure)
     }
 
     fun updatePlaybackState(force: Boolean, floatingLyricsEnabled: Boolean) {
