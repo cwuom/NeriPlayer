@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.navigation
 
-import android.content.res.Configuration
 import android.content.res.Resources
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -161,11 +160,7 @@ internal fun AppNavigationScaffold(
     CompositionLocalProvider(LocalMiniPlayerHeight provides reservedMiniPlayerHeight) {
         AppFeedbackHostEffect(snackbarHostState)
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val useNavigationRail = shouldUseAppNavigationRail(
-                configuration.smallestScreenWidthDp,
-                configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
-                maxWidth
-            )
+            val useNavigationRail = shouldUseAppNavigationRail(configuration.smallestScreenWidthDp, maxWidth)
             Scaffold(
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onSurface,
