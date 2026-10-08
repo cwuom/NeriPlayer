@@ -29,17 +29,44 @@ class ListenTogetherSocketHealthOwnerTest {
 
         port.wallMs = 10_200L
         owner.onServerMessage(serverNowMs = 10_250L, reason = "welcome")
-        assertEquals(85L, owner.serverClockOffsetMs)
+        assertEquals(100L, owner.serverClockOffsetMs)
         owner.onRoundTrip(null, 10_000L, 1_000L, "missing_time")
         owner.onRoundTrip(-1L, 10_000L, 1_000L, "invalid_time")
         owner.onRoundTrip(11_000L, 10_000L, 2_000L, "future_ping")
-        assertEquals(85L, owner.serverClockOffsetMs)
+        assertEquals(100L, owner.serverClockOffsetMs)
 
         port.elapsedMs = 32_000L
         port.wallMs = 41_100L
         owner.onPong(serverNowMs = 11_000L, echoedSentAtElapsedMs = 1_000L)
         owner.onPong(serverNowMs = 11_000L, echoedSentAtElapsedMs = null)
-        assertEquals(85L, owner.serverClockOffsetMs)
+        assertEquals(100L, owner.serverClockOffsetMs)
+    }
+
+    @Test
+    fun `one way samples only seed the offset until a round trip sample exists`() = runTest {
+        val port = FakePort()
+        val owner = owner(this, port)
+        owner.onServerMessage(serverNowMs = 10_050L, reason = "welcome")
+        assertEquals(50L, owner.serverClockOffsetMs)
+
+        assertTrue(owner.sendPing())
+        port.elapsedMs = 1_100L
+        port.wallMs = 10_100L
+        owner.onPong(serverNowMs = 10_150L, echoedSentAtElapsedMs = 1_000L)
+        assertEquals(100L, owner.serverClockOffsetMs)
+
+        repeat(50) {
+            port.wallMs += 1_000L
+            owner.onServerMessage(serverNowMs = port.wallMs + 100L - 400L, reason = "room_state_updated")
+        }
+        assertEquals(100L, owner.serverClockOffsetMs)
+
+        owner.onRoundTrip(serverNowMs = port.wallMs + 120L, sentAtWallMs = port.wallMs, sentAtElapsedMs = 1_100L, reason = "http_state")
+        assertEquals(106L, owner.serverClockOffsetMs)
+
+        owner.resetConnectionTiming()
+        owner.onServerMessage(serverNowMs = port.wallMs + 80L, reason = "welcome")
+        assertEquals(80L, owner.serverClockOffsetMs)
     }
 
     @Test
