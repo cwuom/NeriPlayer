@@ -142,24 +142,9 @@ class PlatformPlaylistCacheRoomStore(
             "SELECT platform, COUNT(*) " +
                 "FROM platform_playlist_cache GROUP BY platform"
         )
-        val payloadBytesByPlatform = PLATFORM_CACHE_TABLES.fold(
-            emptyMap<String, Long>()
-        ) { current, table ->
-            val tablePayloadBytes = readLongByPlatform(
-                sqliteDatabase,
-                "SELECT platform, COALESCE(SUM(${table.payloadExpression}), 0) " +
-                    "FROM ${table.name} GROUP BY platform"
-            )
-            buildMap {
-                putAll(current)
-                tablePayloadBytes.forEach { (platform, bytes) ->
-                    put(platform, (get(platform) ?: 0L) + bytes)
-                }
-            }
-        }
+        val payloadBytesByPlatform = cachePayloadBytesByPlatform(sqliteDatabase)
         val allocatedPageBytesByPlatform = allocateCachePageBytes(
-            totalPageBytes = cacheTablePageBytes(sqliteDatabase)?.takeIf { it > 0L }
-                ?: estimatedCacheTablePageBytes(sqliteDatabase, payloadBytesByPlatform),
+            totalPageBytes = totalCachePageBytes(sqliteDatabase, payloadBytesByPlatform),
             payloadBytesByPlatform = payloadBytesByPlatform
         )
 
@@ -336,6 +321,22 @@ private fun readLongByPlatform(
         }
     }
 }
+
+private fun cachePayloadBytesByPlatform(database: SupportSQLiteDatabase): Map<String, Long> {
+    val totals = mutableMapOf<String, Long>()
+    for (table in PLATFORM_CACHE_TABLES) {
+        val tablePayloadBytes = readLongByPlatform(
+            database,
+            "SELECT platform, COALESCE(SUM(${table.payloadExpression}), 0) " +
+                "FROM ${table.name} GROUP BY platform"
+        )
+        tablePayloadBytes.forEach { (platform, bytes) -> totals[platform] = (totals[platform] ?: 0L) + bytes }
+    }
+    return totals
+}
+
+private fun totalCachePageBytes(database: SupportSQLiteDatabase, payloadBytesByPlatform: Map<String, Long>): Long =
+    cacheTablePageBytes(database)?.takeIf { it > 0L } ?: estimatedCacheTablePageBytes(database, payloadBytesByPlatform)
 
 private fun cacheTablePageBytes(database: SupportSQLiteDatabase): Long? {
     return runCatching {

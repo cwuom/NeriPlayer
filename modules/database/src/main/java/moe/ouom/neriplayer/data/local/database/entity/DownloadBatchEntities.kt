@@ -32,14 +32,8 @@ data class DownloadBatchEntity(
     @ColumnInfo(name = "created_at_ms") val createdAtMs: Long
 ) {
     init {
-        require(batchId.isNotBlank())
-        require(generation > 0L)
-        require(totalCount > 0)
-        require(stateBits >= 0)
-        require(
-            stateBits and DownloadBatchState.TERMINAL_MASK in
-                setOf(0, DownloadBatchState.COMPLETED, DownloadBatchState.CANCELLED)
-        )
+        require(batchId.isNotBlank() && generation > 0L && totalCount > 0)
+        require(stateBits >= 0 && stateBits and DownloadBatchState.TERMINAL_MASK in DownloadBatchState.VALID_TERMINAL_BITS)
     }
 }
 
@@ -87,6 +81,7 @@ object DownloadBatchState {
     /** 用户只允许当前网络代际在移动网络继续，不能扩散到其它批次 */
     const val USER_MOBILE_ALLOWED = 1 shl 5
     const val TERMINAL_MASK = COMPLETED or CANCELLED
+    val VALID_TERMINAL_BITS: Set<Int> = setOf(0, COMPLETED, CANCELLED)
 }
 
 object DownloadBatchMemberTerminal {
