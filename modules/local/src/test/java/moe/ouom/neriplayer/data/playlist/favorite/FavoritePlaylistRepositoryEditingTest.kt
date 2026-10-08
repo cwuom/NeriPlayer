@@ -123,6 +123,25 @@ class FavoritePlaylistRepositoryEditingTest {
         assertEquals("{broken", primary.readText())
     }
 
+    @Test
+    fun `loaded favorites without a sort order fall back to added then modified then current time`() = runTest {
+        val before = System.currentTimeMillis()
+        val repository = repository(
+            backgroundScope,
+            favorite(1L, "Added", sortOrder = 0L).copy(addedTime = 5L, modifiedAt = 9L),
+            favorite(2L, "Modified", sortOrder = -1L).copy(addedTime = 0L, modifiedAt = 7L),
+            favorite(3L, "Unknown", sortOrder = 0L).copy(addedTime = 0L, modifiedAt = 0L),
+            favorite(4L, "Kept", sortOrder = 30L)
+        )
+
+        val sortOrders = repository.favorites.value.associate { it.id to it.sortOrder }
+
+        assertEquals(5L, sortOrders.getValue(1L))
+        assertEquals(7L, sortOrders.getValue(2L))
+        assertTrue(sortOrders.getValue(3L) >= before)
+        assertEquals(30L, sortOrders.getValue(4L))
+    }
+
     // Room never takes over here, so every write goes through the legacy JSON fallback
     private suspend fun repository(
         scope: CoroutineScope,
