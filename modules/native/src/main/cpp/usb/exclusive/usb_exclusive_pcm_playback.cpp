@@ -423,6 +423,40 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
 
 extern "C"
 JNIEXPORT jboolean JNICALL
+Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeDrainPlayerPcm(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong handleValue
+) {
+    static_cast<void>(env);
+    const auto holder = acquireHandle(handleValue);
+    if (holder == nullptr) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> apiGuard(holder->apiLock);
+    if (holder->recovery.closing.load() || !holder->recovery.deviceOnline.load() || holder->device.devh == nullptr ||
+        holder->transfer.streamSource.load() != StreamSource::PlayerPcm) {
+        return JNI_FALSE;
+    }
+    std::string pipelineError;
+    bool drained = false;
+    try {
+        drained = holder->player.pcmPipeline.drainResampler(&pipelineError);
+    } catch (const std::exception& error) {
+        pipelineError = std::string("pcm_drain_failed:") + error.what();
+    }
+    if (!pipelineError.empty()) {
+        setError(holder.get(), pipelineError);
+        LOGW("nativeDrainPlayerPcm pipeline warning: %s", pipelineError.c_str());
+    }
+    if (drained) {
+        activateBufferedIsoReserveTransfers(holder.get());
+    }
+    return drained ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
 Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativePlayPlayerPcm(
     JNIEnv* env,
     jclass /*clazz*/,
