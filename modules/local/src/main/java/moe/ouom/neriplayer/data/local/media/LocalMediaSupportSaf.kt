@@ -655,24 +655,19 @@ internal fun LocalMediaSupport.invalidateLocalCoverLookupCache(
     uri: Uri,
     resolved: ResolvedInspectableLocalMedia?
 ) {
-    val prefixes = buildList {
-        resolved?.file?.absolutePath?.let { add("$it|") }
-        add("${uri}|")
-    }
+    val prefixes = listOfNotNull(resolved?.file?.absolutePath, uri.toString()).map { "$it|" }
     synchronized(localCoverLookupCache) {
-        val iterator = localCoverLookupCache.keys.iterator()
-        while (iterator.hasNext()) {
-            val key = iterator.next()
-            if (prefixes.any(key::startsWith)) {
-                iterator.remove()
-            }
-        }
+        localCoverLookupCache.keys.removeAll { key -> prefixes.any(key::startsWith) }
     }
     embeddedCoverCacheKeys(uri.toString(), resolved?.resolvedPath).forEach { cacheKey ->
-        val cacheFile = embeddedCoverFile(context, cacheKey)
-        if (cacheFile.isFile && !cacheFile.delete()) {
-            NPLogger.w(TAG, "clear stale embedded cover cache failed: ${cacheFile.name}")
-        }
+        deleteEmbeddedCoverCache(context, cacheKey)
+    }
+}
+
+private fun LocalMediaSupport.deleteEmbeddedCoverCache(context: Context, cacheKey: String) {
+    val cacheFile = embeddedCoverFile(context, cacheKey)
+    if (cacheFile.isFile && !cacheFile.delete()) {
+        NPLogger.w(TAG, "clear stale embedded cover cache failed: ${cacheFile.name}")
     }
 }
 
@@ -736,41 +731,46 @@ internal fun LocalMediaSupport.embeddedCoverFile(context: Context, uriKey: Strin
 
 internal fun LocalMediaSupport.saveEmbeddedCover(context: Context, uriKey: String, embeddedPicture: ByteArray?): String? {
     if (embeddedPicture == null || embeddedPicture.isEmpty()) return null
+    findCachedEmbeddedCover(context, uriKey)?.let { return it }
     val file = embeddedCoverFile(context, uriKey)
-    if (file.isFile && file.length() > 0L) {
-        if (isUsableCoverFile(file)) {
-            return file.toURI().toString()
-        }
-        if (!file.delete()) {
-            NPLogger.w(TAG, "replace invalid embedded cover cache failed: ${file.name}")
-        }
-    }
     val parent = file.parentFile ?: return null
-    if (!parent.isDirectory && !parent.mkdirs()) {
-        NPLogger.w(TAG, "create embedded cover cache directory failed: ${parent.path}")
-        return null
-    }
+    if (!ensureEmbeddedCoverDirectory(parent)) return null
     val cacheBytes = compactEmbeddedCoverForCache(embeddedPicture) ?: return null
-    val tempFile = File(file.parentFile ?: context.filesDir, ".${file.name}.tmp")
-    tempFile.writeBytes(cacheBytes)
-    if (!tempFile.renameTo(file)) {
-        file.writeBytes(cacheBytes)
-        tempFile.delete()
-    }
+    writeEmbeddedCoverCache(file, parent, cacheBytes)
     return file.toURI().toString()
 }
 
-internal fun LocalMediaSupport.compactEmbeddedCoverForCache(sourceBytes: ByteArray): ByteArray? {
-    if (sourceBytes.size <= MAX_EMBEDDED_COVER_CACHE_BYTES) {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, bounds)
-        return sourceBytes.takeIf { bounds.outWidth > 0 && bounds.outHeight > 0 }
-    }
+private fun LocalMediaSupport.ensureEmbeddedCoverDirectory(directory: File): Boolean {
+    if (directory.isDirectory || directory.mkdirs()) return true
+    NPLogger.w(TAG, "create embedded cover cache directory failed: ${directory.path}")
+    return false
+}
 
+private fun writeEmbeddedCoverCache(file: File, parent: File, bytes: ByteArray) {
+    val tempFile = File(parent, ".${file.name}.tmp")
+    tempFile.writeBytes(bytes)
+    if (!tempFile.renameTo(file)) {
+        file.writeBytes(bytes)
+        tempFile.delete()
+    }
+}
+
+internal fun LocalMediaSupport.compactEmbeddedCoverForCache(sourceBytes: ByteArray): ByteArray? {
+    val bounds = decodeEmbeddedCoverBounds(sourceBytes) ?: return null
+    if (sourceBytes.size <= MAX_EMBEDDED_COVER_CACHE_BYTES) return sourceBytes
+    return downsampleEmbeddedCoverForCache(sourceBytes, bounds)
+}
+
+private fun decodeEmbeddedCoverBounds(sourceBytes: ByteArray): BitmapFactory.Options? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    return bounds.takeIf { it.outWidth > 0 && it.outHeight > 0 }
+}
 
+private fun LocalMediaSupport.downsampleEmbeddedCoverForCache(
+    sourceBytes: ByteArray,
+    bounds: BitmapFactory.Options
+): ByteArray? {
     var targetDimension = MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX
     repeat(3) {
         val options = BitmapFactory.Options().apply {
