@@ -261,6 +261,19 @@ class ListenTogetherSessionManagerIntegrationTest {
         assertEquals("IOException", f.manager.sessionState.value.lastError)
     }
 
+    @Test
+    fun `listener watchdog leaves an in sync player untouched and repairs drift`() = sessionTest {
+        val f = fixture(this, "listener")
+        f.join(); f.connect()
+        runCurrent()
+        f.player.calls.clear()
+        advanceTimeBy(8_000L); runCurrent()
+        assertEquals(emptyList<String>(), f.player.calls)
+        f.player.playbackPositionFlow.value = 5_000L
+        advanceTimeBy(8_000L); runCurrent()
+        assertTrue(f.player.calls.contains("seek:0"))
+    }
+
     private class Fixture(scope: TestScope, role: String, queueMainWork: Boolean) {
         val player = FakeListenTogetherPlaybackHost().apply { currentSongFlow.value = testSong(); currentQueueFlow.value = listOf(testSong()) }
         val socket = mock(ListenTogetherWebSocketClient::class.java)

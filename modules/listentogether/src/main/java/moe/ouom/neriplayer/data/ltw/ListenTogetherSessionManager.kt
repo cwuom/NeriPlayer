@@ -291,6 +291,7 @@ class ListenTogetherSessionManager(
                 }
             }
         },
+        inSyncDriftMs = SOFT_SYNC_MIN_DRIFT_MS,
         elapsedRealtimeMs = elapsedRealtimeMs
     )
 
