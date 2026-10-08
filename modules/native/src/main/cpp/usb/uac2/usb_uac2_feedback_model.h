@@ -89,6 +89,7 @@ struct FeedbackResolverPolicy {
     bool allowCrossInterfaceAssociation = false;
     bool allowCrossAlternateAssociation = false;
     bool requireAsynchronousOutput = true;
+    bool legacyAudioEndpoints = false;
 };
 
 struct FeedbackEndpointResolution {
@@ -117,7 +118,8 @@ DescriptorValidationStatus validateOutputEndpointSnapshot(
 
 DescriptorValidationStatus validateFeedbackEndpointSnapshot(
     const EndpointSnapshot& feedback,
-    std::string* reason = nullptr
+    std::string* reason = nullptr,
+    const FeedbackResolverPolicy& policy = FeedbackResolverPolicy {}
 );
 
 FeedbackEndpointResolution resolveExplicitFeedbackEndpoint(

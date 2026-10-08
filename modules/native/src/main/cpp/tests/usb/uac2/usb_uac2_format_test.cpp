@@ -1,5 +1,6 @@
 #include "usb/uac2/usb_uac2_format.h"
 #include "usb/control/usb_feature_unit.h"
+#include "usb/control/usb_sample_rate_readback.h"
 
 #include <cassert>
 #include <cmath>
@@ -362,6 +363,23 @@ void mapsVolumeKeysOntoOneHardwareVolumeControl() {
     assert(hardwareVolumeForFraction(std::nanf(""), -12800, 0) == -12800);
 }
 
+void waitsForTheClockBeforeTrustingTheRateReadback() {
+    using neri::usb::control::SampleRateReadback;
+    using neri::usb::control::classifySampleRateReadback;
+    using neri::usb::control::sampleRateSettleDelayMs;
+    assert(classifySampleRateReadback(44100, 44100, 0) == SampleRateReadback::Verified);
+    assert(classifySampleRateReadback(44100, 48000, 0) == SampleRateReadback::Settle);
+    assert(classifySampleRateReadback(44100, 48000, 2) == SampleRateReadback::Settle);
+    assert(classifySampleRateReadback(44100, 48000, 3) == SampleRateReadback::AcceptUnverified);
+    assert(classifySampleRateReadback(96000, 96000, 3) == SampleRateReadback::Verified);
+    assert(classifySampleRateReadback(44100, 0, 0) == SampleRateReadback::AcceptUnverified);
+    assert(sampleRateSettleDelayMs(0) == 5);
+    assert(sampleRateSettleDelayMs(1) == 10);
+    assert(sampleRateSettleDelayMs(2) == 20);
+    assert(sampleRateSettleDelayMs(9) == 20);
+    assert(sampleRateSettleDelayMs(-1) == 5);
+}
+
 } // namespace
 
 int main() {
@@ -377,5 +395,6 @@ int main() {
     rejectsFormatsThatNeedFeedbackScheduling();
     verifiesSampleRateRanges();
     verifiesCurrentSampleRateDecoding();
+    waitsForTheClockBeforeTrustingTheRateReadback();
     return 0;
 }

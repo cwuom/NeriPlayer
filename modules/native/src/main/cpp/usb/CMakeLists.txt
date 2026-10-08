@@ -2,6 +2,7 @@ add_library(
     neri_usb_core
     STATIC
     control/usb_feature_unit.cpp
+    control/usb_sample_rate_readback.cpp
     exclusive/usb_recovery_action_latch.cpp
     exclusive/usb_runtime_report_v2.cpp
     feedback/usb_explicit_feedback_engine.cpp

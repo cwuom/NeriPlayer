@@ -52,6 +52,13 @@ struct UsbStreamingSyncPolicyDecision {
     }
 
     if (uacVersion == 1) {
+        if (feedbackMode == UsbStreamingFeedbackMode::Explicit) {
+            return UsbStreamingSyncPolicyDecision {
+                true,
+                true,
+                UsbStreamingSyncPolicyReason::Accepted
+            };
+        }
         return UsbStreamingSyncPolicyDecision {
             false,
             false,
