@@ -1125,9 +1125,7 @@ object UsbExclusiveSessionController {
         if (!ioGate.tryEnterWrite()) return 0
         try {
             val current = _state.value
-            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-                return 0
-            }
+            if (!current.isOpenPlayerPcm(handle)) return 0
             val written = UsbExclusiveNativeBridge.writePlayerPcm(
                 handle = handle,
                 buffer = buffer,
@@ -1203,9 +1201,7 @@ object UsbExclusiveSessionController {
         if (!ioGate.tryEnterWrite()) return false
         try {
             val current = _state.value
-            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-                return false
-            }
+            if (!current.isOpenPlayerPcm(handle)) return false
             return UsbExclusiveNativeBridge.drainPlayerPcm(handle)
         } finally {
             ioGate.exitWrite()
@@ -1214,9 +1210,7 @@ object UsbExclusiveSessionController {
 
     fun runtimeReportForWritePlanning(handle: Long): String {
         val current = _state.value
-        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-            return current.runtimeReport
-        }
+        if (!current.isOpenPlayerPcm(handle)) return current.runtimeReport
         val latest = latestPlayerPcmRuntime.get()
         return if (latest.handle == handle && latest.report.isNotBlank()) {
             latest.report
@@ -1561,9 +1555,7 @@ object UsbExclusiveSessionController {
 
     fun setPlayerVolume(handle: Long, volume: Float): Boolean {
         val current = _state.value
-        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-            return false
-        }
+        if (!current.isOpenPlayerPcm(handle)) return false
         return UsbExclusiveNativeBridge.setPlayerVolume(handle, volume)
     }
 
@@ -1581,9 +1573,7 @@ object UsbExclusiveSessionController {
 
     fun playerPcmFreeBytes(handle: Long): Long? {
         val current = _state.value
-        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-            return null
-        }
+        if (!current.isOpenPlayerPcm(handle)) return null
         return UsbExclusiveNativeBridge.playerPcmFreeBytes(handle)
     }
 
@@ -1593,9 +1583,7 @@ object UsbExclusiveSessionController {
         actionId: Long
     ): UsbExclusiveRecoveryActionAckStatus {
         val current = _state.value
-        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-            return UsbExclusiveRecoveryActionAckStatus.NoPending
-        }
+        if (!current.isOpenPlayerPcm(handle)) return UsbExclusiveRecoveryActionAckStatus.NoPending
         val status = UsbExclusiveNativeBridge.acknowledgeRecoveryAction(
             handle = handle,
             actionGeneration = actionGeneration,
@@ -2006,3 +1994,6 @@ object UsbExclusiveSessionController {
     }
 
 }
+
+private fun UsbExclusiveNativeState.isOpenPlayerPcm(handle: Long): Boolean =
+    this.handle == handle && source == "player_pcm" && opened
