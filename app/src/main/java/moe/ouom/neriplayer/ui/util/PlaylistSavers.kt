@@ -77,79 +77,75 @@ val biliPlaylistSaver: Saver<BiliPlaylist?, Any> = mapSaver(
 
 fun restoreAlbumSummary(map: Map<*, *>?): AlbumSummary? {
     if (map.isNullOrEmpty()) return null
-    val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
-    val name = map[KEY_NAME] as? String ?: return null
-    val picUrl = map[KEY_PIC_URL] as? String ?: ""
-    val size = (map[KEY_TRACK_COUNT] as? Number)?.toInt() ?: 0
+    val id = map.number(KEY_ID)?.toLong() ?: return null
+    val name = map.string(KEY_NAME) ?: return null
     return AlbumSummary(
         id = id,
         name = name,
-        picUrl = picUrl,
-        size = size
+        picUrl = map.text(KEY_PIC_URL),
+        size = map.int(KEY_TRACK_COUNT)
     )
 }
 
 fun restorePlaylistSummary(map: Map<*, *>?): PlaylistSummary? {
     if (map.isNullOrEmpty()) return null
-    val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
-    val name = map[KEY_NAME] as? String ?: return null
-    val picUrl = map[KEY_PIC_URL] as? String ?: ""
-    val playCount = (map[KEY_PLAY_COUNT] as? Number)?.toLong() ?: 0L
-    val trackCount = (map[KEY_TRACK_COUNT] as? Number)?.toInt() ?: 0
+    val id = map.number(KEY_ID)?.toLong() ?: return null
+    val name = map.string(KEY_NAME) ?: return null
     return PlaylistSummary(
         id = id,
         name = name,
-        picUrl = picUrl,
-        playCount = playCount,
-        trackCount = trackCount
+        picUrl = map.text(KEY_PIC_URL),
+        playCount = map.long(KEY_PLAY_COUNT),
+        trackCount = map.int(KEY_TRACK_COUNT)
     )
 }
 
 fun restoreBiliPlaylist(map: Map<*, *>?): BiliPlaylist? {
     if (map.isNullOrEmpty()) return null
-    val mediaId = (map[KEY_MEDIA_ID] as? Number)?.toLong() ?: return null
-    val fid = (map[KEY_FID] as? Number)?.toLong() ?: 0L
-    val mid = (map[KEY_MID] as? Number)?.toLong() ?: 0L
-    val title = map[KEY_TITLE] as? String ?: return null
-    val count = (map[KEY_COUNT] as? Number)?.toInt() ?: 0
-    val coverUrl = map[KEY_COVER_URL] as? String ?: ""
-    val kind = (map[KEY_KIND] as? String)
-        ?.let { runCatching { BiliPlaylistKind.valueOf(it) }.getOrNull() }
-        ?: BiliPlaylistKind.CREATED_FAVORITE
-    val subtitle = map[KEY_SUBTITLE] as? String ?: ""
+    val mediaId = map.number(KEY_MEDIA_ID)?.toLong() ?: return null
+    val title = map.string(KEY_TITLE) ?: return null
     return BiliPlaylist(
         mediaId = mediaId,
-        fid = fid,
-        mid = mid,
+        fid = map.long(KEY_FID),
+        mid = map.long(KEY_MID),
         title = title,
-        count = count,
-        coverUrl = coverUrl,
-        kind = kind,
-        subtitle = subtitle
+        count = map.int(KEY_COUNT),
+        coverUrl = map.text(KEY_COVER_URL),
+        kind = map.biliPlaylistKind(),
+        subtitle = map.text(KEY_SUBTITLE)
     )
 }
 
 fun restoreYouTubeMusicPlaylist(map: Map<*, *>?): YouTubeMusicPlaylist? {
     if (map.isNullOrEmpty()) return null
-    val browseId = map[KEY_BROWSE_ID] as? String ?: return null
-    val playlistId = map[KEY_PLAYLIST_ID] as? String ?: return null
-    val title = map[KEY_TITLE] as? String ?: return null
-    val trackCount = (map[KEY_TRACK_COUNT] as? Number)?.toInt()
-        ?: (map[KEY_COUNT] as? Number)?.toInt()
-        ?: 0
-    val coverUrl = map[KEY_COVER_URL] as? String ?: ""
-    val subtitle = map[KEY_SUBTITLE] as? String ?: ""
-    val creatorName = map[KEY_CREATOR_NAME] as? String ?: ""
+    val browseId = map.string(KEY_BROWSE_ID) ?: return null
+    val playlistId = map.string(KEY_PLAYLIST_ID) ?: return null
+    val title = map.string(KEY_TITLE) ?: return null
     return YouTubeMusicPlaylist(
         browseId = browseId,
         playlistId = playlistId,
         title = title,
-        subtitle = subtitle,
-        coverUrl = coverUrl,
-        trackCount = trackCount,
-        creatorName = creatorName
+        subtitle = map.text(KEY_SUBTITLE),
+        coverUrl = map.text(KEY_COVER_URL),
+        trackCount = map.int(KEY_TRACK_COUNT, default = map.int(KEY_COUNT)),
+        creatorName = map.text(KEY_CREATOR_NAME)
     )
 }
+
+private fun Map<*, *>.number(key: String): Number? = this[key] as? Number
+
+private fun Map<*, *>.string(key: String): String? = this[key] as? String
+
+private fun Map<*, *>.text(key: String): String = string(key).orEmpty()
+
+private fun Map<*, *>.long(key: String): Long = number(key)?.toLong() ?: 0L
+
+private fun Map<*, *>.int(key: String, default: Int = 0): Int = number(key)?.toInt() ?: default
+
+private fun Map<*, *>.biliPlaylistKind(): BiliPlaylistKind =
+    string(KEY_KIND)
+        ?.let { name -> BiliPlaylistKind.entries.firstOrNull { it.name == name } }
+        ?: BiliPlaylistKind.CREATED_FAVORITE
 
 fun AlbumSummary.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_ID to id,
