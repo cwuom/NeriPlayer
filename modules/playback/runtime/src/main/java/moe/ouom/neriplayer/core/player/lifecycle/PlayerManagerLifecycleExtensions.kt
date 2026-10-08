@@ -1705,6 +1705,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         audioReactiveActive = AudioReactive.enabled,
         audioSource = _currentPlaybackAudioInfo.value?.source,
         listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
+        offloadStallFallbackActive = audioOffloadStallFallbackActive,
     )
     val requiresPcmProcessing = pcmRequirements.isNotEmpty()
     if (lastRequiresPcmAudioProcessing == requiresPcmProcessing) return

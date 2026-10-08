@@ -360,6 +360,8 @@ object PlayerManager {
         SystemClock::elapsedRealtime
     )
     internal var lastRequiresPcmAudioProcessing: Boolean? = null
+    // 启动卡死证明本机 offload sink 不可靠后, 进程内不再恢复 offload
+    internal var audioOffloadStallFallbackActive = false
     internal var usbSinkRouteOwner = UsbSinkRouteOwner(
         mainScope,
         PlayerManagerUsbSinkRoutePort,

@@ -261,6 +261,10 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
         return
     }
 
+    if (tryDisableAudioOffloadForStartupStall(requestToken)) {
+        return
+    }
+
     if (startupStallRecoveryAttempts > STARTUP_STALL_MAX_RECOVERY_ATTEMPTS) {
         consecutivePlayFailures++
         advanceAfterPlaybackFailure(source = "startup_stall")
@@ -358,6 +362,49 @@ private fun PlayerManager.tryRestartSystemFallbackSinkForStartupStall(requestTok
             )
         }
     }
+    return true
+}
+
+internal fun shouldTryAudioOffloadStallFallback(
+    offloadEnabled: Boolean,
+    playbackState: Int,
+    positionMs: Long,
+    alreadyTried: Boolean
+): Boolean {
+    return offloadEnabled &&
+        !alreadyTried &&
+        playbackState == Player.STATE_BUFFERING &&
+        positionMs <= PlayerManager.STARTUP_STALL_POSITION_TOLERANCE_MS
+}
+
+private fun PlayerManager.tryDisableAudioOffloadForStartupStall(requestToken: Long): Boolean {
+    if (!isPlayerInitialized() || requestToken != playbackRequestToken) return false
+    val positionMs = player.currentPosition.coerceAtLeast(0L)
+    val shouldFallback = shouldTryAudioOffloadStallFallback(
+        offloadEnabled = lastRequiresPcmAudioProcessing == false,
+        playbackState = player.playbackState,
+        positionMs = positionMs,
+        alreadyTried = audioOffloadStallFallbackActive
+    )
+    if (!shouldFallback) return false
+    audioOffloadStallFallbackActive = true
+    NPLogger.w(
+        "NERI-PlayerManager",
+        "disable audio offload after startup stall: positionMs=$positionMs " +
+            "attempts=$startupStallRecoveryAttempts"
+    )
+    updateAudioOffloadPreferences("startup_stall_offload_fallback")
+    val reprepared = runCatching {
+        player.stop()
+        player.seekTo(player.currentMediaItemIndex, positionMs)
+        player.prepare()
+        player.playWhenReady = true
+    }.onFailure { error ->
+        NPLogger.w("NERI-PlayerManager", "re-prepare after audio offload fallback failed", error)
+    }.isSuccess
+    if (!reprepared) return false
+    resetPlaybackProgressAdvanceBaseline(positionMs)
+    schedulePlaybackStartupWatchdog(reason = "audio_offload_fallback")
     return true
 }
 
