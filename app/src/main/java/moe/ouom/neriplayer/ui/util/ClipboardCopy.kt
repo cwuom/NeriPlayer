@@ -3,13 +3,25 @@ package moe.ouom.neriplayer.ui.util
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.TransactionTooLargeException
+import androidx.annotation.StringRes
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
+import moe.ouom.neriplayer.common.R as CoreCommonR
 
 internal sealed interface ClipboardCopyResult {
     data class Copied(val wasTruncated: Boolean) : ClipboardCopyResult
 
     data object TransactionTooLarge : ClipboardCopyResult
+}
+
+@StringRes
+internal fun ClipboardCopyResult.copyMessageRes(): Int = when (this) {
+    is ClipboardCopyResult.Copied -> if (wasTruncated) {
+        CoreCommonR.string.toast_copy_truncated
+    } else {
+        CoreCommonR.string.toast_copied
+    }
+    ClipboardCopyResult.TransactionTooLarge -> CoreCommonR.string.toast_copy_failed
 }
 
 internal fun ClipboardManager.copyPlainTextSafely(
