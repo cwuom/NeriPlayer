@@ -48,6 +48,20 @@ class AudioEffectsSettingsTest {
     }
 
     @Test
+    fun `pitch follows speed by default and older saves are moved to the new default`() {
+        assertTrue(AudioEffectsSettings().speedPitchLinked)
+
+        val firstVersion = AudioEffectsSettingsCodec.decodeOrNull("""{"version":1,"speedPitchLinked":false}""")
+        assertTrue(firstVersion?.speedPitchLinked == true)
+        assertEquals(AUDIO_EFFECTS_SETTINGS_VERSION, firstVersion?.version)
+
+        val chosenLater = AudioEffectsSettingsCodec.decodeOrNull(
+            """{"version":$AUDIO_EFFECTS_SETTINGS_VERSION,"speedPitchLinked":false}"""
+        )
+        assertFalse(chosenLater?.speedPitchLinked == true)
+    }
+
+    @Test
     fun `legacy system equalizer settings migrate to the native engine`() {
         assertEquals(AudioEffectsSettings(), migrateLegacyAudioEffects(false, PlaybackEqualizerPresetId.ROCK, emptyList(), 0))
 

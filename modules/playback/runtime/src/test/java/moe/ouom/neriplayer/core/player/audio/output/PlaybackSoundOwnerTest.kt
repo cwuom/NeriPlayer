@@ -107,6 +107,19 @@ class PlaybackSoundOwnerTest {
     }
 
     @Test
+    fun `linked speed and pitch reach the engine as one change`() = runTest {
+        val engine = RecordingEngine()
+        val owner = PlaybackSoundOwner(backgroundScope, backgroundScope, RecordingPort(), engine)
+
+        owner.setSpeedAndPitch(1.25f, 1.25f, persist = false)
+        runCurrent()
+
+        assertEquals(1, engine.applied.size)
+        assertEquals(1.25f, engine.applied.single().speed, 0.0001f)
+        assertEquals(1.25f, engine.applied.single().pitch, 0.0001f)
+    }
+
+    @Test
     fun `scope rebind cancels pending effect and persistence jobs`() = runTest {
         val port = RecordingPort()
         val engine = RecordingEngine()

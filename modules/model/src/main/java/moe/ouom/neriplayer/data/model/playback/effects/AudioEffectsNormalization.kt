@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.data.model.playback.effects
 
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.MAX_PLAYBACK_SPEED
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_PITCH
+import moe.ouom.neriplayer.data.model.playback.MIN_PLAYBACK_SPEED
 import kotlin.math.abs
 
 const val AUDIO_EFFECTS_EQ_BAND_LIMIT_DB = 12f
@@ -90,7 +96,10 @@ fun AudioEffectsSettings.normalized(): AudioEffectsSettings = copy(
         .distinctBy { it.id }
         .take(AUDIO_EFFECTS_USER_PRESET_LIMIT),
     speaker = speaker.normalized(),
-    powerMode = AudioEffectsPowerMode.fromStorageValue(powerMode).storageValue
+    powerMode = AudioEffectsPowerMode.fromStorageValue(powerMode).storageValue,
+    speedPitchLinked = speedPitchLinked || version < AUDIO_EFFECTS_LINKED_PITCH_VERSION,
+    storedSpeed = storedSpeed.finiteIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED, DEFAULT_PLAYBACK_SPEED),
+    storedPitch = storedPitch.finiteIn(MIN_PLAYBACK_PITCH, MAX_PLAYBACK_PITCH, DEFAULT_PLAYBACK_PITCH)
 )
 
 private fun Float.isZero(): Boolean = abs(this) < NEUTRAL_EPSILON
@@ -101,7 +110,9 @@ private fun ParametricEqBand.isNeutral(): Boolean {
 }
 
 /** 所有处理都等于原声时返回 true，此时播放链可以完全旁路 DSP */
-fun AudioEffectsSound.isNeutral(): Boolean {
+fun AudioEffectsSound.isNeutral(): Boolean = effective().allProcessingNeutral()
+
+private fun AudioEffectsSound.allProcessingNeutral(): Boolean {
     val equalizerNeutral = !equalizerEnabled || equalizerBandsDb.all { it.isZero() }
     val parametricNeutral = !parametricEnabled || parametricBands.all { it.isNeutral() }
     val toneNeutral = bassDb.isZero() && trebleDb.isZero() && preampDb.isZero() && outputGainDb.isZero()

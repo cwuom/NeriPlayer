@@ -2,7 +2,10 @@ package moe.ouom.neriplayer.data.model.playback.effects
 
 import kotlinx.serialization.Serializable
 
-const val AUDIO_EFFECTS_SETTINGS_VERSION = 1
+const val AUDIO_EFFECTS_SETTINGS_VERSION = 2
+
+/** 版本 2 起变调默认跟随倍速 */
+const val AUDIO_EFFECTS_LINKED_PITCH_VERSION = 2
 const val AUDIO_EFFECTS_GRAPHIC_BAND_COUNT = 10
 const val AUDIO_EFFECTS_PARAMETRIC_BAND_LIMIT = 10
 const val AUDIO_EFFECTS_USER_PRESET_LIMIT = 50
@@ -108,7 +111,10 @@ data class AudioEffectsSound(
     val outputGainDb: Float = 0f,
     val limiterEnabled: Boolean = true,
     val limiterCeilingDb: Float = -1f,
-    val limiterReleaseMs: Float = 80f
+    val limiterReleaseMs: Float = 80f,
+    val toneEnabled: Boolean = true,
+    val spaceEnabled: Boolean = true,
+    val dynamicsEnabled: Boolean = true
 )
 
 @Serializable
@@ -147,7 +153,10 @@ data class AudioEffectsSettings(
     val powerMode: String = AudioEffectsPowerMode.BALANCED.storageValue,
     val autoHeadroom: Boolean = true,
     val applyInUsbExclusive: Boolean = false,
-    val speedPitchLinked: Boolean = false
+    val speedPitchLinked: Boolean = true,
+    val speedEnabled: Boolean = true,
+    val storedSpeed: Float = 1f,
+    val storedPitch: Float = 1f
 )
 
 /** 运行时 DSP 的实时负载与保护状态，由播放线程按秒刷新 */

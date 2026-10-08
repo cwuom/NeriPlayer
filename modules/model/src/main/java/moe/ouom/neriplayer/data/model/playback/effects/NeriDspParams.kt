@@ -89,7 +89,7 @@ fun AudioEffectsSettings.resolveDsp(context: AudioEffectsRuntimeContext): AudioE
         }
         return inactive(reason)
     }
-    val sound = if (soundActive) profile.sound else AudioEffectsSound()
+    val sound = if (soundActive) profile.sound.effective() else AudioEffectsSound()
     val params = neutralDspParams()
     params[NeriDspParams.MASTER_ENABLED] = 1f
     val powerMode = AudioEffectsPowerMode.fromStorageValue(settings.powerMode)

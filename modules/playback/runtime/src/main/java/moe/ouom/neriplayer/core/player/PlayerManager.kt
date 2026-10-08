@@ -1338,6 +1338,11 @@ object PlayerManager {
         playbackSoundOwner.setPitch(pitch, persist)
     }
 
+    fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean = true) {
+        ensureInitialized()
+        playbackSoundOwner.setSpeedAndPitch(speed, pitch, persist)
+    }
+
     fun resetPlaybackSpeedAndPitch(persist: Boolean = true) {
         ensureInitialized()
         playbackSoundOwner.resetSpeedAndPitch(persist)

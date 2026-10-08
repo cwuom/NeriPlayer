@@ -101,6 +101,11 @@ internal class PlaybackSoundOwner(
         config.copy(pitch = normalizePlaybackPitch(pitch)), persist
     )
 
+    /** 倍速与音调同时变化时只提交一次，避免 Sonic 连续两次排空重建 */
+    fun setSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean) = applyConfig(
+        config.copy(speed = normalizePlaybackSpeed(speed), pitch = normalizePlaybackPitch(pitch)), persist
+    )
+
     fun setVolumeBalance(balance: Float, persist: Boolean) = applyConfig(
         config.copy(volumeBalance = normalizePlaybackVolumeBalance(balance)), persist
     )
