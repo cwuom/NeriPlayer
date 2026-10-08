@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.core.player.usb.sink
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
-import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -19,7 +19,6 @@ import org.mockito.Mockito.`when`
 class UsbExclusiveSinkVolumeOwnerTest {
     @Test
     fun `fallback and native routes use volume owner's player state`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
@@ -51,7 +50,6 @@ class UsbExclusiveSinkVolumeOwnerTest {
 
     @Test
     fun `system volume changes update native gain without changing player volume`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
@@ -72,7 +70,6 @@ class UsbExclusiveSinkVolumeOwnerTest {
 
     @Test
     fun `bit perfect volume keys move the DAC hardware volume and keep PCM at unity`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val port = RecordingVolumePort(bitPerfect = true, hardwareVolume = true)
         val owner = UsbExclusiveSinkVolumeOwner(contextWithoutAudioManager(), false, port)
         try {
@@ -91,7 +88,6 @@ class UsbExclusiveSinkVolumeOwnerTest {
 
     @Test
     fun `digital volume keeps the DAC at unity and DACs without hardware volume are left alone`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val digital = RecordingVolumePort(hardwareVolume = true)
         val digitalOwner = UsbExclusiveSinkVolumeOwner(contextWithoutAudioManager(), false, digital)
         val fixed = RecordingVolumePort(bitPerfect = true)
@@ -114,14 +110,10 @@ class UsbExclusiveSinkVolumeOwnerTest {
 
     @Test
     fun `opening native output reads the current system volume instead of a stale cache`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val context = mock(Context::class.java)
-        val manager = mock(AudioManager::class.java)
+        val manager = musicVolumeManager(min = 0, max = 10, current = 5)
         `when`(context.applicationContext).thenReturn(context)
         `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(manager)
-        `when`(manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)).thenReturn(0)
-        `when`(manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).thenReturn(10)
-        `when`(manager.getStreamVolume(AudioManager.STREAM_MUSIC)).thenReturn(5)
         val port = RecordingVolumePort(bitPerfect = true, hardwareVolume = true)
         val owner = UsbExclusiveSinkVolumeOwner(context, false, port)
         try {
@@ -136,7 +128,6 @@ class UsbExclusiveSinkVolumeOwnerTest {
 
     @Test
     fun `system volume is observed only while native output is open`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val context = contextWithoutAudioManager()
         val resolver = mock(ContentResolver::class.java)
         `when`(context.contentResolver).thenReturn(resolver)
@@ -156,15 +147,34 @@ class UsbExclusiveSinkVolumeOwnerTest {
     }
 
     @Test
-    fun `system volume is polled only while observing without a pushed session volume`() {
-        assertTrue(shouldPollUsbExclusiveSystemVolume(observing = true, sessionVolumePushed = false))
-        assertFalse(shouldPollUsbExclusiveSystemVolume(observing = true, sessionVolumePushed = true))
-        assertFalse(shouldPollUsbExclusiveSystemVolume(observing = false, sessionVolumePushed = false))
+    fun `only media stream volume broadcasts refresh the native gain`() {
+        val music = AudioManager.STREAM_MUSIC
+        assertTrue(isUsbExclusiveMusicVolumeBroadcast(USB_EXCLUSIVE_ACTION_VOLUME_CHANGED, music))
+        assertTrue(isUsbExclusiveMusicVolumeBroadcast(USB_EXCLUSIVE_ACTION_STREAM_MUTE_CHANGED, music))
+        assertTrue(isUsbExclusiveMusicVolumeBroadcast(USB_EXCLUSIVE_ACTION_STREAM_DEVICES_CHANGED, music))
+        assertTrue(isUsbExclusiveMusicVolumeBroadcast(USB_EXCLUSIVE_ACTION_VOLUME_CHANGED, null))
+        assertTrue(isUsbExclusiveMusicVolumeBroadcast(USB_EXCLUSIVE_ACTION_VOLUME_CHANGED, -1))
+        assertFalse(isUsbExclusiveMusicVolumeBroadcast(USB_EXCLUSIVE_ACTION_VOLUME_CHANGED, AudioManager.STREAM_RING))
+        assertFalse(isUsbExclusiveMusicVolumeBroadcast("android.intent.action.SCREEN_OFF", music))
+        assertFalse(isUsbExclusiveMusicVolumeBroadcast(null, music))
+    }
+
+    @Test
+    fun `volume receiver refreshes only for media stream broadcasts`() {
+        var refreshes = 0
+        val receiver = UsbExclusiveMusicVolumeReceiver { refreshes++ }
+
+        receiver.onReceive(null, volumeIntent(USB_EXCLUSIVE_ACTION_VOLUME_CHANGED, AudioManager.STREAM_MUSIC))
+        receiver.onReceive(null, volumeIntent(USB_EXCLUSIVE_ACTION_STREAM_MUTE_CHANGED, AudioManager.STREAM_MUSIC))
+        receiver.onReceive(null, volumeIntent(USB_EXCLUSIVE_ACTION_VOLUME_CHANGED, AudioManager.STREAM_RING))
+        receiver.onReceive(null, volumeIntent(null, AudioManager.STREAM_MUSIC))
+        receiver.onReceive(null, null)
+
+        assertEquals(2, refreshes)
     }
 
     @Test
     fun `system volume read failure falls back without aborting owner creation`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val context = mock(Context::class.java)
         val manager = mock(AudioManager::class.java)
         `when`(context.applicationContext).thenReturn(context)
@@ -178,14 +188,10 @@ class UsbExclusiveSinkVolumeOwnerTest {
 
     @Test
     fun `owner reads stream volume through its system source`() {
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         val context = mock(Context::class.java)
-        val manager = mock(AudioManager::class.java)
+        val manager = musicVolumeManager(min = 0, max = 10, current = 5)
         `when`(context.applicationContext).thenReturn(context)
         `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(manager)
-        `when`(manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)).thenReturn(0)
-        `when`(manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).thenReturn(10)
-        `when`(manager.getStreamVolume(AudioManager.STREAM_MUSIC)).thenReturn(5)
         val owner = UsbExclusiveSinkVolumeOwner(context, false, RecordingVolumePort())
         try {
             verify(manager).getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -193,6 +199,19 @@ class UsbExclusiveSinkVolumeOwnerTest {
             owner.release()
         }
     }
+
+    private fun volumeIntent(action: String?, streamType: Int): Intent =
+        mock(Intent::class.java).also {
+            `when`(it.action).thenReturn(action)
+            `when`(it.getIntExtra(USB_EXCLUSIVE_EXTRA_VOLUME_STREAM_TYPE, -1)).thenReturn(streamType)
+        }
+
+    private fun musicVolumeManager(min: Int, max: Int, current: Int): AudioManager =
+        mock(AudioManager::class.java).also {
+            `when`(it.getStreamMinVolume(AudioManager.STREAM_MUSIC)).thenReturn(min)
+            `when`(it.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).thenReturn(max)
+            `when`(it.getStreamVolume(AudioManager.STREAM_MUSIC)).thenReturn(current)
+        }
 
     private fun contextWithoutAudioManager(): Context {
         val context = mock(Context::class.java)

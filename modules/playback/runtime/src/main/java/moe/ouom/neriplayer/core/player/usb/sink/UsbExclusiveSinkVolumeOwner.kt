@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.database.ContentObserver
 import android.media.AudioManager
 import android.net.Uri
@@ -9,11 +12,9 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import kotlin.math.abs
 import moe.ouom.neriplayer.common.logging.NPLogger
-import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchorVolumeGuard
-import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
-import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridgeSubscription
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveEffectiveNativeVolume
 
 internal interface UsbExclusiveSinkVolumePort {
@@ -26,6 +27,15 @@ internal interface UsbExclusiveSinkVolumePort {
     fun publishHardwareVolume(available: Boolean)
 }
 
+internal const val USB_EXCLUSIVE_ACTION_VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
+internal const val USB_EXCLUSIVE_ACTION_STREAM_MUTE_CHANGED = "android.media.STREAM_MUTE_CHANGED_ACTION"
+internal const val USB_EXCLUSIVE_ACTION_STREAM_DEVICES_CHANGED = "android.media.STREAM_DEVICES_CHANGED_ACTION"
+internal const val USB_EXCLUSIVE_EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
+
+/**
+ * 原生 USB 输出跟随系统媒体音量：音量键、锁屏和系统面板都走 STREAM_MUSIC，
+ * AudioService 在调节的同时发出广播，Settings 持久化要晚约 500 ms，只作兜底
+ */
 internal class UsbExclusiveSinkVolumeOwner(
     context: Context,
     observeSystemVolume: Boolean,
@@ -33,7 +43,6 @@ internal class UsbExclusiveSinkVolumeOwner(
 ) {
     private companion object {
         const val VOLUME_EPSILON = 0.0001f
-        const val POLL_INTERVAL_ACTIVE_MS = 100L
         const val READ_FAILURE_LOG_INTERVAL_MS = 5_000L
 
         fun audioManager(context: Context): AudioManager? =
@@ -59,32 +68,15 @@ internal class UsbExclusiveSinkVolumeOwner(
     private var lastReportedNativeVolume = Float.NaN
     private var lastSystemVolumeReadFailureLogAtMs = 0L
     @Volatile private var systemVolumeObserverRegistered = false
-    private var systemVolumeBridgeSubscription: UsbExclusiveSystemVolumeBridgeSubscription? = null
     private val systemVolumeObserver = object : ContentObserver(systemVolumeHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            applySystemVolumeChange(acceptUserVolumeChange = true)
-        }
-    }
-    private val systemVolumePoll = object : Runnable {
-        override fun run() {
-            if (!shouldPollUsbExclusiveSystemVolume(systemVolumeObserverRegistered, sessionVolumePushed())) return
             applySystemVolumeChange()
-            systemVolumeHandler.postDelayed(this, POLL_INTERVAL_ACTIVE_MS)
         }
     }
+    private val systemVolumeReceiver = UsbExclusiveMusicVolumeReceiver(::applySystemVolumeChange)
 
     init {
         cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
-        systemVolumeBridgeSubscription = UsbExclusiveSystemVolumeBridge.subscribe { volumeFraction ->
-            systemVolumeHandler.post {
-                if (volumeFraction == null) {
-                    applySystemVolumeChange()
-                    resumeSystemVolumePoll()
-                } else {
-                    applySessionVolumeChange(volumeFraction)
-                }
-            }
-        }
     }
 
     fun setNativeHandle(handle: Long) {
@@ -139,34 +131,17 @@ internal class UsbExclusiveSinkVolumeOwner(
 
     fun release() {
         unregisterSystemVolumeObserver()
-        UsbExclusiveSystemVolumeBridge.unsubscribe(systemVolumeBridgeSubscription)
-        systemVolumeBridgeSubscription = null
         systemVolumeThread?.quitSafely()
     }
 
-    private fun readMusicVolumeFractionFromSystem(acceptUserVolumeChange: Boolean = false): Float {
-        UsbExclusiveSystemVolumeBridge.currentSessionVolumeFractionOrNull()?.let { return it }
-        val manager = audioManager ?: return UsbExclusiveBackgroundAudioAnchorVolumeGuard
-            .currentVolumeFractionOrNull() ?: 1f
-        val observedVolumeFraction = try {
+    private fun readMusicVolumeFractionFromSystem(): Float {
+        val manager = audioManager ?: return cachedMusicVolumeFraction
+        return try {
             readMusicVolumeFraction(manager)
         } catch (error: Throwable) {
-            return volumeReadFallback(error)
+            volumeReadFallback(error)
         }
-        return anchoredVolume(observedVolumeFraction, acceptUserVolumeChange)
     }
-
-    private fun anchoredVolume(observedVolumeFraction: Float, acceptUserVolumeChange: Boolean): Float =
-        if (acceptUserVolumeChange) anchoredUserVolume(observedVolumeFraction)
-        else anchoredRouteVolume(observedVolumeFraction)
-
-    private fun anchoredUserVolume(observedVolumeFraction: Float): Float =
-        UsbExclusiveBackgroundAudioAnchorVolumeGuard.applyUserVolumeChange(observedVolumeFraction)
-            ?: observedVolumeFraction
-
-    private fun anchoredRouteVolume(observedVolumeFraction: Float): Float =
-        UsbExclusiveBackgroundAudioAnchorVolumeGuard.observeRouteVolume(observedVolumeFraction)
-            ?: observedVolumeFraction
 
     private fun readMusicVolumeFraction(manager: AudioManager): Float {
         val minVolume = manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
@@ -182,34 +157,39 @@ internal class UsbExclusiveSinkVolumeOwner(
             lastSystemVolumeReadFailureLogAtMs = nowMs
             NPLogger.w("NERI-UsbExclusive", "failed to read system media volume", error)
         }
-        return UsbExclusiveBackgroundAudioAnchorVolumeGuard.currentVolumeFractionOrNull()
-            ?: cachedMusicVolumeFraction
+        return cachedMusicVolumeFraction
     }
 
     private fun registerSystemVolumeObserver() {
         if (systemVolumeObserverRegistered) return
         runCatching {
+            ContextCompat.registerReceiver(
+                appContext,
+                systemVolumeReceiver,
+                usbExclusiveMusicVolumeIntentFilter(),
+                null,
+                systemVolumeHandler,
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
             appContext.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, systemVolumeObserver)
             systemVolumeObserverRegistered = true
-            systemVolumeHandler.removeCallbacks(systemVolumePoll)
-            systemVolumeHandler.post(systemVolumePoll)
         }.onFailure { NPLogger.w("NERI-UsbExclusive", "system volume observer registration failed", it) }
+        // 注册期间的音量变化不会补发广播，注册后再读一次
+        systemVolumeHandler.post { applySystemVolumeChange() }
     }
 
     private fun unregisterSystemVolumeObserver() {
-        systemVolumeHandler.removeCallbacks(systemVolumePoll)
         if (!systemVolumeObserverRegistered) return
+        runCatching { appContext.unregisterReceiver(systemVolumeReceiver) }
+            .onFailure { NPLogger.w("NERI-UsbExclusive", "system volume receiver unregistration failed", it) }
         runCatching { appContext.contentResolver.unregisterContentObserver(systemVolumeObserver) }
             .onFailure { NPLogger.w("NERI-UsbExclusive", "system volume observer unregistration failed", it) }
         systemVolumeObserverRegistered = false
     }
 
-    private fun applySystemVolumeChange(acceptUserVolumeChange: Boolean = false) {
-        updateSystemVolumeFraction(readMusicVolumeFractionFromSystem(acceptUserVolumeChange))
-    }
-
-    private fun applySessionVolumeChange(volumeFraction: Float) {
-        updateSystemVolumeFraction(volumeFraction.coerceIn(0f, 1f))
+    private fun applySystemVolumeChange() {
+        if (nativeHandle == 0L) return
+        updateSystemVolumeFraction(readMusicVolumeFractionFromSystem())
     }
 
     internal fun updateSystemVolumeFraction(nextVolumeFraction: Float) {
@@ -225,20 +205,30 @@ internal class UsbExclusiveSinkVolumeOwner(
         if (handle == 0L || !hardwareVolumeAvailable) return
         port.setHardwareVolume(handle, if (port.bitPerfect()) cachedMusicVolumeFraction else 1f)
     }
+}
 
-    private fun sessionVolumePushed(): Boolean =
-        UsbExclusiveSystemVolumeBridge.currentSessionVolumeFractionOrNull() != null
-
-    private fun resumeSystemVolumePoll() {
-        if (!systemVolumeObserverRegistered) return
-        systemVolumeHandler.removeCallbacks(systemVolumePoll)
-        systemVolumeHandler.post(systemVolumePoll)
+internal class UsbExclusiveMusicVolumeReceiver(
+    private val onMusicVolumeChanged: () -> Unit,
+) : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+        val action = intent?.action ?: return
+        if (isUsbExclusiveMusicVolumeBroadcast(action, intent.getIntExtra(USB_EXCLUSIVE_EXTRA_VOLUME_STREAM_TYPE, -1))) {
+            onMusicVolumeChanged()
+        }
     }
 }
 
-/**
- * 系统音量只在原生 USB 输出时才映射到原生增益；MediaSession 远程音量生效时音量变化会主动推送，
- * 两种情况都不需要每 100 ms 唤醒读一次 AudioManager
- */
-internal fun shouldPollUsbExclusiveSystemVolume(observing: Boolean, sessionVolumePushed: Boolean): Boolean =
-    observing && !sessionVolumePushed
+internal fun usbExclusiveMusicVolumeIntentFilter(): IntentFilter = IntentFilter().apply {
+    addAction(USB_EXCLUSIVE_ACTION_VOLUME_CHANGED)
+    addAction(USB_EXCLUSIVE_ACTION_STREAM_MUTE_CHANGED)
+    addAction(USB_EXCLUSIVE_ACTION_STREAM_DEVICES_CHANGED)
+}
+
+/** 只响应媒体流；缺少流类型的广播按可能相关处理，读一次 AudioManager 的成本很低 */
+internal fun isUsbExclusiveMusicVolumeBroadcast(action: String?, streamType: Int?): Boolean {
+    if (action != USB_EXCLUSIVE_ACTION_VOLUME_CHANGED &&
+        action != USB_EXCLUSIVE_ACTION_STREAM_MUTE_CHANGED &&
+        action != USB_EXCLUSIVE_ACTION_STREAM_DEVICES_CHANGED
+    ) return false
+    return streamType == null || streamType < 0 || streamType == AudioManager.STREAM_MUSIC
+}

@@ -39,7 +39,7 @@ internal class AndroidUsbExclusiveKeepAlivePort(
     override fun onForegroundFailure(reason: String) = host.onForegroundFailure(reason)
 
     override fun startAnchor(reason: String) {
-        UsbExclusiveBackgroundAudioAnchor.start(context, reason)
+        UsbExclusiveBackgroundAudioAnchor.start(reason)
         val showFloating = shouldShowUsbExclusiveFloatingKeepAlive(
             preferenceEnabled = PlayerManager.usbExclusiveFloatingKeepAliveEnabled,
             overlayPermitted = UsbExclusiveFloatingKeepAlive.canDrawOverlays(context)

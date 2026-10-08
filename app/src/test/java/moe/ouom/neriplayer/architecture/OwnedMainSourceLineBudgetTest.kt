@@ -47,8 +47,6 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/presentation/PlaybackServiceMetadataPresentation.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/UsbExclusiveServiceKeepAliveOwner.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveKeepAlivePort.kt",
-            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/UsbExclusiveMediaSessionVolumeRouter.kt",
-            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveVolumeRoutingPort.kt",
             "modules/platform/src/main/java/moe/ouom/neriplayer/platform/youtube/api/challenge/YouTubeStreamingCipherResolution.kt",
             "modules/platform/src/main/java/moe/ouom/neriplayer/platform/youtube/api/protocol/YouTubePlayerRequestComposer.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/AudioPlayerService.kt",

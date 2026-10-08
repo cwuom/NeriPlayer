@@ -49,9 +49,7 @@ import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServi
 import moe.ouom.neriplayer.core.player.service.presentation.PlaybackServicePresentationOwner
 import moe.ouom.neriplayer.core.player.service.presentation.resolveListenTogetherMediaSessionPosition
 import moe.ouom.neriplayer.core.player.service.usb.AndroidUsbExclusiveKeepAlivePort
-import moe.ouom.neriplayer.core.player.service.usb.AndroidUsbExclusiveVolumeRoutingPort
 import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveKeepAliveServiceHost
-import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveMediaSessionVolumeRouter
 import moe.ouom.neriplayer.core.player.service.usb.UsbExclusiveServiceKeepAliveOwner
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -110,11 +108,9 @@ import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
-import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.sameUsbExclusiveAudioPathConfiguration
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
-import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
@@ -541,14 +537,6 @@ class AudioPlayerService : Service() {
         scope = serviceScope,
         port = AndroidUsbExclusiveKeepAlivePort(this, UsbKeepAliveHost()),
     )
-    private val usbVolumeRouterDelegate = lazy {
-        UsbExclusiveMediaSessionVolumeRouter(AndroidUsbExclusiveVolumeRoutingPort(
-            context = this,
-            mediaSession = { presentationOwner.sessionOrNull() },
-            audioAttributes = presentationOwner.audioAttributes(),
-        ))
-    }
-    private val usbVolumeRouter: UsbExclusiveMediaSessionVolumeRouter get() = usbVolumeRouterDelegate.value
     private val artworkOwnerDelegate = lazy {
         PlaybackArtworkOwner(
             resolver = PlaybackCoverSourceResolver(AndroidPlaybackCoverSources(applicationContext)),
@@ -817,18 +805,6 @@ class AudioPlayerService : Service() {
         presentationOwner.dispatchMediaButtonIntent(intent)
     }
 
-    private fun updateMediaSessionVolumeRouting(pathState: UsbExclusiveAudioPathState) {
-        usbVolumeRouter.update(pathState.effectivePath, PlayerManager.usbExclusivePreferences.bitPerfect, pathState.hardwareVolume)
-    }
-
-    private fun disableUsbExclusiveMediaSessionVolumeRouting(reason: String) {
-        if (usbVolumeRouterDelegate.isInitialized()) {
-            usbVolumeRouter.disable(reason)
-        } else {
-            UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
-        }
-    }
-
     private fun handleExternalPauseCommand(source: String, stopService: Boolean = false) {
         NPLogger.d("NERI-APS", "Received external pause command: source=$source")
         if (PlayerManager.shouldIgnoreExternalPauseCommand(source)) {
@@ -886,7 +862,6 @@ class AudioPlayerService : Service() {
         ensurePlaybackNotificationChannel()
 
         presentationOwner.initializeSession(mediaSessionCallback)
-        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         initializePlayerRuntime()
     }
 
@@ -1086,8 +1061,7 @@ class AudioPlayerService : Service() {
         serviceScope.launch {
             UsbExclusiveAudioPathTracker.state
                 .distinctUntilChanged(::sameUsbExclusiveAudioPathConfiguration)
-                .collectSafely("usbExclusiveAudioPathState") { pathState ->
-                    updateMediaSessionVolumeRouting(pathState)
+                .collectSafely("usbExclusiveAudioPathState") {
                     updateUsbExclusiveServiceKeepAlive("usb_path_state")
                     refreshIdleShutdown("usb_path_state")
                 }
@@ -1657,7 +1631,6 @@ class AudioPlayerService : Service() {
         cancelUsbKeepAliveForDestroy()
         closeArtworkOwnerForDestroy()
         serviceScope.cancel()
-        disableUsbExclusiveMediaSessionVolumeRouting("service_destroy")
         releaseMediaSessionForDestroy()
         clearCarQueueIdentityCache()
     }
@@ -1807,7 +1780,6 @@ class AudioPlayerService : Service() {
         preservePlayerRuntime: Boolean
     ) {
         cancelUsbKeepAliveAfterForegroundFailure()
-        disableUsbExclusiveMediaSessionVolumeRouting("foreground_promotion_failed:$reason")
         // 仍有车机绑定时 stopSelf 不会销毁服务，保留会话和观察任务以便重试
         if (carPlaybackBinding.isBound) return
         serviceScope.coroutineContext.cancelChildren()
