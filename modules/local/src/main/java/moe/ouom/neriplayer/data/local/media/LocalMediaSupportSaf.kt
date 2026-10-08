@@ -35,6 +35,7 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.text.Normalizer
 import java.net.URLConnection
+import java.util.EnumMap
 import java.util.LinkedHashMap
 import java.util.Locale
 import androidx.core.net.toUri
@@ -403,147 +404,175 @@ internal fun LocalMediaSupport.readId3v1FileMetadata(raf: RandomAccessFile): Con
     raf.readFully(tag)
     if (tag.readAscii(0, 3) != "TAG") return null
 
-    val trackNumber = tag[125]
-        .takeIf { it == 0.toByte() }
-        ?.let { tag[126].toInt() and 0xFF }
-        ?.takeIf { it > 0 }
     val metadata = ContainerMetadata(
         title = tag.copyOfRange(3, 33).decodeContainerText(),
         artist = tag.copyOfRange(33, 63).decodeContainerText(),
         album = tag.copyOfRange(63, 93).decodeContainerText(),
         year = tag.copyOfRange(93, 97).decodeContainerText()?.extractYear(),
-        trackNumber = trackNumber
+        trackNumber = id3v1TrackNumber(tag)
     )
     return metadata.takeIf { it.hasAnyValue() }
 }
 
-internal fun LocalMediaSupport.parseWaveInfoMetadata(bytes: ByteArray): ContainerMetadata? {
-    var offset = 0
-    var title: String? = null
-    var artist: String? = null
-    var album: String? = null
-    var albumArtist: String? = null
-    var composer: String? = null
-    var genre: String? = null
-    var year: Int? = null
-    var trackNumber: Int? = null
-    var discNumber: Int? = null
+private fun id3v1TrackNumber(tag: ByteArray): Int? {
+    if (tag[125] != 0.toByte()) return null
+    return (tag[126].toInt() and 0xFF).takeIf { it > 0 }
+}
 
+private enum class ContainerTextField(val parse: (String) -> Any?) {
+    TITLE({ it }),
+    ARTIST({ it }),
+    ALBUM({ it }),
+    ALBUM_ARTIST({ it }),
+    COMPOSER({ it }),
+    GENRE({ it }),
+    YEAR({ value -> with(LocalMediaSupport) { value.extractYear() } }),
+    TRACK_NUMBER({ value -> LocalMediaSupport.parseIndexedMetadata(value) }),
+    DISC_NUMBER({ value -> LocalMediaSupport.parseIndexedMetadata(value) })
+}
+
+private val WAVE_INFO_FIELDS = mapOf(
+    "INAM" to ContainerTextField.TITLE,
+    "IART" to ContainerTextField.ARTIST,
+    "IPRD" to ContainerTextField.ALBUM,
+    "IAAR" to ContainerTextField.ALBUM_ARTIST,
+    "IENG" to ContainerTextField.COMPOSER,
+    "IGNR" to ContainerTextField.GENRE,
+    "ICRD" to ContainerTextField.YEAR,
+    "ITRK" to ContainerTextField.TRACK_NUMBER,
+    "IPRT" to ContainerTextField.DISC_NUMBER
+)
+
+private val ID3_FRAME_FIELDS = mapOf(
+    "TIT2" to ContainerTextField.TITLE,
+    "TT2" to ContainerTextField.TITLE,
+    "TPE1" to ContainerTextField.ARTIST,
+    "TP1" to ContainerTextField.ARTIST,
+    "TALB" to ContainerTextField.ALBUM,
+    "TAL" to ContainerTextField.ALBUM,
+    "TPE2" to ContainerTextField.ALBUM_ARTIST,
+    "TP2" to ContainerTextField.ALBUM_ARTIST,
+    "TCOM" to ContainerTextField.COMPOSER,
+    "TCM" to ContainerTextField.COMPOSER,
+    "TCON" to ContainerTextField.GENRE,
+    "TCO" to ContainerTextField.GENRE,
+    "TDRC" to ContainerTextField.YEAR,
+    "TYER" to ContainerTextField.YEAR,
+    "TYE" to ContainerTextField.YEAR,
+    "TRCK" to ContainerTextField.TRACK_NUMBER,
+    "TRK" to ContainerTextField.TRACK_NUMBER,
+    "TPOS" to ContainerTextField.DISC_NUMBER,
+    "TPA" to ContainerTextField.DISC_NUMBER
+)
+
+private class ContainerMetadataCollector {
+    private val values = EnumMap<ContainerTextField, Any>(ContainerTextField::class.java)
+
+    fun offer(field: ContainerTextField?, raw: String?) {
+        if (field == null || raw == null || field in values) return
+        field.parse(raw)?.let { values[field] = it }
+    }
+
+    fun build(): ContainerMetadata? = with(LocalMediaSupport) {
+        ContainerMetadata(
+            title = values[ContainerTextField.TITLE] as String?,
+            artist = values[ContainerTextField.ARTIST] as String?,
+            album = values[ContainerTextField.ALBUM] as String?,
+            albumArtist = values[ContainerTextField.ALBUM_ARTIST] as String?,
+            composer = values[ContainerTextField.COMPOSER] as String?,
+            genre = values[ContainerTextField.GENRE] as String?,
+            year = values[ContainerTextField.YEAR] as Int?,
+            trackNumber = values[ContainerTextField.TRACK_NUMBER] as Int?,
+            discNumber = values[ContainerTextField.DISC_NUMBER] as Int?
+        ).takeIf { it.hasAnyValue() }
+    }
+}
+
+internal fun LocalMediaSupport.parseWaveInfoMetadata(bytes: ByteArray): ContainerMetadata? {
+    val collector = ContainerMetadataCollector()
+    var offset = 0
     while (offset + 8 <= bytes.size) {
         val chunkId = bytes.readFourCc(offset) ?: break
         val chunkSize = bytes.readLittleEndianUInt32(offset + 4).coerceAtMost((bytes.size - offset - 8).toLong())
         val valueStart = offset + 8
         val valueEnd = valueStart + chunkSize.toInt()
-        val value = bytes.copyOfRange(valueStart, valueEnd).decodeContainerText()
-
-        when (chunkId) {
-            "INAM" -> title = title ?: value
-            "IART" -> artist = artist ?: value
-            "IPRD" -> album = album ?: value
-            "IAAR" -> albumArtist = albumArtist ?: value
-            "IENG" -> composer = composer ?: value
-            "IGNR" -> genre = genre ?: value
-            "ICRD" -> year = year ?: value?.extractYear()
-            "ITRK" -> trackNumber = trackNumber ?: parseIndexedMetadata(value)
-            "IPRT" -> discNumber = discNumber ?: parseIndexedMetadata(value)
-        }
-
+        collector.offer(WAVE_INFO_FIELDS[chunkId], bytes.copyOfRange(valueStart, valueEnd).decodeContainerText())
         offset = valueEnd + (chunkSize.toInt() and 1)
     }
-
-    return ContainerMetadata(
-        title = title,
-        artist = artist,
-        album = album,
-        albumArtist = albumArtist,
-        composer = composer,
-        genre = genre,
-        year = year,
-        trackNumber = trackNumber,
-        discNumber = discNumber
-    ).takeIf { it.hasAnyValue() }
+    return collector.build()
 }
 
+private const val ID3_HEADER_SIZE = 10
+
 internal fun LocalMediaSupport.parseId3Metadata(bytes: ByteArray): ContainerMetadata? {
-    if (bytes.size < 10 || bytes.readAscii(0, 3) != "ID3") return null
+    if (!isId3TagHeader(bytes)) return null
     val majorVersion = bytes[3].toInt() and 0xFF
-    val flags = bytes[5].toInt() and 0xFF
-    val tagSize = bytes.readSynchsafeInt(6)
-    val limit = minOf(bytes.size, 10 + tagSize)
-    var offset = 10
-
-    if (majorVersion > 2 && (flags and 0x40) != 0) {
-        if (offset + 4 > limit) return null
-        val extendedSize = if (majorVersion >= 4) {
-            bytes.readSynchsafeInt(offset).toLong()
-        } else {
-            // v2.3 的长度不含 size 字段本身，v2.4 则包含
-            bytes.readBigEndianInt(offset).toLong() + 4L
-        }
-        val minimumSize = if (majorVersion >= 4) 6L else 10L
-        if (extendedSize < minimumSize || extendedSize > limit - offset) return null
-        offset += extendedSize.toInt()
-    }
-
-    var title: String? = null
-    var artist: String? = null
-    var album: String? = null
-    var albumArtist: String? = null
-    var composer: String? = null
-    var genre: String? = null
-    var year: Int? = null
-    var trackNumber: Int? = null
-    var discNumber: Int? = null
-
-    val frameHeaderSize = if (majorVersion == 2) 6 else 10
+    val limit = minOf(bytes.size, ID3_HEADER_SIZE + bytes.readSynchsafeInt(6))
+    var offset = id3FirstFrameOffset(bytes, majorVersion, limit) ?: return null
+    val frameHeaderSize = id3FrameHeaderSize(majorVersion)
+    val collector = ContainerMetadataCollector()
     while (offset + frameHeaderSize <= limit) {
-        val frameId = when (majorVersion) {
-            2 -> bytes.readAscii(offset, 3)
-            else -> bytes.readFourCc(offset)?.trimEnd(NUL_CHAR, ' ')
-        }.orEmpty()
-        if (frameId.isBlank()) break
-        val frameSize = if (majorVersion >= 4) {
-            bytes.readSynchsafeInt(offset + 4)
-        } else if (majorVersion == 2) {
-            bytes.readBigEndianInt24(offset + 3)
-        } else {
-            bytes.readBigEndianInt(offset + 4)
-        }
-        if (frameSize <= 0) break
-
+        val frameId = id3FrameId(bytes, offset, majorVersion) ?: break
         val frameDataStart = offset + frameHeaderSize
-        if (frameSize > limit - frameDataStart) break
+        val frameSize = id3FrameSize(bytes, offset, majorVersion)
+        if (!id3FrameFits(frameSize, frameDataStart, limit)) break
         val frameDataEnd = frameDataStart + frameSize
-
-        val frameData = bytes.copyOfRange(frameDataStart, frameDataEnd)
-        val value = decodeId3TextFrame(frameData)
-
-        when (frameId) {
-            "TIT2", "TT2" -> title = title ?: value
-            "TPE1", "TP1" -> artist = artist ?: value
-            "TALB", "TAL" -> album = album ?: value
-            "TPE2", "TP2" -> albumArtist = albumArtist ?: value
-            "TCOM", "TCM" -> composer = composer ?: value
-            "TCON", "TCO" -> genre = genre ?: value
-            "TDRC", "TYER", "TYE" -> year = year ?: value?.extractYear()
-            "TRCK", "TRK" -> trackNumber = trackNumber ?: parseIndexedMetadata(value)
-            "TPOS", "TPA" -> discNumber = discNumber ?: parseIndexedMetadata(value)
-        }
-
+        collector.offer(ID3_FRAME_FIELDS[frameId], decodeId3TextFrame(bytes.copyOfRange(frameDataStart, frameDataEnd)))
         offset = frameDataEnd
     }
+    return collector.build()
+}
 
-    return ContainerMetadata(
-        title = title,
-        artist = artist,
-        album = album,
-        albumArtist = albumArtist,
-        composer = composer,
-        genre = genre,
-        year = year,
-        trackNumber = trackNumber,
-        discNumber = discNumber
-    ).takeIf { it.hasAnyValue() }
+private fun isId3TagHeader(bytes: ByteArray): Boolean {
+    return bytes.size >= ID3_HEADER_SIZE && bytes.readAscii(0, 3) == "ID3"
+}
+
+private fun id3FirstFrameOffset(bytes: ByteArray, majorVersion: Int, limit: Int): Int? {
+    if (!id3HasExtendedHeader(bytes, majorVersion)) return ID3_HEADER_SIZE
+    if (ID3_HEADER_SIZE + 4 > limit) return null
+    val extendedSize = id3ExtendedHeaderSize(bytes, majorVersion)
+    if (extendedSize < id3MinimumExtendedHeaderSize(majorVersion) || extendedSize > limit - ID3_HEADER_SIZE) {
+        return null
+    }
+    return ID3_HEADER_SIZE + extendedSize.toInt()
+}
+
+private fun id3HasExtendedHeader(bytes: ByteArray, majorVersion: Int): Boolean {
+    return majorVersion > 2 && (bytes[5].toInt() and 0x40) != 0
+}
+
+private fun id3ExtendedHeaderSize(bytes: ByteArray, majorVersion: Int): Long {
+    return if (majorVersion >= 4) {
+        bytes.readSynchsafeInt(ID3_HEADER_SIZE).toLong()
+    } else {
+        // v2.3 的长度不含 size 字段本身，v2.4 则包含
+        bytes.readBigEndianInt(ID3_HEADER_SIZE).toLong() + 4L
+    }
+}
+
+private fun id3MinimumExtendedHeaderSize(majorVersion: Int): Long = if (majorVersion >= 4) 6L else 10L
+
+private fun id3FrameHeaderSize(majorVersion: Int): Int = if (majorVersion == 2) 6 else 10
+
+private fun id3FrameId(bytes: ByteArray, offset: Int, majorVersion: Int): String? {
+    val frameId = if (majorVersion == 2) {
+        bytes.readAscii(offset, 3)
+    } else {
+        bytes.readFourCc(offset)?.trimEnd(NUL_CHAR, ' ')
+    }
+    return frameId?.takeIf(String::isNotBlank)
+}
+
+private fun id3FrameSize(bytes: ByteArray, offset: Int, majorVersion: Int): Int {
+    return when {
+        majorVersion >= 4 -> bytes.readSynchsafeInt(offset + 4)
+        majorVersion == 2 -> bytes.readBigEndianInt24(offset + 3)
+        else -> bytes.readBigEndianInt(offset + 4)
+    }
+}
+
+private fun id3FrameFits(frameSize: Int, frameDataStart: Int, limit: Int): Boolean {
+    return frameSize > 0 && frameSize <= limit - frameDataStart
 }
 
 internal fun LocalMediaSupport.mergeContainerMetadata(
@@ -552,18 +581,24 @@ internal fun LocalMediaSupport.mergeContainerMetadata(
 ): ContainerMetadata? {
     if (primary == null) return fallback
     if (fallback == null) return primary
+    return primary.withMissingValuesFrom(fallback)
+}
+
+private fun ContainerMetadata.withMissingValuesFrom(fallback: ContainerMetadata): ContainerMetadata {
     return ContainerMetadata(
-        title = primary.title ?: fallback.title,
-        artist = primary.artist ?: fallback.artist,
-        album = primary.album ?: fallback.album,
-        albumArtist = primary.albumArtist ?: fallback.albumArtist,
-        composer = primary.composer ?: fallback.composer,
-        genre = primary.genre ?: fallback.genre,
-        year = primary.year ?: fallback.year,
-        trackNumber = primary.trackNumber ?: fallback.trackNumber,
-        discNumber = primary.discNumber ?: fallback.discNumber
+        title = firstPresent(title, fallback.title),
+        artist = firstPresent(artist, fallback.artist),
+        album = firstPresent(album, fallback.album),
+        albumArtist = firstPresent(albumArtist, fallback.albumArtist),
+        composer = firstPresent(composer, fallback.composer),
+        genre = firstPresent(genre, fallback.genre),
+        year = firstPresent(year, fallback.year),
+        trackNumber = firstPresent(trackNumber, fallback.trackNumber),
+        discNumber = firstPresent(discNumber, fallback.discNumber)
     )
 }
+
+private fun <T : Any> firstPresent(primary: T?, fallback: T?): T? = primary ?: fallback
 
 internal fun LocalMediaSupport.localCoverLookupKey(uri: Uri, resolved: ResolvedInspectableLocalMedia): String {
     val file = resolved.file
