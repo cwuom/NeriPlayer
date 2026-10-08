@@ -728,13 +728,9 @@ internal fun LocalMediaSupport.queryContentInfo(context: Context, uri: Uri): Que
 }
 
 private fun directFileContentInfo(resolver: ContentResolver, file: File): QueriedContentInfo {
-    val existing = file.takeIf(File::exists)
-    return unknownContentInfo(resolver.getType(Uri.fromFile(file))).copy(
-        displayName = file.name,
-        sizeBytes = existing?.length(),
-        lastModifiedMs = existing?.lastModified(),
-        filePath = existing?.absolutePath
-    )
+    val info = unknownContentInfo(resolver.getType(Uri.fromFile(file))).copy(displayName = file.name)
+    if (!file.exists()) return info
+    return info.copy(sizeBytes = file.length(), lastModifiedMs = file.lastModified(), filePath = file.absolutePath)
 }
 
 private fun unknownContentInfo(mimeType: String?) = QueriedContentInfo(
