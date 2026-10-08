@@ -219,26 +219,12 @@ internal fun SongItem.toLocalScanPreviewItem(
     context: Context,
     metadataPending: Boolean = false
 ): LocalScanPreviewItem {
-    val resolvedPath = localFilePath
-        ?.takeIf { it.isNotBlank() }
-        ?: mediaUri?.takeIf { it.startsWith("/") }
-        ?: mediaUri.orEmpty()
+    val resolvedPath = scanPreviewFilePath()
     val displayName = displayName()
     val displayArtist = displayArtist()
     val displayAlbum = displayAlbum(context)
-    val resolvedFileName = localFilePath
-        ?.takeIf { it.isNotBlank() }
-        ?.let(::File)
-        ?.name
-        ?: localFileName?.takeIf { it.isNotBlank() }
-        ?: displayName
+    val resolvedFileName = scanPreviewFileName(displayName)
     val hasMetadata = metadataPending || hasMeaningfulPreviewMetadata(context, resolvedFileName)
-    val subtitle = buildList {
-        displayArtist.takeIf { it.isNotBlank() }?.let(::add)
-        displayAlbum.takeIf { it.isNotBlank() }?.let(::add)
-        resolvedFileName.takeIf { it.isNotBlank() && it != displayName }?.let(::add)
-        durationMs.takeIf { it > 0L }?.let { add(formatDuration(it)) }
-    }.joinToString(" · ")
     return LocalScanPreviewItem(
         song = this,
         stableKey = stableKey(),
@@ -246,17 +232,40 @@ internal fun SongItem.toLocalScanPreviewItem(
         title = displayName,
         fileName = resolvedFileName,
         filePath = resolvedPath,
-        subtitle = subtitle,
+        subtitle = scanPreviewSubtitle(displayArtist, displayAlbum, resolvedFileName, displayName),
         hasMetadata = hasMetadata,
         searchText = listOf(resolvedFileName, resolvedPath, displayName, displayArtist, displayAlbum)
             .joinToString("\n")
     )
 }
 
+private fun String?.nonBlankOrNull(): String? = this?.takeIf(String::isNotBlank)
+
+private fun SongItem.scanPreviewFilePath(): String = localFilePath.nonBlankOrNull()
+    ?: mediaUri?.takeIf { it.startsWith("/") }
+    ?: mediaUri.orEmpty()
+
+private fun SongItem.scanPreviewFileName(displayName: String): String =
+    localFilePath.nonBlankOrNull()?.let { File(it).name }
+        ?: localFileName.nonBlankOrNull()
+        ?: displayName
+
+private fun SongItem.scanPreviewSubtitle(
+    displayArtist: String,
+    displayAlbum: String,
+    fileName: String,
+    displayName: String
+): String = listOfNotNull(
+    displayArtist.nonBlankOrNull(),
+    displayAlbum.nonBlankOrNull(),
+    fileName.takeIf { it.isNotBlank() && it != displayName },
+    durationMs.takeIf { it > 0L }?.let(::formatDuration)
+).joinToString(" · ")
+
 internal fun SongItem.scanPreviewRowKey(): String {
-    val source = mediaUri
-        ?.takeIf(String::isNotBlank)
-        ?: localFilePath?.takeIf(String::isNotBlank)
-        ?: localFileName?.takeIf(String::isNotBlank)
-    return source?.let { "local-scan:$it" } ?: "local-scan:${stableKey()}"
+    val source = mediaUri.nonBlankOrNull()
+        ?: localFilePath.nonBlankOrNull()
+        ?: localFileName.nonBlankOrNull()
+        ?: stableKey()
+    return "local-scan:$source"
 }

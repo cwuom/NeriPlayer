@@ -226,16 +226,24 @@ internal fun rememberRetainedLocalPlaylistArtworkUrl(
 
 internal fun shouldResolveLocalPlaylistRowArtworkFallback(): Boolean = true
 
-internal fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean {
+internal fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean =
+    hasPreviewTitleMetadata(fileName) ||
+        hasPreviewArtistMetadata(context.getString(CoreCommonR.string.music_unknown_artist)) ||
+        hasPreviewAlbumMetadata(context) ||
+        hasPreviewCover()
+
+private fun SongItem.hasPreviewTitleMetadata(fileName: String): Boolean {
     val fileTitle = fileName.substringBeforeLast('.', fileName).trim()
-    val unknownArtist = context.getString(CoreCommonR.string.music_unknown_artist)
-    val hasTitleMetadata = name.isNotBlank() &&
-        (fileTitle.isBlank() || !name.equals(fileTitle, ignoreCase = true))
-    val hasArtistMetadata = artist.trim().isNotBlank() &&
-        !artist.equals(unknownArtist, ignoreCase = true)
-    val hasAlbumMetadata = album.trim().isNotBlank() &&
+    return name.isNotBlank() && (fileTitle.isBlank() || !name.equals(fileTitle, ignoreCase = true))
+}
+
+private fun SongItem.hasPreviewArtistMetadata(unknownArtist: String): Boolean =
+    artist.trim().isNotBlank() && !artist.equals(unknownArtist, ignoreCase = true)
+
+private fun SongItem.hasPreviewAlbumMetadata(context: Context): Boolean =
+    album.trim().isNotBlank() &&
         album != moe.ouom.neriplayer.data.local.media.LocalSongSupport.LOCAL_ALBUM_IDENTITY &&
         !LocalFilesPlaylist.matches(album, context)
-    return hasTitleMetadata || hasArtistMetadata || hasAlbumMetadata ||
-        !coverUrl.isNullOrBlank() || !originalCoverUrl.isNullOrBlank()
-}
+
+private fun SongItem.hasPreviewCover(): Boolean =
+    !coverUrl.isNullOrBlank() || !originalCoverUrl.isNullOrBlank()
