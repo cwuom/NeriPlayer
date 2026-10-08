@@ -37,7 +37,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.ProduceStateScope
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -346,44 +345,25 @@ internal fun <T> rememberPlaylistSearchResults(
 ): List<T> {
     if (!buildIndex) return items
 
-    val indexState = produceState<SearchTextMatcher.Index<T>?>(
-        initialValue = null,
-        key1 = items,
-        producer = buildPlaylistSearchIndex(items, tokens)
-    )
+    val indexState = produceState<SearchTextMatcher.Index<T>?>(initialValue = null, key1 = items) {
+        value = withContext(Dispatchers.Default) { SearchTextMatcher.index(items, tokens) }
+    }
     val displayedItems by produceState(
         initialValue = items,
         key1 = items,
         key2 = indexState.value,
-        key3 = query,
-        producer = rankPlaylistSearchResults(items, indexState, query)
-    )
+        key3 = query
+    ) {
+        value = rankPlaylistSearchResults(items, indexState.value, query)
+    }
     return displayedItems
 }
 
-private fun <T> buildPlaylistSearchIndex(
+private suspend fun <T> rankPlaylistSearchResults(
     items: List<T>,
-    tokens: (T) -> Iterable<Any?>
-): suspend ProduceStateScope<SearchTextMatcher.Index<T>?>.() -> Unit = {
-    value = withContext(Dispatchers.Default) {
-        SearchTextMatcher.index(items, tokens)
-    }
-}
-
-private fun <T> rankPlaylistSearchResults(
-    items: List<T>,
-    indexState: State<SearchTextMatcher.Index<T>?>,
+    index: SearchTextMatcher.Index<T>?,
     query: String
-): suspend ProduceStateScope<List<T>>.() -> Unit = {
-    val index = indexState.value
-    value = if (index == null) {
-        items
-    } else {
-        withContext(Dispatchers.Default) {
-            index.filterAndRank(query)
-        }
-    }
-}
+): List<T> = if (index == null) items else withContext(Dispatchers.Default) { index.filterAndRank(query) }
 
 private val PlaylistHeroCoverSize = 88.dp
 private val PlaylistHeroCoverCornerRadius = 14.dp

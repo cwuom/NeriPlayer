@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.ProduceStateScope
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -101,20 +100,24 @@ internal fun rememberStatsQueryDay(
     timeChanges: Flow<Unit>
 ): State<StatsQueryDay> {
     val initial = remember(clock) { statsQueryDay(clock.nowMillis(), clock.timeZone()) }
-    return produceState(initial, clock, resumed, timeChanges, producer = followStatsQueryDay(clock, resumed, timeChanges))
+    return produceState(initial, clock, resumed, timeChanges) {
+        followStatsQueryDay(clock, resumed, timeChanges, current = { value }) { day -> value = day }
+    }
 }
 
-private fun followStatsQueryDay(
+private suspend fun followStatsQueryDay(
     clock: StatsQueryClock,
     resumed: StateFlow<Boolean>,
-    timeChanges: Flow<Unit>
-): suspend ProduceStateScope<StatsQueryDay>.() -> Unit = {
+    timeChanges: Flow<Unit>,
+    current: () -> StatsQueryDay,
+    publish: (StatsQueryDay) -> Unit
+) {
     resumed.collectLatest { active ->
         if (active) {
             timeChanges.onStart { emit(Unit) }.collectLatest {
                 while (currentCoroutineContext().isActive) {
                     val day = statsQueryDay(clock.nowMillis(), clock.timeZone())
-                    if (day.key != value.key) value = day
+                    if (day.key != current().key) publish(day)
                     // 用本地午夜计算下一次检查，系统改时会取消并重新安排
                     delay((day.key.endMillis - clock.nowMillis()).coerceAtLeast(1L))
                 }

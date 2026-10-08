@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -120,13 +121,13 @@ class PlaylistModernComponentsTest {
                             query = "",
                             onQueryChange = {},
                             placeholder = "hero-search",
-                            focusRequester = FocusRequester()
+                            focusRequester = remember { FocusRequester() }
                         )
                         PlaylistModernDockedSearchField(
                             query = "",
                             onQueryChange = {},
                             placeholder = "docked-search",
-                            focusRequester = FocusRequester()
+                            focusRequester = remember { FocusRequester() }
                         )
                         PlaylistModernActionSheet(
                             coverUrl = null,
@@ -208,14 +209,14 @@ class PlaylistModernComponentsTest {
                         query = "",
                         onQueryChange = {},
                         placeholder = "slot-search",
-                        focusRequester = FocusRequester(),
+                        focusRequester = remember { FocusRequester() },
                         dockedProgress = reveal
                     )
                     PlaylistModernStableSearchField(
                         query = "",
                         onQueryChange = {},
                         placeholder = "glass-search",
-                        focusRequester = FocusRequester(),
+                        focusRequester = remember { FocusRequester() },
                         dockedProgress = 1f,
                         glassColor = if (glassBackground) Color.Black else Color.White,
                         onFocusChanged = {}
