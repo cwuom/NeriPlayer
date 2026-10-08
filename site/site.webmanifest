@@ -1,0 +1,15 @@
+{
+  "name": "NeriPlayer · 音理音理！",
+  "short_name": "NeriPlayer",
+  "description": "多源在线播放、本地优先的原生 Android 音频播放器",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbf7ef",
+  "theme_color": "#fbf7ef",
+  "icons": [
+    { "src": "assets/img/app-icon.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/img/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
