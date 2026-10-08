@@ -152,16 +152,15 @@ class SyncProtocolStartupUpgradeRepositoryTest {
     }
 
     @Test
-    fun `future startup registration cannot sync or downgrade upgrade state`() = runTest {
+    fun `future startup registration cannot be downgraded while the remote stays unreadable`() = runTest {
         val initial = preferencesOf(StartupVersion to 5, StartupTargets to setOf(first))
         val store = StartupDataStore(initial)
         val repository = SyncProtocolUpgradeRepository(store)
 
         assertFalse(repository.approvedFlow.first())
-        assertFalse(repository.canSyncTarget(first))
+        assertTrue(repository.canSyncTarget(first))
         assertEquals(5, repository.versionFlow(first).first())
-        assertTrue(repository.executeIfApproved<String> { error("must not sync") }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
-        assertTrue(runCatching { repository.markCurrent(first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
+        assertTrue(repository.executeIfApproved<String> { error("remote is newer") }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
         assertTrue(runCatching { repository.initializeStartupTargets(setOf(first)) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
         assertTrue(runCatching { repository.completeStartupUpgrade(first) }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
         assertTrue(runCatching { repository.startupPendingFlow.first() }.exceptionOrNull() is SyncProtocolUpgradeRequiredException)
