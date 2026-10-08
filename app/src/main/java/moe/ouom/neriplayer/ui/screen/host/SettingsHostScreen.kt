@@ -23,10 +23,8 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/1/17
  */
 
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -42,7 +40,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
-import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostBindings
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
@@ -103,6 +100,13 @@ internal fun shouldAdvanceSettingsScreenTransition(
     targetState != requestedState &&
     renderedScreenStates == setOf(targetState)
 
+/** 只有停在用户请求的页面且没有残留场景时，返回手势才能直接拖动到上一层 */
+internal fun isSettingsScreenSettled(
+    screenState: SettingsScreenState,
+    requestedState: SettingsScreenState,
+    renderedScreenStates: Set<SettingsScreenState>
+): Boolean = screenState == requestedState && renderedScreenStates == setOf(screenState)
+
 @Composable
 internal fun SettingsHostScreen(
     bindings: AppSettingsHostBindings,
@@ -127,10 +131,6 @@ internal fun SettingsHostScreen(
     }
     var pendingSettingsListRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var pendingSettingsListRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
-    val navigationTransition = updateTransition(
-        targetState = screenState,
-        label = "settings_screen_switch"
-    )
     val renderedScreenStates = remember { mutableStateListOf<SettingsScreenState>() }
     val settledRenderedScreenStates = renderedScreenStates.toSet()
 
@@ -149,6 +149,25 @@ internal fun SettingsHostScreen(
         }
         requestedScreenState = target
     }
+
+    val backScreenState = requestedScreenState.nextTowards(SettingsScreenState.Settings)
+    val navigationTransition = rememberHostPredictiveBackTransition(
+        targetState = screenState,
+        backEnabled = requestedScreenState != SettingsScreenState.Settings,
+        backTargetState = screenState.nextTowards(SettingsScreenState.Settings),
+        onBack = { seekedToBackTarget ->
+            requestScreen(backScreenState)
+            if (seekedToBackTarget) {
+                screenState = backScreenState
+            }
+        },
+        label = "settings_screen_switch",
+        seekEnabled = isSettingsScreenSettled(
+            screenState = screenState,
+            requestedState = requestedScreenState,
+            renderedScreenStates = settledRenderedScreenStates
+        )
+    )
 
     LaunchedEffect(
         navigationTransition.currentState,
@@ -190,20 +209,6 @@ internal fun SettingsHostScreen(
         )
         pendingSettingsListRestoreIndex = null
         pendingSettingsListRestoreOffset = 0
-    }
-
-    PredictiveBackHandler(enabled = requestedScreenState != SettingsScreenState.Settings) { progress ->
-        try {
-            progress.collect { }
-            requestScreen(
-                when (requestedScreenState) {
-                SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
-                SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
-                SettingsScreenState.Settings -> SettingsScreenState.Settings
-                }
-            )
-        } catch (_: CancellationException) {
-        }
     }
 
     Surface(color = Color.Transparent) {

@@ -24,14 +24,12 @@ package moe.ouom.neriplayer.ui.screen.host
  */
 
 import android.os.Parcelable
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import kotlinx.parcelize.Parcelize
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
@@ -55,7 +53,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
@@ -144,10 +141,37 @@ private val LibrarySelectedItem?.navigationDepth: Int
         else -> 1
     }
 
-private data class LibraryNavigationScene(
+internal data class LibraryNavigationScene(
     val item: LibrarySelectedItem?,
     val navigationDepth: Int
 )
+
+internal fun libraryNavigationScene(
+    item: LibrarySelectedItem?,
+    creatorParents: List<LibrarySelectedItem>
+): LibraryNavigationScene = LibraryNavigationScene(
+    item = item,
+    navigationDepth = if (item == null) 0 else item.navigationDepth + creatorParents.size
+)
+
+internal fun libraryDetailBackTarget(current: LibrarySelectedItem?): LibrarySelectedItem? =
+    when (current) {
+        is LibrarySelectedItem.NeteaseArtistAlbum -> LibrarySelectedItem.NeteaseArtist(current.artist)
+        else -> null
+    }
+
+/** 与 closeSelectedDetail 的结果一致，供预测性返回提前展示上一层 */
+internal fun resolveLibraryBackScene(
+    selected: LibrarySelectedItem?,
+    creatorParents: List<LibrarySelectedItem>
+): LibraryNavigationScene {
+    val parent = creatorParents.lastOrNull()
+    return if (parent != null) {
+        libraryNavigationScene(parent, creatorParents.dropLast(1))
+    } else {
+        libraryNavigationScene(libraryDetailBackTarget(selected), creatorParents)
+    }
+}
 
 private fun LibrarySelectedItem.Hot.period(): PlaybackStatsPeriod {
     return if (monthly) PlaybackStatsPeriod.MONTH else PlaybackStatsPeriod.WEEK
@@ -273,10 +297,7 @@ fun LibraryHostScreen(
             creatorParents = creatorParents.dropLast(1)
             return
         }
-        selected = when (val current = selected) {
-            is LibrarySelectedItem.NeteaseArtistAlbum -> LibrarySelectedItem.NeteaseArtist(current.artist)
-            else -> null
-        }
+        selected = libraryDetailBackTarget(selected)
     }
 
     fun openNeteaseArtist(artist: NeteaseArtistSummary) {
@@ -296,14 +317,6 @@ fun LibraryHostScreen(
     LaunchedEffect(selected) {
         if (selected != null) {
             skipDetailCloseAnimation = false
-        }
-    }
-
-    PredictiveBackHandler(enabled = selected != null) { progress ->
-        try {
-            progress.collect { }
-            closeSelectedDetail()
-        } catch (_: CancellationException) {
         }
     }
 
@@ -364,11 +377,11 @@ fun LibraryHostScreen(
         regularSource
     }
 
-    val navigationTransition = updateTransition(
-        targetState = LibraryNavigationScene(
-            item = selected,
-            navigationDepth = if (selected == null) 0 else selected.navigationDepth + creatorParents.size
-        ),
+    val navigationTransition = rememberHostPredictiveBackTransition(
+        targetState = libraryNavigationScene(selected, creatorParents),
+        backEnabled = selected != null,
+        backTargetState = resolveLibraryBackScene(selected, creatorParents),
+        onBack = { closeSelectedDetail() },
         label = "library_host_switch"
     )
 
