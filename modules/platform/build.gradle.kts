@@ -12,6 +12,7 @@ plugins {
 android {
     namespace = "moe.ouom.neriplayer.platform"
     defaultConfig.consumerProguardFiles("consumer-rules.pro")
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 dependencies {
@@ -39,6 +40,8 @@ dependencies {
     testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.junit)
 }
 
 val platformCoverageClasses = tasks.named<Jar>("coverageClassesJar")

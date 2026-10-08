@@ -10,6 +10,7 @@ android {
     namespace = "moe.ouom.neriplayer.data.repository"
     defaultConfig.testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     testFixtures.enable = true
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 dependencies {
@@ -44,6 +45,8 @@ dependencies {
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.room.testing)
