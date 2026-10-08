@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.data.settings.usb.putUsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.usb.readUsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.usb.toUsbExclusivePreferences
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -355,180 +356,147 @@ fun persistPlaybackPreferenceSnapshot(
 fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {
     val legacyMobileDataQuality = this[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
     return PlaybackPreferenceSnapshot(
-        audioQuality = this[SettingsKeys.AUDIO_QUALITY] ?: "exhigh",
-        youtubeAudioQuality = this[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "high",
-        biliAudioQuality = this[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high",
-        mobileDataFollowDefaultAudioQuality =
-            this[SettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY]
-                ?: resolveLegacyMobileDataFollowDefaultAudioQuality(legacyMobileDataQuality)
-                ?: true,
+        audioQuality = valueOr(SettingsKeys.AUDIO_QUALITY, "exhigh"),
+        youtubeAudioQuality = valueOr(SettingsKeys.YOUTUBE_AUDIO_QUALITY, "high"),
+        biliAudioQuality = valueOr(SettingsKeys.BILI_AUDIO_QUALITY, "high"),
+        mobileDataFollowDefaultAudioQuality = valueOr(
+            SettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY,
+            legacyMobileDataFollowsDefaultQuality(legacyMobileDataQuality)
+        ),
         mobileDataNeteaseAudioQuality = normalizeMobileDataNeteaseAudioQuality(
-            this[SettingsKeys.MOBILE_DATA_NETEASE_AUDIO_QUALITY]
-                ?: resolveLegacyMobileDataNeteaseAudioQuality(legacyMobileDataQuality)
+            valueOrNullable(
+                SettingsKeys.MOBILE_DATA_NETEASE_AUDIO_QUALITY,
+                resolveLegacyMobileDataNeteaseAudioQuality(legacyMobileDataQuality)
+            )
         ),
         mobileDataYouTubeAudioQuality = normalizeMobileDataYouTubeAudioQuality(
-            this[SettingsKeys.MOBILE_DATA_YOUTUBE_AUDIO_QUALITY]
-                ?: resolveLegacyMobileDataYouTubeAudioQuality(legacyMobileDataQuality)
+            valueOrNullable(
+                SettingsKeys.MOBILE_DATA_YOUTUBE_AUDIO_QUALITY,
+                resolveLegacyMobileDataYouTubeAudioQuality(legacyMobileDataQuality)
+            )
         ),
         mobileDataBiliAudioQuality = normalizeMobileDataBiliAudioQuality(
-            this[SettingsKeys.MOBILE_DATA_BILI_AUDIO_QUALITY]
-                ?: resolveLegacyMobileDataBiliAudioQuality(legacyMobileDataQuality)
+            valueOrNullable(
+                SettingsKeys.MOBILE_DATA_BILI_AUDIO_QUALITY,
+                resolveLegacyMobileDataBiliAudioQuality(legacyMobileDataQuality)
+            )
         ),
-        keepLastPlaybackProgress = this[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true,
-        rememberLongFormPlaybackProgress =
-            this[SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS] ?: true,
-        keepPlaybackModeState = this[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true,
-        neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: false,
-        neteaseLocalSourceFallback = this[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] ?: false,
-        playbackFadeIn = this[SettingsKeys.PLAYBACK_FADE_IN] ?: true,
-        playbackCrossfadeNext = this[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: true,
-        sleepTimerFinishCurrentOnExpiry =
-            this[SettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY] ?: false,
-        playbackFadeInDurationMs = this[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L,
-        playbackFadeOutDurationMs = this[SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS] ?: 500L,
-        playbackCrossfadeInDurationMs =
-            this[SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS] ?: 500L,
-        playbackCrossfadeOutDurationMs =
-            this[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] ?: 500L,
-        playbackSpeed = this[SettingsKeys.PLAYBACK_SPEED] ?: DEFAULT_PLAYBACK_SPEED,
-        playbackPitch = this[SettingsKeys.PLAYBACK_PITCH] ?: DEFAULT_PLAYBACK_PITCH,
-        playbackLoudnessGainMb =
-            this[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] ?: DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
-        playbackVolumeBalance =
-            this[SettingsKeys.PLAYBACK_VOLUME_BALANCE] ?: DEFAULT_PLAYBACK_VOLUME_BALANCE,
-        playbackVolumeNormalizationEnabled =
-            this[SettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED] ?: false,
-        playbackHighResolutionOutputEnabled =
-            this[SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED] ?: false,
-        playbackEqualizerEnabled = this[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] ?: false,
-        playbackEqualizerPreset =
-            this[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] ?: PlaybackEqualizerPresetId.FLAT,
+        keepLastPlaybackProgress = valueOr(SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS, true),
+        rememberLongFormPlaybackProgress = valueOr(SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS, true),
+        keepPlaybackModeState = valueOr(SettingsKeys.KEEP_PLAYBACK_MODE_STATE, true),
+        neteaseAutoSourceSwitch = valueOr(SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH, false),
+        neteaseLocalSourceFallback = valueOr(SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK, false),
+        playbackFadeIn = valueOr(SettingsKeys.PLAYBACK_FADE_IN, true),
+        playbackCrossfadeNext = valueOr(SettingsKeys.PLAYBACK_CROSSFADE_NEXT, true),
+        sleepTimerFinishCurrentOnExpiry = valueOr(SettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY, false),
+        playbackFadeInDurationMs = valueOr(SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS, 500L),
+        playbackFadeOutDurationMs = valueOr(SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS, 500L),
+        playbackCrossfadeInDurationMs = valueOr(SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS, 500L),
+        playbackCrossfadeOutDurationMs = valueOr(SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS, 500L),
+        playbackSpeed = valueOr(SettingsKeys.PLAYBACK_SPEED, DEFAULT_PLAYBACK_SPEED),
+        playbackPitch = valueOr(SettingsKeys.PLAYBACK_PITCH, DEFAULT_PLAYBACK_PITCH),
+        playbackLoudnessGainMb = valueOr(SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB, DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB),
+        playbackVolumeBalance = valueOr(SettingsKeys.PLAYBACK_VOLUME_BALANCE, DEFAULT_PLAYBACK_VOLUME_BALANCE),
+        playbackVolumeNormalizationEnabled = valueOr(SettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED, false),
+        playbackHighResolutionOutputEnabled = valueOr(SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED, false),
+        playbackEqualizerEnabled = valueOr(SettingsKeys.PLAYBACK_EQUALIZER_ENABLED, false),
+        playbackEqualizerPreset = valueOr(SettingsKeys.PLAYBACK_EQUALIZER_PRESET, PlaybackEqualizerPresetId.FLAT),
         playbackEqualizerCustomBandLevels = decodePlaybackEqualizerBandLevels(
             this[SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS]
         ),
-        audioEffectsSettingsJson = this[SettingsKeys.AUDIO_EFFECTS_SETTINGS].orEmpty(),
-        stopOnBluetoothDisconnect = this[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true,
-        usbExclusivePlayback = this[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false,
+        audioEffectsSettingsJson = valueOr(SettingsKeys.AUDIO_EFFECTS_SETTINGS, ""),
+        stopOnBluetoothDisconnect = valueOr(SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT, true),
+        usbExclusivePlayback = valueOr(SettingsKeys.USB_EXCLUSIVE_PLAYBACK, false),
         usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(
             this[SettingsKeys.USB_EXCLUSIVE_DEVICE_KEY]
         ),
         usbExclusiveSampleRateMode =
-            this[SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_MODE]
-                ?: DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
+            valueOr(SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_MODE, DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE),
         usbExclusiveBitDepthMode =
-            this[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE]
-                ?: DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE,
-        usbExclusiveBitPerfect =
-            this[SettingsKeys.USB_EXCLUSIVE_BIT_PERFECT]
-                ?: DEFAULT_USB_EXCLUSIVE_BIT_PERFECT,
+            valueOr(SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE, DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE),
+        usbExclusiveBitPerfect = valueOr(SettingsKeys.USB_EXCLUSIVE_BIT_PERFECT, DEFAULT_USB_EXCLUSIVE_BIT_PERFECT),
         usbExclusiveBufferProfile =
-            this[SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE]
-                ?: DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
-        usbExclusiveUnsupportedFormatPolicy =
-            this[SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY]
-                ?: DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
-        usbExclusiveSampleRateCompatibility =
-            this[SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY]
-                ?: DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
+            valueOr(SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE, DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE),
+        usbExclusiveUnsupportedFormatPolicy = valueOr(
+            SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
+            DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY
+        ),
+        usbExclusiveSampleRateCompatibility = valueOr(
+            SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
+            DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY
+        ),
         usbExclusiveBitDepthCompatibility =
-            this[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY]
-                ?: DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
+            valueOr(SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY, DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY),
         usbExclusiveChannelCompatibility =
-            this[SettingsKeys.USB_EXCLUSIVE_CHANNEL_COMPATIBILITY]
-                ?: DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
+            valueOr(SettingsKeys.USB_EXCLUSIVE_CHANNEL_COMPATIBILITY, DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY),
         usbExclusiveForegroundBufferMs =
-            this[SettingsKeys.USB_EXCLUSIVE_FOREGROUND_BUFFER_MS]
-                ?: DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+            valueOr(SettingsKeys.USB_EXCLUSIVE_FOREGROUND_BUFFER_MS, DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS),
         usbExclusiveBackgroundBufferMs =
-            this[SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS]
-                ?: DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
-        usbExclusiveVolumeRiskThresholdDbfs =
-            this[SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS]
-                ?: DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
-        allowMixedPlayback = this[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false,
-        preemptAudioFocus = this[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false,
+            valueOr(SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS, DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS),
+        usbExclusiveVolumeRiskThresholdDbfs = valueOr(
+            SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
+            DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+        ),
+        allowMixedPlayback = valueOr(SettingsKeys.ALLOW_MIXED_PLAYBACK, false),
+        preemptAudioFocus = valueOr(SettingsKeys.PREEMPT_AUDIO_FOCUS, false),
         cloudMusicLyricDefaultOffsetMs =
-            this[SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
-                ?: DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
+            valueOr(SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS),
         qqMusicLyricDefaultOffsetMs =
-            this[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
-                ?: DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
-        kugouLyricDefaultOffsetMs =
-            this[SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS]
-                ?: DEFAULT_KUGOU_LYRIC_OFFSET_MS,
+            valueOr(SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS),
+        kugouLyricDefaultOffsetMs = valueOr(SettingsKeys.KUGOU_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_KUGOU_LYRIC_OFFSET_MS),
         lrclibLyricDefaultOffsetMs =
-            this[SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS]
-                ?: DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
+            valueOr(SettingsKeys.LRCLIB_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_LRCLIB_LYRIC_OFFSET_MS),
         amllTtmlLyricDefaultOffsetMs =
-            this[SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS]
-                ?: DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
-        lyriconEnabled = this[SettingsKeys.LYRICON_ENABLED] ?: false,
-        amllLyricsEnabled = this[SettingsKeys.AMLL_LYRICS_ENABLED] ?: true,
-        preferWordTimedLyrics = this[SettingsKeys.PREFER_WORD_TIMED_LYRICS] ?: true,
-        defaultLyricSource = this[SettingsKeys.DEFAULT_LYRIC_SOURCE] ?: DEFAULT_LYRIC_SOURCE,
-        maxCacheSizeBytes =
-            this[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES
+            valueOr(SettingsKeys.AMLL_TTML_LYRIC_DEFAULT_OFFSET_MS, DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS),
+        lyriconEnabled = valueOr(SettingsKeys.LYRICON_ENABLED, false),
+        amllLyricsEnabled = valueOr(SettingsKeys.AMLL_LYRICS_ENABLED, true),
+        preferWordTimedLyrics = valueOr(SettingsKeys.PREFER_WORD_TIMED_LYRICS, true),
+        defaultLyricSource = valueOr(SettingsKeys.DEFAULT_LYRIC_SOURCE, DEFAULT_LYRIC_SOURCE),
+        maxCacheSizeBytes = valueOr(SettingsKeys.MAX_CACHE_SIZE_BYTES, CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES)
     ).sanitized()
 }
 
 private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPreferenceSnapshot? {
     val prefs = context.getSharedPreferences(PLAYBACK_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-    if (!prefs.getBoolean(PLAYBACK_SNAPSHOT_READY_KEY, false)) {
-        return null
-    }
-    val cacheVersion = prefs.getInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, 1)
-    if (cacheVersion < PLAYBACK_SNAPSHOT_SCHEMA_VERSION) {
-        return null
-    }
+    return prefs.takeIf(::hasCurrentPlaybackSnapshot)?.toCachedPlaybackPreferenceSnapshot()
+}
+
+private fun hasCurrentPlaybackSnapshot(prefs: SharedPreferences): Boolean =
+    prefs.getBoolean(PLAYBACK_SNAPSHOT_READY_KEY, false) &&
+        prefs.getInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, 1) >= PLAYBACK_SNAPSHOT_SCHEMA_VERSION
+
+private fun SharedPreferences.toCachedPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {
+    val prefs = this
     val legacyMobileDataQuality = prefs.getString(
         PLAYBACK_MOBILE_DATA_DOWNGRADE_QUALITY_KEY,
         null
     )
-    val usbExclusivePreferences = migrateCachedUsbExclusivePreferencesIfNeeded(
-        prefs = prefs,
-        cacheVersion = cacheVersion
-    )
+    val usbExclusivePreferences = prefs.readUsbExclusivePreferences()
     return PlaybackPreferenceSnapshot(
-        audioQuality = prefs.getString(PLAYBACK_AUDIO_QUALITY_KEY, "exhigh") ?: "exhigh",
-        youtubeAudioQuality =
-            prefs.getString(PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY, "high") ?: "high",
-        biliAudioQuality = prefs.getString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, "high") ?: "high",
-        mobileDataFollowDefaultAudioQuality = if (
-            prefs.contains(PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY)
-        ) {
-            prefs.getBoolean(PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY, true)
-        } else {
-            resolveLegacyMobileDataFollowDefaultAudioQuality(legacyMobileDataQuality) ?: true
-        },
+        audioQuality = prefs.stringOr(PLAYBACK_AUDIO_QUALITY_KEY, "exhigh"),
+        youtubeAudioQuality = prefs.stringOr(PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY, "high"),
+        biliAudioQuality = prefs.stringOr(PLAYBACK_BILI_AUDIO_QUALITY_KEY, "high"),
+        mobileDataFollowDefaultAudioQuality = prefs.cachedMobileDataFollowsDefaultQuality(legacyMobileDataQuality),
         mobileDataNeteaseAudioQuality = normalizeMobileDataNeteaseAudioQuality(
-            if (prefs.contains(PLAYBACK_MOBILE_DATA_NETEASE_AUDIO_QUALITY_KEY)) {
-                prefs.getString(
-                    PLAYBACK_MOBILE_DATA_NETEASE_AUDIO_QUALITY_KEY,
-                    DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY
-                )
-            } else {
+            prefs.storedStringOr(
+                PLAYBACK_MOBILE_DATA_NETEASE_AUDIO_QUALITY_KEY,
+                DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY,
                 resolveLegacyMobileDataNeteaseAudioQuality(legacyMobileDataQuality)
-            }
+            )
         ),
         mobileDataYouTubeAudioQuality = normalizeMobileDataYouTubeAudioQuality(
-            if (prefs.contains(PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY)) {
-                prefs.getString(
-                    PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY,
-                    DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY
-                )
-            } else {
+            prefs.storedStringOr(
+                PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY,
+                DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY,
                 resolveLegacyMobileDataYouTubeAudioQuality(legacyMobileDataQuality)
-            }
+            )
         ),
         mobileDataBiliAudioQuality = normalizeMobileDataBiliAudioQuality(
-            if (prefs.contains(PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY)) {
-                prefs.getString(
-                    PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY,
-                    DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY
-                )
-            } else {
+            prefs.storedStringOr(
+                PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY,
+                DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY,
                 resolveLegacyMobileDataBiliAudioQuality(legacyMobileDataQuality)
-            }
+            )
         ),
         keepLastPlaybackProgress = prefs.getBoolean(PLAYBACK_KEEP_PROGRESS_KEY, true),
         rememberLongFormPlaybackProgress = prefs.getBoolean(
@@ -572,13 +540,11 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         ),
         playbackEqualizerEnabled =
             prefs.getBoolean(PLAYBACK_EQUALIZER_ENABLED_KEY, false),
-        playbackEqualizerPreset =
-            prefs.getString(PLAYBACK_EQUALIZER_PRESET_KEY, PlaybackEqualizerPresetId.FLAT)
-                ?: PlaybackEqualizerPresetId.FLAT,
+        playbackEqualizerPreset = prefs.stringOr(PLAYBACK_EQUALIZER_PRESET_KEY, PlaybackEqualizerPresetId.FLAT),
         playbackEqualizerCustomBandLevels = decodePlaybackEqualizerBandLevels(
             prefs.getString(PLAYBACK_EQUALIZER_LEVELS_KEY, null)
         ),
-        audioEffectsSettingsJson = prefs.getString(PLAYBACK_AUDIO_EFFECTS_SETTINGS_KEY, null).orEmpty(),
+        audioEffectsSettingsJson = prefs.stringOr(PLAYBACK_AUDIO_EFFECTS_SETTINGS_KEY, ""),
         stopOnBluetoothDisconnect = prefs.getBoolean(PLAYBACK_STOP_ON_BLUETOOTH_KEY, true),
         usbExclusivePlayback = prefs.getBoolean(PLAYBACK_USB_EXCLUSIVE_KEY, false),
         usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(
@@ -627,8 +593,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         lyriconEnabled = prefs.getBoolean(PLAYBACK_LYRICON_ENABLED_KEY, false),
         amllLyricsEnabled = prefs.getBoolean(PLAYBACK_AMLL_LYRICS_ENABLED_KEY, true),
         preferWordTimedLyrics = prefs.getBoolean(PLAYBACK_PREFER_WORD_TIMED_LYRICS_KEY, true),
-        defaultLyricSource = prefs.getString(PLAYBACK_DEFAULT_LYRIC_SOURCE_KEY, null)
-            ?: DEFAULT_LYRIC_SOURCE,
+        defaultLyricSource = prefs.stringOr(PLAYBACK_DEFAULT_LYRIC_SOURCE_KEY, DEFAULT_LYRIC_SOURCE),
         maxCacheSizeBytes = prefs.getLong(
             PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY,
             CacheSizePolicy.DEFAULT_CACHE_SIZE_BYTES
@@ -636,31 +601,24 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
     ).sanitized()
 }
 
-private fun migrateCachedUsbExclusivePreferencesIfNeeded(
-    prefs: android.content.SharedPreferences,
-    cacheVersion: Int
-): UsbExclusivePreferences {
-    val preferences = prefs.readUsbExclusivePreferences()
-    val shouldMigrateLegacyDefault = cacheVersion < PLAYBACK_SNAPSHOT_SCHEMA_VERSION &&
-        preferences.sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
-        preferences.bitDepthMode == UsbExclusiveBitDepthMode.AUTO &&
-        preferences.bufferProfile == UsbExclusiveBufferProfile.BALANCED &&
-        preferences.unsupportedFormatPolicy == UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK
-    val migrated = if (shouldMigrateLegacyDefault) {
-        preferences.copy(
-            unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
-        )
+private fun legacyMobileDataFollowsDefaultQuality(legacyMobileDataQuality: String?): Boolean =
+    resolveLegacyMobileDataFollowDefaultAudioQuality(legacyMobileDataQuality) ?: true
+
+private fun SharedPreferences.cachedMobileDataFollowsDefaultQuality(legacyMobileDataQuality: String?): Boolean =
+    if (contains(PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY)) {
+        getBoolean(PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY, true)
     } else {
-        preferences
+        legacyMobileDataFollowsDefaultQuality(legacyMobileDataQuality)
     }
-    if (cacheVersion < PLAYBACK_SNAPSHOT_SCHEMA_VERSION) {
-        prefs.edit {
-            putInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, PLAYBACK_SNAPSHOT_SCHEMA_VERSION)
-            putUsbExclusivePreferences(migrated)
-        }
-    }
-    return migrated
-}
+
+private fun SharedPreferences.stringOr(key: String, fallback: String): String = getString(key, fallback) ?: fallback
+
+private fun SharedPreferences.storedStringOr(key: String, default: String, missing: String?): String? =
+    if (contains(key)) getString(key, default) else missing
+
+private fun <T : Any> Preferences.valueOr(key: Preferences.Key<T>, fallback: T): T = this[key] ?: fallback
+
+private fun <T : Any> Preferences.valueOrNullable(key: Preferences.Key<T>, fallback: T?): T? = this[key] ?: fallback
 
 fun PlaybackPreferenceSnapshot.sanitized(): PlaybackPreferenceSnapshot {
     return copy(
