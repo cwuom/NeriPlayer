@@ -7,10 +7,14 @@ on:
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - 'site/**'
+      - '.github/workflows/site_pages.yml'
   pull_request:
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - 'site/**'
+      - '.github/workflows/site_pages.yml'
   workflow_dispatch:
 
 permissions:

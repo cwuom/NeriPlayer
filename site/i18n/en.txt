@@ -1,0 +1,2291 @@
+@c89f3e6686  html  title
+# NeriPlayer · 音理音理！— 多源在线、本地优先的原生 Android 音频播放器
+NeriPlayer — a multi-source, local-first, native Android audio player
+
+@c9f42f7386  attr  meta[content]
+# NeriPlayer 是基于 Jetpack Compose + Media3 的原生 Android 音频播放器：整合网易云音乐、哔哩哔哩、YouTube Music 与本地音频，提供逐字歌词、GLSL 流体背景、USB 独占播放、一起听，以及只同步到你自己 GitHub / WebDAV 的去中心化数据。
+NeriPlayer is a native Android audio player built on Jetpack Compose + Media3. It brings NetEase Cloud Music, Bilibili, YouTube Music and local audio together, with word-by-word lyrics, a GLSL fluid background, USB exclusive playback, Listen Together, and decentralized data that only syncs to your own GitHub or WebDAV.
+
+@74b6a5ba7f  attr  meta[content]
+# NeriPlayer,音理音理,Android 音乐播放器,网易云音乐,哔哩哔哩,YouTube Music,逐字歌词,USB 独占,一起听,开源
+NeriPlayer,Android music player,NetEase Cloud Music,Bilibili,YouTube Music,word-by-word lyrics,USB exclusive,bit-perfect,Listen Together,open source
+
+@2aa28a2d19  attr  meta[content]
+# NeriPlayer · 音理音理！
+NeriPlayer · Neri, Neri!
+
+@91af8781c6  attr  meta[content]
+# 多源在线，本地优先，原生 Android。把好音乐留在掌心。
+Many sources, local first, native Android. Keep the music you love close at hand.
+
+@586f83fd68  html  a.skip
+# 跳到正文
+Skip to content
+
+@08eeacdfd3  attr  a.nav__brand[aria-label]
+# NeriPlayer 回到顶部
+NeriPlayer — back to top
+
+@fb1c7dc70a  attr  nav.nav__links[aria-label]
+# 主导航
+Main navigation
+
+@553b5fd082  html  nav.nav__links
+# <a href="#play" data-go=""><b>01</b>播放</a> <a href="#lyrics" data-go=""><b>02</b>歌词</a> <a href="#sources" data-go=""><b>03</b>多源</a> <a href="#hifi" data-go=""><b>04</b>音质</a> <a href="#together" data-go=""><b>05</b>一起听</a> <a href="#sync" data-go=""><b>07</b>隐私</a> <a href="#download" data-go=""><b>12</b>下载</a>
+<a href="#play" data-go><b>01</b>Play</a> <a href="#lyrics" data-go><b>02</b>Lyrics</a> <a href="#sources" data-go><b>03</b>Sources</a> <a href="#hifi" data-go><b>04</b>Hi-Fi</a> <a href="#together" data-go><b>05</b>Together</a> <a href="#sync" data-go><b>07</b>Privacy</a> <a href="#download" data-go><b>12</b>Download</a>
+
+@70f2be332a  attr  a.nav__gh[aria-label]
+# 在 GitHub 上查看 NeriPlayer
+View NeriPlayer on GitHub
+
+@3688be13be  attr  button.lamp#themeBtn[aria-label]
+# 切换到深色模式
+Switch to dark mode
+
+@dcb754383b  attr  button.lamp#themeBtn[data-label-light]
+# 切换到浅色模式
+Switch to light mode
+
+@031c105578  attr  button.nav__burger#burger[aria-label]
+# 打开目录
+Open menu
+
+@da460e90a2  attr  aside.route#route[aria-label]
+# 路线图
+Route map
+
+@f97248cbac  html  li
+# <a href="#top" data-go=""><i>00</i><span>首页</span></a>
+<a href="#top" data-go><i>00</i><span>Home</span></a>
+
+@bcd28f0a4d  html  li
+# <a href="#play" data-go=""><i>01</i><span>播放</span></a>
+<a href="#play" data-go><i>01</i><span>Play</span></a>
+
+@bffb317639  html  li
+# <a href="#lyrics" data-go=""><i>02</i><span>歌词</span></a>
+<a href="#lyrics" data-go><i>02</i><span>Lyrics</span></a>
+
+@c8c6781614  html  li
+# <a href="#sources" data-go=""><i>03</i><span>多源</span></a>
+<a href="#sources" data-go><i>03</i><span>Sources</span></a>
+
+@f4fdd2a938  html  li
+# <a href="#hifi" data-go=""><i>04</i><span>音质</span></a>
+<a href="#hifi" data-go><i>04</i><span>Hi-Fi</span></a>
+
+@b8673e4a49  html  li
+# <a href="#together" data-go=""><i>05</i><span>一起听</span></a>
+<a href="#together" data-go><i>05</i><span>Together</span></a>
+
+@e2362da92c  html  li
+# <a href="#local" data-go=""><i>06</i><span>本地</span></a>
+<a href="#local" data-go><i>06</i><span>Local</span></a>
+
+@af1d846e93  html  li
+# <a href="#sync" data-go=""><i>07</i><span>同步</span></a>
+<a href="#sync" data-go><i>07</i><span>Sync</span></a>
+
+@39e51f5e6e  html  li
+# <a href="#persona" data-go=""><i>08</i><span>个性</span></a>
+<a href="#persona" data-go><i>08</i><span>Style</span></a>
+
+@048b2365aa  html  li
+# <a href="#tablet" data-go=""><i>09</i><span>平板</span></a>
+<a href="#tablet" data-go><i>09</i><span>Tablet</span></a>
+
+@fe7bef6012  html  li
+# <a href="#details" data-go=""><i>10</i><span>细节</span></a>
+<a href="#details" data-go><i>10</i><span>Details</span></a>
+
+@679053d7cd  html  li
+# <a href="#stack" data-go=""><i>11</i><span>构造</span></a>
+<a href="#stack" data-go><i>11</i><span>Inside</span></a>
+
+@fe817698dd  html  li
+# <a href="#download" data-go=""><i>12</i><span>下载</span></a>
+<a href="#download" data-go><i>12</i><span>Download</span></a>
+
+@a28c1d9e68  html  p.eyebrow
+# <b>NP</b>目录 · Contents
+<b>NP</b>Contents · 目录
+
+@c30f62e3ca  html  li
+# <a href="#top" data-go=""><i>00</i>首页<small>Home</small></a>
+<a href="#top" data-go><i>00</i>Home<small>首页</small></a>
+
+@aa1184e3d9  html  li
+# <a href="#play" data-go=""><i>01</i>正在播放<small>Now Playing</small></a>
+<a href="#play" data-go><i>01</i>Now Playing<small>正在播放</small></a>
+
+@b0050e6408  html  li
+# <a href="#lyrics" data-go=""><i>02</i>歌词<small>Lyrics</small></a>
+<a href="#lyrics" data-go><i>02</i>Lyrics<small>歌词</small></a>
+
+@ed4bd3ecc6  html  li
+# <a href="#sources" data-go=""><i>03</i>多源<small>Sources</small></a>
+<a href="#sources" data-go><i>03</i>Sources<small>多源</small></a>
+
+@997c708db6  html  li
+# <a href="#hifi" data-go=""><i>04</i>音质<small>Hi-Fi</small></a>
+<a href="#hifi" data-go><i>04</i>Hi-Fi<small>音质</small></a>
+
+@f1c9085670  html  li
+# <a href="#together" data-go=""><i>05</i>一起听<small>Together</small></a>
+<a href="#together" data-go><i>05</i>Listen Together<small>一起听</small></a>
+
+@50c76676ff  html  li
+# <a href="#local" data-go=""><i>06</i>本地与离线<small>Local</small></a>
+<a href="#local" data-go><i>06</i>Local &amp; Offline<small>本地</small></a>
+
+@11742769e3  html  li
+# <a href="#sync" data-go=""><i>07</i>同步与隐私<small>Sync</small></a>
+<a href="#sync" data-go><i>07</i>Sync &amp; Privacy<small>同步</small></a>
+
+@afca541228  html  li
+# <a href="#persona" data-go=""><i>08</i>个性<small>Personalize</small></a>
+<a href="#persona" data-go><i>08</i>Personalize<small>个性</small></a>
+
+@010a425511  html  li
+# <a href="#tablet" data-go=""><i>09</i>平板<small>Tablet</small></a>
+<a href="#tablet" data-go><i>09</i>Tablet<small>平板</small></a>
+
+@14b7c43f14  html  li
+# <a href="#details" data-go=""><i>10</i>细节<small>Details</small></a>
+<a href="#details" data-go><i>10</i>Details<small>细节</small></a>
+
+@865cde9ba8  html  li
+# <a href="#stack" data-go=""><i>11</i>构造<small>Inside</small></a>
+<a href="#stack" data-go><i>11</i>Inside<small>构造</small></a>
+
+@b52e7cbe6a  html  li
+# <a href="#download" data-go=""><i>12</i>下载<small>Download</small></a>
+<a href="#download" data-go><i>12</i>Download<small>下载</small></a>
+
+@77d645edfe  html  li
+# <a href="#faq" data-go=""><i>i</i>常见问题<small>FAQ</small></a>
+<a href="#faq" data-go><i>i</i>FAQ<small>常见问题</small></a>
+
+@5f259f679e  html  p.eyebrow
+# <b>00</b><span class="eyebrow__rule"></span>音理音理！· Android 音频播放器
+<b>00</b><span class="eyebrow__rule"></span>NeriPlayer · Android audio player
+
+@c30dcb7905  html  h1.display#hero-title
+# <span class="display__line">多源在线，</span> <span class="display__line">本地优先，</span> <span class="display__line">原生 <em class="ul">Android{{0}}</em>。</span>
+<span class="display__line">Many sources,</span> <span class="display__line">local first,</span> <span class="display__line">native <em class="ul">Android{{0}}</em>.</span>
+
+@6073b00298  html  p.lead
+# NeriPlayer（音理音理！）把网易云音乐、哔哩哔哩、YouTube Music 与本地音频装进同一个播放器，再配上逐字歌词、GLSL 流体背景、USB 独占与只属于你自己的同步。
+NeriPlayer brings NetEase Cloud Music, Bilibili, YouTube Music and your local audio into one player — then adds word-by-word lyrics, a GLSL fluid background, USB exclusive output and sync that belongs to you alone.
+
+@69cef4426a  html  p.small
+# 基于 Jetpack Compose + Media3，支持 Android 9 及以上。免费开源，GPL-3.0。
+Built on Jetpack Compose + Media3, for Android 9 and up. Free and open source under GPL-3.0.
+
+@a5d444fdef  html  div.hero__cta
+# <a class="btn btn--ink" href="#download" data-go="">下载 APK{{0}}</a> <a class="btn btn--line" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">{{1}}GitHub<span class="btn__meta">{{2}}<span data-gh="stars">3.7k</span></span></a>
+<a class="btn btn--ink" href="#download" data-go>Download APK{{0}}</a> <a class="btn btn--line" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">{{1}}GitHub<span class="btn__meta">{{2}}<span data-gh="stars">3.7k</span></span></a>
+
+@acd00f4703  html  p.signals
+# <span class="signals__label">Signals</span> <span><i style="--c:var(--red)"></i>多源播放</span> <span><i style="--c:var(--blue)"></i>本地优先</span> <span><i style="--c:var(--amber)"></i>自建同步</span>
+<span class="signals__label">Signals</span> <span><i style="--c:var(--red)"></i>Multi-source</span> <span><i style="--c:var(--blue)"></i>Local first</span> <span><i style="--c:var(--amber)"></i>Self-hosted sync</span>
+
+@998442bc23  html  p.hand
+# 今晚也一起听歌吗？
+Listening together tonight?
+
+@a882912efa  html  figcaption.fig__cap
+# Fig. 00 — 音理与黑猫诺瓦，crayon on paper
+Fig. 00 — Neri and Noir the black cat, crayon on paper
+
+@6605e439ed  html  p.eyebrow
+# <b>01</b><span class="eyebrow__rule"></span>正在播放 · Now Playing
+<b>01</b><span class="eyebrow__rule"></span>Now Playing · 正在播放
+
+@9dc96c94de  html  h2.h2#play-title
+# 每一首歌，都有自己的<span class="ul">颜色{{0}}</span>。
+Every song has its own <span class="ul">colors{{0}}</span>.
+
+@cec1f3446c  html  p.lead
+# 下面这台手机按 App 源码重绘，并逐项对照真机截图：布局、尺寸、配色和按钮反馈都一致。示例曲《星轨》来自 NeriPlayer PV，按下播放键，它就真的会唱。
+The phone below is redrawn from the app's source and checked against real screenshots item by item — layout, sizes, colors and how every button responds. The demo track “星轨” (Startrail) comes from NeriPlayer PV; press play and it really sings.
+
+@5653480705  html  dt
+# 从封面里取出颜色，揉成会流动的背景
+Colors pulled from the cover, blended into a flowing background
+
+@f0a7179f48  html  dd
+# 5<small>种颜色</small>
+5<small>colors</small>
+
+@98375ca2b9  html  dt
+# 流体背景需要 Android 13 及以上，更低版本自动换成普通背景
+The fluid background needs Android 13 or later; older versions get a plain one
+
+@edc9629438  html  h3.sheet__title
+# <span class="sheet__num">01</span>封面取色，生成流体背景
+<span class="sheet__num">01</span>Cover colors, turned into a fluid background
+
+@ed84d98c75  html  p.body
+# 播放页背景由 <code>BgEffectPainter</code> 加载 GLSL / AGSL 着色器，经 <code>RuntimeShader</code> 逐帧渲染：先用 Palette 从封面提取 Base、Accent、Light、Dark、Bridge 五种色彩角色，再把它们揉成流动的色块与颗粒，并接入 <code>uMusicLevel</code> / <code>uBeat</code> 随节拍律动——不是把封面简单地高斯模糊。
+The Now Playing background is drawn by <code>BgEffectPainter</code>, which loads a GLSL / AGSL shader and renders it frame by frame through <code>RuntimeShader</code>. Palette first pulls five color roles from the cover — Base, Accent, Light, Dark and Bridge — then blends them into flowing patches and grain, wired to <code>uMusicLevel</code> / <code>uBeat</code> so it moves with the beat. It is not just a Gaussian-blurred cover.
+
+@7b268a9e1d  attr  div.palette#palette[aria-label]
+# 《星轨》封面取色
+Colors extracted from the “星轨” cover
+
+@82a853283b  html  p.hand
+# 手机里的背景就是 App 那份着色器，移植到了 WebGL ↗
+This background is the app's own shader, ported to WebGL ↗
+
+@c48ab7d6f8  html  h3.sheet__title
+# <span class="sheet__num">02</span>进度条和主控，放在顺手的地方
+<span class="sheet__num">02</span>Progress and controls, right where your thumb is
+
+@eb1747c6fa  html  p.body
+# 播放时进度条变成一条缓缓流动的波形，暂停后回落成直线；等待缓冲时则换成跳动的脉冲。下方按设置显示音质、编码与规格，例如这首 FLAC 的 <code>RAW · 48 kHz</code>，拖动时还会按歌词时间轴给出触感反馈。
+While playing, the progress bar becomes a slowly flowing wave; on pause it settles into a straight line, and while buffering it turns into a beating pulse. Underneath, quality, codec and format show as configured — like <code>RAW · 48 kHz</code> for this FLAC — and dragging gives haptic ticks along the lyric timeline.
+
+@0b3dbdbf5b  html  p.place__label
+# 正在播放主控位置
+Now Playing controls position
+
+@7262b249a8  html  button.is-on
+# 中下
+Lower middle
+
+@435b2d8982  html  button
+# 底部
+Bottom
+
+@d97816246c  html  button
+# 底部 + 进度
+Bottom + progress
+
+@151e3715eb  html  p.small
+# 单手握持时，把随机、上一首、播放、下一首和循环挪到拇指够得着的底部，进度条也可以一起下来。主控置底时 Dock 会暂时换成普通工具栏，避免两者重叠。
+Holding the phone in one hand? Move shuffle, previous, play, next and repeat down within thumb reach, and bring the progress bar along if you like. While the controls sit at the bottom, the Dock becomes a regular toolbar so the two never overlap.
+
+@fbc98369d9  html  li
+# <b>01</b>波长约 30 dp、振幅约 2.3 dp，每两秒走完一个周期
+<b>01</b>About 30 dp wavelength and 2.3 dp amplitude, one cycle every two seconds
+
+@3aada2cfba  html  li
+# <b>02</b>音质标签可点开切换，倍速不为 1.00× 时会单独标出
+<b>02</b>Tap the quality tag to switch; speeds other than 1.00× get their own label
+
+@ec8dacaa06  html  li
+# <b>03</b>播放页与歌词页的控件还能分别选小 / 中 / 大三档尺寸
+<b>03</b>Controls on Now Playing and the lyrics page each come in small, medium and large
+
+@3493e72fc0  html  h3.sheet__title
+# <span class="sheet__num">03</span>封面页也有逐字歌词
+<span class="sheet__num">03</span>Word-by-word lyrics on the cover page, too
+
+@c49cc5aa7f  html  p.body
+# 控制区下方嵌着一段同步歌词：当前行逐字点亮，翻译只跟在当前行下面，其余行安静地淡在一旁。点一行就跳到那里，长按可以分享；嫌挤的话，封面页歌词和底部工具栏都能单独关掉。
+Under the controls sits a strip of synced lyrics: the current line lights up word by word, its translation follows only that line, and the rest fade quietly to the side. Tap a line to jump there, long-press to share. If it feels crowded, the cover-page lyrics and the bottom toolbar can each be turned off.
+
+@7a771e309f  html  li
+# <b>01</b>封面页 18 sp、翻译 14 sp，可与歌词页分别调整字号
+<b>01</b>18 sp on the cover page, 14 sp for translations, sized separately from the lyrics page
+
+@cfbe3303f4  html  li
+# <b>02</b>向左一滑，就进入完整歌词页
+<b>02</b>Swipe left for the full lyrics page
+
+@5ee122c135  html  h3.sheet__title
+# <span class="sheet__num">04</span>音效与倍速
+<span class="sheet__num">04</span>Audio effects &amp; speed
+
+@38eb4d5717  html  p.body
+# 点右上角「更多」，再选「音效与倍速」：速度与音调分开调节，响度增强按 dB 步进，均衡器绑定当前播放会话，内置 23 种系统预设，也能逐个拖动 60 Hz 到 14 kHz 的手动频段。播放设置里还有按歌曲实时分析的响度均衡、声道平衡、32-bit 高解析输出、淡入淡出与交叉淡入淡出。
+Tap “More” in the top-right corner, then “Audio Effects &amp; Speed”: speed and pitch are set independently, loudness enhancement steps in dB, and the equalizer binds to the current playback session with 23 built-in system presets — or drag the manual bands from 60 Hz to 14 kHz one by one. Playback settings add per-track real-time loudness normalization, channel balance, 32-bit hi-res output, fades and crossfades.
+
+@9a94fc78c4  html  p.hand
+# 先按播放，再点手机里的预设或倍速，声音会真的跟着变 ↗
+Press play first, then try a preset or a speed — you'll actually hear it change ↗
+
+@36f7cfcef5  attr  table.tblock[aria-label]
+# 图纸信息
+Drawing info
+
+@8acdc6abc4  html  td
+# <span>编号</span><b>NP-01</b>
+<span>No.</span><b>NP-01</b>
+
+@d09da1ea4a  html  td
+# <span>版本</span><b data-gh="rev">—</b>
+<span>Version</span><b data-gh="rev">—</b>
+
+@6894b885ca  html  td
+# <span>平台</span><b>Android</b>
+<span>Platform</span><b>Android</b>
+
+@c4ed84652c  html  td
+# <span>页码</span><b>01 / 12</b>
+<span>Page</span><b>01 / 12</b>
+
+@1e26dd840e  html  td
+# <span>状态</span><b>Android 9+ · 流体背景与高级模糊需 Android 13+</b>
+<span>Status</span><b>Android 9+ · fluid background &amp; advanced blur need Android 13+</b>
+
+@d04628997b  html  td
+# <span>来源</span><b><a href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">cwuom/NeriPlayer</a> · {{0}}<span data-gh="stars">3.7k</span> · {{1}}<span data-gh="forks">131</span></b>
+<span>Source</span><b><a href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">cwuom/NeriPlayer</a> · {{0}}<span data-gh="stars">3.7k</span> · {{1}}<span data-gh="forks">131</span></b>
+
+@622a9d6a93  html  td
+# <span>日期</span><b data-gh="date">—</b>
+<span>Date</span><b data-gh="date">—</b>
+
+@21f587e1c6  html  td
+# <span>示例曲</span><b>《星轨》· Neri Line · NeriPlayer PV</b>
+<span>Demo track</span><b>“星轨” · Neri Line · NeriPlayer PV</b>
+
+@5d5815647c  attr  button.pbtn[aria-label]
+# 收起
+Collapse
+
+@d07cee786a  attr  button.pbtn[aria-label]
+# 收藏
+Favorite
+
+@9b0c6c7858  attr  button.pbtn[aria-label]
+# 更多
+More
+
+@a2561ae180  attr  img[alt]
+# 《星轨》封面
+“星轨” cover
+
+@271479adeb  html  div.pc-art
+# {{0}} <span class="pc-badge">{{1}}本地文件</span>
+{{0}} <span class="pc-badge">{{1}}Local Files</span>
+
+@a59750b8e8  html  div.pc-id
+# <b>星轨</b> <span>Neri Line</span>
+<b>星轨</b> <span>Neri Line</span>
+
+@7a5c0fd39c  attr  canvas.pc-wave[aria-label]
+# 播放进度
+Playback progress
+
+@834fd63c81  attr  button.pbtn[aria-label]
+# 随机
+Shuffle
+
+@e8fa515afe  attr  button.pbtn[aria-label]
+# 上一首
+Previous
+
+@21925350de  attr  button.pbtn[aria-label]
+# 播放
+Play
+
+@bacea782a7  attr  button.pbtn[aria-label]
+# 下一首
+Next
+
+@a76d0b3031  attr  button.pbtn[aria-label]
+# 循环
+Repeat
+
+@d319af5a70  attr  button.pbtn[aria-label]
+# 播放队列
+Playback queue
+
+@d0530780e5  attr  button.pbtn[aria-label]
+# 睡眠定时
+Sleep Timer
+
+@3aa83c304c  attr  button.pbtn[aria-label]
+# 输出设备
+Output device
+
+@315d810f5e  attr  button.pbtn[aria-label]
+# 歌词
+Lyrics
+
+@7b4d3114d8  attr  button.pbtn[aria-label]
+# 加入歌单
+Add to playlist
+
+@b5fbd39982  html  p.ms-title
+# 音效与倍速
+Audio Effects &amp; Speed
+
+@85bfc1a470  html  p.ms-sub
+# 速度与音调可分开调节，均衡器会绑定当前播放会话
+Speed and pitch are independent, and the equalizer follows the current playback session.
+
+@d33b507c20  html  div.ms-row
+# <b>播放速度</b><span class="ms-val" data-ms-val="">1.00x</span>
+<b>Playback Speed</b><span class="ms-val" data-ms-val>1.00x</span>
+
+@a860036030  html  div.ms-row
+# <b>音调</b><span class="ms-val" data-ms-val="">1.00x</span>
+<b>Pitch</b><span class="ms-val" data-ms-val>1.00x</span>
+
+@e492673222  html  div.ms-row
+# <b>响度增强<small>当前设备可能不支持响度增强</small></b><span class="ms-val" data-ms-val="">+0.0 dB</span>
+<b>Loudness Enhancer<small>This device may not support loudness enhancement.</small></b><span class="ms-val" data-ms-val>+0.0 dB</span>
+
+@89d85c1a5c  html  div.ms-row
+# <b>均衡器<small>预设</small></b><span class="m3switch is-on" aria-hidden="true"><i></i></span>
+<b>Equalizer<small>Presets</small></b><span class="m3switch is-on" aria-hidden="true"><i></i></span>
+
+@2044e9e95f  html  p.ms-hint
+# 速度、音调和均衡器预设
+Speed, pitch, and equalizer presets
+
+@ed1f3424fe  html  p.ms-hint
+# 手动频段
+Manual Bands
+
+@be3923cb7d  html  p.ann
+# 封面取色<br>→ 流体背景
+Cover colors<br>→ fluid background
+
+@2b42ab337a  html  p.ann
+# 来源角标
+Source badge
+
+@859668648e  html  p.ann
+# 播放时<br>是波浪
+A wave<br>while playing
+
+@251d6c0c3a  html  p.ann
+# 音频规格
+Audio format
+
+@d9d113afef  html  p.ann
+# 当前行<br>逐字点亮
+Current line,<br>word by word
+
+@26de5dd0ff  html  p.ann
+# Dock 工具栏
+Dock toolbar
+
+@eae6564a45  html  p.ann
+# 速度与音调<br>分开调
+Speed &amp; pitch,<br>set apart
+
+@9b81cbb246  html  p.ann
+# 23 种预设<br>+ 手动频段
+23 presets<br>+ manual bands
+
+@021d195f57  html  figcaption.fig__cap
+# Fig. 01 — 播放页 · 每个按钮都能点
+Fig. 01 — Now Playing · every button works
+
+@adc7361b39  html  p.eyebrow
+# <b>02</b><span class="eyebrow__rule"></span>歌词 · Lyrics
+<b>02</b><span class="eyebrow__rule"></span>Lyrics · 歌词
+
+@f82ec601a9  html  h2.h2#lyrics-title
+# 原文与译文，<span class="ul">一同亮起{{0}}</span>。
+Original and translation, <span class="ul">lit as one{{0}}</span>.
+
+@d7daaf0766  html  p.lead
+# 完整歌词页把歌词交给整块屏幕：当前行加粗点亮，译文贴在原文正下方，远处的行被景深慢慢模糊。左下角的「译」可以把译文收起或放出。
+The full lyrics page hands the whole screen to the words: the current line turns bold and bright, the translation sits right beneath it, and distant lines slowly blur away with depth of field. The “Trans” chip in the lower left tucks translations away or brings them back.
+
+@2f1e77de6f  html  div.pl-top__id
+# <b>星轨</b><span>Neri Line</span>
+<b>星轨</b><span>Neri Line</span>
+
+@92ae617316  html  button.pl-chip
+# 译
+Trans
+
+@5bada48259  html  p.ann
+# 当前行加粗<br>译文贴在下面
+Current line in bold,<br>translation beneath
+
+@131f426fb1  html  p.ann
+# 远处的行<br>景深模糊
+Distant lines<br>blur with depth
+
+@51bec4f05a  html  p.ann
+# 点「译」收起译文
+Tap “Trans” to hide translations
+
+@021fd415e2  html  figcaption.fig__cap
+# Fig. 02 — 歌词页，《星轨》的逐字时间轴
+Fig. 02 — Lyrics page, the word-level timeline of “星轨”
+
+@8bb4e52cad  html  h3.sheet__title
+# <span class="sheet__num">02</span>仿 Apple Music 的深度歌词
+<span class="sheet__num">02</span>Deep lyrics, in the spirit of Apple Music
+
+@b31debfa50  html  p.body
+# 支持逐行与逐字 LRC（含行尾时间与方括号逐字时间戳）、YRC 与 TTML。歌词页只显示当前歌曲真正可用的选项，切歌后等歌词判定完成再渐入，不会先闪一下空白。
+Line-synced and word-synced LRC (including line-end times and bracketed word timestamps), YRC and TTML are all supported. The lyrics page only shows options the current song can actually use, and after a track change it waits until lyrics are resolved before fading in — no flash of empty space.
+
+@e9b9bda5c6  html  li
+# <b>01</b>点击某一行直接跳转；长按选择歌词，复制文本、分享歌曲或生成 1080px 歌词卡片
+<b>01</b>Tap a line to jump to it; long-press to select lyrics, copy text, share the song or render a 1080px lyric card
+
+@c7547ee89a  html  li
+# <b>02</b>歌词偏移可按来源分别设置默认值；字号在封面页与歌词页分开调
+<b>02</b>Lyric offsets can default per source; font sizes are set separately for the cover page and the lyrics page
+
+@0c0bc4ce3b  html  li
+# <b>03</b>来源偏好：自动 / 网易云 / 酷狗 / QQ 音乐 / LRCLIB / AMLL TTML，手动匹配时优先逐字
+<b>03</b>Source preference: Auto / NetEase / Kugou / QQ Music / LRCLIB / AMLL TTML, with word-synced lyrics preferred when matching by hand
+
+@28ae7db7a3  html  li
+# <b>04</b>悬浮歌词、状态栏歌词、SuperLyric、词幕 Lyricon 与蓝牙歌词，复用同一条播放数据
+<b>04</b>Floating lyrics, status-bar lyrics, SuperLyric, Lyricon and Bluetooth lyrics all reuse the same playback data
+
+@8a1d308c1f  html  p.ruby-fig__label
+# Fig. 02b — 有音译时（示意）
+Fig. 02b — with romanization (illustration)
+
+@bf08a670ab  html  p.ruby-demo__main
+# 星の線路を そっと辿って
+星の線路を そっと辿って
+
+@9ab608e971  html  p.ruby-fig__text
+# 遇到带音译数据的日语歌，次级行可以切换成音译：它同样<b>贴在原文正下方</b>，取代译文的位置，而不是悬在原文上面。歌曲没有音译时，这个选项不会出现——就像上面的《星轨》，只有「译」。
+For Japanese songs that ship with romanization, the secondary line can switch to it: it also <b>sits right beneath the original</b>, taking the translation's place instead of floating above. When a song has no romanization, the option simply isn't there — like “星轨” above, which only has “Trans”.
+
+@6ea615f533  attr  section.shots#shots[aria-label]
+# 模拟器截图
+Emulator screenshots
+
+@143e6f82d5  html  p.eyebrow
+# <b>Fig.</b><span class="eyebrow__rule"></span>模拟器截图 · Android 16 · 1080 × 2400
+<b>Fig.</b><span class="eyebrow__rule"></span>Emulator screenshots · Android 16 · 1080 × 2400
+
+@0ce7ca762c  html  p.hand
+# 不放效果图，直接从模拟器里截的 ↓
+No mockups — captured straight from the emulator ↓
+
+@8d2ddcb754  attr  img[alt]
+# 播放页截图
+Now Playing screenshot
+
+@28cf183615  html  figcaption
+# 播放页
+Now Playing
+
+@80696e7ead  attr  img[alt]
+# 歌词页截图
+Lyrics page screenshot
+
+@24804aa571  html  figcaption
+# 歌词页
+Lyrics
+
+@594941b28a  attr  img[alt]
+# 音效与倍速截图
+Audio effects &amp; speed screenshot
+
+@723c2fa80c  attr  img[alt]
+# 均衡器截图
+Equalizer screenshot
+
+@d2440fa637  html  figcaption
+# 均衡器
+Equalizer
+
+@b1c4acafe3  attr  img[alt]
+# 更多选项截图
+More options screenshot
+
+@dfd9994508  html  figcaption
+# 更多选项
+More options
+
+@dc1b5d6faf  attr  img[alt]
+# 媒体库截图
+Library screenshot
+
+@c9ca330f75  html  figcaption
+# 媒体库
+Library
+
+@5443aed6e2  html  p.eyebrow
+# <b>03</b><span class="eyebrow__rule"></span>多源 · Sources
+<b>03</b><span class="eyebrow__rule"></span>Sources · 多源
+
+@2aba5fa17f  html  h2.h2#sources-title
+# 一个播放器，<span class="ul">四条线路{{0}}</span>。
+One player, <span class="ul">four lines{{0}}</span>.
+
+@0a652b1427  html  p.lead
+# 按平台独立搜索、互不混排；播放、下载、歌单、历史与统计，却共用同一套本地数据与播放核心。音源解析、失败恢复与自动兜底，都交给 <code>PlayerManager</code> 统一调度。
+Each platform is searched on its own and never mixed in — yet playback, downloads, playlists, history and stats share one set of local data and one playback core. Source resolution, failure recovery and automatic fallback are all orchestrated by <code>PlayerManager</code>.
+
+@8c78d63d9c  html  dt
+# 网易云音乐 · 哔哩哔哩 · YouTube Music
+NetEase Cloud Music · Bilibili · YouTube Music
+
+@af628cb3ea  html  dd
+# 3<small>个在线平台</small>
+3<small>online platforms</small>
+
+@ef3b12cc5f  html  dt
+# 手机里的歌，连同歌词和封面一起导入
+Songs on your phone, imported with their lyrics and covers
+
+@39aa5debfb  html  dd
+# +<small>本地音频</small>
++<small>local audio</small>
+
+@4d439090c5  html  dt
+# 网易云 · 酷狗 · QQ 音乐 · LRCLIB · AMLL TTML
+NetEase · Kugou · QQ Music · LRCLIB · AMLL TTML
+
+@a8e3864af7  html  dd
+# 5<small>个歌词来源</small>
+5<small>lyric sources</small>
+
+@c0b87b6234  attr  nav.src__index#srcIndex[aria-label]
+# 线路索引
+Line index
+
+@23447f0b53  html  li
+# <a href="#src-netease"><i>01</i><b>{{0}}网易云音乐</b><small>完整</small></a>
+<a href="#src-netease"><i>01</i><b>{{0}}NetEase Cloud Music</b><small>Full</small></a>
+
+@192285b82e  html  li
+# <a href="#src-bili"><i>02</i><b>{{0}}哔哩哔哩</b><small>完整</small></a>
+<a href="#src-bili"><i>02</i><b>{{0}}Bilibili</b><small>Full</small></a>
+
+@50778a6b59  html  li
+# <a href="#src-ytm"><i>03</i><b>{{0}}YouTube Music</b><small>兼容</small></a>
+<a href="#src-ytm"><i>03</i><b>{{0}}YouTube Music</b><small>Compatible</small></a>
+
+@884e70f727  html  li
+# <a href="#src-local"><i>04</i><b>{{0}}本地音频</b><small>完整</small></a>
+<a href="#src-local"><i>04</i><b>{{0}}Local audio</b><small>Full</small></a>
+
+@0d42b5d892  html  li
+# <a href="#src-fallback"><i>05</i><b>播放兜底</b><small>策略</small></a>
+<a href="#src-fallback"><i>05</i><b>Playback fallback</b><small>Strategy</small></a>
+
+@d3edd60d84  html  li
+# <a href="#src-link"><i>06</i><b>链接识别</b><small>入口</small></a>
+<a href="#src-link"><i>06</i><b>Link recognition</b><small>Entry</small></a>
+
+@3ece72d4b2  html  p.tag
+# {{0}}登录 · 搜索 · 播放 · 下载 · 评论
+{{0}}Login · Search · Play · Download · Comments
+
+@9b1660a523  html  h3.sheet__title
+# {{0}}网易云音乐
+{{0}}NetEase Cloud Music
+
+@0463c86355  html  p.body
+# 从日推、私人 FM 到艺术家详情，网易云是功能最完整的一条线。
+From daily picks and Personal FM to artist pages, NetEase is the most complete line.
+
+@6504c6cf05  html  li
+# <b>01</b>二维码 / 网页登录；首页同时展示榜单、新歌、日推、私人 FM、雷达与精品歌单
+<b>01</b>QR code / web login; the home page shows charts, new songs, daily picks, Personal FM, radar and curated playlists
+
+@02f9ab3999  html  li
+# <b>02</b>歌曲 · 歌单 · 歌手分类搜索，触底自动加载下一页
+<b>02</b>Search songs, playlists or artists, with the next page loading as you reach the bottom
+
+@1cb445b048  html  li
+# <b>03</b>歌单与专辑详情缓存，网络失败时回退到最近一次成功加载的数据
+<b>03</b>Playlist and album details are cached; on network failure it falls back to the last successful load
+
+@8768622ed7  html  li
+# <b>04</b>艺术家页：热门歌曲与专辑分页，关注后出现在收藏分类里
+<b>04</b>Artist pages with top songs and paged albums; followed artists show up under Favorites
+
+@8f30ffa5b0  html  li
+# <b>05</b>评论：热门 / 最新 / 推荐、楼中楼、点赞、发评与回复，发送失败保留草稿
+<b>05</b>Comments: hot / latest / recommended, nested replies, likes, posting and replying — drafts survive a failed send
+
+@42e4534462  html  li
+# <b>06</b>本地「我喜欢的音乐」可同步回网易云
+<b>06</b>Your local “Liked Songs” can sync back to NetEase
+
+@dbe3df7164  attr  table.matrix[aria-label]
+# 网易云能力
+NetEase capabilities
+
+@21f1e88275  html  th
+# 登录
+Login
+
+@2b9d013177  html  th
+# 下载
+Download
+
+@f04090805c  html  th
+# 搜索
+Search
+
+@12debc4e1b  html  th
+# 歌单
+Playlists
+
+@cf51056243  html  th
+# 评论
+Comments
+
+@d36e47747d  html  p.tag
+# {{0}}收藏夹 · 合集 · 分 P
+{{0}}Favorites · Collections · Multi-part
+
+@8e592c6c13  html  h3.sheet__title
+# {{0}}哔哩哔哩
+{{0}}Bilibili
+
+@4570a1a334  html  p.body
+# 把视频收藏夹当歌单听：分 P 转音频播放、下载，合集上下文一路保留。
+Listen to video favorites like playlists: multi-part videos play and download as audio, with collection context kept all the way through.
+
+@7537533a43  html  li
+# <b>01</b>Web 登录与二维码登录，视频搜索，创建 / 订阅的收藏夹与合集
+<b>01</b>Web and QR login, video search, created / subscribed favorites and collections
+
+@7b41d18cba  html  li
+# <b>02</b>DASH 音频重试，必要时回退 html5 / mp4 渐进流
+<b>02</b>DASH audio retries, falling back to html5 / mp4 progressive streams when needed
+
+@1837ee3330  html  li
+# <b>03</b>可选 BilibiliSponsorBlock：只发送 BV 号的 SHA-256 前缀，片段在本地跳过
+<b>03</b>Optional BilibiliSponsorBlock: only a SHA-256 prefix of the BV ID is sent, and segments are skipped locally
+
+@48800b74e0  html  li
+# <b>04</b>按 <code>BVID + CID</code> 保存自定义跳过区间，可通过 GitHub / WebDAV 同步
+<b>04</b>Custom skip ranges saved per <code>BVID + CID</code>, syncable via GitHub / WebDAV
+
+@79b5b7c860  html  li
+# <b>05</b>评论支持热门 / 最新、楼中楼分页、点赞与回复
+<b>05</b>Comments with hot / latest, paged nested replies, likes and replies
+
+@4af6e0a66d  html  p.hand
+# 片头
+Intro
+
+@d7434cb895  html  p.hand
+# 片尾
+Outro
+
+@a69acaa6d7  html  p.hand
+# 只听正片 ↷
+Just the song ↷
+
+@ae4e5702ef  html  p.tag
+# {{0}}账号会话 · 播放兼容
+{{0}}Account sessions · Playback compatibility
+
+@3720f24d79  html  p.body
+# 国际化模式下首页优先展示 YouTube Music 的歌单与歌曲货架。
+In international mode, the home page puts YouTube Music playlists and song shelves first.
+
+@3ef1ab7205  html  li
+# <b>01</b>登录，首页 / 媒体库歌单、歌单详情与搜索
+<b>01</b>Login, home / library playlists, playlist details and search
+
+@7e3f1c66b6  html  li
+# <b>02</b>登录态 Cookie 与匿名 visitor 会话分别维护，Cookie 轮换受保护
+<b>02</b>Logged-in cookies and anonymous visitor sessions are kept apart, with protected cookie rotation
+
+@8fc8a43437  html  li
+# <b>03</b>PoToken / JS Challenge，bootstrap 与 <code>player.js</code> 缓存优先复用
+<b>03</b>PoToken / JS Challenge, reusing cached bootstrap and <code>player.js</code> first
+
+@f28ef5d35c  html  li
+# <b>04</b>候选被拒时回退 EJS / HLS，不在同一个候选上反复重试
+<b>04</b>When a candidate is rejected it falls back to EJS / HLS instead of retrying the same one
+
+@559fc73573  html  li
+# <b>05</b>可在「设置 &gt; 通用」完全禁用，关闭后不显示入口、不做后台预热
+<b>05</b>Can be switched off entirely in “Settings &gt; General” — no entry points and no background warm-up when off
+
+@0e3aa0e55e  html  p.small
+# 这里的能力只指账号会话、播放兼容和错误恢复，不代表绕过平台限制或重新分发媒体。
+These capabilities only cover account sessions, playback compatibility and error recovery. They do not mean bypassing platform restrictions or redistributing media.
+
+@9942224eee  html  p.tag
+# {{0}}导入 · 扫描 · 归类
+{{0}}Import · Scan · Organize
+
+@1b0b00d0d1  html  h3.sheet__title
+# 本地音频
+Local audio
+
+@341706841a  html  p.body
+# 文件夹里的歌，连同旁边的歌词与封面，一起搬进曲库。
+Songs in a folder move into your library along with the lyrics and covers sitting next to them.
+
+@e2a1b09f7f  html  li
+# <i></i>星轨.flac
+<i></i>星轨.flac
+
+@513686abcc  html  li
+# <i></i>星轨.lrc <em class="hand">← 歌词</em>
+<i></i>星轨.lrc <em class="hand">← lyrics</em>
+
+@97d70133a6  html  li
+# <i></i>星轨_trans.lrc <em class="hand">← 翻译</em>
+<i></i>星轨_trans.lrc <em class="hand">← translation</em>
+
+@a6358af95a  html  li
+# <i></i>星轨.jpg <em class="hand">← 封面</em>
+<i></i>星轨.jpg <em class="hand">← cover</em>
+
+@e49073300e  html  figcaption.fig__cap
+# Fig. 03d — 同目录 sidecar 自动识别
+Fig. 03d — sidecar files in the same folder, picked up automatically
+
+@94aed385a0  html  li
+# <b>01</b>系统分享 / 打开导入，扫描媒体库或按授权文件夹定向扫描
+<b>01</b>Import via system share or “Open with”, scan the media library, or scan granted folders directly
+
+@a63f948cae  html  li
+# <b>02</b>识别 <code>lrc / txt</code> 歌词与 <code>cover / folder / front</code> 封面
+<b>02</b>Recognizes <code>lrc / txt</code> lyrics and <code>cover / folder / front</code> artwork
+
+@a828ea32a3  html  li
+# <b>03</b>大批量扫描先快速预览，再在后台补全歌名、歌手、专辑与封面
+<b>03</b>Large scans show a quick preview first, then fill in titles, artists, albums and covers in the background
+
+@9980f9630f  html  li
+# <b>04</b>按艺术家自动聚合，拆分 feat. / with / 和 / 与 / 斜杠等合作写法
+<b>04</b>Groups by artist automatically, splitting feat. / with / 和 / 与 / slashes and other ways of writing collaborations
+
+@02b642d4ed  html  p.tag
+# {{0}}自动兜底
+{{0}}Automatic fallback
+
+@cdd04b9470  html  h3.sheet__title
+# 播放兜底
+Playback fallback
+
+@a5846a8670  html  p.body
+# 一首歌放不出来时，NeriPlayer 会先想办法，而不是直接报错。
+When a song won't play, NeriPlayer looks for another way first instead of just throwing an error.
+
+@ef86d98438  attr  figure.flow[aria-label]
+# 兜底流程
+Fallback flow
+
+@2fe5bfb386  html  li
+# <b>网易云不可播</b><span>无权限、无可用结果或只给试听片段</span>
+<b>NetEase can't play it</b><span>No permission, no usable result, or only a preview clip</span>
+
+@1d5acffe11  html  li
+# <b>先降音质</b><span>依次尝试更低的音质</span>
+<b>Lower the quality</b><span>Try each lower quality in turn</span>
+
+@f2c7e653c2  html  li
+# <b>改用 Bilibili</b><span>按歌名、歌手与时长评分匹配</span>
+<b>Try Bilibili</b><span>Match by a title, artist and duration score</span>
+
+@df2359c1f4  html  li
+# <b>改用本地音频</b><span>按稳定元数据匹配可读的本地音频</span>
+<b>Try local audio</b><span>Match readable local audio by stable metadata</span>
+
+@e3609d663b  html  li
+# <b>仍然异常</b><span>先刷新播放链接，连续失败再跳过或停止</span>
+<b>Still failing</b><span>Refresh the playback link first; skip or stop after repeated failures</span>
+
+@b70d126e17  html  p.hand
+# Bilibili 与本地兜底默认关闭，要自己打开哦
+Bilibili and local fallback are off by default — switch them on yourself
+
+@7fad917dea  html  figcaption.fig__cap
+# Fig. 03e — 兜底流程
+Fig. 03e — the fallback flow
+
+@721b6471a1  html  p.tag
+# {{0}}分享文案 → 详情页
+{{0}}Share text → detail page
+
+@580c978071  html  h3.sheet__title
+# 粘贴分享文案，直接打开
+Paste a share message, open it directly
+
+@476fd6f199  html  p.body
+# 探索页的「链接识别」可以粘贴链接，也可以粘贴含标题和短链接的整段文案。
+“Link recognition” on the Explore page takes a bare link, or an entire share message with a title and a short link.
+
+@aa75fdc264  html  p.linkbox__in
+# <span id="linkTyping">【哔哩哔哩】夜行列车 Lo-fi 合集 P3 https://b23.tv/…</span><i></i>
+<span id="linkTyping">[bilibili] Night Train Lo-fi Collection P3 https://b23.tv/…</span><i></i>
+
+@f889317910  html  p.linkbox__out
+# <span class="tag">Bilibili 合集</span><span class="tag">分 P 3</span><span class="tag">season_id</span>
+<span class="tag">Bilibili collection</span><span class="tag">Part 3</span><span class="tag">season_id</span>
+
+@3410e4bb74  html  li
+# <b>01</b>识别网易云歌曲 / 歌单 / 歌手，Bilibili 视频 / 收藏夹 / 合集 / UP 主，YouTube 视频 / 歌单 / 频道
+<b>01</b>Recognizes NetEase songs / playlists / artists, Bilibili videos / favorites / collections / uploaders, and YouTube videos / playlists / channels
+
+@fa2937421c  html  li
+# <b>02</b>保留分 P 与 <code>season_id</code> 合集上下文；暂无详情页的类型会明确提示
+<b>02</b>Keeps multi-part and <code>season_id</code> collection context; types without a detail page get a clear notice
+
+@aaae7d821f  html  li
+# <b>03</b>播放页元数据由网易云与 QQ 音乐补全，并接入 LRCLIB 外部歌词
+<b>03</b>Now Playing metadata is filled in from NetEase and QQ Music, with LRCLIB external lyrics
+
+@7d2185b8c2  html  p.eyebrow
+# <b>04</b><span class="eyebrow__rule"></span>音质 · Hi-Fi
+<b>04</b><span class="eyebrow__rule"></span>Hi-Fi · 音质
+
+@7602ec7e4a  html  h2.h2#hifi-title
+# 每一个采样，<span class="ul">原样抵达{{0}}</span>。
+Every sample, <span class="ul">arriving untouched{{0}}</span>.
+
+@dcbb87d750  html  p.lead
+# USB 独占由 native 驱动接管兼容的 USB 音频设备，系统音与其他应用不再共用通道；开启比特完美音量后，软件增益固定为 0&nbsp;dB，把音量交还给 DAC。
+In USB exclusive mode a native driver takes over compatible USB audio devices, so system sounds and other apps no longer share the channel. Turn on bit-perfect volume and software gain is pinned at 0&nbsp;dB, handing volume back to the DAC.
+
+@550da96dc3  html  li.chain__node
+# <span class="chain__box"><b>音源</b><small>FLAC · 24bit / 48kHz</small></span>
+<span class="chain__box"><b>Source</b><small>FLAC · 24bit / 48kHz</small></span>
+
+@aa09a72c98  html  li.chain__node
+# <span class="chain__box"><b>Media3</b><small>ExoPlayer 解码</small></span>
+<span class="chain__box"><b>Media3</b><small>ExoPlayer decoding</small></span>
+
+@2f7826d0ca  html  li.chain__node
+# <span class="chain__box"><b>音效链</b><small>均衡 · 响度 · 倍速</small></span>
+<span class="chain__box"><b>Effects</b><small>EQ · loudness · speed</small></span>
+
+@ae2a53512f  html  li.chain__node
+# <span class="chain__box"><b>lib_neri.so</b><small>USB 独占传输</small></span>
+<span class="chain__box"><b>lib_neri.so</b><small>USB exclusive transfer</small></span>
+
+@ff8c032d75  html  p.hand
+# 比特完美时，绕开音效链 ↷
+Bit-perfect skips the effects chain ↷
+
+@156a60ff5f  html  span
+# 比特完美音量
+Bit-perfect volume
+
+@7968b1f560  html  output.mono#gainOut
+# 软件增益 −3.2 dB · 经过音效链
+Software gain −3.2 dB · through the effects chain
+
+@a4e8e73f1b  html  figcaption.fig__cap
+# Fig. 04 — 从解码到 DAC 的信号链
+Fig. 04 — the signal chain from decoder to DAC
+
+@e9a300dfaf  html  li
+# <b>01</b><span><strong>UAC1.0 · UAC2.0 Type I PCM</strong>设备选择、采样率 / 位深 / 缓冲策略与兼容性开关</span>
+<b>01</b><span><strong>UAC1.0 · UAC2.0 Type I PCM</strong>Device selection, sample rate / bit depth / buffer strategy and compatibility switches</span>
+
+@4e6f504c0a  html  li
+# <b>02</b><span><strong>跟随源采样率</strong>先按 USB 描述符尝试源采样率，不可用时回退设备兼容采样率</span>
+<b>02</b><span><strong>Follows the source sample rate</strong>Tries the source rate from the USB descriptors first, falling back to a rate the device supports</span>
+
+@13094af087  html  li
+# <b>03</b><span><strong>32-bit PCM</strong>PCM float 软件转换为设备格式</span>
+<b>03</b><span><strong>32-bit PCM</strong>PCM float converted in software to the device's format</span>
+
+@8ab8c6122a  html  li
+# <b>04</b><span><strong>显式反馈时钟</strong>解析 UAC2 时钟拓扑与反馈端点，长调度间隙后重新捕获</span>
+<b>04</b><span><strong>Explicit feedback clock</strong>Parses the UAC2 clock topology and feedback endpoints, recapturing after long scheduling gaps</span>
+
+@1e1565522c  html  li
+# <b>05</b><span><strong>卡死自动恢复</strong>启动看门狗、健康审计、原地重配置、动态传输扩缩容，必要时回退系统播放</span>
+<b>05</b><span><strong>Recovers from stalls</strong>Startup watchdog, health audits, in-place reconfiguration and dynamic transfer scaling, falling back to system playback if it must</span>
+
+@094186b829  html  li
+# <b>06</b><span><strong>前后台无缝</strong>按网络或本地来源选择唤醒策略，回到前台后恢复 USB 独占</span>
+<b>06</b><span><strong>Seamless in the background</strong>Wake strategy chosen by network or local source; USB exclusive resumes when you come back</span>
+
+@7ef202d4f3  html  li
+# <b>07</b><span><strong>普通输出也讲究</strong>32-bit 高解析输出、实时响度均衡、声道平衡、蓝牙断连暂停</span>
+<b>07</b><span><strong>Regular output, done properly</strong>32-bit hi-res output, real-time loudness normalization, channel balance, pause on Bluetooth disconnect</span>
+
+@0034ae3f4f  html  li
+# <b>08</b><span><strong>边界写清楚</strong>隐式反馈或无法验证的拓扑会拒绝 Native 候选，走兼容回退</span>
+<b>08</b><span><strong>Honest boundaries</strong>Implicit feedback or unverifiable topologies reject the native candidate and take the compatible fallback</span>
+
+@96eca07626  html  p.eyebrow
+# <b>05</b><span class="eyebrow__rule"></span>一起听 · Listen Together
+<b>05</b><span class="eyebrow__rule"></span>Listen Together · 一起听
+
+@ab0c025b83  html  h2.h2#together-title
+# 隔着很远，<span class="ul">听同一首歌{{0}}</span>。
+Miles apart, <span class="ul">on the very same song{{0}}</span>.
+
+@d95fc189d4  html  p.lead
+# 创建房间、分享邀请，所有人的播放进度通过 WebSocket 实时对齐。服务端基于 Cloudflare Workers 与 Durable Objects，你可以一键部署属于自己的那一台。
+Open a room, share an invite, and everyone's playback stays aligned in real time over WebSocket. The server runs on Cloudflare Workers and Durable Objects, and you can deploy your own in one click.
+
+@d6707d0803  html  li
+# <b>01</b><span><strong>房主 · 听众</strong>成员控制开关与控制请求，房主离线检测与恢复</span>
+<b>01</b><span><strong>Host · listeners</strong>Member control switches and control requests, with host offline detection and recovery</span>
+
+@20549c4819  html  li
+# <b>02</b><span><strong>同一句歌词，同一秒</strong>估算服务端时钟偏移、按漂移阈值校正；单曲循环按时长回绕</span>
+<b>02</b><span><strong>Same line, same second</strong>Estimates the server clock offset and corrects past a drift threshold; single-track repeat wraps around by duration</span>
+
+@8e63a60ef5  html  li
+# <b>03</b><span><strong>队列协作</strong>拖动、添加与删除按房间版本合并，随机模式复用发起端的真实乱序</span>
+<b>03</b><span><strong>A shared queue</strong>Drags, adds and removals merge by room version; shuffle reuses the host's actual shuffled order</span>
+
+@82c1af573b  html  li
+# <b>04</b><span><strong>安全邀请</strong>首次加入需要邀请密钥，成员密钥不出现在公开房间状态中</span>
+<b>04</b><span><strong>Safe invites</strong>Joining for the first time needs an invite key, and member keys never appear in public room state</span>
+
+@9156cea727  html  li
+# <b>05</b><span><strong>候选共享</strong>可选共享房主解析的播放候选，每首最多 3 条，不写入离线缓存</span>
+<b>05</b><span><strong>Candidate sharing</strong>Optionally share the host's resolved playback candidates, up to 3 per track, never written to the offline cache</span>
+
+@ee2ffc5b0f  html  div.together__cta
+# <a class="btn btn--ink" href="https://deploy.workers.cloudflare.com/?url=https://github.com/TheSmallHanCat/NeriPlayer-LTW" target="_blank" rel="noopener">{{0}}一键部署服务端{{1}}</a> <a class="link" href="https://github.com/TheSmallHanCat/NeriPlayer-LTW" target="_blank" rel="noopener">NeriPlayer-LTW 部署模板</a>
+<a class="btn btn--ink" href="https://deploy.workers.cloudflare.com/?url=https://github.com/TheSmallHanCat/NeriPlayer-LTW" target="_blank" rel="noopener">{{0}}Deploy the server{{1}}</a> <a class="link" href="https://github.com/TheSmallHanCat/NeriPlayer-LTW" target="_blank" rel="noopener">NeriPlayer-LTW template</a>
+
+@f66f152ce6  attr  figure.room#room[aria-label]
+# 一起听同步演示
+Listen Together sync demo
+
+@859ff6b05a  html  div
+# <b>音理</b><span>房主</span>
+<b>Neri</b><span>Host</span>
+
+@b90238fd41  html  div
+# <b>诺瓦</b><span>听众</span>
+<b>Noir</b><span>Listener</span>
+
+@f6e1ecccbe  html  div
+# <b>狩叶</b><span>听众</span>
+<b>Karuha</b><span>Listener</span>
+
+@aac4b8d418  html  p.receipt__head
+# 房间 NR7K2Q · 实时同步<i></i>
+Room NR7K2Q · live sync<i></i>
+
+@344b1647fe  html  figcaption.fig__cap
+# Fig. 05 — 三个人，一个房间
+Fig. 05 — three people, one room
+
+@24db0c50e5  html  p.eyebrow
+# <b>06</b><span class="eyebrow__rule"></span>本地与离线 · Local
+<b>06</b><span class="eyebrow__rule"></span>Local &amp; Offline · 本地与离线
+
+@6e8af486e2  html  h2.h2#local-title
+# 连接断开，<span class="ul">歌还在继续{{0}}</span>。
+The signal drops, <span class="ul">the song plays on{{0}}</span>.
+
+@89181de7ca  html  p.lead
+# 播放缓存、下载、歌单、历史和设置默认都留在设备上。网络断开时，首页、探索、播放页、歌词、歌单与下载列表都会切进脱机模式，围绕本地文件与缓存继续运行。
+Playback cache, downloads, playlists, history and settings all stay on your device by default. When the network drops, Home, Explore, Now Playing, lyrics, playlists and downloads switch into offline mode and keep running on local files and cache.
+
+@1a218fec15  html  h3
+# 脱机模式
+Offline mode
+
+@6ed58b8be9  html  span.sr-only
+# 模拟网络连接
+Simulated network connection
+
+@f1ddd50118  html  p.body
+# <code>NetworkStatusMonitor</code> 按系统默认网络承载识别脱机；断网时远程图片请求被阻断，优先用缓存封面。
+<code>NetworkStatusMonitor</code> detects being offline from the system's default network; while offline, remote image requests are blocked and cached covers come first.
+
+@4ff5cac87c  html  li
+# 在线探索与首页刷新<em></em>
+Online explore &amp; home refresh<em></em>
+
+@7a8df65cdd  html  li
+# 本地文件与已下载歌曲<em></em>
+Local files &amp; downloaded songs<em></em>
+
+@d4ba586bb7  html  li
+# 播放缓存与缓存封面<em></em>
+Playback cache &amp; cached covers<em></em>
+
+@93c543ea32  html  li
+# 本地歌单、最近播放与统计<em></em>
+Local playlists, recents &amp; stats<em></em>
+
+@323fe33854  html  h3
+# 下载与断点续传
+Downloads that pick up where they left off
+
+@451d90f049  html  span.card__meta
+# 并发 6 · 最高 8
+6 at once · up to 8
+
+@3519fdfc50  html  li.dl
+# <span class="dl__name">星轨.flac</span><span class="dl__st mono">下载中</span><i class="dl__bar"><i></i></i>
+<span class="dl__name">星轨.flac</span><span class="dl__st mono">Downloading</span><i class="dl__bar"><i></i></i>
+
+@255e007c23  html  li.dl
+# <span class="dl__name">晚安，列车.mp3</span><span class="dl__st mono">下载中</span><i class="dl__bar"><i></i></i>
+<span class="dl__name">晚安，列车.mp3</span><span class="dl__st mono">Downloading</span><i class="dl__bar"><i></i></i>
+
+@f207bec775  html  li.dl
+# <span class="dl__name">Polaris · HLS</span><span class="dl__st mono">下载中</span><i class="dl__bar"><i></i></i>
+<span class="dl__name">Polaris · HLS</span><span class="dl__st mono">Downloading</span><i class="dl__bar"><i></i></i>
+
+@5208d24ee7  html  p.body
+# 不走系统 <code>DownloadManager</code>：直接 HTTP 用 <code>Range</code> 追加，分块传输按偏移续传，HLS 以检查点恢复；队列持久化，重启后自动恢复，手动取消会清理半成品。
+No system <code>DownloadManager</code>: plain HTTP appends with <code>Range</code>, chunked transfers resume by offset, and HLS recovers from checkpoints. The queue is persisted and resumes after a restart; canceling by hand cleans up partial files.
+
+@88b567fb7e  html  h3
+# 存储占用，一眼看清
+Storage, at a glance
+
+@d02a2df7b2  html  li
+# 音频缓存<b>1.0 GB</b>
+Audio cache<b>1.0 GB</b>
+
+@9fd6218061  html  li
+# 图片缓存<b>236 MB</b>
+Image cache<b>236 MB</b>
+
+@e1065c8579  html  li
+# 平台歌单缓存<b>142 MB</b>
+Platform playlist cache<b>142 MB</b>
+
+@b29ad6550f  html  li
+# 下载内容<b>896 MB</b>
+Downloads<b>896 MB</b>
+
+@11d3136034  html  li
+# 日志与崩溃报告<b>9 MB</b>
+Logs &amp; crash reports<b>9 MB</b>
+
+@722c34adfd  html  li
+# 核心应用数据<b>230 MB</b>
+Core app data<b>230 MB</b>
+
+@8b30660691  html  p.body
+# 清理只覆盖可再生成的缓存，不会把你主动下载的歌当成缓存删掉；音频缓存默认上限 1 GB。
+Cleanup only touches caches that can be rebuilt — songs you chose to download are never treated as cache. The audio cache is capped at 1 GB by default.
+
+@9b126e8dd9  html  h3
+# 本地歌手，自动归类
+Local artists, sorted for you
+
+@56d6235a35  html  p.split-demo__in
+# 音理 feat. 诺瓦 / 狩叶、花江
+Neri feat. Noir / Karuha、Hanae
+
+@c40e4d7122  html  p.split-demo__out
+# <span class="tag">音理</span><span class="tag">诺瓦</span><span class="tag">狩叶</span><span class="tag">花江</span>
+<span class="tag">Neri</span><span class="tag">Noir</span><span class="tag">Karuha</span><span class="tag">Hanae</span>
+
+@6e763726b4  html  p.body
+# 识别 feat.、with、和 / 与、顿号、分号与斜杠；歌手页可播放全部、多选导出歌单，或批量下载在线歌曲。
+Splits on feat., with, 和 / 与, the Chinese list comma, semicolons and slashes; artist pages can play everything, multi-select into a playlist, or batch-download online songs.
+
+@99ecb0c1ec  html  h3
+# 歌单，改错了也不怕
+Playlist mistakes, undone
+
+@b58d800a70  html  li
+# <b>01</b>删除歌单或歌曲后可以撤销，批量导出也能撤回新增内容
+<b>01</b>Deleting a playlist or a song can be undone, and batch exports can roll back what they added
+
+@cc21c7d73a  html  li
+# <b>02</b>选中的歌曲可以整体插到指定序号，先预览前后各 5 首上下文
+<b>02</b>Insert selected songs at a chosen position, previewing 5 songs of context on each side first
+
+@16443d645c  html  li
+# <b>03</b>「本地文件」按「手动添加」与「已下载」分类，详情显示累计播放次数
+<b>03</b>“Local Files” is split into “Manually Added” and “Downloaded”, with total play counts in the details
+
+@70024d990a  html  h3
+# 流量也算得清
+Data usage, accounted for
+
+@ab2cfc7ce6  html  li
+# 移动网络 24%
+Mobile 24%
+
+@180d018bc9  html  li
+# 缓存命中 14%
+Cache hits 14%
+
+@7a65f2c88f  html  p.body
+# 区分播放 / 下载流量、Wi‑Fi / 移动 / 漫游与缓存命中；在高风险网络下下载会主动提示。
+Separates playback / download traffic, Wi‑Fi / mobile / roaming and cache hits, and warns before downloading on risky networks.
+
+@47324e98b1  html  p.eyebrow
+# <b>07</b><span class="eyebrow__rule"></span>同步与隐私 · Sync &amp; Privacy
+<b>07</b><span class="eyebrow__rule"></span>Sync &amp; Privacy · 同步与隐私
+
+@8909de41d0  html  h2.h2#sync-title
+# 你的数据，<span class="ul">只交给你自己{{0}}</span>。
+Your data, <span class="ul">in your hands only{{0}}</span>.
+
+@646bde8247  html  p.lead
+# NeriPlayer 没有中心化服务器。歌单、收藏、最近播放与播放统计这些元数据，只会同步到你自己的 GitHub 仓库（应用内新建时默认私有）或 WebDAV。
+NeriPlayer has no central server. Metadata such as playlists, favorites, recent plays and play stats only syncs to your own GitHub repository (private by default when created in the app) or WebDAV.
+
+@27bc39365c  html  div.node
+# {{0}}<b>你的 GitHub</b><span>默认私有仓库</span>
+{{0}}<b>Your GitHub</b><span>Private repo by default</span>
+
+@09386a3fac  html  div.node
+# {{0}}<b>你的 WebDAV</b><span>强 ETag 写入</span>
+{{0}}<b>Your WebDAV</b><span>Strong ETag writes</span>
+
+@f7ee3c27cf  html  div.node
+# {{0}}<b>你的设备</b><span>本地 UUID</span>
+{{0}}<b>Your device</b><span>Local UUID</span>
+
+@dc43cabb5f  html  div.node
+# <b>中心化服务器</b><span>不存在</span>
+<b>Central server</b><span>Doesn't exist</span>
+
+@d0711e2fd3  html  p.hand
+# 歌单 · 收藏 · 最近播放 · 播放统计 · 删除记录
+Playlists · favorites · recent plays · play stats · deletions
+
+@da9a10f235  html  figcaption.fig__cap
+# Fig. 07 — 不经过任何中转服务器
+Fig. 07 — no relay server in between
+
+@ddf92c368e  html  li
+# <b>01</b><span><strong>延迟 5 秒 · 每小时一次</strong>本地变更后延迟同步，另有周期同步；由 WorkManager 调度，只在已验证的网络下执行</span>
+<b>01</b><span><strong>5-second delay · hourly</strong>Local changes sync after a short delay, plus a periodic sync; scheduled by WorkManager and only run on validated networks</span>
+
+@86851e6c40  html  li
+# <b>02</b><span><strong>三路合并</strong>歌单、收藏、历史、删除记录与播放统计参与合并，撤销后的歌曲不会被旧删除记录再次移除</span>
+<b>02</b><span><strong>Three-way merge</strong>Playlists, favorites, history, deletion records and play stats all merge, and a song you restored won't be removed again by an old deletion</span>
+
+@53741fc262  html  li
+# <b>03</b><span><strong>V4 增量格式</strong>Protobuf 记录流 + ZSTD 分块，单个对象不超过 2 MiB，没变的块不再上传</span>
+<b>03</b><span><strong>V4 incremental format</strong>Protobuf record streams + ZSTD chunks, no object over 2 MiB, and unchanged chunks are never uploaded again</span>
+
+@59a349d11a  html  li
+# <b>04</b><span><strong>原子发布</strong>GitHub 以 GraphQL <code>beforeOid</code> 条件更新；WebDAV 先传不可变对象，再以强 ETag 写清单</span>
+<b>04</b><span><strong>Atomic publishing</strong>GitHub updates conditionally via GraphQL <code>beforeOid</code>; WebDAV uploads immutable objects first, then writes the manifest with a strong ETag</span>
+
+@7733d943d4  html  li
+# <b>05</b><span><strong>本地加密</strong>Cookie、YouTube 授权、GitHub Token 与 WebDAV 密码存在 Android Keystore + EncryptedSharedPreferences</span>
+<b>05</b><span><strong>Encrypted on device</strong>Cookies, YouTube auth, GitHub tokens and WebDAV passwords live in Android Keystore + EncryptedSharedPreferences</span>
+
+@65aa88027e  html  h3.h3
+# 四条承诺
+Four promises
+
+@b09613a50b  html  strong
+# 不接广告，也不追踪。
+No ads, no tracking.
+
+@07e901db26  html  p
+# 不接入广告 SDK、第三方统计或崩溃分析 SDK。
+No ad SDKs, third-party analytics or crash-reporting SDKs.
+
+@ccbd3c14ea  html  strong
+# 不做公共曲库。
+No public music library.
+
+@f43fbc8712  html  p
+# 不提供云端媒体分发，也不把个人数据汇聚到维护者手里。
+No cloud media distribution, and no personal data gathered into the maintainers' hands.
+
+@5fd90cb95b  html  strong
+# 凭据不出设备。
+Credentials stay on the device.
+
+@2d0a5fa0e5  html  p
+# 不会上传音频缓存、下载文件、Cookie 或播放 Token。
+Audio cache, downloads, cookies and playback tokens are never uploaded.
+
+@05a9d638e8  html  strong
+# 保护你的账号。
+Your accounts, protected.
+
+@a26d748d9e  html  p
+# 不把本地播放历史回写第三方平台，避免触发风控与异常登录。
+Local play history is never written back to third-party platforms, so it won't trip risk controls or suspicious-login checks.
+
+@e7884cb534  html  h3.sheet__title
+# <span class="sheet__num">07b</span>播放统计
+<span class="sheet__num">07b</span>Play stats
+
+@e3450eb343  html  p.body
+# 按歌曲稳定身份记录播放次数、收听时长与每日统计桶，也参与同步合并。
+Play counts, listening time and daily buckets are recorded against each song's stable identity, and they take part in sync merges too.
+
+@9507bdf912  attr  div.seg[aria-label]
+# 统计周期
+Stats period
+
+@15917f3b32  html  button
+# 日
+Day
+
+@451b86707b  html  button.is-on
+# 周
+Week
+
+@d9b59879f3  html  button
+# 月
+Month
+
+@6f14c2641c  html  button
+# 年
+Year
+
+@3af1ac5b4e  html  button
+# 总计
+All
+
+@852eb780b4  html  dt
+# 次播放
+plays
+
+@2804ea3802  html  dt
+# 小时收听
+hours listened
+
+@6e792ea441  html  dt
+# 首歌曲
+songs
+
+@263227f95f  html  p.hand
+# 收听时长
+Listening time
+
+@8ca00038a4  html  p.small
+# 周 / 月 / 年分别采用近 7 / 30 / 365 天窗口；热点周榜只收录累计收听不少于 10 分钟的歌曲，月榜门槛为 30 分钟。GitHub 仓库与 WebDAV 远端文件都不是端到端加密，请自行妥善保管。
+Week / month / year use rolling 7 / 30 / 365-day windows; the weekly hot list only counts songs with at least 10 minutes of total listening, and the monthly list needs 30. Neither the GitHub repository nor the WebDAV files are end-to-end encrypted, so keep them safe.
+
+@fe13a80eb7  html  p.eyebrow
+# <b>08</b><span class="eyebrow__rule"></span>个性 · Personalize
+<b>08</b><span class="eyebrow__rule"></span>Personalize · 个性
+
+@0c11dea903  html  h2.h2#persona-title
+# 不只是<span class="ul">换个主题色{{0}}</span>。
+More than <span class="ul">a new accent color{{0}}</span>.
+
+@6123e0e5ec  html  p.lead
+# 设置项由 <code>AutoSettingsSchema</code> 统一生成：动态取色、种子色、主题风格、明暗模式、UI 缩放与自定义背景……右边的首页按真机布局重绘，拿蜡笔点点看。
+Settings are generated from a single <code>AutoSettingsSchema</code>: dynamic color, seed color, theme style, light / dark, UI scale, custom backgrounds… The home screen on the right is redrawn from the real layout — go on, pick up a crayon.
+
+@4120228b1c  html  span.lab__name
+# 种子色
+Seed color
+
+@b616476b3c  attr  button.is-on[aria-label]
+# 薰衣草紫
+Lavender
+
+@ba46fc9684  attr  button[aria-label]
+# 樱粉
+Sakura pink
+
+@99ab6c2904  attr  button[aria-label]
+# 天蓝
+Sky blue
+
+@dda9fae1ef  attr  button[aria-label]
+# 薄荷
+Mint
+
+@84c5d7ae27  attr  button[aria-label]
+# 琥珀
+Amber
+
+@750642ccd6  html  span.lab__name
+# 深色模式
+Dark mode
+
+@80ec9e2b1b  html  button
+# 浅色
+Light
+
+@30b2c979ac  html  button.is-on
+# 深色
+Dark
+
+@d07daa9919  html  span.lab__name
+# UI 缩放
+UI scale
+
+@b90659bffa  html  li
+# <b>01</b>动态取色、种子色与主题风格，自动 / 浅色 / 深色
+<b>01</b>Dynamic color, seed color and theme style, with auto / light / dark
+
+@ba863f66b5  html  li
+# <b>02</b>OnePlus 高密度屏会自动叠加 0.95× 修正，用户设置作为额外乘数
+<b>02</b>OnePlus high-density screens get an automatic 0.95× correction, with your setting applied on top
+
+@bcef45b9db  html  li
+# <b>03</b>Android 13+ 可开启进阶高级模糊，12–64 dp 可调，质量分超低 / 低 / 默认 / 高
+<b>03</b>Android 13+ can turn on advanced blur, adjustable from 12–64 dp, in ultra-low / low / default / high quality
+
+@4db684c0a2  html  li
+# <b>04</b>「连贯反馈」让背景与详情页同步接力；关闭时使用抽屉式展开
+<b>04</b>“Continuous feedback” hands the background on to detail pages in one motion; when off, pages open like a drawer
+
+@478d66eba4  html  li
+# <b>05</b>歌词字号与模糊、首页卡片、默认启动页、触感反馈，乃至单曲的名称、歌手与封面
+<b>05</b>Lyric size and blur, home cards, start page, haptics — even each song's title, artist and cover
+
+@38108eaa1d  attr  button.pbtn[aria-label]
+# 刷新
+Refresh
+
+@ab508da6f8  html  p.hm-sec
+# {{0}}继续播放
+{{0}}Continue
+
+@b771f3d578  html  div.hm-card
+# {{0}}<b>本地文件</b><span>10首</span>
+{{0}}<b>Local Files</b><span>10 songs</span>
+
+@5c685eb025  html  div.hm-card
+# {{0}}<b>Neri Line</b><span>2首</span>
+{{0}}<b>Neri Line</b><span>2 songs</span>
+
+@44e33b573e  html  div.hm-card
+# {{0}}<b>NeriPlayer PV</b><span>10首</span>
+{{0}}<b>NeriPlayer PV</b><span>10 songs</span>
+
+@1d734195c9  html  p.hm-sec
+# {{0}}私人雷达
+{{0}}Personal Radar
+
+@a6a4afe54d  html  p.hm-sec
+# {{0}}雷达歌单
+{{0}}Radar Playlists
+
+@5924aa322f  html  div.hm-cv
+# {{0}}<em>雷达</em><strong>时光<br>雷达</strong>
+{{0}}<em>Radar</em><strong>时光<br>雷达</strong>
+
+@616bdb0ef8  html  b
+# 时光雷达
+时光雷达
+
+@a747b08582  html  span
+# 15.6亿 · 30首
+1.6B · 30 songs
+
+@5baa62eb68  html  div.hm-cv
+# {{0}}<em>雷达</em><strong>宝藏<br>雷达</strong>
+{{0}}<em>Radar</em><strong>宝藏<br>雷达</strong>
+
+@161006f6a6  html  b
+# 宝藏雷达
+宝藏雷达
+
+@df3331dd01  html  span
+# 8.7亿 · 30首
+873.1M · 30 songs
+
+@6f9a3cf066  html  div.hm-cv
+# {{0}}<em>雷达</em><strong>新歌<br>雷达</strong>
+{{0}}<em>Radar</em><strong>新歌<br>雷达</strong>
+
+@17d69bfa90  html  b
+# 新歌雷达
+新歌雷达
+
+@cbe37efa70  html  span
+# 3.6亿 · 30首
+359.8M · 30 songs
+
+@1aac6f8fc8  html  div.hm-cv
+# {{0}}<em>雷达</em><strong>乐迷<br>雷达</strong>
+{{0}}<em>Radar</em><strong>乐迷<br>雷达</strong>
+
+@36d2293f31  html  b
+# 乐迷雷达
+乐迷雷达
+
+@30defb20b9  html  span
+# 2.8亿 · 30首
+283.4M · 30 songs
+
+@f66884e606  html  div.hm-cv
+# {{0}}<em>雷达</em><strong>神秘<br>雷达</strong>
+{{0}}<em>Radar</em><strong>神秘<br>雷达</strong>
+
+@00c5df3cda  html  b
+# 神秘雷达
+神秘雷达
+
+@b3843b4795  html  span
+# 3791.7万 · 30首
+37.9M · 30 songs
+
+@ff37e35ed3  html  p.hm-sec
+# {{0}}热力飙升
+{{0}}Trending
+
+@acd2381ea8  html  div
+# <b>海边的信号</b><span>Glass Harbor / NeriPlayer PV</span>
+<b>海边的信号</b><span>Glass Harbor / NeriPlayer PV</span>
+
+@6d25dd1d1d  html  div
+# <b>猫与汽水</b><span>Soda Cat / NeriPlayer PV</span>
+<b>猫与汽水</b><span>Soda Cat / NeriPlayer PV</span>
+
+@b194d4ff50  html  div
+# <b>雨后电台</b><span>Paper Satellite / NeriPlayer PV</span>
+<b>雨后电台</b><span>Paper Satellite / NeriPlayer PV</span>
+
+@f382426cc2  html  p.hm-sec
+# {{0}}推荐新歌
+{{0}}New Picks
+
+@bbc0bb5f3f  html  nav.hm-nav
+# <span class="is-on" data-rpl="">{{0}}首页</span> <span data-rpl="">{{1}}</span> <span data-rpl="">{{2}}</span> <span data-rpl="">{{3}}</span>
+<span class="is-on" data-rpl>{{0}}Home</span> <span data-rpl>{{1}}</span> <span data-rpl>{{2}}</span> <span data-rpl>{{3}}</span>
+
+@7709f6c967  html  figcaption.fig__cap
+# Fig. 08 — 首页，按真机布局重绘
+Fig. 08 — Home, redrawn from the real layout
+
+@b13cf36fe4  html  p.eyebrow
+# <b>09</b><span class="eyebrow__rule"></span>平板 · Tablet
+<b>09</b><span class="eyebrow__rule"></span>Tablet · 平板
+
+@a00cc152b0  html  h2.h2#tablet-title
+# 屏幕大了，<span class="ul">就换一种摆法{{0}}</span>。
+A bigger screen, <span class="ul">a different layout{{0}}</span>.
+
+@43a0de2fa2  html  p.lead
+# 平板与折叠屏横过来，底栏换成左侧导航栏，播放页拆成封面与歌词两栏，设置变成列表与详情并排，迷你播放器也拉成一整条控制栏。下面四张都是 Pixel Tablet 模拟器里的真机截图。
+Turn a tablet or foldable sideways and the bottom bar becomes a side rail, Now Playing splits into cover and lyrics columns, settings sit list-and-detail side by side, and the mini player stretches into a full control bar. All four shots below are real captures from a Pixel Tablet emulator.
+
+@bba7e4005b  html  dt
+# 最短边达到 600 dp 就按平板处理，横竖屏随意转
+A shortest side of 600 dp or more counts as a tablet, free to rotate
+
+@d108b6c041  html  dt
+# 横屏宽度够 840 dp，换成侧边导航栏与双栏设置
+From 840 dp of landscape width, a side rail and two-pane settings take over
+
+@1ddc1b22e6  html  dt
+# 播放页、媒体库、设置……主要页面都有平板布局
+Now Playing, Library, Settings… the main pages all have tablet layouts
+
+@566453a2ae  html  dd
+# 4<small>类页面</small>
+4<small>page types</small>
+
+@1ceffe8a9e  attr  div.tabstage__tabs[aria-label]
+# 平板界面
+Tablet screens
+
+@e716f4e557  html  button.is-on#tabT0
+# <i>A</i>首页<s></s>
+<i>A</i>Home<s></s>
+
+@55eb467472  html  button#tabT1
+# <i>B</i>播放页<s></s>
+<i>B</i>Now Playing<s></s>
+
+@4c6ab31318  html  button#tabT2
+# <i>C</i>媒体库<s></s>
+<i>C</i>Library<s></s>
+
+@a5e0771310  html  button#tabT3
+# <i>D</i>设置<s></s>
+<i>D</i>Settings<s></s>
+
+@c063fce693  attr  img[alt]
+# 平板横屏首页：左侧导航栏、雷达歌单卡片与分三栏排列的「热力飙升」
+Tablet home in landscape: side navigation rail, radar playlist cards and “Trending” in three columns
+
+@9226aa827b  attr  img[alt]
+# 平板横屏播放页：左栏封面、进度与控制，右栏整页双语歌词
+Tablet Now Playing in landscape: cover, progress and controls on the left, full bilingual lyrics on the right
+
+@2386712d09  attr  img[alt]
+# 平板横屏歌单详情：歌单头部、手动添加与已下载分栏、整宽曲目列表
+Tablet playlist in landscape: header, Manually Added / Downloaded tabs and a full-width track list
+
+@7debc0b4cd  attr  img[alt]
+# 平板横屏设置：左栏分组列表与搜索，右栏直接显示「通用」详情
+Tablet settings in landscape: grouped list and search on the left, “General” details on the right
+
+@04c3547fe5  html  figcaption.fig__cap
+# Fig. 09 — Pixel Tablet 模拟器 · Android 16 · 2560 × 1600 横屏
+Fig. 09 — Pixel Tablet emulator · Android 16 · 2560 × 1600 landscape
+
+@5ba6c447c8  html  p.tabstage__note
+# 真机截图，<br>不是效果图 ↙
+Real screenshots,<br>not mockups ↙
+
+@459791600f  html  li
+# <b>01</b>底栏换成左侧导航栏，当前页带文字标签
+<b>01</b>The bottom bar becomes a side rail, labeling the current page
+
+@24c7f7fdb5  html  li
+# <b>02</b>首页卡片按宽度排开，一行放下五张雷达歌单
+<b>02</b>Home cards spread out with the width — five radar playlists in a row
+
+@4b8a98d29e  html  li
+# <b>03</b>榜单拆成三栏，一屏看完九首
+<b>03</b>Charts split into three columns, nine songs at a glance
+
+@b0661dfc95  html  li
+# <b>04</b>迷你播放器拉成整条：切歌、随机、循环、音量、一起听与队列都在手边
+<b>04</b>The mini player becomes a full bar: skip, shuffle, repeat, volume, Listen Together and the queue, all within reach
+
+@6c33fa86f6  html  li
+# <b>01</b>封面、进度与控制收在左栏，宽度固定不乱跳
+<b>01</b>Cover, progress and controls stay in the left column at a fixed width
+
+@a9194775e9  html  li
+# <b>02</b>歌词直接排在右栏，原文与翻译同屏，不用另开一页
+<b>02</b>Lyrics sit right in the right column, original and translation together — no separate page
+
+@41e515026b  html  li
+# <b>03</b>波浪进度条、音质标签与五个功能按钮一个不少
+<b>03</b>Wave progress bar, quality tag and all five tool buttons, nothing left out
+
+@36d354c832  html  li
+# <b>04</b>背景照样从封面取色，铺满整块大屏
+<b>04</b>The background still takes its colors from the cover, across the whole screen
+
+@ff1aa4a59c  html  li
+# <b>01</b>歌单头部与曲目列表在同一页里滚动
+<b>01</b>Playlist header and track list scroll together on one page
+
+@497712dbcf  html  li
+# <b>02</b>「手动添加 / 已下载」分栏切换
+<b>02</b>“Manually Added / Downloaded” tabs
+
+@650f8d201e  html  li
+# <b>03</b>列表铺满宽度，时长与更多操作靠右对齐
+<b>03</b>The list spans the full width, with durations and more actions aligned right
+
+@d9054f2f0b  html  li
+# <b>04</b>悬浮的队列按钮，随时定位正在播放
+<b>04</b>A floating queue button jumps to what's playing
+
+@d352b40ff5  html  li
+# <b>01</b>左栏是分组与搜索，结构和手机一致
+<b>01</b>Groups and search on the left, the same structure as on phones
+
+@983af46ffa  html  li
+# <b>02</b>右栏直接显示详情，不用跳页再返回
+<b>02</b>Details open on the right — no jumping back and forth
+
+@1f175f4ff7  html  li
+# <b>03</b>当前分组高亮，左右两栏联动
+<b>03</b>The current group is highlighted, and the two panes stay in step
+
+@f66fff2581  html  li
+# <b>04</b>侧边导航栏与迷你播放栏常驻
+<b>04</b>The side rail and mini player bar are always there
+
+@a2dafb8574  html  p.small
+# 手机仍锁定竖屏，只有播放页可以横过来；平板竖屏的播放页另有一套布局。
+Phones stay locked to portrait, and only Now Playing can rotate; tablets held upright get a Now Playing layout of their own.
+
+@826d72c7ea  html  p.eyebrow
+# <b>10</b><span class="eyebrow__rule"></span>细节 · Details
+<b>10</b><span class="eyebrow__rule"></span>Details · 细节
+
+@3b103de727  html  h2.h2#details-title
+# 每天都会用到的<span class="ul">小细节{{0}}</span>。
+The <span class="ul">little details{{0}}</span> you meet every day.
+
+@1aa6be2fc4  html  p.lead
+# 不起眼，却天天都会碰到。这些地方也一样认真打磨过。
+Easy to overlook, but you run into them every day — so they got the same care.
+
+@f5f4160a69  html  h3
+# 桌面小组件
+Home screen widgets
+
+@4601d8953d  attr  img[alt]
+# 4×2 播放卡片小组件预览
+4×2 playback card widget preview
+
+@d343c0ace8  attr  img[alt]
+# 2×2 迷你播放器小组件预览
+2×2 mini player widget preview
+
+@7cef58576a  attr  img[alt]
+# 4×1 横条小组件预览
+4×1 strip widget preview
+
+@5e0d71dbed  html  p.widgets__note
+# 同一首歌，<br>三种尺寸 ↖
+One song,<br>three sizes ↖
+
+@5bb041ce16  html  p.body
+# 封面取色的 Material You 圆角卡片，适配明暗主题、大字体与横竖屏。宽卡片显示收藏与桌面歌词入口，窄尺寸也保留上一首、播放与下一首；播放时按秒更新已播放时间。
+Material You rounded cards colored from the cover, adapting to light and dark themes, large fonts and both orientations. The wide card adds favorite and desktop-lyrics buttons; even the narrow sizes keep previous, play and next, and elapsed time ticks every second while playing.
+
+@020d0019c7  html  p.small
+# 图为 App 自带的小组件预览图。
+Shown: the widget previews bundled with the app.
+
+@28a981216a  html  h3
+# 启动器快捷方式
+Launcher shortcuts
+
+@58d1eadb35  html  li
+# {{0}}探索
+{{0}}Explore
+
+@938f59893b  html  li
+# {{0}}媒体库
+{{0}}Library
+
+@ee75fd1867  html  li
+# {{0}}随机喜欢
+{{0}}Shuffle
+
+@3d77a7f5f9  html  p.body
+# 长按桌面图标直达；没有可恢复的队列时会给出反馈，而不是静默失败。
+Long-press the app icon to jump straight in; when there's no queue to restore, you get feedback instead of a silent failure.
+
+@b5bf2bbe33  html  h3
+# 迷你播放器，一滑切歌
+Mini player, swipe to skip
+
+@09a8639772  html  div
+# <b>晚安，列车</b><span>Neri Line</span>
+<b>晚安，列车</b><span>Neri Line</span>
+
+@33d57aa0f3  html  p.body
+# 底部迷你播放器左右一滑切到上一首 / 下一首，点击展开与播放暂停照旧。
+Swipe the bottom mini player left or right for the previous / next track; tap to expand and play / pause work as usual.
+
+@a909598e07  html  h3
+# 悬浮与状态栏歌词
+Floating &amp; status-bar lyrics
+
+@6b8516d7e0  html  div.floatlrc__bar
+# <span>19:19</span><i>换一条轨 也不会停</i><span>{{0}}</span>
+<span>19:19</span><i>换一条轨 也不会停</i><span>{{0}}</span>
+
+@e01a99bf48  html  div.floatlrc__pill
+# <b>每个字 都落在节拍上</b><span>Every word lands right on the beat</span>
+<b>每个字 都落在节拍上</b><span>Every word lands right on the beat</span>
+
+@a81bc6b3ad  html  p.body
+# 悬浮歌词的颜色、描边、字号、位置与对齐都可自定义；支持魅族状态栏歌词、SuperLyric、词幕 Lyricon 与蓝牙歌词。
+Floating lyrics let you set color, outline, size, position and alignment; Meizu status-bar lyrics, SuperLyric, Lyricon and Bluetooth lyrics are supported.
+
+@5c9638d333  html  h3
+# 车载播放
+In the car
+
+@dc4252976b  html  div
+# <b>白昼航线</b><span>Neri Line</span>
+<b>白昼航线</b><span>Neri Line</span>
+
+@1422c7d9dd  html  li
+# 当前队列
+Current queue
+
+@1678b3ab78  html  li
+# 本地歌单
+Local playlists
+
+@6a89e7978b  html  li
+# 最近播放
+Recent plays
+
+@afcd35eb97  html  li
+# 离线歌曲
+Offline songs
+
+@6aee61c73c  html  p.body
+# Android Auto 与支持 AVRCP 浏览的设备可浏览队列与歌单、搜索曲库；连接曲库不会自动播放。
+Android Auto and devices with AVRCP browsing can browse the queue and playlists and search the library; connecting never starts playback by itself.
+
+@38ba2b2018  html  h3
+# 安全模式
+Safe mode
+
+@0e2915a026  html  pre.term
+# <span class="t-dim">$ launch moe.ouom.neriplayer</span>
+# <span class="t-warn">! 上次启动发生 ANR</span>
+# <span class="t-ok">→ 进入安全模式</span>
+#   预览 · 复制 · 导出日志
+<span class="t-dim">$ launch moe.ouom.neriplayer</span>
+<span class="t-warn">! ANR on last launch</span>
+<span class="t-ok">→ entering safe mode</span>
+  Preview · Copy · Export logs
+
+@ef8afd85b0  html  p.body
+# JVM、Native 崩溃与系统 ANR 都会记录现场；上次异常时跳过完整初始化，直接进入安全模式。
+JVM crashes, native crashes and system ANRs are all recorded; after an abnormal exit, full initialization is skipped and the app goes straight into safe mode.
+
+@e174f20a31  html  h3
+# 长音频进度记忆
+Resume long audio
+
+@1760d9ac5c  html  div.memo__marks
+# <span>&lt; 5 秒不记</span><span>≥ 15 分钟才存</span><span>结尾 30 秒算听完</span>
+<span>&lt; 5 s: not saved</span><span>≥ 15 min: saved</span><span>last 30 s: finished</span>
+
+@bbf91b2799  html  p.body
+# 长播客、长视频分 P 自动续上；显式指定的播放位置优先于记忆位置。
+Long podcasts and multi-part videos pick up where you left off; an explicitly requested position always wins over the remembered one.
+
+@16ab0c5a23  html  h3
+# 开发者模式
+Developer mode
+
+@62661fc543  html  button.devver#devBtn
+# <span>版本号</span><b class="mono" data-gh="tag">NeriPlayer-3e1abcb7.10052132</b><small class="hand" id="devHint">连续点击 7 次试试</small>
+<span>Version</span><b class="mono" data-gh="tag">NeriPlayer-3e1abcb7.10052132</b><small class="hand" id="devHint">Try tapping 7 times</small>
+
+@6c3e04a80b  html  p.body
+# 真机上同样是在设置页连点版本号 7 次：底栏会出现 Debug 页，内含各平台探针与日志查看器。
+It works the same on a real device: tap the version 7 times in Settings and a Debug tab appears in the nav bar, with per-platform probes and a log viewer.
+
+@1e15dd5845  html  p.eyebrow
+# <b>11</b><span class="eyebrow__rule"></span>构造 · Inside
+<b>11</b><span class="eyebrow__rule"></span>Inside · 构造
+
+@4e4a806578  html  h2.h2#stack-title
+# 十四个模块，<span class="ul">各管一段路{{0}}</span>。
+Fourteen modules, <span class="ul">each minding its stretch{{0}}</span>.
+
+@567c07306b  html  p.lead
+# 自有 Android 库按业务域拆分，依赖方向写在门禁里：<code>:model</code> 不依赖实现，<code>:common</code> 不依赖业务，所有库禁止依赖 app 或形成循环。彩色圆点对应它们服务的功能章节。
+The in-house Android libraries are split by domain, with dependency direction enforced in CI: <code>:model</code> depends on no implementation, <code>:common</code> on no business logic, and no library may depend on the app or form a cycle. The colored dots match the feature sections they serve.
+
+@3181d7b333  html  div.xref
+# <span class="mono">Cross-reference</span> <span><i style="--c:var(--violet)"></i>01 播放</span> <span><i style="--c:var(--pink)"></i>02 歌词</span> <span><i style="--c:var(--red)"></i>03 多源</span> <span><i style="--c:var(--amber)"></i>04 音质</span> <span><i style="--c:var(--blue)"></i>05 一起听</span> <span><i style="--c:var(--green)"></i>06 本地</span> <span><i style="--c:var(--teal)"></i>07 同步</span>
+<span class="mono">Cross-reference</span> <span><i style="--c:var(--violet)"></i>01 Play</span> <span><i style="--c:var(--pink)"></i>02 Lyrics</span> <span><i style="--c:var(--red)"></i>03 Sources</span> <span><i style="--c:var(--amber)"></i>04 Hi-Fi</span> <span><i style="--c:var(--blue)"></i>05 Together</span> <span><i style="--c:var(--green)"></i>06 Local</span> <span><i style="--c:var(--teal)"></i>07 Sync</span>
+
+@65487da073  html  h3.stack__h
+# {{0}}模块
+{{0}}Modules
+
+@61498750b5  html  li
+# <b>:playback:runtime</b><span>Media3 引擎、音源解析、USB 输出、系统音效</span><em style="--c:var(--violet)"></em><em style="--c:var(--amber)"></em>
+<b>:playback:runtime</b><span>Media3 engine, source resolution, USB output, system effects</span><em style="--c:var(--violet)"></em><em style="--c:var(--amber)"></em>
+
+@ef8685c3ef  html  li
+# <b>:playback:logic</b><span>播放策略、状态协调、PCM 与队列规则</span><em style="--c:var(--violet)"></em>
+<b>:playback:logic</b><span>Playback policy, state coordination, PCM and queue rules</span><em style="--c:var(--violet)"></em>
+
+@530886d75e  html  li
+# <b>:lyrics</b><span>LRC / YRC / TTML 解析、翻译对齐、词幕接入</span><em style="--c:var(--pink)"></em>
+<b>:lyrics</b><span>LRC / YRC / TTML parsing, translation alignment, Lyricon integration</span><em style="--c:var(--pink)"></em>
+
+@4df308c130  html  li
+# <b>:platform</b><span>网易云、Bilibili、YouTube 协议与账号、评论</span><em style="--c:var(--red)"></em><em style="--c:var(--pink)"></em>
+<b>:platform</b><span>NetEase, Bilibili and YouTube protocols, accounts, comments</span><em style="--c:var(--red)"></em><em style="--c:var(--pink)"></em>
+
+@637e788440  html  li
+# <b>:native</b><span>USB 协议、PCM 计算、独占传输，打包 lib_neri.so</span><em style="--c:var(--amber)"></em>
+<b>:native</b><span>USB protocol, PCM math, exclusive transfer, packaged as lib_neri.so</span><em style="--c:var(--amber)"></em>
+
+@d5a24055dd  html  li
+# <b>:listentogether</b><span>一起听协议、WebSocket、会话与播放同步</span><em style="--c:var(--blue)"></em>
+<b>:listentogether</b><span>Listen Together protocol, WebSocket, sessions and playback sync</span><em style="--c:var(--blue)"></em>
+
+@ec8206eb8f  html  li
+# <b>:download:runtime</b><span>下载执行、Room 队列、受管文件与恢复</span><em style="--c:var(--green)"></em>
+<b>:download:runtime</b><span>Download execution, Room queue, managed files and recovery</span><em style="--c:var(--green)"></em>
+
+@7791c5208f  html  li
+# <b>:download:logic</b><span>准入、状态迁移、重试、调度与提交规则</span><em style="--c:var(--green)"></em>
+<b>:download:logic</b><span>Admission, state transitions, retries, scheduling and commit rules</span><em style="--c:var(--green)"></em>
+
+@0db22524c0  html  li
+# <b>:local</b><span>设置、媒体、歌单、统计、备份与缓存清理</span><em style="--c:var(--green)"></em><em style="--c:var(--teal)"></em>
+<b>:local</b><span>Settings, media, playlists, stats, backup and cache cleanup</span><em style="--c:var(--green)"></em><em style="--c:var(--teal)"></em>
+
+@d9d6da1a1b  html  li
+# <b>:sync</b><span>GitHub / WebDAV 传输、编解码、合并与调度</span><em style="--c:var(--teal)"></em>
+<b>:sync</b><span>GitHub / WebDAV transport, codecs, merging and scheduling</span><em style="--c:var(--teal)"></em>
+
+@d756c9dd5e  html  li
+# <b>:database</b><span>Room 实体、DAO、历史 schema 与升级</span><em style="--c:var(--green)"></em><em style="--c:var(--teal)"></em>
+<b>:database</b><span>Room entities, DAOs, schema history and migrations</span><em style="--c:var(--green)"></em><em style="--c:var(--teal)"></em>
+
+@a9f141092e  html  li
+# <b>:network</b><span>通用 HTTP、Range、网页登录基础能力</span><em style="--c:var(--red)"></em><em style="--c:var(--green)"></em>
+<b>:network</b><span>Shared HTTP, Range and web-login foundations</span><em style="--c:var(--red)"></em><em style="--c:var(--green)"></em>
+
+@47424ffaa8  html  li
+# <b>:model</b><span>跨模块数据模型与状态契约</span><em style="--c:var(--violet)"></em><em style="--c:var(--teal)"></em>
+<b>:model</b><span>Cross-module data models and state contracts</span><em style="--c:var(--violet)"></em><em style="--c:var(--teal)"></em>
+
+@35017847ea  html  li
+# <b>:common</b><span>共享工具、日志、文案、图标与语言能力</span><em style="--c:var(--violet)"></em>
+<b>:common</b><span>Shared utilities, logging, strings, icons and locale support</span><em style="--c:var(--violet)"></em>
+
+@25861a91e8  html  h3.stack__h
+# {{0}}工具
+{{0}}Tools
+
+@06f6f71a23  html  li
+# <b>Jetpack Compose</b><span>单 Activity · NavHost</span><em style="--c:var(--violet)"></em><em style="--c:var(--pink)"></em>
+<b>Jetpack Compose</b><span>Single Activity · NavHost</span><em style="--c:var(--violet)"></em><em style="--c:var(--pink)"></em>
+
+@acfcda25ac  html  li
+# <b>Media3 ExoPlayer</b><span>播放核心</span><em style="--c:var(--violet)"></em><em style="--c:var(--amber)"></em>
+<b>Media3 ExoPlayer</b><span>Playback core</span><em style="--c:var(--violet)"></em><em style="--c:var(--amber)"></em>
+
+@7ff5c03cec  html  li
+# <b>AGSL / GLSL</b><span>RuntimeShader 流体背景</span><em style="--c:var(--violet)"></em>
+<b>AGSL / GLSL</b><span>RuntimeShader fluid background</span><em style="--c:var(--violet)"></em>
+
+@42686f0353  html  li
+# <b>Room · DataStore</b><span>本地持久化</span><em style="--c:var(--green)"></em>
+<b>Room · DataStore</b><span>Local persistence</span><em style="--c:var(--green)"></em>
+
+@a5e5990ae2  html  li
+# <b>WorkManager</b><span>同步与下载调度</span><em style="--c:var(--teal)"></em><em style="--c:var(--green)"></em>
+<b>WorkManager</b><span>Sync and download scheduling</span><em style="--c:var(--teal)"></em><em style="--c:var(--green)"></em>
+
+@bb80ff709a  html  li
+# <b>OkHttp · Coil</b><span>网络与图片</span><em style="--c:var(--red)"></em>
+<b>OkHttp · Coil</b><span>Network and images</span><em style="--c:var(--red)"></em>
+
+@2988639ae4  html  li
+# <b>KSP</b><span>设置 schema 生成</span><em style="--c:var(--violet)"></em>
+<b>KSP</b><span>Settings schema generation</span><em style="--c:var(--violet)"></em>
+
+@49471f473e  html  li
+# <b>NDK · C++ · CMake</b><span>libusb、独占传输</span><em style="--c:var(--amber)"></em>
+<b>NDK · C++ · CMake</b><span>libusb, exclusive transfer</span><em style="--c:var(--amber)"></em>
+
+@3846b35dfb  html  li
+# <b>Protobuf · ZSTD</b><span>V4 同步格式</span><em style="--c:var(--teal)"></em>
+<b>Protobuf · ZSTD</b><span>V4 sync format</span><em style="--c:var(--teal)"></em>
+
+@f9b1269e3e  html  li
+# <b>GitHub Actions</b><span>CI、多 ABI 发布、sanitizer 门禁</span><em style="--c:var(--red)"></em>
+<b>GitHub Actions</b><span>CI, multi-ABI releases, sanitizer gates</span><em style="--c:var(--red)"></em>
+
+@3016a27ec2  html  p.eyebrow
+# <b>12</b><span class="eyebrow__rule"></span>下载 · Download
+<b>12</b><span class="eyebrow__rule"></span>Download · 下载
+
+@c49578925b  html  h2.h2#download-title
+# 装上它，<span class="ul">马上就能听{{0}}</span>。
+Install it and <span class="ul">start listening{{0}}</span>.
+
+@0236f73ac6  html  p.lead
+# 选一个和设备匹配的架构（ABI），点一下就能下载。版本号、文件大小和 SHA-256 校验值都实时读取自 GitHub Releases，免费，也没有任何广告。
+Pick the architecture (ABI) that matches your device and download in one tap. Version, file size and SHA-256 checksum are read live from GitHub Releases. It's free, with no ads of any kind.
+
+@a993e8bb9a  html  div.cutline
+# {{0}}<span class="hand">沿虚线剪下</span>
+{{0}}<span class="hand">Cut along the dotted line</span>
+
+@b01ef95966  html  div.ticket__top
+# <span class="ticket__line">{{0}}NeriPlayer · Android 安装包</span> <span class="ticket__kind">免费下载 <i>APK</i></span>
+<span class="ticket__line">{{0}}NeriPlayer · Android package</span> <span class="ticket__kind">Free download <i>APK</i></span>
+
+@e785dd4d5b  html  div.ticket__stop
+# <small>来自</small><b>GitHub</b><i>RELEASES</i>
+<small>From</small><b>GitHub</b><i>RELEASES</i>
+
+@f9664d6288  html  div.ticket__stop
+# <small>装到</small><b>你的手机</b><i>YOUR PHONE</i>
+<small>To</small><b>Your phone</b><i>你的手机</i>
+
+@989d1affa0  html  dt
+# 版本
+Version
+
+@be6ba1bd82  html  dd
+# 最新版本
+Latest
+
+@0f0d2b53a6  html  dt
+# 发布于
+Released
+
+@08fd44cf00  html  dt
+# 系统要求
+Requires
+
+@b70c2d28a1  html  dt
+# 价格
+Price
+
+@b189f1cdc0  html  dd
+# 免费 · GPL-3.0
+Free · GPL-3.0
+
+@bf6c132e7d  html  legend
+# 选择架构 · ABI
+Choose architecture · ABI
+
+@21dbac6856  html  span
+# <b>arm64-v8a</b><small>绝大多数手机 · 推荐</small>
+<b>arm64-v8a</b><small>Most phones · recommended</small>
+
+@b4f26db93e  html  span
+# <b>armeabi-v7a</b><small>老旧 32 位设备</small>
+<b>armeabi-v7a</b><small>Older 32-bit devices</small>
+
+@82d2c10918  html  span
+# <b>x86_64</b><small>模拟器 · Chromebook</small>
+<b>x86_64</b><small>Emulators · Chromebook</small>
+
+@ae08879ebd  html  span
+# <b>x86</b><small>32 位模拟器</small>
+<b>x86</b><small>32-bit emulators</small>
+
+@498bf688a7  html  div.ticket__actions
+# <a class="btn btn--ink" id="dlBtn" href="https://github.com/cwuom/NeriPlayer/releases/latest" rel="noopener">{{0}}<span>下载 APK</span><small id="dlSize">GitHub Releases</small></a> <a class="ticket__more" href="https://github.com/cwuom/NeriPlayer/releases" target="_blank" rel="noopener">全部版本与更新日志{{1}}</a>
+<a class="btn btn--ink" id="dlBtn" href="https://github.com/cwuom/NeriPlayer/releases/latest" rel="noopener">{{0}}<span>Download APK</span><small id="dlSize">GitHub Releases</small></a> <a class="ticket__more" href="https://github.com/cwuom/NeriPlayer/releases" target="_blank" rel="noopener">All versions &amp; changelog{{1}}</a>
+
+@c38743caad  html  div.ticket__stub
+# <span class="ticket__no">第 <b data-gh="count">—</b> 版</span> <span class="ticket__barcode" aria-hidden="true"></span> <span class="stamp stamp--red ticket__stamp" aria-hidden="true">免费</span> <span class="ticket__valid">累计下载<b data-gh="downloads">—</b></span>
+<span class="ticket__no">Release <b data-gh="count">—</b></span> <span class="ticket__barcode" aria-hidden="true"></span> <span class="stamp stamp--red ticket__stamp" aria-hidden="true">Free</span> <span class="ticket__valid">Downloads<b data-gh="downloads">—</b></span>
+
+@2e79863a12  html  h3
+# Release 版本<em class="hand">推荐</em>
+Release<em class="hand">recommended</em>
+
+@b9d0f3e34b  html  p.body
+# 完成一批功能后手动发布，构建 arm64-v8a、armeabi-v7a、x86、x86_64 四个 ABI。它并不是严格意义上的稳定通道，仍可能有尚未暴露的问题。
+Published by hand once a batch of features lands, built for four ABIs: arm64-v8a, armeabi-v7a, x86 and x86_64. It isn't a strictly stable channel and may still hide issues that haven't surfaced yet.
+
+@b7fba82c55  html  h3
+# CI 构建
+CI builds
+
+@fea825bd50  html  p.body
+# master 分支每次成功构建都会上传 arm64-v8a APK，想第一时间尝鲜可以从这里取。
+Every successful build on master uploads an arm64-v8a APK — grab one here if you want the newest bits first.
+
+@f1f390061c  html  h3
+# 从源码构建
+Build from source
+
+@fdf40b9d0c  html  pre.mono#buildCmd
+# <code><span class="t-dim"># 克隆仓库并初始化子模块</span>
+# git clone --recursive https://github.com/cwuom/NeriPlayer.git
+# cd NeriPlayer
+# <span class="t-dim"># 构建调试版并安装</span>
+# ./gradlew :app:assembleDebug
+# adb install -r app/build/outputs/apk/debug/app-debug.apk</code>
+<code><span class="t-dim"># Clone the repo with its submodules</span>
+git clone --recursive https://github.com/cwuom/NeriPlayer.git
+cd NeriPlayer
+<span class="t-dim"># Build a debug APK and install it</span>
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk</code>
+
+@0e8d04cbe3  attr  button.code__copy[aria-label]
+# 复制构建命令
+Copy build commands
+
+@a7c61cd691  html  button.code__copy
+# {{0}}<span>复制</span>
+{{0}}<span>Copy</span>
+
+@1a62a2b173  html  p.small
+# DEBUG 包名 <code>moe.ouom.neriplayer.debug</code>，橙色图标，可与正式版共存。
+The DEBUG build uses the package <code>moe.ouom.neriplayer.debug</code> and an orange icon, so it installs alongside the release.
+
+@2ba8b6bd2c  html  h3.h4
+# 怎么选 ABI？
+Which ABI?
+
+@6ff68920c0  html  td
+# 近几年的绝大多数手机与平板
+Nearly every phone and tablet from recent years
+
+@3fe7627ab3  html  td
+# 老旧的 32 位 ARM 设备
+Older 32-bit ARM devices
+
+@95dc7a0fce  html  td
+# 模拟器、英特尔设备或 Chromebook
+Emulators, Intel devices or Chromebooks
+
+@1f4f3c1876  html  h3.h4
+# 第一次启动
+First launch
+
+@f87073f074  html  p.body
+# 先阅读免责声明并完成启动引导。引导页会说明通知与本地音乐权限，仅在你主动点按后申请，跳过也不影响继续使用。
+Read the disclaimer and finish onboarding first. Onboarding explains the notification and local music permissions, which are only requested when you tap — skipping them won't stop you from using the app.
+
+@912ce29a90  html  h3.h4
+# 最近一班列车
+Latest train
+
+@5969f3cc2c  html  li.changes__empty
+# 正在向 GitHub 查询最新版本……
+Checking GitHub for the latest version…
+
+@c9a8df1ac9  html  p.eyebrow
+# <b>i</b><span class="eyebrow__rule"></span>常见问题 · FAQ
+<b>i</b><span class="eyebrow__rule"></span>FAQ · 常见问题
+
+@a43a9fbbbc  html  h2.h2#faq-title
+# 有什么想问的？
+Anything you'd like to ask?
+
+@e4125c1a90  html  summary
+# <i class="hand">Q.</i>NeriPlayer 收费吗？可以捐赠支持吗？
+<i class="hand">Q.</i>Does NeriPlayer cost anything? Can I donate?
+
+@a53a87b936  html  p
+# 完全免费，以 GPL-3.0 协议开源。由于项目的特殊性，维护者不接受任何形式的赞助、捐赠或商业资助。如果想支持它，欢迎提交 Issue、PR，或者把它分享给需要的人。
+It's completely free and open source under GPL-3.0. Because of the nature of the project, the maintainers don't accept sponsorships, donations or commercial funding of any kind. If you'd like to support it, open an issue or a PR, or share it with someone who needs it.
+
+@4219d6abeb  html  summary
+# <i class="hand">Q.</i>它自带音乐资源吗？
+<i class="hand">Q.</i>Does it come with music?
+
+@30b9e43384  html  p
+# 不提供。NeriPlayer 不构建公共云端曲库或媒体分发服务，在线能力依赖你在第三方平台上的账号授权，会员或受限内容仍需遵循原平台规则。请只在你拥有权利、授权或平台规则允许的范围内访问、播放或保存内容。
+No. NeriPlayer doesn't run a public cloud library or any media distribution service. Online features rely on your own authorized accounts on third-party platforms, and premium or restricted content still follows each platform's rules. Only access, play or save content you own the rights to, are authorized for, or that the platform's rules allow.
+
+@4eea5c6ac0  html  summary
+# <i class="hand">Q.</i>我的数据会被上传到哪里？
+<i class="hand">Q.</i>Where does my data get uploaded?
+
+@d489513fdf  html  p
+# 默认哪里都不去：播放缓存、下载、歌单、历史、统计、设置与授权信息都保存在本机。只有你主动开启 GitHub 或 WebDAV 同步时，歌单、收藏、最近播放和播放统计等元数据才会写入你自己控制的远端；音频缓存、下载文件、Cookie 与播放 Token 不会上传给任何人。
+Nowhere, by default: playback cache, downloads, playlists, history, stats, settings and credentials all stay on your device. Only when you turn on GitHub or WebDAV sync does metadata — playlists, favorites, recent plays and play stats — get written to a remote you control. Audio cache, downloads, cookies and playback tokens are never uploaded to anyone.
+
+@5c7f70e187  html  summary
+# <i class="hand">Q.</i>为什么不把播放记录同步回网易云等平台？
+<i class="hand">Q.</i>Why not sync play history back to NetEase and other platforms?
+
+@ea387c5968  html  p
+# 应用并非没有这个能力。但中心化音乐平台的客户端通常有风控与行为采样，直接上报本地播放历史可能触发异常登录、异常播放甚至账号冻结。出于保护账号安全的考虑，NeriPlayer 暂不向这些平台上传本地播放历史与统计。
+It's not that the app can't. But clients of centralized music platforms usually come with risk controls and behavior sampling, and reporting local play history directly could trigger suspicious-login flags, abnormal-playback flags or even a frozen account. To keep your account safe, NeriPlayer doesn't upload local play history or stats to these platforms for now.
+
+@66f31c0723  html  summary
+# <i class="hand">Q.</i>支持哪些 Android 版本？
+<i class="hand">Q.</i>Which Android versions are supported?
+
+@3bbcf170ef  html  p
+# 支持 Android 9（API 28）及以上。播放页的 RuntimeShader 流体背景与高级模糊需要 Android 13+，封面模糊需要 Android 12+，低版本会自动降级，不影响播放本身。
+Android 9 (API 28) and later. The RuntimeShader fluid background and advanced blur on Now Playing need Android 13+, and cover blur needs Android 12+; older versions fall back gracefully without affecting playback itself.
+
+@3ca78d677a  html  summary
+# <i class="hand">Q.</i>歌词的「音译」在哪里？
+<i class="hand">Q.</i>Where is lyric romanization?
+
+@16465dc46e  html  p
+# 只有当前歌曲带有音译数据时才会出现。开启后，音译显示在原文正下方、取代译文的位置；没有音译的歌曲（比如中文歌）只会看到「译」。
+It only appears when the current song has romanization data. When it's on, romanization sits right beneath the original, in the translation's place; songs without it (Chinese songs, for example) only show “Trans”.
+
+@3af1792158  html  summary
+# <i class="hand">Q.</i>“一起听”必须自己搭服务器吗？
+<i class="hand">Q.</i>Do I have to host my own server for Listen Together?
+
+@dffc07d752  html  p
+# 不一定。你可以使用他人部署的服务，也可以用 Cloudflare Workers 一键部署自己的 <a href="https://github.com/TheSmallHanCat/NeriPlayer-LTW" target="_blank" rel="noopener">NeriPlayer-LTW</a>，然后在设置页填入地址并测试可用性。房间号是 6 位可读字符；本地歌曲不能创建一起听房间。
+Not necessarily. You can use a server someone else has deployed, or deploy your own <a href="https://github.com/TheSmallHanCat/NeriPlayer-LTW" target="_blank" rel="noopener">NeriPlayer-LTW</a> to Cloudflare Workers in one click, then enter its address in Settings and test it. Room codes are 6 readable characters; local songs can't start a Listen Together room.
+
+@8937cd93a2  html  summary
+# <i class="hand">Q.</i>GitHub / WebDAV 同步是端到端加密的吗？
+<i class="hand">Q.</i>Is GitHub / WebDAV sync end-to-end encrypted?
+
+@80a312015c  html  p
+# 不是。凭据在本机以 Android Keystore 加密保存，但同步到远端的文件并不做端到端加密，请自行妥善保管仓库与 WebDAV 账户。完整配置导出文件会包含授权信息，只适合自用迁移，不要公开分享。
+No. Credentials are stored on the device encrypted with Android Keystore, but files synced to the remote aren't end-to-end encrypted, so keep your repository and WebDAV account safe. A full config export includes credentials — it's meant for moving your own setup, so don't share it publicly.
+
+@9f69fe2036  html  summary
+# <i class="hand">Q.</i>USB 独占支持我的 DAC 吗？
+<i class="hand">Q.</i>Will USB exclusive work with my DAC?
+
+@119c3557cb  html  p
+# 当前面向 UAC1.0 与兼容 UAC2.0 Type I PCM 的设备。UAC2 异步链路只接受能解析出唯一显式反馈端点与受支持时钟拓扑的设备，其他情况会走兼容回退。如果息屏后播放被系统限制，请按设置页提示放开电池与后台限制。
+It currently targets UAC1.0 devices and UAC2.0-compatible Type I PCM devices. UAC2 asynchronous links only accept devices with a single resolvable explicit feedback endpoint and a supported clock topology; anything else takes the compatible fallback. If the system restricts playback with the screen off, lift the battery and background restrictions as Settings suggests.
+
+@592d8bb1d5  html  summary
+# <i class="hand">Q.</i>遇到问题，怎么反馈最有效？
+<i class="hand">Q.</i>Found a problem — what's the best way to report it?
+
+@bb479b88d9  html  p
+# 先在设置页连续点击版本号 7 次开启开发者模式，应用会启用文件日志，崩溃日志会单独落盘。然后到 <a href="https://github.com/cwuom/NeriPlayer/issues" target="_blank" rel="noopener">GitHub Issues</a> 附上系统版本、机型、应用版本、复现步骤与关键日志。也可以用 adb 过滤日志：
+First tap the version 7 times in Settings to turn on developer mode; the app then writes file logs, with crash logs saved separately. Then open a <a href="https://github.com/cwuom/NeriPlayer/issues" target="_blank" rel="noopener">GitHub issue</a> with your Android version, device model, app version, steps to reproduce and the relevant logs. You can also filter logs with adb:
+
+@ffcc7f7bc0  attr  button.code__copy[aria-label]
+# 复制日志命令
+Copy log command
+
+@ad69015022  html  p
+# 另外，全局代理可能导致部分第三方接口返回异常数据，请合理配置代理规则。
+Also note that a global proxy can make some third-party APIs return bad data, so set up your proxy rules sensibly.
+
+@f73101d495  html  p.eyebrow
+# <b>NP</b><span class="eyebrow__rule"></span>写在最后
+<b>NP</b><span class="eyebrow__rule"></span>One last thing
+
+@42b5eb5a04  html  p.footer__motto
+# 本地优先，<br>开源透明，<br><em>没有广告</em>。
+Local first,<br>open source,<br><em>no ads</em>.
+
+@7c3ee1da1c  html  p.footer__origin
+# 名称与图标灵感来源于《星空鉄道とシロの旅》中的角色「风又音理」。
+The name and icon are inspired by Neri (风又音理), a character from the visual novel <i>星空鉄道とシロの旅</i>.
+
+@fa967db4f0  attr  img.footer__logo[alt]
+# NeriPlayer 应用图标
+NeriPlayer app icon
+
+@f87b4de9c8  html  p.hand
+# NeriPlayer · GPL-3.0 · 免费开源
+NeriPlayer · GPL-3.0 · free and open source
+
+@90d775026d  attr  nav.footer__cols[aria-label]
+# 页脚导航
+Footer navigation
+
+@22336e6b89  html  h4.mono
+# 项目
+Project
+
+@591a84f563  html  a
+# GitHub 仓库
+GitHub repository
+
+@8d263a68b8  html  a
+# 问题反馈
+Report an issue
+
+@0f3b120bb9  html  a
+# 贡献指南
+Contributing guide
+
+@3060d06b06  html  a
+# GPL-3.0 许可证
+GPL-3.0 license
+
+@367c1ec5d7  html  h4.mono
+# 社区
+Community
+
+@63a165eada  html  a
+# Telegram 频道
+Telegram channel
+
+@a96be9dec4  html  a
+# CI 构建频道
+CI builds channel
+
+@81b553d876  html  a
+# 一起听服务端
+Listen Together server
+
+@c5583bc7e1  html  h4.mono
+# 鸣谢
+Credits
+
+@464380f586  html  p
+# 本项目仅供学习与研究使用，请勿将其用于任何非法用途。请只在你拥有权利、授权或第三方平台规则允许的范围内访问、播放或保存内容。本项目不提供媒体内容、密钥、规避付费 / DRM / 地区限制的方案，也不提供公共媒体代理或再分发服务。
+This project is for learning and research only; do not use it for anything illegal. Only access, play or save content you own the rights to, are authorized for, or that third-party platforms' rules allow. The project provides no media content, no keys, no way around paywalls / DRM / region locks, and no public media proxy or redistribution service.
+
+@ddc4123217  html  p
+# 文中提到的 YouTube Music 相关能力仅指账号会话、播放兼容和错误恢复，不代表绕过平台限制、复制受保护内容或重新分发媒体。网易云音乐、哔哩哔哩、YouTube Music 等名称归各自权利人所有，本项目与其不存在隶属关系。示例曲目与封面来自 NeriPlayer PV。
+The YouTube Music capabilities mentioned here only cover account sessions, playback compatibility and error recovery; they do not mean bypassing platform restrictions, copying protected content or redistributing media. NetEase Cloud Music, Bilibili, YouTube Music and other names belong to their respective owners, and this project is not affiliated with any of them. Demo tracks and covers come from NeriPlayer PV.
+
+@51d905e68f  html  div.footer__bottom
+# <span>© NeriPlayer developers</span> <a href="#top" data-go="">回到顶部 ↑</a>
+<span>© NeriPlayer developers</span> <a href="#top" data-go>Back to top ↑</a>

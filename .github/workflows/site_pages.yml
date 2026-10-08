@@ -1,0 +1,50 @@
+name: NeriPlayer Website
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'site/**'
+      - '.github/workflows/site_pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # 只发布站点本身；site/tools 与 site/i18n 是本地生成工具和译文源，不上线
+      - name: Collect site files
+        working-directory: site
+        run: |
+          mkdir -p ../_site
+          cp -r index.html 404.html .nojekyll robots.txt site.webmanifest assets en ../_site/
+          if [ -f CNAME ]; then cp CNAME ../_site/; fi
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

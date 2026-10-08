@@ -1,0 +1,241 @@
+/* ==========================================================================
+   NeriPlayer · 动效与夜间纸张
+   缓动取自手账风格网站常用的那几条：expo.out 用于出场，power2.inOut 用于描线，
+   back.out 用于贴纸、印章这类「啪」一下的东西。所有状态切换都走过渡，不闪现。
+   ========================================================================== */
+
+:root {
+  --expo: cubic-bezier(.16, 1, .3, 1);
+  --p2io: cubic-bezier(.45, 0, .55, 1);
+  --back: cubic-bezier(.34, 1.56, .64, 1);
+  --back2: cubic-bezier(.26, 2.1, .52, 1);
+}
+
+/* ---------------- 进入视口 ---------------- */
+
+.js [data-reveal] {
+  opacity: 0;
+  translate: 0 28px;
+  transition: opacity .9s var(--expo), translate 1.1s var(--expo), rotate 1.1s var(--expo), scale 1s var(--expo);
+  transition-delay: calc(var(--d, 0) * 90ms);
+}
+.js [data-reveal="sheet"] { translate: 0 44px; rotate: -.6deg; }
+.js [data-reveal="pop"] { translate: 0 22px; scale: .92; transition-timing-function: var(--expo), var(--back), var(--expo), var(--back); }
+.js [data-reveal="left"] { translate: -24px 0; }
+.js [data-reveal="fade"] { translate: 0 0; }
+.js [data-reveal].is-in { opacity: 1; translate: 0 0; rotate: 0deg; scale: 1; }
+
+.js [data-stagger] > * {
+  opacity: 0;
+  translate: 0 18px;
+  transition: opacity .8s var(--expo), translate .9s var(--expo), scale .8s var(--back);
+  transition-delay: calc(var(--base, 160ms) + var(--i, 0) * 70ms);
+}
+.js [data-stagger="pop"] > * { translate: 0 22px; scale: .92; transition-timing-function: var(--expo), var(--back), var(--back); transition-delay: calc(var(--base, 100ms) + var(--i, 0) * 45ms); }
+.js [data-stagger="x"] > * { translate: 24px 0; }
+.js [data-stagger].is-in > * { opacity: 1; translate: 0 0; scale: 1; }
+
+/* 标题逐字从遮罩里升起；带下划线的关键词整体上浮，下划线随后画出 */
+.js [data-split] .sw { display: inline-block; overflow: clip; overflow-clip-margin: .14em; vertical-align: top; }
+.js [data-split] .sw > span { display: inline-block; translate: 0 112%; transition: translate 1s var(--expo); transition-delay: calc(100ms + var(--i, 0) * 38ms); }
+.js [data-split] .ul { opacity: 0; translate: 0 .5em; transition: opacity .9s var(--expo), translate 1s var(--expo); transition-delay: calc(100ms + var(--i, 0) * 38ms); }
+.js [data-split].is-in .sw > span { translate: 0 0; }
+.js [data-split].is-in .ul { opacity: 1; translate: 0 0; }
+
+/* 眉标：横线从 0 拉长，文字乱码后归位（由脚本完成） */
+.js .eyebrow__rule { scale: 0 1; transform-origin: left; transition: scale .9s var(--expo) .15s; }
+.js .is-in > .eyebrow__rule, .js .eyebrow.is-in .eyebrow__rule { scale: 1 1; }
+
+/* 手写批注：像笔从左往右写出来 */
+.js [data-write] { clip-path: inset(-30% 100% -30% -4%); transition: clip-path 1.2s var(--p2io); transition-delay: calc(var(--wd, 0) * 1ms + 250ms); }
+.js [data-write].is-in { clip-path: inset(-30% -6% -30% -4%); }
+.js .ann { clip-path: inset(-30% 100% -30% -30%); transition: clip-path .9s var(--p2io), opacity .4s, transform .6s var(--expo); }
+.js .ann--l { clip-path: inset(-30% -30% -30% 100%); }
+.js .ann.is-on { clip-path: inset(-30% -30% -30% -30%); }
+
+/* 印章：盖下去时先放大再回弹 */
+.js [data-stamp] { opacity: 0; scale: 1.9; rotate: -16deg; transition: opacity .25s, scale .55s var(--back2), rotate .55s var(--back2); transition-delay: var(--sd, .5s); }
+.js [data-stamp].is-in { opacity: 1; scale: 1; rotate: 0deg; }
+
+/* 首页大标题：逐行从遮罩里升起 */
+.js .display__line { overflow: clip; overflow-clip-margin: .3em; }
+.js .display__line > .dl-in { display: inline-block; translate: 0 130%; transition: translate 1.2s var(--expo); transition-delay: calc(150ms + var(--i, 0) * 120ms); }
+.js .hero.is-intro .display__line > .dl-in { translate: 0 0; }
+.js .hero .crayon .cr { opacity: 0; scale: .85; transform-box: fill-box; transform-origin: 50% 60%; transition: opacity .6s var(--expo), scale 1s var(--back); }
+.js .hero.is-intro .crayon .cr { opacity: 1; scale: 1; }
+.js .hero .crayon .cr--head { transition-delay: .35s; }
+.js .hero .crayon .cr--arc { transition-delay: .5s; }
+.js .hero .crayon .cr--bow { transition-delay: .75s; }
+.js .hero .crayon .cr--eyes { transition-delay: 1.1s; }
+.js .hero .crayon .cr--cat { transition-delay: .95s; }
+.js .hero .crayon__ink { opacity: 0; transition: opacity 1.2s var(--p2io) .6s; }
+.js .hero.is-intro .crayon__ink { opacity: 1; }
+
+/* 视差层只用 translate/rotate 独立属性，不和原有 transform 打架 */
+.hero__copy, .crayon, .doodle, .sheet__num, .tablet-stage__device { will-change: translate; }
+
+/* ---------------- 状态切换不闪现 ---------------- */
+
+.member { transition: border-color .3s, transform .4s var(--expo), opacity .6s var(--expo), translate .6s var(--expo); }
+.receipt__log li { transition: opacity .35s var(--expo), max-height .45s var(--expo), translate .45s var(--expo); max-height: 2em; }
+.receipt__log li.is-out { opacity: 0; max-height: 0; translate: 0 -6px; }
+.linkbox__out .tag { transition: opacity .35s var(--expo), translate .35s var(--expo); }
+.linkbox__out.is-out .tag { opacity: 0; translate: 0 -6px; }
+.dl-list { transition: opacity .45s var(--expo); }
+.dl-list.is-reset { opacity: 0; }
+.chain__flow { transition: opacity .35s var(--expo); }
+.chain.is-swap .chain__flow { opacity: 0; }
+.swap-text { display: inline-block; transition: opacity .25s var(--expo), translate .35s var(--expo), filter .35s; }
+.swap-text.is-out { opacity: 0; translate: 0 -.3em; filter: blur(2px); }
+.seg button { transition: background .35s var(--expo), color .35s var(--expo), box-shadow .35s; }
+.nav__links a { position: relative; text-decoration: none !important; }
+.nav__links a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 6px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 6'%3E%3Cpath d='M0 3 Q5 0 10 3 T20 3 T30 3 T40 3' fill='none' stroke='%23e0584a' stroke-width='1.4'/%3E%3C/svg%3E") 0 0 / 20px 6px repeat-x; scale: 0 1; transform-origin: left; transition: scale .6s var(--expo); }
+.nav__links a.is-on::after { scale: 1 1; }
+.route { transition: opacity .6s var(--expo), translate .8s var(--expo), visibility 0s; }
+.route.is-tucked { visibility: hidden; opacity: 0; translate: 28px 0; pointer-events: none; transition: opacity .45s var(--expo), translate .8s var(--expo), visibility 0s .45s; }
+.route__stops li a::before { transition: scale .5s var(--back), opacity .3s; }
+.route__stops li:not(.is-on) a::before { content: ""; position: absolute; left: 50%; top: 50%; width: 34px; height: 24px; margin: -12px 0 0 -17px; border: 1.5px solid var(--red); border-radius: 50%; rotate: -8deg; scale: .3; opacity: 0; }
+.src__index li a::before { content: ""; position: absolute; left: -2px; top: 0; bottom: 0; width: 2px; background: var(--c, var(--red)); scale: 1 0; transition: scale .5s var(--expo); }
+.src__index li.is-on a::before { scale: 1 1; }
+.src__index i, .src__index b { transition: color .4s var(--expo); }
+.src__progress { position: absolute; left: -2px; top: 0; width: 2px; height: 100%; background: var(--ink); transform-origin: top; scale: 1 0; opacity: .25; }
+.checklist em::before { transition: opacity .3s; }
+.stats__chart .bar { transition: y .8s var(--expo), height .8s var(--expo), opacity .5s var(--expo), x .6s var(--expo), width .6s var(--expo); }
+.ph-icon-swap { animation: iconSwap .42s var(--back); }
+@keyframes iconSwap { from { opacity: 0; scale: .55; rotate: -30deg; } }
+
+/* ---------------- 截图条：桌面端吸顶后随纵向滚动横移 ---------------- */
+
+.shots.is-pinned { padding: 0; }
+.shots.is-pinned .shots__pin { position: sticky; top: 0; display: flex; flex-direction: column; justify-content: center; height: 100vh; height: 100svh; overflow: hidden; }
+.shots.is-pinned .shots__strip { overflow: visible; scroll-snap-type: none; padding-right: 0; will-change: transform; }
+.shots.is-pinned .shot { transition: transform .8s var(--expo), translate .2s linear; }
+.shots__meter { display: none; }
+.shots.is-pinned .shots__meter { display: flex; align-items: center; gap: 14px; margin: 6px auto 0; width: min(420px, 70%); font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--ink-3); }
+.shots__meter i { position: relative; flex: 1; height: 1.5px; background: var(--rule-2); }
+.shots__meter i::after { content: ""; position: absolute; inset: 0; background: var(--ink); transform-origin: left; scale: var(--p, 0) 1; }
+
+/* ---------------- 主题开关：一根拉绳 ---------------- */
+
+.lamp {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--rule-2);
+  border-radius: 50%;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color .3s, background .5s;
+}
+.lamp:hover { border-color: var(--ink); }
+.lamp svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: rotate .7s var(--back); }
+.lamp .lamp__sun { opacity: 1; scale: 1; transition: opacity .4s, scale .6s var(--back); transform-origin: center; transform-box: fill-box; }
+.lamp .lamp__moon { opacity: 0; scale: .4; transition: opacity .4s, scale .6s var(--back); transform-origin: center; transform-box: fill-box; }
+[data-theme="dark"] .lamp svg { rotate: -40deg; }
+[data-theme="dark"] .lamp .lamp__sun { opacity: 0; scale: .4; }
+[data-theme="dark"] .lamp .lamp__moon { opacity: 1; scale: 1; }
+.lamp__cord { position: absolute; left: 50%; top: 100%; width: 1px; height: calc(8px + var(--pull, 0px)); background: var(--ink-3); transform-origin: top; rotate: var(--sway, 0deg); cursor: grab; touch-action: none; transition: height .7s cubic-bezier(.3, 1.9, .45, 1), rotate .9s cubic-bezier(.3, 1.9, .45, 1); }
+.lamp__cord::before { content: ""; position: absolute; left: -15px; right: -15px; top: -4px; bottom: -16px; }
+.lamp__cord::after { content: ""; position: absolute; left: -3px; bottom: -6px; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 1.5px var(--card); transition: scale .35s var(--back), background .25s, box-shadow .25s; }
+.lamp__cord.is-drag { cursor: grabbing; transition: none; }
+.lamp__cord.is-armed::after { scale: 1.4; background: #ffc35a; box-shadow: 0 0 0 1.5px var(--card), 0 0 12px 2px rgba(255, 190, 90, .55); }
+.lamp__cord.is-snap::after { animation: cordBead .5s var(--back); }
+@keyframes cordBead { 30% { scale: 1.5; } }
+.lamp:hover .lamp__cord:not(.is-drag) { animation: cordSway 1.6s ease-in-out; }
+@keyframes cordSway { 30% { rotate: 7deg; } 65% { rotate: -4deg; } }
+.lamp.is-pull .lamp__cord { height: 18px; transition-duration: .12s; }
+.nav__lang { display: inline-flex; flex: none; align-items: center; height: 34px; white-space: nowrap; padding: 0 11px; border: 1px solid var(--rule-2); border-radius: 999px; font-family: var(--mono); font-size: 11.5px; font-weight: 600; letter-spacing: .1em; text-decoration: none; color: var(--ink-2); transition: border-color .3s, color .3s; }
+.nav__lang:hover { border-color: var(--ink); color: var(--ink); }
+
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.is-theming, html.is-theming *:not(.lamp__cord) { transition-duration: 0s !important; }
+
+/* 分段选择：一块墨色滑块在选项之间滑动，而不是逐个闪亮 */
+.seg.has-ind { position: relative; isolation: isolate; }
+.seg.has-ind button { position: relative; z-index: 1; }
+.seg.has-ind button.is-on { background: transparent; }
+.seg__ind { position: absolute; top: 0; left: 0; z-index: 0; width: 0; height: 0; border-radius: 999px; background: var(--ink); pointer-events: none; transition: translate .55s var(--expo), width .55s var(--expo), height .55s var(--expo); }
+.seg__ind.is-jump { transition: none; }
+
+/* ==========================================================================
+   夜间纸张
+   ========================================================================== */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #15130f;
+  --paper-2: #1b1814;
+  --paper-3: #26221b;
+  --card: #1d1a16;
+  --ink: #ece4d6;
+  --ink-2: #c7bdac;
+  --ink-3: #91877a;
+  --ink-4: #5f584e;
+  --rule: rgba(236, 228, 214, .11);
+  --rule-2: rgba(236, 228, 214, .22);
+  --grid: rgba(236, 228, 214, .035);
+  --red: #f07a6b;
+  --amber: #f0b455;
+  --blue: #82a6f0;
+  --green: #7fc28e;
+  --violet: #ab90f2;
+  --pink: #ee89ae;
+  --teal: #62c3be;
+  --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 22px 44px -26px rgba(0, 0, 0, .85);
+}
+[data-theme="dark"] body {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .95 0 0 0 0 .86 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+}
+/* 台灯光晕跟着指针走 */
+.lamp-glow { position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0; transition: opacity .8s; background: radial-gradient(520px circle at var(--lx, 70%) var(--ly, 20%), rgba(255, 205, 140, .075), transparent 62%); }
+[data-theme="dark"] .lamp-glow { opacity: 1; }
+main, .footer, .nav, .menu { position: relative; z-index: 2; }
+.nav { position: fixed; z-index: 60; }
+.menu { position: fixed; z-index: 55; }
+
+[data-theme="dark"] code { background: rgba(236, 228, 214, .07); }
+[data-theme="dark"] .nav.is-solid { background: rgba(21, 19, 15, .86); }
+[data-theme="dark"] .btn--ink { box-shadow: 0 10px 24px -14px rgba(0, 0, 0, .9); }
+[data-theme="dark"] .code pre, [data-theme="dark"] .term { background: #0e0c09; border-color: var(--rule); }
+[data-theme="dark"] .sheet--lined { background: repeating-linear-gradient(180deg, transparent 0 31px, rgba(130, 166, 240, .09) 31px 32px), var(--card); background-position: 0 18px; }
+[data-theme="dark"] .sheet--grid {
+  background:
+    linear-gradient(rgba(98, 195, 190, .07) 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(90deg, rgba(98, 195, 190, .07) 1px, transparent 1px) 0 0 / 18px 18px,
+    #1a1915;
+}
+[data-theme="dark"] .ruby-fig, [data-theme="dark"] .sketch--folder, [data-theme="dark"] .src-sheet__fine { background: rgba(236, 228, 214, .035); }
+[data-theme="dark"] .member, [data-theme="dark"] .receipt { background: var(--card); box-shadow: 0 16px 30px -22px rgba(0, 0, 0, .9); }
+[data-theme="dark"] .widgets { background: radial-gradient(circle at 1px 1px, rgba(236, 228, 214, .1) 1px, transparent 1.4px) 0 0 / 18px 18px; }
+[data-theme="dark"] .widget img { filter: drop-shadow(0 12px 18px rgba(0, 0, 0, .55)); }
+[data-theme="dark"] .chain__box::before { box-shadow: 3px 3px 0 rgba(0, 0, 0, .35); }
+[data-theme="dark"] .devver:active { box-shadow: 1px 1px 0 rgba(0, 0, 0, .4); }
+/* 照片与车票仍是一张实物纸，放在深色桌面上 */
+[data-theme="dark"] .shot { background: #ebe4d6; box-shadow: 0 2px 4px rgba(0, 0, 0, .4), 0 26px 40px -24px rgba(0, 0, 0, .9); }
+[data-theme="dark"] .shot figcaption { color: #4c453c; }
+[data-theme="dark"] .ticket { filter: drop-shadow(0 26px 30px rgba(0, 0, 0, .6)) drop-shadow(0 4px 6px rgba(0, 0, 0, .35)); }
+[data-theme="dark"] .ticket .btn--ink { background: #1d1842; color: #f4f1ff; border-color: #1d1842; }
+[data-theme="dark"] .ticket .ticket__more, [data-theme="dark"] .ticket__sha { color: #1d1842; }
+[data-theme="dark"] .ticket code { background: rgba(29, 24, 66, .06); border-color: rgba(29, 24, 66, .14); color: #1d1842; }
+[data-theme="dark"] .tape { filter: brightness(.82) saturate(.9); }
+[data-theme="dark"] .crayon__ink use { stroke: #e9e1f3; }
+[data-theme="dark"] .crayon__art .cr--cat { fill: #1a1626; }
+[data-theme="dark"] .route__cat svg { --np-cat: #1a1626; --np-cat-line: #cbbcf2; }
+[data-theme="dark"] .nav__links a::after { filter: brightness(1.2); }
+[data-theme="dark"] .toast { background: var(--ink); color: var(--paper); }
+[data-theme="dark"] ::selection { background: rgba(240, 180, 85, .35); }
+
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal], .js [data-stagger] > *, .js [data-split] .sw > span, .js [data-split] .ul, .js [data-write], .js [data-stamp], .js .display__line > .dl-in, .js .hero .crayon .cr, .js .hero .crayon__ink {
+    opacity: 1 !important; translate: none !important; rotate: none !important; scale: none !important; clip-path: none !important; transition: none !important;
+  }
+}
+.np-fallback [data-reveal], .np-fallback [data-stagger] > *, .np-fallback [data-split] .sw > span, .np-fallback [data-split] .ul, .np-fallback [data-write], .np-fallback [data-stamp], .np-fallback .display__line > .dl-in, .np-fallback .hero .crayon .cr, .np-fallback .hero .crayon__ink {
+  opacity: 1 !important; translate: none !important; rotate: none !important; scale: none !important; clip-path: none !important;
+}
