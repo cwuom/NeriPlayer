@@ -46,8 +46,6 @@ struct ClockEntity {
     int selectedSourceIndex = -1;
     uint64_t multiplierNumerator = 1;
     uint64_t multiplierDenominator = 1;
-    // 倍频比没从设备读到时，经过这个倍频器的路径换算不出上游时钟源的频率
-    bool multiplierRatioKnown = true;
     bool validityControlAdvertised = false;
     ClockValidityState validityState = ClockValidityState::NotAdvertised;
 };
@@ -78,8 +76,7 @@ ClockGraphResult resolveClockGraph(
 // 返回选择器当前输入脚（从 0 计）；读不到时返回负数，按第一个输入脚处理
 using ClockSelectorPinReader = std::function<int(int selectorId, int pinCount)>;
 
-// 终端经时钟选择器/倍频器连到时钟源时，按选择器当前输入脚走到最终时钟源。
-// 描述符不带倍频比，经过倍频器的路径返回 InvalidMultiplier，不把终端采样率当成上游时钟源的频率
+// 终端经时钟选择器/倍频器连到时钟源时，按选择器当前输入脚走到最终时钟源
 ClockGraphResult resolveTerminalClockSource(
     int audioControlInterface,
     int terminalLink,

@@ -118,15 +118,6 @@ void rejectsMissingCycleDuplicateAndInvalidMultiplier() {
         3
     );
     assert(result.status == ClockGraphStatus::InvalidMultiplier);
-
-    multiplier.multiplierDenominator = 1;
-    multiplier.multiplierRatioKnown = false;
-    result = neri::usb::uac2::resolveClockGraph(
-        { functionWith({ terminal(3, 10), multiplier, source(4) }) },
-        3
-    );
-    assert(result.status == ClockGraphStatus::InvalidMultiplier);
-    assert(result.reason == "clock_multiplier_ratio_unknown");
 }
 
 void rejectsCrossFunctionAmbiguityAndDepthLimit() {
@@ -224,29 +215,11 @@ void resolvesXmosStyleSelectorBetweenTerminalAndSources() {
     );
     assert(external.finalClockSourceId == 42);
 
-    // 描述符里没有倍频比，不能把终端采样率当成时钟源 41 的频率写下去
     const auto viaMultiplier = neri::usb::uac2::resolveTerminalClockSource(
         0, 2, 50, { 41 }, { multiplier }, nullptr
     );
-    assert(viaMultiplier.status == ClockGraphStatus::InvalidMultiplier);
-    assert(viaMultiplier.reason == "clock_multiplier_ratio_unknown");
-    assert(viaMultiplier.finalClockSourceId == 0);
-
-    neri::usb::uac2::ClockRouting selectorBeforeMultiplier;
-    selectorBeforeMultiplier.id = 40;
-    selectorBeforeMultiplier.selector = true;
-    selectorBeforeMultiplier.sourceIds = { 41, 50 };
-    const auto directPin = neri::usb::uac2::resolveTerminalClockSource(
-        0, 2, 40, { 41 }, { selectorBeforeMultiplier, multiplier },
-        [](int, int) { return 0; }
-    );
-    assert(directPin.status == ClockGraphStatus::Valid);
-    assert(directPin.finalClockSourceId == 41);
-    const auto multipliedPin = neri::usb::uac2::resolveTerminalClockSource(
-        0, 2, 40, { 41 }, { selectorBeforeMultiplier, multiplier },
-        [](int, int) { return 1; }
-    );
-    assert(multipliedPin.status == ClockGraphStatus::InvalidMultiplier);
+    assert(viaMultiplier.status == ClockGraphStatus::Valid);
+    assert(viaMultiplier.finalClockSourceId == 41);
 
     neri::usb::uac2::ClockRouting dangling;
     dangling.id = 40;

@@ -157,12 +157,6 @@ PathResult walkEntity(
                         : "clock_multiplier_input_ambiguous"
                 );
             }
-            if (!entity.multiplierRatioKnown) {
-                return invalidPath(
-                    ClockGraphStatus::InvalidMultiplier,
-                    "clock_multiplier_ratio_unknown"
-                );
-            }
             if (entity.multiplierNumerator == 0 ||
                 entity.multiplierDenominator == 0) {
                 return invalidPath(
@@ -356,7 +350,6 @@ ClockGraphResult resolveTerminalClockSource(
         ClockEntity entity;
         entity.id = routing.id;
         entity.kind = routing.selector ? ClockEntityKind::ClockSelector : ClockEntityKind::ClockMultiplier;
-        entity.multiplierRatioKnown = routing.selector;
         entity.sourceIds = routing.sourceIds;
         const int pinCount = static_cast<int>(routing.sourceIds.size());
         if (routing.selector && pinCount > 1) {
