@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.ltw.mapping.ListenTogetherSongMapper
 import moe.ouom.neriplayer.data.ltw.playback.ListenTogetherPlaybackHost
 import moe.ouom.neriplayer.data.ltw.playback.ListenTogetherSoftSyncRecheckAction
 import moe.ouom.neriplayer.data.ltw.playback.expectedPositionMs
+import moe.ouom.neriplayer.data.ltw.playback.isReadyForListenTogetherSoftSync
 import moe.ouom.neriplayer.data.ltw.playback.resolveListenTogetherSoftSyncPlaybackRate
 import moe.ouom.neriplayer.data.ltw.playback.resolveListenTogetherSoftSyncRecheckAction
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
@@ -84,7 +85,7 @@ internal class ListenTogetherSoftSyncRateRecheckOwner(
             sessionConnected = currentSession.connectionState == ListenTogetherConnectionState.CONNECTED,
             isController = isController(currentSession),
             desiredPlaying = state?.playback?.state == "playing",
-            localPlaying = playback.isPlayingFlow.value,
+            localPlaying = playback.isReadyForListenTogetherSoftSync(),
             currentTrackMatchesRoom = currentTrackMatches(state),
             signedDriftMs = drift,
             softSyncMinDriftMs = config.minDriftMs,

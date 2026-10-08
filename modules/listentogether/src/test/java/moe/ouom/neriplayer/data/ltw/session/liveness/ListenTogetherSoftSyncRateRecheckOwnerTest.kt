@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.ltw.session.liveness
 
+import androidx.media3.common.Player
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -58,6 +59,24 @@ class ListenTogetherSoftSyncRateRecheckOwnerTest {
     }
 
     @Test
+    fun `usb exclusive output or an unready player ends an active rate correction`() = runTest {
+        val blockers = listOf<FakeListenTogetherPlaybackHost.() -> Unit>(
+            { usbExclusiveOutput = true },
+            { playerPlaybackStateFlow.value = Player.STATE_BUFFERING },
+            { pendingMediaLoad = true }
+        )
+        for (blocker in blockers) {
+            val f = Fixture(this)
+            f.player.blocker()
+            f.owner.reconcile()
+            advanceTimeBy(500); runCurrent()
+            assertEquals(1f, f.player.syncPlaybackRate)
+            assertTrue(f.applied.isEmpty())
+            f.owner.stop()
+        }
+    }
+
+    @Test
     fun `normal rate cancels a pending loop and rate normalization during wait stops without mutation`() = runTest {
         val f = Fixture(this)
         f.owner.reconcile()
@@ -77,6 +96,7 @@ class ListenTogetherSoftSyncRateRecheckOwnerTest {
         val player = FakeListenTogetherPlaybackHost().apply {
             currentSongFlow.value = testSong()
             isPlayingFlow.value = true
+            playerPlaybackStateFlow.value = Player.STATE_READY
             syncPlaybackRate = 1.02f
         }
         var room: ListenTogetherRoomState? = testRoom(playing = true, position = 1_600L)

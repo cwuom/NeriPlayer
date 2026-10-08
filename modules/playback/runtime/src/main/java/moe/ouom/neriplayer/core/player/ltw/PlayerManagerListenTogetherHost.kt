@@ -57,6 +57,7 @@ object PlayerManagerListenTogetherHost : ListenTogetherPlaybackHost {
     override fun currentListenTogetherShareableStreamUrls() = PlayerManager.currentListenTogetherShareableStreamUrls()
     override fun isPendingMediaLoadActive() = PlayerManager.isPendingMediaLoadActive()
     override fun isTransportActive() = PlayerManager.isTransportActive()
+    override fun isUsbExclusiveOutputEnabled() = PlayerManager.usbExclusivePlaybackEnabled
     override fun currentSong(): SongItem? = currentSongFlow.value
     override fun stableKey(song: SongItem): String? = with(PlayerListenTogetherSongMapper) { song.toListenTogetherTrackOrNull()?.stableKey }
     override fun playbackPositionMs(): Long = playbackPositionFlow.value
