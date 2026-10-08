@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -32,6 +33,11 @@ import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekE
 
 private enum class MiniPlayerSheet { Volume, ListenTogether, Queue }
 
+// 进度每秒多次更新，隐藏时不订阅，避免播放页打开期间持续重组底层迷你播放器
+@Composable
+internal fun playbackPositionWhileVisible(visible: Boolean, positionFlow: StateFlow<Long>): Long =
+    if (visible) positionFlow.collectAsStateWithLifecycle().value else positionFlow.value
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun rememberMiniPlayerTabletActions(
@@ -39,7 +45,7 @@ internal fun rememberMiniPlayerTabletActions(
     offlineMode: Boolean,
     onOpenCurrentPlaybackSource: (() -> Unit)?
 ): MiniPlayerTabletControls {
-    val position by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
+    val position = playbackPositionWhileVisible(visible, PlayerManager.playbackPositionFlow)
     val duration by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val shuffle by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
