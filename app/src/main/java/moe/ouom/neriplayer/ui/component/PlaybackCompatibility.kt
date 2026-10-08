@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.ui.component
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
 
 typealias NeriMiniPlayerDefaults = moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
 typealias PlaybackSourceType = moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
@@ -49,31 +48,6 @@ fun NeriMiniPlayer(
         visualCoverIdentityKey = visualCoverIdentityKey,
         hasCurrentSong = hasCurrentSong,
         tabletControls = tabletControls
-    )
-}
-
-@Composable
-fun PlaybackSoundSheet(
-    state: PlaybackSoundState,
-    onSpeedChange: (Float, Boolean) -> Unit,
-    onPitchChange: (Float, Boolean) -> Unit,
-    onLoudnessGainChange: (Int, Boolean) -> Unit,
-    onEqualizerEnabledChange: (Boolean) -> Unit,
-    onPresetSelected: (String) -> Unit,
-    onBandLevelChange: (Int, Int, Boolean) -> Unit,
-    onReset: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet(
-        state = state,
-        onSpeedChange = onSpeedChange,
-        onPitchChange = onPitchChange,
-        onLoudnessGainChange = onLoudnessGainChange,
-        onEqualizerEnabledChange = onEqualizerEnabledChange,
-        onPresetSelected = onPresetSelected,
-        onBandLevelChange = onBandLevelChange,
-        onReset = onReset,
-        onDismiss = onDismiss
     )
 }
 

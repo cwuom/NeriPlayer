@@ -67,7 +67,6 @@ import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
-import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
@@ -80,7 +79,6 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
-import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
@@ -332,8 +330,7 @@ internal enum class MoreOptionsPage {
     FONT_SIZE,
     EDIT_INFO,
     BILI_VIDEO_SKIP,
-    LISTEN_TOGETHER,
-    PLAYBACK_SOUND
+    LISTEN_TOGETHER
 }
 
 internal fun resolveMoreOptionsInitialPage(startWithLyricBehavior: Boolean): MoreOptionsPage =
@@ -451,28 +448,6 @@ private class MoreOptionsBiliSkipActions(
     val onDismiss: () -> Unit = { owner.open(MoreOptionsPage.MAIN) }
 }
 
-private class MoreOptionsPlaybackSoundActions(
-    private val viewModel: NowPlayingViewModel,
-    private val owner: MoreOptionsSheetOwner
-) {
-    val onSpeedChange: (Float, Boolean) -> Unit = { value, persist ->
-        viewModel.setPlaybackSpeed(value, persist)
-    }
-    val onPitchChange: (Float, Boolean) -> Unit = { value, persist ->
-        viewModel.setPlaybackPitch(value, persist)
-    }
-    val onLoudnessGainChange: (Int, Boolean) -> Unit = { value, persist ->
-        viewModel.setPlaybackLoudnessGain(value, persist)
-    }
-    val onEqualizerEnabledChange: (Boolean) -> Unit = viewModel::setPlaybackEqualizerEnabled
-    val onPresetSelected: (String) -> Unit = viewModel::selectPlaybackEqualizerPreset
-    val onBandLevelChange: (Int, Int, Boolean) -> Unit = { index, value, persist ->
-        viewModel.updatePlaybackEqualizerBandLevel(index, value, persist)
-    }
-    val onReset: () -> Unit = viewModel::resetPlaybackSoundSettings
-    val onDismiss: () -> Unit = { owner.open(MoreOptionsPage.MAIN) }
-}
-
 private class MoreOptionsFontScaleActions(
     lyricTarget: LyricFontScaleTarget,
     translationTarget: LyricFontScaleTarget,
@@ -494,7 +469,6 @@ private class MoreOptionsMainActions(
 ) {
     val onOpenSearch: () -> Unit = { owner.open(MoreOptionsPage.SEARCH) }
     val onOpenEditInfo: () -> Unit = { owner.open(MoreOptionsPage.EDIT_INFO) }
-    val onOpenPlaybackSound: () -> Unit = { owner.open(MoreOptionsPage.PLAYBACK_SOUND) }
     val onOpenLyricBehavior: () -> Unit = { owner.open(MoreOptionsPage.LYRIC_BEHAVIOR) }
     val onOpenFontSize: () -> Unit = { owner.open(MoreOptionsPage.FONT_SIZE) }
     val onOpenBiliVideoSkip: () -> Unit = { owner.open(MoreOptionsPage.BILI_VIDEO_SKIP) }
@@ -669,7 +643,6 @@ private fun MoreOptionsPages(
         targetState, viewModel, actualSong, displayedLyrics, displayedTranslatedLyrics,
         displayedRomanizedLyrics, snackbarHostState, offlineMode, owner
     )
-    MoreOptionsPlaybackSoundPage(targetState, viewModel, owner)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -1038,44 +1011,6 @@ private fun MoreOptionsEditInfoContent(
 }
 
 @Composable
-private fun MoreOptionsPlaybackSoundPage(
-    targetState: MoreOptionsPage,
-    viewModel: NowPlayingViewModel,
-    owner: MoreOptionsSheetOwner
-) {
-    if (targetState != MoreOptionsPage.PLAYBACK_SOUND) return
-    MoreOptionsPlaybackSoundState(viewModel, owner)
-}
-
-@Composable
-private fun MoreOptionsPlaybackSoundState(
-    viewModel: NowPlayingViewModel,
-    owner: MoreOptionsSheetOwner
-) {
-    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
-    val actions = MoreOptionsPlaybackSoundActions(viewModel, owner)
-    MoreOptionsPlaybackSoundContent(playbackSoundState, actions)
-}
-
-@Composable
-private fun MoreOptionsPlaybackSoundContent(
-    state: PlaybackSoundState,
-    actions: MoreOptionsPlaybackSoundActions
-) {
-    PlaybackSoundSheet(
-        state = state,
-        onSpeedChange = actions.onSpeedChange,
-        onPitchChange = actions.onPitchChange,
-        onLoudnessGainChange = actions.onLoudnessGainChange,
-        onEqualizerEnabledChange = actions.onEqualizerEnabledChange,
-        onPresetSelected = actions.onPresetSelected,
-        onBandLevelChange = actions.onBandLevelChange,
-        onReset = actions.onReset,
-        onDismiss = actions.onDismiss
-    )
-}
-
-@Composable
 private fun MoreOptionsMainPage(
     targetState: MoreOptionsPage,
     viewModel: NowPlayingViewModel,
@@ -1121,7 +1056,6 @@ private fun MoreOptionsMainPageContent(
         snackbarHostState = snackbarHostState,
         onOpenSearch = actions.onOpenSearch,
         onOpenEditInfo = actions.onOpenEditInfo,
-        onOpenPlaybackSound = actions.onOpenPlaybackSound,
         onOpenLyricBehavior = actions.onOpenLyricBehavior,
         onOpenFontSize = actions.onOpenFontSize,
         onOpenBiliVideoSkip = actions.onOpenBiliVideoSkip,

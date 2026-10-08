@@ -45,6 +45,21 @@ inline int isoPacketsPerTransfer(int intervalsPerSecond) {
     return std::min(scaledPackets, maxPacketsForShortHighSpeedTransfer);
 }
 
+// Explicit-feedback packet sizes are chosen when each request is filled, so a
+// request may span several feedback periods. Size requests by duration like
+// the high-speed adaptive path: one-interval requests left only ~16 ms queued
+// at 8000 intervals/s, and any event-thread delay beyond that starved the DAC.
+constexpr int kMinimumExplicitFeedbackPacketsPerTransfer = 8;
+
+inline int explicitFeedbackPacketsPerTransfer(int intervalsPerSecond) {
+    const int64_t normalizedIntervals = std::max(1, intervalsPerSecond);
+    return static_cast<int>(std::clamp<int64_t>(
+        (normalizedIntervals * kMaximumHighSpeedIsoTransferDurationMs) / 1000,
+        kMinimumExplicitFeedbackPacketsPerTransfer,
+        kMaximumIsoPacketsPerTransfer
+    ));
+}
+
 inline int isoTransferCountForDuration(
     int intervalsPerSecond,
     int packetsPerTransfer,

@@ -52,7 +52,7 @@ class UsbExclusivePcmWriterTest {
         port.acceptedBytes = 3
         val writer = UsbExclusivePcmWriter(port) {}
         writer.prepareDirectScratch()
-        writer.configureSoftwareFloatInput(usingNative = true, pcmEncoding = C.ENCODING_PCM_FLOAT)
+        writer.configureSoftwareFloatInput(usingNative = true, pcmEncoding = C.ENCODING_PCM_FLOAT, inputSampleRate = 48_000)
         val source = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
             .putFloat(1f).putFloat(-1f)
         source.flip()
@@ -65,7 +65,48 @@ class UsbExclusivePcmWriterTest {
         assertEquals(4, consumed)
         assertEquals(0, source.position())
         assertEquals(6, port.lastBytes.size)
-        assertEquals(listOf<Byte>(-1, -1, 127, 1, 0, -128), port.lastBytes)
+        assertEquals(listOf<Byte>(-1, -1, 127, 0, 0, -128), port.lastBytes)
+    }
+
+    @Test
+    fun `float input decoded from 24 bit PCM converts back bit exactly`() {
+        val port = FakePcmWritePort(outputDescription = "rate=96000 channels=1 bits=24 subslot=3")
+        port.acceptedBytes = 9
+        val writer = UsbExclusivePcmWriter(port) {}
+        writer.prepareDirectScratch()
+        writer.configureSoftwareFloatInput(usingNative = true, pcmEncoding = C.ENCODING_PCM_FLOAT, inputSampleRate = 96_000)
+        val samples = listOf(0x7FFFFE, -0x400001, 0x123456)
+        val source = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN)
+        samples.forEach { source.putFloat(it / 8_388_608f) }
+        source.flip()
+
+        writer.writeNative(source, 12, 1f, snapshot(channelCount = 1, frameBytes = 4, pcmEncoding = C.ENCODING_PCM_FLOAT))
+
+        val expected = samples.flatMap { value ->
+            listOf(value.toByte(), (value shr 8).toByte(), (value shr 16).toByte())
+        }
+        assertEquals(expected, port.lastBytes)
+    }
+
+    @Test
+    fun `resampled float input is written natively without software conversion`() {
+        val port = FakePcmWritePort(outputDescription = "rate=48000 channels=2 bits=16 subslot=2")
+        val writer = UsbExclusivePcmWriter(port) {}
+        writer.prepareDirectScratch()
+        writer.configureSoftwareFloatInput(usingNative = true, pcmEncoding = C.ENCODING_PCM_FLOAT, inputSampleRate = 192_000)
+        val source = ByteBuffer.allocateDirect(16).order(ByteOrder.LITTLE_ENDIAN)
+            .putFloat(0.5f).putFloat(-0.5f).putFloat(0.25f).putFloat(-0.25f)
+        source.flip()
+
+        val consumed = writer.writeNative(
+            source, 16, 1f,
+            snapshot(frameBytes = 8, pcmEncoding = C.ENCODING_PCM_FLOAT)
+        )
+
+        assertEquals(16, consumed)
+        assertTrue(port.lastBufferWasDirect)
+        assertEquals(16, port.lastBytes.size)
+        assertEquals(0, port.lastOffset)
     }
 
     @Test
@@ -77,7 +118,7 @@ class UsbExclusivePcmWriterTest {
             val port = FakePcmWritePort(outputDescription = description)
             val writer = UsbExclusivePcmWriter(port) {}
             writer.prepareDirectScratch()
-            writer.configureSoftwareFloatInput(true, C.ENCODING_PCM_FLOAT)
+            writer.configureSoftwareFloatInput(true, C.ENCODING_PCM_FLOAT, 48_000)
             val source = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(1f)
             source.flip()
 
@@ -93,7 +134,7 @@ class UsbExclusivePcmWriterTest {
     fun `float conversion rejects invalid frames and unavailable scratch`() {
         val port = FakePcmWritePort(outputDescription = "rate=48000 channels=1 bits=16 subslot=2")
         val writer = UsbExclusivePcmWriter(port) {}
-        writer.configureSoftwareFloatInput(true, C.ENCODING_PCM_FLOAT)
+        writer.configureSoftwareFloatInput(true, C.ENCODING_PCM_FLOAT, 48_000)
         val source = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(1f)
         source.flip()
         val floatState = snapshot(channelCount = 1, frameBytes = 4, pcmEncoding = C.ENCODING_PCM_FLOAT)
@@ -133,6 +174,61 @@ class UsbExclusivePcmWriterTest {
         assertEquals(12_288, size)
         assertEquals(1, port.runtimeReads)
         assertEquals(1, port.freeReads)
+    }
+
+    @Test
+    fun `write planning follows a refreshed runtime report`() {
+        val port = FakePcmWritePort()
+        port.report = "source=player_pcm sampleRate=48000 channels=2 subslotBytes=2 " +
+            "transferBytes=3072 pcmLevel=0/288000 pcmFreeBytes=288000 " +
+            "running=true transportFailed=false lastError=none"
+        port.liveFreeBytes = 288_000L
+        val writer = UsbExclusivePcmWriter(port) {}
+
+        assertEquals(12_288, writer.writeSize(65_536, directBuffer = true, snapshot()))
+        assertEquals(12_288, writer.writeSize(65_536, directBuffer = true, snapshot()))
+        port.report = port.report.replace("transferBytes=3072", "transferBytes=1024")
+        assertEquals(4_096, writer.writeSize(65_536, directBuffer = true, snapshot()))
+    }
+
+    @Test
+    fun `running transport fills the queue to its waterline in one buffer callback`() {
+        val port = FakePcmWritePort()
+        port.report = "source=player_pcm sampleRate=48000 channels=2 subslotBytes=2 " +
+            "transferBytes=3072 pcmLevel=0/288000 pcmFreeBytes=288000 " +
+            "running=true transportFailed=false lastError=none"
+        port.liveFreeBytes = 288_000L
+        port.consumeFreeBytesOnWrite = true
+        val writer = UsbExclusivePcmWriter(port) {}
+        val source = ByteBuffer.allocateDirect(192_000)
+        val state = snapshot(runningQueueTargetMs = 750L)
+
+        val first = writer.writeSize(source.remaining(), directBuffer = true, state)
+        val written = writer.writeNativeUntilQueueTarget(source, first, 1f, state)
+
+        assertEquals(144_000, written)
+        assertEquals(0, source.position())
+        assertEquals(12, port.writes)
+        assertEquals(144_000 - 8_832, port.lastOffset)
+    }
+
+    @Test
+    fun `queue top up waits for the transport and stops when native accepts nothing`() {
+        val port = FakePcmWritePort()
+        port.report = "source=player_pcm sampleRate=48000 channels=2 subslotBytes=2 " +
+            "transferBytes=3072 pcmLevel=0/288000 pcmFreeBytes=288000 " +
+            "running=true transportFailed=false lastError=none"
+        port.liveFreeBytes = 288_000L
+        port.consumeFreeBytesOnWrite = true
+        val writer = UsbExclusivePcmWriter(port) {}
+        val source = ByteBuffer.allocateDirect(192_000)
+
+        assertEquals(12_288, writer.writeNativeUntilQueueTarget(source, 12_288, 1f, snapshot(transportStarted = false)))
+        assertEquals(1, port.writes)
+
+        port.acceptedBytes = 0
+        assertEquals(0, writer.writeNativeUntilQueueTarget(source, 12_288, 1f, snapshot(runningQueueTargetMs = 750L)))
+        assertEquals(2, port.writes)
     }
 
     @Test
@@ -291,17 +387,20 @@ class UsbExclusivePcmWriterTest {
         frameBytes: Int = 4,
         pcmEncoding: Int = C.ENCODING_PCM_16BIT,
         playing: Boolean = true,
+        transportStarted: Boolean = true,
+        runningQueueTargetMs: Long? = null,
     ) = UsbExclusiveNativeWriteSnapshot(
         handle = handle,
         sampleRate = 48_000,
         frameBytes = frameBytes,
         channelCount = channelCount,
         pcmEncoding = pcmEncoding,
-        transportStarted = true,
+        transportStarted = transportStarted,
         playing = playing,
         usingNative = true,
         hasQueuedPcm = true,
         prerollMs = 300L,
+        runningQueueTargetMs = runningQueueTargetMs,
     )
 
     private fun backpressureReport(completedTransfers: Int): String =
@@ -324,15 +423,20 @@ class UsbExclusivePcmWriterTest {
         var lastOffset = -1
         var lastBufferWasDirect = false
         var lastBytes = emptyList<Byte>()
+        var consumeFreeBytesOnWrite = false
+        var writes = 0
 
         override fun write(handle: Long, buffer: ByteBuffer, offset: Int, size: Int, volume: Float): Int {
+            writes += 1
             lastOffset = offset
             lastBufferWasDirect = buffer.isDirect
             val copy = buffer.duplicate()
             copy.position(offset)
             copy.limit(offset + size)
             lastBytes = ByteArray(size).also { copy.get(it) }.toList()
-            return acceptedBytes ?: size
+            val accepted = acceptedBytes ?: size
+            if (consumeFreeBytesOnWrite) liveFreeBytes = liveFreeBytes?.minus(accepted)
+            return accepted
         }
 
         override fun runtimeReport(handle: Long): String {

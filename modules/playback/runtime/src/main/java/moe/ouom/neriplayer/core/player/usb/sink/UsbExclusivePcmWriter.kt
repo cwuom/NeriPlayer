@@ -16,6 +16,7 @@ import kotlin.math.max
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatSampleForNativePipeline
+import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatToPcmInt
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
@@ -33,6 +34,7 @@ internal data class UsbExclusiveNativeWriteSnapshot(
     val usingNative: Boolean,
     val hasQueuedPcm: Boolean,
     val prerollMs: Long,
+    val runningQueueTargetMs: Long? = null,
 )
 
 internal data class UsbExclusiveBackpressureObservation(
@@ -79,6 +81,7 @@ internal class UsbExclusivePcmWriter(
 ) {
     private companion object {
         const val DIRECT_SCRATCH_CAPACITY_BYTES = 256 * 1024
+        const val MAX_WRITE_CHUNKS_PER_BUFFER = 16
         const val BACKPRESSURE_REFRESH_INTERVAL_MS = 250L
         const val BACKPRESSURE_PARK_MAX_US = 4_000L
         const val BACKPRESSURE_LOG_INTERVAL_MS = 2_000L
@@ -87,12 +90,15 @@ internal class UsbExclusivePcmWriter(
     }
 
     private var directScratch: ByteBuffer? = null
+    private var planningReport: String? = null
+    private var planningMetrics: UsbExclusiveRuntimeMetrics? = null
     private var softwareFloatInputFormat: PreparedUsbInputPcmFormat? = null
     private var softwareFloatConversionLogged = false
     private var lastNativeBackpressureRefreshAtMs = 0L
     private var lastNativeBackpressureLogAtMs = 0L
     private var nativeBackpressureStartedAtMs = 0L
     private var nativeBackpressureCompletedTransfersBaseline = -1L
+    private val underrunWaterline = UsbExclusiveUnderrunWaterline()
 
     fun prepareDirectScratch() {
         if (directScratch?.capacity() == DIRECT_SCRATCH_CAPACITY_BYTES) return
@@ -110,21 +116,49 @@ internal class UsbExclusivePcmWriter(
         resetBackpressureObservation()
     }
 
-    fun configureSoftwareFloatInput(usingNative: Boolean, pcmEncoding: Int) {
-        if (!usingNative || pcmEncoding != C.ENCODING_PCM_FLOAT) {
-            clearSoftwareFloatConversionState()
-            return
+    fun configureSoftwareFloatInput(usingNative: Boolean, pcmEncoding: Int, inputSampleRate: Int) {
+        softwareFloatInputFormat = if (usingNative && pcmEncoding == C.ENCODING_PCM_FLOAT) {
+            softwareFloatTarget(inputSampleRate)
+        } else {
+            null
         }
-        softwareFloatInputFormat = UsbExclusiveOutputFormatResolver.preparedInputPcmFormat(
-            inputEncoding = pcmEncoding,
-            outputDescription = port.outputFormat(),
-        )
         softwareFloatConversionLogged = false
     }
+
+    private fun softwareFloatTarget(inputSampleRate: Int): PreparedUsbInputPcmFormat? =
+        UsbExclusiveOutputFormatResolver.preparedInputPcmFormat(
+            inputEncoding = C.ENCODING_PCM_FLOAT,
+            outputDescription = port.outputFormat(),
+            inputSampleRate = inputSampleRate,
+        )?.takeUnless { it.encoding == C.ENCODING_PCM_FLOAT }
 
     fun clearSoftwareFloatConversionState() {
         softwareFloatInputFormat = null
         softwareFloatConversionLogged = false
+    }
+
+    /**
+     * 传输已在跑时一次回调写到水位：动态调度下播放线程按上报缓冲休眠，
+     * 每次醒来只写一块会长期慢于实时（192 kHz 浮点源一块约 20 ms），环被抽干后补零断流
+     */
+    fun writeNativeUntilQueueTarget(
+        buffer: ByteBuffer,
+        firstWriteSize: Int,
+        nativeVolume: Float,
+        state: UsbExclusiveNativeWriteSnapshot,
+    ): Int {
+        val remaining = buffer.remaining()
+        var written = writeNative(buffer, firstWriteSize, nativeVolume, state)
+        var chunks = 1
+        while (state.transportStarted && written in 1 until remaining && chunks < MAX_WRITE_CHUNKS_PER_BUFFER) {
+            val chunk = buffer.duplicate().apply { position(position() + written) }
+            val size = writeSize(remaining - written, chunk.isDirect, state)
+            val chunkWritten = if (size > 0) writeNative(chunk, size, nativeVolume, state) else 0
+            if (chunkWritten <= 0) break
+            written += chunkWritten
+            chunks += 1
+        }
+        return written
     }
 
     fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float, state: UsbExclusiveNativeWriteSnapshot): Int {
@@ -200,19 +234,18 @@ internal class UsbExclusivePcmWriter(
 
     private fun putConvertedFloat(output: ByteBuffer, sample: Float, encoding: Int): Boolean = when (encoding) {
         C.ENCODING_PCM_16BIT -> {
-            output.putShort((sample * Short.MAX_VALUE).toInt()
-                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+            output.putShort(usbExclusiveFloatToPcmInt(sample, 16).toShort())
             true
         }
         C.ENCODING_PCM_24BIT -> {
-            val value = (sample * 8_388_607f).toInt()
+            val value = usbExclusiveFloatToPcmInt(sample, 24)
             output.put((value and 0xFF).toByte())
             output.put(((value shr 8) and 0xFF).toByte())
             output.put(((value shr 16) and 0xFF).toByte())
             true
         }
         C.ENCODING_PCM_32BIT -> {
-            output.putInt((sample * Int.MAX_VALUE.toFloat()).toInt())
+            output.putInt(usbExclusiveFloatToPcmInt(sample, 32))
             true
         }
         else -> false
@@ -262,9 +295,19 @@ internal class UsbExclusivePcmWriter(
     }
 
     private fun currentWritePlanningMetrics(handle: Long): UsbExclusiveRuntimeMetrics {
-        val metrics = port.runtimeReport(handle).usbRuntimeMetrics()
+        val metrics = parsedPlanningMetrics(port.runtimeReport(handle))
         val liveFreeBytes = port.freeBytes(handle) ?: return metrics
         return metrics.withLivePcmFreeBytes(liveFreeBytes)
+    }
+
+    /** 报告只在刷新时换新字符串，一次回调内多次补写复用同一份解析结果 */
+    private fun parsedPlanningMetrics(report: String): UsbExclusiveRuntimeMetrics {
+        val cached = planningMetrics
+        if (cached != null && report === planningReport) return cached
+        return report.usbRuntimeMetrics().also {
+            planningReport = report
+            planningMetrics = it
+        }
     }
 
     private fun planWriteSize(
@@ -279,7 +322,23 @@ internal class UsbExclusivePcmWriter(
         playing = state.playing,
         prerollMs = state.prerollMs,
         metrics = metrics,
+        runningQueueTargetMs = adaptiveQueueTargetMs(metrics, state),
     )
+
+    fun currentQueueTargetMs(baseTargetMs: Long): Long = baseTargetMs shl underrunWaterline.boostShift
+
+    private fun adaptiveQueueTargetMs(metrics: UsbExclusiveRuntimeMetrics, state: UsbExclusiveNativeWriteSnapshot): Long? {
+        val previousShift = underrunWaterline.boostShift
+        val target = underrunWaterline.targetMs(state.runningQueueTargetMs, metrics.playerZeroFillBytes, port.elapsedRealtimeMs())
+        if (underrunWaterline.boostShift != previousShift) {
+            NPLogger.i(
+                "NERI-UsbExclusive",
+                "underrun waterline boost=${underrunWaterline.boostShift} targetMs=$target " +
+                    "zeroFillBytes=${metrics.playerZeroFillBytes}"
+            )
+        }
+        return target
+    }
 
     private fun alignToInputFrame(size: Int, frameBytes: Int): Int {
         if (size <= 0 || frameBytes <= 1) return size.coerceAtLeast(0)

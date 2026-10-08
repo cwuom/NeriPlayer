@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
+import android.media.AudioDeviceInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -78,31 +79,29 @@ class UsbExclusiveBackgroundAudioAnchorPolicyTest {
         assertTrue(
             shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
                 transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
-                builtInOutputRequested = true,
-                routedToRequestedBuiltInOutput = true
+                routedToBuiltInOutput = true
             )
         )
         assertFalse(
             shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
                 transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.StaticLoop,
-                builtInOutputRequested = true,
-                routedToRequestedBuiltInOutput = true
+                routedToBuiltInOutput = true
             )
         )
         assertFalse(
             shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
                 transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
-                builtInOutputRequested = false,
-                routedToRequestedBuiltInOutput = true
+                routedToBuiltInOutput = false
             )
         )
-        assertFalse(
-            shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
-                transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
-                builtInOutputRequested = true,
-                routedToRequestedBuiltInOutput = false
-            )
-        )
+    }
+
+    @Test
+    fun `only the built in speaker counts as a carrier route`() {
+        assertTrue(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER))
+        assertFalse(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(AudioDeviceInfo.TYPE_USB_HEADSET))
+        assertFalse(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(AudioDeviceInfo.TYPE_USB_DEVICE))
+        assertFalse(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(null))
     }
 
     @Test

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "libusb/libusb.h"
+#include "usb/control/usb_feature_unit.h"
 #include "usb/exclusive/usb_exclusive_device_selection.h"
 #include "usb/exclusive/usb_player_replay_buffer.h"
 #include "usb/exclusive/usb_player_startup_preroll.h"
@@ -36,6 +37,12 @@ struct TransferUserData {
     uint64_t playerSequence = 0;
     uint64_t generation = 0;
     bool forceSilence = false;
+};
+
+/** 打开时改写过的硬件静音/音量，关闭时原样写回 */
+struct FeatureUnitRestoreEntry {
+    neri::usb::control::FeatureUnitControl control;
+    int16_t value = 0;
 };
 
 struct UsbDeviceState {
@@ -156,9 +163,23 @@ struct UsbRecoveryState {
     neri::usb::UsbRecoveryActionLatch recoveryActionLatch;
 };
 
+/** 硬件静音/音量与音量键调节共用 EP0，单独加锁，不和 PCM 写入抢 apiLock */
+struct UsbFeatureUnitState {
+    std::mutex lock;
+    bool active = false;
+    int interfaceNumber = -1;
+    std::vector<FeatureUnitRestoreEntry> restore;
+    std::vector<neri::usb::control::FeatureUnitVolume> hardwareVolume;
+    std::vector<neri::usb::control::FeatureUnitControl> hardwareMute;
+    float appliedFraction = 1.0f;
+    bool mutedForVolume = false;
+    std::string status = "not_attempted";
+};
+
 struct UsbExclusiveHandle {
     std::mutex apiLock;
     UsbDeviceState device;
+    UsbFeatureUnitState featureUnits;
     UsbTransferState transfer;
     UsbPlayerState player;
     UsbRecoveryState recovery;

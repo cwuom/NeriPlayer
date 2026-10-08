@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.usb.route
 import kotlinx.coroutines.Job
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBufferProfile
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import org.junit.Assert.assertFalse
@@ -17,6 +18,17 @@ class UsbPlaybackRoutePolicyTest {
         val previous = UsbExclusivePreferences()
         assertFalse(previous.requiresRouteReconfiguration(previous.copy(bufferProfile = UsbExclusiveBufferProfile.LOW_LATENCY)))
         assertTrue(previous.requiresRouteReconfiguration(previous.copy(selectedDeviceKey = "new-device")))
+    }
+
+    @Test
+    fun `bit perfect rebuilds the route only when it changes the requested format`() {
+        val followSource = UsbExclusivePreferences()
+        assertFalse(followSource.requiresRouteReconfiguration(followSource.copy(bitPerfect = true)))
+
+        val fixedRate = UsbExclusivePreferences(sampleRateMode = UsbExclusiveSampleRateMode.RATE_96000)
+        assertTrue(fixedRate.requiresRouteReconfiguration(fixedRate.copy(bitPerfect = true)))
+        val bitPerfect = fixedRate.copy(bitPerfect = true)
+        assertFalse(bitPerfect.requiresRouteReconfiguration(bitPerfect.copy(sampleRateMode = UsbExclusiveSampleRateMode.RATE_48000)))
     }
 
     @Test

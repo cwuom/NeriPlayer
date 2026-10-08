@@ -325,6 +325,42 @@ ClockGraphResult resolveClockGraph(
     return result;
 }
 
+ClockGraphResult resolveTerminalClockSource(
+    int audioControlInterface,
+    int terminalLink,
+    int terminalClockId,
+    const std::vector<int>& clockSourceIds,
+    const std::vector<ClockRouting>& routings,
+    const ClockSelectorPinReader& readSelectorPin
+) {
+    AudioFunctionClockGraph function;
+    function.audioControlInterface = audioControlInterface;
+    ClockEntity terminal;
+    terminal.id = terminalLink;
+    terminal.kind = ClockEntityKind::Terminal;
+    terminal.sourceIds.push_back(terminalClockId);
+    function.entities.push_back(terminal);
+    for (const int sourceId : clockSourceIds) {
+        ClockEntity source;
+        source.id = sourceId;
+        source.kind = ClockEntityKind::ClockSource;
+        function.entities.push_back(source);
+    }
+    for (const ClockRouting& routing : routings) {
+        ClockEntity entity;
+        entity.id = routing.id;
+        entity.kind = routing.selector ? ClockEntityKind::ClockSelector : ClockEntityKind::ClockMultiplier;
+        entity.sourceIds = routing.sourceIds;
+        const int pinCount = static_cast<int>(routing.sourceIds.size());
+        if (routing.selector && pinCount > 1) {
+            const int pin = readSelectorPin ? readSelectorPin(routing.id, pinCount) : -1;
+            entity.selectedSourceIndex = pin >= 0 && pin < pinCount ? pin : 0;
+        }
+        function.entities.push_back(entity);
+    }
+    return resolveClockGraph({ function }, terminalLink);
+}
+
 const char* clockGraphStatusName(ClockGraphStatus status) {
     switch (status) {
         case ClockGraphStatus::Valid:

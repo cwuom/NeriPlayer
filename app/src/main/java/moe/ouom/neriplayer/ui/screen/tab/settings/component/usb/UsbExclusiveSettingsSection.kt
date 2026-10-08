@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +47,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
+import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -84,6 +87,8 @@ internal fun UsbExclusiveSettingsSection(
     onForegroundBufferMsChange: (Int) -> Unit,
     onBackgroundBufferMsChange: (Int) -> Unit,
     onVolumeRiskThresholdDbfsChange: (Int) -> Unit,
+    floatingKeepAliveEnabled: Boolean,
+    onFloatingKeepAliveChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current.applicationContext
@@ -121,10 +126,13 @@ internal fun UsbExclusiveSettingsSection(
             UsbExclusiveStatusContent(
                 enabled = usbExclusivePlayback,
                 snapshot = snapshot,
-                nativeState = nativeState
+                nativeState = nativeState,
+                bitPerfect = preferences.bitPerfect
             )
             SettingsDivider()
             UsbExclusiveBackgroundBehaviorItem()
+            SettingsDivider()
+            UsbExclusiveFloatingKeepAliveItem(floatingKeepAliveEnabled, onFloatingKeepAliveChange)
         }
 
         MiuixSettingsSectionCard {
@@ -215,7 +223,8 @@ private fun UsbExclusiveMasterSwitch(
 private fun UsbExclusiveStatusContent(
     enabled: Boolean,
     snapshot: UsbExclusiveDiagnosticsSnapshot,
-    nativeState: UsbExclusiveNativeState
+    nativeState: UsbExclusiveNativeState,
+    bitPerfect: Boolean
 ) {
     val status = resolveUsbStatus(enabled, snapshot, nativeState)
     StatusBanner(status)
@@ -239,16 +248,22 @@ private fun UsbExclusiveStatusContent(
             }
         )
     )
-    UsbExclusiveRuntimeSummary(snapshot, nativeState)
+    UsbExclusiveRuntimeSummary(snapshot, nativeState, bitPerfect)
 }
 
 @Composable
 private fun UsbExclusiveRuntimeSummary(
     snapshot: UsbExclusiveDiagnosticsSnapshot,
-    nativeState: UsbExclusiveNativeState
+    nativeState: UsbExclusiveNativeState,
+    bitPerfect: Boolean
 ) {
     val inputSummary = summarizeInputFormat(snapshot.inputFormat)
     val outputSummary = summarizeNativeOutput(nativeState, snapshot.nativeExclusiveRuntime)
+    val bitPerfectStatus = resolveUsbBitPerfectStatus(
+        bitPerfect = bitPerfect,
+        inputFormat = snapshot.inputFormat,
+        outputFormat = nativeState.outputFormat
+    ).takeIf { snapshot.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB }
     val bufferSummary = summarizeNativeBuffer(snapshot.nativeExclusiveRuntime, nativeState)
     val rawError = if (snapshot.usbExclusivePlaybackEnabled) {
         snapshot.fallbackReason
@@ -270,6 +285,13 @@ private fun UsbExclusiveRuntimeSummary(
         SettingsInfoItem(
             title = stringResource(CoreCommonR.string.settings_usb_exclusive_output_format),
             value = outputSummary
+        )
+    }
+    if (bitPerfectStatus != null) {
+        SettingsDivider()
+        SettingsInfoItem(
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_bit_perfect_status),
+            value = usbBitPerfectStatusLabel(bitPerfectStatus)
         )
     }
     if (bufferSummary != null) {
@@ -335,6 +357,55 @@ private fun UsbExclusiveBackgroundBehaviorItem() {
             }
         } else {
             null
+        },
+        colors = transparentListItemColors()
+    )
+}
+
+@Composable
+private fun UsbExclusiveFloatingKeepAliveItem(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    val context = LocalContext.current.applicationContext
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var permitted by remember(context) { mutableStateOf(FloatingLyricsOverlayManager.hasOverlayPermission(context)) }
+    // 从系统授权页返回后重新读取权限
+    LaunchedEffect(context, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            permitted = FloatingLyricsOverlayManager.hasOverlayPermission(context)
+        }
+    }
+    val toggle: (Boolean) -> Unit = { next ->
+        onEnabledChange(next)
+        if (next && !permitted) FloatingLyricsOverlayManager.openOverlayPermissionSettings(context)
+    }
+    ListItem(
+        modifier = Modifier.settingsItemClickable { toggle(!enabled) },
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.PictureInPictureAlt,
+                contentDescription = stringResource(CoreCommonR.string.settings_usb_exclusive_floating_keep_alive),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(stringResource(CoreCommonR.string.settings_usb_exclusive_floating_keep_alive))
+        },
+        supportingContent = {
+            Text(
+                stringResource(
+                    if (enabled && !permitted) {
+                        CoreCommonR.string.settings_usb_exclusive_floating_keep_alive_permission
+                    } else {
+                        CoreCommonR.string.settings_usb_exclusive_floating_keep_alive_desc
+                    }
+                )
+            )
+        },
+        trailingContent = {
+            MiuixSettingsSwitch(checked = enabled, onCheckedChange = toggle)
         },
         colors = transparentListItemColors()
     )
@@ -529,11 +600,6 @@ private fun joinUsbFormatParts(vararg parts: String?): String? {
     return parts.filterNotNull()
         .takeIf { it.isNotEmpty() }
         ?.joinToString(separator = " · ")
-}
-
-private fun String.valueAfter(key: String): String? {
-    val regex = Regex("(?:^|\\s)${Regex.escape(key)}=([^\\s]+)")
-    return regex.find(this)?.groupValues?.getOrNull(1)
 }
 
 @Composable

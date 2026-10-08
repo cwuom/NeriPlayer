@@ -11,6 +11,7 @@
 #include "usb/exclusive/usb_streaming_sync_policy.h"
 #include "usb/feedback/usb_feedback_rate_math.h"
 #include "usb/iso/usb_iso_transfer_window.h"
+#include "usb/uac2/usb_uac2_clock_graph.h"
 
 #define LOG_TAG "NeriUsbExclusive"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -40,6 +41,9 @@ constexpr auto kLibusbIsoUsageFeedback =
     static_cast<int>(LIBUSB_ISO_USAGE_TYPE_FEEDBACK);
 constexpr auto kLibusbIsoUsageImplicit =
     static_cast<int>(LIBUSB_ISO_USAGE_TYPE_IMPLICIT);
+constexpr auto kLibusbIsoUsageData =
+    static_cast<int>(LIBUSB_ISO_USAGE_TYPE_DATA);
+constexpr uint8_t kUac1AudioEndpointDescriptorLength = 9;
 constexpr auto kLibusbIsoSyncTypeAdaptive =
     static_cast<int>(LIBUSB_ISO_SYNC_TYPE_ADAPTIVE);
 constexpr auto kLibusbIsoSyncTypeSynchronous =
@@ -379,7 +383,8 @@ neri::usb::uac2::EndpointSnapshot makeUac2EndpointSnapshot(
     int configurationValue,
     const libusb_interface_descriptor& alt,
     const libusb_endpoint_descriptor& endpoint,
-    int effectiveMaxPacketBytes
+    int effectiveMaxPacketBytes,
+    bool legacyAudioEndpoint = false
 ) {
     neri::usb::uac2::EndpointSnapshot snapshot;
     snapshot.configurationValue = configurationValue;
@@ -400,16 +405,42 @@ neri::usb::uac2::EndpointSnapshot makeUac2EndpointSnapshot(
     snapshot.hasRefresh = false;
     snapshot.bSynchAddress = 0;
     snapshot.hasSynchAddress = false;
+    if (legacyAudioEndpoint && endpoint.bLength >= kUac1AudioEndpointDescriptorLength) {
+        snapshot.bRefresh = endpoint.bRefresh;
+        snapshot.hasRefresh = true;
+        snapshot.bSynchAddress = endpoint.bSynchAddress;
+        snapshot.hasSynchAddress = true;
+    }
     return snapshot;
 }
 
-bool resolveUac2ExplicitFeedbackProfile(
+/**
+ * UAC1 同步端点按 Linux snd-usb-audio 的方式匹配：bSynchAddress 补上 IN 方向位，
+ * 用途位为 0 的老设备只有被 bSynchAddress 明确指向时才接受
+ */
+bool matchesFeedbackEndpoint(
+    const libusb_endpoint_descriptor& candidate,
+    const libusb_endpoint_descriptor& outputEndpoint,
+    bool legacyAudioEndpoints
+) {
+    if (!isIsoInEndpoint(candidate)) return false;
+    const int usage = usbIsoUsageType(candidate.bmAttributes);
+    const uint8_t synchAddress = legacyAudioEndpoints
+        ? static_cast<uint8_t>(outputEndpoint.bSynchAddress | LIBUSB_ENDPOINT_IN)
+        : outputEndpoint.bSynchAddress;
+    if (outputEndpoint.bSynchAddress != 0 && candidate.bEndpointAddress != synchAddress) return false;
+    if (usage == kLibusbIsoUsageFeedback) return true;
+    return legacyAudioEndpoints && usage == kLibusbIsoUsageData && outputEndpoint.bSynchAddress != 0;
+}
+
+bool resolveExplicitFeedbackProfile(
     libusb_device* device,
     int configurationValue,
     const libusb_interface_descriptor& alt,
     const libusb_endpoint_descriptor& outputEndpoint,
     int outputPacketBytes,
     int usbSpeed,
+    int uacVersion,
     uint8_t* feedbackEndpointAddress,
     int* feedbackPacketBytes,
     int* feedbackInterval,
@@ -425,16 +456,13 @@ bool resolveUac2ExplicitFeedbackProfile(
         return false;
     }
 
+    const bool legacyAudioEndpoints = uacVersion == 1;
+    const std::string reasonPrefix = legacyAudioEndpoints ? "uac1" : "uac2";
     const libusb_endpoint_descriptor* feedbackEndpoint = nullptr;
     int matchingEndpoints = 0;
     for (int index = 0; index < alt.bNumEndpoints; ++index) {
         const libusb_endpoint_descriptor& candidate = alt.endpoint[index];
-        if (!isIsoInEndpoint(candidate) ||
-            usbIsoUsageType(candidate.bmAttributes) != kLibusbIsoUsageFeedback) {
-            continue;
-        }
-        if (outputEndpoint.bSynchAddress != 0 &&
-            candidate.bEndpointAddress != outputEndpoint.bSynchAddress) {
+        if (!matchesFeedbackEndpoint(candidate, outputEndpoint, legacyAudioEndpoints)) {
             continue;
         }
         feedbackEndpoint = &candidate;
@@ -442,9 +470,9 @@ bool resolveUac2ExplicitFeedbackProfile(
     }
     if (feedbackEndpoint == nullptr || matchingEndpoints != 1) {
         if (failureReason != nullptr) {
-            *failureReason = matchingEndpoints == 0
-                ? "uac2_feedback_endpoint_missing"
-                : "uac2_feedback_endpoint_ambiguous";
+            *failureReason = reasonPrefix + (matchingEndpoints == 0
+                ? "_feedback_endpoint_missing"
+                : "_feedback_endpoint_ambiguous");
         }
         return false;
     }
@@ -464,18 +492,21 @@ bool resolveUac2ExplicitFeedbackProfile(
             configurationValue,
             alt,
             outputEndpoint,
-            outputPacketBytes
+            outputPacketBytes,
+            legacyAudioEndpoints
         ),
         makeUac2EndpointSnapshot(
             configurationValue,
             alt,
             *feedbackEndpoint,
-            resolvedFeedbackPacketBytes
-        )
+            resolvedFeedbackPacketBytes,
+            legacyAudioEndpoints
+        ),
+        legacyAudioEndpoints
     );
     if (profile.status != neri::usb::uac2::Uac2FeedbackProfileStatus::Valid) {
         if (failureReason != nullptr) {
-            *failureReason = "uac2_feedback_profile_" + std::string(
+            *failureReason = reasonPrefix + "_feedback_profile_" + std::string(
                 neri::usb::uac2::uac2FeedbackProfileStatusName(profile.status)
             ) + ":" + profile.reason;
         }
@@ -529,7 +560,88 @@ struct Uac2ClockPath {
         neri::usb::uac2::ControlCapability::None;
 };
 
+int readUac2ClockSelectorPin(
+    libusb_device_handle* deviceHandle,
+    int audioControlInterface,
+    int selectorId,
+    int pinCount
+) {
+    if (deviceHandle == nullptr) {
+        return -1;
+    }
+    constexpr uint8_t kCurRequest = 0x01;
+    constexpr uint16_t kClockSelectorControl = 0x0100;
+    constexpr unsigned int kControlTimeoutMs = 1000;
+    uint8_t pin = 0;
+    const int result = libusb_control_transfer(
+        deviceHandle,
+        makeClassInterfaceRequestType(kLibusbEndpointIn),
+        kCurRequest,
+        kClockSelectorControl,
+        makeClockEntityIndex(selectorId, audioControlInterface),
+        &pin,
+        1,
+        kControlTimeoutMs
+    );
+    if (result != 1 || pin < 1 || pin > pinCount) {
+        LOGW(
+            "UAC2 clock selector %d pin unreadable rc=%d pin=%u, using pin 1",
+            selectorId,
+            result,
+            static_cast<unsigned int>(pin)
+        );
+        return -1;
+    }
+    return pin - 1;
+}
+
+// 终端直连时钟源时原样返回；经选择器/倍频器时按选择器当前输入脚走到最终时钟源
+int resolveUac2FinalClockId(
+    libusb_device_handle* deviceHandle,
+    int audioControlInterface,
+    int terminalLink,
+    int terminalClockId,
+    const std::vector<neri::usb::uac2::ClockSource>& clockSources,
+    const std::vector<neri::usb::uac2::ClockRouting>& clockRoutings,
+    std::string* failureReason
+) {
+    std::vector<int> sourceIds;
+    for (const auto& source : clockSources) {
+        sourceIds.push_back(source.id);
+    }
+    const bool direct = std::find(sourceIds.begin(), sourceIds.end(), terminalClockId) != sourceIds.end();
+    if (direct || clockRoutings.empty()) {
+        return terminalClockId;
+    }
+    const auto route = neri::usb::uac2::resolveTerminalClockSource(
+        audioControlInterface,
+        terminalLink,
+        terminalClockId,
+        sourceIds,
+        clockRoutings,
+        [deviceHandle, audioControlInterface](int selectorId, int pinCount) {
+            return readUac2ClockSelectorPin(deviceHandle, audioControlInterface, selectorId, pinCount);
+        }
+    );
+    if (route.status != neri::usb::uac2::ClockGraphStatus::Valid) {
+        if (failureReason != nullptr) {
+            *failureReason = std::string("uac2_clock_route_") +
+                neri::usb::uac2::clockGraphStatusName(route.status) + ":" + route.reason;
+        }
+        return 0;
+    }
+    LOGI(
+        "UAC2 clock routed: terminal=%d entry=%d source=%d hops=%zu",
+        terminalLink,
+        terminalClockId,
+        route.finalClockSourceId,
+        route.traversedEntities.size()
+    );
+    return route.finalClockSourceId;
+}
+
 bool findUac2ClockPath(
+    libusb_device_handle* deviceHandle,
     const libusb_config_descriptor* config,
     int terminalLink,
     Uac2ClockPath* output,
@@ -544,6 +656,7 @@ bool findUac2ClockPath(
 
     bool ambiguousAudioControl = false;
     Uac2ClockPath result;
+    std::string routingFailure;
 
     for (int ifaceIndex = 0; ifaceIndex < config->bNumInterfaces; ++ifaceIndex) {
         const libusb_interface& iface = config->interface[ifaceIndex];
@@ -559,6 +672,7 @@ bool findUac2ClockPath(
 
             int terminalClockSourceId = 0;
             std::vector<neri::usb::uac2::ClockSource> clockSources;
+            std::vector<neri::usb::uac2::ClockRouting> clockRoutings;
             int offset = 0;
             while (offset + 2 <= alt.extra_length) {
                 const int descriptorLength = alt.extra[offset];
@@ -588,6 +702,15 @@ bool findUac2ClockPath(
                         )) {
                         clockSources.push_back(clock);
                     }
+                    neri::usb::uac2::ClockRouting routing;
+                    if (neri::usb::uac2::parseClockRoutingDescriptor(
+                            descriptor,
+                            descriptorLength,
+                            &routing,
+                            &parseError
+                        )) {
+                        clockRoutings.push_back(routing);
+                    }
                 }
                 offset += descriptorLength;
             }
@@ -595,11 +718,20 @@ bool findUac2ClockPath(
             if (terminalClockSourceId <= 0) {
                 continue;
             }
+            const int finalClockId = resolveUac2FinalClockId(
+                deviceHandle,
+                alt.bInterfaceNumber,
+                terminalLink,
+                terminalClockSourceId,
+                clockSources,
+                clockRoutings,
+                &routingFailure
+            );
             const auto clock = std::find_if(
                 clockSources.begin(),
                 clockSources.end(),
-                [terminalClockSourceId](const neri::usb::uac2::ClockSource& candidate) {
-                    return candidate.id == terminalClockSourceId;
+                [finalClockId](const neri::usb::uac2::ClockSource& candidate) {
+                    return candidate.id == finalClockId;
                 }
             );
             if (clock == clockSources.end()) {
@@ -624,7 +756,7 @@ bool findUac2ClockPath(
     }
     if (result.audioControlInterface < 0) {
         if (failureReason != nullptr) {
-            *failureReason = "uac2_terminal_link_not_found";
+            *failureReason = routingFailure.empty() ? "uac2_terminal_link_not_found" : routingFailure;
         }
         return false;
     }
@@ -844,6 +976,37 @@ bool findStreamingAltUac1(
                     );
                     continue;
                 }
+                bool explicitFeedbackEnabled = false;
+                uint8_t feedbackEndpointAddress = 0;
+                int feedbackPacketBytes = 0;
+                int feedbackInterval = 0;
+                neri::usb::uac2::Uac2FeedbackTimingProfile feedbackTimingProfile;
+                if (syncPolicy.requiresExplicitFeedbackProfile) {
+                    std::string feedbackProfileFailure;
+                    if (!resolveExplicitFeedbackProfile(
+                            device,
+                            config->bConfigurationValue,
+                            alt,
+                            endpoint,
+                            packetBytes,
+                            usbSpeed,
+                            1,
+                            &feedbackEndpointAddress,
+                            &feedbackPacketBytes,
+                            &feedbackInterval,
+                            &feedbackTimingProfile,
+                            &feedbackProfileFailure
+                        )) {
+                        appendCandidateRejection(
+                            &rejectionSummary,
+                            alt.bInterfaceNumber,
+                            alt.bAlternateSetting,
+                            feedbackProfileFailure
+                        );
+                        continue;
+                    }
+                    explicitFeedbackEnabled = true;
+                }
                 const int score = scoreStreamingCandidate(
                     format,
                     controls,
@@ -869,6 +1032,11 @@ bool findStreamingAltUac1(
                 best.outEndpoint = endpoint.bEndpointAddress;
                 best.endpointMaxPacketBytes = packetBytes;
                 best.endpointInterval = endpoint.bInterval;
+                best.explicitFeedbackEnabled = explicitFeedbackEnabled;
+                best.feedbackEndpoint = feedbackEndpointAddress;
+                best.feedbackEndpointMaxPacketBytes = feedbackPacketBytes;
+                best.feedbackEndpointInterval = feedbackInterval;
+                best.feedbackTimingProfile = feedbackTimingProfile;
                 best.score = score;
                 best.uacVersion = 1;
                 best.uac1.format = format;
@@ -883,7 +1051,10 @@ bool findStreamingAltUac1(
                 best.reason = "exact_type_i_pcm;rate=" + std::string(rateKind) +
                     ";freqControl=" +
                     (controls.samplingFrequencyControl ? "true" : "false") +
-                    ";score=" + std::to_string(score);
+                    ";score=" + std::to_string(score) +
+                    (explicitFeedbackEnabled
+                        ? ";feedbackProfile=" + feedbackTimingProfile.evidence.profileId
+                        : "");
             }
             if (!hasIsoOutputEndpoint) {
                 appendCandidateRejection(
@@ -1009,6 +1180,7 @@ bool findStreamingAltUac2(
             Uac2ClockPath clockPath;
             std::string clockFailure;
             if (!findUac2ClockPath(
+                    devh,
                     config,
                     format.terminalLink,
                     &clockPath,
@@ -1130,13 +1302,14 @@ bool findStreamingAltUac2(
                 }
                 if (syncPolicy.requiresExplicitFeedbackProfile) {
                     std::string feedbackProfileFailure;
-                    if (!resolveUac2ExplicitFeedbackProfile(
+                    if (!resolveExplicitFeedbackProfile(
                             device,
                             config->bConfigurationValue,
                             alt,
                             endpoint,
                             packetBytes,
                             usbSpeed,
+                            2,
                             &feedbackEndpointAddress,
                             &feedbackPacketBytes,
                             &feedbackInterval,

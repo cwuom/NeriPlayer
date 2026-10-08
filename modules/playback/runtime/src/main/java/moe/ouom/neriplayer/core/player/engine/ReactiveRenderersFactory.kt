@@ -45,6 +45,7 @@ import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.audio.effects.AudioEffectsAudioSink
 import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveAudioSink
 import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
 
@@ -111,18 +112,22 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
             out
         )
         val ffmpegRendererIndex = out.indexOfFirst { it is FfmpegAudioRenderer }
-        if (ffmpegRendererIndex < 0) return
-
-        out[ffmpegRendererIndex] = FfmpegAudioRenderer(
-            eventHandler,
-            eventListener,
-            FfmpegPcm16AudioSink(
-                delegate = audioSink,
-                shouldForcePcm16 = {
-                    forceFfmpegPcm16Output && !PlayerManager.usbExclusivePlaybackEnabled
-                }
+        if (ffmpegRendererIndex >= 0) {
+            out[ffmpegRendererIndex] = FfmpegAudioRenderer(
+                eventHandler,
+                eventListener,
+                FfmpegPcm16AudioSink(
+                    delegate = audioSink,
+                    shouldForcePcm16 = {
+                        forceFfmpegPcm16Output && !PlayerManager.usbExclusivePlaybackEnabled
+                    }
+                )
             )
-        )
+        }
+        for (index in out.indices) {
+            if (out[index].trackType != C.TRACK_TYPE_AUDIO) continue
+            out[index] = SteadyFeedAudioRenderer(out[index], steadyFeedRequired = { AudioReactive.enabled })
+        }
     }
 
     override fun buildAudioSink(
@@ -141,7 +146,8 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
             // 走平台 AudioTrack PlaybackParams 时出现明显电音/颗粒化失真
             .setEnableAudioOutputPlaybackParameters(false)
             .build()
-        return UsbExclusiveAudioSink(context.applicationContext, fallbackSink)
+        val usbSink = UsbExclusiveAudioSink(context.applicationContext, fallbackSink)
+        return AudioEffectsAudioSink(usbSink, usbNativeOutputActive = usbSink::isNativeOutputActive)
     }
 }
 

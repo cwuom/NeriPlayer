@@ -96,7 +96,10 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.data.settings.playback.toAudioEffectsSettings
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import java.util.Locale
 
@@ -609,6 +612,12 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow {
             it[SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED] ?: false
         }
+
+    val audioEffectsSettingsFlow: Flow<AudioEffectsSettings> =
+        dataStoreSettingFlow { it.toAudioEffectsSettings() }
+
+    val usbExclusiveFloatingKeepAliveFlow: Flow<Boolean> =
+        dataStoreSettingFlow { it[SettingsKeys.USB_EXCLUSIVE_FLOATING_KEEP_ALIVE] ?: false }
 
     val keepLastPlaybackProgressFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
@@ -1394,6 +1403,16 @@ class SettingsRepository(private val context: Context) {
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(playbackHighResolutionOutputEnabled = enabled)
         }
+    }
+
+    suspend fun setAudioEffectsSettings(settings: AudioEffectsSettings) {
+        val encoded = AudioEffectsSettingsCodec.encode(settings)
+        context.dataStore.edit { it[SettingsKeys.AUDIO_EFFECTS_SETTINGS] = encoded }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(audioEffectsSettingsJson = encoded) }
+    }
+
+    suspend fun setUsbExclusiveFloatingKeepAlive(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.USB_EXCLUSIVE_FLOATING_KEEP_ALIVE] = enabled }
     }
 
     suspend fun setKeepLastPlaybackProgress(enabled: Boolean) {

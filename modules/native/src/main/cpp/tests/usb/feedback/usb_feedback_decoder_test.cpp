@@ -1,4 +1,5 @@
 #include "usb/feedback/usb_feedback_decoder.h"
+#include "usb/feedback/usb_feedback_format_shift.h"
 
 #include <array>
 #include <cassert>
@@ -75,7 +76,12 @@ void rejectsUnknownProfilesAndMalformedPayloads() {
     profile.rawUnit = FeedbackRawUnit::FramesPerServiceInterval;
     result = neri::usb::feedback::decodeFeedbackSample(
         profile,
-        FeedbackDecodeInput { validPayload.data(), 3, 1, 1 }
+        FeedbackDecodeInput { validPayload.data(), 2, 1, 1 }
+    );
+    assert(result.status == FeedbackMathStatus::PayloadLengthMismatch);
+    result = neri::usb::feedback::decodeFeedbackSample(
+        profile,
+        FeedbackDecodeInput { validPayload.data(), 5, 1, 1 }
     );
     assert(result.status == FeedbackMathStatus::PayloadLengthMismatch);
     result = neri::usb::feedback::decodeFeedbackSample(
@@ -177,9 +183,88 @@ void rejectsProfilesThatCannotNormalize() {
     assert(!neri::usb::feedback::isFeedbackDecodeProfileSupported(profile));
 }
 
+void acceptsThreeAndFourBytePayloadsInterchangeably() {
+    const FeedbackDecodeProfile highSpeed {
+        4,
+        16,
+        FeedbackRawUnit::FramesPerMicroframe,
+        8000,
+        8000,
+        1,
+        1,
+        UINT64_C(0xF0000000)
+    };
+    // 12 frames per microframe written as 10.14 in three bytes.
+    constexpr std::array<uint8_t, 3> threeBytes { 0x00, 0x00, 0x03 };
+    auto result = neri::usb::feedback::decodeFeedbackSample(
+        highSpeed,
+        FeedbackDecodeInput { threeBytes.data(), threeBytes.size(), 1, 1 }
+    );
+    assert(result.status == FeedbackMathStatus::Ok);
+    assert(result.sample.payloadBytesActual == 3U);
+    assert(result.sample.normalized.rateQ32 == UINT64_C(3) * kQ32One);
+
+    const FeedbackDecodeProfile fullSpeed {
+        3,
+        14,
+        FeedbackRawUnit::FramesPerBusFrame,
+        1000,
+        1000,
+        1,
+        1
+    };
+    constexpr std::array<uint8_t, 4> fourBytes { 0x00, 0x00, 0x30, 0x00 };
+    result = neri::usb::feedback::decodeFeedbackSample(
+        fullSpeed,
+        FeedbackDecodeInput { fourBytes.data(), fourBytes.size(), 1, 1 }
+    );
+    assert(result.status == FeedbackMathStatus::Ok);
+    assert(result.sample.normalized.rateQ32 == UINT64_C(192) * kQ32One);
+
+    constexpr std::array<uint8_t, 4> reservedBits { 0x00, 0x00, 0x30, 0x10 };
+    result = neri::usb::feedback::decodeFeedbackSample(
+        fullSpeed,
+        FeedbackDecodeInput { reservedBits.data(), reservedBits.size(), 1, 1 }
+    );
+    assert(result.status == FeedbackMathStatus::OutOfRange);
+}
+
+void detectsPowerOfTwoFeedbackFormatShifts() {
+    using neri::usb::feedback::FeedbackFormatShift;
+    const auto nominal = UINT64_C(12) * kQ32One;
+
+    FeedbackFormatShift exact;
+    assert(exact.apply(nominal + 1000U, nominal) == nominal + 1000U);
+    assert(exact.shift() == 0);
+
+    FeedbackFormatShift tenFourteen;
+    assert(tenFourteen.apply(nominal / 4U, nominal) == nominal);
+    assert(tenFourteen.shift() == 2);
+    assert(tenFourteen.apply((nominal + 4096U) / 4U, nominal) == nominal + 4096U);
+
+    FeedbackFormatShift perFrame;
+    assert(perFrame.apply(nominal * 8U, nominal) == nominal);
+    assert(perFrame.shift() == -3);
+
+    FeedbackFormatShift recovers;
+    assert(recovers.apply(nominal / 2U, nominal) == nominal);
+    assert(recovers.shift() == 1);
+    assert(recovers.apply(nominal, nominal) == 0U);
+    assert(recovers.shift() == FeedbackFormatShift::kUnknown);
+    assert(recovers.apply(nominal, nominal) == nominal);
+    assert(recovers.shift() == 0);
+
+    FeedbackFormatShift rejects;
+    assert(rejects.apply(0U, nominal) == 0U);
+    assert(rejects.apply(1U, nominal) == 0U);
+    assert(rejects.shift() == FeedbackFormatShift::kUnknown);
+}
+
 } // namespace
 
 int main() {
+    acceptsThreeAndFourBytePayloadsInterchangeably();
+    detectsPowerOfTwoFeedbackFormatShifts();
     verifiesConfiguredThreeByteFixedPointVector();
     verifiesSourceAndAudioCadenceStayIndependent();
     rejectsUnknownProfilesAndMalformedPayloads();

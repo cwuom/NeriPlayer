@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.usb.sink
 
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UsbExclusivePcmWritePlannerTest {
@@ -201,6 +202,36 @@ class UsbExclusivePcmWritePlannerTest {
         )
 
         assertEquals(30_720, writeSize)
+    }
+
+    @Test
+    fun `lifecycle waterline keeps a short foreground queue on the reserved background ring`() {
+        val metrics = UsbExclusiveRuntimeMetrics(
+            sampleRate = 192_000,
+            channelCount = 2,
+            subslotBytes = 4,
+            transferBytes = 3_200,
+            lastTransferBytes = 1_536,
+            pcmLevelBytes = 192_000L,
+            pcmCapacityBytes = 2_304_000L,
+            pcmFreeBytes = 2_112_000L,
+            transportFailed = false,
+            running = true,
+            lastError = "none"
+        )
+        fun write(targetMs: Long) = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 65_536,
+            inputSampleRate = 192_000,
+            inputFrameBytes = 8,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 80L,
+            metrics = metrics,
+            runningQueueTargetMs = targetMs
+        )
+
+        assertEquals(0, write(125L))
+        assertTrue(write(750L) > 0)
     }
 
     @Test

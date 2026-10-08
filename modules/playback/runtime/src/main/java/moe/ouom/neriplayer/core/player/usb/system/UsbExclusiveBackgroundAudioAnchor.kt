@@ -1,19 +1,22 @@
 package moe.ouom.neriplayer.core.player.usb.system
 
-import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioDeviceInfo
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTrack
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveBackgroundAudioAnchorSpec
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveBackgroundAudioAnchorTransferMode
+import moe.ouom.neriplayer.core.player.policy.usb.isUsbExclusiveBackgroundAudioAnchorBuiltInRoute
 import moe.ouom.neriplayer.core.player.policy.usb.shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier
 import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveBackgroundAudioAnchorCarrier
 import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveBackgroundAudioAnchorSpecs
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * 后台媒体锚点跟随系统默认路由，不指定输出设备：
+ * Android 12+ 会把带显式路由的活跃媒体客户端所在设备当作媒体音量设备，
+ * 指向扬声器会让后台音量键改扬声器档位，而不是 USB 设备档位
+ */
 internal object UsbExclusiveBackgroundAudioAnchor {
     private const val TAG = "NERI-UsbAudioAnchor"
     private const val BYTES_PER_SAMPLE = 2
@@ -24,8 +27,6 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         val spec: UsbExclusiveBackgroundAudioAnchorSpec,
         val silence: ByteArray,
         val carrier: ByteArray,
-        val preferredBuiltInOutputId: Int?,
-        val volumeGuardToken: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken?
     ) {
         @Volatile
         var carrierActive = false
@@ -44,7 +45,7 @@ internal object UsbExclusiveBackgroundAudioAnchor {
     private val lock = Any()
     private var activeAnchor: ActiveAnchor? = null
 
-    fun start(context: Context, reason: String): Boolean {
+    fun start(reason: String): Boolean {
         synchronized(lock) {
             val existing = activeAnchor
             if (existing != null && existing.track.state == AudioTrack.STATE_INITIALIZED) {
@@ -52,12 +53,7 @@ internal object UsbExclusiveBackgroundAudioAnchor {
             }
             releaseLocked("replace_unusable:$reason")
 
-            val volumeGuardToken = UsbExclusiveBackgroundAudioAnchorVolumeGuard.acquire(context)
-            val created = createAnchor(context, reason, volumeGuardToken)
-            if (created == null) {
-                UsbExclusiveBackgroundAudioAnchorVolumeGuard.release(volumeGuardToken)
-                return false
-            }
+            val created = createAnchor(reason) ?: return false
             activeAnchor = created
             return resume(created, reason)
         }
@@ -83,20 +79,15 @@ internal object UsbExclusiveBackgroundAudioAnchor {
             val playing = anchor.track.state == AudioTrack.STATE_INITIALIZED &&
                 anchor.track.playState == AudioTrack.PLAYSTATE_PLAYING
             "playing=$playing spec=${anchor.spec.name} carrier=${anchor.carrierActive} " +
-                "target=${anchor.preferredBuiltInOutputId ?: "none"} " +
                 "route=${anchor.routedOutputId ?: "none"}/" +
                 "${anchor.routedOutputType ?: "none"} " +
                 "writer=${anchor.streamWriter?.isAlive == true}"
         }
     }
 
-    private fun createAnchor(
-        context: Context,
-        reason: String,
-        volumeGuardToken: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken?
-    ): ActiveAnchor? {
+    private fun createAnchor(reason: String): ActiveAnchor? {
         for (spec in usbExclusiveBackgroundAudioAnchorSpecs()) {
-            val anchor = createAnchor(context, reason, spec, volumeGuardToken)
+            val anchor = createAnchor(reason, spec)
             if (anchor != null) return anchor
         }
         NPLogger.w(TAG, "no compatible background media anchor reason=$reason")
@@ -104,10 +95,8 @@ internal object UsbExclusiveBackgroundAudioAnchor {
     }
 
     private fun createAnchor(
-        context: Context,
         reason: String,
         spec: UsbExclusiveBackgroundAudioAnchorSpec,
-        volumeGuardToken: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken?
     ): ActiveAnchor? {
         val channelMask = when (spec.channelCount) {
             1 -> AudioFormat.CHANNEL_OUT_MONO
@@ -142,7 +131,6 @@ internal object UsbExclusiveBackgroundAudioAnchor {
             releaseTrack(track)
             return null
         }
-        val preferredBuiltInOutputId = preferBuiltInOutput(context, track)
         val silence = ByteArray(bufferBytes)
         val carrier = usbExclusiveBackgroundAudioAnchorCarrier(
             bufferBytes = bufferBytes,
@@ -159,8 +147,6 @@ internal object UsbExclusiveBackgroundAudioAnchor {
             spec = spec,
             silence = silence,
             carrier = carrier,
-            preferredBuiltInOutputId = preferredBuiltInOutputId,
-            volumeGuardToken = volumeGuardToken
         )
     }
 
@@ -221,43 +207,16 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         }.onFailure { error ->
             NPLogger.w(TAG, "play failed reason=$reason", error)
         }.getOrDefault(false)
-        if (playing && !wasPlaying) {
-            UsbExclusiveBackgroundAudioAnchorVolumeGuard
-                .beginRouteObservation(anchor.volumeGuardToken)
-        }
         if (playing) {
             ensureStreamingWriter(anchor)
         }
         if (playing && !wasPlaying) {
-            NPLogger.i(
-                TAG,
-                "started background media anchor reason=$reason spec=${anchor.spec.name} " +
-                    "carrierRequested=${anchor.preferredBuiltInOutputId != null}"
-            )
+            NPLogger.i(TAG, "started background media anchor reason=$reason spec=${anchor.spec.name}")
         }
         if (!playing) {
             releaseLocked("play_failed:$reason")
         }
         return playing
-    }
-
-    private fun preferBuiltInOutput(context: Context, track: AudioTrack): Int? {
-        return runCatching {
-            val audioManager = context.applicationContext
-                .getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                ?: return@runCatching null
-            val output = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                ?: return@runCatching null
-            if (!track.setPreferredDevice(output)) {
-                NPLogger.d(TAG, "built-in output preference rejected")
-                null
-            } else {
-                output.id
-            }
-        }.onFailure { error ->
-            NPLogger.w(TAG, "built-in output preference failed", error)
-        }.getOrNull()
     }
 
     private fun ensureStreamingWriter(anchor: ActiveAnchor) {
@@ -304,13 +263,9 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         val routedOutput = runCatching { anchor.track.routedDevice }.getOrNull()
         val routedOutputId = routedOutput?.id
         val routedOutputType = routedOutput?.type
-        val routedToBuiltInOutput = anchor.preferredBuiltInOutputId != null &&
-            (routedOutputId == anchor.preferredBuiltInOutputId ||
-                routedOutputType == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
         val carrierActive = shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
             transferMode = anchor.spec.transferMode,
-            builtInOutputRequested = anchor.preferredBuiltInOutputId != null,
-            routedToRequestedBuiltInOutput = routedToBuiltInOutput
+            routedToBuiltInOutput = isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(routedOutputType),
         )
         val routeChanged = anchor.routedOutputId != routedOutputId ||
             anchor.routedOutputType != routedOutputType
@@ -322,7 +277,6 @@ internal object UsbExclusiveBackgroundAudioAnchor {
             NPLogger.i(
                 TAG,
                 "background media anchor route spec=${anchor.spec.name} " +
-                    "target=${anchor.preferredBuiltInOutputId ?: "none"} " +
                     "route=${routedOutputId ?: "none"}/${routedOutputType ?: "none"} " +
                     "carrier=$carrierActive"
             )
@@ -338,7 +292,6 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         anchor.streamWriter = null
         anchor.streamWriterRunning = null
         releaseTrack(anchor.track)
-        UsbExclusiveBackgroundAudioAnchorVolumeGuard.release(anchor.volumeGuardToken)
         NPLogger.i(
             TAG,
             "released background media anchor reason=$reason spec=${anchor.spec.name} " +

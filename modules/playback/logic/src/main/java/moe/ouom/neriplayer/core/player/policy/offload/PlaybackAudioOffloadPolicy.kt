@@ -8,8 +8,7 @@ enum class PcmAudioRequirement {
     USB_EXCLUSIVE,
     PLAYBACK_SPEED,
     PLAYBACK_PITCH,
-    EQUALIZER,
-    LOUDNESS,
+    AUDIO_EFFECTS,
     BALANCE,
     VOLUME_NORMALIZATION,
     HIGH_RESOLUTION,
@@ -21,8 +20,7 @@ fun pcmAudioRequirements(
     usbExclusivePlaybackEnabled: Boolean,
     playbackSpeed: Float,
     playbackPitch: Float,
-    equalizerEnabled: Boolean,
-    loudnessGainMb: Int,
+    audioEffectsActive: Boolean,
     volumeBalance: Float,
     volumeNormalizationEnabled: Boolean,
     highResolutionOutputEnabled: Boolean,
@@ -32,7 +30,7 @@ fun pcmAudioRequirements(
 ): Set<PcmAudioRequirement> = buildSet {
     addSourceRequirements(audioSource, usbExclusivePlaybackEnabled)
     addPlaybackParameterRequirements(playbackSpeed, playbackPitch)
-    addSoundEffectRequirements(equalizerEnabled, loudnessGainMb, volumeBalance, volumeNormalizationEnabled)
+    addSoundEffectRequirements(audioEffectsActive, volumeBalance, volumeNormalizationEnabled)
     addOutputRequirements(highResolutionOutputEnabled, audioReactiveActive, listenTogetherPlaybackRate)
 }
 

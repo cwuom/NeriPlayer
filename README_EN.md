@@ -199,10 +199,12 @@ Current positioning:
   retain directional horizontal transitions. Both retain outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
   discontinuities during rapid switching. Long-pressing the Now Playing artwork
   opens an immersive preview with pinch-to-zoom, panning, and a download action.
-- **Sound controls are tied to the active audio session**:
-  `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
-  `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
-  loudness gain, per-track real-time normalization, fade/crossfade, pause on
+- **Fine-grained sound controls**:
+  a native DSP sits in front of the Media3 audio output instead of relying on the
+  Android `Equalizer`. **Settings → Audio effects & speed** provides 29 built-in
+  sound presets, a 10-band EQ, parametric EQ, AutoEQ import, bass/treble, virtual
+  bass, vocal, space, reverb, compression, speaker optimization, a clipping guard,
+  and per-output-device profiles. Per-track real-time normalization, fade/crossfade, pause on
   Bluetooth disconnect, channel balance, 32-bit high-resolution system output,
   USB exclusive playback, and audio-focus behavior are all available. Native USB
   exclusive playback currently targets **UAC1.0** and compatible
@@ -214,11 +216,12 @@ Current positioning:
   scaling, and automatic stall recovery are now part of the path. After a long
   scheduling gap, the runtime reacquires the feedback clock instead of continuing
   with a stale rate estimate. Foreground/background recovery chooses wake behavior
-  from the network or local source, and bit-perfect volume keeps software gain at
+  from the network or local source, and bit-perfect output keeps software gain at
   0 dB so the DAC controls the level. Settings report battery-optimization or
   background-permission limits. While service playback is retained, a background
-  audio anchor selects silence or a zero-mean carrier for the actual output route;
-  MediaSession provides remote volume routing and the carrier is not user content.
+  audio anchor follows the system default route and writes a zero-mean carrier only
+  on the built-in speaker; volume stays on ordinary media volume and the carrier is
+  not user content.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
@@ -449,13 +452,17 @@ For release build and signing details, see
   resolution retries missing DASH audio and can fall back to html5/mp4 progressive
   streams; repeated failures skip or stop playback to avoid getting stuck.
 - 🎚️ **Playback sound controls**:
-  Now Playing includes speed, pitch, loudness enhancer, Android system equalizer
-  presets, and manual EQ bands. Playback settings also provide per-track
-  real-time loudness normalization, channel balance, and 32-bit high-resolution
-  system output. Loudness normalization is bypassed during USB exclusive playback;
-  high-resolution system output keeps the high-precision pipeline where possible
-  and bypasses loudness normalization, channel balance, audio visualization, and
-  in-app speed processing.
+  **Settings → Audio effects & speed** manages effects, speed, and pitch in one
+  place. The DSP processes regular and 32-bit high-resolution output in float
+  precision and offers style, tone, scene, and device presets, a draggable 10-band
+  EQ, parametric EQ with AutoEQ import, shareable custom presets, speaker
+  optimization, and Eco/Balanced/High processing modes. When effects are off or
+  every control is neutral, the DSP is fully bypassed and adds no power cost. USB
+  exclusive output stays bit-perfect by default; an advanced option can apply
+  effects there as well. Playback settings also provide per-track real-time
+  loudness normalization, channel balance, and 32-bit high-resolution system
+  output; high-resolution system output bypasses loudness normalization, channel
+  balance, audio visualization, and in-app speed processing.
 - 🎛️ **Fine-grained playback behavior**:
   keep last playback progress, restore playback mode, fade-in/fade-out,
   crossfade-next, pause on Bluetooth disconnect, USB exclusive playback,
@@ -469,24 +476,45 @@ For release build and signing details, see
   supports **UAC1.0** and compatible **UAC2.0 Type I PCM** USB DAC devices, with
   device selection, sample-rate/bit-depth/buffer policies, compatibility toggles,
   and background-playback guidance. It also handles 32-bit PCM and software
-  conversion from PCM float into the selected device format. When following the
+  conversion from PCM float into the selected device format. An optional floating
+  keep-alive shows an invisible, non-touchable 1-pixel overlay during USB exclusive
+  playback once overlay permission is granted, which lowers the chance that some
+  systems freeze the background process and drop the DAC. When following the
   track sample rate, native exclusive output tries the exact source rate against
   USB descriptors first, then tries a reported compatible rate when the exact
-  format is unavailable and compatibility fallback is enabled. Handling of Android's
+  format is unavailable and compatibility fallback is enabled; that path resamples with a
+  polyphase Kaiser-windowed sinc filter (about -90 dB stopband) instead of linear
+  interpolation. Multichannel-only interfaces carry stereo on their first two channels
+  and zero-fill the rest, and UAC2 terminals that reach their clock through a clock
+  selector or multiplier (as in XMOS firmware) follow the selector's current input to the
+  final clock source before the rate is set. Handling of Android's
   `USB_DEVICE_ATTACHED` event can be disabled separately when users do not want
   NeriPlayer to react to DAC insertion.
-  Compatible UAC2 asynchronous topologies resolve a clock chain and explicit feedback endpoint,
-  schedule packets from device feedback, and reacquire the feedback clock after
-  long scheduling gaps. If playback startup, native transfer backpressure, or
+  Asynchronous UAC1 and UAC2 devices resolve a clock chain and explicit feedback endpoint
+  (UAC1 sync endpoints are matched through `bSynchAddress`), schedule packets from device
+  feedback, and reacquire the feedback clock after long scheduling gaps. On open, the
+  DAC's playback-path hardware mute is cleared and hardware volume is set to 0 dB, and
+  the previous values are written back on close, so the DAC does not keep attenuation
+  left by Android. If the sample rate reads back differently right after it is set, the
+  app waits for the clock to lock before confirming. If playback startup, native transfer backpressure, or
   foreground/background transitions become unhealthy, the app tries in-place
   reconfiguration, coordinated AudioSink recreation, dynamic transfer scaling,
   and soft recovery before falling back to Android system output. Foreground/background
-  recovery chooses wake behavior for network or local playback, and bit-perfect volume
-  keeps software gain at 0 dB for DAC-side volume control. Settings report battery-
-  optimization and background-permission limits. A retained service playback uses a
-  route-aware background audio anchor that selects silence or a zero-mean carrier,
-  while MediaSession provides remote volume routing and the carrier remains inaudible
-  user content.
+  recovery chooses wake behavior for network or local playback. Volume keys, the lock
+  screen, and the system volume panel all adjust ordinary media volume, and native output
+  follows it immediately. Bit-perfect output requests the source sample rate and bit depth,
+  keeps software gain at 0 dB, and skips effects, fades, and resampling; when the DAC has
+  hardware volume, volume keys adjust it instead. The status page reports when a DAC that
+  cannot accept the source format prevents bit-perfect output. High-speed explicit-feedback
+  devices use 8 ms requests, keeping about 128 ms of audio queued on the USB side so
+  background scheduling jitter does not starve the DAC, and feedback reports in an
+  unexpected fixed-point format are corrected automatically as snd-usb-audio does. Once the
+  transport runs, every buffer callback tops the PCM queue up to its waterline, so
+  high-rate sources do not fall behind real time while dynamic scheduling lets the
+  playback thread sleep. Settings
+  report battery-optimization and background-permission limits. A retained service playback
+  uses a background audio anchor that follows the system default route and writes a
+  zero-mean carrier only on the built-in speaker; the carrier remains inaudible user content.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, share staging, and platform playlist

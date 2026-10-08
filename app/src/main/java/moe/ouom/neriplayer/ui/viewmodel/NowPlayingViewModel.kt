@@ -411,38 +411,6 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
-    fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
-        PlayerManager.setPlaybackSpeed(speed, persist)
-    }
-
-    fun setPlaybackPitch(pitch: Float, persist: Boolean = true) {
-        PlayerManager.setPlaybackPitch(pitch, persist)
-    }
-
-    fun setPlaybackLoudnessGain(levelMb: Int, persist: Boolean = true) {
-        PlayerManager.setPlaybackLoudnessGain(levelMb, persist)
-    }
-
-    fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
-        PlayerManager.setPlaybackEqualizerEnabled(enabled, persist)
-    }
-
-    fun selectPlaybackEqualizerPreset(presetId: String, persist: Boolean = true) {
-        PlayerManager.selectPlaybackEqualizerPreset(presetId, persist)
-    }
-
-    fun updatePlaybackEqualizerBandLevel(
-        index: Int,
-        levelMb: Int,
-        persist: Boolean = true
-    ) {
-        PlayerManager.updatePlaybackEqualizerBandLevel(index, levelMb, persist)
-    }
-
-    fun resetPlaybackSoundSettings(persist: Boolean = true) {
-        PlayerManager.resetPlaybackSoundSettings(persist)
-    }
-
     fun fillLyrics(context: Context, song: SongItem, selectedSong: SongSearchInfo, onComplete: (Boolean, String) -> Unit) {
         if (
             selectedSong.source == MusicPlatform.CLOUD_MUSIC &&

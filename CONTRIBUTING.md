@@ -230,7 +230,7 @@
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/playback/`
   - `NeriMiniPlayer.kt` 负责底部迷你播放器、播放暂停和横向滑动切歌；
-    播放音效与睡眠定时器面板也在该目录。
+    睡眠定时器面板也在该目录；音效与倍速设置页位于 `ui/screen/tab/settings/audio/`。
   - `ui/component/` 根目录中的同名文件主要是旧包兼容入口，新增实现应放入
     `lyrics/`、`playback/`、`download/`、`navigation/` 等职责子包。
 
@@ -272,7 +272,11 @@
     负责音源解析、播放队列、缓存、状态恢复、失败重试和播放策略。
   - `service/AudioPlayerService.kt`：前台播放服务、媒体通知、MediaSession 和媒体按钮。
   - 下载执行实现归 `:download:runtime`；播放器只消费 `host/PlayerDownloadAccess.kt`，下载状态契约位于 `:model` 的 `playback/storage`。
-  - `effects/PlaybackEffectsController.kt`：倍速、音调、响度增强和均衡器。
+  - `effects/PlaybackEffectsController.kt`：倍速和音调。
+  - `audio/effects/`：`AudioEffectsAudioSink` 位于 USB/系统输出 sink 之前，调用 `:native` 的
+    `dsp/` 引擎处理 16/24/32-bit 整数与 float PCM；中性或关闭时原样旁路并允许 offload，
+    USB 独占默认旁路以保持 bit-perfect。音效配置、内置音效、编解码与 DSP 参数映射位于
+    `:model` 的 `playback/effects`，参数下标必须与 `dsp/neri_dsp_params.h` 保持一致。
   - `engine/`：Media3 渲染器与数据源组装；PCM 声道平衡、响度归一化和音频可视化位于 `:playback:logic` 的 `audio/processing` 和 `audio/reactive`。
   - `:playback:logic` 的 `runtime/stats`、`runtime/progress`、`runtime/transport` 和 `runtime/quality` 分别维护统计采集、播放进度、传输及音质控制；宿主通过对应 Port 提供副作用。
     播放命令与队列推进仍在 `playback/PlayerManagerPlaybackExtensions.kt`。
@@ -482,8 +486,10 @@
 - USB 独占依赖兼容 **UAC1.0** 或 **UAC2.0 Type I PCM** 的 DAC、
   前台服务、唤醒锁和系统后台策略；
   设置页的后台权限提示不是装饰，改动相关逻辑时要同时考虑息屏场景。
-- USB 设置还包含比特完美音量模式；启用后软件增益保持 0 dB，音量由 DAC 硬件控制，
-  不能把它与普通系统音量或应用内响度处理混为一谈。
+- USB 设置还包含比特完美输出模式；启用后按音源采样率和位深申请 DAC 格式，软件增益保持 0 dB，
+  原生管线不做淡入淡出，音量由 DAC 硬件控制，不能把它与普通系统音量或应用内响度处理混为一谈。
+- USB 独占的音量跟随普通媒体音量（`STREAM_MUSIC`），不要再改回 MediaSession 远程音量；
+  后台锚点不能指定输出设备，Android 12+ 会因此把媒体音量设备切到扬声器。
 - USB 设备插入响应是独立设置；关闭时 Activity alias 和播放服务广播入口都必须跳过
   `USB_DEVICE_ATTACHED`，不能只隐藏设置项或只改其中一个入口。
 - 前后台 USB runtime report 若返回 `native_refresh_deferred`，播放器只在有限次数内

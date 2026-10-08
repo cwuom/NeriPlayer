@@ -150,6 +150,65 @@ void rejectsMalformedProfilesAndReservedBits() {
     assert(profile.status == Uac2FeedbackProfileStatus::InvalidEndpointDescriptor);
 }
 
+EndpointSnapshot uac1AudioEndpoint(
+    uint8_t address,
+    uint8_t attributes,
+    int capacity,
+    uint8_t refresh,
+    uint8_t synchAddress
+) {
+    EndpointSnapshot value = endpoint(address, attributes, capacity, 1);
+    value.descriptorLength = 9;
+    value.bRefresh = refresh;
+    value.hasRefresh = true;
+    value.bSynchAddress = synchAddress;
+    value.hasSynchAddress = true;
+    return value;
+}
+
+void acceptsUac1AsyncEndpointsOnlyInLegacyMode() {
+    const EndpointSnapshot output = uac1AudioEndpoint(0x01, 0x05, 196, 0, 0x81);
+    const EndpointSnapshot unmarkedSync = uac1AudioEndpoint(0x81, 0x01, 3, 5, 0);
+    const auto profile = neri::usb::uac2::buildUac2FeedbackTimingProfile(
+        UsbBusSpeed::Full,
+        output,
+        unmarkedSync,
+        true
+    );
+    assert(profile.status == Uac2FeedbackProfileStatus::Valid);
+    assert(profile.decodeProfile.payloadBytesExpected == 3U);
+    assert(profile.decodeProfile.fractionalBits == 14U);
+    assert(profile.feedbackPollingIntervalBusUnits == 1U);
+    assert(profile.evidence.profileId.rfind("uac1-full", 0) == 0);
+
+    constexpr std::array<uint8_t, 3> payload { 0x66, 0x06, 0x0B };
+    const auto decoded = neri::usb::feedback::decodeFeedbackSample(
+        profile.decodeProfile,
+        FeedbackDecodeInput { payload.data(), payload.size(), 1'000'000, 1 }
+    );
+    assert(decoded.status == FeedbackMathStatus::Ok);
+
+    const auto markedSync = neri::usb::uac2::buildUac2FeedbackTimingProfile(
+        UsbBusSpeed::Full,
+        output,
+        uac1AudioEndpoint(0x81, 0x11, 3, 5, 0),
+        true
+    );
+    assert(markedSync.status == Uac2FeedbackProfileStatus::Valid);
+
+    assert(neri::usb::uac2::buildUac2FeedbackTimingProfile(
+        UsbBusSpeed::Full,
+        output,
+        unmarkedSync
+    ).status == Uac2FeedbackProfileStatus::InvalidEndpointDescriptor);
+    assert(neri::usb::uac2::buildUac2FeedbackTimingProfile(
+        UsbBusSpeed::Full,
+        uac1AudioEndpoint(0x01, 0x09, 196, 0, 0),
+        unmarkedSync,
+        true
+    ).status == Uac2FeedbackProfileStatus::InvalidEndpointDescriptor);
+}
+
 void exposesStableNames() {
     assert(std::string(neri::usb::uac2::usbBusSpeedName(UsbBusSpeed::High)) == "high");
     assert(std::string(neri::usb::uac2::uac2FeedbackProfileStatusName(
@@ -163,6 +222,7 @@ int main() {
     verifiesHighSpeedProfileAndCadence();
     verifiesFullSpeedProfileAndOutputIntervalScaling();
     rejectsMalformedProfilesAndReservedBits();
+    acceptsUac1AsyncEndpointsOnlyInLegacyMode();
     exposesStableNames();
     return 0;
 }

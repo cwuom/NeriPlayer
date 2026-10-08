@@ -1,8 +1,12 @@
 #include "usb/pcm/usb_pcm_pipeline.h"
+#include "usb/pcm/usb_pcm_resampler.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <cmath>
+#include <utility>
 #include <cstring>
 #include <cstdint>
 #include <limits>
@@ -11,6 +15,8 @@
 #include <vector>
 
 namespace {
+
+constexpr double kPi = 3.14159265358979323846;
 
 neri::usb::PcmPipelineConfig configFor(int inputRate, int outputRate) {
     return {
@@ -84,7 +90,8 @@ void verifiesStreamingResampleKeepsLongTermFrameCount() {
     for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex) {
         assert(pipeline.write(chunk.data(), chunk.size(), &error) == chunk.size());
     }
-    assert(pipeline.queuedFrames() == 4799);
+    // sinc 滤波保留 34 帧前瞻，其余输入按 48000/44100 精确换算成输出帧
+    assert(pipeline.queuedFrames() == 4763);
 }
 
 void verifiesPausePreservesQueuedAudio() {
@@ -293,7 +300,7 @@ void verifiesFloatInputResampleProducesUsbSignalStats() {
     config.input.encoding = 4;
     assert(pipeline.configure(config, &error));
 
-    constexpr int inputFrames = 960;
+    constexpr int inputFrames = 9600;
     constexpr int inputChannels = 2;
     constexpr int inputSampleBytes = 4;
     std::vector<uint8_t> input(
@@ -301,21 +308,21 @@ void verifiesFloatInputResampleProducesUsbSignalStats() {
         0
     );
     for (int frame = 0; frame < inputFrames; ++frame) {
-        const float value = (frame % 2 == 0) ? 0.25f : -0.25f;
+        const auto value = static_cast<float>(0.25 * std::sin(2.0 * kPi * 1000.0 * frame / 96000.0));
         const size_t frameOffset = static_cast<size_t>(frame * inputChannels * inputSampleBytes);
         writeFloatSample(input, frameOffset, value);
         writeFloatSample(input, frameOffset + inputSampleBytes, value);
     }
 
     assert(pipeline.write(input.data(), input.size(), &error) == input.size());
-    std::vector<uint8_t> output(480U * 4U, 0);
+    std::vector<uint8_t> output(4000U * 4U, 0);
     assert(pipeline.fill(output.data(), output.size(), true) == output.size());
 
     const auto snapshot = pipeline.snapshot();
     assert(snapshot.signalOutputFrames > 0);
     assert(snapshot.signalOutputBytes > 0);
-    assert(snapshot.outputPeak > 0.0f);
-    assert(snapshot.lastOutputPeak > 0.0f);
+    assert(snapshot.outputPeak > 0.24f && snapshot.outputPeak < 0.27f);
+    assert(snapshot.lastOutputPeak > 0.24f);
 
     bool hasNonZeroOutput = false;
     for (const uint8_t byte : output) {
@@ -519,9 +526,276 @@ void verifiesIntegerCodecDepthsAndEndianInputs() {
     assert((finiteGuardOutput == std::array<uint8_t, 2> {}));
 }
 
+std::vector<uint8_t> fullScale16BitFrames(size_t frames) {
+    std::vector<uint8_t> input(frames * 4U, 0);
+    for (size_t frame = 0; frame < frames; ++frame) {
+        const int16_t left = static_cast<int16_t>(32767 - static_cast<int>(frame % 7U));
+        const int16_t right = static_cast<int16_t>(-32768 + static_cast<int>(frame % 5U));
+        std::memcpy(input.data() + frame * 4U, &left, sizeof(left));
+        std::memcpy(input.data() + frame * 4U + 2U, &right, sizeof(right));
+    }
+    return input;
+}
+
+void verifiesBitPerfectResumeAndTransportStartKeepSamplesExact() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    pipeline.setTargetGain(1.0f);
+
+    const std::vector<uint8_t> input = fullScale16BitFrames(64U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::array<uint8_t, 4> pausedOutput { 1, 1, 1, 1 };
+    assert(pipeline.fill(pausedOutput.data(), pausedOutput.size(), false) == 0);
+    pipeline.armTransportStartRamp();
+
+    std::vector<uint8_t> output(input.size(), 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+    pipeline.applyTransportStartRamp(output.data(), output.size());
+    assert(output == input);
+    assert(pipeline.snapshot().appliedGain == 1.0f);
+}
+
+void verifiesBitPerfectMuteIsHardAndUnmuteIsExact() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(16U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    pipeline.setTargetGain(0.0f);
+    std::vector<uint8_t> muted(input.size(), 1);
+    assert(pipeline.fill(muted.data(), muted.size(), true) == input.size());
+    assert(muted == std::vector<uint8_t>(input.size(), 0));
+
+    pipeline.setTargetGain(1.0f);
+    std::vector<uint8_t> unmuted(input.size(), 0);
+    assert(pipeline.fill(unmuted.data(), unmuted.size(), true) == input.size());
+    assert(unmuted == input);
+}
+
+void verifiesBitPerfectPartialUnderrunKeepsValidFrames() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(4U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::vector<uint8_t> output(input.size() * 2U, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+    assert(std::equal(input.begin(), input.end(), output.begin()));
+    assert(std::all_of(output.begin() + static_cast<std::ptrdiff_t>(input.size()), output.end(),
+        [](uint8_t byte) { return byte == 0U; }));
+}
+
+void verifiesBitPerfectLeavingRestoresSmoothGain() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(8U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    std::vector<uint8_t> output(input.size(), 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+
+    pipeline.setBitPerfect(false);
+    pipeline.setTargetGain(0.5f);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+    const auto snapshot = pipeline.snapshot();
+    assert(snapshot.appliedGain < 1.0f);
+    assert(snapshot.appliedGain > 0.5f);
+}
+
+void verifiesIntegerUpconversionPadsWithoutChangingBits() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor24BitIn32Container(48000, 48000);
+    config.input.encoding = 2;
+    assert(pipeline.configure(config, &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(32U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::vector<uint8_t> output(32U * 8U, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+    for (size_t sample = 0; sample < 64U; ++sample) {
+        int16_t source = 0;
+        int32_t padded = 0;
+        std::memcpy(&source, input.data() + sample * 2U, sizeof(source));
+        std::memcpy(&padded, output.data() + sample * 4U, sizeof(padded));
+        assert(padded == static_cast<int32_t>(static_cast<uint32_t>(source) << 16U));
+    }
+}
+
+void verifiesFloatFromIntegerSourceRoundTripsExactly() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(48000, 48000);
+    config.input.encoding = 4;
+    assert(pipeline.configure(config, &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> source = fullScale16BitFrames(32U);
+    std::vector<uint8_t> input(source.size() * 2U, 0);
+    for (size_t sample = 0; sample < 64U; ++sample) {
+        int16_t value = 0;
+        std::memcpy(&value, source.data() + sample * 2U, sizeof(value));
+        writeFloatSample(input, sample * 4U, static_cast<float>(value) / 32768.0f);
+    }
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::vector<uint8_t> output(source.size(), 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+    assert(output == source);
+}
+
+std::vector<float> stereoTone(int rate, double frequency, double amplitude, int frames) {
+    std::vector<float> samples(static_cast<size_t>(frames) * 2U);
+    for (int frame = 0; frame < frames; ++frame) {
+        const auto value = static_cast<float>(amplitude * std::sin(2.0 * kPi * frequency * frame / rate));
+        samples[static_cast<size_t>(frame) * 2U] = value;
+        samples[static_cast<size_t>(frame) * 2U + 1U] = value;
+    }
+    return samples;
+}
+
+double peakAfter(const std::vector<float>& samples, size_t skipFrames) {
+    double peak = 0.0;
+    for (size_t index = skipFrames * 2U; index < samples.size(); ++index) {
+        peak = std::max(peak, static_cast<double>(std::abs(samples[index])));
+    }
+    return peak;
+}
+
+std::vector<float> resampleWhole(int inputRate, int outputRate, const std::vector<float>& input) {
+    neri::usb::PcmResampler resampler;
+    assert(resampler.configure(inputRate, outputRate, 2));
+    std::vector<float> output;
+    resampler.process(input.data(), static_cast<int>(input.size() / 2U), &output);
+    return output;
+}
+
+void verifiesResamplerOutputDoesNotDependOnChunking() {
+    const std::vector<float> input = stereoTone(44100, 997.0, 0.5, 44100);
+    const std::vector<float> whole = resampleWhole(44100, 48000, input);
+
+    neri::usb::PcmResampler resampler;
+    assert(resampler.configure(44100, 48000, 2));
+    std::vector<float> chunked;
+    const int chunkSizes[] = { 1, 7, 64, 441, 1000, 3 };
+    int offset = 0;
+    int index = 0;
+    const int totalFrames = static_cast<int>(input.size() / 2U);
+    while (offset < totalFrames) {
+        const int frames = std::min(chunkSizes[index++ % 6], totalFrames - offset);
+        resampler.process(input.data() + static_cast<size_t>(offset) * 2U, frames, &chunked);
+        offset += frames;
+    }
+    assert(chunked == whole);
+    const int expectedFrames = static_cast<int>(
+        ((44100 - resampler.halfTaps()) * 48000LL - 1) / 44100 + 1
+    );
+    assert(static_cast<int>(whole.size() / 2U) == expectedFrames);
+}
+
+void verifiesResamplerKeepsPassbandToneAccurate() {
+    const std::vector<float> output = resampleWhole(44100, 48000, stereoTone(44100, 1000.0, 0.5, 44100));
+    double maxError = 0.0;
+    for (size_t frame = 200; frame < output.size() / 2U; ++frame) {
+        const double expected = 0.5 * std::sin(2.0 * kPi * 1000.0 * static_cast<double>(frame) / 48000.0);
+        maxError = std::max(maxError, std::abs(static_cast<double>(output[frame * 2U]) - expected));
+    }
+    assert(maxError < 1e-3);
+
+    const std::vector<float> treble = resampleWhole(44100, 48000, stereoTone(44100, 18000.0, 0.5, 44100));
+    const double treblePeak = peakAfter(treble, 200);
+    assert(treblePeak > 0.5 * 0.944 && treblePeak < 0.5 * 1.06);
+}
+
+void verifiesResamplerRejectsContentAboveOutputNyquist() {
+    const std::vector<float> folded = resampleWhole(192000, 48000, stereoTone(192000, 30000.0, 0.5, 96000));
+    assert(peakAfter(folded, 400) < 0.5e-3);
+
+    const std::vector<float> kept = resampleWhole(192000, 48000, stereoTone(192000, 1000.0, 0.5, 96000));
+    assert(peakAfter(kept, 400) > 0.49);
+}
+
+void verifiesResamplerInputBoundNeverOverfillsOutput() {
+    const std::vector<float> input = stereoTone(44100, 440.0, 0.5, 20000);
+    for (const auto& rates : { std::pair<int, int>{ 44100, 48000 }, std::pair<int, int>{ 192000, 48000 } }) {
+        neri::usb::PcmResampler resampler;
+        assert(resampler.configure(rates.first, rates.second, 2));
+        int offset = 0;
+        for (const size_t maxOutput : { size_t { 0 }, size_t { 1 }, size_t { 37 }, size_t { 480 }, size_t { 5 } }) {
+            const int accepted = resampler.inputFramesForOutput(4000, maxOutput);
+            std::vector<float> output;
+            const size_t produced = resampler.process(input.data() + static_cast<size_t>(offset) * 2U, accepted, &output);
+            offset += accepted;
+            assert(produced <= maxOutput);
+            assert(maxOutput == 0 || produced + 2U >= maxOutput);
+        }
+    }
+}
+
+void verifiesChannelLayoutsCarryStereoWithoutDuplicatingExtraChannels() {
+    const std::array<uint8_t, 4> stereoFrame { 0x00, 0x10, 0x00, 0xF0 };
+    std::string error;
+
+    neri::usb::PcmPipeline quad;
+    auto quadConfig = configFor(48000, 48000);
+    quadConfig.output = { 48000, 4, 2, 16, 8 };
+    assert(quad.configure(quadConfig, &error));
+    assert(quad.write(stereoFrame.data(), stereoFrame.size(), &error) == stereoFrame.size());
+    std::array<uint8_t, 8> quadOutput {};
+    assert(quad.fill(quadOutput.data(), quadOutput.size(), true) == quadOutput.size());
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 0) == 0x1000);
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 2) == static_cast<int16_t>(0xF000));
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 4) == 0);
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 6) == 0);
+
+    neri::usb::PcmPipeline mono;
+    auto monoConfig = configFor(48000, 48000);
+    monoConfig.output = { 48000, 1, 2, 16, 2 };
+    assert(mono.configure(monoConfig, &error));
+    const std::array<uint8_t, 4> balancedFrame { 0x00, 0x20, 0x00, 0x10 };
+    assert(mono.write(balancedFrame.data(), balancedFrame.size(), &error) == balancedFrame.size());
+    std::array<uint8_t, 2> monoOutput {};
+    assert(mono.fill(monoOutput.data(), monoOutput.size(), true) == monoOutput.size());
+    assert(readInt16Sample({ monoOutput.begin(), monoOutput.end() }, 0) == 0x1800);
+
+    neri::usb::PcmPipeline widened;
+    auto widenedConfig = configFor(48000, 48000);
+    widenedConfig.input.channelCount = 1;
+    widenedConfig.output = { 48000, 4, 2, 16, 8 };
+    assert(widened.configure(widenedConfig, &error));
+    const std::array<uint8_t, 2> monoFrame { 0x00, 0x08 };
+    assert(widened.write(monoFrame.data(), monoFrame.size(), &error) == monoFrame.size());
+    std::array<uint8_t, 8> widenedOutput {};
+    assert(widened.fill(widenedOutput.data(), widenedOutput.size(), true) == widenedOutput.size());
+    assert(readInt16Sample({ widenedOutput.begin(), widenedOutput.end() }, 0) == 0x0800);
+    assert(readInt16Sample({ widenedOutput.begin(), widenedOutput.end() }, 2) == 0x0800);
+    assert(readInt16Sample({ widenedOutput.begin(), widenedOutput.end() }, 4) == 0);
+}
+
 } // namespace
 
 int main() {
+    verifiesChannelLayoutsCarryStereoWithoutDuplicatingExtraChannels();
+    verifiesResamplerOutputDoesNotDependOnChunking();
+    verifiesResamplerKeepsPassbandToneAccurate();
+    verifiesResamplerRejectsContentAboveOutputNyquist();
+    verifiesResamplerInputBoundNeverOverfillsOutput();
+    verifiesBitPerfectResumeAndTransportStartKeepSamplesExact();
+    verifiesBitPerfectMuteIsHardAndUnmuteIsExact();
+    verifiesBitPerfectPartialUnderrunKeepsValidFrames();
+    verifiesBitPerfectLeavingRestoresSmoothGain();
+    verifiesIntegerUpconversionPadsWithoutChangingBits();
+    verifiesFloatFromIntegerSourceRoundTripsExactly();
     verifiesExactRatePassThroughAcrossWrites();
     verifiesStreamingResampleKeepsLongTermFrameCount();
     verifiesPausePreservesQueuedAudio();

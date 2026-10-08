@@ -26,7 +26,6 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Tune
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -108,7 +107,6 @@ internal fun MoreOptionsMainContent(
     snackbarHostState: SnackbarHostState,
     onOpenSearch: () -> Unit,
     onOpenEditInfo: () -> Unit,
-    onOpenPlaybackSound: () -> Unit,
     onOpenLyricBehavior: () -> Unit,
     onOpenFontSize: () -> Unit,
     onOpenBiliVideoSkip: () -> Unit,
@@ -130,7 +128,6 @@ internal fun MoreOptionsMainContent(
             isDismissing = isDismissing,
             onOpenSearch = onOpenSearch,
             onOpenEditInfo = onOpenEditInfo,
-            onOpenPlaybackSound = onOpenPlaybackSound,
             onShowQualitySwitch = onShowQualitySwitch
         )
         DownloadOrDetailsAction(
@@ -176,7 +173,6 @@ private fun MetadataAndPlaybackActions(
     isDismissing: Boolean,
     onOpenSearch: () -> Unit,
     onOpenEditInfo: () -> Unit,
-    onOpenPlaybackSound: () -> Unit,
     onShowQualitySwitch: () -> Unit
 ) {
     ListItem(
@@ -202,12 +198,6 @@ private fun MetadataAndPlaybackActions(
             modifier = Modifier.clickable(onClick = onShowQualitySwitch)
         )
     }
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.nowplaying_audio_effects_title)) },
-        leadingContent = { Icon(Icons.Outlined.Tune, null) },
-        supportingContent = { Text(stringResource(CoreCommonR.string.nowplaying_audio_effects_desc)) },
-        modifier = Modifier.clickable(onClick = onOpenPlaybackSound)
-    )
 }
 
 @Composable

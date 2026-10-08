@@ -95,8 +95,6 @@
     "moe/ouom/neriplayer/core/player/service/presentation/PlaybackServiceMetadataPresentation.kt",
     "moe/ouom/neriplayer/core/player/service/usb/UsbExclusiveServiceKeepAliveOwner.kt",
     "moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveKeepAlivePort.kt",
-    "moe/ouom/neriplayer/core/player/service/usb/UsbExclusiveMediaSessionVolumeRouter.kt",
-    "moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveVolumeRoutingPort.kt",
     "moe/ouom/neriplayer/platform/youtube/api/challenge/YouTubeStreamingCipherResolution.kt",
     "moe/ouom/neriplayer/platform/youtube/api/protocol/YouTubePlayerRequestComposer.kt",
     "moe/ouom/neriplayer/core/player/service/presentation/PlaybackServicePresentationOwner.kt",
@@ -633,14 +631,11 @@
         "changeCurrentPlaybackQuality",
         "setPlaybackSpeed",
         "setPlaybackPitch",
-        "setPlaybackLoudnessGain",
         "setPlaybackVolumeBalance",
         "setPlaybackVolumeNormalizationEnabled",
         "setPlaybackHighResolutionOutputEnabled",
-        "setPlaybackEqualizerEnabled",
-        "selectPlaybackEqualizerPreset",
-        "updatePlaybackEqualizerBandLevel",
-        "resetPlaybackSoundSettings",
+        "resetPlaybackSpeedAndPitch",
+        "updateAudioEffects",
         "applyPlaybackSoundConfig$runtime",
         "schedulePlaybackSoundConfigApply$runtime",
         "applyPlaybackSoundConfigIfChanged$runtime",
@@ -674,13 +669,6 @@
       "methods": [
         "previousSongForLongFormProgress",
         "localPlaylistIdForSong"
-      ]
-    },
-    {
-      "source": "moe/ouom/neriplayer/core/player/lifecycle/PlayerManagerLifecycleExtensions.kt",
-      "class": "moe.ouom.neriplayer.core.player.lifecycle.PlayerManagerLifecycleExtensionsKt$initializePlaybackEngine$4",
-      "methods": [
-        "onAudioSessionIdChanged"
       ]
     },
     {
@@ -1035,7 +1023,6 @@
         "getArtworkOwner",
         "getPresentationPort",
         "getPresentationOwner",
-        "getUsbVolumeRouter",
         "onArtworkChanged",
         "refreshFavoriteSongKeys",
         "refreshArtworkPresentation",
@@ -1072,8 +1059,6 @@
         "updateUsbExclusiveBackgroundAudioAnchor",
         "updateUsbExclusiveServiceKeepAlive",
         "requestUsbExclusiveBackgroundForegroundReassert",
-        "updateMediaSessionVolumeRouting",
-        "disableUsbExclusiveMediaSessionVolumeRouting",
         "releaseServiceResourcesAfterForegroundFailure",
         "cancelUsbKeepAliveAfterForegroundFailure",
         "releaseMediaSessionAfterForegroundFailure",

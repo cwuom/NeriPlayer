@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveForegroundRecovery
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveDecision
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveForegroundRecoveryAction
-import moe.ouom.neriplayer.core.player.policy.usb.shouldApplyActiveUsbBufferResize
+import moe.ouom.neriplayer.core.player.policy.usb.shouldRestoreReservedUsbBuffer
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRestoreUsbExclusiveForegroundPlaybackIntent
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRetryUsbExclusiveDeferredRuntimeRefresh
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
@@ -47,6 +47,7 @@ internal interface UsbExclusiveLivenessPort {
     fun restorePlaybackIntent(reason: String)
     fun markForegroundStable()
     fun targetBufferDurationMs(foreground: Boolean): Int
+    fun reservedBufferDurationMs(): Int
     fun configureTransferWindow(durationMs: Int, foreground: Boolean): Boolean
     fun configureBufferDuration(durationMs: Int, foreground: Boolean): Boolean
 }
@@ -368,19 +369,16 @@ internal class UsbExclusiveLivenessOwner(
 
     fun applyActiveBuffer(reason: String) {
         val target = port.targetBufferDurationMs(appInForeground)
+        val reserved = port.reservedBufferDurationMs()
         val native = port.nativeState()
-        if (!shouldApplyActiveUsbBufferResize(native.streaming, native.bufferDurationMs, target)) {
-            val transferApplied = port.configureTransferWindow(target, appInForeground)
-            NPLogger.d(
-                "NERI-UsbExclusive",
-                "defer active USB buffer update: reason=$reason foreground=$appInForeground " +
-                    "current=${native.bufferDurationMs} target=$target transferWindowApplied=$transferApplied"
-            )
-            return
-        }
-        if (port.configureBufferDuration(target, appInForeground)) {
-            NPLogger.d("NERI-UsbExclusive", "updated active USB buffer: reason=$reason foreground=$appInForeground bufferMs=$target")
-        }
+        val restored = shouldRestoreReservedUsbBuffer(native.streaming, native.bufferDurationMs, reserved) &&
+            port.configureBufferDuration(reserved, appInForeground)
+        val transferApplied = port.configureTransferWindow(target, appInForeground)
+        NPLogger.d(
+            "NERI-UsbExclusive",
+            "applied USB lifecycle buffer: reason=$reason foreground=$appInForeground ring=${native.bufferDurationMs} " +
+                "reserved=$reserved restored=$restored waterlineSourceMs=$target transferWindowApplied=$transferApplied"
+        )
     }
 
     private class BackgroundAuditProgress {
@@ -418,7 +416,8 @@ internal class UsbExclusiveLivenessOwner(
                 outputFrameBytes = metrics.outputFrameBytes.orZero(),
                 currentPcmLevelBytes = metrics.pcmLevelBytes.orUnknown(),
                 previousStallTicks = stallTicks,
-                recoveryTicks = 1
+                recoveryTicks = 1,
+                starvationRecoveryTicks = BACKGROUND_AUDIT_CHECKPOINTS_MS.size + 1
             )
         }
 

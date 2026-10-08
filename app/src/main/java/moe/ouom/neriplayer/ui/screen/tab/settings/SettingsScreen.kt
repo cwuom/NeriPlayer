@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
@@ -96,6 +97,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutPageContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.BackgroundImagePickerPort
+import moe.ouom.neriplayer.ui.screen.tab.settings.audio.AudioEffectsSettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.EnforceNowPlayingBackgroundExclusion
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.NowPlayingBackgroundExclusionPort
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.SettingsLyricsAppearanceContent
@@ -400,6 +402,15 @@ internal fun SettingsScreen(
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished,
                                     onClick = { showDpiDialog = true }
+                                )
+                            }
+                        },
+
+                        SettingsPage.AudioEffects to {
+                            item(key = "${selectedPage.name}:content") {
+                                AudioEffectsSettingsPage(
+                                    usbExclusive = playbackState.playbackOutput.usbExclusivePlayback,
+                                    modifier = Modifier.animateItem()
                                 )
                             }
                         },
@@ -797,6 +808,8 @@ internal fun SettingsScreen(
 
                         SettingsPage.UsbExclusive to {
                             item(key = "${selectedPage.name}:content") {
+                                val floatingKeepAlive by repository.usbExclusiveFloatingKeepAliveFlow
+                                    .collectAsStateWithLifecycle(initialValue = false)
                                 UsbExclusiveSettingsSection(
                                     usbExclusivePlayback = playbackState.playbackOutput.usbExclusivePlayback,
                                     onUsbExclusivePlaybackChange = playbackActions.onUsbExclusivePlaybackChange,
@@ -813,6 +826,10 @@ internal fun SettingsScreen(
                                     onForegroundBufferMsChange = usbActions.onForegroundBufferMsChange,
                                     onBackgroundBufferMsChange = usbActions.onBackgroundBufferMsChange,
                                     onVolumeRiskThresholdDbfsChange = usbActions.onVolumeRiskThresholdDbfsChange,
+                                    floatingKeepAliveEnabled = floatingKeepAlive,
+                                    onFloatingKeepAliveChange = { enabled ->
+                                        scope.launch { repository.setUsbExclusiveFloatingKeepAlive(enabled) }
+                                    },
                                     modifier = Modifier.animateItem()
                                 )
                             }

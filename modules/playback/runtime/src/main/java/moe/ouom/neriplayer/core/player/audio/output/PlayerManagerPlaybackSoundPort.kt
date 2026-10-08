@@ -33,12 +33,8 @@ internal object PlayerManagerPlaybackSoundPort : PlaybackSoundPort {
     override suspend fun persistConfig(config: PlaybackSoundConfig) {
         settingsRepo.setPlaybackSpeed(config.speed)
         settingsRepo.setPlaybackPitch(config.pitch)
-        settingsRepo.setPlaybackLoudnessGainMb(config.loudnessGainMb)
         settingsRepo.setPlaybackVolumeBalance(config.volumeBalance)
         settingsRepo.setPlaybackVolumeNormalizationEnabled(config.volumeNormalizationEnabled)
-        settingsRepo.setPlaybackEqualizerEnabled(config.equalizerEnabled)
-        settingsRepo.setPlaybackEqualizerPreset(config.presetId)
-        settingsRepo.setPlaybackEqualizerCustomBandLevels(config.customBandLevelsMb)
     }
 
     override suspend fun persistHighResolution(enabled: Boolean) {

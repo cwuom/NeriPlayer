@@ -56,6 +56,10 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
+import moe.ouom.neriplayer.core.player.audio.effects.AudioEffectsOwner
+import moe.ouom.neriplayer.core.player.audio.effects.AudioEffectsRuntimeState
+import moe.ouom.neriplayer.core.player.audio.effects.AudioOutputRouteMonitor
+import moe.ouom.neriplayer.core.player.audio.effects.PlayerManagerAudioEffectsPort
 import moe.ouom.neriplayer.core.player.audio.output.PlaybackSoundOwner
 import moe.ouom.neriplayer.core.player.audio.output.PlayerManagerPlaybackSoundPort
 import moe.ouom.neriplayer.core.player.runtime.quality.PlaybackQualityOwner
@@ -80,6 +84,9 @@ import moe.ouom.neriplayer.data.model.playback.PreferredQualityKeys
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsRuntimeStats
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
+import moe.ouom.neriplayer.data.model.playback.effects.AudioOutputRoute
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.session.PlayerQueueSessionBindings
@@ -342,6 +349,8 @@ object PlayerManager {
     @Volatile
     internal var listenTogetherSafetyResumeInFlight = false
     internal var playbackSoundOwner = PlaybackSoundOwner(mainScope, ioScope, PlayerManagerPlaybackSoundPort)
+    internal val audioEffectsOwner = AudioEffectsOwner(ioScope, PlayerManagerAudioEffectsPort)
+    internal var audioOutputRouteMonitor: AudioOutputRouteMonitor? = null
     internal var playbackTransportOwner = PlaybackTransportOwner(
         mainScope, PlayerManagerPlaybackTransportPort, SystemClock::elapsedRealtime
     )
@@ -454,6 +463,8 @@ object PlayerManager {
         get() = usbExclusiveLivenessOwner.appInForeground
     @Volatile
     internal var usbExclusivePreferences = UsbExclusivePreferences()
+    @Volatile
+    internal var usbExclusiveFloatingKeepAliveEnabled = false
     internal var allowMixedPlaybackEnabled = false
 
     internal val queueStore = PlayerQueueStateStore(AppQueueSongIdentity)
@@ -656,6 +667,13 @@ object PlayerManager {
 
     val playbackSoundStateFlow: StateFlow<PlaybackSoundState>
         get() = playbackSoundOwner.state
+
+    val audioEffectsSettingsFlow: StateFlow<AudioEffectsSettings>
+        get() = audioEffectsOwner.settings
+    val audioOutputRouteFlow: StateFlow<AudioOutputRoute>
+        get() = audioEffectsOwner.route
+    val audioEffectsStatsFlow: StateFlow<AudioEffectsRuntimeStats>
+        get() = AudioEffectsRuntimeState.stats
 
     /** 本地歌单快照, 供收藏状态和歌单选择弹窗使用 */
     internal val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
@@ -1320,9 +1338,19 @@ object PlayerManager {
         playbackSoundOwner.setPitch(pitch, persist)
     }
 
-    fun setPlaybackLoudnessGain(levelMb: Int, persist: Boolean = true) {
+    fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean = true) {
         ensureInitialized()
-        playbackSoundOwner.setLoudnessGain(levelMb, persist)
+        playbackSoundOwner.setSpeedAndPitch(speed, pitch, persist)
+    }
+
+    fun resetPlaybackSpeedAndPitch(persist: Boolean = true) {
+        ensureInitialized()
+        playbackSoundOwner.resetSpeedAndPitch(persist)
+    }
+
+    fun updateAudioEffects(persist: Boolean = true, transform: (AudioEffectsSettings) -> AudioEffectsSettings) {
+        ensureInitialized()
+        audioEffectsOwner.update(persist, transform)
     }
 
     fun setPlaybackVolumeBalance(balance: Float, persist: Boolean = true) {
@@ -1338,30 +1366,6 @@ object PlayerManager {
     fun setPlaybackHighResolutionOutputEnabled(enabled: Boolean, persist: Boolean = true) {
         ensureInitialized()
         playbackSoundOwner.setHighResolutionEnabled(enabled, persist)
-    }
-
-    fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
-        ensureInitialized()
-        playbackSoundOwner.setEqualizerEnabled(enabled, persist)
-    }
-
-    fun selectPlaybackEqualizerPreset(presetId: String, persist: Boolean = true) {
-        ensureInitialized()
-        playbackSoundOwner.selectEqualizerPreset(presetId, persist)
-    }
-
-    fun updatePlaybackEqualizerBandLevel(
-        index: Int,
-        levelMb: Int,
-        persist: Boolean = true
-    ) {
-        ensureInitialized()
-        playbackSoundOwner.updateEqualizerBandLevel(index, levelMb, persist)
-    }
-
-    fun resetPlaybackSoundSettings(persist: Boolean = true) {
-        ensureInitialized()
-        playbackSoundOwner.reset(persist)
     }
 
     internal fun applyPlaybackSoundConfig(newConfig: PlaybackSoundConfig, persist: Boolean) {

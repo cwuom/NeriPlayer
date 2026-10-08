@@ -98,4 +98,8 @@ object UsbExclusiveAudioPathTracker {
     fun updateVolume(volume: Float) {
         _state.update { current -> current.copy(requestedVolume = volume) }
     }
+
+    fun updateHardwareVolume(available: Boolean) {
+        _state.update { current -> current.copy(hardwareVolume = available) }
+    }
 }

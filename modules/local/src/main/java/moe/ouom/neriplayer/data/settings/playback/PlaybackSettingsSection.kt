@@ -229,6 +229,15 @@ abstract class PlaybackSettingsSection protected constructor() {
     )
 
     @AutoSetting(
+        key = "audio_effects_settings",
+        type = SettingValueType.String,
+        defaultString = "",
+        order = 126,
+        access = SettingAccessMode.KeyOnly
+    )
+    val audioEffectsSettings = Unit
+
+    @AutoSetting(
         key = "keep_last_playback_progress",
         type = SettingValueType.Boolean,
         defaultBoolean = true,
@@ -452,6 +461,15 @@ abstract class PlaybackSettingsSection protected constructor() {
         access = SettingAccessMode.KeyOnly
     )
     val usbExclusiveVolumeRiskThresholdDbfs = Unit
+
+    @AutoSetting(
+        key = "usb_exclusive_floating_keep_alive",
+        type = SettingValueType.Boolean,
+        defaultBoolean = false,
+        order = 173,
+        access = SettingAccessMode.KeyOnly
+    )
+    val usbExclusiveFloatingKeepAlive = Unit
 
     @AutoSetting(
         key = "allow_mixed_playback",

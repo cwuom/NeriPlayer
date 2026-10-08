@@ -45,6 +45,13 @@ struct TerminalClockSource {
     int clockSourceId = 0;
 };
 
+// 时钟选择器有多个输入脚，倍频器只有一个输入；两者都只是把终端连到最终时钟源
+struct ClockRouting {
+    int id = 0;
+    bool selector = false;
+    std::vector<int> sourceIds;
+};
+
 struct SampleRateSubrange {
     int minimum = 0;
     int maximum = 0;
@@ -90,6 +97,13 @@ bool parseTerminalClockSourceDescriptor(
     const uint8_t* descriptor,
     int descriptorLength,
     TerminalClockSource* output,
+    std::string* error
+);
+
+bool parseClockRoutingDescriptor(
+    const uint8_t* descriptor,
+    int descriptorLength,
+    ClockRouting* output,
     std::string* error
 );
 

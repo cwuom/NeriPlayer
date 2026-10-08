@@ -24,13 +24,11 @@ internal fun MutableSet<PcmAudioRequirement>.addPlaybackParameterRequirements(
 }
 
 internal fun MutableSet<PcmAudioRequirement>.addSoundEffectRequirements(
-    equalizerEnabled: Boolean,
-    loudnessGainMb: Int,
+    audioEffectsActive: Boolean,
     volumeBalance: Float,
     volumeNormalizationEnabled: Boolean
 ) {
-    if (equalizerEnabled) add(PcmAudioRequirement.EQUALIZER)
-    if (loudnessGainMb != 0) add(PcmAudioRequirement.LOUDNESS)
+    if (audioEffectsActive) add(PcmAudioRequirement.AUDIO_EFFECTS)
     if (abs(volumeBalance) > PLAYBACK_PARAMETER_EPSILON) add(PcmAudioRequirement.BALANCE)
     if (volumeNormalizationEnabled) add(PcmAudioRequirement.VOLUME_NORMALIZATION)
 }

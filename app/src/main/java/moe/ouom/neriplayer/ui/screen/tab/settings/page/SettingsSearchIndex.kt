@@ -773,6 +773,54 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
             id = "about_debug",
             aliases = listOf("about", "version", "debug", "banben", "tiaoshi")
         )
+    ) + audioEffectsSearchEntries(::entry)
+}
+
+private typealias ManualSearchEntryFactory =
+    (SettingsPage, Int, Int, String, List<String>, String, Int) -> SettingsSearchEntry
+
+private fun audioEffectsSearchEntries(entry: ManualSearchEntryFactory): List<SettingsSearchEntry> {
+    val page = SettingsPage.AudioEffects
+    val target = "page:${page.name}"
+    fun audio(titleRes: Int, descriptionRes: Int, id: String, aliases: List<String>, offset: Int) =
+        entry(page, titleRes, descriptionRes, id, aliases, target, page.ordinal * 100 + offset)
+    return listOf(
+        audio(
+            CoreCommonR.string.audio_effects_eq_title, CoreCommonR.string.audio_effects_eq_desc, "audio_effects_eq",
+            listOf("equalizer", "eq", "10 band", "junhengqi", "均衡", "频段"), 10
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_presets_title, CoreCommonR.string.audio_effects_presets_desc,
+            "audio_effects_presets", listOf("preset", "rock", "pop", "jazz", "yuzhi", "风格", "摇滚", "流行"), 12
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_peq_title, CoreCommonR.string.audio_effects_peq_desc, "audio_effects_peq",
+            listOf("autoeq", "parametric", "peq", "headphone", "erji", "jiaozheng", "耳机", "校正"), 14
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_tone_title, CoreCommonR.string.audio_effects_tone_desc, "audio_effects_tone",
+            listOf("bass", "treble", "virtual bass", "diyin", "gaoyin", "低音", "高音", "重低音"), 16
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_space_title, CoreCommonR.string.audio_effects_space_desc,
+            "audio_effects_space", listOf("reverb", "surround", "3d", "crossfeed", "width", "hunxiang", "环绕", "混响"), 18
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_dynamics_title, CoreCommonR.string.audio_effects_dynamics_desc,
+            "audio_effects_dynamics", listOf("compressor", "limiter", "loudness", "yasuo", "压缩", "破音", "响度"), 20
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_speaker_title, CoreCommonR.string.audio_effects_speaker_desc,
+            "audio_effects_speaker", listOf("speaker", "waifang", "yangshengqi", "外放", "扬声器", "喇叭"), 22
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_speed_title, CoreCommonR.string.audio_effects_speed_desc,
+            "audio_effects_speed", listOf("speed", "pitch", "nightcore", "beisu", "yindiao", "倍速", "变调"), 24
+        ),
+        audio(
+            CoreCommonR.string.audio_effects_power_mode, CoreCommonR.string.audio_effects_power_note,
+            "audio_effects_power", listOf("battery", "power", "gonghao", "shengdian", "功耗", "省电"), 26
+        )
     )
 }
 
@@ -783,6 +831,10 @@ private fun Context.safeString(resId: Int): String {
 
 private val PageSearchAliases = mapOf(
     SettingsPage.General to listOf("general", "basic", "tongyong", "jichu"),
+    SettingsPage.AudioEffects to listOf(
+        "audio effects", "sound effects", "dsp", "eq", "equalizer", "preset", "speed", "pitch",
+        "yinxiao", "junhengqi", "beisu", "yindiao", "音效", "均衡器", "倍速", "变速", "音调"
+    ),
     SettingsPage.Theme to listOf("theme", "dark", "light", "color", "palette", "zhuti", "yanse"),
     SettingsPage.Accounts to listOf(
         "account",

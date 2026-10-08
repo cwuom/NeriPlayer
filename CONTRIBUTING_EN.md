@@ -255,7 +255,7 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/playback/`
   - `NeriMiniPlayer.kt`: bottom Mini Player, play/pause, and horizontal swipe for previous/next.
-    Playback sound and sleep-timer sheets also live here.
+    The sleep-timer sheet also lives here; the audio effects & speed settings page lives in `ui/screen/tab/settings/audio/`.
   - Same-named files in the `ui/component/` root are primarily legacy package
     compatibility entry points. New implementations belong in responsibility-based
     subpackages such as `lyrics/`, `playback/`, `download/`, and `navigation/`.
@@ -301,7 +301,12 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   - `service/AudioPlayerService.kt`: foreground playback service, media notification,
     MediaSession, and media button handling.
   - Downloads belong to `:download:runtime`; playback uses the `PlayerDownloadAccess` interface.
-  - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
+  - `effects/PlaybackEffectsController.kt`: speed and pitch.
+  - `audio/effects/`: `AudioEffectsAudioSink` sits in front of the USB/system output sink and runs
+    the `:native` `dsp/` engine on 16/24/32-bit integer and float PCM. Off or neutral settings pass
+    audio through unchanged and keep offload available; USB exclusive output bypasses it by default to
+    stay bit-perfect. Effect settings, built-in presets, codecs, and DSP parameter mapping live in
+    `:model` under `playback/effects`; parameter indices must match `dsp/neri_dsp_params.h`.
   - `engine/`: Media3 renderers and data sources. PCM normalization, channel balance,
     and reactive audio signals belong to `:playback:logic` under `audio/processing` and `audio/reactive`.
   - `runtime/stats`, `runtime/progress`, `runtime/transport`, and `runtime/quality`
@@ -567,8 +572,12 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   **UAC2.0 Type I PCM** DAC, the foreground service, wake locks, and the system
   background policy. The in-app background-permission prompt is not decorative,
   so screen-off behavior must stay in scope.
-- USB settings include bit-perfect volume mode: software gain remains at 0 dB and
-  the DAC hardware controls volume. Do not treat it as ordinary app/system volume.
+- USB settings include bit-perfect output mode: the DAC format follows the source
+  sample rate and bit depth, software gain remains at 0 dB, the native pipeline applies
+  no fades, and the DAC hardware controls volume. Do not treat it as ordinary app/system volume.
+- USB exclusive volume follows ordinary media volume (`STREAM_MUSIC`); do not move it
+  back to MediaSession remote volume. The background anchor must not set a preferred
+  device, because Android 12+ then moves the media volume device to the speaker.
 - USB attach handling is a separate setting. When disabled, both the Activity alias
   and playback-service broadcast entry must skip `USB_DEVICE_ATTACHED`; do not only
   hide the setting or change one entry point.

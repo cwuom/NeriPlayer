@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.device.UsbExclusiveDeviceSelectionOutcome
 import moe.ouom.neriplayer.core.player.usb.device.selectUsbExclusiveDevice
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
@@ -33,6 +34,17 @@ internal data class PreparedUsbInputPcmFormat(
     val encoding: Int,
     val bytesPerSample: Int
 )
+
+/**
+ * 比特完美按音源采样率和位深申请 DAC 格式，固定采样率/位深会引入重采样或截断；
+ * 兼容回退仍然保留，DAC 不支持音源格式时继续出声，由状态页如实提示
+ */
+internal fun UsbExclusivePreferences.withBitPerfectSourceFormat(): UsbExclusivePreferences =
+    if (bitPerfect) {
+        copy(sampleRateMode = UsbExclusiveSampleRateMode.FOLLOW_SOURCE, bitDepthMode = UsbExclusiveBitDepthMode.AUTO)
+    } else {
+        this
+    }
 
 internal fun describeUsbInputFormat(
     sampleRate: Int,
@@ -95,7 +107,7 @@ internal object UsbExclusiveOutputFormatResolver {
             PlayerManager.usbExclusivePreferences
         } else {
             UsbExclusivePreferences()
-        }
+        }.withBitPerfectSourceFormat()
         val usbOutputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             .filter { device -> device.isSink && isUsbOutputType(device.type) }
             .sortedBy(AudioDeviceInfo::getId)
@@ -287,7 +299,8 @@ internal object UsbExclusiveOutputFormatResolver {
 
     internal fun preparedInputPcmFormat(
         inputEncoding: Int,
-        outputFormat: ResolvedUsbOutputFormat
+        outputFormat: ResolvedUsbOutputFormat,
+        inputSampleRate: Int = outputFormat.sampleRate
     ): PreparedUsbInputPcmFormat? {
         if (inputEncoding != C.ENCODING_PCM_FLOAT) {
             val bytesPerSample = pcmBytesPerSampleForEncoding(inputEncoding) ?: return null
@@ -295,6 +308,10 @@ internal object UsbExclusiveOutputFormatResolver {
                 encoding = inputEncoding,
                 bytesPerSample = bytesPerSample
             )
+        }
+        // 需要重采样时把浮点直接交给原生，插值后只量化一次，也省掉播放线程逐样本转换
+        if (inputSampleRate != outputFormat.sampleRate) {
+            return PreparedUsbInputPcmFormat(encoding = C.ENCODING_PCM_FLOAT, bytesPerSample = 4)
         }
         return when (outputFormat.subslotBytes) {
             2 -> PreparedUsbInputPcmFormat(
@@ -315,7 +332,8 @@ internal object UsbExclusiveOutputFormatResolver {
 
     internal fun preparedInputPcmFormat(
         inputEncoding: Int,
-        outputDescription: String
+        outputDescription: String,
+        inputSampleRate: Int? = null
     ): PreparedUsbInputPcmFormat? {
         val output = parseOutputDescription(outputDescription) ?: return null
         return preparedInputPcmFormat(
@@ -327,7 +345,8 @@ internal object UsbExclusiveOutputFormatResolver {
                 subslotBytes = output.subslotBytes,
                 bufferDurationMs = 0,
                 description = outputDescription
-            )
+            ),
+            inputSampleRate = inputSampleRate ?: output.sampleRate
         )
     }
 

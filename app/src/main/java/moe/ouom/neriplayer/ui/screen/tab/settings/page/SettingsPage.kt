@@ -8,6 +8,7 @@ import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Palette
@@ -31,6 +32,11 @@ internal enum class SettingsPage(
     General(
         AutoSettingsSchema.general.metadata,
         Icons.Outlined.Settings
+    ),
+    AudioEffects(
+        titleRes = CoreCommonR.string.settings_audio_effects_title,
+        descriptionRes = CoreCommonR.string.settings_audio_effects_desc,
+        icon = Icons.Outlined.GraphicEq
     ),
     Theme(
         AutoSettingsSchema.theme.metadata,
@@ -117,7 +123,8 @@ internal enum class SettingsPage(
 internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
     listOf(
         SettingsPage.Accounts,
-        SettingsPage.General
+        SettingsPage.General,
+        SettingsPage.AudioEffects
     ),
     listOf(
         SettingsPage.Theme,

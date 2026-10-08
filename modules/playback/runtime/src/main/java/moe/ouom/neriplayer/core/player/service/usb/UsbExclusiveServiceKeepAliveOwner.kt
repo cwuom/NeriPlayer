@@ -19,11 +19,20 @@ import kotlin.time.Duration.Companion.milliseconds
 private const val FOREGROUND_KEEPALIVE_INTERVAL_MS = 5_000L
 private const val BACKGROUND_KEEPALIVE_INTERVAL_MS = 1_000L
 private const val KEEPALIVE_STALL_WARN_MS = 25_000L
-private const val KEEPALIVE_STALL_RECOVERY_TICKS = 1
+private const val KEEPALIVE_STALL_RECOVERY_TICKS = 2
+private const val KEEPALIVE_STARVATION_RECOVERY_TICKS = 5
 private const val KEEPALIVE_LOG_INTERVAL_TICKS = 3L
+private const val BACKGROUND_HEARTBEAT_EVERY_TICKS = 5
 
 internal fun usbExclusiveKeepAliveIntervalMs(appInForeground: Boolean): Long =
     if (appInForeground) FOREGROUND_KEEPALIVE_INTERVAL_MS else BACKGROUND_KEEPALIVE_INTERVAL_MS
+
+/**
+ * 后台每秒做一次健康检查；重新声明前台和强制刷新通知按前台的 5 秒节奏即可，
+ * 每秒重建通知会反复唤起 SystemUI，和音频线程抢 CPU
+ */
+internal fun usbExclusiveKeepAliveHeartbeatDue(appInForeground: Boolean, ticksSinceHeartbeat: Int): Boolean =
+    appInForeground || ticksSinceHeartbeat >= BACKGROUND_HEARTBEAT_EVERY_TICKS
 
 internal fun shouldReassertUsbExclusiveForegroundService(
     appInForeground: Boolean,
@@ -66,6 +75,7 @@ internal class UsbExclusiveServiceKeepAliveOwner(
     private var lastZeroFillBytes = -1L
     private var lastOutputPeak = Float.NaN
     private var stallTicks = 0
+    private var ticksSinceHeartbeat = BACKGROUND_HEARTBEAT_EVERY_TICKS
 
     fun update(reason: String) {
         if (port.playbackActive()) {
@@ -117,6 +127,7 @@ internal class UsbExclusiveServiceKeepAliveOwner(
         updateAnchor(foregroundReason)
         cancelLoop()
         lastTickAtMs = 0L
+        ticksSinceHeartbeat = BACKGROUND_HEARTBEAT_EVERY_TICKS
         ensureLoop()
         runTick()
     }
@@ -144,11 +155,14 @@ internal class UsbExclusiveServiceKeepAliveOwner(
         lastNativeHandle = 0L
         lastCompletedFrames = -1L
         stallTicks = 0
+        ticksSinceHeartbeat = BACKGROUND_HEARTBEAT_EVERY_TICKS
     }
 
     private fun runTick() {
         val gapMs = recordTickGap(port.elapsedRealtime())
-        val reasserted = reassertForegroundIfNeeded()
+        val heartbeat = usbExclusiveKeepAliveHeartbeatDue(port.appInForeground(), ticksSinceHeartbeat)
+        ticksSinceHeartbeat = if (heartbeat) 1 else ticksSinceHeartbeat + 1
+        val reasserted = heartbeat && reassertForegroundIfNeeded()
         if (!port.ensureForeground()) {
             port.onForegroundFailure("usb_keepalive")
             return
@@ -156,7 +170,7 @@ internal class UsbExclusiveServiceKeepAliveOwner(
         updateAnchor("usb_keepalive")
         port.refreshNative()
         port.maintainWakeLock()
-        port.updatePlaybackPresentation()
+        if (heartbeat) port.updatePlaybackPresentation()
         val nativeState = port.nativeState()
         val pathState = port.pathState()
         val message = keepAliveDiagnostic(nativeState, pathState, gapMs, reasserted)
@@ -267,6 +281,7 @@ internal class UsbExclusiveServiceKeepAliveOwner(
             currentPcmLevelBytes = metrics.pcmLevelBytes ?: -1L,
             previousStallTicks = stallTicks,
             recoveryTicks = KEEPALIVE_STALL_RECOVERY_TICKS,
+            starvationRecoveryTicks = KEEPALIVE_STARVATION_RECOVERY_TICKS,
         )
         if (decision.progress == UsbExclusiveKeepAliveProgress.COUNTER_RESET) {
             NPLogger.i("NERI-APS", "USB exclusive keepalive reset frame baseline after native counter reset: " +
