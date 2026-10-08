@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen.artist
  */
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -84,11 +85,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent
@@ -134,19 +137,22 @@ internal fun resolveBiliUploaderBackdropSources(
     )
 }
 
+private fun BiliUploaderHeader?.matchingUploaderOrBlank(uploader: BiliUploaderSummary): BiliUploaderHeader =
+    this?.takeIf { it.mid == uploader.mid }
+        ?: BiliUploaderHeader(mid = uploader.mid, name = "", avatarUrl = "", sign = "", bannerUrl = "")
+
 internal fun createBiliUploaderFavorite(
     uploader: BiliUploaderSummary,
     header: BiliUploaderHeader?
 ): FavoritePlaylist {
-    val currentHeader = header?.takeIf { it.mid == uploader.mid }
+    val currentHeader = header.matchingUploaderOrBlank(uploader)
     return FavoritePlaylist(
         id = uploader.mid,
-        name = currentHeader?.name?.ifBlank { uploader.name } ?: uploader.name,
-        coverUrl = (currentHeader?.avatarUrl?.ifBlank { uploader.avatarUrl }
-            ?: uploader.avatarUrl).takeIf { it.isNotBlank() },
+        name = currentHeader.name.ifBlank { uploader.name },
+        coverUrl = currentHeader.avatarUrl.ifBlank { uploader.avatarUrl }.takeIf { it.isNotBlank() },
         trackCount = 0,
         source = FAVORITE_SOURCE_BILI_ARTIST,
-        subtitle = currentHeader?.sign?.takeIf { it.isNotBlank() },
+        subtitle = currentHeader.sign.takeIf { it.isNotBlank() },
         songs = emptyList()
     )
 }
@@ -443,39 +449,101 @@ private fun BiliUploaderHeaderCard(
     offlineMode: Boolean,
     isTabletLayout: Boolean
 ) {
-    val context = LocalContext.current
-    val heroHeight = if (isTabletLayout) 160.dp else 210.dp
-    val avatarSize = if (isTabletLayout) 82.dp else 64.dp
-    val backdrop = resolveBiliUploaderBackdropSources(
-        bannerUrl = header?.bannerUrl,
-        avatarUrl = header?.avatarUrl
-    )
-    val avatarBackdropRequest = remember(
-        context,
-        backdrop.avatarUrl,
-        offlineMode
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        shape = RoundedCornerShape(28.dp)
     ) {
-        offlineCachedImageRequest(
-            context = context,
-            data = buildBiliThumbnailUrl(
-                imageUrl = backdrop.avatarUrl,
-                width = UPLOADER_AVATAR_BACKDROP_SIZE_PX,
-                height = UPLOADER_AVATAR_BACKDROP_SIZE_PX
-            ),
-            sizePx = UPLOADER_AVATAR_BACKDROP_SIZE_PX,
-            allowHardware = false,
-            offlineMode = offlineMode,
-            transformations = if (backdrop.avatarUrl.isNotEmpty()) {
-                listOf(
-                    BlurTransformation(
-                        context = context,
-                        radius = UPLOADER_AVATAR_BACKDROP_BLUR_RADIUS
-                    )
-                )
-            } else {
-                emptyList()
-            }
+        BiliUploaderHero(header = header, offlineMode = offlineMode, isTabletLayout = isTabletLayout)
+        BiliUploaderProfileDetails(
+            header = header,
+            followFavorite = followFavorite,
+            videoCount = videoCount,
+            collectionCount = collectionCount,
+            seriesCount = seriesCount,
+            isTabletLayout = isTabletLayout
         )
+    }
+}
+
+private fun biliUploaderAvatarBackdropRequest(
+    context: Context,
+    avatarUrl: String,
+    offlineMode: Boolean
+): ImageRequest = offlineCachedImageRequest(
+    context = context,
+    data = buildBiliThumbnailUrl(
+        imageUrl = avatarUrl,
+        width = UPLOADER_AVATAR_BACKDROP_SIZE_PX,
+        height = UPLOADER_AVATAR_BACKDROP_SIZE_PX
+    ),
+    sizePx = UPLOADER_AVATAR_BACKDROP_SIZE_PX,
+    allowHardware = false,
+    offlineMode = offlineMode,
+    transformations = if (avatarUrl.isNotEmpty()) {
+        listOf(
+            BlurTransformation(
+                context = context,
+                radius = UPLOADER_AVATAR_BACKDROP_BLUR_RADIUS
+            )
+        )
+    } else {
+        emptyList()
+    }
+)
+
+@Composable
+private fun BiliUploaderHero(
+    header: BiliUploaderHeader?,
+    offlineMode: Boolean,
+    isTabletLayout: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (isTabletLayout) 160.dp else 210.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        BiliUploaderBackdrop(
+            backdrop = resolveBiliUploaderBackdropSources(
+                bannerUrl = header?.bannerUrl,
+                avatarUrl = header?.avatarUrl
+            ),
+            bannerDescription = header?.name,
+            offlineMode = offlineMode
+        )
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
+        )
+        if (isTabletLayout) {
+            Box(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                BiliUploaderAvatar(header = header, offlineMode = offlineMode, size = 82.dp)
+            }
+        } else Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BiliUploaderAvatar(header = header, offlineMode = offlineMode, size = 64.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                BiliUploaderIdentity(header, contentColor = Color.White, maxNameLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BiliUploaderBackdrop(
+    backdrop: BiliUploaderBackdropSources,
+    bannerDescription: String?,
+    offlineMode: Boolean
+) {
+    val context = LocalContext.current
+    val avatarBackdropRequest = remember(context, backdrop.avatarUrl, offlineMode) {
+        biliUploaderAvatarBackdropRequest(context, backdrop.avatarUrl, offlineMode)
     }
     val bannerRequest = remember(context, backdrop.bannerUrl, offlineMode) {
         offlineCachedImageRequest(
@@ -489,125 +557,112 @@ private fun BiliUploaderHeaderCard(
             offlineMode = offlineMode
         )
     }
-    val avatar: @Composable () -> Unit = {
+    if (backdrop.avatarUrl.isNotEmpty()) {
         AsyncImage(
-            model = remember(context, header?.avatarUrl, offlineMode) {
-                offlineCachedImageRequest(
-                    context = context,
-                    data = buildBiliThumbnailUrl(
-                        imageUrl = header?.avatarUrl.orEmpty(),
-                        width = 160,
-                        height = 160
-                    ),
-                    sizePx = 160,
-                    allowHardware = false,
-                    offlineMode = offlineMode
-                )
-            },
-            contentDescription = header?.name,
+            model = avatarBackdropRequest,
+            contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(avatarSize)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+            modifier = Modifier.fillMaxSize()
         )
     }
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(heroHeight)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            if (backdrop.avatarUrl.isNotEmpty()) {
-                AsyncImage(
-                    model = avatarBackdropRequest,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            if (backdrop.bannerUrl.isNotEmpty()) {
-                AsyncImage(
-                    model = bannerRequest,
-                    contentDescription = header?.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
+    if (backdrop.bannerUrl.isNotEmpty()) {
+        AsyncImage(
+            model = bannerRequest,
+            contentDescription = bannerDescription,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+@Composable
+private fun BiliUploaderAvatar(
+    header: BiliUploaderHeader?,
+    offlineMode: Boolean,
+    size: Dp
+) {
+    val context = LocalContext.current
+    val avatarUrl = header?.avatarUrl
+    AsyncImage(
+        model = remember(context, avatarUrl, offlineMode) {
+            offlineCachedImageRequest(
+                context = context,
+                data = buildBiliThumbnailUrl(
+                    imageUrl = avatarUrl.orEmpty(),
+                    width = 160,
+                    height = 160
+                ),
+                sizePx = 160,
+                allowHardware = false,
+                offlineMode = offlineMode
             )
-            if (isTabletLayout) {
-                Box(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-                    avatar()
-                }
-            } else Row(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                avatar()
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    BiliUploaderIdentity(header, contentColor = Color.White, maxNameLines = 1)
-                }
-            }
+        },
+        contentDescription = header?.name,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    )
+}
+
+@Composable
+private fun BiliUploaderProfileDetails(
+    header: BiliUploaderHeader?,
+    followFavorite: FavoritePlaylist,
+    videoCount: Int,
+    collectionCount: Int,
+    seriesCount: Int,
+    isTabletLayout: Boolean
+) {
+    Column(modifier = Modifier.padding(if (isTabletLayout) 16.dp else 20.dp)) {
+        if (isTabletLayout) {
+            BiliUploaderIdentity(
+                header = header,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                maxNameLines = 3
+            )
+            Spacer(Modifier.height(12.dp))
         }
-        Column(modifier = Modifier.padding(if (isTabletLayout) 16.dp else 20.dp)) {
-            if (isTabletLayout) {
-                BiliUploaderIdentity(
-                    header = header,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    maxNameLines = 3
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_video_count, videoCount, videoCount))
-                    }
-                )
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text(
-                            pluralStringResource(
-                                CoreCommonR.plurals.bili_uploader_collection_count,
-                                collectionCount,
-                                collectionCount
-                            )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = {},
+                label = {
+                    Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_video_count, videoCount, videoCount))
+                }
+            )
+            AssistChip(
+                onClick = {},
+                label = {
+                    Text(
+                        pluralStringResource(
+                            CoreCommonR.plurals.bili_uploader_collection_count,
+                            collectionCount,
+                            collectionCount
                         )
-                    }
-                )
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_series_count, seriesCount, seriesCount))
-                    }
-                )
-            }
-            if (!header?.sign.isNullOrBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = header.sign.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.height(14.dp))
-            CreatorFollowButton(favorite = followFavorite)
+                    )
+                }
+            )
+            AssistChip(
+                onClick = {},
+                label = {
+                    Text(pluralStringResource(CoreCommonR.plurals.bili_uploader_series_count, seriesCount, seriesCount))
+                }
+            )
         }
+        val sign = header?.sign
+        if (!sign.isNullOrBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = sign,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        CreatorFollowButton(favorite = followFavorite)
     }
 }
 
@@ -735,7 +790,7 @@ private fun BiliUploaderVideoRow(
             val playCount = video.play?.let { formatPlayCount(context, it) }
             val duration = formatDurationSec(video.durationSec)
             Text(
-                text = listOfNotNull(playCount, duration.takeIf { it.isNotBlank() }).joinToString(" · "),
+                text = listOfNotNull(playCount, duration).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

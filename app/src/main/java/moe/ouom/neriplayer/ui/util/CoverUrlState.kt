@@ -124,14 +124,12 @@ internal fun choosePreferredPlaylistCover(
     fallbackCoverUrl: String?,
     preferredCoverUsable: Boolean?
 ): String? {
-    val preferred = preferredCoverUrl?.trim()?.takeIf(String::isNotBlank)
-    val fallback = fallbackCoverUrl?.trim()?.takeIf(String::isNotBlank)
-    return when (preferredCoverUsable) {
-        true -> preferred ?: fallback
-        false -> fallback
-        null -> preferred ?: fallback
-    }
+    val fallback = fallbackCoverUrl.normalizedCoverReference()
+    if (preferredCoverUsable == false) return fallback
+    return preferredCoverUrl.normalizedCoverReference() ?: fallback
 }
+
+private fun String?.normalizedCoverReference(): String? = this?.trim()?.takeIf(String::isNotBlank)
 
 internal fun shouldProbeFastLocalCoverCandidate(
     isLocalSong: Boolean,
@@ -143,48 +141,30 @@ internal fun shouldAllowRemoteCoverFallback(
     hasExplicitCustomCover: Boolean = false
 ): Boolean = !isLocalSong || hasExplicitCustomCover
 
-private fun isAllowedCoverCandidate(
+internal fun isAllowedCoverCandidate(
     reference: String?,
     allowRemoteCoverFallback: Boolean = true
 ): Boolean {
-    val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return false
+    val normalized = reference.normalizedCoverReference() ?: return false
     if (isMediaStoreCoverReference(normalized)) return false
     return allowRemoteCoverFallback || !CustomSongCoverStorage.isRemoteReference(normalized)
 }
 
-private fun SongItem.allowsRemoteCoverFallback(): Boolean {
-    val customReference = customCoverUrl
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-    val hasExplicitCustomCover = customReference?.let { reference ->
-        CustomSongCoverStorage.isRemoteReference(reference)
-    } == true
-    return shouldAllowRemoteCoverFallback(
-        isLocalSong = isLocalSong(),
-        hasExplicitCustomCover = hasExplicitCustomCover
-    )
-}
+internal fun SongItem.allowsRemoteCoverFallback(): Boolean = shouldAllowRemoteCoverFallback(
+    isLocalSong = isLocalSong(),
+    hasExplicitCustomCover = customCoverUrl.normalizedCoverReference()
+        ?.let(CustomSongCoverStorage::isRemoteReference) == true
+)
 
 internal fun resolvePrevalidatedCoverCandidate(
     primaryCoverUrl: String?,
     fallbackCoverUrl: String?,
     allowRemoteCoverFallback: Boolean = true
 ): String? {
-    fun remoteCandidate(reference: String?): String? {
-        if (!allowRemoteCoverFallback) return null
-        val candidate = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
-        return candidate.takeIf {
-            it.startsWith("https://", ignoreCase = true) ||
-                it.startsWith("http://", ignoreCase = true)
-        }
-    }
-
-    val primary = primaryCoverUrl?.trim()?.takeIf(String::isNotBlank)
-    return if (primary != null) {
-        remoteCandidate(primary)
-    } else {
-        remoteCandidate(fallbackCoverUrl)
-    }
+    if (!allowRemoteCoverFallback) return null
+    val candidate = primaryCoverUrl.normalizedCoverReference()
+        ?: fallbackCoverUrl.normalizedCoverReference()
+    return candidate?.takeIf(CustomSongCoverStorage::isRemoteReference)
 }
 
 private fun isPotentialCoverReference(reference: String): Boolean {
@@ -205,25 +185,13 @@ internal fun resolveImmediateCoverCandidate(
     primaryCoverUrl: String?,
     fallbackCoverUrl: String?,
     allowRemoteCoverFallback: Boolean = true
-): String? {
-    val primary = primaryCoverUrl
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-    if (
-        primary != null &&
-            isPotentialCoverReference(primary) &&
-            isAllowedCoverCandidate(primary, allowRemoteCoverFallback)
-    ) {
-        return primary
+): String? = primaryCoverUrl.immediateCoverCandidate(allowRemoteCoverFallback)
+    ?: fallbackCoverUrl.immediateCoverCandidate(allowRemoteCoverFallback)
+
+private fun String?.immediateCoverCandidate(allowRemoteCoverFallback: Boolean): String? =
+    this?.trim()?.takeIf {
+        isPotentialCoverReference(it) && isAllowedCoverCandidate(it, allowRemoteCoverFallback)
     }
-    return fallbackCoverUrl
-        ?.trim()
-        ?.takeIf {
-            it.isNotEmpty() &&
-                isPotentialCoverReference(it) &&
-                isAllowedCoverCandidate(it, allowRemoteCoverFallback)
-        }
-}
 
 internal fun retainCoverDuringResolution(
     currentCover: String?,
@@ -510,19 +478,28 @@ private fun logCoverResolution(
     ) {
         return
     }
-    val sourceKind = when {
-        song.mediaUri?.startsWith("content://", ignoreCase = true) == true -> "content"
-        !song.localFilePath.isNullOrBlank() -> "file"
-        else -> "metadata"
-    }
     NPLogger.d(
         "LocalCoverPerf",
-        "songKeyHash=${Integer.toHexString(song.stableKey().hashCode())}, " +
-            "stage=$stage, elapsed=${elapsedMs}ms, " +
-            "hasImmediate=${!immediateCover.isNullOrBlank()}, " +
-            "hasResolved=${!resolvedCover.isNullOrBlank()}, " +
-            "sourceKind=$sourceKind"
+        coverResolutionLogMessage(song, stage, elapsedMs, immediateCover, resolvedCover)
     )
+}
+
+internal fun coverResolutionLogMessage(
+    song: SongItem,
+    stage: String,
+    elapsedMs: Long,
+    immediateCover: String?,
+    resolvedCover: String?
+): String = "songKeyHash=${Integer.toHexString(song.stableKey().hashCode())}, " +
+    "stage=$stage, elapsed=${elapsedMs}ms, " +
+    "hasImmediate=${!immediateCover.isNullOrBlank()}, " +
+    "hasResolved=${!resolvedCover.isNullOrBlank()}, " +
+    "sourceKind=${coverSourceKind(song)}"
+
+internal fun coverSourceKind(song: SongItem): String = when {
+    song.mediaUri?.startsWith("content://", ignoreCase = true) == true -> "content"
+    !song.localFilePath.isNullOrBlank() -> "file"
+    else -> "metadata"
 }
 
 private fun resolveCachedSongDisplayCoverUrl(
@@ -611,42 +588,46 @@ private fun resolveCachedSongDisplayCoverUrlUncached(
     return usable(song.originalCoverUrl)
 }
 
-private fun fastCoverProbeCacheKey(
+internal fun fastCoverProbeCacheKey(
     song: SongItem,
     probeGeneration: Int,
     allowRemoteCoverFallback: Boolean
 ): String {
-    val localFile = song.localFilePath
-        ?.takeUnless { it.startsWith("content://", ignoreCase = true) }
-        ?.let(::File)
-    val fileState = localFile?.let {
-        "${it.length()}:${it.lastModified()}:${it.parentFile?.lastModified()}"
-    }.orEmpty()
     val referenceRevision = listOf(
         song.mediaUri.orEmpty(),
         song.localFilePath.orEmpty(),
         song.localFileName.orEmpty()
     ).joinToString("|").hashCode()
-    return "${song.coverResolutionKey()}|$fileState|reference=$referenceRevision" +
+    return "${song.coverResolutionKey()}|${localFileProbeState(song.localFilePath)}" +
+        "|reference=$referenceRevision" +
         "|generation=$probeGeneration|allowRemote=$allowRemoteCoverFallback"
 }
+
+private fun localFileProbeState(localFilePath: String?): String {
+    val file = localFilePath
+        ?.takeUnless { it.startsWith("content://", ignoreCase = true) }
+        ?.let(::File)
+        ?: return ""
+    return "${file.length()}:${file.lastModified()}:${file.parentFile?.lastModified()}"
+}
+
+private val FAST_COVER_SCHEMES = arrayOf("http://", "https://", "content://")
 
 internal fun isFastCoverReference(reference: String): Boolean {
     val normalized = reference.trim()
     if (normalized.isEmpty()) return false
-    if (normalized.startsWith("http://", ignoreCase = true) ||
-        normalized.startsWith("https://", ignoreCase = true) ||
-        normalized.startsWith("content://", ignoreCase = true)
-    ) {
-        return true
-    }
-    val uri = runCatching { normalized.toUri() }.getOrNull() ?: return false
-    return when (uri.scheme?.lowercase()) {
-        "file" -> uri.path?.let(::File)?.isFile == true
-        null, "" -> normalized.startsWith("/") && File(normalized).isFile
-        else -> true
-    }
+    if (FAST_COVER_SCHEMES.any { normalized.startsWith(it, ignoreCase = true) }) return true
+    return isFastUriCoverReference(normalized)
 }
+
+private fun isFastUriCoverReference(reference: String): Boolean {
+    val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
+    val scheme = uri.scheme.orEmpty().lowercase()
+    if (scheme.isEmpty()) return isExistingFile(reference.takeIf { it.startsWith("/") })
+    return scheme != "file" || isExistingFile(uri.path)
+}
+
+private fun isExistingFile(path: String?): Boolean = path != null && File(path).isFile
 
 @Composable
 fun rememberPlaylistDisplayCoverUrl(
@@ -952,14 +933,14 @@ fun rememberLocalArtistDisplayCoverUrl(
     return coverUrl
 }
 
-private fun cachedResolvedCover(key: String?): String? {
+internal fun cachedResolvedCover(key: String?): String? {
     if (key.isNullOrBlank()) return null
     return synchronized(resolvedCoverMemoryCache) {
         resolvedCoverMemoryCache[key]
     }
 }
 
-private fun cachedStableResolvedCover(
+internal fun cachedStableResolvedCover(
     aliases: List<String>,
     validationKey: String,
     allowRemoteCoverFallback: Boolean = true
@@ -977,7 +958,7 @@ private fun cachedStableResolvedCover(
     }
 }
 
-private fun rememberStableResolvedCover(
+internal fun rememberStableResolvedCover(
     aliases: List<String>,
     coverUrl: String,
     validationKey: String
@@ -1004,14 +985,14 @@ internal fun versionedCoverCacheKey(baseKey: String?, generation: String): Strin
     return "$baseKey|generation=$generation"
 }
 
-private fun forgetResolvedCover(key: String?) {
+internal fun forgetResolvedCover(key: String?) {
     if (key.isNullOrBlank()) return
     synchronized(resolvedCoverMemoryCache) {
         resolvedCoverMemoryCache.remove(key)
     }
 }
 
-private fun rememberResolvedCover(key: String?, coverUrl: String?) {
+internal fun rememberResolvedCover(key: String?, coverUrl: String?) {
     if (key.isNullOrBlank() || coverUrl.isNullOrBlank()) return
     synchronized(resolvedCoverMemoryCache) {
         resolvedCoverMemoryCache[key] = coverUrl
@@ -1072,21 +1053,23 @@ private fun LocalArtistSummary.coverResolutionKey(): String {
     ).joinToString("|")
 }
 
-internal fun playlistCoverResolutionSignature(songs: List<SongItem>): Long {
-    var signature = 1_125_899_906_842_597L
-    songs.forEach { song ->
-            signature = 31L * signature + song.id
-            signature = 31L * signature + song.album.hashCode()
-            signature = 31L * signature + song.albumId
-            signature = 31L * signature + song.customCoverUrl.orEmpty().hashCode()
-            signature = 31L * signature + song.coverUrl.orEmpty().hashCode()
-            signature = 31L * signature + song.originalCoverUrl.orEmpty().hashCode()
-            signature = 31L * signature + song.localFilePath.orEmpty().hashCode()
-            signature = 31L * signature + song.mediaUri.orEmpty().hashCode()
-            signature = 31L * signature + song.channelId.orEmpty().hashCode()
-            signature = 31L * signature + song.audioId.orEmpty().hashCode()
-            signature = 31L * signature + song.subAudioId.orEmpty().hashCode()
-            signature = 31L * signature + song.sourceStableKey.orEmpty().hashCode()
-        }
-    return signature
-}
+internal fun playlistCoverResolutionSignature(songs: List<SongItem>): Long =
+    songs.fold(1_125_899_906_842_597L) { signature, song -> signature.mixCoverSignature(song) }
+
+private fun Long.mixCoverSignature(song: SongItem): Long = this
+    .mixSignature(song.id)
+    .mixSignature(song.album.hashCode().toLong())
+    .mixSignature(song.albumId)
+    .mixSignature(song.customCoverUrl)
+    .mixSignature(song.coverUrl)
+    .mixSignature(song.originalCoverUrl)
+    .mixSignature(song.localFilePath)
+    .mixSignature(song.mediaUri)
+    .mixSignature(song.channelId)
+    .mixSignature(song.audioId)
+    .mixSignature(song.subAudioId)
+    .mixSignature(song.sourceStableKey)
+
+private fun Long.mixSignature(value: Long): Long = 31L * this + value
+
+private fun Long.mixSignature(value: String?): Long = mixSignature(value.orEmpty().hashCode().toLong())

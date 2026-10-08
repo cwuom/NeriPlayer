@@ -150,21 +150,15 @@ internal fun LocalScanPreviewScreen(
         duplicateMetadataKeys
     ) {
         value = withContext(Dispatchers.Default) {
-            val candidates = previewItems
-                .asSequence()
-                .filter { item -> !metadataOnly || item.hasMetadata }
-                .filter {
-                    item -> !hideExistingLocalPlaylistSongs ||
-                        item.stableKey !in existingLocalPlaylistKeys
-                }
-                .filter {
-                    item -> !hideDuplicateMetadataSongs ||
-                        item.stableKey !in duplicateMetadataKeys
-                }
-                .toList()
-            SearchTextMatcher.filterAndRank(query, candidates) { item ->
-                listOf(item.title, item.fileName, item.filePath, item.subtitle, item.searchText)
-            }
+            filterLocalScanPreviewItems(
+                items = previewItems,
+                query = query,
+                metadataOnly = metadataOnly,
+                hideExistingLocalPlaylistSongs = hideExistingLocalPlaylistSongs,
+                existingLocalPlaylistKeys = existingLocalPlaylistKeys,
+                hideDuplicateMetadataSongs = hideDuplicateMetadataSongs,
+                duplicateMetadataKeys = duplicateMetadataKeys
+            )
         }
     }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -193,6 +187,7 @@ internal fun LocalScanPreviewScreen(
     val resolvedActionLabel = actionLabel?.invoke(selectedKeys.size)
         ?: stringResource(CoreCommonR.string.download_scan_add_selected, selectedKeys.size)
     val showBusy = isScanning || isBusy
+    val selectionActionsEnabled = selectedKeys.isNotEmpty() && !showBusy
 
     BackHandler(onBack = onBack)
 
@@ -343,14 +338,14 @@ internal fun LocalScanPreviewScreen(
                     ) {
                         if (onSecondaryAction != null && secondaryActionLabel != null) {
                             HapticOutlinedButton(
-                                enabled = selectedKeys.isNotEmpty() && !showBusy,
+                                enabled = selectionActionsEnabled,
                                 onClick = onSecondaryAction
                             ) {
                                 Text(secondaryActionLabel)
                             }
                         }
                         HapticTextButton(
-                            enabled = selectedKeys.isNotEmpty() && !showBusy,
+                            enabled = selectionActionsEnabled,
                             onClick = onImport
                         ) {
                             Text(resolvedActionLabel)
@@ -569,5 +564,29 @@ internal fun LocalScanPreviewScreen(
                 }
             }
         }
+    }
+}
+
+internal fun filterLocalScanPreviewItems(
+    items: List<LocalScanPreviewItem>,
+    query: String,
+    metadataOnly: Boolean,
+    hideExistingLocalPlaylistSongs: Boolean,
+    existingLocalPlaylistKeys: Set<String>,
+    hideDuplicateMetadataSongs: Boolean,
+    duplicateMetadataKeys: Set<String>
+): List<LocalScanPreviewItem> {
+    val candidates = items
+        .asSequence()
+        .filter { item -> !metadataOnly || item.hasMetadata }
+        .filter { item ->
+            !hideExistingLocalPlaylistSongs || item.stableKey !in existingLocalPlaylistKeys
+        }
+        .filter { item ->
+            !hideDuplicateMetadataSongs || item.stableKey !in duplicateMetadataKeys
+        }
+        .toList()
+    return SearchTextMatcher.filterAndRank(query, candidates) { item ->
+        listOf(item.title, item.fileName, item.filePath, item.subtitle, item.searchText)
     }
 }

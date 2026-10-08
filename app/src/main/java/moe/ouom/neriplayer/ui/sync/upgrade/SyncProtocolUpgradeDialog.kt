@@ -31,7 +31,7 @@ internal fun SyncProtocolUpgradeDialog(
     onDefer: () -> Unit
 ) {
     DensityScaledAlertDialog(
-        onDismissRequest = { if (!state.isSaving) onDefer() },
+        onDismissRequest = deferUnlessSaving(state.isSaving, onDefer),
         properties = DialogProperties(
             dismissOnBackPress = !state.isSaving,
             dismissOnClickOutside = !state.isSaving
@@ -87,6 +87,10 @@ internal fun SyncProtocolUpgradeDialog(
             }
         }
     )
+}
+
+private fun deferUnlessSaving(isSaving: Boolean, onDefer: () -> Unit): () -> Unit = {
+    if (!isSaving) onDefer()
 }
 
 @Composable

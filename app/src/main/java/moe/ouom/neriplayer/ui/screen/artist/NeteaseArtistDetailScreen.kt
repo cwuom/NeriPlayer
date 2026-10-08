@@ -411,6 +411,24 @@ private fun ArtistWorkTabs(
     }
 }
 
+internal data class NeteaseArtistHero(
+    val coverUrl: String,
+    val avatarUrl: String,
+    val name: String?,
+    val alias: String?
+)
+
+internal fun NeteaseArtistHeader?.toNeteaseArtistHero(): NeteaseArtistHero {
+    if (this == null) return NeteaseArtistHero(coverUrl = "", avatarUrl = "", name = null, alias = null)
+    val cover = coverUrl.ifBlank { avatarUrl }
+    return NeteaseArtistHero(
+        coverUrl = cover,
+        avatarUrl = avatarUrl,
+        name = name,
+        alias = alias.takeIf { it.isNotBlank() }
+    )
+}
+
 @Composable
 private fun ArtistHeaderCard(
     header: NeteaseArtistHeader?,
@@ -419,7 +437,7 @@ private fun ArtistHeaderCard(
     onToggleFollow: () -> Unit
 ) {
     val context = LocalContext.current
-    val coverUrl = header?.coverUrl?.takeIf { it.isNotBlank() } ?: header?.avatarUrl.orEmpty()
+    val hero = header.toNeteaseArtistHero()
     val heroHeight = 240.dp
     val avatarSize = 64.dp
     ElevatedCard(
@@ -432,10 +450,10 @@ private fun ArtistHeaderCard(
             AsyncImage(
                 model = offlineCachedImageRequest(
                     context = context,
-                    data = coverUrl,
+                    data = hero.coverUrl,
                     offlineMode = offlineMode
                 ),
-                contentDescription = header?.name,
+                contentDescription = hero.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -463,10 +481,10 @@ private fun ArtistHeaderCard(
                     AsyncImage(
                         model = offlineCachedImageRequest(
                             context = context,
-                            data = header?.avatarUrl ?: coverUrl,
+                            data = hero.avatarUrl,
                             offlineMode = offlineMode
                         ),
-                        contentDescription = header?.name,
+                        contentDescription = hero.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .size(avatarSize)
@@ -475,15 +493,15 @@ private fun ArtistHeaderCard(
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = header?.name.orEmpty(),
+                            text = hero.name.orEmpty(),
                             style = MaterialTheme.typography.headlineSmall,
                             color = Color.White,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (!header?.alias.isNullOrBlank()) {
+                        hero.alias?.let { alias ->
                             Text(
-                                text = header.alias.orEmpty(),
+                                text = alias,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.82f),
                                 maxLines = 1,
@@ -514,50 +532,71 @@ internal fun ArtistHeaderDetails(
 ) {
     Column(modifier = modifier) {
         if (tabletProfile) {
-            Text(
-                text = header?.name.orEmpty(),
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!header?.alias.isNullOrBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = header.alias.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ArtistReleaseCounts(header)
-            }
+            ArtistTabletHeaderDetails(header, followUpdating, onToggleFollow)
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ArtistReleaseCounts(header)
-            }
-        }
-        if (tabletProfile) {
-            Spacer(Modifier.height(14.dp))
-            ArtistFollowButton(header, followUpdating, onToggleFollow, Modifier.fillMaxWidth())
-        }
-        if (!header?.briefDesc.isNullOrBlank()) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = header.briefDesc.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (tabletProfile) 6 else 3,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (!tabletProfile) {
-            Spacer(Modifier.height(14.dp))
-            ArtistFollowButton(header, followUpdating, onToggleFollow)
+            ArtistPhoneHeaderDetails(header, followUpdating, onToggleFollow)
         }
     }
+}
+
+@Composable
+private fun ArtistTabletHeaderDetails(
+    header: NeteaseArtistHeader?,
+    followUpdating: Boolean,
+    onToggleFollow: () -> Unit
+) {
+    val hero = header.toNeteaseArtistHero()
+    Text(
+        text = hero.name.orEmpty(),
+        style = MaterialTheme.typography.headlineSmall,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+    hero.alias?.let { alias ->
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = alias,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ArtistReleaseCounts(header)
+    }
+    Spacer(Modifier.height(14.dp))
+    ArtistFollowButton(header, followUpdating, onToggleFollow, Modifier.fillMaxWidth())
+    ArtistBriefDescription(header, maxLines = 6)
+}
+
+@Composable
+private fun ArtistPhoneHeaderDetails(
+    header: NeteaseArtistHeader?,
+    followUpdating: Boolean,
+    onToggleFollow: () -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ArtistReleaseCounts(header)
+    }
+    ArtistBriefDescription(header, maxLines = 3)
+    Spacer(Modifier.height(14.dp))
+    ArtistFollowButton(header, followUpdating, onToggleFollow)
+}
+
+@Composable
+private fun ArtistBriefDescription(header: NeteaseArtistHeader?, maxLines: Int) {
+    val briefDesc = header?.briefDesc
+    if (briefDesc.isNullOrBlank()) return
+    Spacer(Modifier.height(10.dp))
+    Text(
+        text = briefDesc,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
 @Composable
@@ -567,6 +606,7 @@ private fun ArtistFollowButton(
     onToggleFollow: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val followed = header?.followed == true
     FilledTonalButton(
         enabled = header != null && !followUpdating,
         onClick = onToggleFollow,
@@ -579,21 +619,13 @@ private fun ArtistFollowButton(
             )
         } else {
             Icon(
-                imageVector = if (header?.followed == true) {
-                    Icons.Outlined.Favorite
-                } else {
-                    Icons.Outlined.FavoriteBorder
-                },
+                imageVector = if (followed) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
                 contentDescription = null
             )
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            if (header?.followed == true) {
-                stringResource(CoreCommonR.string.artist_followed)
-            } else {
-                stringResource(CoreCommonR.string.artist_follow)
-            }
+            stringResource(if (followed) CoreCommonR.string.artist_followed else CoreCommonR.string.artist_follow)
         )
     }
 }

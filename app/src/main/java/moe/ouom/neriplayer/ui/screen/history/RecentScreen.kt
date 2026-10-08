@@ -593,7 +593,7 @@ fun RecentScreen(
 }
 
 @Composable
-private fun RecentRowRich(
+internal fun RecentRowRich(
     index: Int,
     song: SongItem,
     downloadPresenceVersion: Int,
@@ -607,26 +607,9 @@ private fun RecentRowRich(
     moreMenu: @Composable () -> Unit,
     offlineMode: Boolean
 ) {
-    val ctx = LocalContext.current
     val coverUrl = rememberSongDisplayCoverUrl(song)
-    val primaryTitle = remember(song) {
-        if (song.isLocalSong()) {
-            song.localFileName?.takeIf { it.isNotBlank() } ?: song.displayName()
-        } else {
-            song.displayName()
-        }
-    }
-    val secondaryText = remember(song) {
-        buildList {
-            if (song.isLocalSong()) {
-                song.displayName()
-                    .takeIf { it.isNotBlank() && it != primaryTitle }
-                    ?.let(::add)
-            }
-            song.displayArtist().takeIf { it.isNotBlank() }?.let(::add)
-            add(formatDuration(song.durationMs))
-        }.joinToString(" · ")
-    }
+    val primaryTitle = remember(song) { recentSongPrimaryTitle(song) }
+    val secondaryText = remember(song) { recentSongSecondaryText(song, primaryTitle) }
     val rowScale by animateFloatAsState(
         targetValue = if (isCurrentSong) 1.01f else 1f,
         animationSpec = spring(stiffness = 500f),
@@ -646,80 +629,137 @@ private fun RecentRowRich(
             .clip(rowShape)
             .background(rowContainerColor)
             .combinedClickable(
-                onClick = {
-                    if (selectionMode) {
-                        onToggleSelect()
-                    } else {
-                        onClick()
-                    }
-                },
+                onClick = recentRowClickAction(selectionMode, onToggleSelect, onClick),
                 onLongClick = onLongPress
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 序号 / 播放指示
-        Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
-            if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelect() }
-                )
-            } else if (isCurrentSong) {
-                PlayingIndicator(
-                    color = MaterialTheme.colorScheme.primary,
-                    animate = isPlaying
-                )
-            } else {
-                Text(
-                    text = index.toString(),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        RecentRowLeading(
+            index = index,
+            selectionMode = selectionMode,
+            selected = selected,
+            isCurrentSong = isCurrentSong,
+            isPlaying = isPlaying,
+            onToggleSelect = onToggleSelect
+        )
 
         // 封面
-        if (!coverUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = offlineCachedImageRequest(
-                    context = ctx,
-                    data = coverUrl,
-                    sizePx = 192,
-                    allowHardware = false,
-                    offlineMode = offlineMode
-                ),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(10.dp))
-            )
-        } else {
-            Spacer(Modifier.size(52.dp))
-        }
+        RecentRowCover(coverUrl = coverUrl, offlineMode = offlineMode)
 
         Spacer(Modifier.width(12.dp))
 
-        Column(Modifier.weight(1f)) {
-            val downloaded = remember(downloadPresenceVersion, song) {
-                GlobalDownloadManager.hasDownloadedSongCached(song)
-            }
-            Text(
-                primaryTitle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium
-            )
-            SongDownloadSubtitle(
-                text = secondaryText,
-                downloaded = downloaded,
-                contentDescription = stringResource(CoreCommonR.string.cd_downloaded)
-            )
-        }
+        RecentRowText(
+            song = song,
+            primaryTitle = primaryTitle,
+            secondaryText = secondaryText,
+            downloadPresenceVersion = downloadPresenceVersion,
+            modifier = Modifier.weight(1f)
+        )
 
         // 右侧更多
         moreMenu()
+    }
+}
+
+internal fun recentSongPrimaryTitle(song: SongItem): String {
+    val localFileName = song.localFileName?.takeIf { song.isLocalSong() && it.isNotBlank() }
+    return localFileName ?: song.displayName()
+}
+
+internal fun recentSongSecondaryText(song: SongItem, primaryTitle: String): String = listOfNotNull(
+    recentLocalTagTitle(song, primaryTitle),
+    song.displayArtist().takeIf { it.isNotBlank() },
+    formatDuration(song.durationMs)
+).joinToString(" · ")
+
+private fun recentLocalTagTitle(song: SongItem, primaryTitle: String): String? {
+    if (!song.isLocalSong()) return null
+    return song.displayName().takeIf { it.isNotBlank() && it != primaryTitle }
+}
+
+private fun recentRowClickAction(
+    selectionMode: Boolean,
+    onToggleSelect: () -> Unit,
+    onClick: () -> Unit
+): () -> Unit = if (selectionMode) onToggleSelect else onClick
+
+@Composable
+private fun RecentRowLeading(
+    index: Int,
+    selectionMode: Boolean,
+    selected: Boolean,
+    isCurrentSong: Boolean,
+    isPlaying: Boolean,
+    onToggleSelect: () -> Unit
+) {
+    Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
+        if (selectionMode) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = { onToggleSelect() }
+            )
+        } else if (isCurrentSong) {
+            PlayingIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                animate = isPlaying
+            )
+        } else {
+            Text(
+                text = index.toString(),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecentRowCover(coverUrl: String?, offlineMode: Boolean) {
+    if (!coverUrl.isNullOrBlank()) {
+        AsyncImage(
+            model = offlineCachedImageRequest(
+                context = LocalContext.current,
+                data = coverUrl,
+                sizePx = 192,
+                allowHardware = false,
+                offlineMode = offlineMode
+            ),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(10.dp))
+        )
+    } else {
+        Spacer(Modifier.size(52.dp))
+    }
+}
+
+@Composable
+private fun RecentRowText(
+    song: SongItem,
+    primaryTitle: String,
+    secondaryText: String,
+    downloadPresenceVersion: Int,
+    modifier: Modifier
+) {
+    Column(modifier) {
+        val downloaded = remember(downloadPresenceVersion, song) {
+            GlobalDownloadManager.hasDownloadedSongCached(song)
+        }
+        Text(
+            primaryTitle,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.titleMedium
+        )
+        SongDownloadSubtitle(
+            text = secondaryText,
+            downloaded = downloaded,
+            contentDescription = stringResource(CoreCommonR.string.cd_downloaded)
+        )
     }
 }
 

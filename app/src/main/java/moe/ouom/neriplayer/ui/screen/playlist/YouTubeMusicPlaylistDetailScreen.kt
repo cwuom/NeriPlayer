@@ -1060,7 +1060,7 @@ private fun EmptyBlock(text: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun YouTubeMusicSongRow(
+internal fun YouTubeMusicSongRow(
     index: Int,
     song: SongItem,
     isCurrentSong: Boolean,
@@ -1083,68 +1083,30 @@ private fun YouTubeMusicSongRow(
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var showMenu by remember { mutableStateOf(false) }
+    val displayName = song.displayName()
+    val displayArtist = song.displayArtist()
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = {
-                    context.performHapticFeedback()
-                    onClick()
-                },
-                onLongClick = {
-                    context.performHapticFeedback()
-                    onLongPress()
-                }
+                onClick = hapticRowAction(context, onClick),
+                onLongClick = hapticRowAction(context, onLongPress)
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier.width(48.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (selectionMode) {
-                androidx.compose.material3.Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelect() }
-                )
-            } else {
-                Text(
-                    text = index.toString(),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = playlistModernListTertiaryContentColor(),
-                    maxLines = 1
-                )
-            }
-        }
-
-        val coverModel = rememberSongDisplayCoverUrl(song).takeUnless { it.isNullOrBlank() }
-        val displayName = song.displayName()
-        val displayArtist = song.displayArtist()
-        if (!coverModel.isNullOrBlank()) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(10.dp)
-                    )
-            ) {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
-                        context = context,
-                        data = coverModel,
-                        offlineMode = offlineMode
-                    ),
-                    contentDescription = displayName,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-        }
+        YouTubeMusicSongRowLeading(
+            index = index,
+            selectionMode = selectionMode,
+            selected = selected,
+            onToggleSelect = onToggleSelect
+        )
+        YouTubeMusicSongRowCover(
+            coverUrl = rememberSongDisplayCoverUrl(song),
+            contentDescription = displayName,
+            offlineMode = offlineMode
+        )
 
         Column(
             modifier = Modifier.weight(1f)
@@ -1157,10 +1119,7 @@ private fun YouTubeMusicSongRow(
                 color = playlistModernListPrimaryContentColor()
             )
             Text(
-                text = listOfNotNull(
-                    displayArtist.takeIf { it.isNotBlank() },
-                    song.album.takeIf { it.isNotBlank() }
-                ).joinToString(" · "),
+                text = youTubeMusicSongSubtitle(displayArtist, song.album),
                 style = MaterialTheme.typography.bodySmall,
                 color = playlistModernListSecondaryContentColor(),
                 maxLines = 1,
@@ -1168,125 +1127,221 @@ private fun YouTubeMusicSongRow(
             )
         }
 
-        if (isCurrentSong) {
-            PlayingIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                animate = animatePlayingIndicator
+        YouTubeMusicSongRowTrailing(
+            isCurrentSong = isCurrentSong,
+            animatePlayingIndicator = animatePlayingIndicator,
+            durationMs = song.durationMs
+        )
+
+        if (!selectionMode) {
+            YouTubeMusicSongRowMenu(
+                expanded = showMenu,
+                onExpandedChange = { showMenu = it },
+                song = song,
+                isFavorite = isFavorite,
+                onFavoriteToggle = onFavoriteToggle,
+                onPlayNext = onPlayNext,
+                onAddToQueueEnd = onAddToQueueEnd,
+                onDownload = onDownload,
+                onCopySongInfo = copySongInfoAction(
+                    scope = scope,
+                    clipboard = clipboard,
+                    snackbarHostState = snackbarHostState,
+                    resources = composeResources,
+                    songInfo = "${displayName}-${displayArtist}"
+                )
+            )
+        }
+    }
+}
+
+internal fun youTubeMusicSongSubtitle(displayArtist: String, album: String): String =
+    listOfNotNull(
+        displayArtist.takeIf { it.isNotBlank() },
+        album.takeIf { it.isNotBlank() }
+    ).joinToString(" · ")
+
+@Composable
+private fun YouTubeMusicSongRowLeading(
+    index: Int,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit
+) {
+    Box(
+        modifier = Modifier.width(48.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selectionMode) {
+            androidx.compose.material3.Checkbox(
+                checked = selected,
+                onCheckedChange = { onToggleSelect() }
             )
         } else {
             Text(
-                text = formatDuration(song.durationMs),
-                style = MaterialTheme.typography.bodySmall,
-                color = playlistModernListSecondaryContentColor()
+                text = index.toString(),
+                style = MaterialTheme.typography.titleSmall,
+                color = playlistModernListTertiaryContentColor(),
+                maxLines = 1
             )
         }
+    }
+}
 
-        if (!selectionMode) {
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        imageVector = Icons.Filled.MoreVert,
-                        contentDescription = stringResource(CoreCommonR.string.common_more_actions),
-                        tint = playlistModernListSecondaryContentColor()
-                    )
-                }
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        onPlayNext()
-                        showMenu = false
-                    }
+@Composable
+private fun YouTubeMusicSongRowCover(
+    coverUrl: String?,
+    contentDescription: String,
+    offlineMode: Boolean
+) {
+    if (!coverUrl.isNullOrBlank()) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp)
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        onAddToQueueEnd()
-                        showMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            stringResource(
-                                if (isFavorite) {
-                                    CoreCommonR.string.favorite_remove
-                                } else {
-                                    CoreCommonR.string.favorite_add
-                                }
-                            )
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (isFavorite) {
-                                Icons.Filled.Favorite
-                            } else {
-                                Icons.Outlined.FavoriteBorder
-                            },
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        onFavoriteToggle(song, isFavorite)
-                        showMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(CoreCommonR.string.download_to_local)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.Download,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        onDownload()
-                        showMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        scope.launch {
-                            clipboard.setClipEntry(
-                                ClipEntry(
-                                    ClipData.newPlainText(
-                                        "text",
-                                        "${displayName}-${displayArtist}"
-                                    )
-                                )
-                            )
-                            snackbarHostState.showNeriSnackbar(
-                                composeResources.getString(CoreCommonR.string.toast_copied)
-                            )
-                        }
-                        showMenu = false
-                    }
-                )
-            }
+        ) {
+            AsyncImage(
+                model = offlineCachedImageRequest(
+                    context = LocalContext.current,
+                    data = coverUrl,
+                    offlineMode = offlineMode
+                ),
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
         }
+        Spacer(modifier = Modifier.width(12.dp))
+    }
+}
+
+@Composable
+private fun YouTubeMusicSongRowTrailing(
+    isCurrentSong: Boolean,
+    animatePlayingIndicator: Boolean,
+    durationMs: Long
+) {
+    if (isCurrentSong) {
+        PlayingIndicator(
+            color = MaterialTheme.colorScheme.primary,
+            animate = animatePlayingIndicator
+        )
+    } else {
+        Text(
+            text = formatDuration(durationMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = playlistModernListSecondaryContentColor()
+        )
+    }
+}
+
+@Composable
+private fun YouTubeMusicSongRowMenu(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    song: SongItem,
+    isFavorite: Boolean,
+    onFavoriteToggle: (SongItem, Boolean) -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueueEnd: () -> Unit,
+    onDownload: () -> Unit,
+    onCopySongInfo: () -> Unit
+) {
+    Box {
+        IconButton(onClick = { onExpandedChange(true) }) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = stringResource(CoreCommonR.string.common_more_actions),
+                tint = playlistModernListSecondaryContentColor()
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) }
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onPlayNext()
+                    onExpandedChange(false)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onAddToQueueEnd()
+                    onExpandedChange(false)
+                }
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (isFavorite) {
+                                CoreCommonR.string.favorite_remove
+                            } else {
+                                CoreCommonR.string.favorite_add
+                            }
+                        )
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onFavoriteToggle(song, isFavorite)
+                    onExpandedChange(false)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.download_to_local)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Download,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onDownload()
+                    onExpandedChange(false)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.ContentCopy,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onCopySongInfo()
+                    onExpandedChange(false)
+                }
+            )
         }
     }
 }

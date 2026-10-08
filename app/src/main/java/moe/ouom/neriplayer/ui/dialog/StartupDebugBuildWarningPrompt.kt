@@ -59,7 +59,7 @@ internal fun startupDebugBuildWarningPrompt(
         }.collect { acknowledged = it }
     }
 
-    if (acknowledged == false && canShowDialog && isResumed) {
+    if (shouldShowDebugBuildWarning(acknowledged, canShowDialog, isResumed)) {
         dialogContent(saving, saveFailed) {
             if (!saving) {
                 saving = true
@@ -80,6 +80,12 @@ internal fun startupDebugBuildWarningPrompt(
     }
     return acknowledged != true
 }
+
+internal fun shouldShowDebugBuildWarning(
+    acknowledged: Boolean?,
+    canShowDialog: Boolean,
+    isResumed: Boolean
+): Boolean = acknowledged == false && canShowDialog && isResumed
 
 @Composable
 private fun DebugBuildWarningDialog(

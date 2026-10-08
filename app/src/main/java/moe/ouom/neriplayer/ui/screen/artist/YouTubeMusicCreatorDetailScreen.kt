@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -64,12 +65,14 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorHeader as CreatorHeader
@@ -134,20 +137,22 @@ internal fun createYouTubeMusicCreatorFavorite(
     creator: YouTubeMusicCreatorSummary,
     header: CreatorHeader?
 ): FavoritePlaylist {
-    val currentHeader = header?.takeIf { it.browseId == creator.browseId }
+    val currentHeader = header.matchingCreatorOrBlank(creator)
     return FavoritePlaylist(
         id = stableYouTubeMusicId(creator.browseId),
-        name = currentHeader?.title?.ifBlank { creator.title } ?: creator.title,
-        coverUrl = (currentHeader?.coverUrl?.ifBlank { creator.coverUrl }
-            ?: creator.coverUrl).takeIf { it.isNotBlank() },
+        name = currentHeader.title.ifBlank { creator.title },
+        coverUrl = currentHeader.coverUrl.ifBlank { creator.coverUrl }.takeIf { it.isNotBlank() },
         trackCount = 0,
         source = FAVORITE_SOURCE_YOUTUBE_ARTIST,
         browseId = creator.browseId,
-        subtitle = (currentHeader?.subtitle?.ifBlank { creator.subtitle }
-            ?: creator.subtitle).takeIf { it.isNotBlank() },
+        subtitle = currentHeader.subtitle.ifBlank { creator.subtitle }.takeIf { it.isNotBlank() },
         songs = emptyList()
     )
 }
+
+private fun CreatorHeader?.matchingCreatorOrBlank(creator: YouTubeMusicCreatorSummary): CreatorHeader =
+    this?.takeIf { it.browseId == creator.browseId }
+        ?: CreatorHeader(browseId = creator.browseId, title = "", subtitle = "", coverUrl = "")
 
 internal fun resolveYouTubeMusicCreatorDetail(
     uiState: YouTubeMusicCreatorDetailUiState,
@@ -412,7 +417,6 @@ internal fun YouTubeMusicCreatorDetailContent(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun YouTubeMusicCreatorHeader(
     detail: YouTubeMusicCreatorDetail,
@@ -424,30 +428,111 @@ private fun YouTubeMusicCreatorHeader(
         YouTubeMusicCreatorTabletProfile(detail.header, offlineMode, followFavorite)
         return
     }
-    val context = LocalContext.current
-    val header = detail.header
-    val coverUrl = header.coverUrl.takeIf { it.isNotBlank() }
-    val heroHeight = 210.dp
-    val avatarSize = 64.dp
-    val backdropRequest = remember(context, coverUrl, offlineMode) {
-        offlineCachedImageRequest(
-            context = context,
-            data = coverUrl,
-            sizePx = CREATOR_HEADER_BACKDROP_SIZE_PX,
-            allowHardware = false,
-            offlineMode = offlineMode,
-            transformations = if (coverUrl != null) {
-                listOf(
-                    BlurTransformation(
-                        context = context,
-                        radius = CREATOR_HEADER_BACKDROP_BLUR_RADIUS
-                    )
-                )
-            } else {
-                emptyList()
-            }
-        )
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        shape = RoundedCornerShape(28.dp)
+    ) {
+        YouTubeMusicCreatorPhoneHero(header = detail.header, offlineMode = offlineMode)
+        YouTubeMusicCreatorPhoneDetails(header = detail.header, followFavorite = followFavorite)
     }
+}
+
+internal fun youtubeMusicCreatorPhoneMetadata(header: CreatorHeader): List<String> = listOfNotNull(
+    header.monthlyListenerCountText.takeIf { it.isNotBlank() },
+    header.subscriberCountText.takeIf { it.isNotBlank() }
+).distinct()
+
+private fun creatorHeaderBackdropRequest(
+    context: Context,
+    coverUrl: String?,
+    offlineMode: Boolean
+): ImageRequest = offlineCachedImageRequest(
+    context = context,
+    data = coverUrl,
+    sizePx = CREATOR_HEADER_BACKDROP_SIZE_PX,
+    allowHardware = false,
+    offlineMode = offlineMode,
+    transformations = if (coverUrl != null) {
+        listOf(
+            BlurTransformation(
+                context = context,
+                radius = CREATOR_HEADER_BACKDROP_BLUR_RADIUS
+            )
+        )
+    } else {
+        emptyList()
+    }
+)
+
+@Composable
+private fun YouTubeMusicCreatorPhoneHero(
+    header: CreatorHeader,
+    offlineMode: Boolean
+) {
+    val context = LocalContext.current
+    val coverUrl = header.coverUrl.takeIf { it.isNotBlank() }
+    val backdropRequest = remember(context, coverUrl, offlineMode) {
+        creatorHeaderBackdropRequest(context, coverUrl, offlineMode)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(210.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        if (coverUrl != null) {
+            AsyncImage(
+                model = backdropRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.32f))
+        )
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            YouTubeMusicCreatorHeroAvatar(coverUrl = coverUrl, title = header.title, offlineMode = offlineMode)
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = header.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (header.subtitle.isNotBlank()) {
+                    Text(
+                        text = header.subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.82f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YouTubeMusicCreatorHeroAvatar(
+    coverUrl: String?,
+    title: String,
+    offlineMode: Boolean
+) {
+    val context = LocalContext.current
+    val avatarSize = 64.dp
     val avatarRequest = remember(context, coverUrl, offlineMode) {
         offlineCachedImageRequest(
             context = context,
@@ -457,117 +542,76 @@ private fun YouTubeMusicCreatorHeader(
             offlineMode = offlineMode
         )
     }
-    ElevatedCard(
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp)
+            .size(avatarSize)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(heroHeight)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            if (coverUrl != null) {
-                AsyncImage(
-                    model = backdropRequest,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.32f))
+        if (coverUrl != null) {
+            AsyncImage(
+                model = avatarRequest,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
             )
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(avatarSize)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (coverUrl != null) {
-                        AsyncImage(
-                            model = avatarRequest,
-                            contentDescription = header.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.AccountCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(avatarSize * 0.68f),
-                            tint = Color.White
-                        )
-                    }
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = header.title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (header.subtitle.isNotBlank()) {
-                        Text(
-                            text = header.subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.82f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
+        } else {
+            Icon(
+                imageVector = Icons.Filled.AccountCircle,
+                contentDescription = null,
+                modifier = Modifier.size(avatarSize * 0.68f),
+                tint = Color.White
+            )
         }
-        Column(modifier = Modifier.padding(20.dp)) {
-            val metadata = listOfNotNull(
-                header.monthlyListenerCountText.takeIf { it.isNotBlank() },
-                header.subscriberCountText.takeIf { it.isNotBlank() }
-            ).distinct()
-            if (metadata.isNotEmpty()) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    metadata.forEach { value ->
-                        AssistChip(
-                            onClick = {},
-                            label = { Text(value) }
-                        )
-                    }
-                }
+    }
+}
+
+@Composable
+private fun YouTubeMusicCreatorPhoneDetails(
+    header: CreatorHeader,
+    followFavorite: FavoritePlaylist?
+) {
+    Column(modifier = Modifier.padding(20.dp)) {
+        val metadata = youtubeMusicCreatorPhoneMetadata(header)
+        val hasMetadata = metadata.isNotEmpty()
+        val hasDescription = header.description.isNotBlank()
+        if (hasMetadata) {
+            CreatorMetadataChips(metadata = metadata, verticalSpacing = 8.dp)
+        }
+        if (hasDescription) {
+            if (hasMetadata) {
+                Spacer(Modifier.height(10.dp))
             }
-            if (header.description.isNotBlank()) {
-                if (metadata.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                }
-                Text(
-                    text = header.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Text(
+                text = header.description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (followFavorite != null) {
+            if (hasMetadata || hasDescription) {
+                Spacer(Modifier.height(14.dp))
             }
-            if (followFavorite != null) {
-                if (metadata.isNotEmpty() || header.description.isNotBlank()) {
-                    Spacer(Modifier.height(14.dp))
-                }
-                CreatorFollowButton(favorite = followFavorite)
-            }
+            CreatorFollowButton(favorite = followFavorite)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun CreatorMetadataChips(metadata: List<String>, verticalSpacing: Dp) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(verticalSpacing)
+    ) {
+        metadata.forEach { value ->
+            AssistChip(
+                onClick = {},
+                label = { Text(value) }
+            )
         }
     }
 }
@@ -688,7 +732,7 @@ private fun YouTubeMusicCreatorSection(
 }
 
 @Composable
-private fun CreatorPlayableRow(
+internal fun CreatorPlayableRow(
     song: SongItem,
     index: Int,
     offlineMode: Boolean,
@@ -713,32 +757,7 @@ private fun CreatorPlayableRow(
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = fastScrollableImageRequest(
-                        context = context,
-                        data = coverUrl,
-                        sizePx = 128,
-                        offlineMode = offlineMode
-                    ),
-                    contentDescription = song.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.PlayCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        CreatorSongCover(coverUrl = coverUrl, contentDescription = song.name, offlineMode = offlineMode)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -766,6 +785,41 @@ private fun CreatorPlayableRow(
 }
 
 @Composable
+internal fun CreatorSongCover(
+    coverUrl: String?,
+    contentDescription: String,
+    offlineMode: Boolean
+) {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!coverUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = fastScrollableImageRequest(
+                    context = context,
+                    data = coverUrl,
+                    sizePx = 128,
+                    offlineMode = offlineMode
+                ),
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.PlayCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun CreatorSectionCard(
     item: YouTubeMusicCreatorItem,
     offlineMode: Boolean,
@@ -775,25 +829,7 @@ private fun CreatorSectionCard(
     tabletLayout: Boolean
 ) {
     val context = LocalContext.current
-    val onClick: () -> Unit = {
-        context.performHapticFeedback()
-        val song = item.toCreatorSongItem()
-        if (song != null) {
-            onSongClick(listOf(song), 0)
-        } else {
-            when (item.type) {
-                YouTubeMusicCreatorItemType.Creator -> {
-                    item.toCreatorSummary()?.let(onCreatorClick)
-                }
-                YouTubeMusicCreatorItemType.Album,
-                YouTubeMusicCreatorItemType.Playlist -> {
-                    item.toCreatorPlaylist()?.let(onPlaylistClick)
-                }
-                YouTubeMusicCreatorItemType.Song,
-                YouTubeMusicCreatorItemType.Video -> Unit
-            }
-        }
-    }
+    val onClick = creatorItemClickAction(context, item, onSongClick, onPlaylistClick, onCreatorClick)
     Column(
         modifier = Modifier
             .width(if (tabletLayout) 176.dp else 148.dp)
@@ -843,6 +879,41 @@ private fun CreatorSectionCard(
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+}
+
+private fun creatorItemClickAction(
+    context: Context,
+    item: YouTubeMusicCreatorItem,
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
+    onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit
+): () -> Unit = {
+    context.performHapticFeedback()
+    openYouTubeMusicCreatorItem(item, onSongClick, onPlaylistClick, onCreatorClick)
+}
+
+internal fun openYouTubeMusicCreatorItem(
+    item: YouTubeMusicCreatorItem,
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
+    onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit
+) {
+    val song = item.toCreatorSongItem()
+    if (song != null) {
+        onSongClick(listOf(song), 0)
+        return
+    }
+    when (item.type) {
+        YouTubeMusicCreatorItemType.Creator -> {
+            item.toCreatorSummary()?.let(onCreatorClick)
+        }
+        YouTubeMusicCreatorItemType.Album,
+        YouTubeMusicCreatorItemType.Playlist -> {
+            item.toCreatorPlaylist()?.let(onPlaylistClick)
+        }
+        YouTubeMusicCreatorItemType.Song,
+        YouTubeMusicCreatorItemType.Video -> Unit
     }
 }
 

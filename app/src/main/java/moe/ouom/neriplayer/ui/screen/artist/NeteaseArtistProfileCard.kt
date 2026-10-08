@@ -24,7 +24,7 @@ internal fun NeteaseArtistProfileCard(
     onToggleFollow: () -> Unit
 ) {
     val context = LocalContext.current
-    val coverUrl = header?.coverUrl?.takeIf { it.isNotBlank() } ?: header?.avatarUrl.orEmpty()
+    val hero = header.toNeteaseArtistHero()
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp)
@@ -32,10 +32,10 @@ internal fun NeteaseArtistProfileCard(
         AsyncImage(
             model = offlineCachedImageRequest(
                 context = context,
-                data = coverUrl,
+                data = hero.coverUrl,
                 offlineMode = offlineMode
             ),
-            contentDescription = header?.name,
+            contentDescription = hero.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxWidth()
