@@ -261,7 +261,7 @@ class AppNavigationRailLayoutTest {
                         BoxWithConstraints(
                             Modifier.requiredSize(currentWidth, currentHeight).background(Color.Green).testTag("viewport")
                         ) {
-                            val useRail = shouldUseAppNavigationRail(800, maxWidth > maxHeight, maxWidth)
+                            val useRail = shouldUseAppNavigationRail(800, maxWidth)
                             val hideNavigation = playbackRequested.value || playbackMounted.value
                             AppAdaptiveNavigationContent(
                                 useNavigationRail = useRail,

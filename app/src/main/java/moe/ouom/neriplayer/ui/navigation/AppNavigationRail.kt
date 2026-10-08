@@ -56,9 +56,8 @@ private val AppNavigationRailMinWindowWidth = 840.dp
 
 internal fun shouldUseAppNavigationRail(
     smallestScreenWidthDp: Int,
-    isLandscape: Boolean,
     availableWidth: Dp
-): Boolean = smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP && isLandscape &&
+): Boolean = smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP &&
     availableWidth >= AppNavigationRailMinWindowWidth
 
 internal fun resolveAppNavigationLayoutInsets(
