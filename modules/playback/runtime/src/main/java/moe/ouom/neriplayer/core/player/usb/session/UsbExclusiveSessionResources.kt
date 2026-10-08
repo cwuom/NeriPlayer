@@ -474,7 +474,7 @@ internal class UsbExclusiveSessionResources(
                 handle,
                 inputSampleRate,
                 inputChannelCount,
-                inputEncodingForPrepare(inputEncoding, outputDescription)
+                inputEncodingForPrepare(inputEncoding, outputDescription, inputSampleRate)
             )
         ) return null
         return native.runtimeReport(handle)
@@ -513,7 +513,8 @@ internal class UsbExclusiveSessionResources(
             inputChannelCount = inputChannelCount,
             inputEncoding = UsbExclusiveOutputFormatResolver.preparedInputPcmFormat(
                 inputEncoding = inputEncoding,
-                outputFormat = outputFormat
+                outputFormat = outputFormat,
+                inputSampleRate = inputSampleRate
             )?.encoding ?: inputEncoding
         )
         return PreparedPcmStages(
@@ -567,10 +568,11 @@ internal class UsbExclusiveSessionResources(
         )
     }
 
-    fun inputEncodingForPrepare(inputEncoding: Int, outputDescription: String): Int {
+    fun inputEncodingForPrepare(inputEncoding: Int, outputDescription: String, inputSampleRate: Int): Int {
         return UsbExclusiveOutputFormatResolver.preparedInputPcmFormat(
             inputEncoding = inputEncoding,
-            outputDescription = outputDescription
+            outputDescription = outputDescription,
+            inputSampleRate = inputSampleRate
         )?.encoding ?: inputEncoding
     }
 

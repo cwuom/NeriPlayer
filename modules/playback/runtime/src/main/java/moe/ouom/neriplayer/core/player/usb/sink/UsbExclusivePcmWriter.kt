@@ -81,6 +81,7 @@ internal class UsbExclusivePcmWriter(
 ) {
     private companion object {
         const val DIRECT_SCRATCH_CAPACITY_BYTES = 256 * 1024
+        const val MAX_WRITE_CHUNKS_PER_BUFFER = 16
         const val BACKPRESSURE_REFRESH_INTERVAL_MS = 250L
         const val BACKPRESSURE_PARK_MAX_US = 4_000L
         const val BACKPRESSURE_LOG_INTERVAL_MS = 2_000L
@@ -113,21 +114,49 @@ internal class UsbExclusivePcmWriter(
         resetBackpressureObservation()
     }
 
-    fun configureSoftwareFloatInput(usingNative: Boolean, pcmEncoding: Int) {
-        if (!usingNative || pcmEncoding != C.ENCODING_PCM_FLOAT) {
-            clearSoftwareFloatConversionState()
-            return
+    fun configureSoftwareFloatInput(usingNative: Boolean, pcmEncoding: Int, inputSampleRate: Int) {
+        softwareFloatInputFormat = if (usingNative && pcmEncoding == C.ENCODING_PCM_FLOAT) {
+            softwareFloatTarget(inputSampleRate)
+        } else {
+            null
         }
-        softwareFloatInputFormat = UsbExclusiveOutputFormatResolver.preparedInputPcmFormat(
-            inputEncoding = pcmEncoding,
-            outputDescription = port.outputFormat(),
-        )
         softwareFloatConversionLogged = false
     }
+
+    private fun softwareFloatTarget(inputSampleRate: Int): PreparedUsbInputPcmFormat? =
+        UsbExclusiveOutputFormatResolver.preparedInputPcmFormat(
+            inputEncoding = C.ENCODING_PCM_FLOAT,
+            outputDescription = port.outputFormat(),
+            inputSampleRate = inputSampleRate,
+        )?.takeUnless { it.encoding == C.ENCODING_PCM_FLOAT }
 
     fun clearSoftwareFloatConversionState() {
         softwareFloatInputFormat = null
         softwareFloatConversionLogged = false
+    }
+
+    /**
+     * 传输已在跑时一次回调写到水位：动态调度下播放线程按上报缓冲休眠，
+     * 每次醒来只写一块会长期慢于实时（192 kHz 浮点源一块约 20 ms），环被抽干后补零断流
+     */
+    fun writeNativeUntilQueueTarget(
+        buffer: ByteBuffer,
+        firstWriteSize: Int,
+        nativeVolume: Float,
+        state: UsbExclusiveNativeWriteSnapshot,
+    ): Int {
+        val remaining = buffer.remaining()
+        var written = writeNative(buffer, firstWriteSize, nativeVolume, state)
+        var chunks = 1
+        while (state.transportStarted && written in 1 until remaining && chunks < MAX_WRITE_CHUNKS_PER_BUFFER) {
+            val chunk = buffer.duplicate().apply { position(position() + written) }
+            val size = writeSize(remaining - written, chunk.isDirect, state)
+            val chunkWritten = if (size > 0) writeNative(chunk, size, nativeVolume, state) else 0
+            if (chunkWritten <= 0) break
+            written += chunkWritten
+            chunks += 1
+        }
+        return written
     }
 
     fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float, state: UsbExclusiveNativeWriteSnapshot): Int {

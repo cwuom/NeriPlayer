@@ -299,7 +299,8 @@ internal object UsbExclusiveOutputFormatResolver {
 
     internal fun preparedInputPcmFormat(
         inputEncoding: Int,
-        outputFormat: ResolvedUsbOutputFormat
+        outputFormat: ResolvedUsbOutputFormat,
+        inputSampleRate: Int = outputFormat.sampleRate
     ): PreparedUsbInputPcmFormat? {
         if (inputEncoding != C.ENCODING_PCM_FLOAT) {
             val bytesPerSample = pcmBytesPerSampleForEncoding(inputEncoding) ?: return null
@@ -307,6 +308,10 @@ internal object UsbExclusiveOutputFormatResolver {
                 encoding = inputEncoding,
                 bytesPerSample = bytesPerSample
             )
+        }
+        // 需要重采样时把浮点直接交给原生，插值后只量化一次，也省掉播放线程逐样本转换
+        if (inputSampleRate != outputFormat.sampleRate) {
+            return PreparedUsbInputPcmFormat(encoding = C.ENCODING_PCM_FLOAT, bytesPerSample = 4)
         }
         return when (outputFormat.subslotBytes) {
             2 -> PreparedUsbInputPcmFormat(
@@ -327,7 +332,8 @@ internal object UsbExclusiveOutputFormatResolver {
 
     internal fun preparedInputPcmFormat(
         inputEncoding: Int,
-        outputDescription: String
+        outputDescription: String,
+        inputSampleRate: Int? = null
     ): PreparedUsbInputPcmFormat? {
         val output = parseOutputDescription(outputDescription) ?: return null
         return preparedInputPcmFormat(
@@ -339,7 +345,8 @@ internal object UsbExclusiveOutputFormatResolver {
                 subslotBytes = output.subslotBytes,
                 bufferDurationMs = 0,
                 description = outputDescription
-            )
+            ),
+            inputSampleRate = inputSampleRate ?: output.sampleRate
         )
     }
 

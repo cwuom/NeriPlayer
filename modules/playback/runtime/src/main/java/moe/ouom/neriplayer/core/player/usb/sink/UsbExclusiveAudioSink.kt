@@ -1012,7 +1012,7 @@ internal class UsbExclusiveAudioSink(
     )
 
     private fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float): Int =
-        pcmWriter.writeNative(buffer, size, nativeVolume, nativeWriteSnapshot())
+        pcmWriter.writeNativeUntilQueueTarget(buffer, size, nativeVolume, nativeWriteSnapshot())
 
     private fun nativeWriteSizeForAvailablePcmSpace(remaining: Int, directBuffer: Boolean): Int =
         pcmWriter.writeSize(remaining, directBuffer, nativeWriteSnapshot())
@@ -1196,7 +1196,7 @@ internal class UsbExclusiveAudioSink(
     private fun applyEffectiveNativeVolume(): Float = volumeOwner.applyEffectiveNativeVolume()
 
     private fun updateSoftwareFloatConversionState() {
-        pcmWriter.configureSoftwareFloatInput(usingNative, pcmEncoding)
+        pcmWriter.configureSoftwareFloatInput(usingNative, pcmEncoding, sampleRate)
     }
 
     private fun currentNativePositionUs(): Long {
