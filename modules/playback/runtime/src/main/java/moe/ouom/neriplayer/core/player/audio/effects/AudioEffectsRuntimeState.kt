@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.audio.effects
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsInactiveReason
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsResolution
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsRuntimeStats
@@ -55,6 +56,7 @@ internal object AudioEffectsRuntimeState : AudioEffectsRuntimePublisher {
             inactiveReason = AudioEffectsInactiveReason.DISABLED
         )
     )
+    // 播放线程和设置侧同时改统计、各写各的字段，只能用 update 原子地读改写
     private val mutableStats = MutableStateFlow(AudioEffectsRuntimeStats())
     val stats: StateFlow<AudioEffectsRuntimeStats> = mutableStats.asStateFlow()
 
@@ -73,21 +75,25 @@ internal object AudioEffectsRuntimeState : AudioEffectsRuntimePublisher {
             )
             if (snapshot.compareAndSet(previous, next)) break
         }
-        mutableStats.value = mutableStats.value.copy(
-            active = resolution.active,
-            route = route,
-            inactiveReason = resolution.inactiveReason,
-            cpuLoadPercent = if (resolution.active) mutableStats.value.cpuLoadPercent else 0f
-        )
+        mutableStats.update { current ->
+            current.copy(
+                active = resolution.active,
+                route = route,
+                inactiveReason = resolution.inactiveReason,
+                cpuLoadPercent = if (resolution.active) current.cpuLoadPercent else 0f
+            )
+        }
     }
 
     fun publishEngineStats(stats: AudioEffectsEngineStats) {
-        mutableStats.value = mutableStats.value.copy(
-            cpuLoadPercent = stats.cpuLoadPercent,
-            limiterReductionDb = stats.limiterReductionDb,
-            compressorReductionDb = stats.compressorReductionDb,
-            sampleRate = stats.sampleRate
-        )
+        mutableStats.update { current ->
+            current.copy(
+                cpuLoadPercent = stats.cpuLoadPercent,
+                limiterReductionDb = stats.limiterReductionDb,
+                compressorReductionDb = stats.compressorReductionDb,
+                sampleRate = stats.sampleRate
+            )
+        }
     }
 
     /** 播放链自身导致的旁路（USB 独占、格式不支持、native 不可用）优先于设置侧原因 */
@@ -95,15 +101,17 @@ internal object AudioEffectsRuntimeState : AudioEffectsRuntimePublisher {
         val resolved = snapshot.get()
         val reason = sinkReason ?: resolved.inactiveReason
         val active = resolved.active && sinkReason == null
-        val current = mutableStats.value
-        if (current.inactiveReason == reason && current.active == active && current.nativeAvailable == nativeAvailable) {
-            return
+        mutableStats.update { current ->
+            if (current.inactiveReason == reason && current.active == active && current.nativeAvailable == nativeAvailable) {
+                current
+            } else {
+                current.copy(
+                    active = active,
+                    inactiveReason = reason,
+                    nativeAvailable = nativeAvailable,
+                    cpuLoadPercent = if (active) current.cpuLoadPercent else 0f
+                )
+            }
         }
-        mutableStats.value = current.copy(
-            active = active,
-            inactiveReason = reason,
-            nativeAvailable = nativeAvailable,
-            cpuLoadPercent = if (active) current.cpuLoadPercent else 0f
-        )
     }
 }

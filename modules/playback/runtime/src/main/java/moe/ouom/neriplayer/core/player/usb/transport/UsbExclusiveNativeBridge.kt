@@ -204,6 +204,13 @@ internal object UsbExclusiveNativeBridge {
         }
     }
 
+    fun drainPlayerPcm(handle: Long): Boolean {
+        if (handle == 0L || !ensureLoaded()) return false
+        return callNativeBoolean("nativeDrainPlayerPcm", { "handle=$handle" }) {
+            nativeDrainPlayerPcm(handle)
+        }
+    }
+
     fun startPlayerPcm(handle: Long): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
         return callNativeBoolean("nativeStartPlayerPcm", { "handle=$handle" }) {
@@ -422,6 +429,9 @@ internal object UsbExclusiveNativeBridge {
         size: Int,
         volume: Float
     ): Int
+
+    @JvmStatic
+    private external fun nativeDrainPlayerPcm(handle: Long): Boolean
 
     @JvmStatic
     private external fun nativeStartPlayerPcm(handle: Long): Boolean

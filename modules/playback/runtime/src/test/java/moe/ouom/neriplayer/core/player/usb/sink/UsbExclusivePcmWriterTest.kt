@@ -27,6 +27,20 @@ class UsbExclusivePcmWriterTest {
     }
 
     @Test
+    fun `input end drain reaches the native queue only for an open handle`() {
+        val port = FakePcmWritePort()
+        val writer = UsbExclusivePcmWriter(port) {}
+
+        assertFalse(writer.drainInputEnd(0L))
+        assertTrue(port.drains.isEmpty())
+
+        assertTrue(writer.drainInputEnd(7L))
+        port.drainAccepted = false
+        assertFalse(writer.drainInputEnd(7L))
+        assertEquals(listOf(7L, 7L), port.drains)
+    }
+
+    @Test
     fun `heap input is copied into owned direct scratch`() {
         val port = FakePcmWritePort()
         val writer = UsbExclusivePcmWriter(port) {}
@@ -425,6 +439,8 @@ class UsbExclusivePcmWriterTest {
         var lastBytes = emptyList<Byte>()
         var consumeFreeBytesOnWrite = false
         var writes = 0
+        var drainAccepted = true
+        val drains = mutableListOf<Long>()
 
         override fun write(handle: Long, buffer: ByteBuffer, offset: Int, size: Int, volume: Float): Int {
             writes += 1
@@ -437,6 +453,11 @@ class UsbExclusivePcmWriterTest {
             val accepted = acceptedBytes ?: size
             if (consumeFreeBytesOnWrite) liveFreeBytes = liveFreeBytes?.minus(accepted)
             return accepted
+        }
+
+        override fun drainInputEnd(handle: Long): Boolean {
+            drains += handle
+            return drainAccepted
         }
 
         override fun runtimeReport(handle: Long): String {

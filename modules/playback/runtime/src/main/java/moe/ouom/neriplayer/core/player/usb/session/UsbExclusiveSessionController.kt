@@ -1198,6 +1198,20 @@ object UsbExclusiveSessionController {
         }
     }
 
+    /** 输入结束时把重采样器压着的尾部写进原生队列；队列放不下时返回 false，可以稍后重试 */
+    fun drainPlayerPcm(handle: Long): Boolean {
+        if (!ioGate.tryEnterWrite()) return false
+        try {
+            val current = _state.value
+            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
+                return false
+            }
+            return UsbExclusiveNativeBridge.drainPlayerPcm(handle)
+        } finally {
+            ioGate.exitWrite()
+        }
+    }
+
     fun runtimeReportForWritePlanning(handle: Long): String {
         val current = _state.value
         if (current.handle != handle || current.source != "player_pcm" || !current.opened) {

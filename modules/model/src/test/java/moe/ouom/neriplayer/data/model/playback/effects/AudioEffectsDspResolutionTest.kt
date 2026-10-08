@@ -33,6 +33,20 @@ class AudioEffectsDspResolutionTest {
     }
 
     @Test
+    fun `a tuned limiter alone keeps the engine active`() {
+        val tuned = AudioEffectsSettings(
+            main = AudioEffectsProfile(enabled = true, sound = AudioEffectsSound(limiterCeilingDb = -6f))
+        ).resolveDsp(headphones)
+        assertTrue(tuned.active)
+        assertEquals(1f, tuned.params[NeriDspParams.LIMITER_ENABLED])
+        assertEquals(-6f, tuned.params[NeriDspParams.LIMITER_CEILING_DB])
+
+        assertFalse(AudioEffectsSound(limiterReleaseMs = 300f).isNeutral())
+        assertTrue(AudioEffectsSound(limiterEnabled = false, limiterCeilingDb = -6f).isNeutral())
+        assertTrue(AudioEffectsSound(dynamicsEnabled = false, limiterCeilingDb = -6f).isNeutral())
+    }
+
+    @Test
     fun `active preset writes equalizer gains and applies auto headroom`() {
         val rock = requireNotNull(findAudioEffectsBuiltInPreset("rock"))
         val settings = AudioEffectsSettings(main = AudioEffectsProfile().applyBuiltInPreset(rock))

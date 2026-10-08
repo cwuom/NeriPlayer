@@ -742,6 +742,71 @@ void verifiesResamplerInputBoundNeverOverfillsOutput() {
     }
 }
 
+void verifiesResamplerDrainEmitsLookaheadTail() {
+    const std::vector<float> input = stereoTone(44100, 997.0, 0.5, 44100);
+    neri::usb::PcmResampler resampler;
+    assert(resampler.configure(44100, 48000, 2));
+    std::vector<float> output;
+    const size_t streamed = resampler.process(input.data(), 44100, &output);
+    const size_t tail = resampler.drain(&output);
+    // 一秒 44.1 kHz 输入要完整换算成一秒 48 kHz 输出，前瞻窗口里的尾部不能丢
+    assert(streamed + tail == 48000U);
+    assert(peakAfter(output, streamed) > 0.4);
+
+    std::vector<float> padded = input;
+    padded.resize(input.size() + static_cast<size_t>(resampler.halfTaps()) * 2U, 0.0f);
+    assert(output == resampleWhole(44100, 48000, padded));
+
+    assert(resampler.drain(&output) == 0U);
+    std::vector<float> restarted;
+    resampler.process(input.data(), 44100, &restarted);
+    assert(restarted == resampleWhole(44100, 48000, input));
+}
+
+void verifiesPipelineDrainQueuesResamplerTail() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(44100, 48000), &error));
+    std::vector<uint8_t> chunk(441U * 4U, 0);
+    for (int chunkIndex = 0; chunkIndex < 10; ++chunkIndex) {
+        assert(pipeline.write(chunk.data(), chunk.size(), &error) == chunk.size());
+    }
+    assert(pipeline.queuedFrames() == 4763);
+    assert(pipeline.drainResampler(&error));
+    // 4410 帧 44.1 kHz 输入正好是 4800 帧 48 kHz 输出
+    assert(pipeline.queuedFrames() == 4800);
+    assert(pipeline.drainResampler(&error));
+    assert(pipeline.queuedFrames() == 4800);
+
+    neri::usb::PcmPipeline passThrough;
+    assert(passThrough.configure(configFor(48000, 48000), &error));
+    assert(passThrough.write(chunk.data(), chunk.size(), &error) == chunk.size());
+    assert(passThrough.drainResampler(&error));
+    assert(passThrough.queuedFrames() == 441);
+}
+
+void verifiesPipelineDrainWaitsForRingSpace() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(44100, 48000);
+    config.ringDurationMs = 1;
+    config.transferBytes = 4;
+    config.transferCount = 1;
+    assert(pipeline.configure(config, &error));
+    const size_t capacityBytes = pipeline.snapshot().capacityBytes;
+    std::vector<uint8_t> input(4410U * 4U, 0);
+    assert(pipeline.write(input.data(), input.size(), &error) > 0U);
+    const size_t queuedBeforeDrain = pipeline.queuedFrames();
+
+    assert(!pipeline.drainResampler(&error));
+    assert(pipeline.queuedFrames() == queuedBeforeDrain);
+
+    std::vector<uint8_t> output(capacityBytes, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == queuedBeforeDrain * 4U);
+    assert(pipeline.drainResampler(&error));
+    assert(pipeline.queuedFrames() > 0U);
+}
+
 void verifiesChannelLayoutsCarryStereoWithoutDuplicatingExtraChannels() {
     const std::array<uint8_t, 4> stereoFrame { 0x00, 0x10, 0x00, 0xF0 };
     std::string error;
@@ -790,6 +855,9 @@ int main() {
     verifiesResamplerKeepsPassbandToneAccurate();
     verifiesResamplerRejectsContentAboveOutputNyquist();
     verifiesResamplerInputBoundNeverOverfillsOutput();
+    verifiesResamplerDrainEmitsLookaheadTail();
+    verifiesPipelineDrainQueuesResamplerTail();
+    verifiesPipelineDrainWaitsForRingSpace();
     verifiesBitPerfectResumeAndTransportStartKeepSamplesExact();
     verifiesBitPerfectMuteIsHardAndUnmuteIsExact();
     verifiesBitPerfectPartialUnderrunKeepsValidFrames();

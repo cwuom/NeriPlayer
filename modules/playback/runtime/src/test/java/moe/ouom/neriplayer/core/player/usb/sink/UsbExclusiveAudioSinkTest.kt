@@ -248,6 +248,31 @@ class UsbExclusiveAudioSinkTest {
         assertEquals(0, attempts.getInt(sink))
     }
 
+    @Test
+    fun `native end of stream drains the resampler tail into the native queue`() {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
+        val sink = UsbExclusiveAudioSink(
+            context = context,
+            fallbackSink = mock(AudioSink::class.java),
+            observeSystemVolume = false,
+            nativeUsbAudioDeviceAvailable = { true }
+        )
+        val port = mock(UsbExclusivePcmWritePort::class.java)
+        setPrivateField(sink, "pcmWriter", UsbExclusivePcmWriter(port) {})
+        setPrivateField(sink, "usingNative", true)
+        setPrivateField(sink, "nativeHandle", 7L)
+
+        sink.playToEndOfStream()
+
+        verify(port).drainInputEnd(7L)
+    }
+
+    private fun setPrivateField(target: Any, name: String, value: Any) {
+        UsbExclusiveAudioSink::class.java.getDeclaredField(name).apply { isAccessible = true }.set(target, value)
+    }
+
     private fun backpressureReport(completedTransfers: Int): String =
         "source=player_pcm pcmLevel=288000/288000 pcmFreeBytes=0 " +
             "completedTransfers=$completedTransfers inFlight=8 running=true transportFailed=false"
