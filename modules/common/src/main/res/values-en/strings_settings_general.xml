@@ -176,8 +176,8 @@
     <string name="settings_usb_exclusive_bit_depth_auto_desc">Match the track and device</string>
     <string name="settings_usb_exclusive_bit_depth_fixed">%1$d-bit</string>
     <string name="settings_usb_exclusive_bit_depth_fixed_desc">Use %1$d-bit PCM</string>
-    <string name="settings_usb_exclusive_bit_perfect">Bit-perfect volume</string>
-    <string name="settings_usb_exclusive_bit_perfect_desc">Keep software gain at 0 dB and use the DAC hardware volume; system and app volume will not attenuate PCM</string>
+    <string name="settings_usb_exclusive_bit_perfect">Bit-perfect output</string>
+    <string name="settings_usb_exclusive_bit_perfect_desc">Output at the source sample rate and bit depth so PCM reaches the DAC unchanged: software gain stays at 0 dB, with no effects, fades, or resampling. Volume keys control the DAC hardware volume when available; otherwise volume is fixed</string>
     <string name="settings_usb_exclusive_buffer_profile">Buffer Profile</string>
     <string name="settings_usb_exclusive_buffer_low_latency">Low latency</string>
     <string name="settings_usb_exclusive_buffer_low_latency_desc">Faster response, less stable</string>
@@ -215,6 +215,12 @@
     <string name="settings_usb_exclusive_input_format">Input Format</string>
     <string name="settings_usb_exclusive_output_format">Actual Output</string>
     <string name="settings_usb_exclusive_buffer_state">Buffer</string>
+    <string name="settings_usb_exclusive_bit_perfect_status">Bit-perfect</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_off">Off; system and app volume scale the PCM</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_active">Active; PCM reaches the DAC unchanged</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_resampled">Not met: the DAC does not accept %1$s, converting to %2$s</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_truncated">Not met: the DAC only accepts %2$d-bit, so the %1$d-bit source is truncated</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_channels">Not met: channels are converted from %1$d to %2$d</string>
     <string name="settings_usb_exclusive_error_none">No error</string>
     <string name="settings_usb_exclusive_issue_sample_rate">Sample rate is not supported</string>
     <string name="settings_usb_exclusive_issue_bit_depth">Bit depth is not supported</string>

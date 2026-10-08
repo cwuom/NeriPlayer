@@ -18,7 +18,7 @@
     <string name="audio_effects_status_active_rate">正在处理 · %1$s · 单核占用约 %2$s</string>
     <string name="audio_effects_status_disabled">音效已关闭，系统可以使用硬件低功耗播放</string>
     <string name="audio_effects_status_neutral">当前设置与原声相同，已自动跳过处理来省电</string>
-    <string name="audio_effects_status_usb">USB 独占正在比特完美输出，音效已跳过</string>
+    <string name="audio_effects_status_usb">USB 独占输出中，音效已跳过</string>
     <string name="audio_effects_status_unsupported">当前音频格式（如多声道）暂不支持音效，已原声播放</string>
     <string name="audio_effects_status_native_unavailable">音效引擎加载失败，已原声播放</string>
     <string name="audio_effects_status_limiter">防破音保护刚刚压低了 %1$s 的峰值</string>
@@ -217,7 +217,7 @@
     <string name="audio_effects_per_output">按设备分别保存</string>
     <string name="audio_effects_per_output_desc">扬声器、有线耳机、蓝牙和 USB 各记住一套音效，切换设备时自动更换</string>
     <string name="audio_effects_usb_apply">USB 独占时也使用音效</string>
-    <string name="audio_effects_usb_apply_desc">默认关闭以保持比特完美；开启「比特完美音量」时仍会跳过</string>
+    <string name="audio_effects_usb_apply_desc">默认关闭以保持比特完美；开启「比特完美输出」时仍会跳过</string>
     <string name="audio_effects_reset_all">重置当前音效</string>
     <string name="audio_effects_reset_all_confirm">恢复为原声并清除当前设备的所有调整？「我的音效」中保存的内容不会删除</string>
     <string name="audio_effects_tab_presets">音效</string>

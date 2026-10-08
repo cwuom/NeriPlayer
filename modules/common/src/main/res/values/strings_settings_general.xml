@@ -176,8 +176,8 @@
     <string name="settings_usb_exclusive_bit_depth_auto_desc">自动匹配歌曲和设备</string>
     <string name="settings_usb_exclusive_bit_depth_fixed">%1$d-bit</string>
     <string name="settings_usb_exclusive_bit_depth_fixed_desc">固定为 %1$d-bit PCM</string>
-    <string name="settings_usb_exclusive_bit_perfect">比特完美音量</string>
-    <string name="settings_usb_exclusive_bit_perfect_desc">固定 0 dB 软件增益，音量需使用 DAC 硬件控制；系统和应用音量不会衰减 PCM</string>
+    <string name="settings_usb_exclusive_bit_perfect">比特完美输出</string>
+    <string name="settings_usb_exclusive_bit_perfect_desc">按音源采样率和位深输出，PCM 原样送达 DAC：软件增益固定 0 dB，不做音效、淡入淡出和重采样；DAC 有硬件音量时音量键调节硬件音量，否则音量固定</string>
     <string name="settings_usb_exclusive_buffer_profile">缓冲策略</string>
     <string name="settings_usb_exclusive_buffer_low_latency">低延迟</string>
     <string name="settings_usb_exclusive_buffer_low_latency_desc">响应更快，稳定性较低</string>
@@ -215,6 +215,12 @@
     <string name="settings_usb_exclusive_input_format">输入格式</string>
     <string name="settings_usb_exclusive_output_format">实际输出</string>
     <string name="settings_usb_exclusive_buffer_state">缓冲</string>
+    <string name="settings_usb_exclusive_bit_perfect_status">比特完美</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_off">未开启，系统和应用音量会缩放 PCM</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_active">已生效，PCM 原样送达 DAC</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_resampled">未达成：DAC 不支持 %1$s，正在转换为 %2$s</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_truncated">未达成：DAC 只接受 %2$d-bit，%1$d-bit 音源被截断</string>
+    <string name="settings_usb_exclusive_bit_perfect_status_channels">未达成：声道数从 %1$d 转换为 %2$d</string>
     <string name="settings_usb_exclusive_error_none">无错误</string>
     <string name="settings_usb_exclusive_issue_sample_rate">当前采样率设备不支持</string>
     <string name="settings_usb_exclusive_issue_bit_depth">当前位深设备不支持</string>

@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.device.UsbExclusiveDeviceSelectionOutcome
 import moe.ouom.neriplayer.core.player.usb.device.selectUsbExclusiveDevice
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
@@ -33,6 +34,17 @@ internal data class PreparedUsbInputPcmFormat(
     val encoding: Int,
     val bytesPerSample: Int
 )
+
+/**
+ * 比特完美按音源采样率和位深申请 DAC 格式，固定采样率/位深会引入重采样或截断；
+ * 兼容回退仍然保留，DAC 不支持音源格式时继续出声，由状态页如实提示
+ */
+internal fun UsbExclusivePreferences.withBitPerfectSourceFormat(): UsbExclusivePreferences =
+    if (bitPerfect) {
+        copy(sampleRateMode = UsbExclusiveSampleRateMode.FOLLOW_SOURCE, bitDepthMode = UsbExclusiveBitDepthMode.AUTO)
+    } else {
+        this
+    }
 
 internal fun describeUsbInputFormat(
     sampleRate: Int,
@@ -95,7 +107,7 @@ internal object UsbExclusiveOutputFormatResolver {
             PlayerManager.usbExclusivePreferences
         } else {
             UsbExclusivePreferences()
-        }
+        }.withBitPerfectSourceFormat()
         val usbOutputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             .filter { device -> device.isSink && isUsbOutputType(device.type) }
             .sortedBy(AudioDeviceInfo::getId)

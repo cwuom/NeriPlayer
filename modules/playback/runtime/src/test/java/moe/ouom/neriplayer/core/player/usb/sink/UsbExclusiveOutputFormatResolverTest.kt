@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
 import androidx.media3.common.C
+import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveBitDepthMode
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusiveUnsupportedFormatPolicy
@@ -11,6 +12,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UsbExclusiveOutputFormatResolverTest {
+
+    @Test
+    fun `bit perfect requests the source rate and depth instead of fixed modes`() {
+        val fixed = UsbExclusivePreferences(
+            sampleRateMode = UsbExclusiveSampleRateMode.RATE_96000,
+            bitDepthMode = UsbExclusiveBitDepthMode.BIT_16,
+        )
+        assertEquals(fixed, fixed.withBitPerfectSourceFormat())
+
+        val bitPerfect = fixed.copy(bitPerfect = true).withBitPerfectSourceFormat()
+        assertEquals(
+            44_100,
+            UsbExclusiveOutputFormatResolver.nativeSampleRateCandidates(bitPerfect, 44_100, listOf(48_000, 96_000))
+                .first()
+        )
+        assertEquals(24, UsbExclusiveOutputFormatResolver.preferredNativeBitDepth(bitPerfect, 24))
+        assertTrue(bitPerfect.sampleRateCompatibilityEnabled)
+    }
 
     @Test
     fun `auto float mode keeps 32-bit first and defers 24-in-32 fallback`() {

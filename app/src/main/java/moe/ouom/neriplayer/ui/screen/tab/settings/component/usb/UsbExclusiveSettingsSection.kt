@@ -48,6 +48,7 @@ import kotlinx.coroutines.isActive
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -125,7 +126,8 @@ internal fun UsbExclusiveSettingsSection(
             UsbExclusiveStatusContent(
                 enabled = usbExclusivePlayback,
                 snapshot = snapshot,
-                nativeState = nativeState
+                nativeState = nativeState,
+                bitPerfect = preferences.bitPerfect
             )
             SettingsDivider()
             UsbExclusiveBackgroundBehaviorItem()
@@ -221,7 +223,8 @@ private fun UsbExclusiveMasterSwitch(
 private fun UsbExclusiveStatusContent(
     enabled: Boolean,
     snapshot: UsbExclusiveDiagnosticsSnapshot,
-    nativeState: UsbExclusiveNativeState
+    nativeState: UsbExclusiveNativeState,
+    bitPerfect: Boolean
 ) {
     val status = resolveUsbStatus(enabled, snapshot, nativeState)
     StatusBanner(status)
@@ -245,16 +248,22 @@ private fun UsbExclusiveStatusContent(
             }
         )
     )
-    UsbExclusiveRuntimeSummary(snapshot, nativeState)
+    UsbExclusiveRuntimeSummary(snapshot, nativeState, bitPerfect)
 }
 
 @Composable
 private fun UsbExclusiveRuntimeSummary(
     snapshot: UsbExclusiveDiagnosticsSnapshot,
-    nativeState: UsbExclusiveNativeState
+    nativeState: UsbExclusiveNativeState,
+    bitPerfect: Boolean
 ) {
     val inputSummary = summarizeInputFormat(snapshot.inputFormat)
     val outputSummary = summarizeNativeOutput(nativeState, snapshot.nativeExclusiveRuntime)
+    val bitPerfectStatus = resolveUsbBitPerfectStatus(
+        bitPerfect = bitPerfect,
+        inputFormat = snapshot.inputFormat,
+        outputFormat = nativeState.outputFormat
+    ).takeIf { snapshot.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB }
     val bufferSummary = summarizeNativeBuffer(snapshot.nativeExclusiveRuntime, nativeState)
     val rawError = if (snapshot.usbExclusivePlaybackEnabled) {
         snapshot.fallbackReason
@@ -276,6 +285,13 @@ private fun UsbExclusiveRuntimeSummary(
         SettingsInfoItem(
             title = stringResource(CoreCommonR.string.settings_usb_exclusive_output_format),
             value = outputSummary
+        )
+    }
+    if (bitPerfectStatus != null) {
+        SettingsDivider()
+        SettingsInfoItem(
+            title = stringResource(CoreCommonR.string.settings_usb_exclusive_bit_perfect_status),
+            value = usbBitPerfectStatusLabel(bitPerfectStatus)
         )
     }
     if (bufferSummary != null) {
@@ -584,11 +600,6 @@ private fun joinUsbFormatParts(vararg parts: String?): String? {
     return parts.filterNotNull()
         .takeIf { it.isNotEmpty() }
         ?.joinToString(separator = " · ")
-}
-
-private fun String.valueAfter(key: String): String? {
-    val regex = Regex("(?:^|\\s)${Regex.escape(key)}=([^\\s]+)")
-    return regex.find(this)?.groupValues?.getOrNull(1)
 }
 
 @Composable

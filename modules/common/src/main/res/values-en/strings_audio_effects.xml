@@ -18,7 +18,7 @@
     <string name="audio_effects_status_active_rate">Processing · %1$s · about %2$s of one CPU core</string>
     <string name="audio_effects_status_disabled">Effects are off, so the system can use low-power hardware playback.</string>
     <string name="audio_effects_status_neutral">Your settings match the original sound, so processing is skipped to save power.</string>
-    <string name="audio_effects_status_usb">USB exclusive is playing bit-perfect, so effects are skipped.</string>
+    <string name="audio_effects_status_usb">Effects are skipped during USB exclusive output.</string>
     <string name="audio_effects_status_unsupported">This audio format (for example multichannel) is not supported, playing the original sound.</string>
     <string name="audio_effects_status_native_unavailable">The effects engine failed to load, playing the original sound.</string>
     <string name="audio_effects_status_limiter">The clipping guard just pulled peaks down by %1$s</string>
@@ -217,7 +217,7 @@
     <string name="audio_effects_per_output">Separate sound per device</string>
     <string name="audio_effects_per_output_desc">Speaker, wired, Bluetooth and USB each keep their own sound and switch automatically</string>
     <string name="audio_effects_usb_apply">Use effects in USB exclusive mode</string>
-    <string name="audio_effects_usb_apply_desc">Off by default to stay bit-perfect. Still skipped while bit-perfect volume is on.</string>
+    <string name="audio_effects_usb_apply_desc">Off by default to stay bit-perfect. Still skipped while bit-perfect output is on.</string>
     <string name="audio_effects_reset_all">Reset current sound</string>
     <string name="audio_effects_reset_all_confirm">Restore the original sound and clear adjustments for the current device? Sounds saved under Mine are kept.</string>
     <string name="audio_effects_tab_presets">Presets</string>

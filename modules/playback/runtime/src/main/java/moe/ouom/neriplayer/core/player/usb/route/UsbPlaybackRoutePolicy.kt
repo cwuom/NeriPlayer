@@ -3,13 +3,14 @@ package moe.ouom.neriplayer.core.player.usb.route
 import kotlinx.coroutines.Job
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveErrorCode
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveNativeState
+import moe.ouom.neriplayer.core.player.usb.sink.withBitPerfectSourceFormat
 import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
 import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 
 internal fun UsbExclusivePreferences.requiresRouteReconfiguration(next: UsbExclusivePreferences): Boolean =
-    routeSelection() != next.routeSelection()
+    withBitPerfectSourceFormat().routeSelection() != next.withBitPerfectSourceFormat().routeSelection()
 
 private fun UsbExclusivePreferences.routeSelection() = listOf(
     selectedDeviceKey, sampleRateMode, bitDepthMode, unsupportedFormatPolicy,
