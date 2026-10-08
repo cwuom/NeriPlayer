@@ -75,7 +75,6 @@ private fun SongItem.peekedLocalCover(context: Context, onMainThread: Boolean): 
     LocalMediaHostAccess.covers.peekLocalCoverUri(this)?.takeUnless(::isMediaStoreCoverReference)
         ?: if (onMainThread) null else LocalMediaSupport.resolveCoverUri(context, this)
 
-/** A cover the user picked for a playlist, unless it is blank or names a cover directory. */
 private fun customPlaylistCoverOrNull(customCoverUrl: String?): String? =
     customCoverUrl?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
 
