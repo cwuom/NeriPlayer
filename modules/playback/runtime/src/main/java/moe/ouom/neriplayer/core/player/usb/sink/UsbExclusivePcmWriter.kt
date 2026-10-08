@@ -94,6 +94,7 @@ internal class UsbExclusivePcmWriter(
     private var lastNativeBackpressureLogAtMs = 0L
     private var nativeBackpressureStartedAtMs = 0L
     private var nativeBackpressureCompletedTransfersBaseline = -1L
+    private val underrunWaterline = UsbExclusiveUnderrunWaterline()
 
     fun prepareDirectScratch() {
         if (directScratch?.capacity() == DIRECT_SCRATCH_CAPACITY_BYTES) return
@@ -280,8 +281,21 @@ internal class UsbExclusivePcmWriter(
         playing = state.playing,
         prerollMs = state.prerollMs,
         metrics = metrics,
-        runningQueueTargetMs = state.runningQueueTargetMs,
+        runningQueueTargetMs = adaptiveQueueTargetMs(metrics, state),
     )
+
+    private fun adaptiveQueueTargetMs(metrics: UsbExclusiveRuntimeMetrics, state: UsbExclusiveNativeWriteSnapshot): Long? {
+        val previousShift = underrunWaterline.boostShift
+        val target = underrunWaterline.targetMs(state.runningQueueTargetMs, metrics.playerZeroFillBytes, port.elapsedRealtimeMs())
+        if (underrunWaterline.boostShift != previousShift) {
+            NPLogger.i(
+                "NERI-UsbExclusive",
+                "underrun waterline boost=${underrunWaterline.boostShift} targetMs=$target " +
+                    "zeroFillBytes=${metrics.playerZeroFillBytes}"
+            )
+        }
+        return target
+    }
 
     private fun alignToInputFrame(size: Int, frameBytes: Int): Int {
         if (size <= 0 || frameBytes <= 1) return size.coerceAtLeast(0)
