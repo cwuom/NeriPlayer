@@ -51,6 +51,18 @@ class LocalMediaSongCacheInvalidationTest {
         assertEquals(setOf(album.absolutePath, other.absolutePath), directoryIndexKeys())
     }
 
+    @Test
+    fun `blank or parentless local paths keep every folder cache`() {
+        LocalMediaSupport.invalidateSongAssetCaches(song(localFilePath = " "))
+        LocalMediaSupport.invalidateSongAssetCaches(song(localFilePath = "song.flac"))
+
+        assertEquals(
+            setOf(LocalMediaSupport.directoryCoverLookupKey(album), LocalMediaSupport.directoryCoverLookupKey(other)),
+            directoryCoverKeys()
+        )
+        assertEquals(setOf(album.absolutePath, other.absolutePath), directoryIndexKeys())
+    }
+
     private fun directoryCoverKeys(): Set<String> =
         synchronized(LocalMediaSupport.directoryCoverLookupCache) {
             LocalMediaSupport.directoryCoverLookupCache.keys.toSet()
