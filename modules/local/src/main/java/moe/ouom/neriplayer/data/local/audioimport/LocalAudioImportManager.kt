@@ -928,19 +928,18 @@ object LocalAudioImportManager {
     }
 
     fun needsLocalIdentityMetadataProbe(song: SongItem): Boolean {
-        val artistNeedsProbe = isQuickMetadataPlaceholder(song.artist) ||
-            song.artist.isBlank()
-        val fileName = song.localFileName
-            ?.substringBeforeLast('.')
-            ?.trim()
-            .orEmpty()
-        val titleNeedsProbe = song.name.isBlank() ||
-            isQuickMetadataPlaceholder(song.name) ||
-            (fileName.isNotBlank() && song.name.trim().equals(fileName, ignoreCase = true))
-        val albumNeedsProbe = song.album.isBlank() ||
-            isQuickMetadataPlaceholder(song.album) ||
+        return isMissingQuickMetadata(song.artist) ||
+            titleNeedsIdentityProbe(song) ||
+            isMissingQuickMetadata(song.album) ||
             song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
-        return artistNeedsProbe || titleNeedsProbe || albumNeedsProbe
+    }
+
+    private fun isMissingQuickMetadata(value: String): Boolean = value.isBlank() || isQuickMetadataPlaceholder(value)
+
+    private fun titleNeedsIdentityProbe(song: SongItem): Boolean {
+        val fileName = song.localFileName?.substringBeforeLast('.')?.trim().orEmpty()
+        return isMissingQuickMetadata(song.name) ||
+            fileName.isNotBlank() && song.name.trim().equals(fileName, ignoreCase = true)
     }
 
 

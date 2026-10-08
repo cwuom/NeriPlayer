@@ -59,10 +59,8 @@ internal fun LocalAudioImportManager.resolveParsedAlbumFallback(
     if (normalizedCurrentAlbum.isBlank()) {
         return parsedAlbum
     }
-    return parsedAlbum.takeIf {
-        normalizedCurrentAlbum == normalizeParsedMetadataValue(fallbackAlbum) ||
-            normalizedCurrentAlbum == normalizeParsedMetadataValue(LocalSongSupport.LOCAL_ALBUM_IDENTITY)
-    }
+    val replaceableAlbums = listOf(fallbackAlbum, LocalSongSupport.LOCAL_ALBUM_IDENTITY).map(::normalizeParsedMetadataValue)
+    return parsedAlbum.takeIf { normalizedCurrentAlbum in replaceableAlbums }
 }
 
 internal fun LocalAudioImportManager.normalizeParsedMetadataValue(value: String?): String {
