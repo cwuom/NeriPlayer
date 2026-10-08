@@ -1253,23 +1253,35 @@ class BiliClient(
         if (stored["SESSDATA"].isNullOrBlank()) {
             return@withContext false
         }
+        runCatching { requestNavLoginMid(stored) > 0L }.getOrNull()
+    }
 
+    /**
+     * 通过 nav 接口查询当前 Cookie 对应的账号 mid
+     *
+     * 手动导入的 Cookie 可能只有 SESSDATA 没有 DedeUserID, 未登录时返回 null, 请求失败直接抛出
+     */
+    suspend fun fetchLoginMid(): Long? = withContext(Dispatchers.IO) {
+        val stored = cookieRepo.getCookiesOnce()
+        if (stored["SESSDATA"].isNullOrBlank()) {
+            return@withContext null
+        }
+        requestNavLoginMid(stored).takeIf { it > 0L }
+    }
+
+    private fun requestNavLoginMid(cookies: Map<String, String>): Long {
         val req = Request.Builder()
             .url(NAV_URL)
             .header("User-Agent", DEFAULT_WEB_UA)
             .header("Referer", REFERER)
-            .apply { headerCookieIfPresent(stored.toCookieHeader()) }
+            .apply { headerCookieIfPresent(cookies.toCookieHeader()) }
             .get()
             .build()
-
-        runCatching {
-            val text = http.newCall(req).executeOrThrow().use { it.body.string() }
-            val jo = JSONObject(text)
-            val data = jo.optJSONObject("data") ?: JSONObject()
-            jo.optInt("code", -1) == 0 &&
-                data.optBoolean("isLogin", false) &&
-                data.optLong("mid", 0L) > 0L
-        }.getOrNull()
+        val text = http.newCall(req).executeOrThrow().use { it.body.string() }
+        val jo = JSONObject(text)
+        val data = jo.optJSONObject("data") ?: JSONObject()
+        val loggedIn = jo.optInt("code", -1) == 0 && data.optBoolean("isLogin", false)
+        return if (loggedIn) data.optLong("mid", 0L) else 0L
     }
 
     // 工具 / 扩展 //
