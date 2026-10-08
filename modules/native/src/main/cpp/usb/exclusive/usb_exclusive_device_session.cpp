@@ -918,6 +918,7 @@ void finishClosedUsbResources(UsbExclusiveHandle* handle) {
                 );
             }
         }
+        releaseFeatureUnits(handle, true);
         releaseClaimedAudioInterfaces(handle);
         libusb_close(handle->device.devh);
         handle->device.devh = nullptr;
@@ -926,6 +927,7 @@ void finishClosedUsbResources(UsbExclusiveHandle* handle) {
         handle->device.streamingAlternateActive = false;
         handle->device.streamingAlternateStatus = "close:detached";
         handle->device.claimedAudioInterfaces.clear();
+        releaseFeatureUnits(handle, false);
         libusb_close(handle->device.devh);
         handle->device.devh = nullptr;
     }
@@ -1126,6 +1128,7 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
             closeHandleInternal(handle);
             return 0L;
         }
+        applyBitPerfectFeatureUnits(handle.get());
 
         if (selection.uacVersion == 1) {
             rc = setStreamingAlternateLocked(

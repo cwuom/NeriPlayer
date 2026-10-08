@@ -4,11 +4,13 @@ import android.media.AudioManager
 import android.media.VolumeProvider
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 
+/** 比特完美只在 DAC 有硬件音量时接管音量键，否则数字音量会破坏比特完美 */
 internal fun shouldUseUsbExclusiveRemoteVolumeRouting(
     effectivePath: String,
-    bitPerfect: Boolean
+    bitPerfect: Boolean,
+    hardwareVolume: Boolean = false
 ): Boolean {
-    return effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB && !bitPerfect
+    return effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB && (!bitPerfect || hardwareVolume)
 }
 
 internal fun usbExclusiveVolumeProviderMaxIndex(minVolume: Int, maxVolume: Int): Int {

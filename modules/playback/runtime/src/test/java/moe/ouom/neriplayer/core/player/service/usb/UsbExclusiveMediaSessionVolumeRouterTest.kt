@@ -40,6 +40,20 @@ class UsbExclusiveMediaSessionVolumeRouterTest {
     }
 
     @Test
+    fun `bit perfect playback routes volume keys once the DAC exposes hardware volume`() {
+        val port = FakePort()
+        val router = UsbExclusiveMediaSessionVolumeRouter(port)
+
+        router.update(UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB, bitPerfect = true, hardwareVolume = true)
+        assertTrue(router.isRemote())
+        assertEquals(1, port.remoteCalls)
+
+        router.update(UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB, bitPerfect = true, hardwareVolume = false)
+        assertFalse(router.isRemote())
+        assertEquals(1, port.localCalls)
+    }
+
+    @Test
     fun `remote routing failure clears fraction and permits a later retry`() {
         val port = FakePort().apply { failRemote = true }
         val router = UsbExclusiveMediaSessionVolumeRouter(port)

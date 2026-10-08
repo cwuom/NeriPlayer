@@ -6,6 +6,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeBridge
 
 internal class AndroidUsbExclusiveSinkVolumePort(
     private val fallbackSink: AudioSink
@@ -22,5 +23,15 @@ internal class AndroidUsbExclusiveSinkVolumePort(
 
     override fun publishVolume(volume: Float) {
         UsbExclusiveAudioPathTracker.updateVolume(volume)
+    }
+
+    override fun hasHardwareVolume(handle: Long): Boolean = UsbExclusiveNativeBridge.hasHardwareVolume(handle)
+
+    override fun setHardwareVolume(handle: Long, fraction: Float) {
+        UsbExclusiveNativeBridge.setHardwareVolume(handle, fraction)
+    }
+
+    override fun publishHardwareVolume(available: Boolean) {
+        UsbExclusiveAudioPathTracker.updateHardwareVolume(available)
     }
 }

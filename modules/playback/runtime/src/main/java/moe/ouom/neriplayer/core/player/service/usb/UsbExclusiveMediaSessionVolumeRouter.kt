@@ -17,8 +17,8 @@ internal class UsbExclusiveMediaSessionVolumeRouter(
 ) {
     private var provider: VolumeProvider? = null
 
-    fun update(effectivePath: String, bitPerfect: Boolean) {
-        if (shouldUseUsbExclusiveRemoteVolumeRouting(effectivePath, bitPerfect)) {
+    fun update(effectivePath: String, bitPerfect: Boolean, hardwareVolume: Boolean = false) {
+        if (shouldUseUsbExclusiveRemoteVolumeRouting(effectivePath, bitPerfect, hardwareVolume)) {
             if (provider == null) enable()
         } else {
             disable("path=$effectivePath")

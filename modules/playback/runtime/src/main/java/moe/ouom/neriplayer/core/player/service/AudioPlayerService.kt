@@ -818,7 +818,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun updateMediaSessionVolumeRouting(pathState: UsbExclusiveAudioPathState) {
-        usbVolumeRouter.update(pathState.effectivePath, PlayerManager.usbExclusivePreferences.bitPerfect)
+        usbVolumeRouter.update(pathState.effectivePath, PlayerManager.usbExclusivePreferences.bitPerfect, pathState.hardwareVolume)
     }
 
     private fun disableUsbExclusiveMediaSessionVolumeRouting(reason: String) {

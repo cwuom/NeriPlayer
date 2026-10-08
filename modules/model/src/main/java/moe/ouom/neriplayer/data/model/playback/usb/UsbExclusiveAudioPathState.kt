@@ -10,6 +10,7 @@ data class UsbExclusiveAudioPathState(
     val sinkPlaying: Boolean = false,
     val nativePaused: Boolean = false,
     val requestedVolume: Float = 1f,
+    val hardwareVolume: Boolean = false,
     val generation: Long = 0L
 ) {
     companion object {

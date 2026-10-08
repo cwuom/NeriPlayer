@@ -130,5 +130,9 @@ bool reconfigureOpenedPlayerPcmOutput(
     std::string* error
 );
 void finishClosedUsbResources(UsbExclusiveHandle* handle);
+void applyBitPerfectFeatureUnits(UsbExclusiveHandle* handle);
+void releaseFeatureUnits(UsbExclusiveHandle* handle, bool restoreDevice);
+bool setHardwareVolumeFraction(UsbExclusiveHandle* handle, float fraction);
+bool hasHardwareVolume(UsbExclusiveHandle* handle);
 
 } // namespace neri::usb::exclusive

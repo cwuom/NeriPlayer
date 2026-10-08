@@ -29,6 +29,20 @@ class MediaSessionVolumePolicyTest {
                 bitPerfect = true
             )
         )
+        assertTrue(
+            shouldUseUsbExclusiveRemoteVolumeRouting(
+                effectivePath = UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB,
+                bitPerfect = true,
+                hardwareVolume = true
+            )
+        )
+        assertFalse(
+            shouldUseUsbExclusiveRemoteVolumeRouting(
+                effectivePath = UsbExclusiveAudioPathState.EFFECTIVE_SYSTEM,
+                bitPerfect = true,
+                hardwareVolume = true
+            )
+        )
     }
 
     @Test

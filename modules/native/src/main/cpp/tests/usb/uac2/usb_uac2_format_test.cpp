@@ -1,6 +1,8 @@
 #include "usb/uac2/usb_uac2_format.h"
+#include "usb/control/usb_feature_unit.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -253,9 +255,119 @@ void verifiesCurrentSampleRateDecoding() {
     assert(error == "invalid_current_sample_rate_input");
 }
 
+bool hasControl(
+    const std::vector<neri::usb::control::FeatureUnitControl>& controls,
+    int unitId,
+    int channel,
+    uint8_t selector
+) {
+    for (const auto& control : controls) {
+        if (control.unitId == unitId && control.channel == channel && control.selector == selector) return true;
+    }
+    return false;
+}
+
+void findsPlaybackFeatureUnitsButLeavesTheMicrophonePathAlone() {
+    constexpr uint8_t uac2Descriptors[] = {
+        9, 0x24, 0x01, 0x00, 0x02, 0x08, 0x40, 0x00, 0x00,
+        8, 0x24, 0x0A, 0x05, 0x03, 0x07, 0x00, 0x00,
+        17, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 0x05, 2, 0x03, 0, 0, 0, 0, 0x00, 0x00, 0,
+        18, 0x24, 0x06, 0x02, 0x01, 0x0F, 0, 0, 0, 0x0C, 0, 0, 0, 0x04, 0, 0, 0, 0,
+        12, 0x24, 0x03, 0x03, 0x02, 0x03, 0x00, 0x02, 0x05, 0x00, 0x00, 0,
+        17, 0x24, 0x02, 0x04, 0x01, 0x02, 0x00, 0x05, 1, 0x00, 0, 0, 0, 0, 0x00, 0x00, 0,
+        14, 0x24, 0x06, 0x05, 0x04, 0x0F, 0, 0, 0, 0x0F, 0, 0, 0, 0,
+        12, 0x24, 0x03, 0x06, 0x01, 0x01, 0x00, 0x05, 0x05, 0x00, 0x00, 0
+    };
+    const auto uac2 = neri::usb::control::findPlaybackFeatureUnitControls(uac2Descriptors, sizeof(uac2Descriptors), 2);
+    assert(uac2.size() == 3);
+    assert(hasControl(uac2, 2, 0, neri::usb::control::kFeatureUnitMuteSelector));
+    assert(hasControl(uac2, 2, 0, neri::usb::control::kFeatureUnitVolumeSelector));
+    assert(hasControl(uac2, 2, 1, neri::usb::control::kFeatureUnitVolumeSelector));
+    assert(!hasControl(uac2, 2, 2, neri::usb::control::kFeatureUnitVolumeSelector));
+    assert(!hasControl(uac2, 5, 0, neri::usb::control::kFeatureUnitMuteSelector));
+
+    constexpr uint8_t uac1Descriptors[] = {
+        12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 2, 0x03, 0x00, 0, 0,
+        10, 0x24, 0x06, 0x02, 0x01, 0x01, 0x03, 0x02, 0x02, 0,
+        8, 0x24, 0x06, 0x07, 0x02, 0x01, 0x01, 0,
+        9, 0x24, 0x03, 0x03, 0x01, 0x03, 0x00, 0x07, 0
+    };
+    const auto uac1 = neri::usb::control::findPlaybackFeatureUnitControls(uac1Descriptors, sizeof(uac1Descriptors), 1);
+    assert(uac1.size() == 5);
+    assert(hasControl(uac1, 7, 0, neri::usb::control::kFeatureUnitMuteSelector));
+    assert(hasControl(uac1, 2, 0, neri::usb::control::kFeatureUnitMuteSelector));
+    assert(hasControl(uac1, 2, 2, neri::usb::control::kFeatureUnitVolumeSelector));
+
+    assert(neri::usb::control::findPlaybackFeatureUnitControls(nullptr, 0, 2).empty());
+    constexpr uint8_t truncated[] = { 18, 0x24, 0x06, 0x02 };
+    assert(neri::usb::control::findPlaybackFeatureUnitControls(truncated, sizeof(truncated), 2).empty());
+}
+
+void choosesUnityHardwareVolumeWithinTheDeviceRange() {
+    using neri::usb::control::unityVolumeWithinRange;
+    assert(unityVolumeWithinRange(-12800, 0) == 0);
+    assert(unityVolumeWithinRange(-6400, 3072) == 0);
+    assert(unityVolumeWithinRange(-12800, -256) == -256);
+    assert(unityVolumeWithinRange(256, 1024) == 256);
+
+    constexpr uint8_t range[] = { 1, 0, 0x00, 0xCE, 0x00, 0x00, 0x80, 0x00 };
+    int16_t minimum = 1;
+    int16_t maximum = 1;
+    assert(neri::usb::control::decodeUac2VolumeRange(range, sizeof(range), &minimum, &maximum));
+    assert(minimum == -12800);
+    assert(maximum == 0);
+    constexpr uint8_t empty[] = { 0, 0, 0x00, 0xCE, 0x00, 0x00, 0x80, 0x00 };
+    assert(!neri::usb::control::decodeUac2VolumeRange(empty, sizeof(empty), &minimum, &maximum));
+    assert(!neri::usb::control::decodeUac2VolumeRange(range, 4, &minimum, &maximum));
+
+    uint8_t encoded[2] = { 0, 0 };
+    neri::usb::control::encodeLittleEndianInt16(-12800, encoded);
+    assert(encoded[0] == 0x00 && encoded[1] == 0xCE);
+    assert(neri::usb::control::decodeLittleEndianInt16(encoded) == -12800);
+}
+
+void mapsVolumeKeysOntoOneHardwareVolumeControl() {
+    using neri::usb::control::FeatureUnitControl;
+    using neri::usb::control::FeatureUnitVolume;
+    using neri::usb::control::hardwareVolumeForFraction;
+    using neri::usb::control::kFeatureUnitVolumeSelector;
+    using neri::usb::control::selectHardwareVolumeControls;
+    const auto volume = [](int unitId, int channel, int16_t minimum, int16_t maximum) {
+        return FeatureUnitVolume { FeatureUnitControl { unitId, channel, kFeatureUnitVolumeSelector }, minimum, maximum };
+    };
+
+    const auto nearestUnitMaster = selectHardwareVolumeControls({
+        volume(7, 0, -12800, 0),
+        volume(2, 0, -12800, 0),
+        volume(2, 1, -12800, 0),
+    });
+    assert(nearestUnitMaster.size() == 1);
+    assert(nearestUnitMaster[0].control.unitId == 7 && nearestUnitMaster[0].control.channel == 0);
+
+    const auto skipsNarrowRange = selectHardwareVolumeControls({
+        volume(7, 0, -256, 0),
+        volume(2, 1, -12800, 0),
+        volume(2, 2, -12800, 0),
+    });
+    assert(skipsNarrowRange.size() == 2);
+    assert(skipsNarrowRange[0].control.unitId == 2 && skipsNarrowRange[1].control.channel == 2);
+    assert(selectHardwareVolumeControls({ volume(2, 0, 0, 3072), volume(2, 1, -1024, 0) }).empty());
+
+    assert(hardwareVolumeForFraction(1.0f, -12800, 0) == 0);
+    assert(hardwareVolumeForFraction(1.0f, -12800, 3072) == 0);
+    assert(hardwareVolumeForFraction(1.0f, -12800, -256) == -256);
+    assert(hardwareVolumeForFraction(0.5f, -12800, 3072) == -3083);
+    assert(hardwareVolumeForFraction(0.01f, -12800, 0) == -12800);
+    assert(hardwareVolumeForFraction(0.0f, -12800, 0) == -12800);
+    assert(hardwareVolumeForFraction(std::nanf(""), -12800, 0) == -12800);
+}
+
 } // namespace
 
 int main() {
+    findsPlaybackFeatureUnitsButLeavesTheMicrophonePathAlone();
+    choosesUnityHardwareVolumeWithinTheDeviceRange();
+    mapsVolumeKeysOntoOneHardwareVolumeControl();
     verifiesUac2TypeI24BitPcmFormat();
     verifiesUac2TypeI32BitPcmFormat();
     verifiesUac2TypeI24BitPaddedContainerFormat();

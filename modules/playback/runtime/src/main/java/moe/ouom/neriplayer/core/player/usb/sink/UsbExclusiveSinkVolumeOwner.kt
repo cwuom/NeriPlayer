@@ -21,6 +21,9 @@ internal interface UsbExclusiveSinkVolumePort {
     fun setNativeVolume(handle: Long, volume: Float)
     fun setFallbackVolume(volume: Float)
     fun publishVolume(volume: Float)
+    fun hasHardwareVolume(handle: Long): Boolean
+    fun setHardwareVolume(handle: Long, fraction: Float)
+    fun publishHardwareVolume(available: Boolean)
 }
 
 internal class UsbExclusiveSinkVolumeOwner(
@@ -50,6 +53,7 @@ internal class UsbExclusiveSinkVolumeOwner(
     private val systemVolumeHandler = volumeHandler(systemVolumeThread)
     @Volatile private var cachedMusicVolumeFraction = 1f
     @Volatile private var nativeHandle = 0L
+    @Volatile private var hardwareVolumeAvailable = false
     @Volatile var playerVolume = 1f
         private set
     private var lastReportedNativeVolume = Float.NaN
@@ -81,7 +85,12 @@ internal class UsbExclusiveSinkVolumeOwner(
     }
 
     fun setNativeHandle(handle: Long) {
+        if (handle == nativeHandle) return
         nativeHandle = handle
+        hardwareVolumeAvailable = handle != 0L && port.hasHardwareVolume(handle)
+        // 打开后先同步写入硬件音量再出声，避免比特完美首包按 0 dB 播放
+        applyHardwareVolume()
+        port.publishHardwareVolume(hardwareVolumeAvailable)
     }
 
     fun setPlayerVolume(volume: Float) {
@@ -198,6 +207,14 @@ internal class UsbExclusiveSinkVolumeOwner(
         if (abs(nextVolumeFraction - cachedMusicVolumeFraction) <= VOLUME_EPSILON) return
         cachedMusicVolumeFraction = nextVolumeFraction
         if (nativeHandle != 0L) applyEffectiveNativeVolume()
+        applyHardwareVolume()
+    }
+
+    /** 比特完美时音量键改 DAC 硬件音量；非比特完美保持 0 dB，由数字音量负责 */
+    private fun applyHardwareVolume() {
+        val handle = nativeHandle
+        if (handle == 0L || !hardwareVolumeAvailable) return
+        port.setHardwareVolume(handle, if (port.bitPerfect()) cachedMusicVolumeFraction else 1f)
     }
 
     private fun nextPollIntervalMs(): Long =
