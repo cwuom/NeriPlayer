@@ -22,6 +22,27 @@ uint64_t payloadMask(uint8_t payloadBytes) {
     return (UINT64_C(1) << (payloadBytes * 8U)) - 1U;
 }
 
+constexpr uint64_t kFourBytePayloadReservedMask = UINT64_C(0xF0000000);
+
+// 高速设备沿用 UAC1 的 3 字节 10.14、全速 UAC2 设备发 4 字节 16.16 都很常见，
+// 3/4 字节互相接受，定点格式差异由运行时按名义速率检测 2 的幂次修正
+uint8_t acceptedPayloadBytes(const FeedbackDecodeProfile& profile, size_t actualBytes) {
+    if (actualBytes == profile.payloadBytesExpected) {
+        return profile.payloadBytesExpected;
+    }
+    const bool interchangeable =
+        (profile.payloadBytesExpected == 3U || profile.payloadBytesExpected == 4U) &&
+        (actualBytes == 3U || actualBytes == 4U);
+    return interchangeable ? static_cast<uint8_t>(actualBytes) : 0U;
+}
+
+uint64_t requiredZeroMaskFor(const FeedbackDecodeProfile& profile, uint8_t payloadBytes) {
+    if (payloadBytes == profile.payloadBytesExpected) {
+        return profile.requiredZeroMask;
+    }
+    return payloadBytes == 4U ? kFourBytePayloadReservedMask : 0U;
+}
+
 bool rawUnitIsKnown(FeedbackRawUnit rawUnit) {
     switch (rawUnit) {
         case FeedbackRawUnit::FramesPerBusFrame:
@@ -72,8 +93,8 @@ FeedbackDecodeResult decodeFeedbackSample(
         result.status = FeedbackMathStatus::NullPayload;
         return result;
     }
-    if (input.payloadBytesActual != profile.payloadBytesExpected ||
-        input.payloadBytesActual > UINT8_MAX) {
+    const uint8_t payloadBytes = acceptedPayloadBytes(profile, input.payloadBytesActual);
+    if (payloadBytes == 0U) {
         result.status = FeedbackMathStatus::PayloadLengthMismatch;
         return result;
     }
@@ -82,15 +103,12 @@ FeedbackDecodeResult decodeFeedbackSample(
         return result;
     }
 
-    const uint64_t rawValue = readLittleEndian(
-        input.payload,
-        profile.payloadBytesExpected
-    );
-    if (rawValue == 0 || rawValue == payloadMask(profile.payloadBytesExpected)) {
+    const uint64_t rawValue = readLittleEndian(input.payload, payloadBytes);
+    if (rawValue == 0 || rawValue == payloadMask(payloadBytes)) {
         result.status = FeedbackMathStatus::OutOfRange;
         return result;
     }
-    if ((rawValue & profile.requiredZeroMask) != 0) {
+    if ((rawValue & requiredZeroMaskFor(profile, payloadBytes)) != 0) {
         result.status = FeedbackMathStatus::OutOfRange;
         return result;
     }
