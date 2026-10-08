@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
+import moe.ouom.neriplayer.core.player.metadata.msUntilNextExternalLyricLine
 import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.model.SongItem
@@ -147,6 +148,24 @@ private suspend fun PlayerManager.loadExternalTranslatedLyrics(
     }
 }
 
+private fun PlayerManager.externalLyricOffsetMs(song: SongItem): Long = resolveEffectiveLyricOffsetMs(
+    lyricSource = song.matchedLyricSource,
+    cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+    qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+    userLyricOffsetMs = song.userLyricOffsetMs,
+    kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
+    lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
+    amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
+    preferredLyricSource = externalBluetoothPreferredLyricSource,
+)
+
+/** 当前歌曲外部歌词的下一行距离；歌词不属于当前歌曲时返回 null */
+internal fun PlayerManager.msUntilNextExternalLyricLine(positionMs: Long): Long? {
+    val song = _currentSongFlow.value ?: return null
+    if (externalBluetoothLyricsSongKey != song.stableKey()) return null
+    return msUntilNextExternalLyricLine(externalBluetoothLyrics, positionMs, externalLyricOffsetMs(song))
+}
+
 internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
     if (!shouldProvideExternalLyricLine()) {
         clearExternalBluetoothLyricLine()
@@ -159,16 +178,7 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
         return
     }
 
-    val lyricOffsetMs = resolveEffectiveLyricOffsetMs(
-        lyricSource = song.matchedLyricSource,
-        cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
-        qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
-        userLyricOffsetMs = song.userLyricOffsetMs,
-        kugouDefaultOffsetMs = kugouLyricDefaultOffsetMs,
-        lrclibDefaultOffsetMs = lrclibLyricDefaultOffsetMs,
-        amllTtmlDefaultOffsetMs = amllTtmlLyricDefaultOffsetMs,
-        preferredLyricSource = externalBluetoothPreferredLyricSource,
-    )
+    val lyricOffsetMs = externalLyricOffsetMs(song)
 
     val line = findExternalBluetoothLyricLine(
         lyrics = externalBluetoothLyrics,

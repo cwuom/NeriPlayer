@@ -115,4 +115,35 @@ class PlaybackProgressUpdatePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `lyric boundary interval wakes at the next line within the interactive and background bounds`() {
+        assertEquals(1_020L, resolveLyricBoundaryProgressIntervalMs(1_000L, 1f))
+        assertEquals(520L, resolveLyricBoundaryProgressIntervalMs(1_000L, 2f))
+        assertEquals(PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS, resolveLyricBoundaryProgressIntervalMs(30L, 1f))
+        assertEquals(PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS, resolveLyricBoundaryProgressIntervalMs(9_000L, 1f))
+        assertEquals(PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS, resolveLyricBoundaryProgressIntervalMs(null, 1f))
+        assertEquals(1_020L, resolveLyricBoundaryProgressIntervalMs(1_000L, 0f))
+    }
+
+    @Test
+    fun `only an external lyric driven interactive interval switches to the lyric boundary`() {
+        var boundaryRequests = 0
+        val boundary = { boundaryRequests++; 900L }
+
+        assertEquals(900L, resolveProgressIntervalWithLyricBoundary(PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS, false, boundary))
+        assertEquals(
+            PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS,
+            resolveProgressIntervalWithLyricBoundary(PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS, true, boundary)
+        )
+        assertEquals(
+            PLAYBACK_PROGRESS_STARTUP_UPDATE_INTERVAL_MS,
+            resolveProgressIntervalWithLyricBoundary(PLAYBACK_PROGRESS_STARTUP_UPDATE_INTERVAL_MS, false, boundary)
+        )
+        assertEquals(
+            PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS,
+            resolveProgressIntervalWithLyricBoundary(PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS, false, boundary)
+        )
+        assertEquals(1, boundaryRequests)
+    }
 }

@@ -36,6 +36,22 @@ internal fun findExternalBluetoothLyricLine(
         ?.takeIf { it.isNotEmpty() }
 }
 
+/** 下一行歌词开始前还剩多少毫秒；已是最后一行或没有歌词时返回 null */
+internal fun msUntilNextExternalLyricLine(
+    lyrics: List<LyricEntry>,
+    positionMs: Long,
+    lyricOffsetMs: Long
+): Long? {
+    val targetTimeMs = (positionMs + lyricOffsetMs).coerceAtLeast(0L)
+    var low = 0
+    var high = lyrics.size
+    while (low < high) {
+        val mid = (low + high) ushr 1
+        if (lyrics[mid].startTimeMs <= targetTimeMs) low = mid + 1 else high = mid
+    }
+    return lyrics.getOrNull(low)?.let { it.startTimeMs - targetTimeMs }
+}
+
 internal fun findFloatingTranslatedLyricLine(
     lyrics: List<LyricEntry>,
     translations: List<LyricEntry>,
