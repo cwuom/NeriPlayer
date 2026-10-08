@@ -9,10 +9,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
+import moe.ouom.neriplayer.core.startup.debug.debugBuildWarningDataStore
+import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,6 +32,13 @@ class StartupDebugBuildWarningDefaultsTest {
     val composeRule = createComposeRule()
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    // 默认路径使用进程级 DataStore 单例，Robolectric 同一 JVM 内会把其他测试写入的确认状态带过来
+    @Before
+    @After
+    fun clearAcknowledgement() {
+        runBlocking { context.applicationContext.debugBuildWarningDataStore.edit { it.clear() } }
+    }
 
     @Test
     fun `default prompt shows the debug dialog in a resumed debug build and confirms once`() {
