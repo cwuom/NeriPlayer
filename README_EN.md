@@ -482,7 +482,12 @@ For release build and signing details, see
   systems freeze the background process and drop the DAC. When following the
   track sample rate, native exclusive output tries the exact source rate against
   USB descriptors first, then tries a reported compatible rate when the exact
-  format is unavailable and compatibility fallback is enabled. Handling of Android's
+  format is unavailable and compatibility fallback is enabled; that path resamples with a
+  polyphase Kaiser-windowed sinc filter (about -90 dB stopband) instead of linear
+  interpolation. Multichannel-only interfaces carry stereo on their first two channels
+  and zero-fill the rest, and UAC2 terminals that reach their clock through a clock
+  selector or multiplier (as in XMOS firmware) follow the selector's current input to the
+  final clock source before the rate is set. Handling of Android's
   `USB_DEVICE_ATTACHED` event can be disabled separately when users do not want
   NeriPlayer to react to DAC insertion.
   Asynchronous UAC1 and UAC2 devices resolve a clock chain and explicit feedback endpoint
@@ -503,7 +508,10 @@ For release build and signing details, see
   cannot accept the source format prevents bit-perfect output. High-speed explicit-feedback
   devices use 8 ms requests, keeping about 128 ms of audio queued on the USB side so
   background scheduling jitter does not starve the DAC, and feedback reports in an
-  unexpected fixed-point format are corrected automatically as snd-usb-audio does. Settings
+  unexpected fixed-point format are corrected automatically as snd-usb-audio does. Once the
+  transport runs, every buffer callback tops the PCM queue up to its waterline, so
+  high-rate sources do not fall behind real time while dynamic scheduling lets the
+  playback thread sleep. Settings
   report battery-optimization and background-permission limits. A retained service playback
   uses a background audio anchor that follows the system default route and writes a
   zero-mean carrier only on the built-in speaker; the carrier remains inaudible user content.
