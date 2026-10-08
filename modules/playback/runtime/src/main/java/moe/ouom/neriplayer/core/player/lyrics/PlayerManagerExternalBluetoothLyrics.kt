@@ -16,6 +16,8 @@ import moe.ouom.neriplayer.core.player.metadata.msUntilNextExternalLyricLine
 import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.player.policy.progress.resolveLyricBoundaryProgressIntervalMs
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.lyrics.offset.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
@@ -164,6 +166,15 @@ internal fun PlayerManager.msUntilNextExternalLyricLine(positionMs: Long): Long?
     val song = _currentSongFlow.value ?: return null
     if (externalBluetoothLyricsSongKey != song.stableKey()) return null
     return msUntilNextExternalLyricLine(externalBluetoothLyrics, positionMs, externalLyricOffsetMs(song))
+}
+
+/** 只有外部歌词需要进度时的下一次刷新间隔；读不到位置时保持交互间隔 */
+internal fun PlayerManager.externalLyricBoundaryProgressIntervalMs(positionMs: Long?): Long {
+    positionMs ?: return PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS
+    return resolveLyricBoundaryProgressIntervalMs(
+        msUntilNextLine = msUntilNextExternalLyricLine(positionMs),
+        playbackSpeed = player.playbackParameters.speed
+    )
 }
 
 internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {

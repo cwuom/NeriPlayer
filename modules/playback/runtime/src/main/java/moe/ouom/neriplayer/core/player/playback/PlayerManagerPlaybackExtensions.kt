@@ -31,8 +31,8 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.clearUsbExclusiveInterruptedPlaybackIntent
 import moe.ouom.neriplayer.core.player.lifecycle.prepareUsbExclusiveRouteForManualPlayback
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
+import moe.ouom.neriplayer.core.player.lyrics.externalLyricBoundaryProgressIntervalMs
 import moe.ouom.neriplayer.core.player.lyrics.isExternalBluetoothLyricCadenceActive
-import moe.ouom.neriplayer.core.player.lyrics.msUntilNextExternalLyricLine
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
@@ -58,9 +58,7 @@ import moe.ouom.neriplayer.core.player.policy.pending.PendingSeekAction
 import moe.ouom.neriplayer.core.player.policy.pending.SeekExecutionAction
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
-import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS
-import moe.ouom.neriplayer.core.player.policy.progress.resolveLyricBoundaryProgressIntervalMs
 import moe.ouom.neriplayer.core.player.policy.progress.resolveProgressIntervalWithLyricBoundary
 import moe.ouom.neriplayer.core.player.policy.progress.resolvePlaybackProgressUpdateIntervalMs
 import moe.ouom.neriplayer.core.player.policy.progress.shouldRunPlaybackProgressUpdates
@@ -1731,16 +1729,8 @@ private fun PlayerManager.progressUpdateIntervalMs(): Long = resolveProgressInte
         realtimeExternalLyricsActive = isExternalBluetoothLyricCadenceActive()
     ),
     interactiveNowPlayingVisible = interactiveNowPlayingVisible,
-    lyricBoundaryIntervalMs = { externalLyricBoundaryProgressIntervalMs() }
+    lyricBoundaryIntervalMs = { externalLyricBoundaryProgressIntervalMs(readProgressPosition()) }
 )
-
-private fun PlayerManager.externalLyricBoundaryProgressIntervalMs(): Long {
-    val positionMs = readProgressPosition() ?: return PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS
-    return resolveLyricBoundaryProgressIntervalMs(
-        msUntilNextLine = msUntilNextExternalLyricLine(positionMs),
-        playbackSpeed = player.playbackParameters.speed
-    )
-}
 
 private fun PlayerManager.runProgressUpdateTick() {
     val positionMs = readProgressPosition() ?: return
