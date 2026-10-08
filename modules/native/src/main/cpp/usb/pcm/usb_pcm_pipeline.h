@@ -95,6 +95,8 @@ private:
         int inputSampleBytes,
         int inputFrameBytes
     ) const;
+    [[nodiscard]] bool canWidenBigEndianIntegerFrames() const;
+    void widenIntegerFrame(const uint8_t* source, uint8_t* target, int inputSampleBytes) const;
     size_t writeResampled(
         const uint8_t* input,
         int inputFrames,

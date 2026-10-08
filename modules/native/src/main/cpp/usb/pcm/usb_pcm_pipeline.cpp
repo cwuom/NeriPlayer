@@ -216,6 +216,37 @@ bool PcmPipeline::canCopyIntegerFrames(
             outputFormat_.channelCount * outputFormat_.subslotBytes;
 }
 
+// 大端整数只换字节序或加宽时按整数移位，32 位样本经 float 会丢掉低位
+bool PcmPipeline::canWidenBigEndianIntegerFrames() const {
+    const int inputBits = integerPcmBitsForEncoding(inputFormat_.encoding);
+    return inputFormat_.sampleRate == outputFormat_.sampleRate &&
+        inputFormat_.channelCount == outputFormat_.channelCount &&
+        isBigEndianIntegerPcmEncoding(inputFormat_.encoding) &&
+        inputBits > 0 &&
+        inputBits <= outputFormat_.bitsPerSample &&
+        outputFormat_.bitsPerSample <= std::min(32, outputFormat_.subslotBytes * 8);
+}
+
+void PcmPipeline::widenIntegerFrame(
+    const uint8_t* source,
+    uint8_t* target,
+    int inputSampleBytes
+) const {
+    const int shift = outputFormat_.bitsPerSample - integerPcmBitsForEncoding(inputFormat_.encoding);
+    for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
+        const int64_t value = readEncodedIntegerPcmSample(
+            source + channel * inputSampleBytes,
+            inputFormat_.encoding
+        );
+        writeIntegerPcmValue(
+            target + channel * outputFormat_.subslotBytes,
+            outputFormat_.subslotBytes,
+            outputFormat_.bitsPerSample,
+            value * (int64_t { 1 } << shift)
+        );
+    }
+}
+
 void PcmPipeline::beginBackpressureLocked(int64_t nowUs) {
     if (backpressureStartedAtUs_ > 0) {
         return;
@@ -368,10 +399,15 @@ size_t PcmPipeline::writeConverted(
         }
         return 0;
     }
+    const bool widenInteger = canWidenBigEndianIntegerFrames();
     for (int frame = 0; frame < inputFrames; ++frame) {
         const uint8_t* source = input + static_cast<size_t>(frame) * static_cast<size_t>(inputFrameBytes);
         uint8_t* target = conversionBuffer_.data() +
             static_cast<size_t>(frame) * static_cast<size_t>(outputFormat_.frameBytes);
+        if (widenInteger) {
+            widenIntegerFrame(source, target, inputSampleBytes);
+            continue;
+        }
         for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
             writeIntegerPcmSample(
                 target + channel * outputFormat_.subslotBytes,
