@@ -368,45 +368,7 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow { XiaomiSuperIslandSettings.decode(it[XIAOMI_SUPER_ISLAND_SETTINGS]) }
 
     val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
-        dataStoreSettingFlow { prefs ->
-            val outlineWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] ?: 1.6f
-            FloatingLyricsPreferences(
-                enabled = prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] ?: false,
-                hideInApp = prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] ?: false,
-                longPressDragEnabled =
-                    prefs[SettingsKeys.FLOATING_LYRICS_LONG_PRESS_DRAG_ENABLED] ?: true,
-                textColorHex = prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] ?: "FFFFFF",
-                renderStyle = prefs[SettingsKeys.FLOATING_LYRICS_RENDER_STYLE]
-                    ?: FLOATING_LYRICS_RENDER_STYLE_SHADOW,
-                outlineColorHex = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] ?: "121212",
-                fontSizeSp = prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] ?: 22f,
-                outlineWidthDp = outlineWidthDp,
-                lyricAlpha = resolveFloatingLyricsLyricAlpha(
-                    prefs[SettingsKeys.FLOATING_LYRICS_LYRIC_ALPHA]
-                ),
-                translationOutlineWidthDp = resolveFloatingLyricsTranslationOutlineWidthDp(
-                    prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP],
-                    outlineWidthDp
-                ),
-                translationAlpha = resolveFloatingLyricsTranslationAlpha(
-                    prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA]
-                ),
-                maxWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] ?: 280f,
-                positionX = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] ?: 0.1f,
-                positionY = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] ?: 0.7f,
-                landscapePositionX = prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X]
-                    ?: prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X]
-                    ?: 0.1f,
-                landscapePositionY = prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y]
-                    ?: prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y]
-                    ?: 0.7f,
-                alignment = prefs[SettingsKeys.FLOATING_LYRICS_ALIGNMENT]
-                    ?: FLOATING_LYRICS_ALIGNMENT_CENTER,
-                showTranslation = prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] ?: true,
-                revealAnimationEnabled =
-                    prefs[SettingsKeys.FLOATING_LYRICS_REVEAL_ANIMATION_ENABLED] ?: true
-            ).normalized()
-        }
+        dataStoreSettingFlow { prefs -> prefs.toFloatingLyricsPreferences() }
 
     val advancedBlurEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedBlurEnabledFlow
@@ -1576,3 +1538,37 @@ private fun parseColorPalette(raw: String?): List<String> {
         .distinct()
     return parsed.ifEmpty { ThemeDefaults.PRESET_COLORS }
 }
+
+internal fun Preferences.toFloatingLyricsPreferences(): FloatingLyricsPreferences {
+    val outlineWidthDp = valueOr(SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP, 1.6f)
+    val positionX = valueOr(SettingsKeys.FLOATING_LYRICS_POSITION_X, 0.1f)
+    val positionY = valueOr(SettingsKeys.FLOATING_LYRICS_POSITION_Y, 0.7f)
+    return FloatingLyricsPreferences(
+        enabled = valueOr(SettingsKeys.FLOATING_LYRICS_ENABLED, false),
+        hideInApp = valueOr(SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP, false),
+        longPressDragEnabled = valueOr(SettingsKeys.FLOATING_LYRICS_LONG_PRESS_DRAG_ENABLED, true),
+        textColorHex = valueOr(SettingsKeys.FLOATING_LYRICS_TEXT_COLOR, "FFFFFF"),
+        renderStyle = valueOr(SettingsKeys.FLOATING_LYRICS_RENDER_STYLE, FLOATING_LYRICS_RENDER_STYLE_SHADOW),
+        outlineColorHex = valueOr(SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR, "121212"),
+        fontSizeSp = valueOr(SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP, 22f),
+        outlineWidthDp = outlineWidthDp,
+        lyricAlpha = resolveFloatingLyricsLyricAlpha(this[SettingsKeys.FLOATING_LYRICS_LYRIC_ALPHA]),
+        translationOutlineWidthDp = resolveFloatingLyricsTranslationOutlineWidthDp(
+            this[SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP],
+            outlineWidthDp
+        ),
+        translationAlpha = resolveFloatingLyricsTranslationAlpha(
+            this[SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA]
+        ),
+        maxWidthDp = valueOr(SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP, 280f),
+        positionX = positionX,
+        positionY = positionY,
+        landscapePositionX = valueOr(SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X, positionX),
+        landscapePositionY = valueOr(SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y, positionY),
+        alignment = valueOr(SettingsKeys.FLOATING_LYRICS_ALIGNMENT, FLOATING_LYRICS_ALIGNMENT_CENTER),
+        showTranslation = valueOr(SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION, true),
+        revealAnimationEnabled = valueOr(SettingsKeys.FLOATING_LYRICS_REVEAL_ANIMATION_ENABLED, true)
+    ).normalized()
+}
+
+private fun <T : Any> Preferences.valueOr(key: Preferences.Key<T>, fallback: T): T = this[key] ?: fallback
