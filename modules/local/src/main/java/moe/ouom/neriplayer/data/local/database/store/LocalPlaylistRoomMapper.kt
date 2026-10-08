@@ -62,25 +62,53 @@ internal class LocalPlaylistRoomMapper(
 ) {
     fun toWriteSet(previous: List<LocalPlaylist>, next: List<LocalPlaylist>): LocalPlaylistRoomWriteSet {
         val changes = LocalPlaylistRoomWriteSet()
-        val previousById = previous.associateBy(LocalPlaylist::id)
-        val previousPositions = previous.withIndex().associate { it.value.id to it.index }
+        val previousPlaylists = PreviousPlaylists(previous)
+        appendRemovedPlaylists(previous, next, changes)
+        val changedPlaylists = previousPlaylists.changedIn(next)
+        changedPlaylists.forEach { (position, playlist) ->
+            appendPlaylistChanges(previousPlaylists, playlist, position, changes)
+        }
+        changes.domainChanged = changedPlaylists.isNotEmpty() || changes.removedPlaylistIds.isNotEmpty()
+        appendFirstTrackCandidates(changedPlaylists.map { it.value }, changes)
+        return changes
+    }
+
+    private class PreviousPlaylists(previous: List<LocalPlaylist>) {
+        private val byId = previous.associateBy(LocalPlaylist::id)
+        private val positions = previous.withIndex().associate { it.value.id to it.index }
+
+        operator fun get(id: Long): LocalPlaylist? = byId[id]
+
+        fun positionOf(id: Long): Int = positions.getValue(id)
+
+        fun changedIn(next: List<LocalPlaylist>): List<IndexedValue<LocalPlaylist>> =
+            next.withIndex().filter { (position, playlist) ->
+                byId[playlist.id] != playlist || positions[playlist.id] != position
+            }
+    }
+
+    private fun appendRemovedPlaylists(
+        previous: List<LocalPlaylist>,
+        next: List<LocalPlaylist>,
+        changes: LocalPlaylistRoomWriteSet
+    ) {
         val nextIds = next.mapTo(hashSetOf(), LocalPlaylist::id)
         previous.filter { it.id !in nextIds }.forEach { playlist ->
             changes.removedPlaylistIds += playlist.id
             playlist.songs.forEach { changes.orphanCandidates += it.stableKey() }
         }
-        val changedPlaylists = next.withIndex().filter { (position, playlist) ->
-            previousById[playlist.id] != playlist || previousPositions[playlist.id] != position
-        }
-        changedPlaylists.forEach { (position, playlist) ->
-            val old = previousById[playlist.id]
-            val header = playlist.toEntity(position)
-            if (old?.toEntity(previousPositions.getValue(playlist.id)) != header) changes.playlists += header
-            appendMemberChanges(playlist.id, old?.songs.orEmpty(), playlist.songs, changes)
-        }
-        changes.domainChanged = changedPlaylists.isNotEmpty() || changes.removedPlaylistIds.isNotEmpty()
-        appendFirstTrackCandidates(changedPlaylists.map { it.value }, changes)
-        return changes
+    }
+
+    private fun appendPlaylistChanges(
+        previousPlaylists: PreviousPlaylists,
+        playlist: LocalPlaylist,
+        position: Int,
+        changes: LocalPlaylistRoomWriteSet
+    ) {
+        val old = previousPlaylists[playlist.id]
+        val header = playlist.toEntity(position)
+        if (old?.toEntity(previousPlaylists.positionOf(playlist.id)) != header) changes.playlists += header
+        appendMemberChanges(playlist.id, old?.songs.orEmpty(), playlist.songs, changes)
     }
 
     private fun appendMemberChanges(
