@@ -572,8 +572,12 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   **UAC2.0 Type I PCM** DAC, the foreground service, wake locks, and the system
   background policy. The in-app background-permission prompt is not decorative,
   so screen-off behavior must stay in scope.
-- USB settings include bit-perfect volume mode: software gain remains at 0 dB and
-  the DAC hardware controls volume. Do not treat it as ordinary app/system volume.
+- USB settings include bit-perfect output mode: the DAC format follows the source
+  sample rate and bit depth, software gain remains at 0 dB, the native pipeline applies
+  no fades, and the DAC hardware controls volume. Do not treat it as ordinary app/system volume.
+- USB exclusive volume follows ordinary media volume (`STREAM_MUSIC`); do not move it
+  back to MediaSession remote volume. The background anchor must not set a preferred
+  device, because Android 12+ then moves the media volume device to the speaker.
 - USB attach handling is a separate setting. When disabled, both the Activity alias
   and playback-service broadcast entry must skip `USB_DEVICE_ATTACHED`; do not only
   hide the setting or change one entry point.

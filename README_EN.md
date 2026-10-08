@@ -216,11 +216,12 @@ Current positioning:
   scaling, and automatic stall recovery are now part of the path. After a long
   scheduling gap, the runtime reacquires the feedback clock instead of continuing
   with a stale rate estimate. Foreground/background recovery chooses wake behavior
-  from the network or local source, and bit-perfect volume keeps software gain at
+  from the network or local source, and bit-perfect output keeps software gain at
   0 dB so the DAC controls the level. Settings report battery-optimization or
   background-permission limits. While service playback is retained, a background
-  audio anchor selects silence or a zero-mean carrier for the actual output route;
-  MediaSession provides remote volume routing and the carrier is not user content.
+  audio anchor follows the system default route and writes a zero-mean carrier only
+  on the built-in speaker; volume stays on ordinary media volume and the carrier is
+  not user content.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
@@ -494,13 +495,18 @@ For release build and signing details, see
   foreground/background transitions become unhealthy, the app tries in-place
   reconfiguration, coordinated AudioSink recreation, dynamic transfer scaling,
   and soft recovery before falling back to Android system output. Foreground/background
-  recovery chooses wake behavior for network or local playback, and bit-perfect volume
-  keeps software gain at 0 dB for DAC-side volume control; when the DAC has hardware
-  volume, volume keys adjust it and the PCM data stays unchanged. Settings report battery-
-  optimization and background-permission limits. A retained service playback uses a
-  route-aware background audio anchor that selects silence or a zero-mean carrier,
-  while MediaSession provides remote volume routing and the carrier remains inaudible
-  user content.
+  recovery chooses wake behavior for network or local playback. Volume keys, the lock
+  screen, and the system volume panel all adjust ordinary media volume, and native output
+  follows it immediately. Bit-perfect output requests the source sample rate and bit depth,
+  keeps software gain at 0 dB, and skips effects, fades, and resampling; when the DAC has
+  hardware volume, volume keys adjust it instead. The status page reports when a DAC that
+  cannot accept the source format prevents bit-perfect output. High-speed explicit-feedback
+  devices use 8 ms requests, keeping about 128 ms of audio queued on the USB side so
+  background scheduling jitter does not starve the DAC, and feedback reports in an
+  unexpected fixed-point format are corrected automatically as snd-usb-audio does. Settings
+  report battery-optimization and background-permission limits. A retained service playback
+  uses a background audio anchor that follows the system default route and writes a
+  zero-mean carrier only on the built-in speaker; the carrier remains inaudible user content.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, share staging, and platform playlist
