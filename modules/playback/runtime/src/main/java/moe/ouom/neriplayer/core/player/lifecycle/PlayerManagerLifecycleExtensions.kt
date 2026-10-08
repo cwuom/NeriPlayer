@@ -1,4 +1,6 @@
-@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+@file:androidx.annotation.OptIn(
+    markerClass = [androidx.media3.common.util.UnstableApi::class, androidx.media3.common.util.ExperimentalApi::class]
+)
 
 package moe.ouom.neriplayer.core.player.lifecycle
 
@@ -529,6 +531,8 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
     player = ExoPlayer.Builder(app, renderersFactory)
         .setMediaSourceFactory(mediaSourceFactory)
         .setLoadControl(buildAudioLoadControl())
+        // 纯音频播放按 AudioTrack 缓冲余量休眠，息屏时不再每 10 ms 唤醒一次播放线程
+        .experimentalSetDynamicSchedulingEnabled(true)
         .build()
     player.addAnalyticsListener(object : AnalyticsListener {
         override fun onAudioInputFormatChanged(
