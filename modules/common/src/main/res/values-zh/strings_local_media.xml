@@ -46,6 +46,7 @@
     <string name="local_playlist_sync_netease_confirm_message">将所选歌曲同步到网易云我喜欢的音乐，是否继续？</string>
     <string name="local_playlist_sync_netease_preview_title">同步到网易云</string>
     <string name="local_playlist_sync_netease_result">同步完成：总计 %1$d，新增 %2$d，已存在 %3$d，跳过不支持 %4$d，失败 %5$d</string>
+    <string name="local_playlist_sync_netease_rejected">网易云拒绝添加 %1$d 首：%2$s</string>
     <string name="local_playlist_sync_netease_target">目标歌单“%s”</string>
     <string name="local_playlist_sync_netease_picker_title">选择网易云歌单</string>
     <string name="local_playlist_sync_netease_loading_playlists">正在拉取网易云歌单</string>

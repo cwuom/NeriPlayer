@@ -79,7 +79,8 @@ internal fun NeteaseLikeSyncPlan.toLikeSyncResult(
     targetPlaylistId: Long,
     added: Int = 0,
     failed: Int = 0,
-    skippedUnsupported: Int = this.skippedUnsupported
+    skippedUnsupported: Int = this.skippedUnsupported,
+    rejections: Map<Long, NeteasePlaylistAddOutcome.Rejected> = emptyMap()
 ): NeteaseLikeSyncResult {
     return NeteaseLikeSyncResult(
         totalSongs = totalSongs,
@@ -89,6 +90,8 @@ internal fun NeteaseLikeSyncPlan.toLikeSyncResult(
         added = added,
         failed = failed,
         message = message,
-        targetPlaylistId = targetPlaylistId.takeIf { it > 0L }
+        targetPlaylistId = targetPlaylistId.takeIf { it > 0L },
+        rejectedSongIds = rejections.keys.toList(),
+        rejectionMessage = rejections.values.firstOrNull()?.reason
     )
 }
