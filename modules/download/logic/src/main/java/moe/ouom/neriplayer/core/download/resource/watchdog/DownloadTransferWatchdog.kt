@@ -31,34 +31,24 @@ class DownloadTransferWatchdog(
         require(staleAfterNs > 0L) { "staleAfterNs must be positive" }
     }
 
+    /**
+     * 监视器先启动，传输再派发到调用方的调度器；传输里的阻塞读不会挂起，
+     * 如果先在当前线程跑传输，监视器要等传输结束才会出现。判定卡住时先调用 [onStalled]
+     * 中断底层网络调用，阻塞读才能退出，否则只能等网络库自己超时
+     */
     suspend fun <T> run(
         permit: DownloadTransferPermitRegistry.Permit,
+        onStalled: () -> Unit = {},
         block: suspend () -> T
     ): T = supervisorScope {
-        val transfer = async(start = CoroutineStart.UNDISPATCHED) { block() }
         val stalled = CompletableDeferred<DownloadTransferStalledException>()
         val monitor = async(start = CoroutineStart.UNDISPATCHED) {
-            while (true) {
-                delay(pollIntervalMs.milliseconds)
-                if (
-                    registry.isProgressStale(
-                        ownerKey = permit.ownerKey,
-                        generation = permit.generation,
-                        staleAfterNs = staleAfterNs,
-                        atNs = nowNs()
-                    )
-                ) {
-                    stalled.complete(
-                        DownloadTransferStalledException(
-                            ownerKey = permit.ownerKey,
-                            generation = permit.generation,
-                            staleAfterMs = staleAfterNs / NANOS_PER_MILLISECOND
-                        )
-                    )
-                    return@async
-                }
-            }
+            awaitStall(permit)
+            // 先发布卡住结果再中断网络调用，被中断的阻塞读不会抢先以"已取消"结束
+            stalled.complete(stalledError(permit))
+            onStalled()
         }
+        val transfer = async { block() }
         try {
             awaitTransferOrStall(transfer, stalled)
         } finally {
@@ -68,6 +58,25 @@ class DownloadTransferWatchdog(
             }
         }
     }
+
+    private suspend fun awaitStall(permit: DownloadTransferPermitRegistry.Permit) {
+        while (true) {
+            delay(pollIntervalMs.milliseconds)
+            val stale = registry.isProgressStale(
+                ownerKey = permit.ownerKey,
+                generation = permit.generation,
+                staleAfterNs = staleAfterNs,
+                atNs = nowNs()
+            )
+            if (stale) return
+        }
+    }
+
+    private fun stalledError(permit: DownloadTransferPermitRegistry.Permit) = DownloadTransferStalledException(
+        ownerKey = permit.ownerKey,
+        generation = permit.generation,
+        staleAfterMs = staleAfterNs / NANOS_PER_MILLISECOND
+    )
 
     private suspend fun <T> awaitTransferOrStall(
         transfer: Deferred<T>,

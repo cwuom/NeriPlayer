@@ -36,7 +36,7 @@ class AudioDownloadManagerGroup2Test : AudioDownloadManagerTestSupport() {
             "modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/player/download/sidecar/AudioDownloadManagerAssets.kt"
         ).readText()
         val transferBody = methodBody(attemptSource, "transferAndCommitDownloadAttempt")
-        val transferIndex = transferBody.indexOf("transferWatchdog.run(permit)")
+        val transferIndex = transferBody.indexOf("transferWatchdog.run(")
         val networkFinishedIndex = transferBody.indexOf("markNetworkFinished()", transferIndex)
         val coreRequestedIndex = transferBody.indexOf(
             "DownloadOperationTracePhase.CORE_COMMIT_REQUESTED",
