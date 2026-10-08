@@ -93,8 +93,9 @@ class DownloadManagerContentTest {
 
     @Test
     fun `renders library stats and songs and routes toolbar actions`() {
+        val coveredBeta = beta.copy(coverUrl = "https://example.com/beta.jpg")
         val callbacks = setContent(
-            songs = listOf(alpha, beta),
+            songs = listOf(alpha, coveredBeta),
             legacyPreviewClips = mapOf(beta.filePath to beta.fileSize)
         )
 

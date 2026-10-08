@@ -46,6 +46,29 @@ class DownloadedSongCoverReferenceTest {
         assertEquals(remote, resolveDownloadedSongCoverReference(song.copy(coverUrl = remote)))
     }
 
+    @Test
+    fun `blank references are skipped in priority order`() {
+        assertNull(resolveDownloadedSongCoverReference(song))
+        assertEquals("covers/B.jpg", resolveDownloadedSongCoverReference(song.copy(
+            customCoverUrl = "  ",
+            coverPath = "covers/B.jpg",
+            coverUrl = "https://example.com/B.jpg"
+        )))
+        assertEquals("https://example.com/B.jpg", resolveDownloadedSongCoverReference(song.copy(
+            customCoverUrl = "",
+            coverPath = " ",
+            coverUrl = "https://example.com/B.jpg"
+        )))
+    }
+
+    @Test
+    fun `a missing absolute cover file falls back to the remote cover`() {
+        val missing = tempFolder.root.resolve("missing.jpg").absolutePath
+        val remote = "https://example.com/B.jpg"
+        assertEquals(remote, resolveDownloadedSongCoverReference(song.copy(coverPath = missing, coverUrl = remote)))
+        assertNull(resolveDownloadedSongCoverReference(song.copy(coverPath = missing)))
+    }
+
     private val song = DownloadedSong(
         id = 2L,
         name = "B",

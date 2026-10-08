@@ -986,21 +986,17 @@ private fun DownloadedSongActions(
     }
 }
 
-internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? {
-    return song.customCoverUrl
-        ?.takeIf(String::isNotBlank)
-        ?.takeUnless(::isMediaStoreCoverReference)
-        ?: song.coverPath
-            ?.takeIf(String::isNotBlank)
-            ?.takeUnless(::isMediaStoreCoverReference)
-            ?.let { coverPath ->
-                if (!coverPath.startsWith("/")) {
-                    coverPath
-                } else {
-                    File(coverPath).takeIf(File::exists)?.toURI()?.toString()
-                }
-            }
-        ?: song.coverUrl?.takeIf(String::isNotBlank)?.takeUnless(::isMediaStoreCoverReference)
+internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? =
+    song.customCoverUrl.usableCoverReference()
+        ?: song.coverPath.usableCoverReference()?.let(::resolveDownloadedCoverPath)
+        ?: song.coverUrl.usableCoverReference()
+
+private fun String?.usableCoverReference(): String? =
+    takeUnless { it.isNullOrBlank() || isMediaStoreCoverReference(it) }
+
+private fun resolveDownloadedCoverPath(coverPath: String): String? {
+    if (!coverPath.startsWith("/")) return coverPath
+    return File(coverPath).takeIf(File::exists)?.toURI()?.toString()
 }
 
 internal fun toggleSelectedDownloadSongKeys(
