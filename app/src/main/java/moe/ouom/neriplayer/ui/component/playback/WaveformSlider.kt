@@ -29,6 +29,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
@@ -184,11 +185,7 @@ fun WaveformSlider(
             detectDragGestures(
                 onDragStart = { offset ->
                     isDragging = true
-                    val width = size.width.toFloat()
-                    if (width > 0f) {
-                        val startValue = (offset.x / width).coerceIn(0f, 1f)
-                        onValueChangeStarted(startValue)
-                    }
+                    sliderFractionAt(offset.x, size.width.toFloat())?.let(onValueChangeStarted)
                 },
                 onDragEnd = {
                     isDragging = false
@@ -199,13 +196,15 @@ fun WaveformSlider(
                     onValueChangeCanceled()
                 },
                 onDrag = { change, _ ->
-                    val width = size.width.toFloat()
-                    if (width > 0f) {
-                        val newValue = (change.position.x / width).coerceIn(0f, 1f)
-                        onValueChange(newValue)
-                    }
+                    sliderFractionAt(change.position.x, size.width.toFloat())?.let(onValueChange)
                 }
             )
+        }.pointerInput(onValueChangeStarted, onValueChangeFinished) {
+            detectTapGestures { offset ->
+                val fraction = sliderFractionAt(offset.x, size.width.toFloat()) ?: return@detectTapGestures
+                onValueChangeStarted(fraction)
+                onValueChangeFinished()
+            }
         }
     } else {
         Modifier
@@ -454,3 +453,7 @@ private fun Long.floorMod(other: Long): Long {
 private fun Float.floorMod(other: Float): Float {
     return ((this % other) + other) % other
 }
+
+/** 触点在进度条上的比例；宽度未测量时返回 null */
+internal fun sliderFractionAt(x: Float, width: Float): Float? =
+    if (width > 0f) (x / width).coerceIn(0f, 1f) else null
