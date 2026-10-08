@@ -67,17 +67,23 @@ internal fun LocalMediaSupport.hasExpectedOneOfTagValues(
     expectedValue: String?,
     verifyMissing: Boolean = false
 ): Boolean {
-    if (expectedValue == null) {
-        return !verifyMissing || keys.all { key ->
-            key !in propertyMap || propertyMap[key].isNullOrEmpty()
-        }
+    val normalized = expectedValue?.trim()
+    return when {
+        normalized == null -> !verifyMissing || lacksAllTagValues(propertyMap, keys)
+        normalized.isBlank() -> lacksAllTagValues(propertyMap, keys)
+        else -> hasAnyExpectedTagValue(propertyMap, keys, normalized)
     }
-    val normalized = expectedValue.trim()
-    if (normalized.isBlank()) {
-        return keys.all { key ->
-            key !in propertyMap || propertyMap[key].isNullOrEmpty()
-        }
-    }
+}
+
+private fun lacksAllTagValues(propertyMap: PropertyMap, keys: List<String>): Boolean {
+    return keys.all { key -> propertyMap[key].isNullOrEmpty() }
+}
+
+private fun LocalMediaSupport.hasAnyExpectedTagValue(
+    propertyMap: PropertyMap,
+    keys: List<String>,
+    normalized: String
+): Boolean {
     return keys.any { key -> hasExpectedTagValue(propertyMap, key, normalized) }
 }
 
@@ -88,9 +94,7 @@ internal fun LocalMediaSupport.hasExpectedStandardLyrics(
 ): Boolean {
     val keys = standardLyricsMetadataKeys(audioExtension)
     if (expectedLyrics.isNullOrBlank()) {
-        return keys.all { key ->
-            key !in propertyMap || propertyMap[key].isNullOrEmpty()
-        }
+        return lacksAllTagValues(propertyMap, keys)
     }
     return hasExpectedOneOfTagValues(propertyMap, keys, expectedLyrics)
 }
@@ -280,24 +284,33 @@ internal fun LocalMediaSupport.resolveEditableCoverMimeType(
     reference: String,
     bytes: ByteArray
 ): String {
-    val uri = runCatching { reference.toUri() }.getOrNull()
-    val declaredMimeType = uri?.let { coverUri ->
-        runCatching { context.contentResolver.getType(coverUri) }.getOrNull()
-    }?.substringBefore(';')?.trim()?.takeIf { it.startsWith("image/", ignoreCase = true) }
-    val guessedMimeType = URLConnection.guessContentTypeFromName(
-        uri?.lastPathSegment ?: reference
-    )?.takeIf { it.startsWith("image/", ignoreCase = true) }
+    val uri = reference.toUri()
     return normalizeEditableCoverMimeType(
-        detectEditableCoverMimeType(bytes) ?: declaredMimeType ?: guessedMimeType ?: "image/jpeg"
+        detectEditableCoverMimeType(bytes)
+            ?: declaredCoverMimeType(context, uri)
+            ?: imageMimeTypeOrNull(URLConnection.guessContentTypeFromName(uri.lastPathSegment ?: reference))
+            ?: "image/jpeg"
     )
 }
 
+private fun declaredCoverMimeType(context: Context, uri: Uri): String? {
+    val declared = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+    return imageMimeTypeOrNull(declared?.substringBefore(';')?.trim())
+}
+
+private fun imageMimeTypeOrNull(mimeType: String?): String? {
+    return mimeType?.takeIf { it.startsWith("image/", ignoreCase = true) }
+}
+
+private val EDITABLE_COVER_MIME_TYPE_ALIASES = mapOf(
+    "image/jpg" to "image/jpeg",
+    "image/pjpeg" to "image/jpeg",
+    "image/x-ms-bmp" to "image/bmp"
+)
+
 internal fun LocalMediaSupport.normalizeEditableCoverMimeType(mimeType: String): String {
-    return when (mimeType.lowercase(Locale.ROOT)) {
-        "image/jpg", "image/pjpeg" -> "image/jpeg"
-        "image/x-ms-bmp" -> "image/bmp"
-        else -> mimeType.lowercase(Locale.ROOT)
-    }
+    val lowercase = mimeType.lowercase(Locale.ROOT)
+    return EDITABLE_COVER_MIME_TYPE_ALIASES[lowercase] ?: lowercase
 }
 
 internal fun LocalMediaSupport.coverExtensionForMimeType(mimeType: String): String {
@@ -310,51 +323,35 @@ internal fun LocalMediaSupport.coverExtensionForMimeType(mimeType: String): Stri
     }
 }
 
+private class CoverSignature(
+    val mimeType: String,
+    val minimumSize: Int,
+    val magicByOffset: Map<Int, ByteArray>
+) {
+    fun matches(bytes: ByteArray): Boolean {
+        return bytes.size >= minimumSize && magicByOffset.all { (offset, magic) -> bytes.hasMagicAt(offset, magic) }
+    }
+}
+
+private fun ByteArray.hasMagicAt(offset: Int, magic: ByteArray): Boolean {
+    return magic.indices.all { index -> this[offset + index] == magic[index] }
+}
+
+private fun magicBytes(vararg values: Int) = ByteArray(values.size) { index -> values[index].toByte() }
+
+private fun asciiMagic(value: String) = value.toByteArray(Charsets.US_ASCII)
+
+private val EDITABLE_COVER_SIGNATURES = listOf(
+    CoverSignature("image/jpeg", 3, mapOf(0 to magicBytes(0xFF, 0xD8, 0xFF))),
+    CoverSignature("image/png", 8, mapOf(0 to magicBytes(0x89, 0x50, 0x4E, 0x47))),
+    CoverSignature("image/gif", 6, mapOf(0 to asciiMagic("GIF87a"))),
+    CoverSignature("image/gif", 6, mapOf(0 to asciiMagic("GIF89a"))),
+    CoverSignature("image/bmp", 2, mapOf(0 to asciiMagic("BM"))),
+    CoverSignature("image/webp", 12, mapOf(0 to asciiMagic("RIFF"), 8 to asciiMagic("WEBP")))
+)
+
 internal fun LocalMediaSupport.detectEditableCoverMimeType(bytes: ByteArray): String? {
-    if (bytes.size >= 3 &&
-        bytes[0] == 0xFF.toByte() &&
-        bytes[1] == 0xD8.toByte() &&
-        bytes[2] == 0xFF.toByte()
-    ) {
-        return "image/jpeg"
-    }
-    if (bytes.size >= 8 &&
-        bytes[0] == 0x89.toByte() &&
-        bytes[1] == 0x50.toByte() &&
-        bytes[2] == 0x4E.toByte() &&
-        bytes[3] == 0x47.toByte()
-    ) {
-        return "image/png"
-    }
-    if (bytes.size >= 6 &&
-        bytes[0] == 'G'.code.toByte() &&
-        bytes[1] == 'I'.code.toByte() &&
-        bytes[2] == 'F'.code.toByte() &&
-        bytes[3] == '8'.code.toByte() &&
-        (bytes[4] == '7'.code.toByte() || bytes[4] == '9'.code.toByte()) &&
-        bytes[5] == 'a'.code.toByte()
-    ) {
-        return "image/gif"
-    }
-    if (bytes.size >= 2 &&
-        bytes[0] == 'B'.code.toByte() &&
-        bytes[1] == 'M'.code.toByte()
-    ) {
-        return "image/bmp"
-    }
-    if (bytes.size >= 12 &&
-        bytes[0] == 0x52.toByte() &&
-        bytes[1] == 0x49.toByte() &&
-        bytes[2] == 0x46.toByte() &&
-        bytes[3] == 0x46.toByte() &&
-        bytes[8] == 0x57.toByte() &&
-        bytes[9] == 0x45.toByte() &&
-        bytes[10] == 0x42.toByte() &&
-        bytes[11] == 0x50.toByte()
-    ) {
-        return "image/webp"
-    }
-    return null
+    return EDITABLE_COVER_SIGNATURES.firstOrNull { it.matches(bytes) }?.mimeType
 }
 
 internal fun LocalMediaSupport.propertyMapsEquivalent(left: PropertyMap, right: PropertyMap): Boolean {

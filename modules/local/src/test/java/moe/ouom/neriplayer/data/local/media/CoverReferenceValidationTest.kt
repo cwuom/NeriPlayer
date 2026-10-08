@@ -73,6 +73,21 @@ class CoverReferenceValidationTest {
         assertEquals(null, preferredLocalMediaReference(null, " "))
     }
 
+    @Test
+    fun `editable cover mime types prefer image bytes over the reference name`() {
+        val png = imageFile("named.gif").readBytes()
+        val unknown = byteArrayOf(1, 2, 3)
+
+        assertEquals("image/png", LocalMediaSupport.resolveEditableCoverMimeType(context, "file:///covers/named.gif", png))
+        assertEquals("image/gif", LocalMediaSupport.resolveEditableCoverMimeType(context, "file:///covers/named.gif", unknown))
+        assertEquals("image/png", LocalMediaSupport.resolveEditableCoverMimeType(context, "/covers/plain.PNG", unknown))
+        assertEquals("image/jpeg", LocalMediaSupport.resolveEditableCoverMimeType(context, "file:///covers/notes.txt", unknown))
+        assertEquals(
+            "image/jpeg",
+            LocalMediaSupport.resolveEditableCoverMimeType(context, "content://com.example.covers/7", unknown)
+        )
+    }
+
     private fun validate(reference: String): CoverReferenceValidation =
         validateCoverReference(context, Uri.parse(reference))
 
