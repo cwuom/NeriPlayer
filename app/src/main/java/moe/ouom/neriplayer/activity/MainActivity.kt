@@ -130,6 +130,7 @@ import moe.ouom.neriplayer.core.startup.shouldShowStartupLoadingIndicator
 import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
 import moe.ouom.neriplayer.core.startup.download.StartupDownloadRecoveryCoordinator
 import moe.ouom.neriplayer.core.startup.logging.StartupLogInitializer
+import moe.ouom.neriplayer.core.startup.player.PlayerPreloadedInitializer
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeRecoveryCoordinator
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -1575,7 +1576,10 @@ class MainActivity : ComponentActivity() {
                     return@launch
                 }
                 if (result.songs.isNotEmpty()) {
-                    PlayerManager.initialize(application)
+                    PlayerPreloadedInitializer(application).initialize()
+                    if (requestToken != externalAudioRequestToken) {
+                        return@launch
+                    }
                     PlayerManager.playPlaylist(result.songs, startIndex = 0)
                     result.songs.firstOrNull()?.let { firstSong ->
                         scheduleExternalAudioMetadataHydration(requestToken, firstSong)

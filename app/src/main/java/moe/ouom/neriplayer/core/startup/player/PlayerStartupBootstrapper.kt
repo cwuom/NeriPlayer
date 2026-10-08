@@ -2,35 +2,21 @@ package moe.ouom.neriplayer.core.startup.player
 
 import android.app.Application
 import android.content.Context
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
-import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshot
 
 internal class PlayerStartupBootstrapper(
     private val app: Application,
     private val context: Context = app,
-    private val awaitUiFrameBeforePlayerInit: suspend () -> Unit = {}
+    private val awaitUiFrameBeforePlayerInit: suspend () -> Unit = {},
+    private val playerInitializer: PlayerPreloadedInitializer = PlayerPreloadedInitializer(app)
 ) {
     suspend fun bootstrap(): PlayerStartupBootstrapResult {
-        val playbackPreferences = withContext(Dispatchers.IO) {
-            readPlaybackPreferenceSnapshot(app)
-        }
-        val restoredStateSnapshot = preloadRestoredStateSnapshot(
-            app = app,
-            keepLastPlaybackProgressEnabled = playbackPreferences.keepLastPlaybackProgress,
-            keepPlaybackModeStateEnabled = playbackPreferences.keepPlaybackModeState
-        )
-        awaitUiFrameBeforePlayerInit()
-        PlayerManager.initializePreloaded(
-            app = app,
-            startupPlaybackPreferences = playbackPreferences,
-            restoredStateSnapshot = restoredStateSnapshot
+        val playbackPreferences = playerInitializer.initialize(
+            beforeInitialize = awaitUiFrameBeforePlayerInit
         )
         LegacyJsonCleanupScheduler.schedule(app, "player-bootstrap")
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
