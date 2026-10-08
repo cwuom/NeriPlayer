@@ -357,7 +357,6 @@ size_t PcmPipeline::writeConverted(
     int inputFrameBytes,
     std::string* error
 ) {
-    const int inputChannels = std::max(1, inputFormat_.channelCount);
     try {
         conversionBuffer_.assign(
             static_cast<size_t>(inputFrames) * static_cast<size_t>(outputFormat_.frameBytes),
@@ -374,12 +373,11 @@ size_t PcmPipeline::writeConverted(
         uint8_t* target = conversionBuffer_.data() +
             static_cast<size_t>(frame) * static_cast<size_t>(outputFormat_.frameBytes);
         for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
-            const int mappedChannel = std::min(channel, inputChannels - 1);
             writeIntegerPcmSample(
                 target + channel * outputFormat_.subslotBytes,
                 outputFormat_.subslotBytes,
                 outputFormat_.bitsPerSample,
-                readEncodedPcmSample(source + mappedChannel * inputSampleBytes, inputFormat_.encoding)
+                inputSampleFor(source, inputSampleBytes, channel)
             );
         }
     }
@@ -398,7 +396,6 @@ size_t PcmPipeline::writeResampled(
     if (frames <= 0) {
         return 0;
     }
-    const int inputChannels = std::max(1, inputFormat_.channelCount);
     const int outputChannels = outputFormat_.channelCount;
     PcmResampler rollback;
     size_t produced = 0;
@@ -409,11 +406,7 @@ size_t PcmPipeline::writeResampled(
             const uint8_t* source = input + static_cast<size_t>(frame) * static_cast<size_t>(inputFrameBytes);
             float* target = resampleInput_.data() + static_cast<size_t>(frame) * static_cast<size_t>(outputChannels);
             for (int channel = 0; channel < outputChannels; ++channel) {
-                const int mappedChannel = std::min(channel, inputChannels - 1);
-                target[channel] = readEncodedPcmSample(
-                    source + mappedChannel * inputSampleBytes,
-                    inputFormat_.encoding
-                );
+                target[channel] = inputSampleFor(source, inputSampleBytes, channel);
             }
         }
         resampleOutput_.clear();
@@ -445,6 +438,28 @@ size_t PcmPipeline::writeResampled(
         resampler_ = std::move(rollback);
     }
     return consumed;
+}
+
+// 单声道复制到左右，立体声送单声道设备取平均；设备多出的声道补零，不复制最后一个声道
+float PcmPipeline::inputSampleFor(
+    const uint8_t* frame,
+    int inputSampleBytes,
+    int outputChannel
+) const {
+    const int inputChannels = std::max(1, inputFormat_.channelCount);
+    if (outputFormat_.channelCount == 1 && inputChannels >= 2) {
+        return 0.5f * (
+            readEncodedPcmSample(frame, inputFormat_.encoding) +
+            readEncodedPcmSample(frame + inputSampleBytes, inputFormat_.encoding)
+        );
+    }
+    const int sourceChannel = inputChannels == 1
+        ? (outputChannel < 2 ? 0 : -1)
+        : (outputChannel < inputChannels ? outputChannel : -1);
+    if (sourceChannel < 0) {
+        return 0.0f;
+    }
+    return readEncodedPcmSample(frame + sourceChannel * inputSampleBytes, inputFormat_.encoding);
 }
 
 size_t PcmPipeline::commitConverted(size_t consumedBytes) {

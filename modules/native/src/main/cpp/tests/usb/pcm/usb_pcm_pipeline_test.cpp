@@ -742,9 +742,50 @@ void verifiesResamplerInputBoundNeverOverfillsOutput() {
     }
 }
 
+void verifiesChannelLayoutsCarryStereoWithoutDuplicatingExtraChannels() {
+    const std::array<uint8_t, 4> stereoFrame { 0x00, 0x10, 0x00, 0xF0 };
+    std::string error;
+
+    neri::usb::PcmPipeline quad;
+    auto quadConfig = configFor(48000, 48000);
+    quadConfig.output = { 48000, 4, 2, 16, 8 };
+    assert(quad.configure(quadConfig, &error));
+    assert(quad.write(stereoFrame.data(), stereoFrame.size(), &error) == stereoFrame.size());
+    std::array<uint8_t, 8> quadOutput {};
+    assert(quad.fill(quadOutput.data(), quadOutput.size(), true) == quadOutput.size());
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 0) == 0x1000);
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 2) == static_cast<int16_t>(0xF000));
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 4) == 0);
+    assert(readInt16Sample({ quadOutput.begin(), quadOutput.end() }, 6) == 0);
+
+    neri::usb::PcmPipeline mono;
+    auto monoConfig = configFor(48000, 48000);
+    monoConfig.output = { 48000, 1, 2, 16, 2 };
+    assert(mono.configure(monoConfig, &error));
+    const std::array<uint8_t, 4> balancedFrame { 0x00, 0x20, 0x00, 0x10 };
+    assert(mono.write(balancedFrame.data(), balancedFrame.size(), &error) == balancedFrame.size());
+    std::array<uint8_t, 2> monoOutput {};
+    assert(mono.fill(monoOutput.data(), monoOutput.size(), true) == monoOutput.size());
+    assert(readInt16Sample({ monoOutput.begin(), monoOutput.end() }, 0) == 0x1800);
+
+    neri::usb::PcmPipeline widened;
+    auto widenedConfig = configFor(48000, 48000);
+    widenedConfig.input.channelCount = 1;
+    widenedConfig.output = { 48000, 4, 2, 16, 8 };
+    assert(widened.configure(widenedConfig, &error));
+    const std::array<uint8_t, 2> monoFrame { 0x00, 0x08 };
+    assert(widened.write(monoFrame.data(), monoFrame.size(), &error) == monoFrame.size());
+    std::array<uint8_t, 8> widenedOutput {};
+    assert(widened.fill(widenedOutput.data(), widenedOutput.size(), true) == widenedOutput.size());
+    assert(readInt16Sample({ widenedOutput.begin(), widenedOutput.end() }, 0) == 0x0800);
+    assert(readInt16Sample({ widenedOutput.begin(), widenedOutput.end() }, 2) == 0x0800);
+    assert(readInt16Sample({ widenedOutput.begin(), widenedOutput.end() }, 4) == 0);
+}
+
 } // namespace
 
 int main() {
+    verifiesChannelLayoutsCarryStereoWithoutDuplicatingExtraChannels();
     verifiesResamplerOutputDoesNotDependOnChunking();
     verifiesResamplerKeepsPassbandToneAccurate();
     verifiesResamplerRejectsContentAboveOutputNyquist();

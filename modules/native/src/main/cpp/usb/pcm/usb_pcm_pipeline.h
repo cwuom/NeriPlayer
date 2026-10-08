@@ -109,6 +109,11 @@ private:
         std::string* error
     );
     size_t commitConverted(size_t consumedBytes);
+    [[nodiscard]] float inputSampleFor(
+        const uint8_t* frame,
+        int inputSampleBytes,
+        int outputChannel
+    ) const;
     void beginBackpressureLocked(int64_t nowUs);
     void endBackpressureLocked(int64_t nowUs);
     size_t writeRingLocked(const uint8_t* input, size_t bytes);
