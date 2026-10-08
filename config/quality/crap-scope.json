@@ -269,6 +269,7 @@
     "moe/ouom/neriplayer/platform/lyrics/repository/QQMusicLyricsRepository.kt",
     "moe/ouom/neriplayer/platform/lyrics/matching/QQMusicLyricSelection.kt",
     "moe/ouom/neriplayer/lyrics/parser/LyricWordTiming.kt",
+    "moe/ouom/neriplayer/lyrics/parser/LyricCreditFilter.kt",
     "moe/ouom/neriplayer/platform/youtube/auth/web/YouTubeWebSessionAdapter.kt",
     "moe/ouom/neriplayer/core/player/queue/policy/failure/*.kt",
     "moe/ouom/neriplayer/data/model/storage/*.kt",

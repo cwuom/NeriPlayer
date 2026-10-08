@@ -3163,6 +3163,7 @@
       "moe.ouom.neriplayer.platform.search.api.client.QQMusicSearchApi",
       "moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient",
       "moe.ouom.neriplayer.common.logging.NPLogger",
+      "moe.ouom.neriplayer.lyrics.parser.LyricCreditFilterKt",
       "moe.ouom.neriplayer.lyrics.parser.LyricEntryTransformsKt",
       "moe.ouom.neriplayer.lyrics.parser.LyricParserKt",
       "moe.ouom.neriplayer.lyrics.parser.LyricWordTimingKt",

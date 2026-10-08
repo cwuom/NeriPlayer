@@ -390,6 +390,25 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `buildAdvancedSyncedLyrics drops credit lines from raw yrc`() {
+        val rawYrc = """
+            [0,1000](0,1000,0)作词：某某
+            [1000,1000](1000,1000,0)制作人 Producer：某某
+            [12580,3470](12580,250,0)难(12830,300,0)以
+        """.trimIndent()
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = rawYrc,
+            rawTranslatedLyrics = null,
+            lyrics = parseNeteaseLyricsAuto(rawYrc),
+            translatedLyrics = emptyList()
+        )
+
+        val line = result.lines.single() as KaraokeLine.MainKaraokeLine
+        assertEquals("难以", line.syllables.joinToString(separator = "") { it.content })
+    }
+
+    @Test
     fun `buildAdvancedSyncedLyrics keeps parsed word timings when raw lyric is plain lrc`() {
         val lyrics = listOf(
             LyricEntry(

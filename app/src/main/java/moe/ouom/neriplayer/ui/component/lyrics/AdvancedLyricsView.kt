@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.lyrics.parser.isTtmlLyrics
 import moe.ouom.neriplayer.lyrics.parser.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLrc
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.withoutLyricCredits
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -321,7 +322,8 @@ private fun parseRawLyrics(rawLyrics: String?): SyncedLyrics {
     }
     return runCatching {
         if (isTtmlLyrics(rawLyrics) || isNeteaseYrc(rawLyrics)) {
-            AutoParser().parse(rawLyrics)
+            val parsed = AutoParser().parse(rawLyrics)
+            parsed.copy(lines = parsed.lines.withoutLyricCredits { it.plainText() })
         } else {
             parseNeteaseLrc(rawLyrics).toSyncedLyrics()
         }
