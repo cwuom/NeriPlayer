@@ -45,6 +45,11 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 private val StatsTabletContentMaxWidth = 1200.dp
 private val StatsTabletColumnsMinWidth = 720.dp
+private val StatsTabletWindowMinWidth = 720.dp
+
+/** 按当前窗口宽度而不是设备类型选择平板布局，分屏和横屏手机同样适用 */
+internal fun usePlaybackStatsTabletLayout(windowWidth: Dp): Boolean =
+    windowWidth >= StatsTabletWindowMinWidth
 
 internal data class PlaybackStatsLayout(
     val contentWidth: Dp,
