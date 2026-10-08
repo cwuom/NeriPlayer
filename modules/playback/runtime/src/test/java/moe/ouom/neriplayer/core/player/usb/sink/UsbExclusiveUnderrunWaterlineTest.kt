@@ -55,4 +55,10 @@ class UsbExclusiveUnderrunWaterlineTest {
         assertEquals(62_500L, usbExclusiveSchedulingBufferUs(125L))
         assertEquals(C.TIME_UNSET, usbExclusiveSchedulingBufferUs(0L))
     }
+
+    @Test
+    fun `boosted background waterlines never report more than the planner ceiling`() {
+        assertEquals(750_000L, usbExclusiveSchedulingBufferUs(750L shl 3))
+        assertEquals(750_000L, usbExclusiveSchedulingBufferUs(1_500L))
+    }
 }

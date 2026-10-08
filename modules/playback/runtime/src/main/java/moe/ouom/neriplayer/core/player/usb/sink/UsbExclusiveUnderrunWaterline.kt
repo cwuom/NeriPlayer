@@ -41,7 +41,15 @@ internal class UsbExclusiveUnderrunWaterline(
 
 /**
  * 动态调度下渲染器会按上报缓冲的一半休眠；这里只报水位的一半，
- * 播放线程大约每过四分之一水位醒一次，留四分之三的余量应对高负载
+ * 播放线程大约每过四分之一水位醒一次，留四分之三的余量应对高负载。
+ * 写入规划器把水位封顶在 [USB_EXCLUSIVE_SCHEDULING_QUEUE_CEILING_MS]，
+ * 欠载翻倍后的水位也按这个上限上报，休眠不会超过队列实际能撑住的时长
  */
 internal fun usbExclusiveSchedulingBufferUs(queueTargetMs: Long): Long =
-    if (queueTargetMs > 0L) queueTargetMs * 1_000L / 2L else C.TIME_UNSET
+    if (queueTargetMs > 0L) {
+        queueTargetMs.coerceAtMost(USB_EXCLUSIVE_SCHEDULING_QUEUE_CEILING_MS) * 1_000L / 2L
+    } else {
+        C.TIME_UNSET
+    }
+
+internal const val USB_EXCLUSIVE_SCHEDULING_QUEUE_CEILING_MS = 1_500L

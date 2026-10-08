@@ -13,7 +13,7 @@ internal object UsbExclusivePcmWritePlanner {
     private const val TRANSFERS_PER_WRITE = 4L
     private const val RECOVERY_TRANSFERS_PER_WRITE = 10L
     private const val RUNNING_TARGET_QUEUE_MIN_MS = 120L
-    private const val RUNNING_TARGET_QUEUE_MAX_MS = 1_500L
+    private const val RUNNING_TARGET_QUEUE_MAX_MS = USB_EXCLUSIVE_SCHEDULING_QUEUE_CEILING_MS
     private const val RUNNING_TARGET_QUEUE_CAPACITY_DIVISOR = 2L
     private const val RUNNING_LOW_WATERMARK_QUEUE_MS = 40L
     private const val RUNNING_TARGET_TRANSFERS = 6L
