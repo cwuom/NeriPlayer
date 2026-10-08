@@ -341,10 +341,18 @@ object LocalMediaMetadataRecoveryStore {
 
     private fun contentUriIdentity(reference: String): String? {
         val uri: Uri = runCatching { reference.toUri() }.getOrNull() ?: return null
+        val authority = contentAuthorityOrNull(uri) ?: return null
+        return documentIdentity(uri, authority) ?: "uri:${uri.normalizeScheme()}"
+    }
+
+    private fun contentAuthorityOrNull(uri: Uri): String? {
         if (!uri.scheme.equals("content", ignoreCase = true)) return null
-        val authority = uri.authority?.takeIf(String::isNotBlank) ?: return null
-        val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
-        return documentId?.let { "document:${authority.length}:$authority:$it" } ?: "uri:${uri.normalizeScheme()}"
+        return uri.authority?.takeIf(String::isNotBlank)
+    }
+
+    private fun documentIdentity(uri: Uri, authority: String): String? {
+        val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull() ?: return null
+        return "document:${authority.length}:$authority:$documentId"
     }
 
     fun resetRecoveryForTest() {

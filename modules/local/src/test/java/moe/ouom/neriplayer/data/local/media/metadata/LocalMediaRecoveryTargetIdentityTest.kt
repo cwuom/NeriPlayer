@@ -48,6 +48,7 @@ class LocalMediaRecoveryTargetIdentityTest {
             LocalMediaMetadataRecoveryStore.targetIdentity("CONTENT://media/external/audio/media/7")
         )
         assertNull(LocalMediaMetadataRecoveryStore.targetIdentity("content:///external/audio/media/7"))
+        assertNull(LocalMediaMetadataRecoveryStore.targetIdentity("content:/external/audio/media/7"))
         assertNull(LocalMediaMetadataRecoveryStore.targetIdentity("https://example.com/song.flac"))
         assertNull(LocalMediaMetadataRecoveryStore.targetIdentity("relative/song.flac"))
     }
