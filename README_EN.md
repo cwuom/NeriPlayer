@@ -484,14 +484,19 @@ For release build and signing details, see
   format is unavailable and compatibility fallback is enabled. Handling of Android's
   `USB_DEVICE_ATTACHED` event can be disabled separately when users do not want
   NeriPlayer to react to DAC insertion.
-  Compatible UAC2 asynchronous topologies resolve a clock chain and explicit feedback endpoint,
-  schedule packets from device feedback, and reacquire the feedback clock after
-  long scheduling gaps. If playback startup, native transfer backpressure, or
+  Asynchronous UAC1 and UAC2 devices resolve a clock chain and explicit feedback endpoint
+  (UAC1 sync endpoints are matched through `bSynchAddress`), schedule packets from device
+  feedback, and reacquire the feedback clock after long scheduling gaps. On open, the
+  DAC's playback-path hardware mute is cleared and hardware volume is set to 0 dB, and
+  the previous values are written back on close, so the DAC does not keep attenuation
+  left by Android. If the sample rate reads back differently right after it is set, the
+  app waits for the clock to lock before confirming. If playback startup, native transfer backpressure, or
   foreground/background transitions become unhealthy, the app tries in-place
   reconfiguration, coordinated AudioSink recreation, dynamic transfer scaling,
   and soft recovery before falling back to Android system output. Foreground/background
   recovery chooses wake behavior for network or local playback, and bit-perfect volume
-  keeps software gain at 0 dB for DAC-side volume control. Settings report battery-
+  keeps software gain at 0 dB for DAC-side volume control; when the DAC has hardware
+  volume, volume keys adjust it and the PCM data stays unchanged. Settings report battery-
   optimization and background-permission limits. A retained service playback uses a
   route-aware background audio anchor that selects silence or a zero-mean carrier,
   while MediaSession provides remote volume routing and the carrier remains inaudible

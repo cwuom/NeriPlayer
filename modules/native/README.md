@@ -17,6 +17,7 @@ Sources are in [src/main/cpp](src/main/cpp). CMake assigns portable USB protocol
 | `usb/uac1/`, `usb/uac2/` | 各协议的格式、描述符和候选模型 / Protocol-specific formats, descriptors, and candidate models |
 | `usb/feedback/`, `usb/iso/` | 反馈时钟、速率估计、包调度和传输健康规则 / Feedback clocks, rate estimation, packet scheduling, and transfer health rules |
 | `usb/pcm/` | PCM 编解码、缓冲和增益处理 / PCM codecs, buffering, and gain processing |
+| `usb/control/` | Feature Unit 静音/音量拓扑与采样率回读判定 / Feature Unit mute/volume topology and sample-rate readback rules |
 | `usb/exclusive/` | JNI 入口、会话所有权、设备选择、传输和恢复 / JNI entry points, session ownership, device selection, transport, and recovery |
 | `third_party/libusb/` | libusb 及其 Android 构建配置 / libusb and its Android build configuration |
 | `tests/usb/` | 可移植 USB 模型的 host 测试与门禁配置 / Host tests and gate configuration for portable USB models |
