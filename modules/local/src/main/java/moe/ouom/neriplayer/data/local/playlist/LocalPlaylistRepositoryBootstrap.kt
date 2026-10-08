@@ -146,35 +146,34 @@ internal fun LocalPlaylistRepository.readRoomPrimary(): List<LocalPlaylist>? {
 }
 
 internal fun LocalPlaylistRepository.readStoredPlaylists(): PlaylistLoadResult {
-    val primaryRead = runCatching(storage::readPrimary)
-    val primaryText = primaryRead.getOrNull()
-    if (primaryRead.isSuccess && primaryText == null) {
-        return recoverFromBackup(primaryWasCorrupt = false)
-            ?: emptyPlaylistLoadResult(allowMigrationWrite = true)
-    }
-
-    if (primaryRead.isFailure) {
-        NPLogger.e(
-            "LocalPlaylistRepo",
-            "Failed to read primary playlist storage",
-            primaryRead.exceptionOrNull()
-        )
+    val primaryText = runCatching(storage::readPrimary).getOrElse { error ->
+        NPLogger.e("LocalPlaylistRepo", "Failed to read primary playlist storage", error)
         preserveBackupOnNextWrite = true
-        return recoverFromBackup(primaryWasCorrupt = false)
-            ?: emptyPlaylistLoadResult(allowMigrationWrite = false)
+        return recoverFromBackupOrEmpty(primaryWasCorrupt = false, allowEmptyMigrationWrite = false)
     }
-
-    val primaryParsed = parsePlaylists(primaryText.orEmpty(), "primary")
-    if (primaryParsed != null) {
-        return PlaylistLoadResult(
-            playlists = primaryParsed.normalized,
-            migrationRequired = primaryParsed.normalized != primaryParsed.decoded,
-            allowMigrationWrite = true
-        )
+    if (primaryText == null) {
+        return recoverFromBackupOrEmpty(primaryWasCorrupt = false, allowEmptyMigrationWrite = true)
     }
+    val primaryParsed = parsePlaylists(primaryText, "primary")
+        ?: return recoverFromBackupOrEmpty(primaryWasCorrupt = true, allowEmptyMigrationWrite = false)
+    return primaryParsed.toLoadResult(allowMigrationWrite = true)
+}
 
-    return recoverFromBackup(primaryWasCorrupt = true)
-        ?: emptyPlaylistLoadResult(allowMigrationWrite = false)
+private fun LocalPlaylistRepository.recoverFromBackupOrEmpty(
+    primaryWasCorrupt: Boolean,
+    allowEmptyMigrationWrite: Boolean
+): PlaylistLoadResult {
+    return recoverFromBackup(primaryWasCorrupt) ?: emptyPlaylistLoadResult(allowEmptyMigrationWrite)
+}
+
+private fun LocalPlaylistRepository.ParsedPlaylistCandidate.toLoadResult(
+    allowMigrationWrite: Boolean
+): PlaylistLoadResult {
+    return PlaylistLoadResult(
+        playlists = normalized,
+        migrationRequired = normalized != decoded,
+        allowMigrationWrite = allowMigrationWrite
+    )
 }
 
 internal fun LocalPlaylistRepository.emptyPlaylistLoadResult(allowMigrationWrite: Boolean): PlaylistLoadResult {
@@ -187,42 +186,37 @@ internal fun LocalPlaylistRepository.emptyPlaylistLoadResult(allowMigrationWrite
 }
 
 internal fun LocalPlaylistRepository.recoverFromBackup(primaryWasCorrupt: Boolean): PlaylistLoadResult? {
-    val backupRead = runCatching(storage::readBackup)
-    val backupText = backupRead.getOrNull()
-    if (backupRead.isFailure) {
-        NPLogger.e(
-            "LocalPlaylistRepo",
-            "Failed to read playlist backup",
-            backupRead.exceptionOrNull()
-        )
-    }
-
+    val backupText = readPlaylistBackupText()
     val backupParsed = backupText?.let { parsePlaylists(it, "backup") }
     if (backupText != null && backupParsed == null) {
         replaceBackupOnNextWrite = true
     }
-    val primaryReadyForRestore = if (primaryWasCorrupt) {
-        corruptPrimaryNeedsQuarantine = true
-        quarantineCorruptPrimary()
-    } else {
-        true
-    }
+    val primaryReadyForRestore = !primaryWasCorrupt || quarantineCorruptPrimaryForRestore()
     if (backupParsed == null) {
         return null
     }
+    val repairSucceeded = primaryReadyForRestore && restorePlaylistBackup(backupText)
+    return backupParsed.toLoadResult(allowMigrationWrite = repairSucceeded)
+}
 
-    val repairSucceeded = primaryReadyForRestore &&
-        runCatching {
-            storage.commit(backupText, rotateBackup = false)
-        }.onFailure { error ->
-            preserveBackupOnNextWrite = true
-            NPLogger.e("LocalPlaylistRepo", "Failed to restore playlist backup", error)
-        }.isSuccess
-    return PlaylistLoadResult(
-        playlists = backupParsed.normalized,
-        migrationRequired = backupParsed.normalized != backupParsed.decoded,
-        allowMigrationWrite = repairSucceeded
-    )
+private fun LocalPlaylistRepository.readPlaylistBackupText(): String? {
+    return runCatching(storage::readBackup)
+        .onFailure { error -> NPLogger.e("LocalPlaylistRepo", "Failed to read playlist backup", error) }
+        .getOrNull()
+}
+
+private fun LocalPlaylistRepository.quarantineCorruptPrimaryForRestore(): Boolean {
+    corruptPrimaryNeedsQuarantine = true
+    return quarantineCorruptPrimary()
+}
+
+private fun LocalPlaylistRepository.restorePlaylistBackup(backupText: String): Boolean {
+    return runCatching {
+        storage.commit(backupText, rotateBackup = false)
+    }.onFailure { error ->
+        preserveBackupOnNextWrite = true
+        NPLogger.e("LocalPlaylistRepo", "Failed to restore playlist backup", error)
+    }.isSuccess
 }
 
 internal fun LocalPlaylistRepository.quarantineCorruptPrimary(): Boolean {
