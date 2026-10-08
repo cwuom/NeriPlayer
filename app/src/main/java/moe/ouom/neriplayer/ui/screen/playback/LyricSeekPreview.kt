@@ -57,13 +57,11 @@ private fun resolveListenTogetherProgressRole(
     controllerUserUuid: String?,
     controllerUserId: String?
 ): String? {
-    val normalizedUserId = sessionUserUuid?.trim()?.takeIf { it.isNotBlank() }
-    val controllerId = controllerUserUuid?.trim()?.takeIf { it.isNotBlank() }
-        ?: controllerUserId?.trim()?.takeIf { it.isNotBlank() }
-    return when {
-        normalizedUserId != null && controllerId != null -> {
-            if (normalizedUserId == controllerId) "controller" else "listener"
-        }
-        else -> fallbackRole
-    }
+    val normalizedUserId = sessionUserUuid.trimmedOrNull() ?: return fallbackRole
+    val controllerId = controllerUserUuid.trimmedOrNull()
+        ?: controllerUserId.trimmedOrNull()
+        ?: return fallbackRole
+    return if (normalizedUserId == controllerId) "controller" else "listener"
 }
+
+private fun String?.trimmedOrNull(): String? = this?.trim()?.takeIf(String::isNotEmpty)
