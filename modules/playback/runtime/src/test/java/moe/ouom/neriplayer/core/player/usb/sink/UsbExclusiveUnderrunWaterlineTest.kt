@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
+import androidx.media3.common.C
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -46,5 +47,12 @@ class UsbExclusiveUnderrunWaterlineTest {
         assertEquals(125L, waterline.targetMs(125L, 0L, 5_020L))
         assertEquals(125L, waterline.targetMs(125L, null, 5_040L))
         assertEquals(125L, waterline.targetMs(125L, 4_800L, 5_060L))
+    }
+
+    @Test
+    fun `scheduling reports half the waterline so the player wakes with three quarters left`() {
+        assertEquals(375_000L, usbExclusiveSchedulingBufferUs(750L))
+        assertEquals(62_500L, usbExclusiveSchedulingBufferUs(125L))
+        assertEquals(C.TIME_UNSET, usbExclusiveSchedulingBufferUs(0L))
     }
 }

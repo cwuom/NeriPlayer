@@ -284,6 +284,8 @@ internal class UsbExclusivePcmWriter(
         runningQueueTargetMs = adaptiveQueueTargetMs(metrics, state),
     )
 
+    fun currentQueueTargetMs(baseTargetMs: Long): Long = baseTargetMs shl underrunWaterline.boostShift
+
     private fun adaptiveQueueTargetMs(metrics: UsbExclusiveRuntimeMetrics, state: UsbExclusiveNativeWriteSnapshot): Long? {
         val previousShift = underrunWaterline.boostShift
         val target = underrunWaterline.targetMs(state.runningQueueTargetMs, metrics.playerZeroFillBytes, port.elapsedRealtimeMs())

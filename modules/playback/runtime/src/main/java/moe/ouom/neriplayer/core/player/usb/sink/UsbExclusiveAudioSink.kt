@@ -660,9 +660,9 @@ internal class UsbExclusiveAudioSink(
         }
     }
 
-    override fun getAudioTrackBufferSizeUs(): Long {
-        return if (usingNative) C.TIME_UNSET else fallbackSink.audioTrackBufferSizeUs
-    }
+    override fun getAudioTrackBufferSizeUs(): Long = if (usingNative) {
+        usbExclusiveSchedulingBufferUs(pcmWriter.currentQueueTargetMs(lifecycleQueueTargetMs()))
+    } else fallbackSink.audioTrackBufferSizeUs
 
     override fun enableTunnelingV21() {
         if (usingNative && PlayerManager.usbExclusivePlaybackEnabled) {
@@ -1004,9 +1004,11 @@ internal class UsbExclusiveAudioSink(
         usingNative = usingNative,
         hasQueuedPcm = nativeHasQueuedPcm,
         prerollMs = NATIVE_START_PREROLL_MS,
-        runningQueueTargetMs = usbExclusiveRunningQueueTargetMs(
-            PlayerManager.usbExclusivePreferences.bufferDurationMs(PlayerManager.usbExclusiveAppInForeground)
-        ),
+        runningQueueTargetMs = lifecycleQueueTargetMs(),
+    )
+
+    private fun lifecycleQueueTargetMs(): Long = usbExclusiveRunningQueueTargetMs(
+        PlayerManager.usbExclusivePreferences.bufferDurationMs(PlayerManager.usbExclusiveAppInForeground)
     )
 
     private fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float): Int =
