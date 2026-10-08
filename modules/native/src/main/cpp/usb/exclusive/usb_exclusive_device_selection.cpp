@@ -595,7 +595,7 @@ int readUac2ClockSelectorPin(
     return pin - 1;
 }
 
-// 终端直连时钟源时原样返回；经选择器/倍频器时按选择器当前输入脚走到最终时钟源
+// 终端直连时钟源时原样返回；经选择器时按当前输入脚走到最终时钟源；经倍频器的路径换算不出频率，返回 0
 int resolveUac2FinalClockId(
     libusb_device_handle* deviceHandle,
     int audioControlInterface,
