@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -77,6 +78,17 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import java.io.File
+
+internal const val DOWNLOAD_MANAGER_STATS_TAG = "downloadManagerStats"
+internal const val DOWNLOAD_MANAGER_LIST_TAG = "downloadManagerList"
+internal val DownloadPageContentMaxWidth = 920.dp
+
+/** 下载页面内容在宽窗口中居中并限制宽度，窄窗口仍然铺满 */
+internal fun Modifier.downloadPageContentWidth(): Modifier = this
+    .fillMaxWidth()
+    .wrapContentWidth(Alignment.CenterHorizontally)
+    .widthIn(max = DownloadPageContentMaxWidth)
+    .fillMaxWidth()
 
 @Composable
 fun DownloadManagerScreen(
@@ -340,7 +352,9 @@ internal fun DownloadManagerContent(
             failureDismissed = deleteFailureDismissed,
             onDismissFailure = onDismissDeleteFailure,
             requestedSongCount = selection.deletingSongCount,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            modifier = Modifier
+                .downloadPageContentWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
         // 下载统计信息
@@ -522,7 +536,12 @@ private fun DownloadManagerTopBar(
 
 @Composable
 private fun DownloadManagerStatsCard(songCount: Int, totalSize: Long) {
-    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+    Box(
+        modifier = Modifier
+            .downloadPageContentWidth()
+            .padding(horizontal = 16.dp)
+            .testTag(DOWNLOAD_MANAGER_STATS_TAG)
+    ) {
         val shape = RoundedCornerShape(16.dp)
         val baseColor = MaterialTheme.colorScheme.surfaceVariant
         AdvancedGlassSurface(
@@ -582,7 +601,7 @@ private fun DownloadManagerSearchField(query: String, onQueryChange: (String) ->
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier
-            .fillMaxWidth()
+            .downloadPageContentWidth()
             .padding(horizontal = 16.dp),
         placeholder = { Text(stringResource(CoreCommonR.string.download_search_hint)) },
         leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(CoreCommonR.string.action_search)) },
@@ -696,7 +715,10 @@ private fun DownloadedSongsList(
             DownloadedSongsEmptyState(searchActive = searchQuery.isNotBlank())
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .downloadPageContentWidth()
+                    .fillMaxHeight()
+                    .testTag(DOWNLOAD_MANAGER_LIST_TAG),
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(
@@ -729,7 +751,7 @@ private fun DownloadedSongsList(
             LinearProgressIndicator(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .fillMaxWidth()
+                    .downloadPageContentWidth()
                     .padding(horizontal = 16.dp)
                     .clip(RoundedCornerShape(999.dp))
                     .height(3.dp),

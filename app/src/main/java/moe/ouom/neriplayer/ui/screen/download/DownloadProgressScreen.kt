@@ -733,7 +733,9 @@ fun DownloadProgressScreen(
 
             DownloadProgressPagePresentation.CONTENT -> {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .downloadPageContentWidth()
+                        .fillMaxHeight(),
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(
