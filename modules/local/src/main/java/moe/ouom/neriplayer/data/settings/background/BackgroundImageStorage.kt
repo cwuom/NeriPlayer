@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.settings.background
 
 
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,7 @@ object BackgroundImageStorage {
     private const val DIRECTORY_NAME = "custom_background"
     private const val FILE_NAME_PREFIX = "background"
     private const val TEMP_FILE_NAME = "$FILE_NAME_PREFIX.tmp"
+    private const val DEFAULT_EXTENSION = "jpg"
 
     suspend fun importFromUri(
         context: Context,
@@ -83,47 +85,46 @@ object BackgroundImageStorage {
 
     private fun resolveManagedFile(context: Context, uriString: String?): File? {
         if (uriString.isNullOrBlank()) return null
+        val path = localPathOf(uriString) ?: return null
+        val managedDir = File(context.filesDir, DIRECTORY_NAME)
+        return File(path).takeIf { it.absolutePath.startsWith(managedDir.absolutePath) }
+    }
+
+    private fun localPathOf(uriString: String): String? {
         val uri = runCatching { uriString.toUri() }.getOrNull() ?: return null
-        val path = when {
+        return when {
             uri.scheme.equals("file", ignoreCase = true) -> uri.path
             uri.scheme.isNullOrBlank() -> uriString
             else -> null
-        } ?: return null
-        val file = File(path)
-        val managedDir = File(context.filesDir, DIRECTORY_NAME)
-        return file.takeIf { it.absolutePath.startsWith(managedDir.absolutePath) }
+        }
     }
 
     private fun queryExtension(context: Context, uri: Uri): String {
-        val displayName = runCatching {
-            context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0 && cursor.moveToFirst()) {
-                    cursor.getString(index)
-                } else {
-                    null
-                }
-            }
-        }.getOrNull()
-
-        val extension = displayName
-            ?.substringAfterLast('.', "")
-            ?.lowercase()
-            ?.takeIf { it.isNotBlank() }
-            ?: context.contentResolver.getType(uri)
-                ?.substringAfterLast('/')
-                ?.substringAfter('+')
-                ?.lowercase()
-                ?.takeIf { it.isNotBlank() }
-
-        return extension ?: "jpg"
+        return displayNameExtension(queryDisplayName(context, uri))
+            ?: mimeTypeExtension(context.contentResolver.getType(uri))
+            ?: DEFAULT_EXTENSION
     }
+
+    private fun queryDisplayName(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use(::firstDisplayName)
+    }.getOrNull()
+
+    private fun firstDisplayName(cursor: Cursor): String? {
+        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        return if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+    }
+
+    private fun displayNameExtension(displayName: String?): String? =
+        displayName?.substringAfterLast('.', "")?.lowercase()?.takeIf { it.isNotBlank() }
+
+    private fun mimeTypeExtension(mimeType: String?): String? =
+        mimeType?.substringAfterLast('/')?.substringAfter('+')?.lowercase()?.takeIf { it.isNotBlank() }
 
     private fun buildManagedFileName(extension: String): String {
         return "${FILE_NAME_PREFIX}_${System.currentTimeMillis()}.$extension"
