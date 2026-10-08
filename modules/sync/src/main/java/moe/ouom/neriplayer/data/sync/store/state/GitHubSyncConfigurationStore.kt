@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.store.preferences.PlayHistoryUpdateMode
+import java.util.Locale
 
 internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPreferences) {
     private val completionTime = SyncCompletionTimeStore(encryptedPrefs, completionTimeChanges, configurationLock, ::getLastSyncTime)
@@ -14,6 +15,7 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     private companion object {
         val completionTimeChanges = MutableStateFlow(0L)
         val configurationLock = Any()
+        val REPOSITORY_CHECKPOINT_KEYS = listOf(KEY_LAST_SYNC_TIME, KEY_LAST_REMOTE_SHA)
     }
 
     fun saveToken(token: String) {
@@ -29,11 +31,17 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun saveRepository(owner: String, name: String) {
-        completionTime.editConfiguration {
+        completionTime.editTarget(::storedRepository, repositoryTarget(owner, name), REPOSITORY_CHECKPOINT_KEYS) {
             putString(KEY_REPO_OWNER, owner)
                 .putString(KEY_REPO_NAME, name)
         }
     }
+
+    private fun storedRepository(): List<String> = repositoryTarget(getRepoOwner(), getRepoName())
+
+    // GitHub 仓库名不区分大小写，与同步目标哈希保持同一判定
+    private fun repositoryTarget(owner: String?, name: String?): List<String> =
+        listOf(owner, name).map { it.orEmpty().trim().lowercase(Locale.ROOT) }
 
     fun getRepoOwner(): String? {
         return encryptedPrefs.getString(KEY_REPO_OWNER, null)
@@ -137,7 +145,8 @@ internal class GitHubSyncConfigurationStore(private val encryptedPrefs: SharedPr
     }
 
     fun restore(snapshot: GitHubSyncConfigSnapshot) {
-        completionTime.editConfiguration {
+        val target = repositoryTarget(snapshot.repoOwner, snapshot.repoName)
+        completionTime.editTarget(::storedRepository, target, REPOSITORY_CHECKPOINT_KEYS) {
             remove(KEY_GITHUB_TOKEN)
             remove(KEY_REPO_OWNER)
             remove(KEY_REPO_NAME)

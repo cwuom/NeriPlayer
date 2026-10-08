@@ -943,8 +943,14 @@ internal fun LocalAudioImportManager.stabilizeExternalUri(
         "${baseName.take(48)}_${stableKey(uri.toString()).take(12)}.$extension"
     )
 
-    if (shouldCopyExternalAudio(targetFile, resolvedCopyInfo.sizeBytes)) {
-        copyExternalAudioToTarget(context, uri, targetFile, resolvedCopyInfo.sizeBytes)
+    if (shouldCopyExternalAudio(targetFile, resolvedCopyInfo.sizeBytes, resolvedCopyInfo.sourceLastModifiedAt)) {
+        copyExternalAudioToTarget(
+            context,
+            uri,
+            targetFile,
+            resolvedCopyInfo.sizeBytes,
+            resolvedCopyInfo.sourceLastModifiedAt
+        )
     }
     resolvedCopyInfo.sourceLastModifiedAt
         ?.takeIf { it > 0L }
@@ -1134,11 +1140,22 @@ internal fun LocalAudioImportManager.isMediaStoreAuthority(authority: String?): 
         authority == "com.android.providers.media.documents"
 }
 
-fun LocalAudioImportManager.shouldCopyExternalAudio(targetFile: File, expectedBytes: Long?): Boolean {
+fun LocalAudioImportManager.shouldCopyExternalAudio(
+    targetFile: File,
+    expectedBytes: Long?,
+    sourceLastModifiedAt: Long? = null
+): Boolean {
     if (!targetFile.exists()) return true
     if (!targetFile.isFile) return true
     if (targetFile.length() <= 0L) return true
-    return expectedBytes != null && targetFile.length() != expectedBytes
+    if (expectedBytes != null && targetFile.length() != expectedBytes) return true
+    return isImportCopyBehindSource(targetFile, sourceLastModifiedAt)
+}
+
+// 导入副本的 mtime 会对齐源修改时间，同长度改写只能靠它识别；源未报告时间时仍按长度复用
+private fun isImportCopyBehindSource(targetFile: File, sourceLastModifiedAt: Long?): Boolean {
+    val sourceModifiedAt = sourceLastModifiedAt?.takeIf { it > 0L } ?: return false
+    return targetFile.lastModified() != sourceModifiedAt
 }
 
 fun LocalAudioImportManager.isExternalAudioCopySizeComplete(
@@ -1150,7 +1167,8 @@ fun LocalAudioImportManager.copyExternalAudioToTarget(
     context: Context,
     uri: Uri,
     targetFile: File,
-    expectedBytes: Long?
+    expectedBytes: Long?,
+    sourceLastModifiedAt: Long? = null
 ) {
     val partialFile = File(
         targetFile.parentFile ?: error("Import target has no parent"),
@@ -1163,7 +1181,7 @@ fun LocalAudioImportManager.copyExternalAudioToTarget(
     partialFile.delete()
     if (!targetFile.exists() && backupFile.isFile) {
         if (backupFile.renameTo(targetFile) &&
-            !shouldCopyExternalAudio(targetFile, expectedBytes)
+            !shouldCopyExternalAudio(targetFile, expectedBytes, sourceLastModifiedAt)
         ) {
             return
         }

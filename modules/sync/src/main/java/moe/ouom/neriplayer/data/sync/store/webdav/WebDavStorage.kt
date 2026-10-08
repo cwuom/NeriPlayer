@@ -38,6 +38,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         private const val KEY_ARCHIVE_MAINTENANCE = "archive_maintenance_"
         private val completionTimeChanges = MutableStateFlow(0L)
         private val configurationLock = Any()
+        private val TARGET_CHECKPOINT_KEYS = listOf(KEY_LAST_SYNC_TIME, KEY_LAST_REMOTE_FINGERPRINT)
     }
 
     fun saveConfiguration(
@@ -46,7 +47,7 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
         password: String,
         basePath: String
     ) {
-        completionTime.editConfiguration {
+        completionTime.editTarget(::storedTarget, target(serverUrl, basePath, username), TARGET_CHECKPOINT_KEYS) {
             putString(KEY_SERVER_URL, normalizeServerUrl(serverUrl))
             putString(KEY_BASE_PATH, normalizeBasePath(basePath))
             putString(KEY_USERNAME, username)
@@ -152,7 +153,8 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
     }
 
     fun restore(snapshot: WebDavSyncConfigSnapshot) {
-        completionTime.editConfiguration {
+        val target = target(snapshot.serverUrl, snapshot.basePath, snapshot.username)
+        completionTime.editTarget(::storedTarget, target, TARGET_CHECKPOINT_KEYS) {
             remove(KEY_SERVER_URL)
             remove(KEY_BASE_PATH)
             remove(KEY_USERNAME)
@@ -168,6 +170,11 @@ class WebDavStorage internal constructor(private val encryptedPrefs: SharedPrefe
             putBoolean(KEY_AUTO_SYNC_ENABLED, snapshot.autoSyncEnabled)
         }
     }
+
+    private fun storedTarget(): List<String> = target(getServerUrl(), getBasePath(), getUsername())
+
+    private fun target(serverUrl: String?, basePath: String?, username: String?): List<String> =
+        listOf(normalizeServerUrl(serverUrl.orEmpty()), normalizeBasePath(basePath.orEmpty()), username.orEmpty())
 
     private fun normalizeServerUrl(serverUrl: String): String = serverUrl.trim().trimEnd('/')
 

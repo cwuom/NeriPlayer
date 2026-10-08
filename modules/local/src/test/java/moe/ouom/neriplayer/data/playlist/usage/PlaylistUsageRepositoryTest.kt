@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
+import moe.ouom.neriplayer.data.local.database.store.mockPlaylistUsageRoomStore
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -717,7 +718,7 @@ class PlaylistUsageRepositoryTest {
         )
         val readStarted = CountDownLatch(1)
         val releaseRead = CountDownLatch(1)
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer {
             readStarted.countDown()
             releaseRead.await()
@@ -742,7 +743,7 @@ class PlaylistUsageRepositoryTest {
     }
 
     private suspend fun roomReturning(entries: List<UsageEntry>): PlaylistUsageRoomStore {
-        return mock(PlaylistUsageRoomStore::class.java).also { room ->
+        return mockPlaylistUsageRoomStore().also { room ->
             `when`(room.readIfRoomPrimary()).thenReturn(entries)
         }
     }

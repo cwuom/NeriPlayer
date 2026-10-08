@@ -59,6 +59,10 @@ internal class LocalPlaylistRoomStore(
         return readPlaylists()
     }
 
+    suspend fun commitLegacyFallback(sourceDigest: String, writeSnapshot: () -> Unit) {
+        database.commitLegacyJsonFallback(writeSnapshot) { markLegacyJsonPrimary(sourceDigest) }
+    }
+
     suspend fun markLegacyJsonPrimary(
         sourceDigest: String,
         now: Long = System.currentTimeMillis()
