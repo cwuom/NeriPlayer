@@ -49,6 +49,7 @@
     <string name="local_playlist_sync_netease_confirm_message">Sync selected songs to NetEase Liked Songs?</string>
     <string name="local_playlist_sync_netease_preview_title">Sync to NetEase</string>
     <string name="local_playlist_sync_netease_result">Sync finished: total %1$d, added %2$d, existing %3$d, unsupported %4$d, failed %5$d</string>
+    <string name="local_playlist_sync_netease_rejected">NetEase rejected %1$d songs: %2$s</string>
     <string name="local_playlist_sync_netease_target">Target playlist “%s”</string>
     <string name="local_playlist_sync_netease_picker_title">Choose a NetEase playlist</string>
     <string name="local_playlist_sync_netease_loading_playlists">Loading NetEase playlists</string>

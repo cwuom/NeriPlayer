@@ -139,6 +139,12 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
         NPLogger.d("NERI-BiliCookieRepo", "Saved Bili cookies: keys=${cookies.keys.joinToString()}")
     }
 
+    /** 只补写 nav 接口查到的 DedeUserID, 保留原来的保存时间 */
+    fun saveUserMid(mid: Long) {
+        val current = _authFlow.value
+        saveCookies(current.withUserMid(mid).cookies, savedAt = current.savedAt)
+    }
+
     fun clear() {
         writeAuthBundle(null)
         val cleared = BiliAuthBundle()

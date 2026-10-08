@@ -73,8 +73,8 @@ internal fun addNeteasePlaylistSongIdsBatch(
     client: NeteaseClient,
     playlistId: Long,
     songIds: List<Long>
-): Boolean {
-    if (songIds.isEmpty()) return true
+): NeteasePlaylistAddOutcome {
+    if (songIds.isEmpty()) return NeteasePlaylistAddOutcome.Ok
     val raw = runCatching { client.addSongsToPlaylist(playlistId, songIds) }
         .getOrElse { error ->
             NPLogger.e(
@@ -82,23 +82,37 @@ internal fun addNeteasePlaylistSongIdsBatch(
                 "addSongsToPlaylist failed for playlistId=$playlistId: ${error.message}",
                 error
             )
-            return false
+            return NeteasePlaylistAddOutcome.Transient(-1, error.message)
         }
-    val code = parseNeteaseCode(raw)
-    if (code == 200) return true
-    if (code == 301 && client.hasLogin()) {
-        val retry = retryNeteaseSessionRequest(
+    val response = if (parseNeteaseCode(raw) == 301 && client.hasLogin()) {
+        retryNeteaseSessionRequest(
             client = client,
             ensureFailureMessage = "ensureWeapiSession retry failed",
             retryFailureMessage = "addSongsToPlaylist retry failed for playlistId=$playlistId"
-        ) { client.addSongsToPlaylist(playlistId, songIds) } ?: return false
-        return parseNeteaseCode(retry) == 200
+        ) { client.addSongsToPlaylist(playlistId, songIds) }
+            ?: return NeteasePlaylistAddOutcome.Transient(-1, null)
+    } else {
+        raw
     }
-    NPLogger.w(
-        "LocalPlaylistRepo",
-        "addSongsToPlaylist returned code=$code for playlistId=$playlistId, size=${songIds.size}"
-    )
-    return false
+    val outcome = parseNeteasePlaylistAddOutcome(response)
+    if (outcome != NeteasePlaylistAddOutcome.Ok) {
+        NPLogger.w(
+            "LocalPlaylistRepo",
+            "addSongsToPlaylist returned $outcome for playlistId=$playlistId, size=${songIds.size}"
+        )
+    }
+    return outcome
+}
+
+/** 限流或服务暂不可用, 应退避后重试而不是拆分批次; -1 表示响应缺失或无法解析 */
+private val NETEASE_TRANSIENT_ADD_CODES = setOf(-1, -460, -462, 405, 406, 429, 503)
+
+internal fun parseNeteasePlaylistAddOutcome(raw: String): NeteasePlaylistAddOutcome {
+    val code = parseNeteaseCode(raw)
+    if (code == 200) return NeteasePlaylistAddOutcome.Ok
+    val message = parseNeteaseMessage(raw)
+    if (code in NETEASE_TRANSIENT_ADD_CODES) return NeteasePlaylistAddOutcome.Transient(code, message)
+    return NeteasePlaylistAddOutcome.Rejected(code, message)
 }
 
 internal fun validateNeteaseSyncCandidates(
@@ -321,5 +335,9 @@ internal fun reconcileNeteasePlaylistAddResult(
             failedIds.removeAll(recovered.toSet())
         }
     }
-    return NeteasePlaylistBatchAddResult(addedIds = addedIds, failedIds = failedIds)
+    return NeteasePlaylistBatchAddResult(
+        addedIds = addedIds,
+        failedIds = failedIds,
+        rejections = result.rejections.filterKeys { it in failedIds }
+    )
 }

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.platform.bilibili.api.client
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
 import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionMeta
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
@@ -188,6 +190,85 @@ class BiliClientFavoriteFolderTest {
             http.requestsTo(RESOURCE_LIST_PATH).mapNotNull { it.url.queryParameter("pn") }.sorted()
         )
         assertEquals(setOf("20"), http.requestsTo(RESOURCE_LIST_PATH).mapNotNull { it.url.queryParameter("ps") }.toSet())
+    }
+
+    @Test
+    fun `risk control on a folder page stops paging and reports the missing pages`() = biliClientTest(
+        route = { request ->
+            if (request.url.encodedPath != RESOURCE_LIST_PATH) {
+                null
+            } else when (val page = request.url.queryParameter("pn")?.toLong()) {
+                1L -> json(resourcePage(160, hasMore = true, 1))
+                3L -> BiliTestReply("<html>risk control</html>", code = 412)
+                null -> null
+                else -> json(resourcePage(160, hasMore = true, page))
+            }
+        }
+    ) { http, client ->
+        val firstPage = client.getFavFolderContents(1001L, page = 1, pageSize = 20)
+
+        val result = client.getAllFavFolderItemsResult(1001L, firstPage)
+
+        assertEquals(listOf(1L, 2L, 4L), result.items.map { it.id })
+        assertEquals(5, result.missingPages)
+        assertFalse(result.isComplete)
+        assertEquals(
+            listOf("1", "2", "3", "4"),
+            http.requestsTo(RESOURCE_LIST_PATH).mapNotNull { it.url.queryParameter("pn") }.sorted()
+        )
+        assertEquals(listOf(1L, 2L, 4L), client.getAllFavFolderItems(1001L, firstPage).map { it.id })
+    }
+
+    @Test
+    fun `folder pages run at most three at a time with a gap between chunks`() {
+        val inFlight = AtomicInteger()
+        val maxInFlight = AtomicInteger()
+        val startedAt = ConcurrentHashMap<String, Long>()
+        val finishedAt = ConcurrentHashMap<String, Long>()
+        biliClientTest(
+            route = { request ->
+                val page = request.url.queryParameter("pn")
+                if (request.url.encodedPath != RESOURCE_LIST_PATH || page == null) {
+                    null
+                } else {
+                    startedAt[page] = System.nanoTime()
+                    maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), ::maxOf)
+                    Thread.sleep(40)
+                    inFlight.decrementAndGet()
+                    finishedAt[page] = System.nanoTime()
+                    json(resourcePage(200, hasMore = true, page.toLong()))
+                }
+            }
+        ) { _, client ->
+            val firstPage = client.getFavFolderContents(1001L, page = 1, pageSize = 20)
+
+            val result = client.getAllFavFolderItemsResult(1001L, firstPage)
+
+            assertEquals((1L..10L).toList(), result.items.map { it.id })
+            assertTrue(result.isComplete)
+        }
+        assertTrue("max in-flight was ${maxInFlight.get()}", maxInFlight.get() <= 3)
+        val chunkGapMs = (startedAt.getValue("5") - listOf("2", "3", "4").maxOf(finishedAt::getValue)) / 1_000_000
+        assertTrue("gap between chunks was ${chunkGapMs}ms", chunkGapMs >= 200)
+    }
+
+    @Test
+    fun `collection archives report pages that failed to load`() = biliClientTest(
+        route = { request ->
+            if (request.url.encodedPath != SEASON_ARCHIVES_PATH) {
+                null
+            } else when (request.url.queryParameter("page_num")) {
+                "1" -> json(archivePage(total = 65, """{"aid":1,"bvid":"BV1","title":"a"}"""))
+                "2" -> json(archivePage(total = 65, """{"aid":2,"bvid":"BV2","title":"b"}"""))
+                else -> BiliTestReply("""{"code":-500}""", code = 500)
+            }
+        }
+    ) { _, client ->
+        val result = client.getAllCollectionArchivesResult(mid = 42L, seasonId = 3001L)
+
+        assertEquals(listOf(1L, 2L), result.items.map { it.aid })
+        assertEquals(1, result.missingPages)
+        assertEquals(listOf(1L, 2L), client.getAllCollectionArchives(mid = 42L, seasonId = 3001L).map { it.aid })
     }
 
     @Test

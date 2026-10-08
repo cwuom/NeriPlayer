@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliPagedItems
 import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.data.model.bilibili.collection.CollectionArchiveItem
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavResourceItem
@@ -105,10 +107,26 @@ internal fun applyBiliArchiveUploader(
     }
 }
 
+internal data class BiliFavoriteFolderRefresh(
+    val videos: List<BiliVideoItem>,
+    val complete: Boolean
+)
+
+/** 分页缺失时不能当作完整列表, 有旧缓存就继续展示旧缓存, 没有才展示这次拿到的部分内容 */
+internal fun resolveBiliFavoriteFolderRefresh(
+    fetchedVideos: List<BiliVideoItem>,
+    missingPages: Int,
+    cachedVideos: List<BiliVideoItem>?
+): BiliFavoriteFolderRefresh {
+    if (missingPages == 0) return BiliFavoriteFolderRefresh(fetchedVideos, complete = true)
+    return BiliFavoriteFolderRefresh(cachedVideos ?: fetchedVideos, complete = false)
+}
+
 private data class BiliPlaylistContentLoad(
     val videos: List<BiliVideoItem>,
     val totalCount: Int,
-    val hasMore: Boolean = false
+    val hasMore: Boolean = false,
+    val complete: Boolean = true
 )
 
 class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
@@ -269,11 +287,15 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                         }
                         BiliPlaylistKind.CREATED_FAVORITE,
                         BiliPlaylistKind.COLLECTED_FAVORITE -> {
-                            val videos = loadFavoriteFolderVideos(
+                            val refresh = loadFavoriteFolderVideos(
                                 playlist = header,
                                 forceRefresh = forceRefresh
                             )
-                            BiliPlaylistContentLoad(videos, totalCount = videos.size)
+                            BiliPlaylistContentLoad(
+                                videos = refresh.videos,
+                                totalCount = refresh.videos.size,
+                                complete = refresh.complete
+                            )
                         }
                     }
                 }
@@ -281,6 +303,11 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 archivePage = 1
                 _uiState.value = _uiState.value.copy(
                     loading = false,
+                    error = if (content.complete) {
+                        null
+                    } else {
+                        getApplication<Application>().getString(CoreCommonR.string.bili_favorites_incomplete)
+                    },
                     header = header.copy(count = content.totalCount),
                     videos = content.videos,
                     hasMore = content.hasMore,
@@ -378,7 +405,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
     private suspend fun loadFavoriteFolderVideos(
         playlist: BiliPlaylist,
         forceRefresh: Boolean
-    ): List<BiliVideoItem> {
+    ): BiliFavoriteFolderRefresh {
         val cached = favoriteCacheRepo.read(playlist.mediaId)
         NPLogger.d(
             TAG,
@@ -396,7 +423,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 TAG,
                 "loadFavoriteFolderVideos fallback to cache: mediaId=${playlist.mediaId}, message=${latestPageResult.exceptionOrNull()?.message}"
             )
-            return cached.videos.map { it.toVideoItem() }
+            return BiliFavoriteFolderRefresh(cached.videos.map { it.toVideoItem() }, complete = true)
         }
         latestPageResult.exceptionOrNull()?.let { error ->
             NPLogger.e(
@@ -413,24 +440,37 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 TAG,
                 "loadFavoriteFolderVideos reuse cached signature: mediaId=${playlist.mediaId}, count=${cached.videos.size}"
             )
-            return cached.videos.map { it.toVideoItem() }
+            return BiliFavoriteFolderRefresh(cached.videos.map { it.toVideoItem() }, complete = true)
         }
 
-        val items = client.getAllFavFolderItems(playlist.mediaId, latestPage)
-        val videos = mapFavoriteItemsToVideos(items)
+        val items = client.getAllFavFolderItemsResult(playlist.mediaId, latestPage)
+        val videos = mapFavoriteItemsToVideos(items.items)
+        val missingPages = items.missingPages + videos.missingPages
+        val refresh = resolveBiliFavoriteFolderRefresh(
+            fetchedVideos = videos.items,
+            missingPages = missingPages,
+            cachedVideos = cached?.videos?.map { it.toVideoItem() }
+        )
+        if (!refresh.complete) {
+            NPLogger.w(
+                TAG,
+                "loadFavoriteFolderVideos incomplete, keep previous cache: mediaId=${playlist.mediaId}, missingPages=$missingPages, fetched=${videos.items.size}, hasCache=${cached != null}"
+            )
+            return refresh
+        }
         favoriteCacheRepo.save(
             BiliFavoriteFolderContentCache(
                 mediaId = playlist.mediaId,
                 latestPageSignature = latestSignature,
                 totalCount = latestPage.info.count,
-                videos = videos.map { it.toCachedVideo() }
+                videos = videos.items.map { it.toCachedVideo() }
             )
         )
         NPLogger.d(
             TAG,
-            "loadFavoriteFolderVideos refreshed: mediaId=${playlist.mediaId}, items=${items.size}, videos=${videos.size}"
+            "loadFavoriteFolderVideos refreshed: mediaId=${playlist.mediaId}, items=${items.items.size}, videos=${videos.items.size}"
         )
-        return videos
+        return refresh
     }
 
     private fun loadCachedContent(
@@ -472,22 +512,24 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         )
     }
 
-    private suspend fun mapFavoriteItemsToVideos(items: List<FavResourceItem>): List<BiliVideoItem> {
+    private suspend fun mapFavoriteItemsToVideos(items: List<FavResourceItem>): BiliPagedItems<BiliVideoItem> {
         val videos = ArrayList<BiliVideoItem>(items.size)
+        var missingPages = 0
         for (item in items) {
             when (item.type) {
                 BILI_RESOURCE_TYPE_VIDEO -> item.toVideoItem()?.let(videos::add)
                 BILI_RESOURCE_TYPE_COLLECTION -> {
-                    val collectionVideos = runCatching {
-                        client.getAllCollectionArchives(mid = item.upperMid, seasonId = item.id)
+                    val collection = runCatching {
+                        client.getAllCollectionArchivesResult(mid = item.upperMid, seasonId = item.id)
                     }.onFailure { error ->
                         NPLogger.w(
                             TAG,
                             "load collection videos failed: seasonId=${item.id}, upperMid=${item.upperMid}, title=${item.title}",
                             error
                         )
-                    }.getOrDefault(emptyList())
-                    collectionVideos.mapTo(videos) { archive ->
+                    }.getOrDefault(BiliPagedItems(emptyList(), missingPages = 1))
+                    missingPages += collection.missingPages
+                    collection.items.mapTo(videos) { archive ->
                         archive.toVideoItem(
                             uploader = item.upperName.ifBlank { item.title },
                             uploaderMid = item.upperMid
@@ -496,7 +538,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 }
             }
         }
-        return videos.distinctBy { it.bvid.ifBlank { it.id.toString() } }
+        return BiliPagedItems(videos.distinctBy { it.bvid.ifBlank { it.id.toString() } }, missingPages)
     }
 
     private fun FavResourcePage.latestPageSignature(): String {

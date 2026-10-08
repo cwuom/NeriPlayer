@@ -179,10 +179,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun refreshBilibili() {
         viewModelScope.launch {
             try {
-                val mid = biliCookieRepo.getCookiesOnce()["DedeUserID"]?.toLongOrNull() ?: 0L
-                if (mid == 0L) {
-                    _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(CoreCommonR.string.error_get_user_id))
-                    return@launch
+                val account = resolveLibraryBiliMid(
+                    cookies = biliCookieRepo.getCookiesOnce(),
+                    fetchLoginMid = biliClient::fetchLoginMid,
+                    saveUserMid = biliCookieRepo::saveUserMid
+                )
+                val mid = when (account) {
+                    is LibraryBiliMid.Ready -> account.mid
+                    LibraryBiliMid.Persisted -> return@launch
+                    LibraryBiliMid.Missing -> {
+                        _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(CoreCommonR.string.error_get_user_id))
+                        return@launch
+                    }
                 }
                 val mapped = withContext(Dispatchers.IO) {
                     val created = async { biliClient.getUserCreatedFavFolders(mid) }

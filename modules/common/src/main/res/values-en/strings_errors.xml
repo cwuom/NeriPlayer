@@ -19,7 +19,7 @@
     <string name="error_link_recognition">Link recognition failed: %s</string>
     <string name="error_load_playlist">Load playlist failed: %s</string>
     <string name="error_search_failed">Search failed: %s</string>
-    <string name="error_get_user_id">Cannot get user ID, please log in again</string>
+    <string name="error_get_user_id">Cannot get user ID. The cookie needs DedeUserID; import the full cookie or log in again</string>
     <string name="error_api_code">API returned error code=%d</string>
     <string name="error_missing_node">Missing %s node</string>
     <string name="exception_title">Application Error</string>

@@ -11,16 +11,19 @@ import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import java.io.IOException
 
 class NeteasePlaylistSyncTest {
+    private val noPause: (Long) -> Unit = { error("unexpected backoff") }
+
     @Test
     fun `plan results request only the message for the actual outcome`() = runTest {
         val messages = mutableListOf<NeteasePlaylistSyncMessage>()
-        val sync = NeteasePlaylistSync { message ->
+        val sync = NeteasePlaylistSync(noPause) { message ->
             messages += message
             message.name
         }
@@ -109,7 +112,7 @@ class NeteasePlaylistSyncTest {
         val local = remote.copy(id = 2L, channelId = "local", audioId = null, album = "local")
         val songs = listOf(remote, remote.copy(name = "duplicate"), local)
 
-        val result = NeteasePlaylistSync { it.name }.syncSongsToNeteasePlaylist(client, 91L, songs)
+        val result = NeteasePlaylistSync(noPause) { it.name }.syncSongsToNeteasePlaylist(client, 91L, songs)
 
         assertEquals(3, result.totalSongs)
         assertEquals(1, result.supportedSongs)
@@ -133,7 +136,7 @@ class NeteasePlaylistSyncTest {
         )
         `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenReturn("{\"code\":500}")
 
-        val result = NeteasePlaylistSync { it.name }.syncSongsToNeteasePlaylist(client, 91L, listOf(song(1L)))
+        val result = NeteasePlaylistSync(noPause) { it.name }.syncSongsToNeteasePlaylist(client, 91L, listOf(song(1L)))
 
         assertEquals(1, result.added)
         assertEquals(0, result.failed)
@@ -151,19 +154,43 @@ class NeteasePlaylistSyncTest {
             "{\"code\":200,\"playlist\":{\"trackIds\":[],\"trackCount\":0}}"
         ).thenThrow(IllegalStateException("reconciliation failed"))
         `when`(client.addSongsToPlaylist(91L, listOf(1L))).thenThrow(IllegalStateException("insertion failed"))
+        val pauses = mutableListOf<Long>()
 
-        val result = NeteasePlaylistSync { it.name }.syncSongsToNeteasePlaylist(client, 91L, listOf(song(1L)))
+        val result = NeteasePlaylistSync(pauses::add) { it.name }.syncSongsToNeteasePlaylist(client, 91L, listOf(song(1L)))
 
         assertEquals(0, result.added)
         assertEquals(1, result.failed)
         assertEquals(0, result.skippedUnsupported)
         assertEquals(1, result.supportedSongs)
+        assertEquals(listOf(1_000L, 2_000L, 4_000L), pauses)
+        assertEquals(emptyList<Long>(), result.rejectedSongIds)
+        assertNull(result.rejectionMessage)
+        verify(client, times(4)).addSongsToPlaylist(91L, listOf(1L))
+    }
+
+    @Test
+    fun `songs rejected by netease are reported with the server reason`() = runTest {
+        val client = mock(NeteaseClient::class.java)
+        `when`(client.hasLogin()).thenReturn(true)
+        `when`(client.getSongDetail(listOf(1L, 2L))).thenReturn(
+            """{"code":200,"songs":[${songJson(1L, "one")},${songJson(2L, "two")}]}"""
+        )
+        `when`(client.getPlaylistDetail(91L)).thenReturn("{\"code\":200,\"playlist\":{\"trackIds\":[],\"trackCount\":0}}")
+        `when`(client.addSongsToPlaylist(91L, listOf(1L, 2L))).thenReturn("{\"code\":524,\"message\":\"no copyright\"}")
+
+        val result = NeteasePlaylistSync(noPause) { it.name }.syncSongsToNeteasePlaylist(client, 91L, listOf(song(1L), song(2L, "two")))
+
+        assertEquals(0, result.added)
+        assertEquals(2, result.failed)
+        assertEquals(listOf(1L, 2L), result.rejectedSongIds)
+        assertEquals("no copyright", result.rejectionMessage)
+        verify(client).addSongsToPlaylist(91L, listOf(1L, 2L))
     }
 
     @Test
     fun `empty and already synced results retain counts messages and target identity`() = runTest {
         val client = mock(NeteaseClient::class.java)
-        val sync = NeteasePlaylistSync { it.name }
+        val sync = NeteasePlaylistSync(noPause) { it.name }
 
         val empty = sync.syncSongsToNeteasePlaylist(client, 91L, emptyList())
         assertEquals(0, empty.totalSongs)
@@ -192,7 +219,7 @@ class NeteasePlaylistSyncTest {
 
     @Test
     fun `remote playlist fetching requires login and retains only owned playlists after failed preheat`() = runTest {
-        val sync = NeteasePlaylistSync { it.name }
+        val sync = NeteasePlaylistSync(noPause) { it.name }
         val loggedOut = mock(NeteaseClient::class.java)
         val error = runCatching { sync.fetchNeteaseRemotePlaylists(loggedOut) }.exceptionOrNull()
         assertTrue(error is IOException)
@@ -219,7 +246,7 @@ class NeteasePlaylistSyncTest {
         `when`(client.getCurrentUserId()).thenReturn(7L)
         `when`(client.getUserPlaylists(7L, 0, 1000)).thenReturn("invalid")
 
-        assertTrue(runCatching { NeteasePlaylistSync { it.name }.fetchNeteaseRemotePlaylists(client) }.exceptionOrNull() is IOException)
+        assertTrue(runCatching { NeteasePlaylistSync(noPause) { it.name }.fetchNeteaseRemotePlaylists(client) }.exceptionOrNull() is IOException)
     }
 
     @Test
@@ -232,7 +259,7 @@ class NeteasePlaylistSyncTest {
         `when`(client.getPlaylistDetail(91L)).thenReturn("{\"code\":200,\"playlist\":{\"trackIds\":[],\"trackCount\":0}}")
         val songs = listOf(song(1L))
 
-        val plan = NeteasePlaylistSync { it.name }.prepareNeteaseLikeSyncPlan(client, songs)
+        val plan = NeteasePlaylistSync(noPause) { it.name }.prepareNeteaseLikeSyncPlan(client, songs)
 
         assertTrue(plan.compareSucceeded)
         assertEquals(songs, plan.pendingSongs)
@@ -248,7 +275,7 @@ class NeteasePlaylistSyncTest {
         `when`(client.getSongDetail(listOf(1L))).thenReturn(songDetail(1L, "song"))
         `when`(client.getLikedPlaylistId(0L)).thenReturn("{\"code\":200,\"playlistId\":0}")
 
-        val plan = NeteasePlaylistSync { it.name }.prepareNeteaseLikeSyncPlan(client, listOf(song(1L)))
+        val plan = NeteasePlaylistSync(noPause) { it.name }.prepareNeteaseLikeSyncPlan(client, listOf(song(1L)))
 
         assertFalse(plan.compareSucceeded)
         assertTrue(plan.pendingSongs.isEmpty())
@@ -261,7 +288,7 @@ class NeteasePlaylistSyncTest {
         val first = song(1L)
         val local = first.copy(id = 2L, channelId = "local", audioId = null, album = "local")
         val songs = listOf(first, first.copy(name = "duplicate"), local)
-        val sync = NeteasePlaylistSync { it.name }
+        val sync = NeteasePlaylistSync(noPause) { it.name }
 
         for (liked in listOf(true, false)) {
             val client = mock(NeteaseClient::class.java)
@@ -287,7 +314,7 @@ class NeteasePlaylistSyncTest {
     @Test
     fun `target playlist planning filters unsupported rows before checking login`() = runTest {
         val client = mock(NeteaseClient::class.java)
-        val sync = NeteasePlaylistSync { it.name }
+        val sync = NeteasePlaylistSync(noPause) { it.name }
         val local = song(1L).copy(channelId = "local", audioId = null, album = "local")
 
         val unsupported = sync.prepareNeteasePlaylistSyncPlan(client, 91L, listOf(local))
@@ -303,7 +330,7 @@ class NeteasePlaylistSyncTest {
 
     @Test
     fun `liked synchronization preserves empty missing-target and successful upload results`() = runTest {
-        val sync = NeteasePlaylistSync { it.name }
+        val sync = NeteasePlaylistSync(noPause) { it.name }
         val missingTarget = mock(NeteaseClient::class.java)
         val empty = sync.syncSongsToNeteaseLiked(missingTarget, emptyList())
         assertEquals(0, empty.totalSongs)
@@ -340,6 +367,10 @@ class NeteasePlaylistSyncTest {
     }
 
     private fun songDetail(id: Long, name: String): String {
-        return """{"code":200,"songs":[{"id":$id,"name":"$name","ar":[{"name":"artist"}],"dt":1000}]}"""
+        return """{"code":200,"songs":[${songJson(id, name)}]}"""
+    }
+
+    private fun songJson(id: Long, name: String): String {
+        return """{"id":$id,"name":"$name","ar":[{"name":"artist"}],"dt":1000}"""
     }
 }

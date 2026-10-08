@@ -869,6 +869,15 @@ fun LocalPlaylistDetailScreen(
                         result.failed
                     )
                 }
+                val rejectedMessage = result.rejectionMessage
+                    ?.takeIf { result.rejectedSongIds.isNotEmpty() }
+                    ?.let { reason ->
+                        composeResources.getString(
+                            CoreCommonR.string.local_playlist_sync_netease_rejected,
+                            result.rejectedSongIds.size,
+                            reason
+                        )
+                    }
                 val unsupportedMessage = if (unsupportedCount > 0) {
                     context.resources.getQuantityString(
                         CoreCommonR.plurals.local_playlist_sync_netease_unsupported,
@@ -884,7 +893,7 @@ fun LocalPlaylistDetailScreen(
                         it
                     )
                 }
-                val message = listOfNotNull(targetMessage, syncMessage, unsupportedMessage)
+                val message = listOfNotNull(targetMessage, syncMessage, rejectedMessage, unsupportedMessage)
                     .joinToString(" ")
                 scope.launch {
                     snackbarHostState.showNeriSnackbar(message)
