@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -24,6 +25,7 @@ class HostPredictiveBackTransitionTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private var selected by mutableStateOf<String?>(DETAIL)
+    private var backAllowed by mutableStateOf(true)
     private val seekedBacks = mutableListOf<Boolean>()
     private var detailVisibility = Float.NaN
     private lateinit var transition: Transition<String?>
@@ -32,7 +34,7 @@ class HostPredictiveBackTransitionTest {
         composeRule.setContent {
             transition = rememberHostPredictiveBackTransition(
                 targetState = selected,
-                backEnabled = selected != null,
+                backEnabled = selected != null && backAllowed,
                 backTargetState = null,
                 onBack = { seeked ->
                     seekedBacks += seeked
@@ -139,6 +141,26 @@ class HostPredictiveBackTransitionTest {
         composeRule.waitForIdle()
 
         assertEquals(listOf(false), seekedBacks)
+        assertEquals(null, transition.currentState)
+    }
+
+    @Test
+    fun `back handling resumes after being disabled without a target change`() {
+        setHost()
+
+        composeRule.runOnIdle { backAllowed = false }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertFalse(dispatcher.hasEnabledCallbacks())
+            assertEquals(DETAIL, transition.currentState)
+            backAllowed = true
+        }
+        composeRule.waitForIdle()
+        startGesture(0.5f)
+        composeRule.runOnIdle { dispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+
+        assertEquals(listOf(true), seekedBacks)
         assertEquals(null, transition.currentState)
     }
 

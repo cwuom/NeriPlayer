@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -68,15 +69,21 @@ internal fun <S> rememberHostPredictiveBackTransition(
             transitionState.seekTo(activeGesture.progress, activeGesture.targetState)
         }
     } else {
-        LaunchedEffect(targetState) {
-            if (transitionState.currentState != targetState) {
-                transitionState.animateTo(targetState)
-            } else if (transitionState.targetState != targetState) {
-                transitionState.settleCancelledBack(targetState, transition.totalDurationNanos)
-            }
-        }
+        LaunchedEffect(targetState, block = settleHostTransition(transitionState, transition, targetState))
     }
     return transition
+}
+
+private fun <S> settleHostTransition(
+    transitionState: SeekableTransitionState<S>,
+    transition: Transition<S>,
+    targetState: S
+): suspend CoroutineScope.() -> Unit = {
+    if (transitionState.currentState != targetState) {
+        transitionState.animateTo(targetState)
+    } else if (transitionState.targetState != targetState) {
+        transitionState.settleCancelledBack(targetState, transition.totalDurationNanos)
+    }
 }
 
 internal fun hostBackCancelDurationMillis(fraction: Float, totalDurationNanos: Long): Int =
