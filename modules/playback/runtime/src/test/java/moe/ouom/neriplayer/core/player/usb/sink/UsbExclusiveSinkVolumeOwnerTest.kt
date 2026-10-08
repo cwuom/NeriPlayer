@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
+import android.content.ContentResolver
 import android.content.Context
 import android.media.AudioManager
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
@@ -7,7 +8,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
@@ -124,6 +129,27 @@ class UsbExclusiveSinkVolumeOwnerTest {
             owner.setNativeHandle(7L)
 
             assertEquals(7L to 0.8f, port.hardwareVolumes.single())
+        } finally {
+            owner.release()
+        }
+    }
+
+    @Test
+    fun `system volume is observed only while native output is open`() {
+        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
+        val context = contextWithoutAudioManager()
+        val resolver = mock(ContentResolver::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+        val owner = UsbExclusiveSinkVolumeOwner(context, true, RecordingVolumePort())
+        try {
+            verify(resolver, never()).registerContentObserver(any(), anyBoolean(), any())
+
+            owner.setNativeHandle(7L)
+            owner.setNativeHandle(9L)
+            verify(resolver, times(1)).registerContentObserver(any(), anyBoolean(), any())
+
+            owner.setNativeHandle(0L)
+            verify(resolver, times(1)).unregisterContentObserver(any())
         } finally {
             owner.release()
         }

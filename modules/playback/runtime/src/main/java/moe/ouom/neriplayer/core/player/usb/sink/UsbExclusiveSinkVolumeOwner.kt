@@ -67,10 +67,7 @@ internal class UsbExclusiveSinkVolumeOwner(
     }
     private val systemVolumePoll = object : Runnable {
         override fun run() {
-            if (!shouldPollUsbExclusiveSystemVolume(
-                    observing = systemVolumeObserverRegistered,
-                    sessionVolumePushed = UsbExclusiveSystemVolumeBridge.currentSessionVolumeFractionOrNull() != null,
-                )) return
+            if (!shouldPollUsbExclusiveSystemVolume(systemVolumeObserverRegistered, sessionVolumePushed())) return
             applySystemVolumeChange()
             systemVolumeHandler.postDelayed(this, POLL_INTERVAL_ACTIVE_MS)
         }
@@ -228,6 +225,9 @@ internal class UsbExclusiveSinkVolumeOwner(
         if (handle == 0L || !hardwareVolumeAvailable) return
         port.setHardwareVolume(handle, if (port.bitPerfect()) cachedMusicVolumeFraction else 1f)
     }
+
+    private fun sessionVolumePushed(): Boolean =
+        UsbExclusiveSystemVolumeBridge.currentSessionVolumeFractionOrNull() != null
 
     private fun resumeSystemVolumePoll() {
         if (!systemVolumeObserverRegistered) return
