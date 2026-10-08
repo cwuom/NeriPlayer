@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -1335,26 +1336,31 @@ private fun ExplicitResumeTaskItem(
     }
 }
 
+internal fun downloadTaskStatusIcon(status: DownloadStatus): ImageVector = when (status) {
+    DownloadStatus.QUEUED -> Icons.Default.Schedule
+    DownloadStatus.DOWNLOADING -> Icons.Default.CloudDownload
+    DownloadStatus.WAITING_NETWORK -> Icons.Default.Schedule
+    DownloadStatus.COMPLETED -> Icons.Default.CheckCircle
+    DownloadStatus.FAILED -> Icons.Default.Error
+    DownloadStatus.CANCELLED -> Icons.Default.Cancel
+}
+
+internal fun downloadTaskStatusTint(status: DownloadStatus, colorScheme: ColorScheme): Color =
+    when (status) {
+        DownloadStatus.QUEUED -> colorScheme.onSurfaceVariant
+        DownloadStatus.DOWNLOADING -> colorScheme.primary
+        DownloadStatus.WAITING_NETWORK -> colorScheme.onSurfaceVariant
+        DownloadStatus.COMPLETED -> colorScheme.tertiary
+        DownloadStatus.FAILED -> colorScheme.error
+        DownloadStatus.CANCELLED -> colorScheme.onSurfaceVariant
+    }
+
 @Composable
 private fun DownloadTaskStatusIcon(status: DownloadStatus) {
     Icon(
-        imageVector = when (status) {
-            DownloadStatus.QUEUED -> Icons.Default.Schedule
-            DownloadStatus.DOWNLOADING -> Icons.Default.CloudDownload
-            DownloadStatus.WAITING_NETWORK -> Icons.Default.Schedule
-            DownloadStatus.COMPLETED -> Icons.Default.CheckCircle
-            DownloadStatus.FAILED -> Icons.Default.Error
-            DownloadStatus.CANCELLED -> Icons.Default.Cancel
-        },
+        imageVector = downloadTaskStatusIcon(status),
         contentDescription = null,
-        tint = when (status) {
-            DownloadStatus.QUEUED -> MaterialTheme.colorScheme.onSurfaceVariant
-            DownloadStatus.DOWNLOADING -> MaterialTheme.colorScheme.primary
-            DownloadStatus.WAITING_NETWORK -> MaterialTheme.colorScheme.onSurfaceVariant
-            DownloadStatus.COMPLETED -> Color(0xFF4CAF50)
-            DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
-            DownloadStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
-        },
+        tint = downloadTaskStatusTint(status, MaterialTheme.colorScheme),
         modifier = Modifier.size(24.dp)
     )
 }
@@ -1509,7 +1515,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
             Text(
                 text = stringResource(CoreCommonR.string.download_completed),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF4CAF50)
+                color = downloadTaskStatusTint(DownloadStatus.COMPLETED, MaterialTheme.colorScheme)
             )
         }
 
