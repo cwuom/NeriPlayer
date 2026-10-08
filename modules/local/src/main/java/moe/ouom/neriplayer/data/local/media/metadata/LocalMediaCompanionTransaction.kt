@@ -397,7 +397,8 @@ private fun bytePrefix(actual: ByteArray, expected: ByteArray): Boolean =
     actual.size <= expected.size && actual.indices.all { actual[it] == expected[it] }
 
 private fun writeRegularCompanion(context: Context, reference: String, bytes: ByteArray, identity: String) {
-    val descriptor = context.contentResolver.openFileDescriptor(reference.toUri(), "rwt")
+    // "rwt" 会在身份校验前截断 URI 当前映射的对象，只能在校验同一描述符后再截断
+    val descriptor = context.contentResolver.openFileDescriptor(reference.toUri(), "rw")
         ?: throw IOException("伴随文件不可写")
     descriptor.use { fd ->
         val stat = Os.fstat(fd.fileDescriptor)
