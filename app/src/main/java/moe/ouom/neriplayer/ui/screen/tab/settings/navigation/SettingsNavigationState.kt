@@ -218,9 +218,9 @@ internal fun rememberSettingsNavigationState(
     listState: LazyListState,
     dynamicColor: Boolean,
     mobileDataFollowDefaultAudioQuality: Boolean,
-    backgroundImageUri: String?
+    backgroundImageUri: String?,
+    splitLayout: Boolean = settingsSplitLayout()
 ): SettingsNavigationState {
-    val splitLayout = settingsSplitLayout()
     val activePageState = rememberInitialSettingsPageState()
     val homeTopAppBarState = rememberTopAppBarState()
     val detailTopAppBarStates = SettingsPage.entries.associateWith { rememberTopAppBarState() }
@@ -254,9 +254,7 @@ internal fun rememberSettingsNavigationState(
         hasCustomBackground = backgroundImageUri != null
     )
 
-    LaunchedEffect(splitLayout) {
-        activePageState.value = ensureSplitSettingsPage(splitLayout, activePageState.value)
-    }
+    // 分栏时默认显示通用页只是展示兜底，不写回状态，窗口变窄后仍回到设置首页
     ObserveSettingsSearchScroll(searchQueryState, listState)
     val eligiblePendingNavigation = pendingSettingsNavigationForPage(
         navigation.activePage, pendingNavigationState.value
