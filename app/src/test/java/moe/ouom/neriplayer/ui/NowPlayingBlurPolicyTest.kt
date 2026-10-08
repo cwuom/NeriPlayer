@@ -16,10 +16,19 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import moe.ouom.neriplayer.ui.playback.visual.isNowPlayingCoverBlurSupported
 import org.junit.Test
 
 class NowPlayingBlurPolicyTest {
     private fun song(id: Long) = SongItem(id, "Track $id", "Artist", "Album", 1, 1_000, null)
+
+    @Test
+    fun `cover blur works below Android 12 because it is a bitmap blur`() {
+        assertTrue(isNowPlayingCoverBlurSupported(28))
+        assertTrue(isNowPlayingCoverBlurSupported(30))
+        assertTrue(isNowPlayingCoverBlurSupported(36))
+        assertFalse(isNowPlayingCoverBlurSupported(27))
+    }
 
     @Test
     fun `blur availability requires support preference and a current or retained cover`() {
