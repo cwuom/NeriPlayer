@@ -898,7 +898,7 @@ internal fun LocalMediaSupport.directFilePath(uri: Uri): String? {
     return path.takeIf { File(it).exists() }
 }
 
-private fun Uri.isDirectFilePath(path: String): Boolean {
+internal fun Uri.isDirectFilePath(path: String): Boolean {
     return scheme.equals("file", ignoreCase = true) || scheme.isNullOrBlank() && path.startsWith("/")
 }
 

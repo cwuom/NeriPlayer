@@ -262,69 +262,89 @@ object LocalMediaMetadataRecoveryStore {
     private suspend fun recoverRecordsLocked(context: Context, targetKeys: Set<String>?): RecoveryPass {
         val directory = stagingDirectory(context)
         if (!directory.exists()) return RecoveryPass(0, true)
-        val journals = directory.listFiles { file ->
-            file.isFile && file.name.startsWith(METADATA_RECOVERY_PREFIX) &&
-                file.name.endsWith(METADATA_RECOVERY_SUFFIX)
-        } ?: return RecoveryPass(0, false)
+        val journals = directory.listFiles { file -> isRecoveryJournal(file) } ?: return RecoveryPass(0, false)
+        // 未知目标可能属于任何已知记录的后继写入，不能先回放再拒绝新编辑
+        val candidates = groupJournalsByTarget(journals, targetKeys) ?: return RecoveryPass(0, false)
         var recoveredCount = 0
         var allResolved = true
-        val candidates = linkedMapOf<String, MutableList<Pair<File, JSONObject>>>()
-        journals.forEach { journal ->
-            currentCoroutineContext().ensureActive()
-            val body = runCatching { JSONObject(journal.readText()) }.getOrNull()
-            val targetKey = body?.optString("targetReference")?.let(::targetIdentity)
-            if (body == null || targetKey == null) {
-                // 无法确认目标的凭据不能当成与本次编辑无关
-                NPLogger.w(TAG, "元信息恢复凭据目标未知，保留凭据并阻止新编辑: ${journal.name}")
-                allResolved = false
-                return@forEach
-            }
-            if (targetKeys != null && targetKey !in targetKeys) return@forEach
-            candidates.getOrPut(targetKey) { mutableListOf() }.add(journal to body)
-        }
-        // 未知目标可能属于任何已知记录的后继写入，不能先回放再拒绝新编辑
-        if (!allResolved) return RecoveryPass(0, false)
         candidates.forEach { (targetKey, records) ->
             currentCoroutineContext().ensureActive()
-            if (records.size != 1) {
-                // 旧版本可能留下多个写入意图，文件时间或随机 id 都不能证明提交顺序
-                NPLogger.w(TAG, "同一音频存在多个元信息恢复凭据，保留原内容与备份: count=${records.size}")
-                allResolved = false
-                return@forEach
-            }
-            val (journal, body) = records.single()
-            val record = runCatching { readRecord(context, journal, body) }
-                .onFailure { error ->
-                    NPLogger.e(TAG, "读取元信息恢复凭据失败，原文件和备份均保留: ${journal.name}", error)
-                }
-                .getOrNull()
-            if (record == null || record.id in activeRecordIds || targetKey in reservedTargetKeys) {
-                allResolved = false
-                return@forEach
-            }
-            if (recoverRecord(context, record)) recoveredCount++ else allResolved = false
+            if (recoverCandidate(context, targetKey, records)) recoveredCount++ else allResolved = false
         }
         return RecoveryPass(recoveredCount, allResolved)
     }
 
-    fun targetIdentity(reference: String): String? {
-        val raw = reference.takeIf(String::isNotBlank) ?: return null
-        if (raw.startsWith('/')) return runCatching { "file:${File(raw).canonicalPath}" }.getOrNull()
-        if (raw.startsWith("file:", ignoreCase = true)) {
-            return runCatching {
-                URI(raw).path?.takeIf { it.startsWith('/') }
-                    ?.let { path -> "file:${File(path).canonicalPath}" }
-            }.getOrNull()
+    private fun isRecoveryJournal(file: File): Boolean {
+        return file.isFile && file.name.startsWith(METADATA_RECOVERY_PREFIX) && file.name.endsWith(METADATA_RECOVERY_SUFFIX)
+    }
+
+    private suspend fun groupJournalsByTarget(
+        journals: Array<File>,
+        targetKeys: Set<String>?
+    ): Map<String, List<Pair<File, JSONObject>>>? {
+        var allKnown = true
+        val candidates = linkedMapOf<String, MutableList<Pair<File, JSONObject>>>()
+        journals.forEach { journal ->
+            currentCoroutineContext().ensureActive()
+            val (targetKey, body) = readJournalTarget(journal) ?: run {
+                // 无法确认目标的凭据不能当成与本次编辑无关
+                NPLogger.w(TAG, "元信息恢复凭据目标未知，保留凭据并阻止新编辑: ${journal.name}")
+                allKnown = false
+                return@forEach
+            }
+            if (targetKeys == null || targetKey in targetKeys) {
+                candidates.getOrPut(targetKey) { mutableListOf() }.add(journal to body)
+            }
         }
-        val uri = runCatching { raw.toUri() }.getOrNull() ?: return null
+        return candidates.takeIf { allKnown }
+    }
+
+    private fun readJournalTarget(journal: File): Pair<String, JSONObject>? {
+        val body = runCatching { JSONObject(journal.readText()) }.getOrNull() ?: return null
+        val targetKey = targetIdentity(body.optString("targetReference")) ?: return null
+        return targetKey to body
+    }
+
+    private fun recoverCandidate(context: Context, targetKey: String, records: List<Pair<File, JSONObject>>): Boolean {
+        if (records.size != 1) {
+            // 旧版本可能留下多个写入意图，文件时间或随机 id 都不能证明提交顺序
+            NPLogger.w(TAG, "同一音频存在多个元信息恢复凭据，保留原内容与备份: count=${records.size}")
+            return false
+        }
+        val (journal, body) = records.single()
+        val record = runCatching { readRecord(context, journal, body) }
+            .onFailure { error ->
+                NPLogger.e(TAG, "读取元信息恢复凭据失败，原文件和备份均保留: ${journal.name}", error)
+            }
+            .getOrNull()
+        if (record == null || record.id in activeRecordIds || targetKey in reservedTargetKeys) return false
+        return recoverRecord(context, record)
+    }
+
+    fun targetIdentity(reference: String): String? {
+        return when {
+            reference.isBlank() -> null
+            reference.startsWith('/') -> canonicalFileIdentity(reference)
+            reference.startsWith("file:", ignoreCase = true) -> fileUriIdentity(reference)
+            else -> contentUriIdentity(reference)
+        }
+    }
+
+    private fun canonicalFileIdentity(path: String): String? {
+        return runCatching { "file:${File(path).canonicalPath}" }.getOrNull()
+    }
+
+    private fun fileUriIdentity(reference: String): String? {
+        val path = runCatching { URI(reference).path }.getOrNull()?.takeIf { it.startsWith('/') } ?: return null
+        return canonicalFileIdentity(path)
+    }
+
+    private fun contentUriIdentity(reference: String): String? {
+        val uri: Uri = runCatching { reference.toUri() }.getOrNull() ?: return null
         if (!uri.scheme.equals("content", ignoreCase = true)) return null
         val authority = uri.authority?.takeIf(String::isNotBlank) ?: return null
         val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
-        return if (documentId != null) {
-            "document:${authority.length}:$authority:$documentId"
-        } else {
-            "uri:${uri.normalizeScheme()}"
-        }
+        return documentId?.let { "document:${authority.length}:$authority:$it" } ?: "uri:${uri.normalizeScheme()}"
     }
 
     fun resetRecoveryForTest() {
@@ -506,12 +526,7 @@ object LocalMediaMetadataRecoveryStore {
     private fun directFile(targetReference: String): File? {
         if (targetReference.startsWith('/')) return File(targetReference)
         val uri = targetReference.toUri()
-        val path = when {
-            uri.scheme.equals("file", ignoreCase = true) -> uri.path
-            uri.scheme.isNullOrBlank() && uri.path?.startsWith('/') == true -> uri.path
-            else -> null
-        }
-        return path?.let(::File)
+        return uri.path?.takeIf { uri.isDirectFilePath(it) }?.let(::File)
     }
 
     private fun replaceDirectFile(source: File, target: File): Boolean = runCatching {
