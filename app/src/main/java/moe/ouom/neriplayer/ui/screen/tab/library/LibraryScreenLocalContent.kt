@@ -62,18 +62,16 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -99,8 +97,6 @@ import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.artist.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -1042,53 +1038,16 @@ internal fun LocalCategoryTabs(
     onPlaylistSelected: () -> Unit,
     onArtistSelected: () -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
+    LibrarySecondaryTabs(
+        labels = listOf(
+            stringResource(CoreCommonR.string.library_favorite_tab_playlists),
+            stringResource(CoreCommonR.string.library_favorite_tab_artists)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-    ) {
-        AdvancedGlassSurface(
-            role = AdvancedGlassRole.ScreenTopTab,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-            tintColor = MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            PrimaryTabRow(
-                selectedTabIndex = selectedCategory,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = selectedCategory == LOCAL_CATEGORY_PLAYLIST,
-                    onClick = onPlaylistSelected,
-                    text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_playlists)) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = null
-                        )
-                    }
-                )
-                Tab(
-                    selected = selectedCategory == LOCAL_CATEGORY_ARTIST,
-                    onClick = onArtistSelected,
-                    text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_artists)) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.AccountCircle,
-                            contentDescription = null
-                        )
-                    }
-                )
-            }
+        selectedIndex = selectedCategory,
+        onSelected = { index ->
+            if (index == LOCAL_CATEGORY_ARTIST) onArtistSelected() else onPlaylistSelected()
         }
-    }
+    )
 }
 
 @Composable
