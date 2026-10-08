@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import moe.ouom.neriplayer.data.model.download.DownloadLibraryEntry
 import moe.ouom.neriplayer.data.model.download.DownloadLibrarySnapshot
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 
@@ -1100,23 +1101,27 @@ class ManagedDownloadCandidatePublicationGate(
     private val snapshot: DownloadLibrarySnapshot?,
     private val treeDocumentId: String?
 ) {
-    internal val audioByName = snapshot
-        ?.audioEntries
-        ?.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
-        .orEmpty()
-    internal val audioByReference = snapshot
-        ?.audioEntries
-        ?.flatMap { entry ->
-            listOf(entry.reference, entry.mediaUri, entry.localFilePath)
-                .mapNotNull { reference -> reference?.takeIf(String::isNotBlank) }
+    internal val audioByName = indexAudioByName(snapshot?.audioEntries.orEmpty())
+    internal val audioByReference = indexAudioByReference(snapshot?.audioEntries.orEmpty())
+    private val pendingAudioNames = pendingAudioLookupNames(snapshot)
+
+    private fun indexAudioByName(entries: List<DownloadLibraryEntry>): Map<String, DownloadLibraryEntry> {
+        return entries.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
+    }
+
+    private fun indexAudioByReference(entries: List<DownloadLibraryEntry>): Map<String, DownloadLibraryEntry> {
+        return entries.flatMap { entry ->
+            listOfNotNull(entry.reference, entry.mediaUri, entry.localFilePath)
+                .filter(String::isNotBlank)
                 .map { reference -> reference to entry }
-        }
-        ?.toMap()
-        .orEmpty()
-    private val pendingAudioNames = snapshot?.let { current ->
-        (current.pendingAudioEntries + current.audioEntries.filter { it.isPendingAudioWrite })
+        }.toMap()
+    }
+
+    private fun pendingAudioLookupNames(snapshot: DownloadLibrarySnapshot?): Set<String> {
+        snapshot ?: return emptySet()
+        return (snapshot.pendingAudioEntries + snapshot.audioEntries.filter { it.isPendingAudioWrite })
             .mapTo(hashSetOf()) { ManagedDownloadTreeNaming.canonicalLookupName(it.logicalName) }
-    }.orEmpty()
+    }
 
     fun evaluateRelativePath(
         relativePath: String?,
