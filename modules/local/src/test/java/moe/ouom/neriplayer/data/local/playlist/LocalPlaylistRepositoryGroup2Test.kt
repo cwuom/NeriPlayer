@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.sync.mapping.fromSongItem
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
+import moe.ouom.neriplayer.data.local.database.store.mockLocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -35,7 +36,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
         val initial = LocalPlaylist(id = 140L, name = "initial")
         val remote = initial.copy(name = "remote")
         val storage = RecordingStorage(primary = null)
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         val markerFailure = IOException("Room primary marker unavailable")
         var failMarker = true
         var roomPrimary = true
@@ -83,7 +84,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
     fun `failed JSON fallback restores Room retry requirement without publishing`() = runTest {
         val initial = LocalPlaylist(id = 141L, name = "initial")
         val storage = RecordingStorage(primary = null, failCommit = true)
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
         doAnswer { throw IOException("Room write unavailable") }.`when`(room)
             .writeIncremental(anyList(), anyList(), anyString(), anyLong())
@@ -111,7 +112,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
     fun `cancelled Room write propagates without writing JSON or switching primary`() = runTest {
         val initial = LocalPlaylist(id = 142L, name = "initial")
         val storage = RecordingStorage(primary = null)
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         val cancelled = CancellationException("cancelled Room commit")
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
         doAnswer { throw cancelled }.`when`(room)
@@ -137,7 +138,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
     fun `Room outbox read failure preserves authority and refuses empty legacy fallback on every retry`() = runTest {
         val initial = LocalPlaylist(id = 143L, name = "initial")
         val storage = RecordingStorage(primary = null)
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
         val repository = LocalPlaylistRepository.createForTest(
             context = mockContext(), file = File(tempFolder.root, "failed_room_outbox_read.json"),
@@ -165,7 +166,7 @@ class LocalPlaylistRepositoryGroup2Test : LocalPlaylistRepositoryTestSupport() {
     fun `cancelled fallback marker propagates and retains Room primary retry`() = runTest {
         val initial = LocalPlaylist(id = 144L, name = "initial")
         val storage = RecordingStorage(primary = null)
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(initial))
         doAnswer { throw IOException("Room write unavailable") }.`when`(room)
             .writeIncremental(anyList(), anyList(), anyString(), anyLong())

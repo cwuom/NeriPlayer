@@ -462,9 +462,9 @@ class PlaylistUsageRepository internal constructor(
             }
         }
         currentCoroutineContext().ensureActive()
-        file.writeTextAtomically(gson.toJson(list))
-        currentCoroutineContext().ensureActive()
-        roomStore?.markLegacyJsonPrimary()
+        val snapshot = gson.toJson(list)
+        if (roomStore == null) file.writeTextAtomically(snapshot)
+        else roomStore.commitLegacyFallback { file.writeTextAtomically(snapshot) }
         confirmPersistedEntries(list)
     }
 

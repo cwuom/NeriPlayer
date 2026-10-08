@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomStore
+import moe.ouom.neriplayer.data.local.database.store.mockPlayHistoryRoomStore
 import moe.ouom.neriplayer.data.model.history.PlayedEntry
 import moe.ouom.neriplayer.data.model.sync.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
@@ -41,7 +42,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `unreadable Room primary cannot replace history from a stale JSON snapshot`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         val stale = File(temporary.root, "play_history.json").also { it.writeText(com.google.gson.Gson().toJson(listOf(entry(1)))) }
         val originalBytes = stale.readBytes()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary temporarily unavailable") }
@@ -58,7 +59,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `history recovery retries the same primary and publishes every recovered identity`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var unavailable = true
         val complete = listOf(entry(2), entry(1))
         `when`(room.readIfRoomPrimary()).thenAnswer {
@@ -77,7 +78,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `unknown history refuses local replacement without changing primary or legacy bytes`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary unavailable") }
         Fixture(room).use { fixture ->
             assertTrue(runCatching { fixture.repository.updateHistory(listOf(entry(2))) }.exceptionOrNull() is IOException)
@@ -91,7 +92,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `history recovery cancellation propagates and cannot import legacy`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary unavailable") }
         Fixture(room).use { fixture ->
             val cancelled = CancellationException("recovery cancelled")
@@ -105,7 +106,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `invalid history JSON cannot promote an empty database and repaired JSON can recover`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         val file = File(temporary.root, "play_history.json").also { it.writeText("null") }
         Fixture(room).use { fixture ->
             assertFalse(fixture.repository.awaitInitialized())
@@ -120,7 +121,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `ordinary failed history save stays pending until the complete current snapshot is durable`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var primary = listOf(entry(1))
         var roomPrimary = true
         var markerFails = true
@@ -149,7 +150,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `failed history clear keeps permanent deletions but cannot acknowledge an uncommitted empty snapshot`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var roomPrimary = true
         var markerFails = true
         `when`(room.readIfRoomPrimary()).thenAnswer { if (roomPrimary) listOf(entry(1)) else null }
@@ -175,7 +176,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `committed then cancelled history sync recovers actual rows before later clear`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var primary = listOf(entry(1))
         var cancelAfterCommit = true
         val cancelled = CancellationException("committed before cancellation delivery")
@@ -207,7 +208,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `committed then cancelled history fallback marker restores actual JSON authority`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var roomPrimary = true
         var cancelAfterMarker = true
         val cancelled = CancellationException("marker committed before cancellation delivery")
@@ -229,7 +230,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `ordinary committed history cancellation retains UI intent and recovers before the next delta`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var primary = listOf(entry(1))
         var unavailable = false
         val previousWrites = mutableListOf<List<PlayedEntry>>()
@@ -269,7 +270,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `ordinary clear committed then cancelled keeps tombstones and recovers empty authority on reopen`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var primary = listOf(entry(2), entry(1))
         var writes = 0
         val storage = historyStorageWithDurableDeletions()
@@ -304,7 +305,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `ordinary partial remove committed then cancelled retains surviving rows and deletion across reopen`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var primary = listOf(entry(2), entry(1))
         var writes = 0
         val storage = historyStorageWithDurableDeletions()
@@ -340,7 +341,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `failed fallback marker never acknowledges and same epoch retries before restart`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         val original = listOf(entry(1))
         val replacement = listOf(entry(2))
         var roomPrimary = true
@@ -373,7 +374,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `failed JSON cannot switch primary and repaired JSON can retry same epoch`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         val original = listOf(entry(1))
         `when`(room.readIfRoomPrimary()).thenReturn(original)
         doAnswer { throw IOException("Room write failed") }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
@@ -396,7 +397,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `cancelled Room write preserves cancellation and cannot write fallback`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         val original = listOf(entry(1))
         val cancellation = CancellationException("cancelled Room write")
         `when`(room.readIfRoomPrimary()).thenReturn(original)
@@ -413,7 +414,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `cancelled fallback marker is not acknowledged and retries without replacing memory`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         val original = listOf(entry(1))
         val cancellation = CancellationException("cancelled marker write")
         `when`(room.readIfRoomPrimary()).thenReturn(original)
@@ -429,7 +430,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `successful Room save publishes and persists without legacy fallback`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var primary = listOf(entry(1))
         `when`(room.readIfRoomPrimary()).thenAnswer { primary }
         doAnswer { primary = it.getArgument(1); Unit }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
@@ -444,7 +445,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `cancelled ordinary save retries the same Flow and epoch before acknowledging durability`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         var primary = listOf(entry(1))
         var roomPrimary = true
         var attempts = 0
@@ -481,7 +482,7 @@ class PlayHistoryRepositoryPersistenceTest {
 
     @Test
     fun `construction does not wait for the history read and an early write merges into it`() = runTest {
-        val room = mock(PlayHistoryRoomStore::class.java)
+        val room = mockPlayHistoryRoomStore()
         val readStarted = CountDownLatch(1)
         val releaseRead = CountDownLatch(1)
         val persisted = CountDownLatch(1)

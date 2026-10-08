@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
+import moe.ouom.neriplayer.data.local.database.store.mockLocalPlaylistPlaybackRoomStore
 import moe.ouom.neriplayer.data.model.stats.LocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.model.sync.SyncLocalPlaylistPlaybackStat
 import org.junit.Assert.*
@@ -28,7 +29,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `durable playback event cannot acknowledge JSON fallback across process reopen`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         val file = File(temporary.root, "local_playlist_playback_stats.json")
         file.writeText(Gson().toJson(listOf(original())))
         val originalBytes = file.readBytes()
@@ -47,7 +48,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `durable playback retries promotion and reopens without counting the same event twice`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         val file = File(temporary.root, "local_playlist_playback_stats.json")
         file.writeText(Gson().toJson(listOf(original())))
         var primary: List<LocalPlaylistPlaybackStat>? = null
@@ -79,7 +80,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `cancelled promotion confirmation retries the real Room primary before event mutation`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         File(temporary.root, "local_playlist_playback_stats.json").writeText(Gson().toJson(listOf(original())))
         var primary: List<LocalPlaylistPlaybackStat>? = null
         var initialPromotion = true
@@ -105,7 +106,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `same playback event retries a cancelled Room transaction without dropping its increment`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var primary = listOf(original())
         var attempts = 0
         val cancelled = CancellationException("cancelled before playlist commit")
@@ -125,7 +126,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `ordinary JSON marker cancellation flushes the pending play without incrementing again`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         File(temporary.root, "local_playlist_playback_stats.json").writeText(Gson().toJson(listOf(original())))
         doAnswer { throw IOException("Room promotion unavailable") }.`when`(room).importLegacyAndPromote(anyList(), anyLong())
         var markers = 0
@@ -143,7 +144,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `failed duplicate confirmation cannot persist an unaccepted second increment`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         val actual = listOf(original().copy(totalPlayCount = 2))
         var reads = 0
         `when`(room.readIfRoomPrimary()).thenAnswer {
@@ -161,7 +162,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `same playback event is not counted again after a committed Room cancellation`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var primary = listOf(original())
         var writes = 0
         val cancelled = CancellationException("play event committed before cancellation")
@@ -187,7 +188,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `unreadable Room primary cannot replace playback from a stale JSON snapshot`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         val stale = File(temporary.root, "local_playlist_playback_stats.json").also { it.writeText(Gson().toJson(listOf(original()))) }
         val originalBytes = stale.readBytes()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary temporarily unavailable") }
@@ -203,7 +204,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `playback recovery retries the original primary and retains all playlist counters`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var unavailable = true
         `when`(room.readIfRoomPrimary()).thenAnswer {
             if (unavailable) throw IOException("primary unavailable") else listOf(original(), original().copy(playlistId = 2))
@@ -219,7 +220,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `unknown playback refuses ordinary recording without writing legacy data`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary unavailable") }
         val repository = repository(room)
         repository.recordPlayNow(2, 200)
@@ -231,7 +232,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `playback recovery cancellation propagates and cannot import legacy`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary unavailable") }
         val repository = repository(room)
         val cancelled = CancellationException("recovery cancelled")
@@ -244,7 +245,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `invalid playback JSON cannot import empty state and repair can recover`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         val file = File(temporary.root, "local_playlist_playback_stats.json").also { it.writeText("null") }
         val repository = repository(room)
         assertFalse(repository.awaitInitialized())
@@ -258,7 +259,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `ordinary failed playback save flushes full counters once before allowing sync`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var roomPrimary = true
         var markerFails = true
         `when`(room.readIfRoomPrimary()).thenAnswer { if (roomPrimary) listOf(original()) else null }
@@ -285,7 +286,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `committed then cancelled playback sync recovers actual counters rather than old UI`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var primary = listOf(original())
         var cancelAfterCommit = true
         val cancelled = CancellationException("committed before cancellation delivery")
@@ -307,7 +308,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `committed then cancelled playback marker recovers the switched JSON primary`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var roomPrimary = true
         var cancelAfterMarker = true
         val cancelled = CancellationException("marker committed before cancellation delivery")
@@ -328,7 +329,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `ordinary committed playback cancellation recovers authority without counting the play twice`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var primary = listOf(original())
         var unavailable = false
         val previousWrites = mutableListOf<List<LocalPlaylistPlaybackStat>>()
@@ -362,7 +363,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `failed marker preserves old primary across retries and repaired marker persists replacement`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var primary = true
         var markerFails = true
         var attempts = 0
@@ -390,7 +391,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `JSON failure cannot change primary and repaired target retries without data loss`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(original()))
         failRoomWrites(room)
         val file = File(temporary.root, "local_playlist_playback_stats.json")
@@ -411,7 +412,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `Room cancellation does not enter fallback and marker cancellation cannot complete apply`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         val cancellation = CancellationException("cancelled")
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(original()))
         doAnswer { throw cancellation }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
@@ -429,7 +430,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `successful Room persistence occurs before publishing and survives reopen`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var primary = listOf(original())
         `when`(room.readIfRoomPrimary()).thenAnswer { primary }
         val repository = repository(room)
@@ -446,7 +447,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `ordinary playback updates remain compatible when fallback fails`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(original()))
         failRoomWrites(room)
         doAnswer { throw IOException("marker failed") }.`when`(room).markLegacyJsonPrimary(anyLong())
@@ -458,7 +459,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `cancelled ordinary playback save retries the same snapshot before acknowledging durability`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         var primary = listOf(original())
         var roomPrimary = true
         var attempts = 0
@@ -495,7 +496,7 @@ class LocalPlaylistPlaybackStatsPersistenceTest {
 
     @Test
     fun `construction does not wait for the Room read and an early play merges into it`() = runTest {
-        val room = mock(LocalPlaylistPlaybackRoomStore::class.java)
+        val room = mockLocalPlaylistPlaybackRoomStore()
         val readStarted = CountDownLatch(1)
         val releaseRead = CountDownLatch(1)
         val writes = mutableListOf<List<LocalPlaylistPlaybackStat>>()

@@ -336,9 +336,9 @@ class PlayHistoryRepository private constructor(
         }
 
         currentCoroutineContext().ensureActive()
-        file.writeTextAtomically(gson.toJson(next))
-        currentCoroutineContext().ensureActive()
-        roomStore?.markLegacyJsonPrimary()
+        val snapshot = gson.toJson(next)
+        if (roomStore == null) file.writeTextAtomically(snapshot)
+        else roomStore.commitLegacyFallback { file.writeTextAtomically(snapshot) }
         confirmPersistedHistory(next)
     }
 

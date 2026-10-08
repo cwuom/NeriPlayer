@@ -582,9 +582,10 @@ private suspend fun LocalPlaylistRepository.persistLegacyPlaylistFallback(
     roomFallbackRequired: Boolean
 ) {
     try {
-        persistToDisk(playlists)
         if (roomFallbackRequired) {
-            requireNotNull(roomStore).markLegacyJsonPrimary(domainDigest)
+            requireNotNull(roomStore).commitLegacyFallback(domainDigest) { persistToDisk(playlists) }
+        } else {
+            persistToDisk(playlists)
         }
     } catch (error: Exception) {
         // 主存切换未提交时 Room 仍是权威来源，重试必须再次确认切换
