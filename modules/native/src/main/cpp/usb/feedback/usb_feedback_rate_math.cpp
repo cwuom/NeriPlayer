@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <limits>
 
@@ -327,6 +328,10 @@ FeedbackMathStatus makeFeedbackRateQ32(
         return FeedbackMathStatus::Overflow;
     }
     return divideRounded(numerator, intervalsPerSecond, output);
+}
+
+double feedbackRateHz(FeedbackRateQ32 rateQ32, uint32_t intervalsPerSecond) {
+    return std::ldexp(static_cast<double>(rateQ32), -32) * static_cast<double>(intervalsPerSecond);
 }
 
 FeedbackMathStatus normalizeFeedbackRateQ32(
