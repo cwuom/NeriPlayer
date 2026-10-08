@@ -76,6 +76,7 @@ internal class AudioEffectsAudioSink(
     private var appliedGeneration = Long.MIN_VALUE
     private var appliedWanted = false
     private var pendingInput: ByteBuffer? = null
+    private var passthroughInput: ByteBuffer? = null
     private var processed: ByteBuffer = ByteBuffer.allocateDirect(0)
     private var staging: ByteBuffer = ByteBuffer.allocateDirect(0)
     private var lastStatsAtMs = 0L
@@ -92,16 +93,22 @@ internal class AudioEffectsAudioSink(
     }
 
     override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+        if (passthroughInput === buffer) return passThrough(buffer, presentationTimeUs, encodedAccessUnitCount)
         if (pendingInput !== buffer) {
             clearPending()
-            if (!processIntoPending(buffer)) {
-                return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
-            }
+            if (!processIntoPending(buffer)) return passThrough(buffer, presentationTimeUs, encodedAccessUnitCount)
         }
         if (!super.handleBuffer(processed, presentationTimeUs, encodedAccessUnitCount)) return false
         buffer.position(buffer.limit())
         pendingInput = null
         return true
+    }
+
+    // 下游未完全接收的原始缓冲必须原样重交，音效开关只能在缓冲边界生效
+    private fun passThrough(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+        val handled = super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+        passthroughInput = if (handled) null else buffer
+        return handled
     }
 
     override fun flush() {
@@ -237,6 +244,7 @@ internal class AudioEffectsAudioSink(
 
     private fun clearPending() {
         pendingInput = null
+        passthroughInput = null
     }
 
     private fun releaseEngine() {

@@ -54,6 +54,46 @@ class AudioEffectsAudioSinkTest {
     }
 
     @Test
+    fun `enabling effects while a passthrough buffer is pending waits for the next buffer`() {
+        delegate.acceptOnCall = 2
+        val sink = sink()
+        val input = pcm(1, 2, 3, 4)
+        assertFalse(sink.handleBuffer(input, 0L, 1))
+
+        runtime.activate()
+        assertTrue(sink.handleBuffer(input, 0L, 1))
+        assertSame(input, delegate.received[1])
+        assertEquals(0, engine.processCalls)
+
+        delegate.acceptOnCall = 0
+        assertTrue(sink.handleBuffer(pcm(5, 6, 7, 8), 0L, 1))
+        assertEquals(1, engine.processCalls)
+        assertArrayEquals(byteArrayOf(6, 7, 8, 9), delegate.contents.last())
+    }
+
+    @Test
+    fun `disabling effects or entering bit perfect USB keeps draining the pending processed block`() {
+        runtime.activate()
+        var usbNative = false
+        delegate.acceptOnCall = 2
+        val sink = AudioEffectsAudioSink(
+            delegate,
+            usbNativeOutputActive = { usbNative },
+            engineFactory = { engine },
+            runtime = runtime
+        ).also { it.configure(format(), 0, null) }
+        val input = pcm(1, 2, 3, 4)
+        assertFalse(sink.handleBuffer(input, 0L, 1))
+
+        runtime.deactivate()
+        usbNative = true
+        assertTrue(sink.handleBuffer(input, 0L, 1))
+
+        assertSame(delegate.received[0], delegate.received[1])
+        assertEquals(1, engine.processCalls)
+    }
+
+    @Test
     fun `heap buffers are staged before reaching native code`() {
         runtime.activate()
         val sink = sink()
@@ -178,15 +218,26 @@ class AudioEffectsAudioSinkTest {
         val contents = mutableListOf<ByteArray>()
         var acceptOnCall = 0
         private var calls = 0
+        private var pending: ByteBuffer? = null
 
         override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+            require(pending == null || pending === buffer) { "DefaultAudioSink requires the pending buffer to be resubmitted" }
             calls += 1
             received += buffer
             contents += ByteArray(buffer.remaining()).also { buffer.duplicate().get(it) }
-            if (calls < acceptOnCall) return false
+            if (calls < acceptOnCall) {
+                pending = buffer
+                return false
+            }
             buffer.position(buffer.limit())
             calls = 0
+            pending = null
             return true
+        }
+
+        override fun flush() {
+            pending = null
+            calls = 0
         }
     }
 
