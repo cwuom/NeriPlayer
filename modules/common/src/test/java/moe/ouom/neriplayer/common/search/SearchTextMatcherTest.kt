@@ -34,6 +34,32 @@ class SearchTextMatcherTest {
     }
 
     @Test
+    fun `tokensOf adds pinyin per token and for the compact text`() {
+        assertEquals(emptyList<String>(), SearchTextMatcher.tokensOf("   "))
+        assertEquals(listOf("-"), SearchTextMatcher.tokensOf(" - "))
+        assertEquals(listOf("ab"), SearchTextMatcher.tokensOf("Ab"))
+        assertEquals(listOf("晴", "qing"), SearchTextMatcher.tokensOf("晴"))
+        assertEquals(
+            listOf(
+                "晴天 - 周杰伦", "晴天", "qingtian", "qt", "周杰伦", "zhoujielun", "zjl",
+                "晴天周杰伦", "qingtianzhoujielun", "qtzjl", "晴周"
+            ),
+            SearchTextMatcher.tokensOf("晴天 - 周杰伦")
+        )
+        assertEquals(listOf("abc 12", "abc", "12", "abc12", "a1"), SearchTextMatcher.tokensOf("abc 12"))
+        assertEquals(listOf("周2", "zhou2", "z2"), SearchTextMatcher.tokensOf("周2"))
+    }
+
+    @Test
+    fun `fuzzy subsequence needs ascii tokens to share the first letter`() {
+        assertTrue(SearchTextMatcher.matches("dl9", "download_lane9"))
+        assertFalse(SearchTextMatcher.matches("ol9", "downloadlane9"))
+        assertTrue(SearchTextMatcher.matches("zx", "zax"))
+        assertTrue(SearchTextMatcher.matches("a1", "a-b-1"))
+        assertTrue(SearchTextMatcher.matches("xa", "x中a"))
+    }
+
+    @Test
     fun `matches Chinese title by full pinyin and initials`() {
         assertTrue(SearchTextMatcher.matches("qingtian", "晴天"))
         assertTrue(SearchTextMatcher.matches("qt", "晴天"))
