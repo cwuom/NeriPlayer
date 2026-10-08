@@ -20,6 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -33,10 +38,17 @@ import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekE
 
 private enum class MiniPlayerSheet { Volume, ListenTogether, Queue }
 
-// 进度每秒多次更新，隐藏时不订阅，避免播放页打开期间持续重组底层迷你播放器
+// 进度每秒多次更新，隐藏时停止上游收集，避免播放页打开期间持续重组底层迷你播放器
+@OptIn(ExperimentalCoroutinesApi::class)
 @Composable
-internal fun playbackPositionWhileVisible(visible: Boolean, positionFlow: StateFlow<Long>): Long =
-    if (visible) positionFlow.collectAsStateWithLifecycle().value else positionFlow.value
+internal fun playbackPositionWhileVisible(visible: Boolean, positionFlow: StateFlow<Long>): Long {
+    val visibleState = rememberUpdatedState(visible)
+    val gatedPosition = remember(positionFlow) {
+        snapshotFlow { visibleState.value }.flatMapLatest { shown -> if (shown) positionFlow else emptyFlow() }
+    }
+    val initialPosition = remember(positionFlow) { positionFlow.value }
+    return gatedPosition.collectAsStateWithLifecycle(initialValue = initialPosition).value
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
