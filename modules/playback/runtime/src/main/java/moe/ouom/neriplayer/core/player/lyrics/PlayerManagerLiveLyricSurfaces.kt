@@ -76,7 +76,8 @@ internal fun PlayerManager.publishLiveLyricSurfaces(
     lyricOffsetMs: Long
 ) {
     if (!(xiaomiSuperIslandLyricEnabled || liveUpdateLyricEnabled) || !_isPlayingFlow.value) return
-    val lyricPositionMs = positionMs - lyricOffsetMs
+    // 与歌词页、蓝牙歌词一致：偏移为正表示歌词提前显示
+    val lyricPositionMs = positionMs + lyricOffsetMs
     val lyricIndex = externalBluetoothLyrics.indexOfLast { it.startTimeMs <= lyricPositionMs }
     val currentEntry = externalBluetoothLyrics.getOrNull(lyricIndex)
     val superIsland = xiaomiSuperIslandLyricBridge.takeIf { xiaomiSuperIslandLyricEnabled }
