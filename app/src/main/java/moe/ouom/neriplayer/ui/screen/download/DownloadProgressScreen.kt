@@ -904,13 +904,12 @@ private fun DownloadProgressBootstrapUnavailableContent() {
 }
 
 @Composable
-private fun DownloadProgressEmptyContent(
+internal fun DownloadProgressEmptyContent(
     isClearing: Boolean,
     clearProgress: DownloadClearVisibility.ClearProgress?,
     showBackgroundCleanup: Boolean
 ) {
-    val showClearProgress = clearProgress != null &&
-        (isClearing || showBackgroundCleanup)
+    val visibleClearProgress = clearProgress?.takeIf { isClearing || showBackgroundCleanup }
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -926,9 +925,9 @@ private fun DownloadProgressEmptyContent(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(16.dp))
-            if (showClearProgress) {
+            if (visibleClearProgress != null) {
                 DownloadClearProgressSummary(
-                    progress = requireNotNull(clearProgress),
+                    progress = visibleClearProgress,
                     backgroundCleanup = showBackgroundCleanup
                 )
             } else {
@@ -981,19 +980,6 @@ private fun DownloadClearProgressSummary(
         animationSpec = tween(durationMillis = 220),
         label = "download clear progress"
     )
-    val phaseResource = when (progress.phase) {
-        DownloadClearVisibility.ClearPhase.PREPARING ->
-            CoreCommonR.string.download_clear_phase_preparing
-
-        DownloadClearVisibility.ClearPhase.CANCELLING ->
-            CoreCommonR.string.download_clear_phase_cancelling
-
-        DownloadClearVisibility.ClearPhase.CLEANING ->
-            CoreCommonR.string.download_clear_phase_cleaning
-
-        DownloadClearVisibility.ClearPhase.PURGING ->
-            CoreCommonR.string.download_clear_phase_purging
-    }
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.Start,
@@ -1014,7 +1000,7 @@ private fun DownloadClearProgressSummary(
                 progress.affectedItemCount,
                 progress.displayPercentage,
                 progress.affectedItemCount
-            ) + " · " + stringResource(phaseResource),
+            ) + " · " + stringResource(downloadClearPhaseLabelRes(progress.phase)),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1042,14 +1028,8 @@ private fun DownloadClearProgressSummary(
                     progress.completedItemCount,
                     progress.totalItemCount
                 )
-            } else if (progress.phase == DownloadClearVisibility.ClearPhase.PURGING &&
-                progress.completedSteps >= progress.totalSteps
-            ) {
-                stringResource(CoreCommonR.string.download_clear_item_progress_empty)
-            } else if (progress.phase == DownloadClearVisibility.ClearPhase.CLEANING) {
-                stringResource(CoreCommonR.string.download_clear_item_progress_scanning)
             } else {
-                stringResource(CoreCommonR.string.download_clear_item_progress_pending)
+                stringResource(downloadClearUncountedItemProgressRes(progress))
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1057,8 +1037,33 @@ private fun DownloadClearProgressSummary(
     }
 }
 
+internal fun downloadClearPhaseLabelRes(phase: DownloadClearVisibility.ClearPhase): Int = when (phase) {
+    DownloadClearVisibility.ClearPhase.PREPARING ->
+        CoreCommonR.string.download_clear_phase_preparing
+
+    DownloadClearVisibility.ClearPhase.CANCELLING ->
+        CoreCommonR.string.download_clear_phase_cancelling
+
+    DownloadClearVisibility.ClearPhase.CLEANING ->
+        CoreCommonR.string.download_clear_phase_cleaning
+
+    DownloadClearVisibility.ClearPhase.PURGING ->
+        CoreCommonR.string.download_clear_phase_purging
+}
+
+internal fun downloadClearUncountedItemProgressRes(progress: DownloadClearVisibility.ClearProgress): Int = when {
+    progress.phase == DownloadClearVisibility.ClearPhase.PURGING &&
+        progress.completedSteps >= progress.totalSteps ->
+        CoreCommonR.string.download_clear_item_progress_empty
+
+    progress.phase == DownloadClearVisibility.ClearPhase.CLEANING ->
+        CoreCommonR.string.download_clear_item_progress_scanning
+
+    else -> CoreCommonR.string.download_clear_item_progress_pending
+}
+
 @Composable
-private fun DownloadTaskItem(
+internal fun DownloadTaskItem(
     task: DownloadTask,
     onCancel: () -> Unit,
     onResume: () -> Unit,
@@ -1367,6 +1372,10 @@ private fun DownloadTaskStatusIcon(status: DownloadStatus) {
     )
 }
 
+internal fun isDownloadTaskWaitingToRetry(task: DownloadTask): Boolean =
+    task.status == DownloadStatus.WAITING_NETWORK ||
+        task.progress?.stage == DownloadStage.WAITING_RETRY
+
 @Composable
 private fun DownloadTaskActionButton(
     task: DownloadTask,
@@ -1378,9 +1387,7 @@ private fun DownloadTaskActionButton(
         DownloadStatus.QUEUED,
         DownloadStatus.WAITING_NETWORK,
         DownloadStatus.DOWNLOADING -> {
-            if (task.status == DownloadStatus.WAITING_NETWORK ||
-                task.progress?.stage == DownloadStage.WAITING_RETRY
-            ) {
+            if (isDownloadTaskWaitingToRetry(task)) {
                 IconButton(onClick = onResume, enabled = actionsEnabled) {
                     Icon(
                         Icons.Default.Refresh,
@@ -1423,122 +1430,85 @@ private fun DownloadTaskActionButton(
 
 @Composable
 private fun DownloadTaskProgressSection(task: DownloadTask) {
-    when (task.status) {
-        DownloadStatus.QUEUED -> {
-            val stageLabel = task.progress?.stage?.let(::downloadStageLabelResource)
-            Text(
-                text = stringResource(stageLabel ?: CoreCommonR.string.download_queued_status),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        DownloadStatus.WAITING_NETWORK -> {
-            Text(
-                text = stringResource(
-                    task.progress?.stage
-                        ?.takeIf { it == DownloadStage.WAITING_DELETE_CLEANUP }
-                        ?.let(::downloadStageLabelResource)
-                        ?: CoreCommonR.string.download_waiting_network_recovery
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            task.progress?.let { progress ->
-                DownloadTaskRetainedProgress(progress)
-            }
-        }
-
-        DownloadStatus.DOWNLOADING -> {
-            val progress = task.progress
-            if (progress == null) {
-                Text(
-                    text = stringResource(CoreCommonR.string.download_waiting_host),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                DownloadTaskIndeterminateProgress()
-                return
-            }
-            if (progress.stage == DownloadStage.WAITING_RETRY) {
-                Text(
-                    text = stringResource(CoreCommonR.string.download_waiting_retry),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                DownloadTaskRetainedProgress(progress)
-                return
-            }
-            if (progress.stage == DownloadStage.FINALIZING) {
-                Text(
-                    text = stringResource(CoreCommonR.string.download_finalizing),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                DownloadTaskIndeterminateProgress()
-                return
-            }
-            progress.stage.let(::downloadStageLabelResource)?.let { stageLabel ->
-                Text(
-                    text = stringResource(stageLabel),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                DownloadTaskRetainedProgress(progress)
-                return
-            }
-            Text(
-                text = formatDownloadTransferProgress(progress),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            if (progress.totalBytes > 0L) {
-                val progressFraction = remember(progress.bytesRead, progress.totalBytes) {
-                    (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-                        .coerceIn(0f, 1f)
-                }
-                LinearProgressIndicator(
-                    progress = { progressFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                )
-            } else {
-                DownloadTaskIndeterminateProgress()
-            }
-        }
-
-        DownloadStatus.COMPLETED -> {
-            Text(
-                text = stringResource(CoreCommonR.string.download_completed),
-                style = MaterialTheme.typography.bodySmall,
-                color = downloadTaskStatusTint(DownloadStatus.COMPLETED, MaterialTheme.colorScheme)
-            )
-        }
-
-        DownloadStatus.FAILED -> {
-            Text(
-                text = stringResource(
-                    downloadFailureReasonMessageRes(task) ?: CoreCommonR.string.download_failed
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-
-        DownloadStatus.CANCELLED -> {
-            Text(
-                text = stringResource(CoreCommonR.string.download_cancelled_status),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    val statusLabel = downloadTaskStatusLabelRes(task)
+    if (statusLabel == null) {
+        DownloadTaskActiveProgress(task.progress)
+        return
+    }
+    Text(
+        text = stringResource(statusLabel),
+        style = MaterialTheme.typography.bodySmall,
+        color = downloadTaskStatusTint(task.status, MaterialTheme.colorScheme)
+    )
+    if (task.status == DownloadStatus.WAITING_NETWORK) {
+        task.progress?.let { progress ->
+            DownloadTaskRetainedProgress(progress)
         }
     }
+}
+
+/** null while downloading, where the label follows the live progress stage instead */
+internal fun downloadTaskStatusLabelRes(task: DownloadTask): Int? = when (task.status) {
+    DownloadStatus.QUEUED -> queuedDownloadTaskLabelRes(task.progress)
+    DownloadStatus.WAITING_NETWORK -> waitingNetworkDownloadTaskLabelRes(task.progress)
+    DownloadStatus.DOWNLOADING -> null
+    DownloadStatus.COMPLETED -> CoreCommonR.string.download_completed
+    DownloadStatus.FAILED -> downloadFailureReasonMessageRes(task) ?: CoreCommonR.string.download_failed
+    DownloadStatus.CANCELLED -> CoreCommonR.string.download_cancelled_status
+}
+
+private fun queuedDownloadTaskLabelRes(progress: DownloadProgress?): Int =
+    progress?.stage?.let(::downloadStageLabelResource)
+        ?: CoreCommonR.string.download_queued_status
+
+private fun waitingNetworkDownloadTaskLabelRes(progress: DownloadProgress?): Int =
+    progress?.stage
+        ?.takeIf { it == DownloadStage.WAITING_DELETE_CLEANUP }
+        ?.let(::downloadStageLabelResource)
+        ?: CoreCommonR.string.download_waiting_network_recovery
+
+@Composable
+private fun DownloadTaskActiveProgress(progress: DownloadProgress?) {
+    if (progress == null) {
+        DownloadTaskStatusLine(CoreCommonR.string.download_waiting_host)
+        Spacer(modifier = Modifier.height(4.dp))
+        DownloadTaskIndeterminateProgress()
+        return
+    }
+    if (progress.stage == DownloadStage.WAITING_RETRY) {
+        DownloadTaskStatusLine(CoreCommonR.string.download_waiting_retry)
+        DownloadTaskRetainedProgress(progress)
+        return
+    }
+    if (progress.stage == DownloadStage.FINALIZING) {
+        DownloadTaskStatusLine(CoreCommonR.string.download_finalizing)
+        Spacer(modifier = Modifier.height(4.dp))
+        DownloadTaskIndeterminateProgress()
+        return
+    }
+    val stageLabel = downloadStageLabelResource(progress.stage)
+    if (stageLabel != null) {
+        DownloadTaskStatusLine(stageLabel)
+        Spacer(modifier = Modifier.height(4.dp))
+        DownloadTaskRetainedProgress(progress)
+        return
+    }
+    Text(
+        text = formatDownloadTransferProgress(progress),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    DownloadTaskProgressBar(progress)
+}
+
+@Composable
+private fun DownloadTaskStatusLine(textRes: Int) {
+    Text(
+        text = stringResource(textRes),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable
@@ -1550,6 +1520,11 @@ private fun DownloadTaskRetainedProgress(progress: DownloadProgress) {
         color = MaterialTheme.colorScheme.primary
     )
     Spacer(modifier = Modifier.height(4.dp))
+    DownloadTaskProgressBar(progress)
+}
+
+@Composable
+private fun DownloadTaskProgressBar(progress: DownloadProgress) {
     if (progress.totalBytes > 0L) {
         val progressFraction = (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
             .coerceIn(0f, 1f)
