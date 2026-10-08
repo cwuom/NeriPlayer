@@ -19,6 +19,7 @@ add_library(
     feedback/usb_feedback_types.cpp
     pcm/usb_pcm_codec.cpp
     pcm/usb_pcm_pipeline.cpp
+    pcm/usb_pcm_resampler.cpp
     uac1/usb_uac1_format.cpp
     uac2/usb_uac2_candidate_model.cpp
     uac2/usb_uac2_clock_graph.cpp

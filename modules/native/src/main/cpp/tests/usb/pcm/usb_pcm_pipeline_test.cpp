@@ -1,9 +1,12 @@
 #include "usb/pcm/usb_pcm_pipeline.h"
+#include "usb/pcm/usb_pcm_resampler.h"
 
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <cmath>
+#include <utility>
 #include <cstring>
 #include <cstdint>
 #include <limits>
@@ -12,6 +15,8 @@
 #include <vector>
 
 namespace {
+
+constexpr double kPi = 3.14159265358979323846;
 
 neri::usb::PcmPipelineConfig configFor(int inputRate, int outputRate) {
     return {
@@ -85,7 +90,8 @@ void verifiesStreamingResampleKeepsLongTermFrameCount() {
     for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex) {
         assert(pipeline.write(chunk.data(), chunk.size(), &error) == chunk.size());
     }
-    assert(pipeline.queuedFrames() == 4799);
+    // sinc 滤波保留 34 帧前瞻，其余输入按 48000/44100 精确换算成输出帧
+    assert(pipeline.queuedFrames() == 4763);
 }
 
 void verifiesPausePreservesQueuedAudio() {
@@ -294,7 +300,7 @@ void verifiesFloatInputResampleProducesUsbSignalStats() {
     config.input.encoding = 4;
     assert(pipeline.configure(config, &error));
 
-    constexpr int inputFrames = 960;
+    constexpr int inputFrames = 9600;
     constexpr int inputChannels = 2;
     constexpr int inputSampleBytes = 4;
     std::vector<uint8_t> input(
@@ -302,21 +308,21 @@ void verifiesFloatInputResampleProducesUsbSignalStats() {
         0
     );
     for (int frame = 0; frame < inputFrames; ++frame) {
-        const float value = (frame % 2 == 0) ? 0.25f : -0.25f;
+        const auto value = static_cast<float>(0.25 * std::sin(2.0 * kPi * 1000.0 * frame / 96000.0));
         const size_t frameOffset = static_cast<size_t>(frame * inputChannels * inputSampleBytes);
         writeFloatSample(input, frameOffset, value);
         writeFloatSample(input, frameOffset + inputSampleBytes, value);
     }
 
     assert(pipeline.write(input.data(), input.size(), &error) == input.size());
-    std::vector<uint8_t> output(480U * 4U, 0);
+    std::vector<uint8_t> output(4000U * 4U, 0);
     assert(pipeline.fill(output.data(), output.size(), true) == output.size());
 
     const auto snapshot = pipeline.snapshot();
     assert(snapshot.signalOutputFrames > 0);
     assert(snapshot.signalOutputBytes > 0);
-    assert(snapshot.outputPeak > 0.0f);
-    assert(snapshot.lastOutputPeak > 0.0f);
+    assert(snapshot.outputPeak > 0.24f && snapshot.outputPeak < 0.27f);
+    assert(snapshot.lastOutputPeak > 0.24f);
 
     bool hasNonZeroOutput = false;
     for (const uint8_t byte : output) {
@@ -648,9 +654,101 @@ void verifiesFloatFromIntegerSourceRoundTripsExactly() {
     assert(output == source);
 }
 
+std::vector<float> stereoTone(int rate, double frequency, double amplitude, int frames) {
+    std::vector<float> samples(static_cast<size_t>(frames) * 2U);
+    for (int frame = 0; frame < frames; ++frame) {
+        const auto value = static_cast<float>(amplitude * std::sin(2.0 * kPi * frequency * frame / rate));
+        samples[static_cast<size_t>(frame) * 2U] = value;
+        samples[static_cast<size_t>(frame) * 2U + 1U] = value;
+    }
+    return samples;
+}
+
+double peakAfter(const std::vector<float>& samples, size_t skipFrames) {
+    double peak = 0.0;
+    for (size_t index = skipFrames * 2U; index < samples.size(); ++index) {
+        peak = std::max(peak, static_cast<double>(std::abs(samples[index])));
+    }
+    return peak;
+}
+
+std::vector<float> resampleWhole(int inputRate, int outputRate, const std::vector<float>& input) {
+    neri::usb::PcmResampler resampler;
+    assert(resampler.configure(inputRate, outputRate, 2));
+    std::vector<float> output;
+    resampler.process(input.data(), static_cast<int>(input.size() / 2U), &output);
+    return output;
+}
+
+void verifiesResamplerOutputDoesNotDependOnChunking() {
+    const std::vector<float> input = stereoTone(44100, 997.0, 0.5, 44100);
+    const std::vector<float> whole = resampleWhole(44100, 48000, input);
+
+    neri::usb::PcmResampler resampler;
+    assert(resampler.configure(44100, 48000, 2));
+    std::vector<float> chunked;
+    const int chunkSizes[] = { 1, 7, 64, 441, 1000, 3 };
+    int offset = 0;
+    int index = 0;
+    const int totalFrames = static_cast<int>(input.size() / 2U);
+    while (offset < totalFrames) {
+        const int frames = std::min(chunkSizes[index++ % 6], totalFrames - offset);
+        resampler.process(input.data() + static_cast<size_t>(offset) * 2U, frames, &chunked);
+        offset += frames;
+    }
+    assert(chunked == whole);
+    const int expectedFrames = static_cast<int>(
+        ((44100 - resampler.halfTaps()) * 48000LL - 1) / 44100 + 1
+    );
+    assert(static_cast<int>(whole.size() / 2U) == expectedFrames);
+}
+
+void verifiesResamplerKeepsPassbandToneAccurate() {
+    const std::vector<float> output = resampleWhole(44100, 48000, stereoTone(44100, 1000.0, 0.5, 44100));
+    double maxError = 0.0;
+    for (size_t frame = 200; frame < output.size() / 2U; ++frame) {
+        const double expected = 0.5 * std::sin(2.0 * kPi * 1000.0 * static_cast<double>(frame) / 48000.0);
+        maxError = std::max(maxError, std::abs(static_cast<double>(output[frame * 2U]) - expected));
+    }
+    assert(maxError < 1e-3);
+
+    const std::vector<float> treble = resampleWhole(44100, 48000, stereoTone(44100, 18000.0, 0.5, 44100));
+    const double treblePeak = peakAfter(treble, 200);
+    assert(treblePeak > 0.5 * 0.944 && treblePeak < 0.5 * 1.06);
+}
+
+void verifiesResamplerRejectsContentAboveOutputNyquist() {
+    const std::vector<float> folded = resampleWhole(192000, 48000, stereoTone(192000, 30000.0, 0.5, 96000));
+    assert(peakAfter(folded, 400) < 0.5e-3);
+
+    const std::vector<float> kept = resampleWhole(192000, 48000, stereoTone(192000, 1000.0, 0.5, 96000));
+    assert(peakAfter(kept, 400) > 0.49);
+}
+
+void verifiesResamplerInputBoundNeverOverfillsOutput() {
+    const std::vector<float> input = stereoTone(44100, 440.0, 0.5, 20000);
+    for (const auto& rates : { std::pair<int, int>{ 44100, 48000 }, std::pair<int, int>{ 192000, 48000 } }) {
+        neri::usb::PcmResampler resampler;
+        assert(resampler.configure(rates.first, rates.second, 2));
+        int offset = 0;
+        for (const size_t maxOutput : { size_t { 0 }, size_t { 1 }, size_t { 37 }, size_t { 480 }, size_t { 5 } }) {
+            const int accepted = resampler.inputFramesForOutput(4000, maxOutput);
+            std::vector<float> output;
+            const size_t produced = resampler.process(input.data() + static_cast<size_t>(offset) * 2U, accepted, &output);
+            offset += accepted;
+            assert(produced <= maxOutput);
+            assert(maxOutput == 0 || produced + 2U >= maxOutput);
+        }
+    }
+}
+
 } // namespace
 
 int main() {
+    verifiesResamplerOutputDoesNotDependOnChunking();
+    verifiesResamplerKeepsPassbandToneAccurate();
+    verifiesResamplerRejectsContentAboveOutputNyquist();
+    verifiesResamplerInputBoundNeverOverfillsOutput();
     verifiesBitPerfectResumeAndTransportStartKeepSamplesExact();
     verifiesBitPerfectMuteIsHardAndUnmuteIsExact();
     verifiesBitPerfectPartialUnderrunKeepsValidFrames();

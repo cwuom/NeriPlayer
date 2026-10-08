@@ -1,6 +1,7 @@
 #pragma once
 
 #include "usb_pcm_codec.h"
+#include "usb_pcm_resampler.h"
 
 #include <atomic>
 #include <cstddef>
@@ -92,6 +93,22 @@ private:
         int inputSampleBytes,
         int inputFrameBytes
     ) const;
+    size_t writeResampled(
+        const uint8_t* input,
+        int inputFrames,
+        int inputSampleBytes,
+        int inputFrameBytes,
+        size_t freeOutputFrames,
+        std::string* error
+    );
+    size_t writeConverted(
+        const uint8_t* input,
+        int inputFrames,
+        int inputSampleBytes,
+        int inputFrameBytes,
+        std::string* error
+    );
+    size_t commitConverted(size_t consumedBytes);
     void beginBackpressureLocked(int64_t nowUs);
     void endBackpressureLocked(int64_t nowUs);
     size_t writeRingLocked(const uint8_t* input, size_t bytes);
@@ -110,9 +127,9 @@ private:
     size_t readIndex_ = 0;
     size_t writeIndex_ = 0;
     size_t levelBytes_ = 0;
-    double resamplePosition_ = 0.0;
-    bool hasPreviousInputFrame_ = false;
-    std::vector<float> previousInputFrame_;
+    PcmResampler resampler_;
+    std::vector<float> resampleInput_;
+    std::vector<float> resampleOutput_;
     std::vector<uint8_t> conversionBuffer_;
     int64_t inputBytes_ = 0;
     int64_t outputBytes_ = 0;
