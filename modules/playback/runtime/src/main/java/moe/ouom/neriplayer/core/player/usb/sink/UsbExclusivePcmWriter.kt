@@ -33,6 +33,7 @@ internal data class UsbExclusiveNativeWriteSnapshot(
     val usingNative: Boolean,
     val hasQueuedPcm: Boolean,
     val prerollMs: Long,
+    val runningQueueTargetMs: Long? = null,
 )
 
 internal data class UsbExclusiveBackpressureObservation(
@@ -279,6 +280,7 @@ internal class UsbExclusivePcmWriter(
         playing = state.playing,
         prerollMs = state.prerollMs,
         metrics = metrics,
+        runningQueueTargetMs = state.runningQueueTargetMs,
     )
 
     private fun alignToInputFrame(size: Int, frameBytes: Int): Int {

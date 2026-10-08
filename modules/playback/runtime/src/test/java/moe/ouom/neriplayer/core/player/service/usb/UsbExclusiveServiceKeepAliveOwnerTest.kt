@@ -69,6 +69,10 @@ class UsbExclusiveServiceKeepAliveOwnerTest {
         runCurrent()
         advanceTimeBy(2_000L)
         runCurrent()
+        assertTrue("one stalled second must not rebuild the route", port.recoveries.isEmpty())
+
+        advanceTimeBy(1_000L)
+        runCurrent()
 
         assertEquals(listOf("service_keepalive_stalled"), port.recoveries)
         owner.close()

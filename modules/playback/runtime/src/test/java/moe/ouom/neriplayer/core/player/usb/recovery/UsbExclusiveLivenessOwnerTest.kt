@@ -153,6 +153,20 @@ class UsbExclusiveLivenessOwnerTest {
         assertEquals(1, port.bufferChanges)
     }
 
+    @Test
+    fun `returning to the foreground never shrinks the reserved ring`() {
+        val port = RecordingPort()
+        val owner = UsbExclusiveLivenessOwner(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined), port)
+
+        port.currentNative = port.currentNative.copy(streaming = false, bufferDurationMs = 300)
+        owner.applyActiveBuffer("lifecycle_resume")
+        owner.updateForegroundState(false, "lifecycle_on_pause")
+        owner.updateForegroundState(true, "lifecycle_resume")
+
+        assertEquals(0, port.bufferChanges)
+        assertTrue(port.transferWindowChanges >= 1)
+    }
+
     private class RecordingPort : UsbExclusiveLivenessPort {
         var currentSnapshot = UsbExclusiveLivenessSnapshot(
             playbackEnabled = true,
@@ -204,6 +218,7 @@ class UsbExclusiveLivenessOwnerTest {
         override fun restorePlaybackIntent(reason: String) { restoredIntents += reason }
         override fun markForegroundStable() { stableMarks++ }
         override fun targetBufferDurationMs(foreground: Boolean): Int = if (foreground) 200 else 300
+        override fun reservedBufferDurationMs(): Int = 300
         override fun configureTransferWindow(durationMs: Int, foreground: Boolean): Boolean {
             transferWindowChanges++
             return true

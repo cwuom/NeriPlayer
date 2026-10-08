@@ -121,6 +121,9 @@ internal object PlayerManagerUsbExclusiveLivenessPort : UsbExclusiveLivenessPort
     override fun targetBufferDurationMs(foreground: Boolean): Int =
         PlayerManager.usbExclusivePreferences.bufferDurationMs(foreground)
 
+    override fun reservedBufferDurationMs(): Int =
+        PlayerManager.usbExclusivePreferences.reservedBufferDurationMs()
+
     override fun configureTransferWindow(durationMs: Int, foreground: Boolean): Boolean =
         UsbExclusiveSessionController.configureActivePlayerTransferWindow(durationMs, foreground)
 

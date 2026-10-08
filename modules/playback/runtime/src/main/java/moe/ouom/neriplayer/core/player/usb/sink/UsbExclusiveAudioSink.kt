@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveCompletedPo
 import moe.ouom.neriplayer.core.player.policy.usb.shouldBypassCooldownForUsbExclusiveOpenGateRetry
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSuppressSystemFallbackForUsbExclusiveFailure
 import moe.ouom.neriplayer.core.player.lifecycle.markUsbExclusiveNativePathActive
+import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveRunningQueueTargetMs
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusiveTransportRecovery
@@ -1003,6 +1004,9 @@ internal class UsbExclusiveAudioSink(
         usingNative = usingNative,
         hasQueuedPcm = nativeHasQueuedPcm,
         prerollMs = NATIVE_START_PREROLL_MS,
+        runningQueueTargetMs = usbExclusiveRunningQueueTargetMs(
+            PlayerManager.usbExclusivePreferences.bufferDurationMs(PlayerManager.usbExclusiveAppInForeground)
+        ),
     )
 
     private fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float): Int =

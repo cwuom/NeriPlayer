@@ -25,7 +25,8 @@ internal object UsbExclusivePcmWritePlanner {
         nativeTransportStarted: Boolean,
         playing: Boolean,
         prerollMs: Long,
-        metrics: UsbExclusiveRuntimeMetrics
+        metrics: UsbExclusiveRuntimeMetrics,
+        runningQueueTargetMs: Long? = null
     ): Int {
         if (remainingBytes <= 0) return 0
 
@@ -57,7 +58,8 @@ internal object UsbExclusivePcmWritePlanner {
                 metrics = metrics,
                 inputSampleRate = inputSampleRate,
                 inputFrameBytes = frameBytes,
-                nativeTransportStarted = nativeTransportStarted
+                nativeTransportStarted = nativeTransportStarted,
+                runningQueueTargetMs = runningQueueTargetMs
             )
         )
         return alignDown(limit, frameBytes)
@@ -128,7 +130,8 @@ internal object UsbExclusivePcmWritePlanner {
         metrics: UsbExclusiveRuntimeMetrics,
         inputSampleRate: Int,
         inputFrameBytes: Int,
-        nativeTransportStarted: Boolean
+        nativeTransportStarted: Boolean,
+        runningQueueTargetMs: Long?
     ): Int {
         val freeOutputBytes = explicitFreeBytes(metrics) ?: return Int.MAX_VALUE
         if (freeOutputBytes <= 0L) {
@@ -143,7 +146,8 @@ internal object UsbExclusivePcmWritePlanner {
             freeOutputBytes = freeOutputBytes,
             outputFrameBytes = outputFrameBytes,
             inputSampleRate = inputSampleRate,
-            nativeTransportStarted = nativeTransportStarted
+            nativeTransportStarted = nativeTransportStarted,
+            runningQueueTargetMs = runningQueueTargetMs
         )
         val freeOutputFrames = usableOutputBytes / outputFrameBytes
         if (freeOutputFrames <= 0L) return 0
@@ -174,7 +178,8 @@ internal object UsbExclusivePcmWritePlanner {
         freeOutputBytes: Long,
         outputFrameBytes: Int,
         inputSampleRate: Int,
-        nativeTransportStarted: Boolean
+        nativeTransportStarted: Boolean,
+        runningQueueTargetMs: Long?
     ): Long {
         if (!nativeTransportStarted) return freeOutputBytes
         val capacity = metrics.pcmCapacityBytes?.takeIf { it > 0L } ?: return freeOutputBytes
@@ -183,7 +188,8 @@ internal object UsbExclusivePcmWritePlanner {
             metrics = metrics,
             capacity = capacity,
             outputFrameBytes = outputFrameBytes,
-            inputSampleRate = inputSampleRate
+            inputSampleRate = inputSampleRate,
+            requestedQueueMs = runningQueueTargetMs
         )
         return min(freeOutputBytes, target - level).coerceAtLeast(0L)
     }
@@ -192,17 +198,17 @@ internal object UsbExclusivePcmWritePlanner {
         metrics: UsbExclusiveRuntimeMetrics,
         capacity: Long,
         outputFrameBytes: Int,
-        inputSampleRate: Int
+        inputSampleRate: Int,
+        requestedQueueMs: Long?
     ): Long {
         val outputSampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: inputSampleRate
         val bytesPerSecond = outputSampleRate.toLong() * outputFrameBytes
-        // retain half of the bounded background ring so scheduler gaps do not drain PCM
-        val targetQueueMs = if (bytesPerSecond > 0L) {
-            (capacity * 1_000L / bytesPerSecond / RUNNING_TARGET_QUEUE_CAPACITY_DIVISOR)
-                .coerceIn(RUNNING_TARGET_QUEUE_MIN_MS, RUNNING_TARGET_QUEUE_MAX_MS)
-        } else {
-            RUNNING_TARGET_QUEUE_MIN_MS
-        }
+        // 前后台水位由生命周期给出；没有时退回按环形缓冲一半估算
+        val targetQueueMs = when {
+            requestedQueueMs != null -> requestedQueueMs
+            bytesPerSecond > 0L -> capacity * 1_000L / bytesPerSecond / RUNNING_TARGET_QUEUE_CAPACITY_DIVISOR
+            else -> RUNNING_TARGET_QUEUE_MIN_MS
+        }.coerceIn(RUNNING_TARGET_QUEUE_MIN_MS, RUNNING_TARGET_QUEUE_MAX_MS)
         val timedBytes = if (outputSampleRate > 0) {
             outputSampleRate.toLong() * outputFrameBytes * targetQueueMs / 1_000L
         } else {

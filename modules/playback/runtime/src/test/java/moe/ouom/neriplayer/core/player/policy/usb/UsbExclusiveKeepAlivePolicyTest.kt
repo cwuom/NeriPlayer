@@ -93,6 +93,40 @@ class UsbExclusiveKeepAlivePolicyTest {
     }
 
     @Test
+    fun `writer starvation waits longer than a stopped USB stream before rebuilding the route`() {
+        fun starved(previousTicks: Int) = evaluateUsbExclusiveKeepAliveProgress(
+            previousHandle = 7L,
+            currentHandle = 7L,
+            previousCompletedFrames = 500_000L,
+            currentCompletedFrames = 500_768L,
+            previousSignalBytes = 1_024L,
+            currentSignalBytes = 1_024L,
+            previousZeroFillBytes = 0L,
+            currentZeroFillBytes = 4_096L,
+            previousOutputPeak = 0f,
+            currentOutputPeak = 0f,
+            previousStallTicks = previousTicks,
+            recoveryTicks = 2,
+            starvationRecoveryTicks = 5
+        )
+        fun stopped(previousTicks: Int) = evaluateUsbExclusiveKeepAliveProgress(
+            previousHandle = 7L,
+            currentHandle = 7L,
+            previousCompletedFrames = 500_000L,
+            currentCompletedFrames = 500_000L,
+            previousStallTicks = previousTicks,
+            recoveryTicks = 2,
+            starvationRecoveryTicks = 5
+        )
+
+        assertFalse(starved(0).shouldRecover)
+        assertFalse(starved(3).shouldRecover)
+        assertTrue(starved(4).shouldRecover)
+        assertFalse(stopped(0).shouldRecover)
+        assertTrue(stopped(1).shouldRecover)
+    }
+
+    @Test
     fun `drained queue with severe zero fill recovers despite partial signal progress`() {
         val decision = evaluateUsbExclusiveKeepAliveProgress(
             previousHandle = 7L,

@@ -19,7 +19,8 @@ import kotlin.time.Duration.Companion.milliseconds
 private const val FOREGROUND_KEEPALIVE_INTERVAL_MS = 5_000L
 private const val BACKGROUND_KEEPALIVE_INTERVAL_MS = 1_000L
 private const val KEEPALIVE_STALL_WARN_MS = 25_000L
-private const val KEEPALIVE_STALL_RECOVERY_TICKS = 1
+private const val KEEPALIVE_STALL_RECOVERY_TICKS = 2
+private const val KEEPALIVE_STARVATION_RECOVERY_TICKS = 5
 private const val KEEPALIVE_LOG_INTERVAL_TICKS = 3L
 
 internal fun usbExclusiveKeepAliveIntervalMs(appInForeground: Boolean): Long =
@@ -267,6 +268,7 @@ internal class UsbExclusiveServiceKeepAliveOwner(
             currentPcmLevelBytes = metrics.pcmLevelBytes ?: -1L,
             previousStallTicks = stallTicks,
             recoveryTicks = KEEPALIVE_STALL_RECOVERY_TICKS,
+            starvationRecoveryTicks = KEEPALIVE_STARVATION_RECOVERY_TICKS,
         )
         if (decision.progress == UsbExclusiveKeepAliveProgress.COUNTER_RESET) {
             NPLogger.i("NERI-APS", "USB exclusive keepalive reset frame baseline after native counter reset: " +
