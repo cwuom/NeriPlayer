@@ -57,7 +57,7 @@ data class LocalMediaCompanionRecoveryEntry(
         private val RECOVERABLE_PHASES = setOf(null, "CREATED", "WRITE_INTENT", "ATOMIC_WRITE_INTENT", "WRITTEN", "RESTORING")
 
         fun fromJson(body: JSONObject, directory: File): LocalMediaCompanionRecoveryEntry {
-            val backup = body.presentText("backupPath")?.let { canonicalFileIn(it, directory) }
+            val backup = canonicalFileIn(body.presentText("backupPath"), directory)
             val created = body.getBoolean("createdByTransaction")
             val original = body.presentText("originalSha256")
             require(created || hasProvenOriginal(backup, original))
@@ -67,12 +67,12 @@ data class LocalMediaCompanionRecoveryEntry(
             requireConsistentPhase(phase, body.presentText("intendedPath"))
             return LocalMediaCompanionRecoveryEntry(
                 reference, backup, original, body.presentText("expectedSha256"),
-                body.optLong("originalLastModifiedMs").takeIf { it > 0L }, created,
+                body.optPositiveLong("originalLastModifiedMs"), created,
                 body.presentText("fileIdentity"), body.optBoolean("writeIdentityVerified"),
                 body.optBoolean("deferredDelete"),
-                body.presentText("intendedPath")?.let { canonicalFileIn(it, directory) },
+                canonicalFileIn(body.presentText("intendedPath"), directory),
                 phase, body.presentText("previousSha256"), body.presentText("previousIdentity"),
-                body.presentText("stagedPath")?.let { canonicalStagedCompanionFile(it, reference) },
+                canonicalStagedCompanionFile(body.presentText("stagedPath"), reference),
                 body.presentText("restoreInputSha256"), body.presentText("stagedIdentity")
             )
         }
@@ -86,11 +86,13 @@ data class LocalMediaCompanionRecoveryEntry(
             require(phase != null || intendedPath == null)
         }
 
-        private fun canonicalFileIn(path: String, directory: File): File {
+        private fun canonicalFileIn(path: String?, directory: File): File? {
+            path ?: return null
             return File(path).canonicalFile.also { require(it.parentFile == directory) }
         }
 
-        private fun canonicalStagedCompanionFile(path: String, reference: String): File {
+        private fun canonicalStagedCompanionFile(path: String?, reference: String): File? {
+            path ?: return null
             val file = File(path).canonicalFile
             val target = requireNotNull(companionFile(reference)).canonicalFile
             require(file.parentFile == target.parentFile && file.name.startsWith(".${target.name}.companion-"))
@@ -102,6 +104,8 @@ data class LocalMediaCompanionRecoveryEntry(
 private fun JSONObject.presentText(key: String): String? {
     return optString(key).takeIf { has(key) && !isNull(key) && it.isNotBlank() }
 }
+
+private fun JSONObject.optPositiveLong(key: String): Long? = optLong(key).takeIf { it > 0L }
 
 private fun Any?.orJsonNull(): Any = this ?: JSONObject.NULL
 
