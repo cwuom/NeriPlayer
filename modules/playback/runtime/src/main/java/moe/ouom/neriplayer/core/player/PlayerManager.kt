@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -1261,7 +1262,7 @@ object PlayerManager {
     }
 
     internal fun bumpCurrentQueueDisplayRevision() {
-        _currentQueueDisplayRevisionFlow.value = _currentQueueDisplayRevisionFlow.value + 1
+        _currentQueueDisplayRevisionFlow.update { it + 1 }
     }
 
     internal fun localMediaSource(song: SongItem): String? {
