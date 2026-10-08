@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.VibrationEffect
 import android.os.Vibrator
 import org.junit.After
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.`when`
@@ -72,5 +74,13 @@ class HapticFeedbackDispatchTest {
             effects.verify { VibrationEffect.createOneShot(8L, 32) }
         }
         verify(vibrator).vibrate(oneShot)
+    }
+
+    @Test
+    fun `predefined effects are used only when support is confirmed or unknown`() {
+        assertTrue(isPredefinedEffectSupportUsable(Vibrator.VIBRATION_EFFECT_SUPPORT_YES))
+        assertTrue(isPredefinedEffectSupportUsable(Vibrator.VIBRATION_EFFECT_SUPPORT_UNKNOWN))
+        assertFalse(isPredefinedEffectSupportUsable(Vibrator.VIBRATION_EFFECT_SUPPORT_NO))
+        assertFalse(isPredefinedEffectSupportUsable(null))
     }
 }
