@@ -9,11 +9,14 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -78,20 +81,20 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     @Volatile
     private var initialized = false
     private var initialLoadFailure: Exception? = null
-    private val _stats = MutableStateFlow(loadInitialStats())
+    private val _stats = MutableStateFlow(emptyList<LocalPlaylistPlaybackStat>())
     @Volatile
     private var persistedStats = _stats.value
     @Volatile
-    private var baselineTrusted = initialized
+    private var baselineTrusted = false
     private var pendingUiChanges = false
     private val recordedEvents = linkedMapOf<String, LocalPlaylistPlaybackEvent>()
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
-
-    private fun loadInitialStats(): List<LocalPlaylistPlaybackStat> {
-        return runBlocking(Dispatchers.IO) {
-            tryLoadStats()?.also { initialized = true }.orEmpty()
-        }
+    // 首次访问常在主线程，读取放到后台；写入都在同一把锁内先完成加载再叠加
+    private val initialLoad: Job = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        mutex.withLock { ensureInitializedLocked() }
     }
+
+    internal suspend fun awaitInitialLoad() = initialLoad.join()
 
     private suspend fun loadTrustedStats(): List<LocalPlaylistPlaybackStat> {
         if (roomStorageEnabled && roomStore != null) {

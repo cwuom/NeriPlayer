@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -1215,6 +1216,7 @@ class PlaylistUsagePersistenceTest {
                 `when`(it.getPlaylistUsageDeletionsConfirmed()).thenReturn(emptyMap())
             }
             repository = PlaylistUsageRepository(context, room)
+            runBlocking { repository.awaitInitialLoad() }
             val scope = PlaylistUsageRepository::class.java.getDeclaredField("scope").also { it.isAccessible = true }
             (scope.get(repository) as CoroutineScope).cancel()
             scope.set(repository, ownedScope)

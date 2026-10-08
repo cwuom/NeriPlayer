@@ -6,11 +6,14 @@ import android.content.Context
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -476,6 +479,39 @@ class PlayHistoryRepositoryPersistenceTest {
         }
     }
 
+    @Test
+    fun `construction does not wait for the history read and an early write merges into it`() = runTest {
+        val room = mock(PlayHistoryRoomStore::class.java)
+        val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val persisted = CountDownLatch(1)
+        val stored = listOf(entry(2), entry(1))
+        val writes = mutableListOf<Pair<List<PlayedEntry>, List<PlayedEntry>>>()
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            readStarted.countDown()
+            releaseRead.await()
+            stored
+        }
+        doAnswer { invocation ->
+            writes += invocation.getArgument<List<PlayedEntry>>(0) to invocation.getArgument<List<PlayedEntry>>(1)
+            persisted.countDown()
+            Unit
+        }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+
+        Fixture(room, awaitInitialLoad = false).use { fixture ->
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS))
+            assertTrue(fixture.repository.historyFlow.value.isEmpty())
+            fixture.repository.updateRememberedPlaybackPosition(entry(3).toSongItem(), 1_000L, now = 3L)
+            releaseRead.countDown()
+
+            assertTrue(persisted.await(5, TimeUnit.SECONDS))
+            val recent = entry(3).toSongItem().toPlayedEntry(3L).copy(resumePositionMs = 1_000L)
+            assertEquals(listOf(stored to listOf(recent) + stored), writes)
+            assertTrue(fixture.repository.awaitInitialized())
+            assertEquals(listOf(recent) + stored, fixture.repository.syncSnapshot())
+        }
+    }
+
     private fun assertCancellation(expected: CancellationException, actual: Throwable?) {
         assertTrue(actual is CancellationException)
         assertEquals(expected.message, actual?.message)
@@ -506,7 +542,8 @@ class PlayHistoryRepositoryPersistenceTest {
     private inner class Fixture(
         room: PlayHistoryRoomStore,
         testScope: TestScope? = null,
-        storageOverride: SecureTokenStorage? = null
+        storageOverride: SecureTokenStorage? = null,
+        awaitInitialLoad: Boolean = true
     ) : Closeable {
         val storage = storageOverride ?: mock(SecureTokenStorage::class.java)
         val repository: PlayHistoryRepository
@@ -519,6 +556,7 @@ class PlayHistoryRepositoryPersistenceTest {
             val constructor = PlayHistoryRepository::class.java.getDeclaredConstructor(Context::class.java, PlayHistoryRoomStore::class.java)
             constructor.isAccessible = true
             repository = constructor.newInstance(context, room)
+            if (awaitInitialLoad) runBlocking { repository.awaitInitialLoad() }
             PlayHistoryRepository::class.java.getDeclaredField("storage\$delegate").also { it.isAccessible = true }.set(repository, lazy { storage })
             if (testScope != null) {
                 val field = PlayHistoryRepository::class.java.getDeclaredField("scope").also { it.isAccessible = true }

@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -193,6 +194,7 @@ class PlayHistoryRepositoryCapacityTest {
             val constructor = PlayHistoryRepository::class.java.getDeclaredConstructor(Context::class.java, PlayHistoryRoomStore::class.java)
             constructor.isAccessible = true
             repository = constructor.newInstance(context, null)
+            runBlocking { repository.awaitInitialLoad() }
             val originalScope = PlayHistoryRepository::class.java.getDeclaredField("scope").also { it.isAccessible = true }
             (originalScope.get(repository) as CoroutineScope).cancel()
             originalScope.set(repository, scope)
