@@ -27,8 +27,6 @@ import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
 import android.content.ClipData
-import android.content.Context
-import android.content.res.Resources
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -92,7 +90,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -107,7 +104,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -1164,33 +1160,6 @@ internal fun youTubeMusicSongSubtitle(displayArtist: String, album: String): Str
         displayArtist.takeIf { it.isNotBlank() },
         album.takeIf { it.isNotBlank() }
     ).joinToString(" · ")
-
-private fun hapticRowAction(context: Context, action: () -> Unit): () -> Unit = {
-    context.performHapticFeedback()
-    action()
-}
-
-private fun copySongInfoAction(
-    scope: CoroutineScope,
-    clipboard: Clipboard,
-    snackbarHostState: SnackbarHostState,
-    resources: Resources,
-    songInfo: String
-): () -> Unit = {
-    scope.launch {
-        clipboard.setClipEntry(
-            ClipEntry(
-                ClipData.newPlainText(
-                    "text",
-                    songInfo
-                )
-            )
-        )
-        snackbarHostState.showNeriSnackbar(
-            resources.getString(CoreCommonR.string.toast_copied)
-        )
-    }
-}
 
 @Composable
 private fun YouTubeMusicSongRowLeading(

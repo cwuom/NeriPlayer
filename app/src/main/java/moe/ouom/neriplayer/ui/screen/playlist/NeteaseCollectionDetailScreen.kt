@@ -27,6 +27,8 @@ import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
 import android.content.ClipData
+import android.content.Context
+import android.content.res.Resources
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -92,6 +94,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -110,6 +113,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -127,6 +131,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -312,6 +317,7 @@ fun DetailScreen(
     val hasDownloadManagerEntry = downloadTaskSummary.hasDownloadManagerEntry
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
     val listState = rememberSaveable(playlistId, saver = LazyListState.Saver) {
@@ -854,6 +860,8 @@ fun DetailScreen(
                                             SongRow(
                                                 index = index + 1,
                                                 song = item,
+                                                isCurrentSong = currentSong?.sameIdentityAs(item) == true,
+                                                animatePlayingIndicator = isPlaying,
                                                 isFavorite = isFavoriteSong,
                                                 onFavoriteToggle = ::toggleSongFavorite,
                                                 showCover = ui.header?.isAlbum == false,
@@ -878,6 +886,8 @@ fun DetailScreen(
                                                     val pos = full.indexOfFirst { it.stableKey() == itemKey }
                                                     if (pos >= 0) onSongClick(full, pos)
                                                 },
+                                                onPlayNext = { PlayerManager.addToQueueNext(item) },
+                                                onAddToQueueEnd = { PlayerManager.addToQueueEnd(item) },
                                                 snackbarHostState = snackbarHostState,
                                                 offlineMode = offlineMode
                                             )
@@ -1045,9 +1055,11 @@ private fun RetryChip(onClick: () -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SongRow(
+internal fun SongRow(
     index: Int,
     song: SongItem,
+    isCurrentSong: Boolean,
+    animatePlayingIndicator: Boolean,
     isFavorite: Boolean,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     showCover: Boolean,
@@ -1056,13 +1068,11 @@ private fun SongRow(
     onToggleSelect: () -> Unit,
     onLongPress: () -> Unit,
     onClick: () -> Unit,
-    indexWidth: Dp = 48.dp,
+    onPlayNext: () -> Unit,
+    onAddToQueueEnd: () -> Unit,
     snackbarHostState: SnackbarHostState,
     offlineMode: Boolean
 ) {
-    val current by PlayerManager.currentSongFlow.collectAsState()
-    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-    val isCurrentSong = current?.sameIdentityAs(song) == true
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
@@ -1072,62 +1082,19 @@ private fun SongRow(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = {
-                    context.performHapticFeedback()
-                    if (selectionMode) onToggleSelect() else onClick()
-                },
-                onLongClick = { onLongPress() }
+                onClick = hapticRowAction(context, if (selectionMode) onToggleSelect else onClick),
+                onLongClick = onLongPress
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier.width(indexWidth),
-            contentAlignment = Alignment.Center
-        ) {
-            if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelect() }
-                )
-            } else {
-                Text(
-                    text = index.toString(),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = playlistModernListTertiaryContentColor(),
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-
-        val itemContext = LocalContext.current
-        val displayCoverUrl = rememberSongDisplayCoverUrl(song)
-        if (showCover && !displayCoverUrl.isNullOrBlank()) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(10.dp)
-                    )
-            ) {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
-                        context = itemContext,
-                        data = displayCoverUrl,
-                        offlineMode = offlineMode
-                    ),
-                    contentDescription = song.displayName(),
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize()
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-        }
+        SongRowLeading(
+            index = index,
+            selectionMode = selectionMode,
+            selected = selected,
+            onToggleSelect = onToggleSelect
+        )
+        SongRowCover(song = song, showCover = showCover, offlineMode = offlineMode)
 
         Column(Modifier.weight(1f)) {
             Text(
@@ -1138,10 +1105,7 @@ private fun SongRow(
                 color = playlistModernListPrimaryContentColor()
             )
             Text(
-                text = listOfNotNull(
-                    song.displayArtist().takeIf { it.isNotBlank() },
-                    (song.album.takeIf { it.isNotBlank() })?.replace("Netease", "") ?: ""
-                ).joinToString(" · "),
+                text = neteaseSongSubtitle(song.displayArtist(), song.album),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
@@ -1149,110 +1113,226 @@ private fun SongRow(
             )
         }
 
-        if (isCurrentSong) {
-            PlayingIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                animate = isPlaying
-            )
-        } else {
-            Text(
-                text = formatDuration(song.durationMs),
-                style = MaterialTheme.typography.bodySmall,
-                color = playlistModernListSecondaryContentColor()
-            )
-        }
+        SongRowTrailing(
+            isCurrentSong = isCurrentSong,
+            animatePlayingIndicator = animatePlayingIndicator,
+            durationMs = song.durationMs
+        )
 
         // 更多操作菜单
         if (!selectionMode) {
-            var showMoreMenu by remember { mutableStateOf(false) }
-            Box {
-                IconButton(
-                    onClick = { showMoreMenu = true }
-                ) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = stringResource(CoreCommonR.string.cd_more_actions),
-                        tint = playlistModernListSecondaryContentColor()
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = showMoreMenu,
-                    onDismissRequest = { showMoreMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            PlayerManager.addToQueueNext(song)
-                            showMoreMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            PlayerManager.addToQueueEnd(song)
-                            showMoreMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    if (isFavorite) {
-                                        CoreCommonR.string.favorite_remove
-                                    } else {
-                                        CoreCommonR.string.favorite_add
-                                    }
-                                )
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (isFavorite) {
-                                    Icons.Filled.Favorite
-                                } else {
-                                    Icons.Outlined.FavoriteBorder
-                                },
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            onFavoriteToggle(song, isFavorite)
-                            showMoreMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.ContentCopy,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            val songInfo = "${song.displayName()}-${song.displayArtist()}"
-                            scope.launch {
-                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
-                                snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.toast_copied))
-                            }
-                            showMoreMenu = false
-                        }
-                    )
-                }
-            }
+            SongRowMoreMenu(
+                song = song,
+                isFavorite = isFavorite,
+                onFavoriteToggle = onFavoriteToggle,
+                onPlayNext = onPlayNext,
+                onAddToQueueEnd = onAddToQueueEnd,
+                onCopySongInfo = copySongInfoAction(
+                    scope = scope,
+                    clipboard = clipboard,
+                    snackbarHostState = snackbarHostState,
+                    resources = composeResources,
+                    songInfo = "${song.displayName()}-${song.displayArtist()}"
+                )
+            )
         }
+    }
+}
+
+internal fun neteaseSongSubtitle(displayArtist: String, album: String): String = listOfNotNull(
+    displayArtist.takeIf { it.isNotBlank() },
+    album.takeIf { it.isNotBlank() }?.replace("Netease", "") ?: ""
+).joinToString(" · ")
+
+@Composable
+private fun SongRowLeading(
+    index: Int,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit
+) {
+    Box(
+        modifier = Modifier.width(48.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selectionMode) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = { onToggleSelect() }
+            )
+        } else {
+            Text(
+                text = index.toString(),
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = playlistModernListTertiaryContentColor(),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+private fun SongRowCover(song: SongItem, showCover: Boolean, offlineMode: Boolean) {
+    val itemContext = LocalContext.current
+    val displayCoverUrl = rememberSongDisplayCoverUrl(song)
+    if (showCover && !displayCoverUrl.isNullOrBlank()) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp)
+                )
+        ) {
+            AsyncImage(
+                model = offlineCachedImageRequest(
+                    context = itemContext,
+                    data = displayCoverUrl,
+                    offlineMode = offlineMode
+                ),
+                contentDescription = song.displayName(),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+    }
+}
+
+@Composable
+private fun SongRowTrailing(
+    isCurrentSong: Boolean,
+    animatePlayingIndicator: Boolean,
+    durationMs: Long
+) {
+    if (isCurrentSong) {
+        PlayingIndicator(
+            color = MaterialTheme.colorScheme.primary,
+            animate = animatePlayingIndicator
+        )
+    } else {
+        Text(
+            text = formatDuration(durationMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = playlistModernListSecondaryContentColor()
+        )
+    }
+}
+
+@Composable
+private fun SongRowMoreMenu(
+    song: SongItem,
+    isFavorite: Boolean,
+    onFavoriteToggle: (SongItem, Boolean) -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueueEnd: () -> Unit,
+    onCopySongInfo: () -> Unit
+) {
+    var showMoreMenu by remember { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { showMoreMenu = true }
+        ) {
+            Icon(
+                Icons.Filled.MoreVert,
+                contentDescription = stringResource(CoreCommonR.string.cd_more_actions),
+                tint = playlistModernListSecondaryContentColor()
+            )
+        }
+
+        DropdownMenu(
+            expanded = showMoreMenu,
+            onDismissRequest = { showMoreMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onPlayNext()
+                    showMoreMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onAddToQueueEnd()
+                    showMoreMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (isFavorite) {
+                                CoreCommonR.string.favorite_remove
+                            } else {
+                                CoreCommonR.string.favorite_add
+                            }
+                        )
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onFavoriteToggle(song, isFavorite)
+                    showMoreMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.ContentCopy,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onCopySongInfo()
+                    showMoreMenu = false
+                }
+            )
+        }
+    }
+}
+
+internal fun hapticRowAction(context: Context, action: () -> Unit): () -> Unit = {
+    context.performHapticFeedback()
+    action()
+}
+
+internal fun copySongInfoAction(
+    scope: CoroutineScope,
+    clipboard: Clipboard,
+    snackbarHostState: SnackbarHostState,
+    resources: Resources,
+    songInfo: String
+): () -> Unit = {
+    scope.launch {
+        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
+        snackbarHostState.showNeriSnackbar(resources.getString(CoreCommonR.string.toast_copied))
     }
 }
 
@@ -1297,17 +1377,17 @@ fun PlayingIndicator(
     )
     val barHeights = listOf(
         animateFloatAsState(
-            targetValue = if (animate) animatedValues[0].value else flatHeight,
+            targetValue = playingBarHoldTarget(animate, animatedValues[0], flatHeight),
             animationSpec = transitionSpec,
             label = "bar1Hold"
         ).value,
         animateFloatAsState(
-            targetValue = if (animate) animatedValues[1].value else flatHeight,
+            targetValue = playingBarHoldTarget(animate, animatedValues[1], flatHeight),
             animationSpec = transitionSpec,
             label = "bar2Hold"
         ).value,
         animateFloatAsState(
-            targetValue = if (animate) animatedValues[2].value else flatHeight,
+            targetValue = playingBarHoldTarget(animate, animatedValues[2], flatHeight),
             animationSpec = transitionSpec,
             label = "bar3Hold"
         ).value
@@ -1332,3 +1412,6 @@ fun PlayingIndicator(
         }
     }
 }
+
+private fun playingBarHoldTarget(animate: Boolean, animated: State<Float>, flatHeight: Float): Float =
+    if (animate) animated.value else flatHeight
