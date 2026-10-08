@@ -43,7 +43,15 @@ struct FeatureUnitVolume {
     FeatureUnitControl control;
     int16_t minimum = 0;
     int16_t maximum = 0;
+    // 设备只接受 minimum + n × resolution 的音量值
+    uint16_t resolution = 1;
 };
+
+/**
+ * 取不高于 value 的最近有效步进（minimum + n × resolution），结果落在设备范围内；
+ * 步进为 0、超过 0x7FFF 或大于整个范围时视为没有步进限制
+ */
+int16_t quantizeVolumeToResolution(int value, int16_t minimum, int16_t maximum, uint16_t resolution);
 
 /**
  * 比特完美模式下由音量键驱动的硬件音量：取最靠近输出端子、可调范围足够的那个 Feature Unit，
@@ -51,11 +59,17 @@ struct FeatureUnitVolume {
  */
 std::vector<FeatureUnitVolume> selectHardwareVolumeControls(const std::vector<FeatureUnitVolume>& volumes);
 
-/** 音量比例到硬件音量，曲线与应用数字音量一致（增益 = 比例²），上限 0 dB */
-int16_t hardwareVolumeForFraction(float fraction, int16_t minimum, int16_t maximum);
+/** 音量比例到硬件音量，曲线与应用数字音量一致（增益 = 比例²），上限 0 dB，并对齐到设备步进 */
+int16_t hardwareVolumeForFraction(float fraction, int16_t minimum, int16_t maximum, uint16_t resolution = 1);
 
 /** 读取 UAC2 RANGE 应答的第一个子区间 */
-bool decodeUac2VolumeRange(const uint8_t* data, size_t length, int16_t* minimum, int16_t* maximum);
+bool decodeUac2VolumeRange(
+    const uint8_t* data,
+    size_t length,
+    int16_t* minimum,
+    int16_t* maximum,
+    uint16_t* resolution
+);
 
 int16_t decodeLittleEndianInt16(const uint8_t* data);
 void encodeLittleEndianInt16(int16_t value, uint8_t* output);
