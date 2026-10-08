@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveEffectiveNativeVol
 
 internal interface UsbExclusiveSinkVolumePort {
     fun bitPerfect(): Boolean
+    fun setNativeBitPerfect(handle: Long, enabled: Boolean)
     fun setNativeVolume(handle: Long, volume: Float)
     fun setFallbackVolume(volume: Float)
     fun publishVolume(volume: Float)
@@ -63,6 +64,8 @@ internal class UsbExclusiveSinkVolumeOwner(
     @Volatile private var cachedMusicVolumeFraction = 1f
     @Volatile private var nativeHandle = 0L
     @Volatile private var hardwareVolumeAvailable = false
+    private val bitPerfectLock = Any()
+    private var nativeBitPerfect: Boolean? = null
     @Volatile var playerVolume = 1f
         private set
     private var lastReportedNativeVolume = Float.NaN
@@ -84,9 +87,11 @@ internal class UsbExclusiveSinkVolumeOwner(
         // 空闲时不监听系统音量，打开原生输出前同步读取一次，首包就用当前音量
         if (handle != 0L) cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
         nativeHandle = handle
+        synchronized(bitPerfectLock) { nativeBitPerfect = null }
         if (observesSystemVolume) {
             if (handle != 0L) registerSystemVolumeObserver() else unregisterSystemVolumeObserver()
         }
+        syncNativeBitPerfect()
         hardwareVolumeAvailable = handle != 0L && port.hasHardwareVolume(handle)
         // 打开后先同步写入硬件音量再出声，避免比特完美首包按 0 dB 播放
         applyHardwareVolume()
@@ -114,12 +119,28 @@ internal class UsbExclusiveSinkVolumeOwner(
         bitPerfect = port.bitPerfect(),
     )
 
+    /** 写入路径每次取音量时同步比特完美开关，设置切换后下一包 PCM 即生效 */
+    fun nativeWriteVolume(): Float {
+        syncNativeBitPerfect()
+        return effectiveNativeVolume()
+    }
+
     fun applyEffectiveNativeVolume(): Float {
+        syncNativeBitPerfect()
         val effectiveVolume = effectiveNativeVolume()
         publishNativeVolume(effectiveVolume)
         val handle = nativeHandle
         if (handle != 0L) port.setNativeVolume(handle, effectiveVolume)
         return effectiveVolume
+    }
+
+    private fun syncNativeBitPerfect() = synchronized(bitPerfectLock) {
+        val handle = nativeHandle
+        if (handle == 0L) return
+        val enabled = port.bitPerfect()
+        if (nativeBitPerfect == enabled) return
+        nativeBitPerfect = enabled
+        port.setNativeBitPerfect(handle, enabled)
     }
 
     fun publishNativeVolume(effectiveVolume: Float) {

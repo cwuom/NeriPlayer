@@ -512,7 +512,7 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
     const int frames = outputFormat_.frameBytes > 0
         ? static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes))
         : 0;
-    if (output == nullptr || frames <= 0) {
+    if (output == nullptr || frames <= 0 || applyBitPerfectGain(output, bytes)) {
         return;
     }
     float applied = appliedGain_.load();
@@ -552,6 +552,22 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
         }
     }
     appliedGain_.store(applied);
+}
+
+bool PcmPipeline::applyBitPerfectGain(uint8_t* output, size_t bytes) {
+    if (!bitPerfect_.load()) {
+        return false;
+    }
+    const bool muted = targetGain_.load() <= 0.000001f;
+    if (muted) {
+        std::memset(output, 0, bytes);
+    }
+    const float applied = muted ? 0.0f : 1.0f;
+    appliedGain_.store(applied);
+    // 退出比特完美后从当前实际增益开始斜坡，避免增益跳变
+    gainRampTarget_ = applied;
+    gainRampFramesRemaining_ = 0;
+    return true;
 }
 
 void PcmPipeline::fadeOutTrailingFrames(uint8_t* output, size_t bytes) const {
@@ -678,7 +694,9 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
     } else {
         applyGain(output, partialUnderrun ? read : bytes);
         if (partialUnderrun) {
-            fadeOutTrailingFrames(output, read);
+            if (!bitPerfect_.load()) {
+                fadeOutTrailingFrames(output, read);
+            }
             markSilentOutputLocked();
         }
         updateOutputSignalStatsLocked(output, bytes);
@@ -734,6 +752,14 @@ void PcmPipeline::setTargetGain(float gain) {
     targetGain_.store(std::clamp(gain, 0.0f, 1.0f));
 }
 
+void PcmPipeline::setBitPerfect(bool enabled) {
+    bitPerfect_.store(enabled);
+}
+
+bool PcmPipeline::bitPerfect() const {
+    return bitPerfect_.load();
+}
+
 void PcmPipeline::armTransportStartRamp() {
     std::lock_guard<std::mutex> guard(lock_);
     transportStartRampFramesTotal_ = std::max(
@@ -745,6 +771,10 @@ void PcmPipeline::armTransportStartRamp() {
 
 void PcmPipeline::applyTransportStartRamp(uint8_t* output, size_t bytes) {
     if (output == nullptr || transportStartRampFramesRemaining_.load() <= 0) {
+        return;
+    }
+    if (bitPerfect_.load()) {
+        transportStartRampFramesRemaining_.store(0);
         return;
     }
     std::lock_guard<std::mutex> guard(lock_);

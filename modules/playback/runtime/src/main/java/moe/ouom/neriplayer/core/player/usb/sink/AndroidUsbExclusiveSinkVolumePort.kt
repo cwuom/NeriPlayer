@@ -13,6 +13,10 @@ internal class AndroidUsbExclusiveSinkVolumePort(
 ) : UsbExclusiveSinkVolumePort {
     override fun bitPerfect(): Boolean = PlayerManager.usbExclusivePreferences.bitPerfect
 
+    override fun setNativeBitPerfect(handle: Long, enabled: Boolean) {
+        UsbExclusiveNativeBridge.setPlayerBitPerfect(handle, enabled)
+    }
+
     override fun setNativeVolume(handle: Long, volume: Float) {
         UsbExclusiveSessionController.setPlayerVolume(handle, volume)
     }

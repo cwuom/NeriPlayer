@@ -1191,7 +1191,7 @@ internal class UsbExclusiveAudioSink(
         pcmWriter.ensureUrgentAudioThreadPriority()
     }
 
-    private fun effectiveNativeVolume(): Float = volumeOwner.effectiveNativeVolume()
+    private fun effectiveNativeVolume(): Float = volumeOwner.nativeWriteVolume()
 
     private fun applyEffectiveNativeVolume(): Float = volumeOwner.applyEffectiveNativeVolume()
 

@@ -174,6 +174,32 @@ class UsbExclusiveSinkVolumeOwnerTest {
     }
 
     @Test
+    fun `native bit perfect mode follows the preference once per change and per handle`() {
+        val port = RecordingVolumePort(bitPerfect = true)
+        val owner = UsbExclusiveSinkVolumeOwner(contextWithoutAudioManager(), false, port)
+        try {
+            owner.nativeWriteVolume()
+            assertTrue(port.nativeBitPerfect.isEmpty())
+
+            owner.setNativeHandle(7L)
+            owner.nativeWriteVolume()
+            owner.applyEffectiveNativeVolume()
+            assertEquals(listOf(7L to true), port.nativeBitPerfect)
+
+            port.bitPerfect = false
+            assertEquals(1f, owner.nativeWriteVolume())
+            owner.nativeWriteVolume()
+            assertEquals(listOf(7L to true, 7L to false), port.nativeBitPerfect)
+
+            owner.setNativeHandle(9L)
+            assertEquals(7L to true, port.nativeBitPerfect[0])
+            assertEquals(9L to false, port.nativeBitPerfect.last())
+        } finally {
+            owner.release()
+        }
+    }
+
+    @Test
     fun `system volume read failure falls back without aborting owner creation`() {
         val context = mock(Context::class.java)
         val manager = mock(AudioManager::class.java)
@@ -221,9 +247,10 @@ class UsbExclusiveSinkVolumeOwnerTest {
     }
 
     private class RecordingVolumePort(
-        private val bitPerfect: Boolean = false,
+        var bitPerfect: Boolean = false,
         private val hardwareVolume: Boolean = false,
     ) : UsbExclusiveSinkVolumePort {
+        val nativeBitPerfect = mutableListOf<Pair<Long, Boolean>>()
         val nativeVolumes = mutableListOf<Pair<Long, Float>>()
         val fallbackVolumes = mutableListOf<Float>()
         val publishedVolumes = mutableListOf<Float>()
@@ -241,6 +268,10 @@ class UsbExclusiveSinkVolumeOwnerTest {
         }
 
         override fun bitPerfect(): Boolean = bitPerfect
+
+        override fun setNativeBitPerfect(handle: Long, enabled: Boolean) {
+            nativeBitPerfect += handle to enabled
+        }
 
         override fun setNativeVolume(handle: Long, volume: Float) {
             nativeVolumes += handle to volume

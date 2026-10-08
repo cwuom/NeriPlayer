@@ -65,7 +65,27 @@ class UsbExclusivePcmWriterTest {
         assertEquals(4, consumed)
         assertEquals(0, source.position())
         assertEquals(6, port.lastBytes.size)
-        assertEquals(listOf<Byte>(-1, -1, 127, 1, 0, -128), port.lastBytes)
+        assertEquals(listOf<Byte>(-1, -1, 127, 0, 0, -128), port.lastBytes)
+    }
+
+    @Test
+    fun `float input decoded from 24 bit PCM converts back bit exactly`() {
+        val port = FakePcmWritePort(outputDescription = "rate=96000 channels=1 bits=24 subslot=3")
+        port.acceptedBytes = 9
+        val writer = UsbExclusivePcmWriter(port) {}
+        writer.prepareDirectScratch()
+        writer.configureSoftwareFloatInput(usingNative = true, pcmEncoding = C.ENCODING_PCM_FLOAT)
+        val samples = listOf(0x7FFFFE, -0x400001, 0x123456)
+        val source = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN)
+        samples.forEach { source.putFloat(it / 8_388_608f) }
+        source.flip()
+
+        writer.writeNative(source, 12, 1f, snapshot(channelCount = 1, frameBytes = 4, pcmEncoding = C.ENCODING_PCM_FLOAT))
+
+        val expected = samples.flatMap { value ->
+            listOf(value.toByte(), (value shr 8).toByte(), (value shr 16).toByte())
+        }
+        assertEquals(expected, port.lastBytes)
     }
 
     @Test

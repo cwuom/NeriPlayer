@@ -16,6 +16,7 @@ import kotlin.math.max
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatSampleForNativePipeline
+import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatToPcmInt
 import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
@@ -202,19 +203,18 @@ internal class UsbExclusivePcmWriter(
 
     private fun putConvertedFloat(output: ByteBuffer, sample: Float, encoding: Int): Boolean = when (encoding) {
         C.ENCODING_PCM_16BIT -> {
-            output.putShort((sample * Short.MAX_VALUE).toInt()
-                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+            output.putShort(usbExclusiveFloatToPcmInt(sample, 16).toShort())
             true
         }
         C.ENCODING_PCM_24BIT -> {
-            val value = (sample * 8_388_607f).toInt()
+            val value = usbExclusiveFloatToPcmInt(sample, 24)
             output.put((value and 0xFF).toByte())
             output.put(((value shr 8) and 0xFF).toByte())
             output.put(((value shr 16) and 0xFF).toByte())
             true
         }
         C.ENCODING_PCM_32BIT -> {
-            output.putInt((sample * Int.MAX_VALUE.toFloat()).toInt())
+            output.putInt(usbExclusiveFloatToPcmInt(sample, 32))
             true
         }
         else -> false

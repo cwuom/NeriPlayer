@@ -77,6 +77,9 @@ public:
     void resetCounters();
     void addDroppedFrames(int64_t frames);
     void setTargetGain(float gain);
+    // 比特完美：单位增益原样透传，增益为 0 时硬静音，不做任何斜坡和淡入淡出
+    void setBitPerfect(bool enabled);
+    [[nodiscard]] bool bitPerfect() const;
     void armTransportStartRamp();
     void applyTransportStartRamp(uint8_t* output, size_t bytes);
 
@@ -94,6 +97,7 @@ private:
     size_t writeRingLocked(const uint8_t* input, size_t bytes);
     size_t readRingLocked(uint8_t* output, size_t bytes);
     void applyGain(uint8_t* output, size_t bytes);
+    bool applyBitPerfectGain(uint8_t* output, size_t bytes);
     void fadeOutTrailingFrames(uint8_t* output, size_t bytes) const;
     void markSilentOutputLocked();
     void updateOutputSignalStatsLocked(const uint8_t* output, size_t bytes);
@@ -132,6 +136,7 @@ private:
     float lastChannel1OutputPeak_ = 0.0f;
     std::atomic<float> targetGain_ { 1.0f };
     std::atomic<float> appliedGain_ { 1.0f };
+    std::atomic<bool> bitPerfect_ { false };
     float gainRampTarget_ = 1.0f;
     int gainRampFramesRemaining_ = 0;
     int transportStartRampFramesTotal_ = 0;

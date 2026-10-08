@@ -257,6 +257,13 @@ internal object UsbExclusiveNativeBridge {
         }
     }
 
+    fun setPlayerBitPerfect(handle: Long, enabled: Boolean): Boolean {
+        if (handle == 0L || !ensureLoaded()) return false
+        return callNativeBoolean("nativeSetPlayerBitPerfect", { "handle=$handle enabled=$enabled" }) {
+            nativeSetPlayerBitPerfect(handle, enabled)
+        }
+    }
+
     fun setPlayerFocusMuted(handle: Long, muted: Boolean): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
         return callNativeBoolean(
@@ -432,6 +439,9 @@ internal object UsbExclusiveNativeBridge {
     private external fun nativeSetPlayerVolume(handle: Long, volume: Float): Boolean
     private external fun nativeSetHardwareVolume(handle: Long, fraction: Float): Boolean
     private external fun nativeHasHardwareVolume(handle: Long): Boolean
+
+    @JvmStatic
+    private external fun nativeSetPlayerBitPerfect(handle: Long, enabled: Boolean): Boolean
 
     @JvmStatic
     private external fun nativeSetPlayerFocusMuted(handle: Long, muted: Boolean): Boolean

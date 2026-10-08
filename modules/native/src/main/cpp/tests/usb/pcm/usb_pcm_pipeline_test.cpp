@@ -1,5 +1,6 @@
 #include "usb/pcm/usb_pcm_pipeline.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -519,9 +520,143 @@ void verifiesIntegerCodecDepthsAndEndianInputs() {
     assert((finiteGuardOutput == std::array<uint8_t, 2> {}));
 }
 
+std::vector<uint8_t> fullScale16BitFrames(size_t frames) {
+    std::vector<uint8_t> input(frames * 4U, 0);
+    for (size_t frame = 0; frame < frames; ++frame) {
+        const int16_t left = static_cast<int16_t>(32767 - static_cast<int>(frame % 7U));
+        const int16_t right = static_cast<int16_t>(-32768 + static_cast<int>(frame % 5U));
+        std::memcpy(input.data() + frame * 4U, &left, sizeof(left));
+        std::memcpy(input.data() + frame * 4U + 2U, &right, sizeof(right));
+    }
+    return input;
+}
+
+void verifiesBitPerfectResumeAndTransportStartKeepSamplesExact() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    pipeline.setTargetGain(1.0f);
+
+    const std::vector<uint8_t> input = fullScale16BitFrames(64U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::array<uint8_t, 4> pausedOutput { 1, 1, 1, 1 };
+    assert(pipeline.fill(pausedOutput.data(), pausedOutput.size(), false) == 0);
+    pipeline.armTransportStartRamp();
+
+    std::vector<uint8_t> output(input.size(), 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+    pipeline.applyTransportStartRamp(output.data(), output.size());
+    assert(output == input);
+    assert(pipeline.snapshot().appliedGain == 1.0f);
+}
+
+void verifiesBitPerfectMuteIsHardAndUnmuteIsExact() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(16U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    pipeline.setTargetGain(0.0f);
+    std::vector<uint8_t> muted(input.size(), 1);
+    assert(pipeline.fill(muted.data(), muted.size(), true) == input.size());
+    assert(muted == std::vector<uint8_t>(input.size(), 0));
+
+    pipeline.setTargetGain(1.0f);
+    std::vector<uint8_t> unmuted(input.size(), 0);
+    assert(pipeline.fill(unmuted.data(), unmuted.size(), true) == input.size());
+    assert(unmuted == input);
+}
+
+void verifiesBitPerfectPartialUnderrunKeepsValidFrames() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(4U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::vector<uint8_t> output(input.size() * 2U, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+    assert(std::equal(input.begin(), input.end(), output.begin()));
+    assert(std::all_of(output.begin() + static_cast<std::ptrdiff_t>(input.size()), output.end(),
+        [](uint8_t byte) { return byte == 0U; }));
+}
+
+void verifiesBitPerfectLeavingRestoresSmoothGain() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(8U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    std::vector<uint8_t> output(input.size(), 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+
+    pipeline.setBitPerfect(false);
+    pipeline.setTargetGain(0.5f);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+    const auto snapshot = pipeline.snapshot();
+    assert(snapshot.appliedGain < 1.0f);
+    assert(snapshot.appliedGain > 0.5f);
+}
+
+void verifiesIntegerUpconversionPadsWithoutChangingBits() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor24BitIn32Container(48000, 48000);
+    config.input.encoding = 2;
+    assert(pipeline.configure(config, &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> input = fullScale16BitFrames(32U);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::vector<uint8_t> output(32U * 8U, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+    for (size_t sample = 0; sample < 64U; ++sample) {
+        int16_t source = 0;
+        int32_t padded = 0;
+        std::memcpy(&source, input.data() + sample * 2U, sizeof(source));
+        std::memcpy(&padded, output.data() + sample * 4U, sizeof(padded));
+        assert(padded == static_cast<int32_t>(static_cast<uint32_t>(source) << 16U));
+    }
+}
+
+void verifiesFloatFromIntegerSourceRoundTripsExactly() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(48000, 48000);
+    config.input.encoding = 4;
+    assert(pipeline.configure(config, &error));
+    pipeline.setBitPerfect(true);
+    const std::vector<uint8_t> source = fullScale16BitFrames(32U);
+    std::vector<uint8_t> input(source.size() * 2U, 0);
+    for (size_t sample = 0; sample < 64U; ++sample) {
+        int16_t value = 0;
+        std::memcpy(&value, source.data() + sample * 2U, sizeof(value));
+        writeFloatSample(input, sample * 4U, static_cast<float>(value) / 32768.0f);
+    }
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::vector<uint8_t> output(source.size(), 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+    assert(output == source);
+}
+
 } // namespace
 
 int main() {
+    verifiesBitPerfectResumeAndTransportStartKeepSamplesExact();
+    verifiesBitPerfectMuteIsHardAndUnmuteIsExact();
+    verifiesBitPerfectPartialUnderrunKeepsValidFrames();
+    verifiesBitPerfectLeavingRestoresSmoothGain();
+    verifiesIntegerUpconversionPadsWithoutChangingBits();
+    verifiesFloatFromIntegerSourceRoundTripsExactly();
     verifiesExactRatePassThroughAcrossWrites();
     verifiesStreamingResampleKeepsLongTermFrameCount();
     verifiesPausePreservesQueuedAudio();
