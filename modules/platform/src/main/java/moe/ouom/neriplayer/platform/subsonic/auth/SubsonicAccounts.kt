@@ -44,6 +44,7 @@ class SubsonicAccounts(context: Context) {
     private val state = MutableStateFlow<List<SubsonicProfile>>(emptyList())
     val profiles = state.asStateFlow()
     @Volatile private var snapshot: List<SubsonicProfile>? = null
+    val isLoaded: Boolean get() = snapshot != null
 
     suspend fun load() = withContext(Dispatchers.IO) {
         synchronized(this@SubsonicAccounts) {

@@ -45,4 +45,7 @@
     <string name="server_lyrics_error">歌词加载失败：%1$s</string>
     <string name="settings_search_results_title">搜索结果</string>
     <string name="settings_search_clear_query">清空搜索</string>
+    <string name="server_refresh">刷新</string>
+    <string name="storage_type_server_browse_cache">音乐服务器浏览缓存</string>
+    <string name="storage_desc_server_browse_cache">服务器专辑目录和曲目快照，不包含离线音频。</string>
 </resources>

@@ -3,6 +3,8 @@
 package moe.ouom.neriplayer.core.player.engine.datasource
 
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
+import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import moe.ouom.neriplayer.data.model.server.ServerSongRef
@@ -19,7 +21,11 @@ internal class ServerAwareHttpDataSource(private val delegate: HttpDataSource) :
         serverRequest = dataSpec.uri.host == ServerSongRef.RESOURCE_HOST
         remaining = C.LENGTH_UNSET.toLong()
         return try {
-            delegate.open(dataSpec).also { remaining = it }
+            delegate.open(dataSpec).also {
+                // A successful open with HTTP 416 is Media3's exact-file-end case, even
+                // when an explicit request length makes open return a positive value.
+                remaining = if (serverRequest && delegate.responseCode == 416) 0L else it
+            }
         } catch (error: IOException) {
             runCatching { delegate.close() }
             throw classify(error)
@@ -45,6 +51,9 @@ internal class ServerAwareHttpDataSource(private val delegate: HttpDataSource) :
     }
 
     private fun classify(error: IOException): IOException = if (!serverRequest) error else {
-        SubsonicException.find(error) ?: SubsonicException.transport(error)
+        if (DataSourceException.isCausedByPositionOutOfRange(error)) {
+            // Preserve Media3's range signal without retaining response bodies or signed URLs.
+            DataSourceException(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE)
+        } else SubsonicException.find(error) ?: SubsonicException.transport(error)
     }
 }

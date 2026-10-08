@@ -61,8 +61,8 @@ internal fun removeExplicitRangeHeader(headers: Map<String, String>): Map<String
 @UnstableApi
 class ConditionalHttpDataSourceFactory(
     private val baseFactory: HttpDataSource.Factory,
-    cookieRepo: BiliCookieRepository,
-    youtubeAuthRepo: YouTubeAuthRepository,
+    private val cookieRepo: BiliCookieRepository,
+    private val youtubeAuthRepo: YouTubeAuthRepository,
     private val trafficStatsRepository: TrafficStatsRepository? = null
 ) : HttpDataSource.Factory {
 
@@ -124,6 +124,11 @@ class ConditionalHttpDataSourceFactory(
         baseFactory.setDefaultRequestProperties(defaultRequestProperties)
         return this
     }
+
+    /** Server prefetch keeps the same resource/auth/traffic adapters with individually cancellable calls. */
+    internal fun forServerPrefetch(calls: okhttp3.Call.Factory): ConditionalHttpDataSourceFactory =
+        ConditionalHttpDataSourceFactory(androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(calls),
+            cookieRepo, youtubeAuthRepo, trafficStatsRepository)
 
     fun close() {
         scope.cancel()

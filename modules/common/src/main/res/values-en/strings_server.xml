@@ -45,4 +45,7 @@
     <string name="server_lyrics_error">Could not load lyrics: %1$s</string>
     <string name="settings_search_results_title">Search results</string>
     <string name="settings_search_clear_query">Clear search</string>
+    <string name="server_refresh">Refresh</string>
+    <string name="storage_type_server_browse_cache">Music Server Browsing Cache</string>
+    <string name="storage_desc_server_browse_cache">Server album and track snapshots; does not include offline audio.</string>
 </resources>

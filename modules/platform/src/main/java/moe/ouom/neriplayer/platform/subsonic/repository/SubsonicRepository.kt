@@ -7,6 +7,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
@@ -25,7 +28,44 @@ data class ServerAlbum(val profileId: String, val id: String, val name: String,
                        val artist: String, val coverUrl: String?, val songCount: Int)
 
 /** Minimal album/search/playback adapter using the application's existing song and lyric models. */
-class SubsonicRepository(val accounts: SubsonicAccounts, private val client: SubsonicClient) {
+class SubsonicRepository(val accounts: SubsonicAccounts, private val client: SubsonicClient,
+                        val browseCache: SubsonicBrowseCache = SubsonicBrowseCache()) {
+    init {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            accounts.profiles.collect { profiles ->
+                if (accounts.isLoaded) {
+                    try { browseCache.retainProfiles(profiles.filter { it.enabled }.associate { it.id to it.revision }) }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { /* Storage failure must not disable server access. */ }
+                }
+            }
+        }
+    }
+
+    fun browseKey(profileId: String, albumId: String? = null, query: String = "",
+                  offset: Int = 0, size: Int = 30): ServerBrowseKey {
+        val profile = accounts.profile(profileId) ?: throw SubsonicException.accountUnavailable()
+        return ServerBrowseKey(profileId, profile.revision,
+            if (albumId != null) "album" else if (query.isNotBlank()) "search" else "albums",
+            albumId ?: query.trim(), offset, size)
+    }
+
+    suspend fun browse(key: ServerBrowseKey, force: Boolean = false): ServerBrowsePage = withContext(Dispatchers.IO) {
+        if (accounts.profile(key.profileId)?.revision != key.revision) throw SubsonicException.accountUnavailable()
+        browseCache.fetch(key, force) {
+            val page = when (key.kind) {
+                "album" -> ServerBrowsePage(songs = fetchAlbumSongs(key.profileId, key.value))
+                "search" -> fetchSearch(key.profileId, key.value, key.offset, key.size).let {
+                    ServerBrowsePage(songs = it, hasMore = it.size == key.size)
+                }
+                else -> fetchAlbums(key.profileId, key.offset, key.size).let {
+                    ServerBrowsePage(albums = it, hasMore = it.size == key.size)
+                }
+            }
+            if (accounts.profile(key.profileId)?.revision != key.revision) throw SubsonicException.accountUnavailable()
+            page
+        }
+    }
     private val lyricVersions = ConcurrentHashMap<String, Pair<Long, Int>>()
     private val lyricsCache = SubsonicLyricsCache()
     private data class AudioEntry(val revision: Long, val savedAt: Long, val metadata: SubsonicAudioMetadata)
@@ -54,7 +94,10 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             synchronized(audioMetadata) { audioMetadata.keys.removeAll { it.profileId == original.id } }
         }
 
-    suspend fun albums(profileId: String, offset: Int, size: Int = 30): List<ServerAlbum> {
+    suspend fun albums(profileId: String, offset: Int, size: Int = 30): List<ServerAlbum> =
+        browse(browseKey(profileId, offset = offset, size = size)).albums
+
+    private suspend fun fetchAlbums(profileId: String, offset: Int, size: Int): List<ServerAlbum> {
         val data = call(profileId, "getAlbumList2", mapOf("type" to "alphabeticalByName",
             "offset" to offset.toString(), "size" to size.toString()))
             .optJSONObject("albumList2")?.optJSONArray("album") ?: JSONArray()
@@ -66,10 +109,16 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
     }
 
     suspend fun albumSongs(profileId: String, albumId: String): List<SongItem> =
+        browse(browseKey(profileId, albumId = albumId)).songs
+
+    private suspend fun fetchAlbumSongs(profileId: String, albumId: String): List<SongItem> =
         call(profileId, "getAlbum", mapOf("id" to albumId)).getJSONObject("album")
             .optJSONArray("song").objects().map { mapSong(profileId, it) }
 
     suspend fun search(profileId: String, query: String, offset: Int, size: Int = 30): List<SongItem> =
+        browse(browseKey(profileId, query = query, offset = offset, size = size)).songs
+
+    private suspend fun fetchSearch(profileId: String, query: String, offset: Int, size: Int): List<SongItem> =
         call(profileId, "search3", mapOf("query" to query, "songOffset" to offset.toString(),
             "songCount" to size.toString(), "artistCount" to "0", "albumCount" to "0"))
             .optJSONObject("searchResult3")?.optJSONArray("song").objects().map { mapSong(profileId, it) }

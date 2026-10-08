@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,16 +28,26 @@ import moe.ouom.neriplayer.ui.viewmodel.server.MusicServerViewModel
 fun MusicServerScreen(vm: MusicServerViewModel = viewModel()) {
     val state by vm.state.collectAsState()
     val profiles by vm.profiles.collectAsState()
-    var query by remember { mutableStateOf("") }
-    BackHandler(state.album != null) { vm.search("") }
+    val location = vm.locationKey
+    val listState = remember(location) {
+        val (index, offset) = vm.listPosition(location)
+        LazyListState(index, offset)
+    }
+    DisposableEffect(location, listState) {
+        onDispose { vm.saveListPosition(location, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) }
+    }
+    BackHandler(state.album != null || state.query.isNotBlank()) { vm.back() }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(stringResource(CoreCommonR.string.server_my_music), style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(vertical = 12.dp))
+            TextButton(onClick = vm::refresh, enabled = !state.loading && state.profileId != null) {
+                Text(stringResource(CoreCommonR.string.server_refresh))
+            }
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(profiles, key = { it.id }) { profile ->
-                FilterChip(selected = state.profileId == profile.id, onClick = { query = ""; vm.select(profile.id) },
+                FilterChip(selected = state.profileId == profile.id, onClick = { vm.select(profile.id) },
                     label = { Text(profile.label) })
             }
         }
@@ -48,20 +59,20 @@ fun MusicServerScreen(vm: MusicServerViewModel = viewModel()) {
         else if (profiles.isEmpty()) Text(stringResource(CoreCommonR.string.server_empty), Modifier.padding(vertical = 24.dp))
         else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.weight(1f),
+                OutlinedTextField(value = state.inputQuery, onValueChange = vm::editQuery, modifier = Modifier.weight(1f),
                     singleLine = true, label = { Text(stringResource(CoreCommonR.string.server_search_hint)) })
-                TextButton(onClick = { vm.search(query) }) { Text(stringResource(CoreCommonR.string.server_search)) }
+                TextButton(onClick = { vm.search(state.inputQuery) }) { Text(stringResource(CoreCommonR.string.server_search)) }
             }
             if (state.album != null || state.query.isNotEmpty()) {
-                TextButton(onClick = { query = ""; vm.search("") }) { Text(stringResource(CoreCommonR.string.server_back_albums)) }
+                TextButton(onClick = vm::back) { Text(stringResource(CoreCommonR.string.server_back_albums)) }
             }
             state.album?.let { Text(it.name, style = MaterialTheme.typography.titleMedium) }
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
             state.error?.let { message ->
                 Text(stringResource(message), color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = { vm.load(more = state.hasMore) }) { Text(stringResource(CoreCommonR.string.server_retry)) }
+                TextButton(onClick = vm::retry) { Text(stringResource(CoreCommonR.string.server_retry)) }
             }
-            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = LocalMiniPlayerHeight.current + 24.dp)) {
+            LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = LocalMiniPlayerHeight.current + 24.dp)) {
                 if (state.album == null && state.query.isBlank()) {
                     items(state.albums, key = { it.id }) { album ->
                         ServerResourceRow(album.name, album.artist, album.coverUrl) { vm.open(album) }

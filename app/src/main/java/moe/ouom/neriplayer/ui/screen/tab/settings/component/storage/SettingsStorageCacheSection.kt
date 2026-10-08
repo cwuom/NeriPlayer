@@ -176,6 +176,8 @@ internal fun SettingsStorageCacheSection(
     onClearBiliArchiveCacheChange: (Boolean) -> Unit,
     clearYoutubePlaylistCache: Boolean,
     onClearYoutubePlaylistCacheChange: (Boolean) -> Unit,
+    clearServerBrowseCache: Boolean,
+    onClearServerBrowseCacheChange: (Boolean) -> Unit,
     clearLogFiles: Boolean,
     onClearLogFilesChange: (Boolean) -> Unit,
     clearCrashLogs: Boolean,
@@ -599,6 +601,16 @@ internal fun SettingsStorageCacheSection(
                         onCheckedChange = onClearYoutubePlaylistCacheChange
                     )
                     CacheTypeRow(
+                        checked = clearServerBrowseCache,
+                        title = stringResource(CoreCommonR.string.storage_type_server_browse_cache),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.ServerBrowse,
+                            fallback = stringResource(CoreCommonR.string.storage_desc_server_browse_cache)
+                        ),
+                        onCheckedChange = onClearServerBrowseCacheChange
+                    )
+                    CacheTypeRow(
                         checked = clearLogFiles,
                         title = stringResource(CoreCommonR.string.storage_type_log_files),
                         description = cacheTypeDescription(
@@ -630,6 +642,7 @@ internal fun SettingsStorageCacheSection(
                     biliFavoriteCache = clearBiliFavoriteCache,
                     biliArchiveCache = clearBiliArchiveCache,
                     youtubePlaylistCache = clearYoutubePlaylistCache,
+                    serverBrowseCache = clearServerBrowseCache,
                     logFiles = clearLogFiles,
                     crashLogs = clearCrashLogs
                 )

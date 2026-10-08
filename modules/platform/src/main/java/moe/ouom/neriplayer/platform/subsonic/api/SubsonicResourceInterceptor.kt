@@ -29,6 +29,11 @@ class SubsonicResourceInterceptor(private val accounts: () -> SubsonicAccounts) 
             val response = chain.proceed(request.newBuilder().url(url)
                 .removeHeader("Authorization").removeHeader("Cookie")
                 .removeHeader("Referer").removeHeader("Origin").build())
+            // Media3 needs Content-Range to distinguish an EOF probe from an invalid offset.
+            // Keep the opaque request even on errors so transport credentials cannot escape.
+            if (method == "stream" && response.code == 416) {
+                return response.newBuilder().request(request).build()
+            }
             val type = response.header("Content-Type").orEmpty()
             if (!response.isSuccessful) {
                 val error = SubsonicException.http(response.code, response.header("Retry-After"))

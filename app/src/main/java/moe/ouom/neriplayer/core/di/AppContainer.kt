@@ -254,7 +254,13 @@ object AppContainer {
     private const val YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS = 20_000L
 
     val subsonicAccounts by lazy { SubsonicAccounts(application) }
-    val subsonicRepository by lazy { SubsonicRepository(subsonicAccounts, SubsonicClient(sharedOkHttpClient)) }
+    val subsonicRepository by lazy {
+        SubsonicRepository(subsonicAccounts, SubsonicClient(sharedOkHttpClient),
+            moe.ouom.neriplayer.platform.subsonic.repository.SubsonicBrowseCache(
+                moe.ouom.neriplayer.platform.subsonic.repository.SubsonicBrowseRoomStore(
+                    moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore(
+                        moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase.getInstance(application)))))
+    }
 
     // 基础 Repo
     val settingsRepo by lazy { SettingsRepository(application) }

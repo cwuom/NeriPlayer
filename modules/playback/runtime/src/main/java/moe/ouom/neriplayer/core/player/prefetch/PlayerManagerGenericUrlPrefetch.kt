@@ -38,9 +38,11 @@ internal fun PlayerManager.prefetchNextGenericTrackUrl() {
         else -> -1
     }
     val nextSong = currentPlaylist.getOrNull(nextIndex)
-    // Enable server media prefetch after bounded cancellation and bandwidth arbitration are verified.
+    if (nextSong?.isServerSong() == true) {
+        prefetchNextServerTrack(nextSong)
+        return
+    }
     if (nextSong == null ||
-        nextSong.isServerSong() ||
         isLocalSong(nextSong) ||
         isYouTubeMusicTrack(nextSong) ||
         isDirectStreamUrl(nextSong.streamUrl)
@@ -185,6 +187,11 @@ internal fun PlayerManager.cancelGenericUrlPrefetchUnlessReusableForSong(
     song: SongItem,
     reason: String
 ) {
+    if (song.isServerSong()) {
+        // Playback reuses the bytes already written, without competing with the speculative writer.
+        cancelGenericUrlPrefetch(reason)
+        return
+    }
     val activeJob = currentGenericUrlPrefetchJob?.takeIf { it.isActive } ?: return
     val reusableKey = song
         .takeUnless { isLocalSong(it) || isYouTubeMusicTrack(it) || isDirectStreamUrl(it.streamUrl) }
@@ -205,6 +212,8 @@ internal suspend fun PlayerManager.consumeGenericUrlPrefetch(
     cacheKey: String,
     song: SongItem
 ): SongUrlResult.Success? {
+    // Server addresses are local references; playback must never wait for speculative media IO.
+    if (song.isServerSong()) return null
     consumeValidGenericUrlPrefetch(cacheKey, song)?.let { return it }
     val activeJob = currentGenericUrlPrefetchJob
         ?.takeIf { it.isActive && currentGenericUrlPrefetchKey == cacheKey }
