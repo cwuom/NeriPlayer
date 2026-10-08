@@ -11,6 +11,7 @@
 #include "usb/exclusive/usb_streaming_sync_policy.h"
 #include "usb/feedback/usb_feedback_rate_math.h"
 #include "usb/iso/usb_iso_transfer_window.h"
+#include "usb/uac2/usb_uac2_clock_graph.h"
 
 #define LOG_TAG "NeriUsbExclusive"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -559,7 +560,88 @@ struct Uac2ClockPath {
         neri::usb::uac2::ControlCapability::None;
 };
 
+int readUac2ClockSelectorPin(
+    libusb_device_handle* deviceHandle,
+    int audioControlInterface,
+    int selectorId,
+    int pinCount
+) {
+    if (deviceHandle == nullptr) {
+        return -1;
+    }
+    constexpr uint8_t kCurRequest = 0x01;
+    constexpr uint16_t kClockSelectorControl = 0x0100;
+    constexpr unsigned int kControlTimeoutMs = 1000;
+    uint8_t pin = 0;
+    const int result = libusb_control_transfer(
+        deviceHandle,
+        makeClassInterfaceRequestType(kLibusbEndpointIn),
+        kCurRequest,
+        kClockSelectorControl,
+        makeClockEntityIndex(selectorId, audioControlInterface),
+        &pin,
+        1,
+        kControlTimeoutMs
+    );
+    if (result != 1 || pin < 1 || pin > pinCount) {
+        LOGW(
+            "UAC2 clock selector %d pin unreadable rc=%d pin=%u, using pin 1",
+            selectorId,
+            result,
+            static_cast<unsigned int>(pin)
+        );
+        return -1;
+    }
+    return pin - 1;
+}
+
+// 终端直连时钟源时原样返回；经选择器/倍频器时按选择器当前输入脚走到最终时钟源
+int resolveUac2FinalClockId(
+    libusb_device_handle* deviceHandle,
+    int audioControlInterface,
+    int terminalLink,
+    int terminalClockId,
+    const std::vector<neri::usb::uac2::ClockSource>& clockSources,
+    const std::vector<neri::usb::uac2::ClockRouting>& clockRoutings,
+    std::string* failureReason
+) {
+    std::vector<int> sourceIds;
+    for (const auto& source : clockSources) {
+        sourceIds.push_back(source.id);
+    }
+    const bool direct = std::find(sourceIds.begin(), sourceIds.end(), terminalClockId) != sourceIds.end();
+    if (direct || clockRoutings.empty()) {
+        return terminalClockId;
+    }
+    const auto route = neri::usb::uac2::resolveTerminalClockSource(
+        audioControlInterface,
+        terminalLink,
+        terminalClockId,
+        sourceIds,
+        clockRoutings,
+        [deviceHandle, audioControlInterface](int selectorId, int pinCount) {
+            return readUac2ClockSelectorPin(deviceHandle, audioControlInterface, selectorId, pinCount);
+        }
+    );
+    if (route.status != neri::usb::uac2::ClockGraphStatus::Valid) {
+        if (failureReason != nullptr) {
+            *failureReason = std::string("uac2_clock_route_") +
+                neri::usb::uac2::clockGraphStatusName(route.status) + ":" + route.reason;
+        }
+        return 0;
+    }
+    LOGI(
+        "UAC2 clock routed: terminal=%d entry=%d source=%d hops=%zu",
+        terminalLink,
+        terminalClockId,
+        route.finalClockSourceId,
+        route.traversedEntities.size()
+    );
+    return route.finalClockSourceId;
+}
+
 bool findUac2ClockPath(
+    libusb_device_handle* deviceHandle,
     const libusb_config_descriptor* config,
     int terminalLink,
     Uac2ClockPath* output,
@@ -574,6 +656,7 @@ bool findUac2ClockPath(
 
     bool ambiguousAudioControl = false;
     Uac2ClockPath result;
+    std::string routingFailure;
 
     for (int ifaceIndex = 0; ifaceIndex < config->bNumInterfaces; ++ifaceIndex) {
         const libusb_interface& iface = config->interface[ifaceIndex];
@@ -589,6 +672,7 @@ bool findUac2ClockPath(
 
             int terminalClockSourceId = 0;
             std::vector<neri::usb::uac2::ClockSource> clockSources;
+            std::vector<neri::usb::uac2::ClockRouting> clockRoutings;
             int offset = 0;
             while (offset + 2 <= alt.extra_length) {
                 const int descriptorLength = alt.extra[offset];
@@ -618,6 +702,15 @@ bool findUac2ClockPath(
                         )) {
                         clockSources.push_back(clock);
                     }
+                    neri::usb::uac2::ClockRouting routing;
+                    if (neri::usb::uac2::parseClockRoutingDescriptor(
+                            descriptor,
+                            descriptorLength,
+                            &routing,
+                            &parseError
+                        )) {
+                        clockRoutings.push_back(routing);
+                    }
                 }
                 offset += descriptorLength;
             }
@@ -625,11 +718,20 @@ bool findUac2ClockPath(
             if (terminalClockSourceId <= 0) {
                 continue;
             }
+            const int finalClockId = resolveUac2FinalClockId(
+                deviceHandle,
+                alt.bInterfaceNumber,
+                terminalLink,
+                terminalClockSourceId,
+                clockSources,
+                clockRoutings,
+                &routingFailure
+            );
             const auto clock = std::find_if(
                 clockSources.begin(),
                 clockSources.end(),
-                [terminalClockSourceId](const neri::usb::uac2::ClockSource& candidate) {
-                    return candidate.id == terminalClockSourceId;
+                [finalClockId](const neri::usb::uac2::ClockSource& candidate) {
+                    return candidate.id == finalClockId;
                 }
             );
             if (clock == clockSources.end()) {
@@ -654,7 +756,7 @@ bool findUac2ClockPath(
     }
     if (result.audioControlInterface < 0) {
         if (failureReason != nullptr) {
-            *failureReason = "uac2_terminal_link_not_found";
+            *failureReason = routingFailure.empty() ? "uac2_terminal_link_not_found" : routingFailure;
         }
         return false;
     }
@@ -1078,6 +1180,7 @@ bool findStreamingAltUac2(
             Uac2ClockPath clockPath;
             std::string clockFailure;
             if (!findUac2ClockPath(
+                    devh,
                     config,
                     format.terminalLink,
                     &clockPath,

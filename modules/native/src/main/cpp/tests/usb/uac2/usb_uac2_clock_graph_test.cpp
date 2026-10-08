@@ -177,9 +177,64 @@ void rejectsInconsistentValidityAdvertisement() {
     assert(result.reason == "clock_validity_state_inconsistent");
 }
 
+void resolvesXmosStyleSelectorBetweenTerminalAndSources() {
+    // XMOS 参考固件：USB 输入终端 2 -> 时钟选择器 40 -> 内部时钟 41 / S/PDIF 42
+    constexpr uint8_t selectorDescriptor[] = { 9, 0x24, 0x0B, 40, 2, 41, 42, 0x03, 0 };
+    constexpr uint8_t multiplierDescriptor[] = { 7, 0x24, 0x0C, 50, 41, 0x00, 0 };
+    neri::usb::uac2::ClockRouting selector;
+    neri::usb::uac2::ClockRouting multiplier;
+    std::string error;
+    assert(neri::usb::uac2::parseClockRoutingDescriptor(selectorDescriptor, 9, &selector, &error));
+    assert(selector.selector && selector.id == 40);
+    assert((selector.sourceIds == std::vector<int> { 41, 42 }));
+    assert(neri::usb::uac2::parseClockRoutingDescriptor(multiplierDescriptor, 7, &multiplier, &error));
+    assert(!multiplier.selector && (multiplier.sourceIds == std::vector<int> { 41 }));
+
+    constexpr uint8_t truncatedSelector[] = { 6, 0x24, 0x0B, 40, 2, 41 };
+    constexpr uint8_t clockSource[] = { 8, 0x24, 0x0A, 41, 0x01, 0x07, 0, 0 };
+    neri::usb::uac2::ClockRouting rejected;
+    assert(!neri::usb::uac2::parseClockRoutingDescriptor(truncatedSelector, 6, &rejected, &error));
+    assert(!neri::usb::uac2::parseClockRoutingDescriptor(clockSource, 8, &rejected, &error));
+
+    int pinReads = 0;
+    const auto unreadable = neri::usb::uac2::resolveTerminalClockSource(
+        0, 2, 40, { 41, 42 }, { selector },
+        [&pinReads](int selectorId, int pinCount) {
+            ++pinReads;
+            assert(selectorId == 40 && pinCount == 2);
+            return -1;
+        }
+    );
+    assert(unreadable.status == ClockGraphStatus::Valid);
+    assert(unreadable.finalClockSourceId == 41);
+    assert(pinReads == 1);
+
+    const auto external = neri::usb::uac2::resolveTerminalClockSource(
+        0, 2, 40, { 41, 42 }, { selector },
+        [](int, int) { return 1; }
+    );
+    assert(external.finalClockSourceId == 42);
+
+    const auto viaMultiplier = neri::usb::uac2::resolveTerminalClockSource(
+        0, 2, 50, { 41 }, { multiplier }, nullptr
+    );
+    assert(viaMultiplier.status == ClockGraphStatus::Valid);
+    assert(viaMultiplier.finalClockSourceId == 41);
+
+    neri::usb::uac2::ClockRouting dangling;
+    dangling.id = 40;
+    dangling.selector = true;
+    dangling.sourceIds = { 99 };
+    const auto missing = neri::usb::uac2::resolveTerminalClockSource(
+        0, 2, 40, { 41 }, { dangling }, nullptr
+    );
+    assert(missing.status == ClockGraphStatus::MissingEntity);
+}
+
 } // namespace
 
 int main() {
+    resolvesXmosStyleSelectorBetweenTerminalAndSources();
     resolvesDirectSourceAndPreservesValidityState();
     resolvesSelectedSelectorPinAndRejectsUnselectedMultiplePins();
     resolvesMultiplierRatioWithReduction();
