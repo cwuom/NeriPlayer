@@ -33,7 +33,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -241,14 +240,7 @@ internal fun TopTracksBarChart(
     val primaryColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
 
-    val maxValue = remember(tracks, sortMode) {
-        when (sortMode) {
-            StatsSortMode.PLAY_COUNT, StatsSortMode.RECENT, StatsSortMode.FIRST_PLAYED ->
-                tracks.maxOfOrNull { it.playCount.toFloat() } ?: 1f
-            StatsSortMode.LISTEN_TIME ->
-                tracks.maxOfOrNull { it.totalListenMs.toFloat() } ?: 1f
-        }
-    }
+    val maxValue = statsChartMaxValue(tracks, sortMode)
 
     Column(
         modifier = modifier
@@ -263,14 +255,9 @@ internal fun TopTracksBarChart(
         )
 
         tracks.forEachIndexed { index, stat ->
-            val value = when (sortMode) {
-                StatsSortMode.PLAY_COUNT, StatsSortMode.RECENT, StatsSortMode.FIRST_PLAYED ->
-                    stat.playCount.toFloat()
-                StatsSortMode.LISTEN_TIME -> stat.totalListenMs.toFloat()
-            }
-            val fraction = if (maxValue > 0f) value / maxValue else 0f
+            val valueLabel = statsChartValueLabel(stat, sortMode)
             val animatedFraction by animateFloatAsState(
-                targetValue = fraction,
+                targetValue = statsChartFraction(statsChartValue(stat, sortMode), maxValue),
                 animationSpec = tween(600, delayMillis = index * 80),
                 label = "bar_$index"
             )
@@ -281,8 +268,7 @@ internal fun TopTracksBarChart(
                         Text(stat.displayName(), style = MaterialTheme.typography.bodySmall,
                             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Text(
-                            if (sortMode == StatsSortMode.LISTEN_TIME) formatListenDuration(stat.totalListenMs)
-                            else stat.playCount.toString(),
+                            valueLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -307,10 +293,7 @@ internal fun TopTracksBarChart(
                 StatsChartBar(animatedFraction, primaryColor, trackColor, Modifier.weight(1f).height(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    when (sortMode) {
-                        StatsSortMode.LISTEN_TIME -> formatListenDuration(stat.totalListenMs)
-                        else -> "${stat.playCount}"
-                    },
+                    valueLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.width(48.dp)
@@ -319,6 +302,18 @@ internal fun TopTracksBarChart(
         }
     }
 }
+
+internal fun statsChartValue(stat: TrackStat, sortMode: StatsSortMode): Float =
+    if (sortMode == StatsSortMode.LISTEN_TIME) stat.totalListenMs.toFloat() else stat.playCount.toFloat()
+
+internal fun statsChartMaxValue(tracks: List<TrackStat>, sortMode: StatsSortMode): Float =
+    tracks.maxOfOrNull { statsChartValue(it, sortMode) } ?: 1f
+
+internal fun statsChartFraction(value: Float, maxValue: Float): Float =
+    if (maxValue > 0f) value / maxValue else 0f
+
+internal fun statsChartValueLabel(stat: TrackStat, sortMode: StatsSortMode): String =
+    if (sortMode == StatsSortMode.LISTEN_TIME) formatListenDuration(stat.totalListenMs) else stat.playCount.toString()
 
 @Composable
 private fun StatsChartBar(fraction: Float, primaryColor: Color, trackColor: Color, modifier: Modifier) {
@@ -447,7 +442,7 @@ private fun PlaybackStatsPeriod.labelResId(): Int = when (this) {
     PlaybackStatsPeriod.ALL -> CoreCommonR.string.stats_period_all
 }
 
-private fun formatListenDuration(ms: Long): String {
+internal fun formatListenDuration(ms: Long): String {
     val totalSeconds = ms / 1000
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
