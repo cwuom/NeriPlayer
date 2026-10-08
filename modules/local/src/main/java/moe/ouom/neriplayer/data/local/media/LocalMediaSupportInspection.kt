@@ -14,7 +14,9 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.RetrieverTextMetad
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.ResolvedInspectableLocalMedia
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.TagLibMetadata
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.QueriedContentInfo
+import android.content.ContentResolver
 import android.content.Context
+import android.database.Cursor
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
@@ -52,25 +54,18 @@ internal fun LocalMediaSupport.resolveInspectableLocalMedia(
 ): ResolvedInspectableLocalMedia {
     require(uri.isSupportedLocalMediaUri()) { "Unsupported local media uri: $uri" }
     val queried = queryContentInfo(context, uri)
-    val resolvedPath = directFilePath(uri)
-        ?: queried.filePath
-        ?: if (allowDescriptorFallback) resolvePathFromDescriptor(context, uri) else null
-    val file = resolvedPath?.let(::File)?.takeIf(File::exists)
-    val playableUri = when {
-        uri.scheme.equals("content", ignoreCase = true) -> uri
-        uri.scheme.equals("android.resource", ignoreCase = true) -> uri
-        else -> file?.let(Uri::fromFile) ?: uri
-    }
-    val displayName = file?.name
-        ?: queried.displayName
-        ?: resolvedPath?.substringAfterLast(File.separatorChar)
-        ?: playableUri.lastPathSegment
-        ?: uri.toString()
+    val resolvedPath = resolveInspectablePath(context, uri, queried, allowDescriptorFallback)
+    val file = existingFileOrNull(resolvedPath)
+    val playableUri = inspectablePlayableUri(uri, file)
+    val displayName = listOfNotNull(
+        file?.name,
+        queried.displayName,
+        resolvedPath?.substringAfterLast(File.separatorChar),
+        playableUri.lastPathSegment
+    ).firstOrNull() ?: uri.toString()
     val fallbackTitle = displayName.substringBeforeLast('.').ifBlank {
         context.getString(CoreCommonR.string.local_files)
     }
-    val fileExtension = file?.extension?.takeIf { it.isNotBlank() }
-        ?: displayName.substringAfterLast('.', "").takeIf { it.isNotBlank() }
     return ResolvedInspectableLocalMedia(
         queried = queried,
         resolvedPath = resolvedPath,
@@ -78,8 +73,32 @@ internal fun LocalMediaSupport.resolveInspectableLocalMedia(
         playableUri = playableUri,
         displayName = displayName,
         fallbackTitle = fallbackTitle,
-        fileExtension = fileExtension
+        fileExtension = inspectableFileExtension(file, displayName)
     )
+}
+
+private fun LocalMediaSupport.resolveInspectablePath(
+    context: Context,
+    uri: Uri,
+    queried: QueriedContentInfo,
+    allowDescriptorFallback: Boolean
+): String? {
+    return directFilePath(uri)
+        ?: queried.filePath
+        ?: if (allowDescriptorFallback) resolvePathFromDescriptor(context, uri) else null
+}
+
+private fun existingFileOrNull(path: String?): File? = path?.let(::File)?.takeIf(File::exists)
+
+private fun inspectablePlayableUri(uri: Uri, file: File?): Uri {
+    val keepsSourceUri = uri.scheme.equals("content", ignoreCase = true) ||
+        uri.scheme.equals("android.resource", ignoreCase = true)
+    if (keepsSourceUri) return uri
+    return file?.let(Uri::fromFile) ?: uri
+}
+
+private fun inspectableFileExtension(file: File?, displayName: String): String? {
+    return listOfNotNull(file?.extension, displayName.substringAfterLast('.', "")).firstOrNull(String::isNotBlank)
 }
 
 internal fun LocalMediaSupport.buildQuickLocalMediaDetails(
@@ -100,6 +119,7 @@ internal fun LocalMediaSupport.buildQuickLocalMediaDetails(
         unknownArtistLabel = context.getString(CoreCommonR.string.music_unknown_artist),
         defaultAlbumLabel = context.getString(CoreCommonR.string.local_files)
     )
+    val techInfo = audioTrackTechInfo ?: UNKNOWN_AUDIO_TRACK_TECH_INFO
     return LocalMediaDetails(
         sourceUri = sourceUri,
         displayName = resolved.displayName,
@@ -116,18 +136,16 @@ internal fun LocalMediaSupport.buildQuickLocalMediaDetails(
         year = null,
         trackNumber = null,
         discNumber = null,
-        durationMs = selectedMetadata.durationMs.takeIf { it > 0L }
-            ?: audioTrackTechInfo?.durationMs
-            ?: 0L,
+        durationMs = quickDurationMs(selectedMetadata.durationMs, techInfo.durationMs),
         fileExtension = resolved.fileExtension,
         mimeType = resolved.queried.mimeType,
-        audioMimeType = audioTrackTechInfo?.audioMimeType,
-        bitrateKbps = audioTrackTechInfo?.bitrateKbps,
-        sampleRateHz = audioTrackTechInfo?.sampleRateHz,
-        channelCount = audioTrackTechInfo?.channelCount,
+        audioMimeType = techInfo.audioMimeType,
+        bitrateKbps = techInfo.bitrateKbps,
+        sampleRateHz = techInfo.sampleRateHz,
+        channelCount = techInfo.channelCount,
         bitsPerSample = null,
-        sizeBytes = resolved.queried.sizeBytes ?: resolved.file?.length(),
-        lastModifiedMs = resolved.queried.lastModifiedMs ?: resolved.file?.lastModified(),
+        sizeBytes = resolved.knownSizeBytes(),
+        lastModifiedMs = resolved.knownLastModifiedMs(),
         filePath = resolved.file?.absolutePath,
         coverUri = null,
         coverSource = null,
@@ -140,6 +158,16 @@ internal fun LocalMediaSupport.buildQuickLocalMediaDetails(
         romanizedLyricContent = null
     )
 }
+
+private val UNKNOWN_AUDIO_TRACK_TECH_INFO = AudioTrackTechInfo(null, null, null, null, null)
+
+private fun quickDurationMs(selectedDurationMs: Long, trackDurationMs: Long?): Long {
+    return selectedDurationMs.takeIf { it > 0L } ?: trackDurationMs ?: 0L
+}
+
+private fun ResolvedInspectableLocalMedia.knownSizeBytes(): Long? = queried.sizeBytes ?: file?.length()
+
+private fun ResolvedInspectableLocalMedia.knownLastModifiedMs(): Long? = queried.lastModifiedMs ?: file?.lastModified()
 
 internal fun LocalMediaSupport.readLocalMetadataSidecar(
     context: Context,
@@ -667,99 +695,105 @@ internal fun LocalMediaSupport.decodeTextBytes(bytes: ByteArray): String? {
     if (!utf8Text.contains('\uFFFD')) {
         return utf8Text
     }
+    return decodeTextWithBestScoringCharset(bytes)
+}
 
-    val candidates = buildList {
-        add(StandardCharsets.UTF_8)
-        add(StandardCharsets.UTF_16LE)
-        add(StandardCharsets.UTF_16BE)
-        runCatching { Charset.forName("GB18030") }.getOrNull()?.let(::add)
-        runCatching { Charset.forName("GBK") }.getOrNull()?.let(::add)
-    }.distinct()
+private val TEXT_DECODING_CHARSETS: List<Charset> by lazy {
+    listOfNotNull(
+        StandardCharsets.UTF_8,
+        StandardCharsets.UTF_16LE,
+        StandardCharsets.UTF_16BE,
+        supportedCharsetOrNull("GB18030"),
+        supportedCharsetOrNull("GBK")
+    ).distinct()
+}
 
-    return candidates
-        .map { charset -> charset to scoreDecodedText(bytes.toString(charset).normalizeDecodedText()) }
-        .maxByOrNull { it.second }
-        ?.first
+private fun supportedCharsetOrNull(name: String): Charset? = runCatching { Charset.forName(name) }.getOrNull()
+
+private fun LocalMediaSupport.decodeTextWithBestScoringCharset(bytes: ByteArray): String? {
+    return TEXT_DECODING_CHARSETS
+        .maxByOrNull { charset -> scoreDecodedText(bytes.toString(charset).normalizeDecodedText()) }
         ?.let { bytes.toString(it).normalizeDecodedText() }
 }
 
 internal fun LocalMediaSupport.queryContentInfo(context: Context, uri: Uri): QueriedContentInfo {
     val resolver = context.contentResolver
-    directFilePath(uri)?.let { filePath ->
-        val file = File(filePath)
-        return QueriedContentInfo(
-            displayName = file.name,
-            sizeBytes = file.takeIf(File::exists)?.length(),
-            mimeType = resolver.getType(Uri.fromFile(file)),
-            lastModifiedMs = file.takeIf(File::exists)?.lastModified(),
-            filePath = file.takeIf(File::exists)?.absolutePath,
-            relativePath = null,
-            title = null,
-            artist = null,
-            album = null,
-            durationMs = null
-        )
-    }
-    val includeRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-    val projection = buildList {
-        add(OpenableColumns.DISPLAY_NAME)
-        add(OpenableColumns.SIZE)
-        add(MediaStore.MediaColumns.MIME_TYPE)
-        add(MediaStore.MediaColumns.DATE_MODIFIED)
-        if (includeRelativePath) {
-            add(MediaStore.MediaColumns.RELATIVE_PATH)
+    directFilePath(uri)?.let { filePath -> return directFileContentInfo(resolver, File(filePath)) }
+    return runCatching { queryProviderContentInfo(resolver, uri) }
+        .getOrElse {
+            NPLogger.w(TAG, "queryContentInfo failed for $uri: ${it.message}")
+            null
         }
-        add("_data")
-        add(MediaStore.Audio.Media.TITLE)
-        add(MediaStore.Audio.Media.ARTIST)
-        add(MediaStore.Audio.Media.ALBUM)
-        add(MediaStore.Audio.Media.DURATION)
-    }.toTypedArray()
+        ?: unknownContentInfo(resolver.getType(uri))
+}
 
-    return runCatching {
-        resolver.query(uri, projection, null, null, null)?.use { cursor ->
-            if (!cursor.moveToFirst()) {
-                return@use null
-            }
-            QueriedContentInfo(
-                displayName = cursor.getOptionalString(OpenableColumns.DISPLAY_NAME),
-                sizeBytes = cursor.getOptionalLong(OpenableColumns.SIZE),
-                mimeType = cursor.getOptionalString(MediaStore.MediaColumns.MIME_TYPE),
-                lastModifiedMs = cursor.getOptionalLong(MediaStore.MediaColumns.DATE_MODIFIED)?.times(1000),
-                filePath = resolveQueryFilePath(
-                    rawPath = cursor.getOptionalString("_data"),
-                    relativePath = if (includeRelativePath) {
-                        cursor.getOptionalString(MediaStore.MediaColumns.RELATIVE_PATH)
-                    } else {
-                        null
-                    },
-                    displayName = cursor.getOptionalString(OpenableColumns.DISPLAY_NAME)
-                ),
-                relativePath = if (includeRelativePath) {
-                    cursor.getOptionalString(MediaStore.MediaColumns.RELATIVE_PATH)
-                } else {
-                    null
-                },
-                title = cursor.getOptionalString(MediaStore.Audio.Media.TITLE),
-                artist = cursor.getOptionalString(MediaStore.Audio.Media.ARTIST),
-                album = cursor.getOptionalString(MediaStore.Audio.Media.ALBUM),
-                durationMs = cursor.getOptionalLong(MediaStore.Audio.Media.DURATION)
-            )
-        }
-    }.getOrElse {
-        NPLogger.w(TAG, "queryContentInfo failed for $uri: ${it.message}")
+private fun directFileContentInfo(resolver: ContentResolver, file: File): QueriedContentInfo {
+    val existing = file.takeIf(File::exists)
+    return unknownContentInfo(resolver.getType(Uri.fromFile(file))).copy(
+        displayName = file.name,
+        sizeBytes = existing?.length(),
+        lastModifiedMs = existing?.lastModified(),
+        filePath = existing?.absolutePath
+    )
+}
+
+private fun unknownContentInfo(mimeType: String?) = QueriedContentInfo(
+    displayName = null,
+    sizeBytes = null,
+    mimeType = mimeType,
+    lastModifiedMs = null,
+    filePath = null,
+    relativePath = null,
+    title = null,
+    artist = null,
+    album = null,
+    durationMs = null
+)
+
+private fun LocalMediaSupport.queryProviderContentInfo(resolver: ContentResolver, uri: Uri): QueriedContentInfo? {
+    val includeRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+    return resolver.query(uri, contentInfoProjection(includeRelativePath), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) contentInfoAtCursor(cursor, includeRelativePath) else null
+    }
+}
+
+private fun contentInfoProjection(includeRelativePath: Boolean): Array<String> = buildList {
+    add(OpenableColumns.DISPLAY_NAME)
+    add(OpenableColumns.SIZE)
+    add(MediaStore.MediaColumns.MIME_TYPE)
+    add(MediaStore.MediaColumns.DATE_MODIFIED)
+    if (includeRelativePath) {
+        add(MediaStore.MediaColumns.RELATIVE_PATH)
+    }
+    add("_data")
+    add(MediaStore.Audio.Media.TITLE)
+    add(MediaStore.Audio.Media.ARTIST)
+    add(MediaStore.Audio.Media.ALBUM)
+    add(MediaStore.Audio.Media.DURATION)
+}.toTypedArray()
+
+private fun LocalMediaSupport.contentInfoAtCursor(cursor: Cursor, includeRelativePath: Boolean): QueriedContentInfo {
+    val displayName = cursor.getOptionalString(OpenableColumns.DISPLAY_NAME)
+    val relativePath = if (includeRelativePath) {
+        cursor.getOptionalString(MediaStore.MediaColumns.RELATIVE_PATH)
+    } else {
         null
-    } ?: QueriedContentInfo(
-        displayName = null,
-        sizeBytes = null,
-        mimeType = resolver.getType(uri),
-        lastModifiedMs = null,
-        filePath = null,
-        relativePath = null,
-        title = null,
-        artist = null,
-        album = null,
-        durationMs = null
+    }
+    return QueriedContentInfo(
+        displayName = displayName,
+        sizeBytes = cursor.getOptionalLong(OpenableColumns.SIZE),
+        mimeType = cursor.getOptionalString(MediaStore.MediaColumns.MIME_TYPE),
+        lastModifiedMs = cursor.getOptionalLong(MediaStore.MediaColumns.DATE_MODIFIED)?.times(1000),
+        filePath = resolveQueryFilePath(
+            rawPath = cursor.getOptionalString("_data"),
+            relativePath = relativePath,
+            displayName = displayName
+        ),
+        relativePath = relativePath,
+        title = cursor.getOptionalString(MediaStore.Audio.Media.TITLE),
+        artist = cursor.getOptionalString(MediaStore.Audio.Media.ARTIST),
+        album = cursor.getOptionalString(MediaStore.Audio.Media.ALBUM),
+        durationMs = cursor.getOptionalLong(MediaStore.Audio.Media.DURATION)
     )
 }
 
@@ -785,17 +819,17 @@ internal fun LocalMediaSupport.resolveQueryFilePath(
     relativePath: String?,
     displayName: String?
 ): String? {
-    val normalizedRawPath = rawPath
-        ?.substringBefore(" (deleted)")
-        ?.takeIf { it.startsWith("/") && File(it).exists() }
-    if (normalizedRawPath != null) {
-        return normalizedRawPath
-    }
+    return existingAbsoluteQueryPath(rawPath) ?: reconstructedExternalStoragePath(relativePath, displayName)
+}
 
-    val safeRelativePath = relativePath?.takeIf { it.isNotBlank() } ?: return null
-    val safeDisplayName = displayName?.takeIf { it.isNotBlank() } ?: return null
-    val reconstructed = File(Environment.getExternalStorageDirectory(), safeRelativePath)
-        .resolve(safeDisplayName)
+private fun existingAbsoluteQueryPath(rawPath: String?): String? {
+    val path = rawPath?.substringBefore(" (deleted)") ?: return null
+    return path.takeIf { it.startsWith("/") && File(it).exists() }
+}
+
+private fun reconstructedExternalStoragePath(relativePath: String?, displayName: String?): String? {
+    if (relativePath.isNullOrBlank() || displayName.isNullOrBlank()) return null
+    val reconstructed = File(Environment.getExternalStorageDirectory(), relativePath).resolve(displayName)
     return reconstructed.absolutePath.takeIf { reconstructed.exists() }
 }
 
@@ -978,24 +1012,11 @@ internal fun LocalMediaSupport.openTagLibDescriptor(
     if (!uri.isSupportedLocalMediaUri()) {
         return null
     }
-    val isContentUri = uri.scheme.equals("content", ignoreCase = true)
-    if (isContentUri) {
-        runCatching {
-            context.contentResolver.openFileDescriptor(uri, "r")
-        }.getOrNull()?.let { return it }
-    }
-    file?.let { localFile ->
-        runCatching {
-            ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_ONLY)
-        }.getOrNull()?.let { return it }
-    }
-    if (!isContentUri) {
-        runCatching {
-            context.contentResolver.openFileDescriptor(uri, "r")
-        }.getOrNull()?.let { return it }
-    }
-    NPLogger.w(TAG, "openTagLibDescriptor failed for $uri")
-    return null
+    return openLocalMediaDescriptor(context, uri, file, "r", ParcelFileDescriptor.MODE_READ_ONLY)
+        ?: run {
+            NPLogger.w(TAG, "openTagLibDescriptor failed for $uri")
+            null
+        }
 }
 
 internal fun LocalMediaSupport.openWritableTagLibDescriptor(
@@ -1003,32 +1024,32 @@ internal fun LocalMediaSupport.openWritableTagLibDescriptor(
     uri: Uri,
     file: File?
 ): ParcelFileDescriptor? {
-    val isContentUri = uri.scheme.equals("content", ignoreCase = true)
-    if (isContentUri) {
-        runCatching {
-            context.contentResolver.openFileDescriptor(uri, "rw")
-        }.getOrNull()?.let { return it }
-    }
-    val fileDescriptor = file?.let { localFile ->
-        runCatching {
-            ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_WRITE)
-        }.getOrNull()
-    }
-    if (fileDescriptor != null) {
-        return fileDescriptor
-    }
+    return openLocalMediaDescriptor(context, uri, file, "rw", ParcelFileDescriptor.MODE_READ_WRITE)
+        ?: run {
+            NPLogger.w(TAG, "open writable metadata descriptor failed for $uri")
+            null
+        }
+}
 
-    val fallbackDescriptor = if (!isContentUri) {
-        runCatching {
-            context.contentResolver.openFileDescriptor(uri, "rw")
-        }.getOrNull()
-    } else {
-        null
+private fun openLocalMediaDescriptor(
+    context: Context,
+    uri: Uri,
+    file: File?,
+    resolverMode: String,
+    fileMode: Int
+): ParcelFileDescriptor? {
+    if (uri.scheme.equals("content", ignoreCase = true)) {
+        return openResolverDescriptor(context, uri, resolverMode) ?: openFileDescriptorOrNull(file, fileMode)
     }
-    if (fallbackDescriptor == null) {
-        NPLogger.w(TAG, "open writable metadata descriptor failed for $uri")
-    }
-    return fallbackDescriptor
+    return openFileDescriptorOrNull(file, fileMode) ?: openResolverDescriptor(context, uri, resolverMode)
+}
+
+private fun openResolverDescriptor(context: Context, uri: Uri, mode: String): ParcelFileDescriptor? {
+    return runCatching { context.contentResolver.openFileDescriptor(uri, mode) }.getOrNull()
+}
+
+private fun openFileDescriptorOrNull(file: File?, mode: Int): ParcelFileDescriptor? {
+    return file?.let { runCatching { ParcelFileDescriptor.open(it, mode) }.getOrNull() }
 }
 
 internal fun LocalMediaSupport.loadTagLibPropertyMap(descriptor: ParcelFileDescriptor): PropertyMap? {
