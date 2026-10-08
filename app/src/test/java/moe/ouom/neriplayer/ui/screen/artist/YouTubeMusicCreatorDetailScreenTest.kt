@@ -14,8 +14,10 @@ import org.junit.Test
 class YouTubeMusicCreatorDetailScreenTest {
 
     @Test
-    fun creatorSplitLayout_requiresTabletAndEnoughActualPaneWidth() {
-        assertFalse(useCreatorDetailSplitLayout(tabletDevice = false, availableWidthDp = 1280f))
+    fun creatorSplitLayout_requiresTabletOrExpandedPaneWidth() {
+        assertFalse(useCreatorDetailSplitLayout(tabletDevice = false, availableWidthDp = 839f))
+        assertTrue(useCreatorDetailSplitLayout(tabletDevice = false, availableWidthDp = 840f))
+        assertTrue(useCreatorDetailSplitLayout(tabletDevice = false, availableWidthDp = 1280f))
         assertFalse(useCreatorDetailSplitLayout(tabletDevice = true, availableWidthDp = 599f))
         assertTrue(useCreatorDetailSplitLayout(tabletDevice = true, availableWidthDp = 600f))
         assertTrue(useCreatorDetailSplitLayout(tabletDevice = true, availableWidthDp = 800f))

@@ -26,8 +26,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+private const val CREATOR_DETAIL_TABLET_SPLIT_MIN_WIDTH_DP = 600f
+private const val CREATOR_DETAIL_ANY_DEVICE_SPLIT_MIN_WIDTH_DP = 840f
+
+/** 展开的折叠屏等宽窗口即使不是平板设备也使用分栏 */
 internal fun useCreatorDetailSplitLayout(tabletDevice: Boolean, availableWidthDp: Float): Boolean =
-    tabletDevice && availableWidthDp >= 600f
+    availableWidthDp >= CREATOR_DETAIL_ANY_DEVICE_SPLIT_MIN_WIDTH_DP ||
+        (tabletDevice && availableWidthDp >= CREATOR_DETAIL_TABLET_SPLIT_MIN_WIDTH_DP)
 
 @Composable
 internal fun CreatorDetailAdaptiveLayout(
