@@ -90,6 +90,8 @@ internal class UsbExclusivePcmWriter(
     }
 
     private var directScratch: ByteBuffer? = null
+    private var planningReport: String? = null
+    private var planningMetrics: UsbExclusiveRuntimeMetrics? = null
     private var softwareFloatInputFormat: PreparedUsbInputPcmFormat? = null
     private var softwareFloatConversionLogged = false
     private var lastNativeBackpressureRefreshAtMs = 0L
@@ -293,9 +295,19 @@ internal class UsbExclusivePcmWriter(
     }
 
     private fun currentWritePlanningMetrics(handle: Long): UsbExclusiveRuntimeMetrics {
-        val metrics = port.runtimeReport(handle).usbRuntimeMetrics()
+        val metrics = parsedPlanningMetrics(port.runtimeReport(handle))
         val liveFreeBytes = port.freeBytes(handle) ?: return metrics
         return metrics.withLivePcmFreeBytes(liveFreeBytes)
+    }
+
+    /** 报告只在刷新时换新字符串，一次回调内多次补写复用同一份解析结果 */
+    private fun parsedPlanningMetrics(report: String): UsbExclusiveRuntimeMetrics {
+        val cached = planningMetrics
+        if (cached != null && report === planningReport) return cached
+        return report.usbRuntimeMetrics().also {
+            planningReport = report
+            planningMetrics = it
+        }
     }
 
     private fun planWriteSize(

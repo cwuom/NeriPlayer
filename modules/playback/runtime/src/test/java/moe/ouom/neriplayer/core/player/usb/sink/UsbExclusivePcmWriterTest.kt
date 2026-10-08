@@ -177,6 +177,21 @@ class UsbExclusivePcmWriterTest {
     }
 
     @Test
+    fun `write planning follows a refreshed runtime report`() {
+        val port = FakePcmWritePort()
+        port.report = "source=player_pcm sampleRate=48000 channels=2 subslotBytes=2 " +
+            "transferBytes=3072 pcmLevel=0/288000 pcmFreeBytes=288000 " +
+            "running=true transportFailed=false lastError=none"
+        port.liveFreeBytes = 288_000L
+        val writer = UsbExclusivePcmWriter(port) {}
+
+        assertEquals(12_288, writer.writeSize(65_536, directBuffer = true, snapshot()))
+        assertEquals(12_288, writer.writeSize(65_536, directBuffer = true, snapshot()))
+        port.report = port.report.replace("transferBytes=3072", "transferBytes=1024")
+        assertEquals(4_096, writer.writeSize(65_536, directBuffer = true, snapshot()))
+    }
+
+    @Test
     fun `running transport fills the queue to its waterline in one buffer callback`() {
         val port = FakePcmWritePort()
         port.report = "source=player_pcm sampleRate=48000 channels=2 subslotBytes=2 " +
