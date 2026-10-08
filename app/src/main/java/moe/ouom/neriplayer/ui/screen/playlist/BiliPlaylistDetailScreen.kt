@@ -156,6 +156,10 @@ fun BiliPlaylistDetailScreen(
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
     // 使用Unit作为key，确保每次进入都重新加载最新数据
     LaunchedEffect(playlist.mediaId, playlist.kind) { vm.start(playlist) }
+    val errorWithVisibleVideos = ui.error?.takeIf { ui.videos.isNotEmpty() }
+    LaunchedEffect(errorWithVisibleVideos) {
+        errorWithVisibleVideos?.let { snackbarHostState.showNeriSnackbar(it) }
+    }
 
     // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }

@@ -16,5 +16,6 @@
     <string name="bili_qr_login_hint">二维码由哔哩哔哩接口生成，确认后会在本页监听状态并保存 Cookie。</string>
     <string name="bili_loading_favorites">正在加载收藏夹内容…</string>
     <string name="bili_load_failed">加载失败: %s</string>
+    <string name="bili_favorites_incomplete">部分收藏内容未能加载（可能触发了哔哩哔哩风控），请稍后刷新</string>
     <string name="bili_get_parts_failed">获取分 P 失败</string>
 </resources>
