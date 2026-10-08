@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.model.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
@@ -33,6 +34,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anyMap
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.MockedConstruction
 import org.mockito.Mockito.doAnswer
@@ -212,6 +215,42 @@ class ConfigFileManagerSectionImportTest {
         assertEquals(listOf("github_sync_work"), cancelled)
         assertEquals(1, syncMutations)
         verifyNoInteractions(syncPreferences.constructed().single())
+    }
+
+    @Test
+    fun `cookie logins keep their timestamps and a rejected netease login becomes a warning`() = runTest {
+        doReturn("netease rejected").`when`(context).getString(CoreCommonR.string.config_import_warning_netease_cookie)
+        doReturn(false).`when`(netease).saveCookies(mapOf("MUSIC_U" to "bad"), 77L)
+
+        val result = importSections(
+            """"neteaseAuth":{"cookies":{"MUSIC_U":"bad"},"savedAt":77},""" +
+                """"biliAuth":{"cookies":{"SESSDATA":"session"},"savedAt":88}"""
+        )
+
+        assertEquals(
+            AppConfigImportResult(0, 0, 1, 0, listOf("netease rejected"), requiresActivityRecreate = false),
+            result
+        )
+        verify(bili).saveCookies(mapOf("SESSDATA" to "session"), 88L)
+        verifyNoInteractions(youtube)
+    }
+
+    @Test
+    fun `accepted cookie logins without a timestamp are saved at import time`() = runTest {
+        val savedAt = mutableListOf<Long>()
+        doAnswer { savedAt += it.getArgument<Long>(1); true }
+            .`when`(netease).saveCookies(anyMap(), anyLong())
+        doAnswer { savedAt += it.getArgument<Long>(1); Unit }
+            .`when`(bili).saveCookies(anyMap(), anyLong())
+        val before = System.currentTimeMillis()
+
+        val result = importSections(
+            """"neteaseAuth":{"cookies":{"MUSIC_U":"good"}},"biliAuth":{"cookies":{"SESSDATA":"session"}}"""
+        )
+
+        assertEquals(AppConfigImportResult(0, 0, 2, 0, emptyList(), requiresActivityRecreate = false), result)
+        assertEquals(2, savedAt.size)
+        assertTrue(savedAt.toString(), savedAt.all { it in before..System.currentTimeMillis() })
     }
 
     private suspend fun TestScope.importSections(sections: String): AppConfigImportResult {
