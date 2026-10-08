@@ -154,6 +154,7 @@ bool FeedbackInTransferSet::submitSlotLocked(Slot* slot, std::string* error) {
         return false;
     }
     slot->inFlight = true;
+    slot->cancelRequested = false;
     ++inFlight_;
     ++submissions_;
     return true;
@@ -189,15 +190,14 @@ bool FeedbackInTransferSet::beginStop(std::string* error) {
     state_ = FeedbackInTransferSetState::Stopping;
     bool success = true;
     for (Slot& slot : slots_) {
-        if (!slot.inFlight || slot.transfer == nullptr) {
+        if (!slot.inFlight || slot.cancelRequested || slot.transfer == nullptr) {
             continue;
         }
+        // libusb 不论取消成败都会把传输标成取消中，回调之后仍会投递；
+        // NOT_FOUND 也可能是回调正在投递，所以槽位一律等回调再离开在途
         const int rc = backend_->cancelTransfer(slot.transfer);
+        slot.cancelRequested = true;
         if (rc == LIBUSB_ERROR_NOT_FOUND) {
-            slot.inFlight = false;
-            if (inFlight_ > 0) {
-                --inFlight_;
-            }
             ++cancelNotFound_;
         } else if (rc != LIBUSB_SUCCESS) {
             ++cancelErrors_;
@@ -269,6 +269,7 @@ void FeedbackInTransferSet::onTransferCompletion(
                 return;
             }
             slot.inFlight = false;
+            slot.cancelRequested = false;
             ++completions_;
 
             completion.generation = userData->generation;
