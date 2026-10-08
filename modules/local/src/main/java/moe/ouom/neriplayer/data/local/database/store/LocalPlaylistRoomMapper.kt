@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 
 import com.google.gson.Gson
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.entity.LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -237,12 +238,9 @@ internal class LocalPlaylistRoomMapper(
                             .thenBy { it.orderTieBreak }
                             .thenBy { it.identityKey }
                     )
-                    .map { member ->
-                        val track = requireNotNull(tracksByIdentity[member.identityKey]) {
-                            "Missing track row for ${member.identityKey}"
-                        }
-                        member.toSongItem(
-                            track = track,
+                    .mapNotNull { member ->
+                        member.toSongItemOrNull(
+                            track = tracksByIdentity[member.identityKey],
                             tokens = tokensByMember[
                                 PlaylistMemberKey(member.playlistId, member.identityKey)
                             ].orEmpty()
@@ -341,14 +339,15 @@ internal class LocalPlaylistRoomMapper(
         )
     }
 
-    private fun PlaylistMemberEntity.toSongItem(
-        track: TrackEntity,
+    // An undecodable member is left untouched in Room so a fixed or newer app can still read it.
+    private fun PlaylistMemberEntity.toSongItemOrNull(
+        track: TrackEntity?,
         tokens: List<PlaylistMemberTokenEntity>
-    ): SongItem {
-        val payload = requireNotNull(
-            decodeSong(memberPayloadJson) ?: decodeSong(track.durablePayloadJson)
-        ) {
-            "Song payload is missing for ${track.identityKey}"
+    ): SongItem? {
+        val payload = decodeSong(memberPayloadJson) ?: track?.let { decodeSong(it.durablePayloadJson) }
+        if (payload == null) {
+            NPLogger.w(TAG, "Skipping undecodable member $identityKey of playlist $playlistId")
+            return null
         }
         return payload.copy(
             addedAt = addedAt,
@@ -428,4 +427,8 @@ internal class LocalPlaylistRoomMapper(
         val playlistId: Long,
         val identityKey: String
     )
+
+    private companion object {
+        const val TAG = "LocalPlaylistRoomMapper"
+    }
 }
