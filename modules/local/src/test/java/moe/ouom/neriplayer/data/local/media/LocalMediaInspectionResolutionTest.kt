@@ -226,6 +226,23 @@ class LocalMediaInspectionResolutionTest {
     }
 
     @Test
+    fun `quick details keep a positive provider duration over the track duration`() {
+        FakeAudioProvider.rows = listOf(
+            mapOf(
+                OpenableColumns.DISPLAY_NAME to "Track.mp3",
+                MediaStore.Audio.Media.DURATION to 4_000L
+            )
+        )
+        val resolved = LocalMediaSupport.resolveInspectableLocalMedia(context, AUDIO_URI, allowDescriptorFallback = false)
+        val track = AudioTrackTechInfo("audio/mpeg", 320, 44_100, 2, 5_000L)
+
+        val details = LocalMediaSupport.buildQuickLocalMediaDetails(context, AUDIO_URI, resolved, track)
+
+        assertEquals(4_000L, details.durationMs)
+        assertNull(details.filePath)
+    }
+
+    @Test
     fun `tag descriptors fall back from the provider to the local file`() {
         val file = temporaryFolder.newFile("Song.flac")
 
