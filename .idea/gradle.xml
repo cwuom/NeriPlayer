@@ -31,6 +31,7 @@
             <option value="$PROJECT_DIR$/build-logic" />
             <option value="$PROJECT_DIR$/build-logic/convention" />
             <option value="$PROJECT_DIR$/buildSrc" />
+            <option value="$PROJECT_DIR$/hidden-api" />
             <option value="$PROJECT_DIR$/ksp-annotations" />
             <option value="$PROJECT_DIR$/ksp-processor" />
             <option value="$PROJECT_DIR$/modules/common" />
@@ -42,6 +43,7 @@
             <option value="$PROJECT_DIR$/modules/local" />
             <option value="$PROJECT_DIR$/modules/lyrics" />
             <option value="$PROJECT_DIR$/modules/model" />
+            <option value="$PROJECT_DIR$/modules/native" />
             <option value="$PROJECT_DIR$/modules/network" />
             <option value="$PROJECT_DIR$/modules/platform" />
             <option value="$PROJECT_DIR$/modules/playback" />
