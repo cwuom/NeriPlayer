@@ -682,48 +682,69 @@ class DownloadCorePublicationInstrumentedTest {
                         requireNotNull(context.contentResolver.openOutputStream(metadata.uri)).use { it.write(json.toByteArray()) }
                     }
                     ManagedDownloadStorage.buildDownloadLibrarySnapshot(context, forceRefresh = true)
-                    fun counters() = requireNotNull(context.contentResolver.call(
-                        root.tree.uri, ManagedDownloadMigrationTestDocumentProvider.QUERY_COUNT, null, null
-                    ))
-                    val before = counters()
-                    val started = System.nanoTime()
-                    var previousTime = started
-                    var previousQueries = before.getInt("count")
-                    var previousMetadataReads = before.getInt("metadataReads")
-                    fun measureStage(stage: String): Int {
-                        val now = System.nanoTime()
-                        val current = counters()
-                        val queries = current.getInt("count")
-                        val queryDelta = queries - previousQueries
-                        val metadataReadDelta = current.getInt("metadataReads") - previousMetadataReads
-                        val line = "library=$size stage=$stage elapsedMs=${(now - previousTime) / 1_000_000} " +
-                            "childQueries=$queryDelta metadataReads=$metadataReadDelta"
-                        android.util.Log.i("NeriFinalizationPerformance", line)
-                        performanceEvidence.appendText("$line\n")
-                        previousTime = now
-                        previousQueries = queries
-                        previousMetadataReads = current.getInt("metadataReads")
-                        return queryDelta
+                    awaitConcurrentCatalogReadersIdle()
+                    withTerminalTemporaryWriteCleanupPaused {
+                        fun counters() = requireNotNull(context.contentResolver.call(
+                            root.tree.uri, ManagedDownloadMigrationTestDocumentProvider.QUERY_COUNT, null, null
+                        ))
+                        val before = counters()
+                        val started = System.nanoTime()
+                        var previousTime = started
+                        var previousQueries = before.getInt("count")
+                        var previousMetadataReads = before.getInt("metadataReads")
+                        fun measureStage(stage: String): Int {
+                            val now = System.nanoTime()
+                            val current = counters()
+                            val queries = current.getInt("count")
+                            val queryDelta = queries - previousQueries
+                            val metadataReadDelta = current.getInt("metadataReads") - previousMetadataReads
+                            val line = "library=$size stage=$stage elapsedMs=${(now - previousTime) / 1_000_000} " +
+                                "childQueries=$queryDelta metadataReads=$metadataReadDelta"
+                            android.util.Log.i("NeriFinalizationPerformance", line)
+                            performanceEvidence.appendText("$line\n")
+                            previousTime = now
+                            previousQueries = queries
+                            previousMetadataReads = current.getInt("metadataReads")
+                            return queryDelta
+                        }
+                        val pending = commit()
+                        assertEquals("core commit must reuse the complete root snapshot", 0, measureStage("core"))
+                        prepareTaggedAudio(pending, checkFinalName = false)
+                        assertEquals("metadata replacement must use its cached SAF reference", 0, measureStage("metadata"))
+                        val published = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, pending)).audio
+                        assertEquals("publication must validate its returned document directly", 0, measureStage("publish"))
+                        assertTrue(ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName))
+                        assertNull(ManagedDownloadStorage.queryStoredEntry(context, pending.reference))
+                        assertFalse(requireNotNull(ManagedDownloadStorage.queryStoredEntry(context, published.reference)).isPendingAudioWrite)
+                        assertEquals("receipt cleanup must update the cached snapshot", 0, measureStage("cleanup"))
+                        val after = counters()
+                        val metadataReads = after.getInt("metadataReads") - before.getInt("metadataReads")
+                        val summary = "library=$size elapsedMs=${(System.nanoTime() - started) / 1_000_000} " +
+                            "metadataReads=$metadataReads childQueries=${after.getInt("count") - before.getInt("count")}"
+                        android.util.Log.i("NeriFinalizationPerformance", summary)
+                        performanceEvidence.appendText("$summary\n")
+                        assertTrue("finalizing one song must not read $size unrelated metadata files: $metadataReads", metadataReads <= 48)
                     }
-                    val pending = commit()
-                    assertEquals("core commit must reuse the complete root snapshot", 0, measureStage("core"))
-                    prepareTaggedAudio(pending, checkFinalName = false)
-                    assertEquals("metadata replacement must use its cached SAF reference", 0, measureStage("metadata"))
-                    val published = requireNotNull(ManagedDownloadStorage.promoteFinalizedPendingAudio(context, pending)).audio
-                    assertEquals("publication must validate its returned document directly", 0, measureStage("publish"))
-                    assertTrue(ManagedDownloadStorage.deletePendingAudioMetadata(context, fileName))
-                    assertNull(ManagedDownloadStorage.queryStoredEntry(context, pending.reference))
-                    assertFalse(requireNotNull(ManagedDownloadStorage.queryStoredEntry(context, published.reference)).isPendingAudioWrite)
-                    assertEquals("receipt cleanup must update the cached snapshot", 0, measureStage("cleanup"))
-                    val after = counters()
-                    val metadataReads = after.getInt("metadataReads") - before.getInt("metadataReads")
-                    val summary = "library=$size elapsedMs=${(System.nanoTime() - started) / 1_000_000} " +
-                        "metadataReads=$metadataReads childQueries=${after.getInt("count") - before.getInt("count")}"
-                    android.util.Log.i("NeriFinalizationPerformance", summary)
-                    performanceEvidence.appendText("$summary\n")
-                    assertTrue("finalizing one song must not read $size unrelated metadata files: $metadataReads", metadataReads <= 48)
                 }
             }
+        }
+    }
+
+    /** 后台终态清理会在退避重试时枚举目录，测量窗口内暂停它，避免把清理的查询算进发布路径 */
+    private suspend fun <T> withTerminalTemporaryWriteCleanupPaused(block: suspend () -> T): T {
+        val cleanupMutex = GlobalDownloadManager.terminalTemporaryWriteCleanupMutex
+        withTimeout(60_000.milliseconds) {
+            while (true) {
+                GlobalDownloadManager.terminalTemporaryWriteCleanupJob?.join()
+                cleanupMutex.lock()
+                if (GlobalDownloadManager.terminalTemporaryWriteCleanupJob?.isActive != true) break
+                cleanupMutex.unlock()
+            }
+        }
+        try {
+            return block()
+        } finally {
+            cleanupMutex.unlock()
         }
     }
 

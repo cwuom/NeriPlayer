@@ -124,10 +124,25 @@ jobs:
           if-no-files-found: ignore
 
   android-instrumented-tests:
-    name: Android instrumented tests
+    name: Android instrumented tests (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    # app 仪器测试单分片已接近 60 分钟上限，按 AndroidJUnitRunner 分片拆成两个模拟器并行；库模块只在 0 号分片完整运行
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 0
+            build_tasks: >-
+              :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest
+              :playback:runtime:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest
+            module_tests: >-
+              :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest
+              :playback:runtime:connectedDebugAndroidTest
+          - shard: 1
+            build_tasks: ":app:assembleDebug :app:assembleDebugAndroidTest"
+            module_tests: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -156,10 +171,7 @@ jobs:
 
       # 先编译好测试 APK 再启动模拟器，避免编译与空闲模拟器争抢 CPU 时 Launcher 无响应
       - name: Build instrumented test APKs
-        run: >-
-          ./gradlew :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest
-          :playback:runtime:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest
-          --warning-mode all --stacktrace
+        run: ./gradlew ${{ matrix.build_tasks }} --warning-mode all --stacktrace
 
       - name: Run connected Android tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -176,15 +188,20 @@ jobs:
             adb shell settings put global hide_error_dialogs 1 &&
             adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&
             adb shell am start -W -a android.settings.SETTINGS &&
-            ./gradlew :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest :playback:runtime:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+            { [ -z "${{ matrix.module_tests }}" ] || ./gradlew ${{ matrix.module_tests }}
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
+            --warning-mode all --stacktrace; } &&
+            ./gradlew :app:connectedDebugAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
+            -Pandroid.testInstrumentationRunnerArguments.numShards=2
+            -Pandroid.testInstrumentationRunnerArguments.shardIndex=${{ matrix.shard }}
             --warning-mode all --stacktrace
 
       - name: Upload Android test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-instrumented-test-reports
+          name: android-instrumented-test-reports-${{ matrix.shard }}
           path: |
             **/build/reports/androidTests/connected/**
             **/build/outputs/androidTest-results/connected/**
