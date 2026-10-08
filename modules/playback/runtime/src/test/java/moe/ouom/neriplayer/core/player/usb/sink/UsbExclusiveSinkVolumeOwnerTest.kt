@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -104,6 +105,35 @@ class UsbExclusiveSinkVolumeOwnerTest {
             digitalOwner.release()
             fixedOwner.release()
         }
+    }
+
+    @Test
+    fun `opening native output reads the current system volume instead of a stale cache`() {
+        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
+        val context = mock(Context::class.java)
+        val manager = mock(AudioManager::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(manager)
+        `when`(manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)).thenReturn(0)
+        `when`(manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).thenReturn(10)
+        `when`(manager.getStreamVolume(AudioManager.STREAM_MUSIC)).thenReturn(5)
+        val port = RecordingVolumePort(bitPerfect = true, hardwareVolume = true)
+        val owner = UsbExclusiveSinkVolumeOwner(context, false, port)
+        try {
+            `when`(manager.getStreamVolume(AudioManager.STREAM_MUSIC)).thenReturn(8)
+            owner.setNativeHandle(7L)
+
+            assertEquals(7L to 0.8f, port.hardwareVolumes.single())
+        } finally {
+            owner.release()
+        }
+    }
+
+    @Test
+    fun `system volume is polled only while observing without a pushed session volume`() {
+        assertTrue(shouldPollUsbExclusiveSystemVolume(observing = true, sessionVolumePushed = false))
+        assertFalse(shouldPollUsbExclusiveSystemVolume(observing = true, sessionVolumePushed = true))
+        assertFalse(shouldPollUsbExclusiveSystemVolume(observing = false, sessionVolumePushed = false))
     }
 
     @Test

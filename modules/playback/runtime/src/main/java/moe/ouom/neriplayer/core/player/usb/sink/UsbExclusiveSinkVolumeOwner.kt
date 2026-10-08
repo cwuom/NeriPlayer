@@ -34,7 +34,6 @@ internal class UsbExclusiveSinkVolumeOwner(
     private companion object {
         const val VOLUME_EPSILON = 0.0001f
         const val POLL_INTERVAL_ACTIVE_MS = 100L
-        const val POLL_INTERVAL_IDLE_MS = 1_000L
         const val READ_FAILURE_LOG_INTERVAL_MS = 5_000L
 
         fun audioManager(context: Context): AudioManager? =
@@ -48,6 +47,7 @@ internal class UsbExclusiveSinkVolumeOwner(
     }
 
     private val appContext = context.applicationContext
+    private val observesSystemVolume = observeSystemVolume
     private val audioManager = audioManager(appContext)
     private val systemVolumeThread = volumeThread(observeSystemVolume)
     private val systemVolumeHandler = volumeHandler(systemVolumeThread)
@@ -58,7 +58,7 @@ internal class UsbExclusiveSinkVolumeOwner(
         private set
     private var lastReportedNativeVolume = Float.NaN
     private var lastSystemVolumeReadFailureLogAtMs = 0L
-    private var systemVolumeObserverRegistered = false
+    @Volatile private var systemVolumeObserverRegistered = false
     private var systemVolumeBridgeSubscription: UsbExclusiveSystemVolumeBridgeSubscription? = null
     private val systemVolumeObserver = object : ContentObserver(systemVolumeHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
@@ -67,9 +67,12 @@ internal class UsbExclusiveSinkVolumeOwner(
     }
     private val systemVolumePoll = object : Runnable {
         override fun run() {
-            if (!systemVolumeObserverRegistered) return
+            if (!shouldPollUsbExclusiveSystemVolume(
+                    observing = systemVolumeObserverRegistered,
+                    sessionVolumePushed = UsbExclusiveSystemVolumeBridge.currentSessionVolumeFractionOrNull() != null,
+                )) return
             applySystemVolumeChange()
-            systemVolumeHandler.postDelayed(this, nextPollIntervalMs())
+            systemVolumeHandler.postDelayed(this, POLL_INTERVAL_ACTIVE_MS)
         }
     }
 
@@ -77,16 +80,24 @@ internal class UsbExclusiveSinkVolumeOwner(
         cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
         systemVolumeBridgeSubscription = UsbExclusiveSystemVolumeBridge.subscribe { volumeFraction ->
             systemVolumeHandler.post {
-                if (volumeFraction == null) applySystemVolumeChange()
-                else applySessionVolumeChange(volumeFraction)
+                if (volumeFraction == null) {
+                    applySystemVolumeChange()
+                    resumeSystemVolumePoll()
+                } else {
+                    applySessionVolumeChange(volumeFraction)
+                }
             }
         }
-        if (observeSystemVolume) registerSystemVolumeObserver()
     }
 
     fun setNativeHandle(handle: Long) {
         if (handle == nativeHandle) return
+        // 空闲时不监听系统音量，打开原生输出前同步读取一次，首包就用当前音量
+        if (handle != 0L) cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
         nativeHandle = handle
+        if (observesSystemVolume) {
+            if (handle != 0L) registerSystemVolumeObserver() else unregisterSystemVolumeObserver()
+        }
         hardwareVolumeAvailable = handle != 0L && port.hasHardwareVolume(handle)
         // 打开后先同步写入硬件音量再出声，避免比特完美首包按 0 dB 播放
         applyHardwareVolume()
@@ -179,6 +190,7 @@ internal class UsbExclusiveSinkVolumeOwner(
     }
 
     private fun registerSystemVolumeObserver() {
+        if (systemVolumeObserverRegistered) return
         runCatching {
             appContext.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, systemVolumeObserver)
             systemVolumeObserverRegistered = true
@@ -217,6 +229,16 @@ internal class UsbExclusiveSinkVolumeOwner(
         port.setHardwareVolume(handle, if (port.bitPerfect()) cachedMusicVolumeFraction else 1f)
     }
 
-    private fun nextPollIntervalMs(): Long =
-        if (nativeHandle != 0L) POLL_INTERVAL_ACTIVE_MS else POLL_INTERVAL_IDLE_MS
+    private fun resumeSystemVolumePoll() {
+        if (!systemVolumeObserverRegistered) return
+        systemVolumeHandler.removeCallbacks(systemVolumePoll)
+        systemVolumeHandler.post(systemVolumePoll)
+    }
 }
+
+/**
+ * 系统音量只在原生 USB 输出时才映射到原生增益；MediaSession 远程音量生效时音量变化会主动推送，
+ * 两种情况都不需要每 100 ms 唤醒读一次 AudioManager
+ */
+internal fun shouldPollUsbExclusiveSystemVolume(observing: Boolean, sessionVolumePushed: Boolean): Boolean =
+    observing && !sessionVolumePushed
