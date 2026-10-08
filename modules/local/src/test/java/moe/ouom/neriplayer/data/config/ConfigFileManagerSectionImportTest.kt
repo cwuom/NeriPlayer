@@ -218,6 +218,16 @@ class ConfigFileManagerSectionImportTest {
     }
 
     @Test
+    fun `a legacy github play history mode restores sync preferences without their own section`() = runTest {
+        val result = importSections(
+            """"gitHubSync":{"token":"token","repoOwner":"owner","repoName":"repo","playHistoryUpdateMode":"IMMEDIATE"}"""
+        )
+
+        assertEquals(1, result.restoredSyncCount)
+        verify(syncPreferences.constructed().single()).restore(SyncPreferencesConfigSnapshot(), "IMMEDIATE")
+    }
+
+    @Test
     fun `cookie logins keep their timestamps and a rejected netease login becomes a warning`() = runTest {
         doReturn("netease rejected").`when`(context).getString(CoreCommonR.string.config_import_warning_netease_cookie)
         doReturn(false).`when`(netease).saveCookies(mapOf("MUSIC_U" to "bad"), 77L)

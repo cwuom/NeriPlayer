@@ -91,7 +91,7 @@ object BackgroundImageStorage {
     }
 
     private fun localPathOf(uriString: String): String? {
-        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return null
+        val uri = uriString.toUri()
         return when {
             uri.scheme.equals("file", ignoreCase = true) -> uri.path
             uri.scheme.isNullOrBlank() -> uriString
