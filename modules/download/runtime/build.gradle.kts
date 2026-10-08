@@ -5,6 +5,7 @@ plugins {
 
 android {
     namespace = "moe.ouom.neriplayer.feature.download"
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 dependencies {
@@ -30,4 +31,6 @@ dependencies {
     testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.junit)
 }
