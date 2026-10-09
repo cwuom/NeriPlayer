@@ -93,6 +93,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -225,15 +226,17 @@ internal fun resolveActiveLyricRevealHorizontalPadding(): Dp {
     return ACTIVE_LYRIC_REVEAL_HORIZONTAL_PADDING
 }
 
+private fun Float.positiveFiniteOrNull(): Float? = takeIf { it.isFinite() && it > 0f }
+
 internal fun resolveLyricRevealClipBounds(
     lineLeft: Float,
     lineRight: Float,
     horizontalBleedPx: Float,
     containerWidth: Float
 ): LyricRevealClipBounds {
-    val safeContainerWidth = containerWidth.takeIf { it.isFinite() && it > 0f }
+    val safeContainerWidth = containerWidth.positiveFiniteOrNull()
         ?: lineRight.coerceAtLeast(lineLeft)
-    val safeBleed = horizontalBleedPx.takeIf { it.isFinite() && it > 0f } ?: 0f
+    val safeBleed = horizontalBleedPx.positiveFiniteOrNull() ?: 0f
     val safeLeft = lineLeft.coerceIn(0f, safeContainerWidth)
     val safeRight = lineRight.coerceIn(safeLeft, safeContainerWidth)
     return LyricRevealClipBounds(
@@ -350,12 +353,18 @@ private fun interpolateLyricVisualValue(
     return playbackValue + (clearValue - playbackValue) * clearPresentationProgress
 }
 
+private val JAPANESE_KANA_RANGES = arrayOf(
+    '\u3040'..'\u30FF',
+    '\u31F0'..'\u31FF',
+    '\uFF66'..'\uFF9F'
+)
+
+private fun isJapaneseKana(char: Char): Boolean {
+    return JAPANESE_KANA_RANGES.any { range -> char in range }
+}
+
 internal fun containsJapaneseKana(text: String): Boolean {
-    return text.any { char ->
-        char in '\u3040'..'\u30FF' ||
-            char in '\u31F0'..'\u31FF' ||
-            char in '\uFF66'..'\uFF9F'
-    }
+    return text.any(::isJapaneseKana)
 }
 
 internal fun resolveLyricTranslationExtraGap(
@@ -376,8 +385,8 @@ internal fun resolveLyricTranslationGap(
     translationGlyphCoverage: Float = 1f,
     fontScale: Float = 1f
 ): Dp {
-    val lyricSize = lyricFontSize.value.takeIf { it.isFinite() && it > 0f }
-    val translationSize = translationFontSize.value.takeIf { it.isFinite() && it > 0f }
+    val lyricSize = lyricFontSize.value.positiveFiniteOrNull()
+    val translationSize = translationFontSize.value.positiveFiniteOrNull()
     val referenceFontSize = when {
         lyricSize != null && translationSize != null -> (lyricSize + translationSize) / 2f
         lyricSize != null -> lyricSize
@@ -401,8 +410,7 @@ private fun measureLyricInkMetrics(
     fontSize: TextUnit,
     typeface: Typeface
 ): LyricInkMetrics {
-    val sizeSp = fontSize.value.takeIf { it.isFinite() && it > 0f }
-        ?: LYRIC_TRANSLATION_GAP_REFERENCE_SP
+    val sizeSp = fontSize.value.positiveFiniteOrNull() ?: LYRIC_TRANSLATION_GAP_REFERENCE_SP
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = sizeSp
         this.typeface = typeface
@@ -428,13 +436,11 @@ private fun resolveLyricFontTypeface(fontWeight: FontWeight): Typeface {
     }
 }
 
-private fun resolveLyricLineHeight(fontSize: TextUnit, multiplier: Float): TextUnit {
-    val size = fontSize.value.takeIf { it.isFinite() && it > 0f }
-        ?: LYRIC_TRANSLATION_GAP_REFERENCE_SP
-    return if (fontSize.value.isFinite() && fontSize.value > 0f) {
+internal fun resolveLyricLineHeight(fontSize: TextUnit, multiplier: Float): TextUnit {
+    return if (fontSize.value.positiveFiniteOrNull() != null) {
         fontSize * multiplier
     } else {
-        (size * multiplier).sp
+        (LYRIC_TRANSLATION_GAP_REFERENCE_SP * multiplier).sp
     }
 }
 
@@ -1046,7 +1052,6 @@ private fun LyricTranslationText(
  * 会把每段文字的长度写入 WordTiming.charCount, 用于多行逐字揭示
  */
 /** 小数字符偏移的多行 reveal */
-@Composable
 internal fun Modifier.multilineGradientReveal(
     layout: TextLayoutResult?,
     revealOffsetChars: Float?,
@@ -1063,148 +1068,154 @@ internal fun Modifier.multilineGradientReveal(
             drawContent()
             return@drawWithContent
         }
-        val effectiveRevealOffsetChars = revealOffsetChars ?: run {
-            val currentLine = line
-            val positionState = interpolatedPositionState
-            if (currentLine == null || positionState == null) {
-                drawContent()
-                return@drawWithContent
-            }
-            val drawTimeMs = (positionState.renderedPositionMs + lyricOffsetMs).coerceAtLeast(0L)
-            currentLine.text.length * calculateLineProgress(currentLine, drawTimeMs).coerceIn(0f, 1f)
-        }
-
+        val effectiveRevealOffsetChars = resolveDrawTimeRevealOffsetChars(
+            revealOffsetChars = revealOffsetChars,
+            line = line,
+            interpolatedPositionState = interpolatedPositionState,
+            lyricOffsetMs = lyricOffsetMs
+        )
         // 进度达100%, 直接显示全部高亮, 跳过裁剪
-        if (effectiveRevealOffsetChars >= textLength) {
+        if (effectiveRevealOffsetChars == null || effectiveRevealOffsetChars >= textLength) {
             drawContent()
             return@drawWithContent
         }
-
-        val safeChars = effectiveRevealOffsetChars.coerceIn(0f, textLength.toFloat())
-        val totalLines = layout.lineCount
-        val horizontalInsetPx = horizontalContentInset.toPx()
-
-        // 遍历所有行, 分三种情况处理, 已完成行, 当前行, 未开始行
-        for (lineIndex in 0 until totalLines) {
-            val lineStartIdx = layout.getLineStart(lineIndex) // 该行第一个字符的索引
-            val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引 (含换行符)
-            val rawLineLeft = layout.getLineLeft(lineIndex) + horizontalInsetPx
-            val rawLineRight = layout.getLineRight(lineIndex) + horizontalInsetPx
-            val lineClipBounds = resolveLyricRevealClipBounds(
-                lineLeft = rawLineLeft,
-                lineRight = rawLineRight,
-                horizontalBleedPx = horizontalInsetPx,
-                containerWidth = size.width
-            )
-
-            // 进度超过该行最后一个字符, 直接绘制全高亮
-            if (safeChars >= lineEndIdx) {
-                clipRect(
-                    left = lineClipBounds.left,
-                    top = layout.getLineTop(lineIndex),
-                    right = lineClipBounds.right,
-                    bottom = layout.getLineBottom(lineIndex)
-                ) {
-                    this@drawWithContent.drawContent()
-                }
-            }
-            // 进度落在该行内, 执行渐变裁剪
-            else if (safeChars >= lineStartIdx) {
-                val currentIdxInLine = (safeChars - lineStartIdx).coerceAtLeast(0f)
-                val currentCharIdx = lineStartIdx + floor(currentIdxInLine).toInt()
-                val frac = (currentIdxInLine - floor(currentIdxInLine)).coerceIn(0f, 1f)
-
-                // 计算当前字符和下一个字符的X坐标
-                // 使用 getBoundingBox 获取更准确的字符边界, 避免字体渲染偏移
-                val x0 = try {
-                    layout.getBoundingBox(currentCharIdx).left + horizontalInsetPx
-                } catch (e: Exception) {
-                    layout.getHorizontalPosition(
-                        currentCharIdx,
-                        usePrimaryDirection = true
-                    ) + horizontalInsetPx
-                }
-                val nextCharIdx = if (currentCharIdx >= lineEndIdx - 1) {
-                    lineEndIdx // 该行最后一个字符，下一个字符指向行尾
-                } else {
-                    currentCharIdx + 1
-                }
-                val x1 = if (currentCharIdx >= lineEndIdx - 1) {
-                    rawLineRight // 该行最后一个字符，X1取行右边界
-                } else {
-                    try {
-                        layout.getBoundingBox(nextCharIdx).left + horizontalInsetPx
-                    } catch (e: Exception) {
-                        layout.getHorizontalPosition(
-                            nextCharIdx,
-                            usePrimaryDirection = true
-                        ) + horizontalInsetPx
-                    }
-                }
-
-                // 确保X坐标在当前行范围内
-                val lineLeft = lineClipBounds.left
-                val lineRight = lineClipBounds.right
-                val x = (x0 + (x1 - x0) * frac).coerceIn(lineLeft, lineRight)
-
-                // 计算渐变范围
-                val fadePx = fadeWidth.toPx()
-                if (fadePx <= 0.5f) {
-                    clipRect(
-                        left = lineLeft,
-                        top = layout.getLineTop(lineIndex),
-                        right = x,
-                        bottom = layout.getLineBottom(lineIndex)
-                    ) {
-                        this@drawWithContent.drawContent()
-                    }
-                    continue
-                }
-                val start = (x - fadePx).coerceAtLeast(lineLeft)
-
-                // 裁剪并绘制当前行的渐变高亮
-                clipRect(
-                    left = lineLeft,
-                    top = layout.getLineTop(lineIndex),
-                    right = lineRight,
-                    bottom = layout.getLineBottom(lineIndex)
-                ) {
-                    this@drawWithContent.drawContent()
-
-                    // 绘制渐变遮罩
-                    val lineWidth = (lineRight - lineLeft).coerceAtLeast(1f)
-                    val s1 = ((start - lineLeft) / lineWidth).coerceIn(0f, 1f)
-                    val s2 = ((x - lineLeft) / lineWidth).coerceIn(0f, 1f)
-                    val leftStop = minOf(s1, s2)
-                    val rightStop = maxOf(s1, s2)
-                    val brush = Brush.horizontalGradient(
-                        colorStops = arrayOf(
-                            0f to Color.White,
-                            leftStop to Color.White,
-                            rightStop to Color.Transparent,
-                            1f to Color.Transparent
-                        ),
-                        startX = lineLeft,
-                        endX = lineRight
-                    )
-                    drawRect(
-                        brush = brush,
-                        topLeft = Offset(lineLeft, layout.getLineTop(lineIndex)),
-                        size = androidx.compose.ui.geometry.Size(
-                            lineRight - lineLeft,
-                            layout.getLineBottom(lineIndex) - layout.getLineTop(lineIndex)
-                        ),
-                        blendMode = BlendMode.DstIn
-                    )
-                }
-            }
-            // 进度未到该行, 不绘制高亮
-            else {
-                continue
-            }
-        }
+        drawRevealedLines(
+            layout = layout,
+            revealedChars = effectiveRevealOffsetChars.coerceIn(0f, textLength.toFloat()),
+            horizontalInsetPx = horizontalContentInset.toPx(),
+            fadePx = fadeWidth.toPx()
+        )
     }
 
+/** 未提供字符偏移时, 在绘制阶段按插值播放位置计算, 返回 null 表示直接绘制原文 */
+internal fun resolveDrawTimeRevealOffsetChars(
+    revealOffsetChars: Float?,
+    line: LyricEntry?,
+    interpolatedPositionState: InterpolatedPlaybackPositionState?,
+    lyricOffsetMs: Long
+): Float? {
+    if (revealOffsetChars != null) return revealOffsetChars
+    if (line == null || interpolatedPositionState == null) return null
+    val drawTimeMs = (interpolatedPositionState.renderedPositionMs + lyricOffsetMs).coerceAtLeast(0L)
+    return line.text.length * calculateLineProgress(line, drawTimeMs).coerceIn(0f, 1f)
+}
+
+// 遍历所有行, 分三种情况处理, 已完成行, 当前行, 未开始行
+private fun ContentDrawScope.drawRevealedLines(
+    layout: TextLayoutResult,
+    revealedChars: Float,
+    horizontalInsetPx: Float,
+    fadePx: Float
+) {
+    for (lineIndex in 0 until layout.lineCount) {
+        val lineStartIdx = layout.getLineStart(lineIndex) // 该行第一个字符的索引
+        val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引 (含换行符)
+        if (revealedChars >= lineEndIdx) {
+            // 进度超过该行最后一个字符, 直接绘制全高亮
+            val lineClipBounds = layout.revealClipBounds(lineIndex, horizontalInsetPx, size.width)
+            clipRect(
+                left = lineClipBounds.left,
+                top = layout.getLineTop(lineIndex),
+                right = lineClipBounds.right,
+                bottom = layout.getLineBottom(lineIndex)
+            ) {
+                this@drawRevealedLines.drawContent()
+            }
+        } else if (revealedChars >= lineStartIdx) {
+            // 进度落在该行内, 执行渐变裁剪; 进度未到的行不绘制高亮
+            drawPartiallyRevealedLine(layout, lineIndex, revealedChars, horizontalInsetPx, fadePx)
+        }
+    }
+}
+
+private fun TextLayoutResult.revealClipBounds(
+    lineIndex: Int,
+    horizontalInsetPx: Float,
+    containerWidth: Float
+): LyricRevealClipBounds {
+    return resolveLyricRevealClipBounds(
+        lineLeft = getLineLeft(lineIndex) + horizontalInsetPx,
+        lineRight = getLineRight(lineIndex) + horizontalInsetPx,
+        horizontalBleedPx = horizontalInsetPx,
+        containerWidth = containerWidth
+    )
+}
+
+// 使用 getBoundingBox 获取更准确的字符边界, 避免字体渲染偏移
+private fun TextLayoutResult.revealCharLeft(charIndex: Int, horizontalInsetPx: Float): Float {
+    return try {
+        getBoundingBox(charIndex).left + horizontalInsetPx
+    } catch (e: Exception) {
+        getHorizontalPosition(charIndex, usePrimaryDirection = true) + horizontalInsetPx
+    }
+}
+
+private fun ContentDrawScope.drawPartiallyRevealedLine(
+    layout: TextLayoutResult,
+    lineIndex: Int,
+    revealedChars: Float,
+    horizontalInsetPx: Float,
+    fadePx: Float
+) {
+    val lineStartIdx = layout.getLineStart(lineIndex)
+    val lineEndIdx = layout.getLineEnd(lineIndex, true)
+    val lineClipBounds = layout.revealClipBounds(lineIndex, horizontalInsetPx, size.width)
+    val currentIdxInLine = (revealedChars - lineStartIdx).coerceAtLeast(0f)
+    val currentCharIdx = lineStartIdx + floor(currentIdxInLine).toInt()
+    val frac = (currentIdxInLine - floor(currentIdxInLine)).coerceIn(0f, 1f)
+
+    // 计算当前字符和下一个字符的X坐标
+    val x0 = layout.revealCharLeft(currentCharIdx, horizontalInsetPx)
+    val x1 = if (currentCharIdx >= lineEndIdx - 1) {
+        layout.getLineRight(lineIndex) + horizontalInsetPx // 该行最后一个字符，X1取行右边界
+    } else {
+        layout.revealCharLeft(currentCharIdx + 1, horizontalInsetPx)
+    }
+
+    // 确保X坐标在当前行范围内
+    val lineLeft = lineClipBounds.left
+    val lineRight = lineClipBounds.right
+    val lineTop = layout.getLineTop(lineIndex)
+    val lineBottom = layout.getLineBottom(lineIndex)
+    val x = (x0 + (x1 - x0) * frac).coerceIn(lineLeft, lineRight)
+
+    if (fadePx <= 0.5f) {
+        clipRect(left = lineLeft, top = lineTop, right = x, bottom = lineBottom) {
+            this@drawPartiallyRevealedLine.drawContent()
+        }
+        return
+    }
+    // 计算渐变范围
+    val start = (x - fadePx).coerceAtLeast(lineLeft)
+
+    // 裁剪并绘制当前行的渐变高亮
+    clipRect(left = lineLeft, top = lineTop, right = lineRight, bottom = lineBottom) {
+        this@drawPartiallyRevealedLine.drawContent()
+
+        // 绘制渐变遮罩
+        val lineWidth = (lineRight - lineLeft).coerceAtLeast(1f)
+        val s1 = ((start - lineLeft) / lineWidth).coerceIn(0f, 1f)
+        val s2 = ((x - lineLeft) / lineWidth).coerceIn(0f, 1f)
+        val leftStop = minOf(s1, s2)
+        val rightStop = maxOf(s1, s2)
+        val brush = Brush.horizontalGradient(
+            colorStops = arrayOf(
+                0f to Color.White,
+                leftStop to Color.White,
+                rightStop to Color.Transparent,
+                1f to Color.Transparent
+            ),
+            startX = lineLeft,
+            endX = lineRight
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(lineLeft, lineTop),
+            size = androidx.compose.ui.geometry.Size(lineRight - lineLeft, lineBottom - lineTop),
+            blendMode = BlendMode.DstIn
+        )
+    }
+}
 
 /**
  * 顶层当前行
@@ -1393,7 +1404,7 @@ fun DebugActiveLine(
     }
 }
 
-private fun scaleForDistance(d: Int, spec: LyricVisualSpec): Float =
+internal fun scaleForDistance(d: Int, spec: LyricVisualSpec): Float =
     when {
         d <= 0 -> spec.activeScale
         d == 1 -> spec.nearScale
@@ -1401,14 +1412,14 @@ private fun scaleForDistance(d: Int, spec: LyricVisualSpec): Float =
             .coerceIn(spec.farScaleMin, spec.farScale)
     }
 
-private fun alphaForDistance(d: Int, near: Float, far: Float): Float =
+internal fun alphaForDistance(d: Int, near: Float, far: Float): Float =
     when (d) {
         1 -> near
         2 -> far
         else -> (far - 0.08f * (d - 2)).coerceIn(0.16f, far)
     }
 
-private fun blurForDistance(d: Int, maxBlur: Float): Float =
+internal fun blurForDistance(d: Int, maxBlur: Float): Float =
     when (d) {
         1 -> maxBlur * 1.0f
         2 -> maxBlur * 1.5f
