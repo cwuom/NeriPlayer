@@ -121,7 +121,10 @@ class YouTubeMusicPlaylistDetailMappingTest {
     @Test
     fun `creator context keeps an existing original artist`() {
         val resolved = applyYouTubeMusicPlaylistCreatorContext(
-            tracks = listOf(song(artist = "").copy(originalArtist = "Original"), song(artist = "").copy(originalArtist = "")),
+            tracks = listOf(
+                song(artist = "").copy(originalArtist = "Original"),
+                song(artist = "").copy(originalArtist = "", customArtist = " ")
+            ),
             creatorName = " Creator "
         )
 

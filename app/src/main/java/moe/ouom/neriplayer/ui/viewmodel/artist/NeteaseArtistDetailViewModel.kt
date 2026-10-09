@@ -394,10 +394,8 @@ class NeteaseArtistDetailViewModel internal constructor(
         return names.joinToString(" / ")
     }
 
-    private fun JSONObject?.optNonBlankString(name: String): String? {
-        return this?.optString(name, "")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+    private fun JSONObject.optNonBlankString(name: String): String? {
+        return optString(name, "").trim().takeIf { it.isNotBlank() }
     }
 
     private fun toHttps(url: String?): String {

@@ -104,14 +104,16 @@ internal fun applyYouTubeMusicPlaylistCreatorContext(
 }
 
 private fun SongItem.withCreatorArtistFallback(creatorName: String): SongItem {
-    if (artist.isNotBlank() || !customArtist.isNullOrBlank()) {
+    if (hasDisplayArtist()) {
         return this
     }
     return copy(
         artist = creatorName,
-        originalArtist = originalArtist?.ifBlank { creatorName } ?: creatorName
+        originalArtist = originalArtist.orEmpty().ifBlank { creatorName }
     )
 }
+
+private fun SongItem.hasDisplayArtist(): Boolean = artist.isNotBlank() || !customArtist.isNullOrBlank()
 
 class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(YouTubeMusicPlaylistDetailUiState())
