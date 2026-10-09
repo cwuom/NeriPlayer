@@ -116,10 +116,13 @@ internal fun shouldShowMiniPlayer(hasSong: Boolean, showNowPlaying: Boolean): Bo
 internal fun shouldSuppressPlaybackNavigation(
     playbackOpen: Boolean,
     overlayMounted: Boolean,
-    smallestScreenWidthDp: Int
+    smallestScreenWidthDp: Int,
+    backGestureRevealing: Boolean = false
 ): Boolean =
+    // 返回手势拖动播放页时，底下露出的应是关闭后的底栏和迷你播放器；
     // 手机底栏与播放页退出同时开始恢复，避免两段动画串联等待
-    playbackOpen || (smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP && overlayMounted)
+    !backGestureRevealing &&
+        (playbackOpen || (smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP && overlayMounted))
 
 internal fun playbackSourceNavigationAction(
     sourceRoute: String?,

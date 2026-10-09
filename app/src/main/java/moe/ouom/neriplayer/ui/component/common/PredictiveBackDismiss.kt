@@ -14,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,11 @@ internal class PredictiveDismissState {
 
 @Composable
 internal fun rememberPredictiveDismissState(): PredictiveDismissState = remember { PredictiveDismissState() }
+
+/** 只在手势开始和 [PredictiveDismissState.reset] 时变化，调用方读取它不会随拖动进度重组 */
+@Composable
+internal fun PredictiveDismissState.rememberRevealsUnderlying(): State<Boolean> =
+    remember(this) { derivedStateOf { revealsUnderlying } }
 
 /**
  * 手势过程中只更新 [state]，松手后调用 [onDismiss]；取消时把进度动画回 0，
