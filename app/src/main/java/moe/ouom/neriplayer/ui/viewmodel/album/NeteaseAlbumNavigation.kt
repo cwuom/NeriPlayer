@@ -32,9 +32,13 @@ internal fun buildKnownNeteaseAlbumSummary(song: SongItem): AlbumSummary? {
 
 internal fun resolveNeteaseSongDetailId(song: SongItem): Long? {
     if (!isNeteaseAlbumNavigationSource(song)) return null
-    return song.audioId?.toLongOrNull()?.takeIf { it > 0L }
+    return positiveNeteaseSongId(song.audioId)
         ?: song.id.takeIf { it > 0L }
-        ?: song.matchedSongId?.toLongOrNull()?.takeIf { it > 0L }
+        ?: positiveNeteaseSongId(song.matchedSongId)
+}
+
+private fun positiveNeteaseSongId(value: String?): Long? {
+    return value?.toLongOrNull()?.takeIf { it > 0L }
 }
 
 internal suspend fun resolveNeteaseAlbum(song: SongItem): AlbumSummary? {
@@ -56,11 +60,7 @@ internal fun parseNeteaseAlbumSummaryFromSongDetail(
     fallbackName: String,
     fallbackCoverUrl: String?
 ): AlbumSummary? {
-    val root = JSONObject(raw)
-    if (root.optInt("code", -1) != 200) return null
-
-    val song = root.optJSONArray("songs")?.optJSONObject(0) ?: return null
-    val album = song.optJSONObject("al") ?: song.optJSONObject("album") ?: return null
+    val album = firstSongDetailAlbum(raw) ?: return null
     val albumId = album.optLong("id", 0L)
     if (albumId <= 0L) return null
 
@@ -77,4 +77,11 @@ internal fun parseNeteaseAlbumSummaryFromSongDetail(
         picUrl = coverUrl,
         size = album.optInt("size", 0).coerceAtLeast(0)
     )
+}
+
+private fun firstSongDetailAlbum(raw: String): JSONObject? {
+    val root = JSONObject(raw)
+    if (root.optInt("code", -1) != 200) return null
+    val song = root.optJSONArray("songs")?.optJSONObject(0) ?: return null
+    return song.optJSONObject("al") ?: song.optJSONObject("album")
 }

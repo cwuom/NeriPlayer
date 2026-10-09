@@ -64,6 +64,32 @@ class BiliPlaylistFavoriteMetadataTest {
         )
     }
 
+    @Test
+    fun `malformed favorite references fall back to a favorite folder`() {
+        listOf(
+            "other/v1/COLLECTION/1/2",
+            "bili-playlist/v1/COLLECTION/1",
+            "bili-playlist/v1/UNKNOWN/1/2",
+            "bili-playlist/v1/COLLECTION/x/2",
+            "bili-playlist/v1/COLLECTION/1/y"
+        ).forEach { browseId ->
+            val playlist = legacyFavorite().copy(browseId = browseId).toBiliPlaylist()
+
+            assertEquals(browseId, BiliPlaylistKind.CREATED_FAVORITE, playlist.kind)
+            assertEquals(browseId, 0L, playlist.fid)
+            assertEquals(browseId, 0L, playlist.mid)
+        }
+    }
+
+    private fun legacyFavorite() = FavoritePlaylist(
+        id = 99L,
+        name = "旧收藏夹",
+        coverUrl = null,
+        trackCount = 2,
+        source = "bili",
+        songs = emptyList()
+    )
+
     private fun favoriteFrom(playlist: BiliPlaylist): FavoritePlaylist {
         return FavoritePlaylist(
             id = playlist.mediaId,

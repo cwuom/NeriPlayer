@@ -23,11 +23,13 @@ internal fun youtubeMusicCreatorSectionKey(section: YouTubeMusicCreatorSection):
 }
 
 internal fun youtubeMusicCreatorItemKey(item: YouTubeMusicCreatorItem): String {
-    return item.videoId.trim().takeIf(String::isNotBlank)
-        ?: item.browseId.trim().takeIf(String::isNotBlank)
-        ?: item.playlistId.trim().takeIf(String::isNotBlank)
+    return item.videoId.trimmedOrNull()
+        ?: item.browseId.trimmedOrNull()
+        ?: item.playlistId.trimmedOrNull()
         ?: listOf(item.type.name, item.title.trim(), item.subtitle.trim()).joinToString("|")
 }
+
+private fun String?.trimmedOrNull(): String? = this?.trim()?.takeIf(String::isNotBlank)
 
 internal fun mergeYouTubeMusicCreatorItems(
     items: Iterable<YouTubeMusicCreatorItem>
@@ -74,7 +76,7 @@ internal suspend fun loadYouTubeMusicCreatorPlaybackQueue(
     items += firstPage.items
 
     val seenContinuations = mutableSetOf<String>()
-    var continuation = firstPage.continuation?.trim()?.takeIf(String::isNotBlank)
+    var continuation = firstPage.continuation.trimmedOrNull()
     var loadedPageCount = 1
     val maxPageCount = pageLimit.coerceAtLeast(1)
     while (continuation != null && loadedPageCount < maxPageCount) {
@@ -84,7 +86,7 @@ internal suspend fun loadYouTubeMusicCreatorPlaybackQueue(
         val page = fetchContinuation(continuation)
         items += page.items
         loadedPageCount++
-        continuation = page.continuation?.trim()?.takeIf(String::isNotBlank)
+        continuation = page.continuation.trimmedOrNull()
     }
     return buildYouTubeMusicCreatorPlaybackQueue(items, selectedItem)
 }
