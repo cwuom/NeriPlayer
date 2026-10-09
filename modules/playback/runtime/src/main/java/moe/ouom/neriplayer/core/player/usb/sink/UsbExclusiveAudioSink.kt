@@ -407,7 +407,12 @@ internal class UsbExclusiveAudioSink(
                 flushIdleNativeQueueAfterStalledWrite(runtimeReport)
                 return false
             }
-            if (shouldRecoverNativeTransportBeforeFirstCompletion(runtimeReport, nowMs)) {
+            if (
+                isFirstCompletionStallRecoveryWindowOpen(
+                    playing, nativeTransportStarted, firstCompletionStallRecoveryAttempts,
+                    nativeTransportStartedAtMs, nowMs
+                ) && isNativeTransportStalledBeforeFirstCompletion(runtimeReport)
+            ) {
                 firstCompletionStallRecoveryAttempts += 1
                 val restarted = restartNativeTransportForShortDisruption(
                     reason = "sink_first_completion_stalled",
@@ -1817,13 +1822,6 @@ internal class UsbExclusiveAudioSink(
             suppressedSystemFallbackReason ?: "native_fallback_suppressed"
         )
     }
-
-    private fun shouldRecoverNativeTransportBeforeFirstCompletion(
-        runtimeReport: String,
-        nowMs: Long
-    ): Boolean = isFirstCompletionStallRecoveryWindowOpen(
-        playing, nativeTransportStarted, firstCompletionStallRecoveryAttempts, nativeTransportStartedAtMs, nowMs
-    ) && isNativeTransportStalledBeforeFirstCompletion(runtimeReport)
 
     private fun resetNativeQualityRecoveryState(handle: Long = 0L) {
         nativeQualityRecoveryState = UsbExclusiveAudioQualityRecoveryPolicy.reset(handle)

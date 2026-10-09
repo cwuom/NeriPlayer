@@ -82,6 +82,7 @@ class UsbExclusiveAudioSinkDecisionsTest {
         assertTrue(isFatalNativeRuntime("source=player_pcm lastError=LIBUSB_ERROR_NO_DEVICE"))
         assertTrue(isFatalNativeRuntime("source=player_pcm transportFailed=true lastError=permission"))
         assertTrue(isFatalNativeRuntime("source=player_pcm lastError=sample_rate_unsupported"))
+        assertFalse(isFatalNativeRuntime("source=player_pcm lastError= running=true"))
     }
 
     @Test
@@ -126,6 +127,13 @@ class UsbExclusiveAudioSinkDecisionsTest {
             "transportFailed=false pcmLevel=1024/1024 pcmFreeBytes=0 lastError=none"
         assertTrue(isNativeTransportStalledBeforeFirstCompletion(stalled))
         assertTrue(isNativeTransportStalledBeforeFirstCompletion(stalled.replace(" inFlight=8", "")))
+        // a malformed counter invalidates the report itself
+        assertFalse(isNativeTransportStalledBeforeFirstCompletion(stalled.replace("inFlight=8", "inFlight=many")))
+        assertFalse(
+            isNativeTransportStalledBeforeFirstCompletion(
+                stalled.replace("completedTransfers=0", "completedTransfers=unknown")
+            )
+        )
         assertFalse(isNativeTransportStalledBeforeFirstCompletion(stalled.replace("source=player_pcm", "source=probe")))
         assertFalse(isNativeTransportStalledBeforeFirstCompletion(stalled.replace("completedTransfers=0", "completedTransfers=3")))
         assertFalse(isNativeTransportStalledBeforeFirstCompletion(stalled.replace("completedTransfers=0 ", "")))
