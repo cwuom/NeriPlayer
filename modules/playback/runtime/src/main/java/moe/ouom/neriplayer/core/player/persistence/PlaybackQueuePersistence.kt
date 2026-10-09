@@ -89,25 +89,7 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
     }
     val now = System.currentTimeMillis()
     if (queueState == null && queueStateProvider == null) {
-        return runCatchingNonCancellation {
-            roomStore.clear(now)
-            currentCoroutineContext().ensureActive()
-            legacyStore.clear()
-            PlaybackQueuePersistTarget.ROOM
-        }.getOrElse { error ->
-            currentCoroutineContext().ensureActive()
-            onRoomFailure(error)
-            legacyStore.write(
-                PersistedState(playlist = emptyList(), index = -1)
-                    .withPlaybackState(playbackState),
-                playbackState
-            )
-            runCatchingNonCancellation { roomStore.markLegacyJsonPrimary(now) }
-                .onFailure { markerError ->
-                    onRoomFailure(markerError)
-                }.getOrThrow()
-            PlaybackQueuePersistTarget.LEGACY_JSON
-        }
+        return clearPlaybackQueueWithRoomFallback(roomStore, legacyStore, playbackState, now, onRoomFailure)
     }
 
     val resolvedQueueState by lazy(LazyThreadSafetyMode.NONE) {
@@ -128,6 +110,34 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
         currentCoroutineContext().ensureActive()
         onRoomFailure(error)
         legacyStore.write(resolvedQueueState, playbackState)
+        runCatchingNonCancellation { roomStore.markLegacyJsonPrimary(now) }
+            .onFailure { markerError ->
+                onRoomFailure(markerError)
+            }.getOrThrow()
+        PlaybackQueuePersistTarget.LEGACY_JSON
+    }
+}
+
+private suspend fun clearPlaybackQueueWithRoomFallback(
+    roomStore: PlaybackQueueStateStore,
+    legacyStore: PlaybackQueueLegacyStore,
+    playbackState: PersistedPlaybackState,
+    now: Long,
+    onRoomFailure: (Throwable) -> Unit
+): PlaybackQueuePersistTarget {
+    return runCatchingNonCancellation {
+        roomStore.clear(now)
+        currentCoroutineContext().ensureActive()
+        legacyStore.clear()
+        PlaybackQueuePersistTarget.ROOM
+    }.getOrElse { error ->
+        currentCoroutineContext().ensureActive()
+        onRoomFailure(error)
+        legacyStore.write(
+            PersistedState(playlist = emptyList(), index = -1)
+                .withPlaybackState(playbackState),
+            playbackState
+        )
         runCatchingNonCancellation { roomStore.markLegacyJsonPrimary(now) }
             .onFailure { markerError ->
                 onRoomFailure(markerError)
