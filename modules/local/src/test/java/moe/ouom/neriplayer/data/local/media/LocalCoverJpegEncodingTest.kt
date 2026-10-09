@@ -18,6 +18,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
@@ -82,6 +83,47 @@ class LocalCoverJpegEncodingTest {
 
         assertArrayEquals(byteArrayOf(9, 90), encoded)
         verify(bitmap).recycle()
+    }
+
+    @Test
+    fun `editable cover jpeg decodes oversized covers with a sample size instead of full resolution`() {
+        val source = byteArrayOf(7, 8)
+        val bitmap = encodingBitmap { quality, output ->
+            output.write(byteArrayOf(quality.toByte()))
+            true
+        }
+        val sampleSizes = mutableListOf<Int>()
+
+        val encoded = decoding(source, bitmap, width = 12_000, height = 9_000, decodedSampleSizes = sampleSizes) {
+            LocalMediaSupport.encodeEditableCoverAsJpeg(source)
+        }
+
+        assertArrayEquals(byteArrayOf(95), encoded)
+        assertEquals(listOf(4), sampleSizes)
+    }
+
+    @Test
+    fun `editable cover jpeg keeps normal covers at full resolution`() {
+        val source = byteArrayOf(7, 9)
+        val bitmap = encodingBitmap { quality, output ->
+            output.write(byteArrayOf(quality.toByte()))
+            true
+        }
+        val sampleSizes = mutableListOf<Int>()
+
+        decoding(source, bitmap, width = 3_000, height = 3_000, decodedSampleSizes = sampleSizes) {
+            LocalMediaSupport.encodeEditableCoverAsJpeg(source)
+        }
+
+        assertEquals(listOf(1), sampleSizes)
+    }
+
+    @Test
+    fun `editable cover decode sample size halves until the pixel budget fits`() {
+        assertEquals(1, editableCoverDecodeSampleSize(4_000, 4_000, maxPixels = 16_000_000L))
+        assertEquals(2, editableCoverDecodeSampleSize(4_001, 4_000, maxPixels = 16_000_000L))
+        assertEquals(8, editableCoverDecodeSampleSize(20_000, 20_000, maxPixels = 16_000_000L))
+        assertEquals(1, editableCoverDecodeSampleSize(1, 1, maxPixels = -5L))
     }
 
     @Test
@@ -169,9 +211,28 @@ class LocalCoverJpegEncodingTest {
         return bitmap
     }
 
-    private fun <T> decoding(source: ByteArray, bitmap: Bitmap, block: () -> T): T {
+    private fun <T> decoding(
+        source: ByteArray,
+        bitmap: Bitmap,
+        width: Int = 1_000,
+        height: Int = 1_000,
+        decodedSampleSizes: MutableList<Int> = mutableListOf(),
+        block: () -> T
+    ): T {
         return mockStatic(BitmapFactory::class.java).use { decoder ->
-            decoder.`when`<Bitmap> { BitmapFactory.decodeByteArray(source, 0, source.size) }.thenReturn(bitmap)
+            decoder.`when`<Bitmap> {
+                BitmapFactory.decodeByteArray(eq(source), eq(0), eq(source.size), any(BitmapFactory.Options::class.java))
+            }.thenAnswer { invocation ->
+                val options = invocation.getArgument<BitmapFactory.Options>(3)
+                if (options.inJustDecodeBounds) {
+                    options.outWidth = width
+                    options.outHeight = height
+                    null
+                } else {
+                    decodedSampleSizes += options.inSampleSize
+                    bitmap
+                }
+            }
             block()
         }
     }

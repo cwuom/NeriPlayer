@@ -54,8 +54,18 @@ class LocalMediaEmbeddedCoverContainerNormalizationTest {
         }.`when`(bitmap).compress(any(), anyInt(), any())
 
         mockStatic(BitmapFactory::class.java).use { decoder ->
-            decoder.`when`<Bitmap> { BitmapFactory.decodeByteArray(source, 0, source.size) }
-                .thenReturn(bitmap)
+            decoder.`when`<Bitmap> {
+                BitmapFactory.decodeByteArray(eq(source), eq(0), eq(source.size), any(BitmapFactory.Options::class.java))
+            }.thenAnswer { invocation ->
+                val options = invocation.getArgument<BitmapFactory.Options>(3)
+                if (options.inJustDecodeBounds) {
+                    options.outWidth = 640
+                    options.outHeight = 640
+                    null
+                } else {
+                    bitmap
+                }
+            }
 
             val result = LocalMediaSupport.normalizeEmbeddedCoverForContainer(source, "image/webp", "m4a")
 
@@ -70,7 +80,9 @@ class LocalMediaEmbeddedCoverContainerNormalizationTest {
     fun `mp4 covers that cannot be decoded are dropped`() {
         mockStatic(BitmapFactory::class.java).use { decoder ->
             assertNull(LocalMediaSupport.normalizeEmbeddedCoverForContainer(source, "image/gif", "m4a"))
-            decoder.verify { BitmapFactory.decodeByteArray(source, 0, source.size) }
+            decoder.verify {
+                BitmapFactory.decodeByteArray(eq(source), eq(0), eq(source.size), any(BitmapFactory.Options::class.java))
+            }
         }
     }
 }

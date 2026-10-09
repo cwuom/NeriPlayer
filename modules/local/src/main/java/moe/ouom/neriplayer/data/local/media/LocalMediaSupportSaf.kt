@@ -262,7 +262,12 @@ internal fun LocalMediaSupport.createEditableCoverPicture(
 }
 
 internal fun LocalMediaSupport.encodeEditableCoverAsJpeg(sourceBytes: ByteArray): ByteArray? {
-    val bitmap = BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size) ?: return null
+    val bounds = decodeEmbeddedCoverBounds(sourceBytes) ?: return null
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = editableCoverDecodeSampleSize(bounds.outWidth, bounds.outHeight)
+    }
+    val bitmap = BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, options)
+        ?: return null
     return try {
         ByteArrayOutputStream().use { output ->
             EDITABLE_COVER_JPEG_QUALITIES.forEach { quality ->
@@ -279,6 +284,20 @@ internal fun LocalMediaSupport.encodeEditableCoverAsJpeg(sourceBytes: ByteArray)
     } finally {
         bitmap.recycle()
     }
+}
+
+/** 取能把解码像素数压到 [maxPixels] 以内的最小 2 的幂采样率，普通尺寸的封面保持原分辨率 */
+internal fun editableCoverDecodeSampleSize(
+    width: Int,
+    height: Int,
+    maxPixels: Long = MAX_EDITABLE_COVER_DECODE_PIXELS
+): Int {
+    val budget = maxPixels.coerceAtLeast(1L)
+    var sampleSize = 1
+    while ((width.toLong() / sampleSize) * (height.toLong() / sampleSize) > budget) {
+        sampleSize *= 2
+    }
+    return sampleSize
 }
 
 internal fun LocalMediaSupport.resolveEditableCoverMimeType(

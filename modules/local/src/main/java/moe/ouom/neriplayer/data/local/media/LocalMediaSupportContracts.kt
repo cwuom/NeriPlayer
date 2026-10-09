@@ -30,6 +30,7 @@ import android.os.ParcelFileDescriptor
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_COVER_PIXELS
 import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -67,6 +68,9 @@ internal const val DOCUMENT_NAVIGATION_CACHE_LIMIT = 512
 internal const val LOCAL_LYRICS_PERF_LOG_LIMIT = 96
 internal const val MAX_MEDIASTORE_DURATION_QUERY_IDS = 400
 internal const val MAX_EDITABLE_COVER_BYTES = MAX_SOURCE_COVER_BYTES
+
+/** 16 MiB 的压缩封面可能解出上亿像素，解码前按这个像素预算降采样，避免一次性分配数百 MB */
+internal const val MAX_EDITABLE_COVER_DECODE_PIXELS = MAX_COVER_PIXELS
 internal const val MAX_EMBEDDED_COVER_CACHE_BYTES = 1024 * 1024
 internal const val MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX = 512
 internal const val FRONT_COVER_PICTURE_TYPE = "Front Cover"
