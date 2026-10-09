@@ -21,8 +21,8 @@ import moe.ouom.neriplayer.core.download.processing.ManagedLibraryProcessingCoor
 import moe.ouom.neriplayer.data.model.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.DownloadDirectoryStoragePort
 import moe.ouom.neriplayer.ui.screen.tab.settings.download.migration.rememberDownloadDirectoryMigrationRecoveryController
-import android.content.ActivityNotFoundException
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.util.platform.tryLaunch
 
 internal data class PendingDownloadDirectoryChange(
     val previousUri: String?,
@@ -224,9 +224,7 @@ internal fun rememberDownloadDirectorySettingsController(
         hasActiveDownloadOperationsState = hasActiveDownloadOperationsState,
         launchPicker = {
             // 部分精简系统或电视设备没有 DocumentsUI，目录选择器无法打开
-            try {
-                directoryLauncher.launch(null)
-            } catch (_: ActivityNotFoundException) {
+            if (!directoryLauncher.tryLaunch(null)) {
                 AppFeedback.show(context, resources.getString(CoreCommonR.string.error_no_app_for_action))
             }
         }
