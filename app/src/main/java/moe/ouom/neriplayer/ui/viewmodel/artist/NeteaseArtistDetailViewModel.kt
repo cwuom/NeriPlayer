@@ -119,31 +119,39 @@ class NeteaseArtistDetailViewModel internal constructor(
                 if (artistGeneration != generation) return@launch
                 songOffset = loaded.songs.size
                 albumOffset = loaded.albums.size
-                _uiState.update { current ->
-                    loaded.copy(
-                        loading = false,
-                        error = null,
-                        followUpdating = current.followUpdating,
-                        header = loaded.header?.copy(
-                            followed = favoriteRepo.isFavorite(summary.id, FAVORITE_SOURCE_NETEASE_ARTIST)
-                        )
-                    )
-                }
+                publishLoadedArtist(summary.id, loaded)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (artistGeneration != generation) return@launch
                 NPLogger.e(TAG, "load artist failed", e)
-                _uiState.update {
-                    it.copy(
-                        loading = false,
-                        error = getApplication<Application>().getString(
-                            CoreCommonR.string.artist_load_failed,
-                            e.message ?: e.javaClass.simpleName
-                        )
-                    )
-                }
+                publishLoadFailure(e)
             }
+        }
+    }
+
+    private fun publishLoadedArtist(artistId: Long, loaded: NeteaseArtistDetailUiState) {
+        _uiState.update { current ->
+            loaded.copy(
+                loading = false,
+                error = null,
+                followUpdating = current.followUpdating,
+                header = loaded.header?.copy(
+                    followed = favoriteRepo.isFavorite(artistId, FAVORITE_SOURCE_NETEASE_ARTIST)
+                )
+            )
+        }
+    }
+
+    private fun publishLoadFailure(error: Exception) {
+        _uiState.update {
+            it.copy(
+                loading = false,
+                error = getApplication<Application>().getString(
+                    CoreCommonR.string.artist_load_failed,
+                    error.message ?: error.javaClass.simpleName
+                )
+            )
         }
     }
 
@@ -247,30 +255,47 @@ class NeteaseArtistDetailViewModel internal constructor(
                         throw IOException("Artist follow change could not be saved")
                     }
                     favoriteRepo.isFavorite(header.id, FAVORITE_SOURCE_NETEASE_ARTIST)
-                }
-                if (followed == null) return@launch
-                _uiState.update {
-                    if (artistGeneration != generation || it.header?.id != header.id) return@update it
-                    it.copy(
-                        followUpdating = false,
-                        header = it.header.copy(followed = followed)
-                    )
-                }
+                } ?: return@launch
+                publishFollowResult(generation, header.id, followed)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 NPLogger.e(TAG, "toggle artist follow failed", error)
-                _uiState.update {
-                    if (artistGeneration != generation || it.header?.id != header.id) return@update it
-                    it.copy(
-                        followUpdating = false,
-                        error = getApplication<Application>().getString(
-                            CoreCommonR.string.artist_follow_failed,
-                            error.message ?: error.javaClass.simpleName
-                        )
-                    )
-                }
+                publishFollowFailure(generation, header.id, error)
             }
+        }
+    }
+
+    /** 关注写入期间切换了歌手时, 旧请求的结果不能落到新歌手上 */
+    private fun currentFollowHeader(
+        state: NeteaseArtistDetailUiState,
+        generation: Long,
+        headerId: Long
+    ): NeteaseArtistHeader? {
+        if (artistGeneration != generation) return null
+        return state.header?.takeIf { it.id == headerId }
+    }
+
+    private fun publishFollowResult(generation: Long, headerId: Long, followed: Boolean) {
+        _uiState.update { state ->
+            val header = currentFollowHeader(state, generation, headerId) ?: return@update state
+            state.copy(
+                followUpdating = false,
+                header = header.copy(followed = followed)
+            )
+        }
+    }
+
+    private fun publishFollowFailure(generation: Long, headerId: Long, error: Exception) {
+        _uiState.update { state ->
+            if (currentFollowHeader(state, generation, headerId) == null) return@update state
+            state.copy(
+                followUpdating = false,
+                error = getApplication<Application>().getString(
+                    CoreCommonR.string.artist_follow_failed,
+                    error.message ?: error.javaClass.simpleName
+                )
+            )
         }
     }
 
