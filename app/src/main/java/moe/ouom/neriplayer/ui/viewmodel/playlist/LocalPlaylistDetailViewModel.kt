@@ -241,14 +241,11 @@ private class ScanPreviewHydrationBatch(state: LocalScanPreviewState) {
     }
 
     fun replace(targetIndex: Int, hydratedSong: SongItem) {
-        if (targetIndex !in songs.indices) return
-        val previousSong = songs[targetIndex]
+        val previousSong = songs.getOrNull(targetIndex) ?: return
         songs[targetIndex] = hydratedSong
         val previousKey = previousSong.stableKey()
         val hydratedKey = hydratedSong.stableKey()
-        if (songIndexByStableKey[previousKey] == targetIndex) {
-            songIndexByStableKey.remove(previousKey)
-        }
+        songIndexByStableKey.remove(previousKey, targetIndex)
         songIndexByStableKey.putIfAbsent(hydratedKey, targetIndex)
         selectedKeys = remapScanPreviewKeySet(selectedKeys, previousSong, hydratedSong)
         existingLocalPlaylistKeys = remapScanPreviewKeySet(
