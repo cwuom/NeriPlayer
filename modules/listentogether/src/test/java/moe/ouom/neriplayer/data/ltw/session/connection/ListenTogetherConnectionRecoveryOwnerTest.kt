@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.ltw.testing.FakeListenTogetherNetworkMonitor
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherMember
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
@@ -77,6 +78,86 @@ class ListenTogetherConnectionRecoveryOwnerTest {
         owner.scheduleReconnect("max_attempts")
         assertEquals(15, port.connects)
         assertEquals(listOf("reconnect_max_attempts_exceeded"), port.closedReasons)
+        owner.stop()
+    }
+
+    @Test
+    fun `network return during backoff resets attempts and reconnects immediately`() = runTest {
+        val port = FakePort(controller = true)
+        val monitor = FakeListenTogetherNetworkMonitor()
+        val owner = ListenTogetherConnectionRecoveryOwner(this, port, monitor)
+        owner.beginConnect()
+        owner.watchNetwork()
+        owner.watchNetwork()
+        assertEquals(1, monitor.starts)
+        val network = requireNotNull(monitor.listener)
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.CONNECTED)
+        network.onDefaultNetworkAvailable("wifi")
+        runCurrent()
+        assertEquals(0, port.connects)
+
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
+        repeat(4) {
+            owner.scheduleReconnect("failed")
+            advanceTimeBy(15_000L)
+            runCurrent()
+        }
+        owner.scheduleReconnect("failed")
+        network.onDefaultNetworkLost("wifi")
+        network.onDefaultNetworkValidated("cellular")
+        runCurrent()
+        assertEquals(5, port.connects)
+        assertTrue("reconnect_scheduled:network_available" in port.keepAliveReasons)
+
+        owner.scheduleReconnect("failed_again")
+        advanceTimeBy(3_700L)
+        runCurrent()
+        assertEquals(6, port.connects)
+        owner.scheduleReconnect("signal_change")
+        network.onDefaultNetworkValidated("cellular")
+        network.onDefaultNetworkAvailable("cellular")
+        network.onDefaultNetworkLost("wifi")
+        runCurrent()
+        assertEquals(6, port.connects)
+        owner.stop()
+        owner.stop()
+        assertEquals(1, monitor.stops)
+        network.onDefaultNetworkAvailable("ethernet")
+        advanceTimeBy(20_000L)
+        runCurrent()
+        assertEquals(6, port.connects)
+    }
+
+    @Test
+    fun `network return revives an idle disconnected session but not one already rejoining`() = runTest {
+        val idlePort = FakePort(controller = true)
+        val idleMonitor = FakeListenTogetherNetworkMonitor()
+        val idleOwner = ListenTogetherConnectionRecoveryOwner(this, idlePort, idleMonitor)
+        idleOwner.beginConnect()
+        idleOwner.watchNetwork()
+        requireNotNull(idleMonitor.listener).onDefaultNetworkAvailable("wifi")
+        runCurrent()
+        assertEquals(1, idlePort.connects)
+        idleOwner.stop()
+
+        val port = FakePort(controller = false)
+        val gate = CompletableDeferred<Unit>()
+        port.rejoinGate = gate
+        val monitor = FakeListenTogetherNetworkMonitor()
+        val owner = ListenTogetherConnectionRecoveryOwner(this, port, monitor)
+        owner.beginConnect()
+        owner.watchNetwork()
+        assertTrue(owner.recoverFromMembershipError("member missing", "socket_error"))
+        runCurrent()
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
+        requireNotNull(monitor.listener).onDefaultNetworkValidated("wifi")
+        runCurrent()
+        assertEquals(1, port.recoveryStarts)
+        assertEquals(0, port.connects)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(1, port.rejoins)
+        assertEquals(1, port.connects)
         owner.stop()
     }
 

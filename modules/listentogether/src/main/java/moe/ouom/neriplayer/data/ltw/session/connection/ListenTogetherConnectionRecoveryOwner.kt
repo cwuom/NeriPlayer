@@ -10,7 +10,10 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS
 import moe.ouom.neriplayer.api.ltw.reconnect.isTerminalListenTogetherReconnectError
 import moe.ouom.neriplayer.api.ltw.reconnect.listenTogetherReconnectDelayMs
+import moe.ouom.neriplayer.data.ltw.platform.ListenTogetherNetworkMonitor
+import moe.ouom.neriplayer.data.ltw.platform.NoListenTogetherNetworkMonitor
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
+import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -27,7 +30,8 @@ interface ListenTogetherConnectionRecoveryPort {
 
 class ListenTogetherConnectionRecoveryOwner(
     private val scope: CoroutineScope,
-    private val port: ListenTogetherConnectionRecoveryPort
+    private val port: ListenTogetherConnectionRecoveryPort,
+    private val networkMonitor: ListenTogetherNetworkMonitor = NoListenTogetherNetworkMonitor
 ) {
     private val lock = Any()
     private var reconnectJob: Job? = null
@@ -35,6 +39,7 @@ class ListenTogetherConnectionRecoveryOwner(
     private var reconnectAttempt = 0
     private var generation = 0L
     private var stopped = false
+    private var watchingNetwork = false
     @Volatile
     var enabled = false
         private set
@@ -69,9 +74,53 @@ class ListenTogetherConnectionRecoveryOwner(
             membershipRecoveryJob?.cancel()
             membershipRecoveryJob = null
         }
+        stopWatchingNetwork()
     }
 
-    fun scheduleReconnect(reason: String) {
+    fun watchNetwork() {
+        val tracker = synchronized(lock) {
+            if (watchingNetwork) return
+            watchingNetwork = true
+            ListenTogetherDefaultNetworkTracker(::onNetworkAvailable, ::onNetworkLost)
+        }
+        networkMonitor.start(tracker)
+    }
+
+    private fun stopWatchingNetwork() {
+        synchronized(lock) {
+            if (!watchingNetwork) return
+            watchingNetwork = false
+        }
+        networkMonitor.stop()
+    }
+
+    private fun onNetworkAvailable() {
+        if (!restartBackoffForNetwork()) return
+        NPLogger.d(TAG, "default network available: reconnect now")
+        requestReconnect("network_available", immediate = true)
+    }
+
+    private fun onNetworkLost() {
+        NPLogger.d(TAG, "default network lost")
+    }
+
+    private fun restartBackoffForNetwork(): Boolean = synchronized(lock) {
+        if (!enabled || !isAwaitingReconnect()) return@synchronized false
+        reconnectAttempt = 0
+        reconnectJob?.cancel()
+        reconnectJob = null
+        true
+    }
+
+    private fun isAwaitingReconnect(): Boolean {
+        if (reconnectJob?.isActive == true) return true
+        return port.session().connectionState == ListenTogetherConnectionState.DISCONNECTED &&
+            membershipRecoveryJob?.isActive != true
+    }
+
+    fun scheduleReconnect(reason: String) = requestReconnect(reason, immediate = false)
+
+    private fun requestReconnect(reason: String, immediate: Boolean) {
         val observedGeneration = synchronized(lock) { generation }
         val snapshot = port.session()
         if (!shouldScheduleListenTogetherReconnect(snapshot, enabled)) {
@@ -79,25 +128,35 @@ class ListenTogetherConnectionRecoveryOwner(
             return
         }
         port.updateBackgroundKeepAlive("reconnect_scheduled:$reason")
-        enqueueReconnect(snapshot, reason, observedGeneration)
+        enqueueReconnect(snapshot, reason, observedGeneration, immediate)
     }
 
-    private fun enqueueReconnect(snapshot: ListenTogetherSessionState, reason: String, observedGeneration: Long) {
+    private fun enqueueReconnect(
+        snapshot: ListenTogetherSessionState,
+        reason: String,
+        observedGeneration: Long,
+        immediate: Boolean
+    ) {
         synchronized(lock) {
-            val current = port.session()
-            if (!canRunListenTogetherReconnect(snapshot, current, enabled, generation == observedGeneration)) return
-            if (reconnectJob?.isActive == true) return
+            if (!mayEnqueueReconnect(snapshot, observedGeneration)) return
             val attempt = ++reconnectAttempt
             if (attempt > LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS) {
                 NPLogger.w(TAG, "scheduleReconnect(): max attempts reached ($LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS), reason=$reason")
                 port.closeRoomLocally("reconnect_max_attempts_exceeded")
                 return
             }
-            val delayMs = listenTogetherReconnectDelayMs(attempt)
-            val scheduledGeneration = generation
-            NPLogger.w(TAG, "scheduleReconnect(): roomId=${snapshot.roomId}, attempt=$attempt, delayMs=$delayMs, reason=$reason")
-            reconnectJob = scope.launch { executeReconnect(delayMs, reason, attempt, snapshot, scheduledGeneration) }
+            launchReconnect(snapshot, reason, attempt, if (immediate) 0L else listenTogetherReconnectDelayMs(attempt))
         }
+    }
+
+    private fun mayEnqueueReconnect(snapshot: ListenTogetherSessionState, observedGeneration: Long): Boolean =
+        canRunListenTogetherReconnect(snapshot, port.session(), enabled, generation == observedGeneration) &&
+            reconnectJob?.isActive != true
+
+    private fun launchReconnect(snapshot: ListenTogetherSessionState, reason: String, attempt: Int, delayMs: Long) {
+        val scheduledGeneration = generation
+        NPLogger.w(TAG, "scheduleReconnect(): roomId=${snapshot.roomId}, attempt=$attempt, delayMs=$delayMs, reason=$reason")
+        reconnectJob = scope.launch { executeReconnect(delayMs, reason, attempt, snapshot, scheduledGeneration) }
     }
 
     private suspend fun executeReconnect(

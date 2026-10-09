@@ -189,7 +189,8 @@ class ListenTogetherSessionManager(
                     lastError = errorMessage
                 )
             }
-        }
+        },
+        networkMonitor = platform.networkMonitor
     )
 
     private val socketHealthOwner = ListenTogetherSocketHealthOwner(
@@ -620,6 +621,7 @@ class ListenTogetherSessionManager(
             connectionState = ListenTogetherConnectionState.CONNECTING,
             lastError = null
         )
+        connectionRecoveryOwner.watchNetwork()
         webSocketClient.connect(
             wsUrl = wsUrl,
             listener = object : ListenTogetherWebSocketClient.Listener {

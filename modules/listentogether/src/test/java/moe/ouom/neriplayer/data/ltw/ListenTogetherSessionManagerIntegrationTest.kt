@@ -274,10 +274,27 @@ class ListenTogetherSessionManagerIntegrationTest {
         assertTrue(f.player.calls.contains("seek:0"))
     }
 
+    @Test
+    fun `returning network reconnects a dropped socket at once and leaving stops watching`() = sessionTest {
+        val f = fixture(this)
+        f.join(); f.connect()
+        val monitor = f.platform.networkMonitor
+        assertEquals(1, monitor.starts)
+        f.listener.onFailure(IOException("network down"))
+        assertEquals(1, f.socketConnects)
+        requireNotNull(monitor.listener).onDefaultNetworkValidated("wifi")
+        assertEquals(2, f.socketConnects)
+        assertEquals(ListenTogetherConnectionState.CONNECTING, f.manager.sessionState.value.connectionState)
+        f.manager.leaveRoom()
+        assertEquals(1, monitor.stops)
+    }
+
     private class Fixture(scope: TestScope, role: String, queueMainWork: Boolean) {
         val player = FakeListenTogetherPlaybackHost().apply { currentSongFlow.value = testSong(); currentQueueFlow.value = listOf(testSong()) }
         val socket = mock(ListenTogetherWebSocketClient::class.java)
+        val platform = FakeListenTogetherPlatformHost()
         lateinit var listener: ListenTogetherWebSocketClient.Listener
+        var socketConnects = 0
         val events = mutableListOf<ListenTogetherEvent>()
         var now = 50_000L
         var mainThread = true
@@ -316,7 +333,7 @@ class ListenTogetherSessionManagerIntegrationTest {
 
         init {
             val unusedListener = mock(ListenTogetherWebSocketClient.Listener::class.java)
-            doAnswer { listener = it.getArgument(1); null }.`when`(socket).connect(
+            doAnswer { listener = it.getArgument(1); socketConnects++; null }.`when`(socket).connect(
                 anyString(), any(ListenTogetherWebSocketClient.Listener::class.java) ?: unusedListener
             )
             `when`(socket.sendEvent(any(ListenTogetherEvent::class.java) ?: ListenTogetherEvent("PLAY")))
@@ -324,7 +341,7 @@ class ListenTogetherSessionManagerIntegrationTest {
             `when`(socket.sendPing(anyLong())).thenAnswer { socketSends }
             `when`(socket.sendLegacyPing()).thenAnswer { socketSends }
         }
-        val manager = ListenTogetherSessionManager(ListenTogetherApi(httpClient, dispatcher), socket, player, FakeListenTogetherPlatformHost(), TestSongMapper, dispatcher, mainDispatcher, { now }, { mainThread })
+        val manager = ListenTogetherSessionManager(ListenTogetherApi(httpClient, dispatcher), socket, player, platform, TestSongMapper, dispatcher, mainDispatcher, { now }, { mainThread })
         suspend fun join() { manager.joinRoom(BASE_URL, "ABC234", USER_UUID, "Tester", joinSecret = "secret") }
         fun connect() { manager.connectWebSocket(); listener.onOpen() }
     }
