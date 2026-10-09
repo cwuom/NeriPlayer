@@ -30,7 +30,7 @@ internal object BiliSponsorBlockPlaybackController {
     fun onPlaybackRequestStarted(song: SongItem, requestToken: Long) {
         synchronized(lock) {
             val track = activeTrack ?: return
-            if (track.requestToken != requestToken || !track.song.sameIdentityAs(song)) {
+            if (!track.isFor(song, requestToken)) {
                 clearActiveTrackLocked()
             }
         }
@@ -45,10 +45,7 @@ internal object BiliSponsorBlockPlaybackController {
         val loadAction = synchronized(lock) {
             val current = activeTrack
             val explicitTarget = song.explicitBiliSponsorBlockTargetOrNull()
-            val track = if (
-                current?.requestToken == requestToken &&
-                    current.song.sameIdentityAs(song)
-            ) {
+            val track = if (current != null && current.isFor(song, requestToken)) {
                 current
             } else {
                 clearActiveTrackLocked()
@@ -59,27 +56,11 @@ internal object BiliSponsorBlockPlaybackController {
                 ).also { activeTrack = it }
             }
             if (explicitTarget != null && track.target != explicitTarget) {
-                targetLoadJob?.cancel()
-                targetLoadJob = null
-                segmentLoadJob?.cancel()
-                segmentLoadJob = null
-                track.target = explicitTarget
-                track.segments = emptyList()
-                track.loaded = false
-                track.skipTracker.reset()
+                retargetActiveTrackLocked(track, explicitTarget)
             }
-            when {
-                !enabled -> LoadAction.NONE
-                track.target == null && targetLoadJob?.isActive != true -> LoadAction.TARGET
-                !track.loaded && segmentLoadJob?.isActive != true -> LoadAction.SEGMENTS
-                else -> LoadAction.NONE
-            }
+            if (enabled) nextLoadActionLocked(track) else LoadAction.NONE
         }
-        when (loadAction) {
-            LoadAction.TARGET -> loadTargetForActiveTrack(scope)
-            LoadAction.SEGMENTS -> loadSegmentsForActiveTrack(scope)
-            LoadAction.NONE -> Unit
-        }
+        runLoadAction(loadAction, scope)
     }
 
     fun onBiliTrackResolved(
@@ -91,11 +72,7 @@ internal object BiliSponsorBlockPlaybackController {
         ensureSettingsObserver(scope)
         val shouldLoadSegments = synchronized(lock) {
             val current = activeTrack
-            val track = if (
-                current?.requestToken == requestToken &&
-                current.target == target &&
-                current.song.sameIdentityAs(song)
-            ) {
+            val track = if (current != null && current.isFor(song, requestToken) && current.target == target) {
                 current
             } else {
                 clearActiveTrackLocked()
@@ -106,7 +83,7 @@ internal object BiliSponsorBlockPlaybackController {
                 ).also { activeTrack = it }
             }
             targetLoadJob?.cancel()
-            enabled && !track.loaded && segmentLoadJob?.isActive != true
+            enabled && !track.loaded && !segmentLoadJob.isRunning
         }
         if (shouldLoadSegments) {
             loadSegmentsForActiveTrack(scope)
@@ -129,7 +106,7 @@ internal object BiliSponsorBlockPlaybackController {
     }
 
     private fun ensureSettingsObserver(scope: CoroutineScope) {
-        val shouldObserve = synchronized(lock) { settingsJob?.isActive != true }
+        val shouldObserve = synchronized(lock) { !settingsJob.isRunning }
         if (!shouldObserve) return
 
         val newJob = scope.launch {
@@ -140,7 +117,7 @@ internal object BiliSponsorBlockPlaybackController {
                 }
         }
         synchronized(lock) {
-            if (settingsJob?.isActive != true) {
+            if (!settingsJob.isRunning) {
                 settingsJob = newJob
             } else {
                 newJob.cancel()
@@ -157,13 +134,22 @@ internal object BiliSponsorBlockPlaybackController {
                 segmentLoadJob?.cancel()
                 track?.skipTracker?.reset()
                 LoadAction.NONE
-            } else when {
-                track == null -> LoadAction.NONE
-                track.target == null && targetLoadJob?.isActive != true -> LoadAction.TARGET
-                !track.loaded && segmentLoadJob?.isActive != true -> LoadAction.SEGMENTS
-                else -> LoadAction.NONE
+            } else if (track == null) {
+                LoadAction.NONE
+            } else {
+                nextLoadActionLocked(track)
             }
         }
+        runLoadAction(loadAction, scope)
+    }
+
+    private fun nextLoadActionLocked(track: ActiveTrack): LoadAction = when {
+        track.target == null && !targetLoadJob.isRunning -> LoadAction.TARGET
+        !track.loaded && !segmentLoadJob.isRunning -> LoadAction.SEGMENTS
+        else -> LoadAction.NONE
+    }
+
+    private fun runLoadAction(loadAction: LoadAction, scope: CoroutineScope) {
         when (loadAction) {
             LoadAction.TARGET -> loadTargetForActiveTrack(scope)
             LoadAction.SEGMENTS -> loadSegmentsForActiveTrack(scope)
@@ -178,7 +164,7 @@ internal object BiliSponsorBlockPlaybackController {
                 !enabled ||
                 track == null ||
                 track.target != null ||
-                targetLoadJob?.isActive == true
+                targetLoadJob.isRunning
             ) {
                 return@synchronized
             }
@@ -219,7 +205,7 @@ internal object BiliSponsorBlockPlaybackController {
                         false
                     } else {
                         current.target = target
-                        !current.loaded && segmentLoadJob?.isActive != true
+                        !current.loaded && !segmentLoadJob.isRunning
                     }
                 }
                 if (shouldLoadSegments) {
@@ -238,7 +224,7 @@ internal object BiliSponsorBlockPlaybackController {
                 track == null ||
                 target == null ||
                 track.loaded ||
-                segmentLoadJob?.isActive == true
+                segmentLoadJob.isRunning
             ) {
                 return@synchronized
             }
@@ -268,12 +254,27 @@ internal object BiliSponsorBlockPlaybackController {
         }
     }
 
+    private val Job?.isRunning: Boolean
+        get() = this?.isActive == true
+
     private fun clearActiveTrackLocked() {
+        cancelLoadJobsLocked()
+        activeTrack = null
+    }
+
+    private fun retargetActiveTrackLocked(track: ActiveTrack, target: BiliSponsorBlockTarget) {
+        cancelLoadJobsLocked()
+        track.target = target
+        track.segments = emptyList()
+        track.loaded = false
+        track.skipTracker.reset()
+    }
+
+    private fun cancelLoadJobsLocked() {
         targetLoadJob?.cancel()
         targetLoadJob = null
         segmentLoadJob?.cancel()
         segmentLoadJob = null
-        activeTrack = null
     }
 
     private class ActiveTrack(
@@ -283,7 +284,10 @@ internal object BiliSponsorBlockPlaybackController {
         var segments: List<BiliSponsorBlockSegment> = emptyList(),
         var loaded: Boolean = false,
         val skipTracker: BiliSponsorBlockSkipTracker = BiliSponsorBlockSkipTracker()
-    )
+    ) {
+        fun isFor(incoming: SongItem, incomingRequestToken: Long): Boolean =
+            requestToken == incomingRequestToken && song.sameIdentityAs(incoming)
+    }
 
     private enum class LoadAction {
         NONE,
