@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
  * Updated: 2026/3/23
  */
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -60,6 +62,20 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.sync.upgrade.syncProtocolStartupConfigurationGate
+import moe.ouom.neriplayer.util.platform.tryStartActivity
+
+internal const val GITHUB_TOKEN_CREATION_URL =
+    "https://github.com/settings/tokens/new?scopes=repo&description=NeriPlayer%20Backup"
+
+internal fun openGitHubTokenCreationPage(context: Context) {
+    val intent = Intent(Intent.ACTION_VIEW, GITHUB_TOKEN_CREATION_URL.toUri())
+    if (!context.tryStartActivity(intent)) {
+        AppFeedback.showToast(
+            context = context,
+            message = context.getString(CoreCommonR.string.sync_create_token_open_failed)
+        )
+    }
+}
 
 @Stable
 internal class GitHubConfigDraft(
@@ -158,13 +174,7 @@ internal fun SettingsGitHubDialogs(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     MiuixSettingsTextButton(
-                        onClick = {
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                "https://github.com/settings/tokens/new?scopes=repo&description=NeriPlayer%20Backup".toUri()
-                            )
-                            context.startActivity(intent)
-                        }
+                        onClick = { openGitHubTokenCreationPage(context) }
                     ) {
                         Text(stringResource(CoreCommonR.string.sync_create_token))
                     }

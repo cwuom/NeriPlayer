@@ -18,6 +18,7 @@
     <string name="local_playlist_scan_mode_message">Authorized folder scans only the selected folder and its subfolders. Global scan reads the device music library.</string>
     <string name="local_playlist_scan_folder">Authorized Folder</string>
     <string name="local_playlist_scan_global">Global Scan</string>
+    <string name="local_playlist_scan_folder_unavailable">No folder picker is available on this device. Use Global Scan instead.</string>
     <string name="local_playlist_scan_preserve_existing">Invalid scan result. Kept the existing Local Files list.</string>
     <string name="local_playlist_scan_preview_title">Preview Local Files</string>
     <string name="local_playlist_scan_preview_search">Search local files</string>

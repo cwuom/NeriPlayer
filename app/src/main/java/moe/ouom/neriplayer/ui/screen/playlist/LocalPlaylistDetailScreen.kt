@@ -143,6 +143,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
+import moe.ouom.neriplayer.util.platform.tryLaunch
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -747,6 +748,16 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
+            fun launchFolderScanPicker() {
+                if (!folderScanLauncher.tryLaunch(null)) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(
+                            composeResources.getString(CoreCommonR.string.local_playlist_scan_folder_unavailable)
+                        )
+                    }
+                }
+            }
+
             if (showLocalScanModeDialog) {
                 AlertDialog(
                     onDismissRequest = { showLocalScanModeDialog = false },
@@ -754,7 +765,7 @@ fun LocalPlaylistDetailScreen(
                         HapticTextButton(
                             onClick = {
                                 showLocalScanModeDialog = false
-                                folderScanLauncher.launch(null)
+                                launchFolderScanPicker()
                             }
                         ) { Text(stringResource(CoreCommonR.string.local_playlist_scan_folder)) }
                     },
