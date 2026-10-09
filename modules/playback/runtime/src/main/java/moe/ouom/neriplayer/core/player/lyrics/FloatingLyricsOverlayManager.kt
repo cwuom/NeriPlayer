@@ -216,8 +216,11 @@ object FloatingLyricsOverlayManager {
         if (!hasOverlayPermission(app)) {
             return false
         }
-        return !(preferences.hideInApp && startedActivityCount > 0)
+        return !isHiddenWhileAppIsVisible()
     }
+
+    private fun isHiddenWhileAppIsVisible(): Boolean =
+        preferences.hideInApp && startedActivityCount > 0
 
     private fun ensureOverlay() {
         if (rootView != null) {
@@ -266,27 +269,18 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun updateOverlayText() {
-        val nextLyric = lyricLine.orEmpty()
-        val showTranslation = preferences.showTranslation && !translationLine.isNullOrBlank()
-        val nextTranslation = if (showTranslation) translationLine.orEmpty() else ""
-        val revealAnimationEnabled = preferences.revealAnimationEnabled
-        val revealDurationMs = if (revealAnimationEnabled) {
-            listOf(nextLyric, nextTranslation)
-                .maxOf { AnimatedOutlinedLyricTextView.resolveRevealDurationMs(it) }
-        } else {
-            null
-        }
+        val text = resolveFloatingLyricsOverlayText(preferences, lyricLine, translationLine)
         lyricTextView?.setLyricText(
-            nextText = nextLyric,
-            revealDurationMs = revealDurationMs,
-            revealAnimationEnabled = revealAnimationEnabled
+            nextText = text.lyric,
+            revealDurationMs = text.revealDurationMs,
+            revealAnimationEnabled = text.revealAnimationEnabled
         )
         translationTextView?.apply {
-            visibility = if (showTranslation) View.VISIBLE else View.GONE
+            visibility = if (text.showTranslation) View.VISIBLE else View.GONE
             setLyricText(
-                nextText = nextTranslation,
-                revealDurationMs = revealDurationMs,
-                revealAnimationEnabled = revealAnimationEnabled
+                nextText = text.translation,
+                revealDurationMs = text.revealDurationMs,
+                revealAnimationEnabled = text.revealAnimationEnabled
             )
         }
     }
@@ -608,6 +602,39 @@ fun resolveFloatingLyricsEffectAlpha(alpha: Float): Float {
 internal fun resolveFloatingLyricsColorWithAlpha(color: Int, alpha: Float): Int {
     val requestedAlpha = resolveFloatingLyricsAlphaByte(alpha)
     return (color and 0x00FFFFFF) or (requestedAlpha shl 24)
+}
+
+internal data class FloatingLyricsOverlayText(
+    val lyric: String,
+    val translation: String,
+    val showTranslation: Boolean,
+    val revealAnimationEnabled: Boolean,
+    val revealDurationMs: Long?
+)
+
+internal fun resolveFloatingLyricsOverlayText(
+    preferences: FloatingLyricsPreferences,
+    lyricLine: String?,
+    translationLine: String?
+): FloatingLyricsOverlayText {
+    val lyric = lyricLine.orEmpty()
+    val showTranslation = preferences.showTranslation && !translationLine.isNullOrBlank()
+    val translation = if (showTranslation) translationLine.orEmpty() else ""
+    val revealDurationMs = if (preferences.revealAnimationEnabled) {
+        maxOf(
+            AnimatedOutlinedLyricTextView.resolveRevealDurationMs(lyric),
+            AnimatedOutlinedLyricTextView.resolveRevealDurationMs(translation)
+        )
+    } else {
+        null
+    }
+    return FloatingLyricsOverlayText(
+        lyric = lyric,
+        translation = translation,
+        showTranslation = showTranslation,
+        revealAnimationEnabled = preferences.revealAnimationEnabled,
+        revealDurationMs = revealDurationMs
+    )
 }
 
 internal data class FloatingLyricsDragPosition(val x: Float, val y: Float)
