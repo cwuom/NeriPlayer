@@ -118,4 +118,5 @@
     <string name="settings_account_sign_in_hint">登录后可使用平台相关功能</string>
     <string name="settings_account_sign_in_again">重新登录</string>
     <string name="settings_account_avatar">%1$s 账号头像</string>
+    <string name="web_login_webview_unavailable">系统 WebView 不可用，无法打开网页登录。请在系统设置中启用或更新 Android System WebView 后重试</string>
 </resources>

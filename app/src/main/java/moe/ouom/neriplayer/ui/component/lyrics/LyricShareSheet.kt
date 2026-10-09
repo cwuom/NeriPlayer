@@ -93,6 +93,7 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import java.io.File
 import kotlin.math.roundToInt
 import android.graphics.Color as AndroidColor
+import moe.ouom.neriplayer.ui.feedback.startActivityOrShowUnavailable
 
 private const val LyricShareCardSizePx = 1080
 private const val LyricShareCardCacheDir = "lyric_share_cards"
@@ -506,7 +507,7 @@ private suspend fun shareSong(
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, shareText)
     }
-    context.startActivity(Intent.createChooser(sendIntent, null))
+    context.startActivityOrShowUnavailable(Intent.createChooser(sendIntent, null))
 }
 
 private suspend fun createAndShareLyricCard(
@@ -553,7 +554,7 @@ private suspend fun createAndShareLyricCard(
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = ClipData.newUri(context.contentResolver, file.name, uri)
     }
-    context.startActivity(Intent.createChooser(sendIntent, null))
+    context.startActivityOrShowUnavailable(Intent.createChooser(sendIntent, null))
 }
 
 private suspend fun loadCoverBitmap(context: Context, coverUrl: String?): Bitmap? {

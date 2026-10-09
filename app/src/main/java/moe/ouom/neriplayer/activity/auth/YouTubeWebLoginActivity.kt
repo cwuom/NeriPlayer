@@ -173,6 +173,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)

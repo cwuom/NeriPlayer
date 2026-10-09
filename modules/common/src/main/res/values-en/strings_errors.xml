@@ -30,4 +30,5 @@
     <string name="exception_no_detail">No details</string>
     <string name="exception_logged">Detailed error logged to file.</string>
     <string name="exception_contact">If problem persists, please restart app or contact developer.</string>
+    <string name="error_no_app_for_action">No app can complete this action</string>
 </resources>

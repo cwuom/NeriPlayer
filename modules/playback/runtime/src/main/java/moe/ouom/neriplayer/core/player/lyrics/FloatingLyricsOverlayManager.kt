@@ -183,15 +183,16 @@ object FloatingLyricsOverlayManager {
         return Settings.canDrawOverlays(context)
     }
 
-    fun openOverlayPermissionSettings(context: Context) {
+    /** 精简系统可能连应用详情页都没有，两个入口都打不开时返回 false，不能让设置页崩溃 */
+    fun openOverlayPermissionSettings(context: Context): Boolean {
         val packageUri = "package:${context.packageName}".toUri()
         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, packageUri)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { context.startActivity(intent) }.onFailure {
-            val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(fallbackIntent)
-        }
+        val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching { context.startActivity(intent) }
+            .recoverCatching { context.startActivity(fallbackIntent) }
+            .isSuccess
     }
 
     private fun syncOverlay() {
