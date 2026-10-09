@@ -6,8 +6,10 @@ import androidx.test.core.app.ApplicationProvider
 import moe.ouom.neriplayer.core.download.execution.persistence.DownloadExecutionRoomStore.DownloadBatchIdentity
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadBatchMemberEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.download.DownloadExecutionRequest
+import org.junit.Assert.assertTrue
 import moe.ouom.neriplayer.data.identity.stableKey
 
 /** In-memory Room fixture for driving the download execution journal through its public entry points. */
@@ -92,6 +94,17 @@ internal class DownloadExecutionRoomFixture {
     }
 
     suspend fun state(operationId: String): String? = operationDao.findState(operationId)
+
+    suspend fun row(operationId: String): DownloadOperationEntity = requireNotNull(operationDao.find(operationId))
+
+    /** Rewrites a persisted journal row to seed states that are only reachable through long executor flows. */
+    suspend fun rewrite(operationId: String, transform: (DownloadOperationEntity) -> DownloadOperationEntity) {
+        operationDao.upsert(transform(row(operationId)))
+    }
+
+    suspend fun read(operationId: String): DownloadExecutionRequest? {
+        return DownloadExecutionRoomStore.read(context, operationId, database)
+    }
 }
 
 internal fun testSong(id: Long, name: String = "Song $id"): SongItem {
@@ -125,4 +138,9 @@ internal fun request(
         batchId = batch?.batchId,
         batchGeneration = batch?.generation
     )
+}
+
+internal suspend fun assertRejectsArgument(block: suspend () -> Unit) {
+    val failure = runCatching { block() }.exceptionOrNull()
+    assertTrue("expected IllegalArgumentException but was $failure", failure is IllegalArgumentException)
 }
