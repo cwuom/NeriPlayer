@@ -1921,7 +1921,6 @@ private fun UsbExclusiveRuntimeMetrics.hasFatalStructuredFailure(): Boolean {
 private fun UsbExclusiveRuntimeMetrics.hasFatalLegacyFailure(runtimeReport: String): Boolean {
     if (isBenignBackpressure) return false
     if (errorCode.requiresFreshNativeOpen) return true
-    if (errorCode.isRecoverableTransportFailure) return true
     if (runtimeReport.contains("transportFailed=true")) return true
     return lastError != "none" && lastError.isNotBlank()
 }

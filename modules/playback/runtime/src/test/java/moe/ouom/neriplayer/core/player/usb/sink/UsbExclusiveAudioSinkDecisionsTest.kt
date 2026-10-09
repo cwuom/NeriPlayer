@@ -1,7 +1,10 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
+import moe.ouom.neriplayer.core.player.usb.transport.requiresFreshNativeOpen
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
+import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveErrorCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -83,6 +86,14 @@ class UsbExclusiveAudioSinkDecisionsTest {
         assertTrue(isFatalNativeRuntime("source=player_pcm transportFailed=true lastError=permission"))
         assertTrue(isFatalNativeRuntime("source=player_pcm lastError=sample_rate_unsupported"))
         assertFalse(isFatalNativeRuntime("source=player_pcm lastError= running=true"))
+    }
+
+    @Test
+    fun `every recoverable transport failure already requires a fresh native open`() {
+        for (code in UsbExclusiveErrorCode.entries) {
+            if (code.isRecoverableTransportFailure) assertTrue(code.name, code.requiresFreshNativeOpen)
+        }
+        assertTrue(isFatalNativeRuntime("source=player_pcm lastError=iso_packet_error"))
     }
 
     @Test
