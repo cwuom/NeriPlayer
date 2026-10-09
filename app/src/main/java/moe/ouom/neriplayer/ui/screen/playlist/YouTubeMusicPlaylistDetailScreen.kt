@@ -183,8 +183,9 @@ fun YouTubeMusicPlaylistDetailScreen(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var showSearch by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    val searchUiState = rememberPlaylistSearchUiState()
+    var showSearch by searchUiState.visible
+    var searchQuery by searchUiState.query
     var headerSearchFocused by remember { mutableStateOf(false) }
     var dockedSearchFocused by remember { mutableStateOf(false) }
     val searchInputState = rememberPlaylistSearchInputState(

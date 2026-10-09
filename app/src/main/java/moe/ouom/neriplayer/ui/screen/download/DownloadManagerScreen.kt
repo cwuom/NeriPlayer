@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -310,7 +311,7 @@ internal fun DownloadManagerContent(
     val resources = LocalResources.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val selection = remember { DownloadManagerSelectionState() }
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     val deletionInProgress = selection.deletingSongCount > 0 ||
         isDownloadedSongDeletionRunning(deleteProgress)
 
