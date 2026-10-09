@@ -384,12 +384,10 @@ internal class MoreOptionsSheetOwner(
         if (!isEditSongSaving) page = target
     }
 
-    /** 返回会回到面板主页时的目标页；会直接关闭面板或正在保存时为 null */
-    val pageBackTarget: MoreOptionsPage?
-        get() = MoreOptionsPage.MAIN.takeIf {
-            !isEditSongSaving && page != MoreOptionsPage.MAIN &&
-                !(page == initialPage && initialPage != MoreOptionsPage.MAIN)
-        }
+    /** 返回会回到面板主页；会直接关闭面板或正在保存时为 false，交给弹层自身或保存期间的拦截处理 */
+    val canGoBackToMainPage: Boolean
+        get() = !isEditSongSaving && page != MoreOptionsPage.MAIN &&
+            !(page == initialPage && initialPage != MoreOptionsPage.MAIN)
 
     fun back() {
         if (isEditSongSaving) return
@@ -741,11 +739,10 @@ private fun MoreOptionsAnimatedPage(
     owner: MoreOptionsSheetOwner,
     content: @Composable (MoreOptionsPage) -> Unit
 ) {
-    val backTarget = owner.pageBackTarget
     val pageTransition = rememberHostPredictiveBackTransition(
         targetState = owner.page,
-        backEnabled = backTarget != null,
-        backTargetState = backTarget ?: MoreOptionsPage.MAIN,
+        backEnabled = owner.canGoBackToMainPage,
+        backTargetState = MoreOptionsPage.MAIN,
         onBack = { owner.back() },
         label = "more_options_sheet_content"
     )
