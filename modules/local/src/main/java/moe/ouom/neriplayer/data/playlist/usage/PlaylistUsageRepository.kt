@@ -200,6 +200,7 @@ class PlaylistUsageRepository internal constructor(
     @Volatile
     private var writingTrustedSnapshot = false
     private var initialLoadInFlight = true
+    private var initialLoadRetry: Job? = null
     private val mutationsAwaitingInitialLoad = ArrayList<() -> Unit>()
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
     // 首次访问常在主线程，读取放到后台；加载期间到达的界面操作排队，完成后按原顺序重放
@@ -294,6 +295,31 @@ class PlaylistUsageRepository internal constructor(
         pendingUiChanges = false
         initialized = true
         return true
+    }
+
+    /**
+     * 界面操作多在主线程，存储暂时不可读时不能在这里同步重试加载，否则主线程会持锁等待 IO
+     *
+     * 本次操作被拒绝，同时在后台单飞重试一次，恢复后的操作照常生效
+     */
+    private fun ensureInitializedForUiLocked(): Boolean {
+        if (initialized) return baselineTrusted || writingTrustedSnapshot
+        if (initialLoadRetry?.isActive != true) {
+            initialLoadRetry = scope.launch { retryInitialLoad() }
+        }
+        return false
+    }
+
+    private suspend fun retryInitialLoad() {
+        val loaded = tryLoadEntries() ?: return
+        synchronized(mutationLock) {
+            if (initialized) return
+            _flow.value = loaded
+            persistedEntries = loaded
+            baselineTrusted = true
+            pendingUiChanges = false
+            initialized = true
+        }
     }
 
     private suspend fun recoverBaselineLocked(): Boolean = try {
@@ -492,7 +518,7 @@ class PlaylistUsageRepository internal constructor(
             if (deferUntilInitialLoadLocked {
                     recordOpen(id, name, picUrl, trackCount, fid, mid, source, browseId, playlistId, subtype, subtitle, now, updateLastOpened)
                 }) return
-            if (!ensureInitializedLocked()) return
+            if (!ensureInitializedForUiLocked()) return
             val deviceId = syncCounterDeviceId()
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
@@ -571,7 +597,7 @@ class PlaylistUsageRepository internal constructor(
     fun applyMergedStats(stats: List<SyncPlaylistUsageStat>) {
         val out = synchronized(mutationLock) {
             if (deferUntilInitialLoadLocked { applyMergedStats(stats) }) return
-            if (!ensureInitializedLocked()) return
+            if (!ensureInitializedForUiLocked()) return
             var barriers = emptyList<SyncPlaylistUsageDeletion>()
             if (!tryUiTombstoneOperation { barriers = deletionBarriersLocked() }) return
             mergeStatsLocked(stats, barriers).also(::publishUiEntries)
@@ -690,7 +716,7 @@ class PlaylistUsageRepository internal constructor(
             if (deferUntilInitialLoadLocked {
                     updateInfo(id, name, picUrl, trackCount, fid, mid, source, browseId, playlistId, subtype, subtitle, now)
                 }) return
-            if (!ensureInitializedLocked()) return
+            if (!ensureInitializedForUiLocked()) return
             val deviceId = syncCounterDeviceId()
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
@@ -753,7 +779,7 @@ class PlaylistUsageRepository internal constructor(
             if (deferUntilInitialLoadLocked {
                     syncLocalEntries(playlists, localFilesCoverCandidates, resolveLocalMetadataFallback)
                 }) return
-            if (!ensureInitializedLocked()) return
+            if (!ensureInitializedForUiLocked()) return
             val current = _flow.value
             val localEntryIds = current.asSequence()
                 .filter { entry -> entry.source == SOURCE_LOCAL }
@@ -853,7 +879,7 @@ class PlaylistUsageRepository internal constructor(
     ) {
         val out = synchronized(mutationLock) {
             if (deferUntilInitialLoadLocked { syncLocalArtistEntries(playlists, resolveLocalMetadataFallback) }) return
-            if (!ensureInitializedLocked()) return
+            if (!ensureInitializedForUiLocked()) return
             val current = _flow.value
             if (current.none { it.source == SOURCE_LOCAL_ARTIST }) {
                 return@synchronized null
@@ -922,7 +948,7 @@ class PlaylistUsageRepository internal constructor(
         val targetKey = playlistUsageKey(source, id, subtype)
         val out = synchronized(mutationLock) {
             if (deferUntilInitialLoadLocked { removeEntry(id, source, subtype) }) return
-            if (!ensureInitializedLocked()) return
+            if (!ensureInitializedForUiLocked()) return
             if (!tryUiTombstoneOperation { rememberManualRemovalLocked(targetKey) }) return
             val data = _flow.value.toMutableList()
             val removed = data.removeAll { it.usageKey() == targetKey }
@@ -938,7 +964,7 @@ class PlaylistUsageRepository internal constructor(
     private fun removeEntryIfPresent(id: Long, source: String, subtype: String? = null) {
         val out = synchronized(mutationLock) {
             if (deferUntilInitialLoadLocked { removeEntryIfPresent(id, source, subtype) }) return
-            if (!ensureInitializedLocked()) return
+            if (!ensureInitializedForUiLocked()) return
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
             val removed = data.removeAll { it.usageKey() == targetKey }

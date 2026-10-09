@@ -357,6 +357,30 @@ class PlaylistUsagePersistenceTest {
     }
 
     @Test
+    fun `unknown usage never reloads on the calling thread and recovers in the background`() = runTest {
+        val room = mockPlaylistUsageRoomStore()
+        var unavailable = true
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            if (unavailable) throw IOException("primary unavailable") else listOf(entry())
+        }
+        Fixture(this, room, realStorage(RamDiskPreferences())).use { fixture ->
+            clearInvocations(room)
+            unavailable = false
+
+            fixture.repository.recordOpen(2, "new", null, 3, source = "netease")
+
+            verify(room, never()).readIfRoomPrimary()
+            assertTrue(fixture.repository.frequentPlaylistsFlow.value.isEmpty())
+            runCurrent()
+            assertEquals(listOf(1L), fixture.repository.frequentPlaylistsFlow.value.map { it.id })
+
+            fixture.repository.recordOpen(2, "new", null, 3, source = "netease")
+            runCurrent()
+            assertEquals(setOf(1L, 2L), fixture.repository.frequentPlaylistsFlow.value.map { it.id }.toSet())
+        }
+    }
+
+    @Test
     fun `usage recovery cancellation propagates without importing a stale snapshot`() = runTest {
         val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary unavailable") }
