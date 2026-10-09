@@ -21,7 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
-class PlaybackQueueRoomStoreTest {
+class PlaybackQueueRoomStoreRobolectricTest {
     private lateinit var database: NeriUserDataDatabase
     private lateinit var store: PlaybackQueueRoomStore
 
@@ -118,6 +118,19 @@ class PlaybackQueueRoomStoreTest {
 
         assertFalse(store.isRoomPrimary())
         assertNull(store.readIfRoomPrimary())
+    }
+
+    @Test
+    fun `restored state prefers the newer of room and legacy snapshots`() {
+        val room = PlaybackQueueRoomSnapshot(PersistedState(playlist = listOf(song(1L, null)), index = 0), updatedAt = 100L)
+        val older = PlaybackQueueLegacySnapshot(PersistedState(playlist = listOf(song(2L, null)), index = 0), updatedAt = 99L)
+        val sameAge = older.copy(updatedAt = 100L)
+
+        assertEquals(older.state, selectRestoredPlaybackState(roomPrimary = false, roomSnapshot = room, legacySnapshot = older))
+        assertNull(selectRestoredPlaybackState(roomPrimary = true, roomSnapshot = null, legacySnapshot = null))
+        assertEquals(room.state, selectRestoredPlaybackState(roomPrimary = true, roomSnapshot = room, legacySnapshot = null))
+        assertEquals(room.state, selectRestoredPlaybackState(roomPrimary = true, roomSnapshot = room, legacySnapshot = older))
+        assertEquals(sameAge.state, selectRestoredPlaybackState(roomPrimary = true, roomSnapshot = room, legacySnapshot = sameAge))
     }
 
     private fun song(id: Long, lyricSource: MusicPlatform?) = PersistedSongItem(
