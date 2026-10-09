@@ -88,12 +88,15 @@ data class LocalFilesDownloadedSongDeleteUiResult(
 
 internal fun shouldScheduleLocalDurationRefresh(song: SongItem): Boolean {
     if (song.durationMs > 0L) return false
-    return song.localFilePath?.isNotBlank() == true ||
-        song.mediaUri?.let { reference ->
-            reference.startsWith("content://", ignoreCase = true) ||
-                reference.startsWith("file://", ignoreCase = true) ||
-                reference.startsWith("/")
-        } == true
+    if (!song.localFilePath.isNullOrBlank()) return true
+    val reference = song.mediaUri ?: return false
+    return isLocalPlaybackReference(reference)
+}
+
+private fun isLocalPlaybackReference(reference: String): Boolean {
+    return reference.startsWith("content://", ignoreCase = true) ||
+        reference.startsWith("file://", ignoreCase = true) ||
+        reference.startsWith("/")
 }
 
 data class LocalScanPreviewState(
@@ -176,36 +179,71 @@ internal fun applyHydratedSongsToScanPreview(
     hasMeaningfulMetadata: ((SongItem) -> Boolean)? = null
 ): LocalScanPreviewState {
     require(startIndex >= 0) { "startIndex must be non-negative" }
-    val resolvedProgress = if (state.scanProgress.processed > progress.processed) {
-        state.scanProgress
-    } else {
-        progress
-    }
+    val resolvedProgress = newerScanProgress(state.scanProgress, progress)
     if (hydratedSongs.isEmpty() || state.songs.isEmpty()) {
         return state.copy(scanProgress = resolvedProgress)
     }
 
-    val updatedSongs = state.songs.toMutableList()
-    // 批量回填时用稳定键索引，避免每首歌都线性扫描整个预览列表
-    val songIndexByStableKey = HashMap<String, Int>(updatedSongs.size)
-    updatedSongs.forEachIndexed { index, song ->
-        songIndexByStableKey.putIfAbsent(song.stableKey(), index)
-    }
-    var selectedKeys = state.selectedKeys
-    var existingLocalPlaylistKeys = state.existingLocalPlaylistKeys
-    var duplicateMetadataKeys = state.duplicateMetadataKeys
-    var metadataPendingKeys = state.metadataPendingKeys
+    val batch = ScanPreviewHydrationBatch(state)
     hydratedSongs.forEachIndexed { index, hydratedSong ->
-        val targetIndex = targetKeys
-            ?.getOrNull(index)
-            ?.let(songIndexByStableKey::get)
-            ?.takeIf { it >= 0 }
-            ?: (startIndex + index)
-        if (hydratedSong == null || targetIndex !in updatedSongs.indices) {
-            return@forEachIndexed
+        val targetIndex = batch.targetIndex(
+            targetKey = targetKeys?.getOrNull(index),
+            fallbackIndex = startIndex + index
+        )
+        if (hydratedSong != null) {
+            batch.replace(targetIndex, hydratedSong)
         }
-        val previousSong = updatedSongs[targetIndex]
-        updatedSongs[targetIndex] = hydratedSong
+    }
+    val hiddenKeys = scanPreviewHiddenKeys(
+        songs = batch.songs,
+        pendingKeys = batch.metadataPendingKeys,
+        options = state,
+        existingLocalPlaylistKeys = batch.existingLocalPlaylistKeys,
+        duplicateMetadataKeys = batch.duplicateMetadataKeys,
+        hasMeaningfulMetadata = hasMeaningfulMetadata
+    )
+    return state.copy(
+        scanProgress = resolvedProgress,
+        songs = batch.songs,
+        selectedKeys = batch.selectedKeys - hiddenKeys,
+        existingLocalPlaylistKeys = batch.existingLocalPlaylistKeys,
+        duplicateMetadataKeys = batch.duplicateMetadataKeys,
+        metadataPendingKeys = batch.metadataPendingKeys
+    )
+}
+
+private fun newerScanProgress(
+    current: LocalAudioScanProgress,
+    incoming: LocalAudioScanProgress
+): LocalAudioScanProgress {
+    return if (current.processed > incoming.processed) current else incoming
+}
+
+private class ScanPreviewHydrationBatch(state: LocalScanPreviewState) {
+    val songs = state.songs.toMutableList()
+    var selectedKeys = state.selectedKeys
+        private set
+    var existingLocalPlaylistKeys = state.existingLocalPlaylistKeys
+        private set
+    var duplicateMetadataKeys = state.duplicateMetadataKeys
+        private set
+    var metadataPendingKeys = state.metadataPendingKeys
+        private set
+
+    // 批量回填时用稳定键索引，避免每首歌都线性扫描整个预览列表
+    private val songIndexByStableKey = HashMap<String, Int>(songs.size).also { index ->
+        songs.forEachIndexed { position, song -> index.putIfAbsent(song.stableKey(), position) }
+    }
+
+    fun targetIndex(targetKey: String?, fallbackIndex: Int): Int {
+        val indexedPosition = targetKey?.let(songIndexByStableKey::get) ?: return fallbackIndex
+        return if (indexedPosition >= 0) indexedPosition else fallbackIndex
+    }
+
+    fun replace(targetIndex: Int, hydratedSong: SongItem) {
+        if (targetIndex !in songs.indices) return
+        val previousSong = songs[targetIndex]
+        songs[targetIndex] = hydratedSong
         val previousKey = previousSong.stableKey()
         val hydratedKey = hydratedSong.stableKey()
         if (songIndexByStableKey[previousKey] == targetIndex) {
@@ -223,32 +261,75 @@ internal fun applyHydratedSongsToScanPreview(
             previousSong,
             hydratedSong
         )
-        metadataPendingKeys = metadataPendingKeys - previousSong.stableKey() - hydratedSong.stableKey()
+        metadataPendingKeys = metadataPendingKeys - previousKey - hydratedKey
     }
-    val hiddenKeys = buildSet {
-        if (state.metadataOnly && hasMeaningfulMetadata != null) {
-            updatedSongs
-                .asSequence()
-                .filter { song ->
-                    song.stableKey() !in metadataPendingKeys &&
-                        !hasMeaningfulMetadata(song)
-                }
-                .forEach { song -> add(song.stableKey()) }
-        }
-        if (state.hideExistingLocalPlaylistSongs) {
-            addAll(existingLocalPlaylistKeys)
-        }
-        if (state.hideDuplicateMetadataSongs) {
-            addAll(duplicateMetadataKeys)
-        }
+}
+
+internal fun scanPreviewHiddenKeys(
+    songs: List<SongItem>,
+    pendingKeys: Set<String>,
+    options: LocalScanPreviewState,
+    existingLocalPlaylistKeys: Set<String>,
+    duplicateMetadataKeys: Set<String>,
+    hasMeaningfulMetadata: ((SongItem) -> Boolean)?
+): Set<String> = buildSet {
+    if (options.metadataOnly && hasMeaningfulMetadata != null) {
+        songs
+            .asSequence()
+            .filter { song ->
+                song.stableKey() !in pendingKeys && !hasMeaningfulMetadata(song)
+            }
+            .forEach { song -> add(song.stableKey()) }
     }
-    return state.copy(
-        scanProgress = resolvedProgress,
-        songs = updatedSongs,
-        selectedKeys = selectedKeys - hiddenKeys,
+    if (options.hideExistingLocalPlaylistSongs) {
+        addAll(existingLocalPlaylistKeys)
+    }
+    if (options.hideDuplicateMetadataSongs) {
+        addAll(duplicateMetadataKeys)
+    }
+}
+
+internal fun buildLocalScanPreviewState(
+    songs: List<SongItem>,
+    localPlaylists: List<LocalPlaylist>,
+    options: LocalScanPreviewState,
+    metadataPendingKeys: Set<String>,
+    selectedKeys: Set<String>?,
+    progress: LocalAudioScanProgress,
+    hasMeaningfulMetadata: (SongItem) -> Boolean
+): LocalScanPreviewState {
+    val preparedSongs = sortScannedSongsBySourceTime(songs)
+    val preparedSongKeys = preparedSongs.mapTo(LinkedHashSet(preparedSongs.size)) {
+        it.stableKey()
+    }
+    val pendingKeys = metadataPendingKeys.intersect(preparedSongKeys)
+    val existingLocalPlaylistKeys = scannedSongKeysAlreadyInLocalPlaylists(
+        scannedSongs = preparedSongs,
+        localPlaylists = localPlaylists
+    )
+    val duplicateMetadataKeys = duplicateScannedSongKeysByMetadata(preparedSongs)
+    val hiddenKeys = scanPreviewHiddenKeys(
+        songs = preparedSongs,
+        pendingKeys = pendingKeys,
+        options = options,
         existingLocalPlaylistKeys = existingLocalPlaylistKeys,
         duplicateMetadataKeys = duplicateMetadataKeys,
-        metadataPendingKeys = metadataPendingKeys
+        hasMeaningfulMetadata = hasMeaningfulMetadata
+    )
+    val initialSelection = selectedKeys ?: preparedSongKeys
+    return LocalScanPreviewState(
+        visible = true,
+        isScanning = progress.phase != LocalAudioScanPhase.COMPLETED,
+        scanProgress = progress,
+        songs = preparedSongs,
+        query = options.query,
+        metadataOnly = options.metadataOnly,
+        hideExistingLocalPlaylistSongs = options.hideExistingLocalPlaylistSongs,
+        existingLocalPlaylistKeys = existingLocalPlaylistKeys,
+        hideDuplicateMetadataSongs = options.hideDuplicateMetadataSongs,
+        duplicateMetadataKeys = duplicateMetadataKeys,
+        metadataPendingKeys = pendingKeys,
+        selectedKeys = initialSelection.intersect(preparedSongKeys) - hiddenKeys
     )
 }
 
@@ -497,13 +578,14 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                         emptySet()
                     }
                     val preparedState = withContext(Dispatchers.Default) {
-                        buildScanPreviewState(
+                        buildLocalScanPreviewState(
                             songs = result.songs,
                             localPlaylists = localPlaylists,
                             options = scanOptions,
                             metadataPendingKeys = metadataPendingKeys,
                             selectedKeys = null,
-                            progress = completedProgress
+                            progress = completedProgress,
+                            hasMeaningfulMetadata = ::hasMeaningfulScanMetadata
                         )
                     }
                     // 歌词、翻译和罗马字在播放或编辑时按需读取, 不阻塞扫描结果
@@ -887,57 +969,6 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         return scanJob === currentJob && scanSessionId == sessionId
     }
 
-    private fun buildScanPreviewState(
-        songs: List<SongItem>,
-        localPlaylists: List<LocalPlaylist>,
-        options: LocalScanPreviewState,
-        metadataPendingKeys: Set<String>,
-        selectedKeys: Set<String>?,
-        progress: LocalAudioScanProgress
-    ): LocalScanPreviewState {
-        val preparedSongs = prepareScannedSongs(songs)
-        val preparedSongKeys = preparedSongs.mapTo(LinkedHashSet(preparedSongs.size)) {
-            it.stableKey()
-        }
-        val pendingKeys = metadataPendingKeys.intersect(preparedSongKeys)
-        val existingLocalPlaylistKeys = scannedSongKeysAlreadyInLocalPlaylists(
-            scannedSongs = preparedSongs,
-            localPlaylists = localPlaylists
-        )
-        val duplicateMetadataKeys = duplicateScannedSongKeysByMetadata(preparedSongs)
-        val hiddenKeys = buildSet {
-            if (options.metadataOnly) {
-                preparedSongs
-                    .asSequence()
-                    .filter { song ->
-                        song.stableKey() !in pendingKeys && !hasMeaningfulScanMetadata(song)
-                    }
-                    .forEach { song -> add(song.stableKey()) }
-            }
-            if (options.hideExistingLocalPlaylistSongs) {
-                addAll(existingLocalPlaylistKeys)
-            }
-            if (options.hideDuplicateMetadataSongs) {
-                addAll(duplicateMetadataKeys)
-            }
-        }
-        val initialSelection = selectedKeys ?: preparedSongKeys
-        return LocalScanPreviewState(
-            visible = true,
-            isScanning = progress.phase != LocalAudioScanPhase.COMPLETED,
-            scanProgress = progress,
-            songs = preparedSongs,
-            query = options.query,
-            metadataOnly = options.metadataOnly,
-            hideExistingLocalPlaylistSongs = options.hideExistingLocalPlaylistSongs,
-            existingLocalPlaylistKeys = existingLocalPlaylistKeys,
-            hideDuplicateMetadataSongs = options.hideDuplicateMetadataSongs,
-            duplicateMetadataKeys = duplicateMetadataKeys,
-            metadataPendingKeys = pendingKeys,
-            selectedKeys = initialSelection.intersect(preparedSongKeys) - hiddenKeys
-        )
-    }
-
     private fun launchPlaylistMutation(
         operation: String,
         mutation: suspend () -> Unit
@@ -947,55 +978,75 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
     }
 
-    private fun prepareScannedSongs(songs: List<SongItem>): List<SongItem> {
-        return sortScannedSongsBySourceTime(songs)
-    }
-
     private fun hasMeaningfulScanMetadata(song: SongItem): Boolean {
-        val unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist)
-        val fileTitle = song.localFileName
-            ?.substringBeforeLast('.')
-            ?.trim()
-            .orEmpty()
-        val hasTitleMetadata = song.name.isNotBlank() &&
-            (fileTitle.isBlank() || !song.name.equals(fileTitle, ignoreCase = true))
-        return hasTitleMetadata ||
-            song.artist.isMeaningfulMetadata(unknownArtist) ||
-            song.album.isMeaningfulAlbum(app) ||
-            !song.coverUrl.isNullOrBlank() ||
-            !song.originalCoverUrl.isNullOrBlank()
+        return hasMeaningfulLocalScanMetadata(
+            song = song,
+            unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist),
+            isLocalFilesAlbum = { album -> LocalFilesPlaylist.matches(album, app) }
+        )
     }
 
     private fun shouldHydrateScanPreviewMetadata(song: SongItem): Boolean {
-        // 文件名或下载 metadata 已经给出有效身份时, 不再为首屏重复打开音频容器
-        val unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist)
-        val artistNeedsRepair = song.artist.trim().let { artist ->
-            artist.isBlank() ||
-                artist.equals(unknownArtist, ignoreCase = true) ||
-                artist.equals("<unknown>", ignoreCase = true) ||
-                artist.equals("<unknown artist>", ignoreCase = true) ||
-                artist.equals("unknown artist", ignoreCase = true) ||
-                artist.equals("未知艺术家", ignoreCase = true)
-        }
-        if (!artistNeedsRepair && hasMeaningfulScanMetadata(song)) return false
-        val fileTitle = song.localFileName
-            ?.substringBeforeLast('.')
-            ?.trim()
-            .orEmpty()
-        return artistNeedsRepair ||
-            song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
-            (fileTitle.isNotBlank() && song.name.trim().equals(fileTitle, ignoreCase = true))
+        return shouldHydrateLocalScanMetadata(
+            song = song,
+            unknownArtist = app.getString(moe.ouom.neriplayer.common.R.string.music_unknown_artist)
+        )
     }
 }
 
-private fun String?.isMeaningfulMetadata(unknownArtist: String): Boolean {
-    val value = this?.trim().orEmpty()
+internal fun hasMeaningfulLocalScanMetadata(
+    song: SongItem,
+    unknownArtist: String,
+    isLocalFilesAlbum: (String) -> Boolean
+): Boolean {
+    return song.hasLocalScanTitleMetadata() ||
+        song.artist.isMeaningfulMetadata(unknownArtist) ||
+        song.album.isMeaningfulAlbum(isLocalFilesAlbum) ||
+        song.hasLocalScanCover()
+}
+
+internal fun shouldHydrateLocalScanMetadata(song: SongItem, unknownArtist: String): Boolean {
+    // 文件名或下载 metadata 已经给出有效艺术家时, 不再为首屏重复打开音频容器
+    return isPlaceholderLocalScanArtist(song.artist, unknownArtist)
+}
+
+private val LOCAL_SCAN_PLACEHOLDER_ARTISTS = listOf(
+    "<unknown>",
+    "<unknown artist>",
+    "unknown artist",
+    "未知艺术家"
+)
+
+private fun isPlaceholderLocalScanArtist(artist: String, unknownArtist: String): Boolean {
+    val value = artist.trim()
+    if (value.isBlank() || value.equals(unknownArtist, ignoreCase = true)) return true
+    for (placeholder in LOCAL_SCAN_PLACEHOLDER_ARTISTS) {
+        if (value.equals(placeholder, ignoreCase = true)) return true
+    }
+    return false
+}
+
+private fun SongItem.localScanFileTitle(): String {
+    return localFileName?.substringBeforeLast('.')?.trim().orEmpty()
+}
+
+private fun SongItem.hasLocalScanTitleMetadata(): Boolean {
+    val fileTitle = localScanFileTitle()
+    return name.isNotBlank() && (fileTitle.isBlank() || !name.equals(fileTitle, ignoreCase = true))
+}
+
+private fun SongItem.hasLocalScanCover(): Boolean {
+    return !coverUrl.isNullOrBlank() || !originalCoverUrl.isNullOrBlank()
+}
+
+private fun String.isMeaningfulMetadata(unknownArtist: String): Boolean {
+    val value = trim()
     return value.isNotBlank() && !value.equals(unknownArtist, ignoreCase = true)
 }
 
-private fun String?.isMeaningfulAlbum(application: Application): Boolean {
-    val value = this?.trim().orEmpty()
+private fun String.isMeaningfulAlbum(isLocalFilesAlbum: (String) -> Boolean): Boolean {
+    val value = trim()
     if (value.isBlank()) return false
     if (value == LocalSongSupport.LOCAL_ALBUM_IDENTITY) return false
-    return !LocalFilesPlaylist.matches(value, application)
+    return !isLocalFilesAlbum(value)
 }
