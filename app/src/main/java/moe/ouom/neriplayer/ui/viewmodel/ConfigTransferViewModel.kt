@@ -131,7 +131,7 @@ class ConfigTransferViewModel : ViewModel() {
         strings = null
     }
 
-    private data class ConfigTransferStrings(
+    internal data class ConfigTransferStrings(
         private val context: Context
     ) {
         val exporting: String = context.getString(CoreCommonR.string.settings_config_exporting)

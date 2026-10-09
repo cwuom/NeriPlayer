@@ -143,23 +143,11 @@ class BackupRestoreViewModel internal constructor(
 
             result.fold(
                 onSuccess = { importResult ->
-                    val message = buildString {
-                        append(resources.importComplete)
-                        append("\n${resources.importCount(importResult.importedCount)}")
-                        if (importResult.hasMerged) {
-                            append("\n${resources.mergeCount(importResult.mergedCount)}")
-                        }
-                        if (importResult.hasSkipped) {
-                            append("\n${resources.skipCount(importResult.skippedCount)}")
-                        }
-                        append("\n${resources.backupDate(importResult.backupDate)}")
-                    }
-
                     _uiState.value = _uiState.value.copy(
                         isImporting = false,
                         importProgress = null,
                         lastImportSuccess = true,
-                        lastImportMessage = message
+                        lastImportMessage = resources.importSummary(importResult)
                     )
                 },
                 onFailure = { exception ->
@@ -208,7 +196,7 @@ class BackupRestoreViewModel internal constructor(
         strings = null
     }
 
-    private data class BackupRestoreStrings(
+    internal data class BackupRestoreStrings(
         private val context: Context
     ) {
         private val resources = context.resources
@@ -244,6 +232,18 @@ class BackupRestoreViewModel internal constructor(
         )
 
         fun backupDate(date: String): String = context.getString(CoreCommonR.string.playlist_backup_date, date)
+
+        fun importSummary(importResult: BackupManager.ImportResult): String = buildString {
+            append(importComplete)
+            append("\n${importCount(importResult.importedCount)}")
+            if (importResult.hasMerged) {
+                append("\n${mergeCount(importResult.mergedCount)}")
+            }
+            if (importResult.hasSkipped) {
+                append("\n${skipCount(importResult.skippedCount)}")
+            }
+            append("\n${backupDate(importResult.backupDate)}")
+        }
 
         fun importFailed(message: String?): String = "$importFailedPrefix: $message"
 
