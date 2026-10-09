@@ -50,6 +50,7 @@ import moe.ouom.neriplayer.data.model.playlist.LocalPlaylistDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
@@ -244,51 +245,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             .flatMap { batch ->
                 batch.map { folder ->
                     async(Dispatchers.IO) {
-                        mapBiliFolder(folder, kind, currentMid)
+                        mapLibraryBiliFolder(folder, kind, currentMid) { mediaId ->
+                            loadBiliFolderDetail(mediaId)
+                        }
                     }
                 }.awaitAll()
             }
             .filterNotNull()
     }
 
-    private suspend fun mapBiliFolder(
-        folder: FavFolder,
-        kind: BiliPlaylistKind,
-        currentMid: Long
-    ): BiliPlaylist? {
-        val resolvedKind = when {
-            folder.itemType == BILI_RESOURCE_TYPE_COLLECTION -> BiliPlaylistKind.COLLECTION
-            else -> kind
-        }
-
-        val detail = if (resolvedKind == BiliPlaylistKind.COLLECTION) {
-            null
-        } else {
-            runCatching { biliClient.getFavFolderInfo(folder.mediaId) }
-                .onFailure { error ->
-                    NPLogger.e(
-                        "LibraryViewModel-Bili",
-                        getApplication<Application>().getString(CoreCommonR.string.music_get_detail_failed),
-                        error
-                    )
-                }
-                .getOrNull()
-        }
-        val source = detail ?: folder
-        val ownerLabel = source.upperName.ifBlank {
-            if (source.mid != 0L && source.mid != currentMid) source.mid.toString() else ""
-        }
-
-        return BiliPlaylist(
-            mediaId = source.mediaId,
-            fid = source.fid,
-            mid = source.mid,
-            title = source.title.takeIf { it.isNotBlank() } ?: return null,
-            count = source.count,
-            coverUrl = source.coverUrl.replace("http://", "https://"),
-            kind = resolvedKind,
-            subtitle = ownerLabel
-        )
+    private suspend fun loadBiliFolderDetail(mediaId: Long): FavFolder? {
+        return runCatching { biliClient.getFavFolderInfo(mediaId) }
+            .onFailure { error ->
+                NPLogger.e(
+                    "LibraryViewModel-Bili",
+                    getApplication<Application>().getString(CoreCommonR.string.music_get_detail_failed),
+                    error
+                )
+            }
+            .getOrNull()
     }
 
 
@@ -297,7 +272,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
                 val raw = withContext(Dispatchers.IO) { neteaseClient.getUserPlaylists(uid) }
-                val mapped = parseNeteasePlaylists(raw)
+                val mapped = parseNeteaseLibraryPlaylists(raw)
                 _uiState.value = _uiState.value.copy(
                     neteasePlaylists = mapped,
                     neteaseError = null
@@ -315,7 +290,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
                 val raw = withContext(Dispatchers.IO) { neteaseClient.getUserStaredAlbums(uid) }
-                val mapped = parseNeteaseAlbums(raw)
+                val mapped = parseNeteaseLibraryAlbums(raw)
                 _uiState.value = _uiState.value.copy(
                     neteaseAlbums = mapped,
                     neteaseError = null
@@ -420,45 +395,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun parseNeteasePlaylists(raw: String): List<PlaylistSummary> {
-        val result = mutableListOf<PlaylistSummary>()
-        val root = JSONObject(raw)
-        if (root.optInt("code", -1) != 200) return emptyList()
-        val arr = root.optJSONArray("playlist") ?: return emptyList()
-        val size = arr.length()
-        for (i in 0 until size) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val id = obj.optLong("id", 0L)
-            val name = obj.optString("name", "")
-            val cover = obj.optString("coverImgUrl", "").replaceFirst("http://", "https://")
-            val playCount = obj.optLong("playCount", 0L)
-            val trackCount = obj.optInt("trackCount", 0)
-            if (id != 0L && name.isNotBlank()) {
-                result.add(PlaylistSummary(id, name, cover, playCount, trackCount))
-            }
-        }
-        return result
-    }
-    
-    private fun parseNeteaseAlbums(raw: String): List<AlbumSummary> {
-        val result = mutableListOf<AlbumSummary>()
-        val root = JSONObject(raw)
-        if (root.optInt("code", -1) != 200) return emptyList()
-        val arr = root.optJSONArray("playlist") ?: return emptyList()
-        val size = arr.length()
-        for (i in 0 until size) {
-            val obj = arr.optJSONObject(i)?.optJSONObject("dataInfo")?.optJSONObject("data") ?: continue
-            val id = obj.optLong("id", 0L)
-            val name = obj.optString("name", "")
-            val cover = arr.optJSONObject(i)?.optJSONObject("dataInfo")?.optString("picUrl", "")?.replaceFirst("http://", "https://") ?: continue
-            val songSize = obj.optInt("size", 0)
-            if (id != 0L && name.isNotBlank()) {
-                result.add(AlbumSummary(id, name, cover, songSize))
-            }
-        }
-        return result
-    }
-
     private fun moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
         return hasSavedAuthMaterial()
     }
@@ -475,4 +411,80 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             trackCount = playlist.trackCount ?: 0
         )
     }
+}
+
+/** 合集不需要再请求收藏夹详情, 详情请求失败时退回列表里的摘要 */
+internal suspend fun mapLibraryBiliFolder(
+    folder: FavFolder,
+    kind: BiliPlaylistKind,
+    currentMid: Long,
+    loadDetail: suspend (mediaId: Long) -> FavFolder?
+): BiliPlaylist? {
+    val resolvedKind = if (folder.itemType == BILI_RESOURCE_TYPE_COLLECTION) BiliPlaylistKind.COLLECTION else kind
+    val detail = if (resolvedKind == BiliPlaylistKind.COLLECTION) null else loadDetail(folder.mediaId)
+    val source = detail ?: folder
+    val title = source.title.takeIf { it.isNotBlank() } ?: return null
+    return BiliPlaylist(
+        mediaId = source.mediaId,
+        fid = source.fid,
+        mid = source.mid,
+        title = title,
+        count = source.count,
+        coverUrl = source.coverUrl.replace("http://", "https://"),
+        kind = resolvedKind,
+        subtitle = source.libraryOwnerLabel(currentMid)
+    )
+}
+
+private fun FavFolder.libraryOwnerLabel(currentMid: Long): String {
+    return upperName.ifBlank {
+        if (mid != 0L && mid != currentMid) mid.toString() else ""
+    }
+}
+
+internal fun parseNeteaseLibraryPlaylists(raw: String): List<PlaylistSummary> {
+    val items = neteaseLibraryItems(raw) ?: return emptyList()
+    return (0 until items.length()).mapNotNull { index ->
+        items.optJSONObject(index)?.toNeteaseLibraryPlaylist()
+    }
+}
+
+internal fun parseNeteaseLibraryAlbums(raw: String): List<AlbumSummary> {
+    val items = neteaseLibraryItems(raw) ?: return emptyList()
+    return (0 until items.length()).mapNotNull { index ->
+        items.optJSONObject(index)?.toNeteaseLibraryAlbum()
+    }
+}
+
+private fun neteaseLibraryItems(raw: String): JSONArray? {
+    val root = JSONObject(raw)
+    if (root.optInt("code", -1) != 200) return null
+    return root.optJSONArray("playlist")
+}
+
+private fun JSONObject.toNeteaseLibraryPlaylist(): PlaylistSummary? {
+    val id = optLong("id", 0L)
+    val name = optString("name", "")
+    if (id == 0L || name.isBlank()) return null
+    return PlaylistSummary(
+        id,
+        name,
+        optString("coverImgUrl", "").replaceFirst("http://", "https://"),
+        optLong("playCount", 0L),
+        optInt("trackCount", 0)
+    )
+}
+
+private fun JSONObject.toNeteaseLibraryAlbum(): AlbumSummary? {
+    val dataInfo = optJSONObject("dataInfo") ?: return null
+    val album = dataInfo.optJSONObject("data") ?: return null
+    val id = album.optLong("id", 0L)
+    val name = album.optString("name", "")
+    if (id == 0L || name.isBlank()) return null
+    return AlbumSummary(
+        id,
+        name,
+        dataInfo.optString("picUrl", "").replaceFirst("http://", "https://"),
+        album.optInt("size", 0)
+    )
 }
