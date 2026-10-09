@@ -82,9 +82,7 @@ internal fun mergeBiliPagedVideoPage(
     totalCount: Int,
     hasMore: Boolean
 ): BiliPagedVideoPage {
-    val videos = existingVideos.mergeDistinctBy(incomingVideos) { video ->
-        video.bvid.ifBlank { video.id.toString() }
-    }
+    val videos = existingVideos.mergeDistinctBy(incomingVideos) { video -> video.dedupeKey() }
     return BiliPagedVideoPage(
         videos = videos,
         totalCount = totalCount.coerceAtLeast(videos.size),
@@ -120,6 +118,107 @@ internal fun resolveBiliFavoriteFolderRefresh(
 ): BiliFavoriteFolderRefresh {
     if (missingPages == 0) return BiliFavoriteFolderRefresh(fetchedVideos, complete = true)
     return BiliFavoriteFolderRefresh(cachedVideos ?: fetchedVideos, complete = false)
+}
+
+private fun BiliVideoItem.dedupeKey(): String = bvid.ifBlank { id.toString() }
+
+internal fun BiliPlaylist.sameIdentityAs(other: BiliPlaylist): Boolean {
+    return mediaId == other.mediaId && kind == other.kind
+}
+
+internal fun BiliPlaylist.isFavoriteFolder(): Boolean {
+    return kind == BiliPlaylistKind.CREATED_FAVORITE || kind == BiliPlaylistKind.COLLECTED_FAVORITE
+}
+
+internal fun BiliPlaylistKind.hasPagedArchives(): Boolean {
+    return this == BiliPlaylistKind.COLLECTION || this == BiliPlaylistKind.SERIES
+}
+
+internal fun FavResourcePage.latestPageSignature(): String {
+    return buildString {
+        append(info.count)
+        append('#')
+        items.forEach { item ->
+            append(item.type)
+            append(':')
+            append(item.id)
+            append(':')
+            append(item.bvid.orEmpty())
+            append(':')
+            append(item.favTime ?: 0L)
+            append(':')
+            append(item.durationSec)
+            append(':')
+            append(item.title)
+            append('|')
+        }
+    }
+}
+
+internal fun FavResourceItem.toVideoItem(): BiliVideoItem? {
+    val resolvedBvid = bvid?.takeIf { it.isNotBlank() } ?: return null
+    return BiliVideoItem(
+        id = id,
+        bvid = resolvedBvid,
+        title = title,
+        uploader = upperName,
+        uploaderMid = upperMid,
+        coverUrl = coverUrl.replaceFirst("http://", "https://"),
+        durationSec = durationSec
+    )
+}
+
+private fun CollectionArchiveItem.toVideoItem(
+    uploader: String,
+    uploaderMid: Long = 0L
+): BiliVideoItem {
+    return BiliVideoItem(
+        id = aid,
+        bvid = bvid,
+        title = title,
+        uploader = uploader,
+        uploaderMid = uploaderMid,
+        coverUrl = coverUrl.replaceFirst("http://", "https://"),
+        durationSec = durationSec
+    )
+}
+
+/** 收藏夹里的合集会展开成其中的视频, 合集加载失败时记作缺页而不是空合集 */
+internal suspend fun mapBiliFavoriteItemsToVideos(
+    items: List<FavResourceItem>,
+    loadCollection: suspend (upperMid: Long, seasonId: Long) -> BiliPagedItems<CollectionArchiveItem>
+): BiliPagedItems<BiliVideoItem> {
+    val videos = ArrayList<BiliVideoItem>(items.size)
+    var missingPages = 0
+    for (item in items) {
+        when (item.type) {
+            BILI_RESOURCE_TYPE_VIDEO -> item.toVideoItem()?.let(videos::add)
+            BILI_RESOURCE_TYPE_COLLECTION -> {
+                val collection = loadFavoriteCollection(item, loadCollection)
+                missingPages += collection.missingPages
+                val uploader = item.upperName.ifBlank { item.title }
+                collection.items.mapTo(videos) { archive ->
+                    archive.toVideoItem(uploader = uploader, uploaderMid = item.upperMid)
+                }
+            }
+        }
+    }
+    return BiliPagedItems(videos.distinctBy { it.dedupeKey() }, missingPages)
+}
+
+private suspend fun loadFavoriteCollection(
+    item: FavResourceItem,
+    loadCollection: suspend (upperMid: Long, seasonId: Long) -> BiliPagedItems<CollectionArchiveItem>
+): BiliPagedItems<CollectionArchiveItem> {
+    return runCatching {
+        loadCollection(item.upperMid, item.id)
+    }.onFailure { error ->
+        NPLogger.w(
+            TAG,
+            "load collection videos failed: seasonId=${item.id}, upperMid=${item.upperMid}, title=${item.title}",
+            error
+        )
+    }.getOrDefault(BiliPagedItems(emptyList(), missingPages = 1))
 }
 
 private data class BiliPlaylistContentLoad(
@@ -513,57 +612,9 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
     }
 
     private suspend fun mapFavoriteItemsToVideos(items: List<FavResourceItem>): BiliPagedItems<BiliVideoItem> {
-        val videos = ArrayList<BiliVideoItem>(items.size)
-        var missingPages = 0
-        for (item in items) {
-            when (item.type) {
-                BILI_RESOURCE_TYPE_VIDEO -> item.toVideoItem()?.let(videos::add)
-                BILI_RESOURCE_TYPE_COLLECTION -> {
-                    val collection = runCatching {
-                        client.getAllCollectionArchivesResult(mid = item.upperMid, seasonId = item.id)
-                    }.onFailure { error ->
-                        NPLogger.w(
-                            TAG,
-                            "load collection videos failed: seasonId=${item.id}, upperMid=${item.upperMid}, title=${item.title}",
-                            error
-                        )
-                    }.getOrDefault(BiliPagedItems(emptyList(), missingPages = 1))
-                    missingPages += collection.missingPages
-                    collection.items.mapTo(videos) { archive ->
-                        archive.toVideoItem(
-                            uploader = item.upperName.ifBlank { item.title },
-                            uploaderMid = item.upperMid
-                        )
-                    }
-                }
-            }
+        return mapBiliFavoriteItemsToVideos(items) { upperMid, seasonId ->
+            client.getAllCollectionArchivesResult(mid = upperMid, seasonId = seasonId)
         }
-        return BiliPagedItems(videos.distinctBy { it.bvid.ifBlank { it.id.toString() } }, missingPages)
-    }
-
-    private fun FavResourcePage.latestPageSignature(): String {
-        return buildString {
-            append(info.count)
-            append('#')
-            items.forEach { item ->
-                append(item.type)
-                append(':')
-                append(item.id)
-                append(':')
-                append(item.bvid.orEmpty())
-                append(':')
-                append(item.favTime ?: 0L)
-                append(':')
-                append(item.durationSec)
-                append(':')
-                append(item.title)
-                append('|')
-            }
-        }
-    }
-
-    private fun BiliPlaylist.isFavoriteFolder(): Boolean {
-        return kind == BiliPlaylistKind.CREATED_FAVORITE || kind == BiliPlaylistKind.COLLECTED_FAVORITE
     }
 
     private suspend fun loadArchiveVideos(
@@ -629,38 +680,6 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         return result
     }
 
-    private fun BiliPlaylistKind.hasPagedArchives(): Boolean {
-        return this == BiliPlaylistKind.COLLECTION || this == BiliPlaylistKind.SERIES
-    }
-
-    private fun FavResourceItem.toVideoItem(): BiliVideoItem? {
-        val resolvedBvid = bvid?.takeIf { it.isNotBlank() } ?: return null
-        return BiliVideoItem(
-            id = id,
-            bvid = resolvedBvid,
-            title = title,
-            uploader = upperName,
-            uploaderMid = upperMid,
-            coverUrl = coverUrl.replaceFirst("http://", "https://"),
-            durationSec = durationSec
-        )
-    }
-
-    private fun CollectionArchiveItem.toVideoItem(
-        uploader: String,
-        uploaderMid: Long = 0L
-    ): BiliVideoItem {
-        return BiliVideoItem(
-            id = aid,
-            bvid = bvid,
-            title = title,
-            uploader = uploader,
-            uploaderMid = uploaderMid,
-            coverUrl = coverUrl.replaceFirst("http://", "https://"),
-            durationSec = durationSec
-        )
-    }
-
     private fun CachedBiliFavoriteVideo.toVideoItem(): BiliVideoItem {
         return BiliVideoItem(
             id = id,
@@ -707,10 +726,6 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             coverUrl = coverUrl,
             durationSec = durationSec
         )
-    }
-
-    private fun BiliPlaylist.sameIdentityAs(other: BiliPlaylist): Boolean {
-        return mediaId == other.mediaId && kind == other.kind
     }
 
     /**
