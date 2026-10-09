@@ -46,11 +46,13 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import org.json.JSONObject
+import java.io.File
 
 private const val BILI_AUTH_PREFS = "bili_auth_secure_prefs"
 private const val KEY_BILI_AUTH_BUNDLE = "bili_auth_bundle"
 
-private val Context.biliCookieStore by preferencesDataStore("bili_auth_store")
+private const val LEGACY_COOKIE_STORE_NAME = "bili_auth_store"
+private val Context.biliCookieStore by preferencesDataStore(LEGACY_COOKIE_STORE_NAME)
 
 object BiliCookieKeys {
     val COOKIE_JSON = stringPreferencesKey("bili_cookie_json")
@@ -176,7 +178,14 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
         return migrateLegacyCookies() ?: BiliAuthBundle()
     }
 
+    // preferencesDataStore 的文件固定在 files/datastore/<name>.preferences_pb，
+    // 从没写过旧存储的安装不必在启动时阻塞主线程打开 DataStore
+    private fun hasLegacyCookieStore(): Boolean = runCatching {
+        File(context.filesDir, "datastore/$LEGACY_COOKIE_STORE_NAME.preferences_pb").exists()
+    }.getOrDefault(true)
+
     private fun loadLegacyCookies(): Map<String, String> {
+        if (!hasLegacyCookieStore()) return emptyMap()
         return runCatching {
             val prefs = runBlocking { context.biliCookieStore.data.first() }
             val json = prefs[BiliCookieKeys.COOKIE_JSON] ?: "{}"
