@@ -67,6 +67,7 @@
     <string name="listen_together_error_room_not_found">房间不存在或已失效，无法继续加入</string>
     <string name="listen_together_error_reconnecting">一起听连接暂时中断，正在重连</string>
     <string name="listen_together_error_rejoining">一起听连接已失效，正在重新加入房间</string>
+    <string name="listen_together_error_reconnect_exhausted">一起听长时间无法连上服务器，已退出房间</string>
     <string name="listen_together_debug_probe">探测服务</string>
     <string name="listen_together_debug_probe_result">服务探测结果：%1$s</string>
     <string name="listen_together_debug_entry_desc">查看协议状态、房间数据与 WebSocket 调试操作</string>

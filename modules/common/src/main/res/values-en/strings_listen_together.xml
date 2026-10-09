@@ -67,6 +67,7 @@
     <string name="listen_together_error_room_not_found">The room no longer exists or is unavailable.</string>
     <string name="listen_together_error_reconnecting">Listen Together connection was interrupted. Reconnecting now.</string>
     <string name="listen_together_error_rejoining">Listen Together session expired. Rejoining the room now.</string>
+    <string name="listen_together_error_reconnect_exhausted">Listen Together could not reach the server for a long time and left the room.</string>
     <string name="listen_together_debug_probe">Probe</string>
     <string name="listen_together_debug_probe_result">Server probe: %1$s</string>
     <string name="listen_together_debug_entry_desc">Inspect protocol state, room data, and WebSocket debug actions</string>
