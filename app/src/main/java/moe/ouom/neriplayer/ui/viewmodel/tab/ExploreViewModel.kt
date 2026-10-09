@@ -210,19 +210,24 @@ internal fun ExploreUiState.withNeteaseAuthRequired(error: String): ExploreUiSta
 )
 
 internal fun ExploreUiState.withYouTubeDisabled(): ExploreUiState {
-    val youtubeWasSelected = selectedSearchSource == SearchSource.YOUTUBE_MUSIC
-    return copy(
-        selectedSearchSource = if (youtubeWasSelected) SearchSource.NETEASE else selectedSearchSource,
-        searching = if (youtubeWasSelected) false else searching,
-        searchResults = if (youtubeWasSelected) emptyList() else searchResults,
-        searchItems = if (youtubeWasSelected) emptyList() else searchItems,
-        searchHasMore = if (youtubeWasSelected) false else searchHasMore,
-        searchLoadingMore = if (youtubeWasSelected) false else searchLoadingMore,
-        searchLoadMoreError = if (youtubeWasSelected) null else searchLoadMoreError,
-        searchPage = if (youtubeWasSelected) 0 else searchPage,
-        searchKeyword = if (youtubeWasSelected) "" else searchKeyword,
-        searchDisplayQuery = if (youtubeWasSelected) "" else searchDisplayQuery,
-        searchError = if (youtubeWasSelected) null else searchError,
+    val searchState = if (selectedSearchSource == SearchSource.YOUTUBE_MUSIC) {
+        copy(
+            selectedSearchSource = SearchSource.NETEASE,
+            searching = false,
+            searchResults = emptyList(),
+            searchItems = emptyList(),
+            searchHasMore = false,
+            searchLoadingMore = false,
+            searchLoadMoreError = null,
+            searchPage = 0,
+            searchKeyword = "",
+            searchDisplayQuery = "",
+            searchError = null
+        )
+    } else {
+        this
+    }
+    return searchState.copy(
         ytMusicPlaylists = emptyList(),
         ytMusicPlaylistsLoading = false,
         ytMusicPlaylistsError = null
@@ -692,7 +697,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 val raw = withContext(Dispatchers.IO) {
                     neteaseClient.getHighQualityPlaylists(apiCategory, 50, 0L)
                 }
-                val mapped = parsePlaylists(raw)
+                val mapped = parseExploreHighQualityPlaylists(raw)
                 NPLogger.d(TAG, "loadHighQuality success: tag=$realCat, count=${mapped.size}")
 
                 _uiState.value = _uiState.value.copy(
@@ -721,28 +726,6 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
         }
-    }
-
-    private fun parsePlaylists(raw: String): List<PlaylistSummary> {
-        val result = mutableListOf<PlaylistSummary>()
-        val root = JSONObject(raw)
-        val code = root.optInt("code", -1)
-        if (code != 200) {
-            NPLogger.w(TAG, "parsePlaylists unexpected code=$code")
-            return emptyList()
-        }
-        val arr = root.optJSONArray("playlists") ?: return emptyList()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            result.add(PlaylistSummary(
-                id = obj.optLong("id"),
-                name = obj.optString("name"),
-                picUrl = obj.optString("coverImgUrl").replace("http://", "https://"),
-                playCount = obj.optLong("playCount"),
-                trackCount = obj.optInt("trackCount")
-            ))
-        }
-        return result
     }
 
     /** 搜索网易云歌曲 */
@@ -973,7 +956,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         return runCatching {
             parseLinkedNeteaseArtist(
                 raw = neteaseClient.getArtistDetail(artistId),
-                fallbackId = artistId
+                fallbackId = artistId,
+                fallbackName = app.getString(CoreCommonR.string.explore_link_netease_artist_fallback, artistId)
             )
         }.getOrElse {
             NeteaseSearchArtistResult(
@@ -1192,38 +1176,6 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    private fun parseLinkedNeteaseArtist(
-        raw: String,
-        fallbackId: Long
-    ): NeteaseSearchArtistResult {
-        val root = JSONObject(raw)
-        val artist = root.optJSONObject("data")?.optJSONObject("artist")
-            ?: root.optJSONObject("artist")
-        val fallbackName = app.getString(CoreCommonR.string.explore_link_netease_artist_fallback, fallbackId)
-        if (artist == null) {
-            return NeteaseSearchArtistResult(
-                artist = NeteaseArtistSummary(id = fallbackId, name = fallbackName),
-                picUrl = null,
-                musicSize = 0,
-                albumSize = 0
-            )
-        }
-        return NeteaseSearchArtistResult(
-            artist = NeteaseArtistSummary(
-                id = artist.optLong("id", fallbackId),
-                name = artist.optString("name", fallbackName).ifBlank { fallbackName }
-            ),
-            picUrl = artist.optString("cover", "")
-                .ifBlank { artist.optString("picUrl", "") }
-                .ifBlank { artist.optString("avatar", "") }
-                .ifBlank { artist.optString("img1v1Url", "") }
-                .replaceFirst("http://", "https://")
-                .takeIf { it.isNotBlank() },
-            musicSize = artist.optInt("musicSize", 0),
-            albumSize = artist.optInt("albumSize", 0)
-        )
-    }
-
     private suspend fun fetchNeteaseSearchPage(
         keyword: String,
         matchQuery: String,
@@ -1423,6 +1375,64 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 }
 
+internal fun parseExploreHighQualityPlaylists(raw: String): List<PlaylistSummary> {
+    val result = mutableListOf<PlaylistSummary>()
+    val root = JSONObject(raw)
+    val code = root.optInt("code", -1)
+    if (code != 200) {
+        NPLogger.w(TAG, "parsePlaylists unexpected code=$code")
+        return emptyList()
+    }
+    val arr = root.optJSONArray("playlists") ?: return emptyList()
+    for (i in 0 until arr.length()) {
+        val obj = arr.optJSONObject(i) ?: continue
+        result.add(PlaylistSummary(
+            id = obj.optLong("id"),
+            name = obj.optString("name"),
+            picUrl = obj.optString("coverImgUrl").replace("http://", "https://"),
+            playCount = obj.optLong("playCount"),
+            trackCount = obj.optInt("trackCount")
+        ))
+    }
+    return result
+}
+
+internal fun parseLinkedNeteaseArtist(
+    raw: String,
+    fallbackId: Long,
+    fallbackName: String
+): NeteaseSearchArtistResult {
+    val root = JSONObject(raw)
+    val artist = root.optJSONObject("data")?.optJSONObject("artist")
+        ?: root.optJSONObject("artist")
+    if (artist == null) {
+        return NeteaseSearchArtistResult(
+            artist = NeteaseArtistSummary(id = fallbackId, name = fallbackName),
+            picUrl = null,
+            musicSize = 0,
+            albumSize = 0
+        )
+    }
+    return NeteaseSearchArtistResult(
+        artist = NeteaseArtistSummary(
+            id = artist.optLong("id", fallbackId),
+            name = artist.optString("name", fallbackName).ifBlank { fallbackName }
+        ),
+        picUrl = artist.linkedNeteaseArtistPicUrl(),
+        musicSize = artist.optInt("musicSize", 0),
+        albumSize = artist.optInt("albumSize", 0)
+    )
+}
+
+private fun JSONObject.linkedNeteaseArtistPicUrl(): String? {
+    return optString("cover", "")
+        .ifBlank { optString("picUrl", "") }
+        .ifBlank { optString("avatar", "") }
+        .ifBlank { optString("img1v1Url", "") }
+        .replaceFirst("http://", "https://")
+        .takeIf { it.isNotBlank() }
+}
+
 /** Bilibili 搜索结果到通用 SongItem 的转换器 */
 private fun SearchVideoItem.toSongItem(): SongItem {
     return SongItem(
@@ -1473,18 +1483,24 @@ internal fun VideoBasicInfo.toExploreLinkCollectionTarget(
     target: ExploreLinkTarget.BiliVideo
 ): ExploreLinkTarget.BiliCollection? {
     if (!target.isCollectionShare) return null
-    val season = ugcSeason
-    val seasonId = target.seasonId ?: season?.id ?: return null
-    val collectionOwnerMid = season?.mid?.takeIf { it > 0L }
-        ?: ownerMid.takeIf { it > 0L }
-        ?: return null
+    val seasonId = target.seasonId ?: ugcSeason?.id ?: return null
+    val collectionOwnerMid = collectionOwnerMid() ?: return null
     return ExploreLinkTarget.BiliCollection(
         ownerMid = collectionOwnerMid,
         seasonId = seasonId
     )
 }
 
-private fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
+private fun VideoBasicInfo.collectionOwnerMid(): Long? {
+    val seasonMid = ugcSeason?.mid ?: 0L
+    return when {
+        seasonMid > 0L -> seasonMid
+        ownerMid > 0L -> ownerMid
+        else -> null
+    }
+}
+
+internal fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
     val displayArtist = artist.ifBlank { "YouTube" }
     val displayAlbum = album.ifBlank {
         when (type) {
