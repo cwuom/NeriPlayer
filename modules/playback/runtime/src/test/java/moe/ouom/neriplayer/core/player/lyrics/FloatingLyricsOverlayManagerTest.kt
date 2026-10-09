@@ -98,6 +98,15 @@ class FloatingLyricsOverlayManagerTest {
     }
 
     @Test
+    fun `lyric line pending while preferences change is still shown`() {
+        FloatingLyricsOverlayManager.updateContent("Pending line", null)
+        FloatingLyricsOverlayManager.updatePreferences(FloatingLyricsPreferences(enabled = true))
+        idle()
+
+        assertEquals(1, overlayViews().size)
+    }
+
+    @Test
     fun `overlay requires permission and an enabled preference`() {
         ShadowSettings.setCanDrawOverlays(false)
         showOverlay(FloatingLyricsPreferences(enabled = true))

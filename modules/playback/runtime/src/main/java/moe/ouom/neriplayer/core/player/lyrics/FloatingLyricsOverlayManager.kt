@@ -498,9 +498,7 @@ object FloatingLyricsOverlayManager {
         translationTextView = null
         layoutParams = null
         appliedStylePreferences = null
-        mainHandler.removeCallbacks(contentUpdateRunnable)
         mainHandler.removeCallbacks(layoutUpdateRunnable)
-        contentUpdateScheduled = false
         layoutUpdateScheduled = false
     }
 
