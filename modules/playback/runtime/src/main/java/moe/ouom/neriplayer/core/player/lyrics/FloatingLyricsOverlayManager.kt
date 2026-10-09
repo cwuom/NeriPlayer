@@ -616,24 +616,26 @@ internal fun resolveFloatingLyricsOverlayText(
     translationLine: String?
 ): FloatingLyricsOverlayText {
     val lyric = lyricLine.orEmpty()
-    val translation = translationLine
-        ?.takeIf { preferences.showTranslation && it.isNotBlank() }
-        .orEmpty()
-    val showTranslation = translation.isNotEmpty()
-    val revealDurationMs = if (preferences.revealAnimationEnabled) {
-        maxOf(
-            AnimatedOutlinedLyricTextView.resolveRevealDurationMs(lyric),
-            AnimatedOutlinedLyricTextView.resolveRevealDurationMs(translation)
-        )
-    } else {
-        null
-    }
+    val translation = visibleFloatingLyricsTranslation(preferences.showTranslation, translationLine)
     return FloatingLyricsOverlayText(
         lyric = lyric,
         translation = translation,
-        showTranslation = showTranslation,
+        showTranslation = translation.isNotEmpty(),
         revealAnimationEnabled = preferences.revealAnimationEnabled,
-        revealDurationMs = revealDurationMs
+        revealDurationMs = floatingLyricsRevealDurationMs(preferences.revealAnimationEnabled, lyric, translation)
+    )
+}
+
+private fun visibleFloatingLyricsTranslation(showTranslation: Boolean, translationLine: String?): String {
+    if (!showTranslation || translationLine == null || translationLine.isBlank()) return ""
+    return translationLine
+}
+
+private fun floatingLyricsRevealDurationMs(enabled: Boolean, lyric: String, translation: String): Long? {
+    if (!enabled) return null
+    return maxOf(
+        AnimatedOutlinedLyricTextView.resolveRevealDurationMs(lyric),
+        AnimatedOutlinedLyricTextView.resolveRevealDurationMs(translation)
     )
 }
 
