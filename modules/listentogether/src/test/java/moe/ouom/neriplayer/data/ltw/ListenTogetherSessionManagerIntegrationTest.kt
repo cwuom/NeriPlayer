@@ -289,6 +289,30 @@ class ListenTogetherSessionManagerIntegrationTest {
         assertEquals(1, monitor.stops)
     }
 
+    @Test
+    fun `backgrounded listener under the playback service holds the wake lock only while reconnecting`() = sessionTest {
+        val member = fixture(this, "listener")
+        member.platform.initialized = true
+        member.join(); member.connect()
+        member.manager.onApplicationBackgrounded()
+        verify(member.platform.wakeLock, never()).acquire(anyLong())
+        member.listener.onFailure(IOException("offline"))
+        verify(member.platform.wakeLock, atLeastOnce()).acquire(anyLong())
+
+        val controller = fixture(this)
+        controller.platform.initialized = true
+        controller.join(); controller.connect()
+        controller.manager.onApplicationBackgrounded()
+        verify(controller.platform.wakeLock, atLeastOnce()).acquire(anyLong())
+
+        val withoutService = fixture(this, "listener")
+        withoutService.platform.initialized = true
+        withoutService.platform.playbackServiceReady = false
+        withoutService.join(); withoutService.connect()
+        withoutService.manager.onApplicationBackgrounded()
+        verify(withoutService.platform.wakeLock, atLeastOnce()).acquire(anyLong())
+    }
+
     private class Fixture(scope: TestScope, role: String, queueMainWork: Boolean) {
         val player = FakeListenTogetherPlaybackHost().apply { currentSongFlow.value = testSong(); currentQueueFlow.value = listOf(testSong()) }
         val socket = mock(ListenTogetherWebSocketClient::class.java)
