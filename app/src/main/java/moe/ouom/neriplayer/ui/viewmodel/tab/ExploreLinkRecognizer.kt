@@ -77,7 +77,7 @@ private fun neteaseTargetForPath(targetPath: String, id: Long): ExploreLinkTarge
 private fun recognizeBiliLink(uri: URI, raw: String): ExploreLinkTarget? {
     val params = queryParameters(uri.rawQuery)
     val bvid = BILI_BVID_REGEX.find(raw)?.value
-    if (!bvid.isNullOrBlank()) {
+    if (bvid != null) {
         return biliVideoTarget(params, avid = null, bvid = bvid)
     }
     val aid = biliAid(params, raw)

@@ -10,6 +10,8 @@ class ExploreLinkRecognizerBoundaryTest {
     fun `input without a usable http url is rejected`() {
         assertNull(recognizeExploreLink("   "))
         assertNull(recognizeExploreLink("just some share text"))
+        assertNull(recognizeExploreLink("http://"))
+        assertNull(recognizeExploreLink("https://"))
         assertNull(recognizeExploreLink("https://music.163.com/song?id=1|2"))
         assertNull(recognizeExploreLink("https://bad_host.com/song?id=1"))
         assertEquals(
