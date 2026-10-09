@@ -280,7 +280,13 @@ class SettingsPageTransitionTest {
                     navigation = owner
                     scope = ownerScope
                 }
-                SettingsPageHost(owner.activePage, splitLayout = false, isolateAdvancedGlassTransitions = false) { page ->
+                SettingsPageHost(
+                    owner.activePage,
+                    splitLayout = false,
+                    isolateAdvancedGlassTransitions = false,
+                    backEnabled = owner.activePage != null,
+                    onBack = owner::navigateBack
+                ) { page ->
                     if (page == null) {
                         LazyColumn(Modifier.fillMaxSize().testTag("settings-search-home"), state = homeListState) {
                             items(10) { index -> Text("设置分组 $index", Modifier.height(56.dp)) }
@@ -355,7 +361,13 @@ class SettingsPageTransitionTest {
             Fixture(width, height, smallestWidth) {
                 selectedPage = remember { mutableStateOf<SettingsPage?>(SettingsPage.General) }
                 CompositionLocalProvider(LocalAdvancedGlassSceneOpacity provides { ParentOpacity }) {
-                    SettingsPageHost(selectedPage.value, splitLayout = false, isolateAdvancedGlassTransitions = false) { page ->
+                    SettingsPageHost(
+                        selectedPage.value,
+                        splitLayout = false,
+                        isolateAdvancedGlassTransitions = false,
+                        backEnabled = false,
+                        onBack = {}
+                    ) { page ->
                         val opacity = LocalAdvancedGlassSceneOpacity.current
                         SideEffect { opacityGetters[page] = opacity }
                         Box(
@@ -533,7 +545,13 @@ class SettingsPageTransitionTest {
                             }
                         }
                         Box(Modifier.fillMaxSize().captureAdvancedGlassBackdrop(content)) {
-                            SettingsPageHost(selectedPage.value, splitLayout = false, isolateAdvancedGlassTransitions = true) { page ->
+                            SettingsPageHost(
+                                selectedPage.value,
+                                splitLayout = false,
+                                isolateAdvancedGlassTransitions = true,
+                                backEnabled = false,
+                                onBack = {}
+                            ) { page ->
                                 val sceneOpacity = LocalAdvancedGlassSceneOpacity.current
                                 SideEffect { opacityGetters[page] = sceneOpacity }
                                 CompositionLocalProvider(LocalAdvancedGlassNavigationOwner provides page) {

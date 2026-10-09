@@ -51,7 +51,9 @@ class SettingsPageHostTest {
                     SettingsPageHost(
                         activePage = activePage.value,
                         splitLayout = true,
-                        isolateAdvancedGlassTransitions = false
+                        isolateAdvancedGlassTransitions = false,
+                        backEnabled = false,
+                        onBack = {}
                     ) { page ->
                         Row(modifier = Modifier.fillMaxSize()) {
                             Box(
