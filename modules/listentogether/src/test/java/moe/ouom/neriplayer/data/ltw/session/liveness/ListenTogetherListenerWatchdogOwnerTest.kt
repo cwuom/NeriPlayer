@@ -61,6 +61,24 @@ class ListenTogetherListenerWatchdogOwnerTest {
     }
 
     @Test
+    fun `controller session never schedules listener watchdog ticks`() = runTest {
+        val port = FakePort()
+        port.controller = true
+        val owner = ListenTogetherListenerWatchdogOwner(this, FakeListenTogetherPlaybackHost(), TestSongMapper, port, 600L) { testScheduler.currentTime + 1_000L }
+        owner.start()
+        advanceTimeBy(80_000L)
+        runCurrent()
+        assertEquals(0, port.snapshots)
+
+        port.controller = false
+        owner.start()
+        advanceTimeBy(8_000L)
+        runCurrent()
+        assertEquals(1, port.snapshots)
+        owner.stop()
+    }
+
+    @Test
     fun `watchdog ignores blank room and does not refresh without base url`() = runTest {
         val port = FakePort()
         val owner = ListenTogetherListenerWatchdogOwner(this, FakeListenTogetherPlaybackHost(), TestSongMapper, port, 600L) { testScheduler.currentTime + 1_000L }
@@ -168,9 +186,14 @@ class ListenTogetherListenerWatchdogOwnerTest {
         val appliedCauses = mutableListOf<String>()
         val failureReasons = mutableListOf<String>()
 
-        override fun snapshot() = ListenTogetherListenerWatchdogSnapshot(
-            sessionState, room, controller, pendingRepairVersion, lastMessageAtElapsedMs, 0L
-        )
+        var snapshots = 0
+
+        override fun snapshot(): ListenTogetherListenerWatchdogSnapshot {
+            snapshots++
+            return ListenTogetherListenerWatchdogSnapshot(
+                sessionState, room, controller, pendingRepairVersion, lastMessageAtElapsedMs, 0L
+            )
+        }
         override fun isControllerNow(): Boolean = controller
         override fun retryPendingMemberRequest(room: ListenTogetherRoomState?) {
             memberRetries++

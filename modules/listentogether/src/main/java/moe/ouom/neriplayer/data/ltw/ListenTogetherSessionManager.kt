@@ -669,6 +669,7 @@ class ListenTogetherSessionManager(
                 override fun onClosed(code: Int, reason: String) {
                     webSocketConnectingAtElapsedMs = 0L
                     heartbeatOwner.stop()
+                    listenerWatchdogOwner.stop()
                     socketHealthOwner.stopKeepAlive()
                     NPLogger.w(TAG, "websocket.onClosed(): code=$code, reason=$reason")
                     _sessionState.value = _sessionState.value.copy(
@@ -684,6 +685,7 @@ class ListenTogetherSessionManager(
                 override fun onFailure(error: Throwable) {
                     webSocketConnectingAtElapsedMs = 0L
                     heartbeatOwner.stop()
+                    listenerWatchdogOwner.stop()
                     socketHealthOwner.stopKeepAlive()
                     NPLogger.e(TAG, "websocket.onFailure(): ${error.message}", error)
                     _sessionState.value = _sessionState.value.copy(

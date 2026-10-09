@@ -56,7 +56,7 @@ internal class ListenTogetherListenerWatchdogOwner(
     private var lastRefreshAtElapsedMs = 0L
 
     fun start() {
-        if (watchdogJob?.isActive == true) return
+        if (watchdogJob?.isActive == true || port.isControllerNow()) return
         NPLogger.d(TAG, "startSyncWatchdog()")
         lastRefreshAtElapsedMs = 0L
         watchdogJob = scope.launch { runWatchdog() }

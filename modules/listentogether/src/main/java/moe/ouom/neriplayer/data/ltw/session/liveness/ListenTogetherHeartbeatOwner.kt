@@ -38,7 +38,7 @@ class ListenTogetherHeartbeatOwner(
     }
 
     fun start() {
-        if (heartbeatJob?.isActive == true) return
+        if (heartbeatJob?.isActive == true || !port.isController(port.session())) return
         NPLogger.d(TAG, "startHeartbeat()")
         if (lastOutboundSyncAtMs == 0L) noteOutboundSync()
         heartbeatJob = scope.launch { runHeartbeatLoop() }
