@@ -225,22 +225,25 @@ private fun parseNeteaseHomeSong(song: JSONObject): SongItem? {
 
     val artistItems = parseNeteaseArtistSummaries(song.optJSONArray("ar"))
         .ifEmpty { parseNeteaseArtistSummaries(song.optJSONArray("artists")) }
-    val album = song.optJSONObject("al") ?: song.optJSONObject("album")
+    val album = song.optJSONObject("al") ?: song.optJSONObject("album") ?: JSONObject()
     return SongItem(
         id = songId,
         name = name,
         artist = artistItems.joinToString(" / ") { it.name },
-        album = album?.optString("name", "").orEmpty(),
-        albumId = album?.optLong("id", 0L) ?: 0L,
+        album = album.optString("name", ""),
+        albumId = album.optLong("id", 0L),
         durationMs = song.optLong("dt", song.optLong("duration", 0L)),
-        coverUrl = toHttps(
-            album?.optString("picUrl", "")
-                ?.ifBlank { album.optString("picUrl_str", "") }
-        ).takeIf { it.isNotBlank() },
+        coverUrl = neteaseHomeAlbumCoverUrl(album),
         channelId = "netease",
         audioId = songId.toString(),
         neteaseArtists = artistItems
     )
+}
+
+private fun neteaseHomeAlbumCoverUrl(album: JSONObject): String? {
+    return toHttps(
+        album.optString("picUrl", "").ifBlank { album.optString("picUrl_str", "") }
+    ).takeIf { it.isNotBlank() }
 }
 
 private fun parseNeteasePlaylistSummary(playlist: JSONObject): PlaylistSummary? {

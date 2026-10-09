@@ -304,20 +304,24 @@ class NeteaseArtistDetailViewModel internal constructor(
         val code = root.optInt("code", -1)
         require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
-        val data = root.optJSONObject("data")
-        val artist = data?.optJSONObject("artist") ?: root.optJSONObject("artist")
-        val alias = artist?.optJSONArray("alias").joinNames()
+        val artist = root.optJSONObject("data")?.optJSONObject("artist")
+            ?: root.optJSONObject("artist")
+            ?: JSONObject()
         return NeteaseArtistHeader(
-            id = artist?.optLong("id", fallback.id) ?: fallback.id,
-            name = artist?.optString("name", fallback.name).orEmpty().ifBlank { fallback.name },
-            coverUrl = toHttps(artist.optNonBlankString("cover") ?: artist.optNonBlankString("picUrl")),
-            avatarUrl = toHttps(artist.optNonBlankString("avatar") ?: artist.optNonBlankString("img1v1Url")),
-            alias = alias,
-            briefDesc = artist?.optString("briefDesc", "").orEmpty(),
-            musicSize = artist?.optInt("musicSize", 0) ?: 0,
-            albumSize = artist?.optInt("albumSize", 0) ?: 0,
-            followed = artist?.optBoolean("followed", false) == true
+            id = artist.optLong("id", fallback.id),
+            name = artist.optString("name", fallback.name).ifBlank { fallback.name },
+            coverUrl = artist.httpsUrl(primary = "cover", fallback = "picUrl"),
+            avatarUrl = artist.httpsUrl(primary = "avatar", fallback = "img1v1Url"),
+            alias = artist.optJSONArray("alias").joinNames(),
+            briefDesc = artist.optString("briefDesc", ""),
+            musicSize = artist.optInt("musicSize", 0),
+            albumSize = artist.optInt("albumSize", 0),
+            followed = artist.optBoolean("followed", false)
         )
+    }
+
+    private fun JSONObject.httpsUrl(primary: String, fallback: String): String {
+        return toHttps(optNonBlankString(primary) ?: optNonBlankString(fallback))
     }
 
     private fun parseArtistSongs(raw: String): Page<SongItem> {
@@ -364,18 +368,17 @@ class NeteaseArtistDetailViewModel internal constructor(
         if (id <= 0L || name.isBlank()) return null
 
         val artists = parseNeteaseArtistsFromSongJson(song)
-        val album = song.optJSONObject("al") ?: song.optJSONObject("album")
-        val albumName = album?.optString("name", "").orEmpty()
-        val cover = toHttps(album?.optString("picUrl", ""))
+        val album = song.optJSONObject("al") ?: song.optJSONObject("album") ?: JSONObject()
+        val cover = toHttps(album.optString("picUrl", "")).takeIf { it.isNotBlank() }
         return SongItem(
             id = id,
             name = name,
             artist = artists.joinToString(" / ") { it.name },
-            album = "${PlayerManager.NETEASE_SOURCE_TAG}$albumName",
-            albumId = album?.optLong("id", 0L) ?: 0L,
+            album = "${PlayerManager.NETEASE_SOURCE_TAG}${album.optString("name", "")}",
+            albumId = album.optLong("id", 0L),
             durationMs = song.optLong("dt", 0L),
-            coverUrl = cover.takeIf { it.isNotBlank() },
-            originalCoverUrl = cover.takeIf { it.isNotBlank() },
+            coverUrl = cover,
+            originalCoverUrl = cover,
             channelId = "netease",
             audioId = id.toString(),
             neteaseArtists = artists
