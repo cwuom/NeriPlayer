@@ -1138,6 +1138,14 @@ class ListenTogetherSessionManager(
             roomNotice = roomNoticeForState(state)
         )
         connectionRecoveryOwner.recoverMissingListenerMembership(state, reason = "apply_room_state")
+        reconcileLivenessLoops()
+    }
+
+    /** 房主转移后角色会变，两个循环各自只在对应角色下启动，已在运行时调用无副作用 */
+    private fun reconcileLivenessLoops() {
+        if (_sessionState.value.connectionState != ListenTogetherConnectionState.CONNECTED) return
+        heartbeatOwner.start()
+        listenerWatchdogOwner.start()
     }
 
     private fun recordWebSocketMessage(message: ListenTogetherSocketEnvelope): Boolean =

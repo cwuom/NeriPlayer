@@ -246,6 +246,26 @@ class ListenTogetherSessionManagerIntegrationTest {
     }
 
     @Test
+    fun `listener promoted to controller while connected starts publishing heartbeats`() = sessionTest {
+        val f = fixture(this, "listener")
+        f.join(); f.connect()
+        runCurrent()
+        val promoted = f.serverRoom.copy(
+            version = 2L,
+            controllerUserUuid = USER_UUID,
+            members = f.serverRoom.members.map { member ->
+                member.copy(role = if (member.userUuid == USER_UUID) "controller" else "listener")
+            }
+        )
+        f.listener.onMessage(ListenTogetherSocketEnvelope(type = "room_state_updated", roomId = "ABC234", state = promoted, expectedPositionMs = 0L))
+        assertEquals("controller", f.manager.sessionState.value.role)
+
+        f.now += 60_000L
+        advanceTimeBy(60_000L); runCurrent()
+        assertTrue(f.events.any { it.type == "HEARTBEAT" })
+    }
+
+    @Test
     fun `silent listener watchdog reports refresh failure and retains membership for recovery`() = sessionTest {
         val f = fixture(this, "listener")
         f.join(); f.connect()
