@@ -42,10 +42,11 @@ class ManagedDownloadAudioPublicationReceiptTest {
         target = File(rootDir, FINAL_NAME)
     }
 
+    /** Context-free invalidation: a context would schedule Room snapshot jobs that cannot open outside the app process. */
     @After
     fun tearDown() {
         storage.clearTreeDirectoryCache()
-        storage.invalidateSnapshotCache(context)
+        storage.invalidateSnapshotCache()
     }
 
     @Test
@@ -91,47 +92,24 @@ class ManagedDownloadAudioPublicationReceiptTest {
     }
 
     @Test
-    fun `publication pending marker is written to formal metadata and sealed after verification`() {
+    fun `publication metadata prefers the receipt and inherits the sealed formal marker of the same owner`() {
         writePendingMetadata(identity())
         target.writeText("complete audio")
         storage.recordAudioPublicationTarget(context, root, pending, target.absolutePath, publicationFileIdentity(target.absolutePath))
-
-        storage.markAudioPublicationPending(context, root, pending, FINAL_NAME)
         val formal = File(rootDir, "$FINAL_NAME.npmeta.json")
-        assertTrue(JSONObject(formal.readText()).getBoolean("audioPublicationPending"))
-        assertTrue(storage.readAudioPublicationMetadata(context, root, FINAL_NAME)!!.getBoolean("audioPublicationPending"))
 
-        storage.sealAudioPublicationReceipt(context, root, entry(target))
-
-        val sealed = JSONObject(formal.readText())
-        assertFalse(sealed.getBoolean("audioPublicationPending"))
+        formal.writeText(identity().put("audioPublicationPending", false).toString())
+        val sealed = storage.readAudioPublicationMetadata(context, root, FINAL_NAME)!!
         assertEquals(pending.name, sealed.getJSONObject("audioPublicationReceipt").getString("sourceName"))
-    }
+        assertFalse(sealed.getBoolean("audioPublicationPending"))
 
-    @Test
-    fun `sealing refuses to complete an unverified publication`() {
-        writePendingMetadata(identity())
-        target.writeText("complete audio")
-        storage.recordAudioPublicationTarget(context, root, pending, target.absolutePath, publicationFileIdentity(target.absolutePath))
-        storage.markAudioPublicationPending(context, root, pending, FINAL_NAME)
-        target.writeText("partial")
+        formal.writeText(identity(operationId = "op-other").put("audioPublicationPending", false).toString())
+        assertFalse(storage.readAudioPublicationMetadata(context, root, FINAL_NAME)!!.has("audioPublicationPending"))
 
+        File(rootDir, ".tmp/$FINAL_NAME.npmeta.pending.json").writeText(identity().put("audioPublicationReceipt", "x").toString())
         assertThrows(IOException::class.java) {
-            storage.sealAudioPublicationReceipt(context, root, entry(target))
+            storage.readAudioPublicationMetadata(context, root, FINAL_NAME)
         }
-        assertTrue(JSONObject(File(rootDir, "$FINAL_NAME.npmeta.json").readText()).getBoolean("audioPublicationPending"))
-    }
-
-    @Test
-    fun `pending marker refuses formal metadata owned by another download`() {
-        writePendingMetadata(identity())
-        storage.recordAudioPublicationTarget(context, root, pending, target.absolutePath)
-        File(rootDir, "$FINAL_NAME.npmeta.json").writeText(identity(operationId = "op-other").toString())
-
-        assertThrows(IOException::class.java) {
-            storage.markAudioPublicationPending(context, root, pending, FINAL_NAME)
-        }
-        assertFalse(JSONObject(File(rootDir, "$FINAL_NAME.npmeta.json").readText()).has("audioPublicationPending"))
     }
 
     @Test

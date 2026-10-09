@@ -34,10 +34,11 @@ class ManagedDownloadStorageReferenceTrustTest {
     private val storage = ManagedDownloadStorage
     private val context: Context = ApplicationProvider.getApplicationContext()
 
+    /** Context-free invalidation: a context would schedule Room snapshot jobs that cannot open outside the app process. */
     @After
     fun tearDown() {
         storage.clearTreeDirectoryCache()
-        storage.invalidateSnapshotCache(context)
+        storage.invalidateSnapshotCache()
     }
 
     @Test
