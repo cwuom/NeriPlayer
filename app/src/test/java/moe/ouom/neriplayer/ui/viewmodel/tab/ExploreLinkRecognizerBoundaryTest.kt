@@ -87,10 +87,9 @@ class ExploreLinkRecognizerBoundaryTest {
             ExploreLinkTarget.YouTubeVideo(videoId = "short-id"),
             recognizeExploreLink("https://youtube.com/shorts/short-id?v=ignored")
         )
-        assertEquals(
-            ExploreLinkTarget.YouTubeVideo(videoId = "embed"),
-            recognizeExploreLink("https://www.youtube.com/embed")
-        )
+        assertNull(recognizeExploreLink("https://www.youtube.com/embed"))
+        assertNull(recognizeExploreLink("https://www.youtube.com/shorts?v=ignored"))
+        assertNull(recognizeExploreLink("https://m.youtube.com/live"))
         assertNull(recognizeExploreLink("https://www.youtube.com/shorts/%20?v=ignored"))
         assertEquals(
             ExploreLinkTarget.YouTubeVideo(videoId = "abc"),

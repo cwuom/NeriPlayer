@@ -200,7 +200,7 @@ private fun recognizeYouTubeLink(uri: URI): ExploreLinkTarget? {
 private fun youTubeVideoId(host: String?, path: String, params: Map<String, String>): String? {
     if (host == "youtu.be") return youtuBeVideoId(path)
     val section = youTubeVideoPathSection(path) ?: return params.nonBlank("v")
-    return path.substringAfter("$section/").takeIf { it.isNotBlank() }
+    return path.substringAfter("$section/", missingDelimiterValue = "").takeIf { it.isNotBlank() }
 }
 
 private fun youtuBeVideoId(path: String): String? {
