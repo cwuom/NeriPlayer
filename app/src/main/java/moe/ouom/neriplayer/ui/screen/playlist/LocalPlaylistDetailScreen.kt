@@ -68,6 +68,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -197,6 +199,23 @@ internal fun playlistNameFieldValue(text: String, maxLength: Int): TextFieldValu
         text = limited,
         selection = TextRange(limited.length)
     )
+}
+
+@Stable
+internal class PlaylistRenameUiState(
+    val visible: MutableState<Boolean>,
+    val text: MutableState<TextFieldValue>,
+    val error: MutableState<String?>
+)
+
+@Composable
+internal fun rememberPlaylistRenameUiState(name: String, maxLength: Int): PlaylistRenameUiState {
+    val visible = rememberSaveable { mutableStateOf(false) }
+    val text = rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(playlistNameFieldValue(name, maxLength))
+    }
+    val error = rememberSaveable { mutableStateOf<String?>(null) }
+    return remember(visible, text, error) { PlaylistRenameUiState(visible, text, error) }
 }
 
 internal fun areDisplayedSongKeysSelected(
@@ -499,8 +518,9 @@ fun LocalPlaylistDetailScreen(
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
             var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
-            var showSearch by remember { mutableStateOf(false) }
-            var searchQuery by remember { mutableStateOf("") }
+            val searchUiState = rememberPlaylistSearchUiState()
+            var showSearch by searchUiState.visible
+            var searchQuery by searchUiState.query
             var headerSearchFocused by remember { mutableStateOf(false) }
             var dockedSearchFocused by remember { mutableStateOf(false) }
             val searchInputState = rememberPlaylistSearchInputState(
@@ -952,12 +972,11 @@ fun LocalPlaylistDetailScreen(
             val hasCustomBackground = backgroundImageUri != null
 
             // 重命名
-            var showRename by remember { mutableStateOf(false) }
             val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
-            var renameText by remember {
-                mutableStateOf(playlistNameFieldValue(playlist.name, maxNameLength))
-            }
-            var renameError by remember { mutableStateOf<String?>(null) }
+            val renameUiState = rememberPlaylistRenameUiState(playlist.name, maxNameLength)
+            var showRename by renameUiState.visible
+            var renameText by renameUiState.text
+            var renameError by renameUiState.error
             fun normalizedRenameName(input: String): String = input.trim().take(maxNameLength)
             fun isSameRenameName(input: String): Boolean {
                 return normalizedRenameName(input).equals(
