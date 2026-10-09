@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
 
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBarState
@@ -260,8 +259,5 @@ internal fun rememberSettingsNavigationState(
         navigation.activePage, pendingNavigationState.value
     )
     CompletePendingSettingsNavigation(eligiblePendingNavigation, navigation, density)
-    BackHandler(enabled = canNavigateBackFromSettingsPage(navigation.activePage, splitLayout)) {
-        navigation.navigateBack()
-    }
     return navigation
 }

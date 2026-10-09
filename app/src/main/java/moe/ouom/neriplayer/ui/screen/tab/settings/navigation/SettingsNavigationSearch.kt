@@ -22,6 +22,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
  * File: moe.ouom.neriplayer.ui.screen.tab.settings.navigation/SettingsNavigationSearch
  */
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -145,14 +146,17 @@ internal fun SettingsPageHost(
     activePage: SettingsPage?,
     splitLayout: Boolean,
     isolateAdvancedGlassTransitions: Boolean,
+    backEnabled: Boolean,
+    onBack: () -> Unit,
     content: @Composable (SettingsPage?) -> Unit
 ) {
     if (splitLayout) {
+        BackHandler(enabled = backEnabled, onBack = onBack)
         AdvancedGlassScene(active = true) {
             content(activePage)
         }
     } else {
-        SettingsStackedPageHost(activePage, isolateAdvancedGlassTransitions, content)
+        SettingsStackedPageHost(activePage, isolateAdvancedGlassTransitions, backEnabled, onBack, content)
     }
 }
 
@@ -160,9 +164,12 @@ internal fun SettingsPageHost(
 private fun SettingsStackedPageHost(
     activePage: SettingsPage?,
     isolateAdvancedGlassTransitions: Boolean,
+    backEnabled: Boolean,
+    onBack: () -> Unit,
     content: @Composable (SettingsPage?) -> Unit
 ) {
     if (shouldUseTabletSettingsTransitions(LocalConfiguration.current.smallestScreenWidthDp)) {
+        BackHandler(enabled = backEnabled, onBack = onBack)
         SettingsPageTransitionHost(
             activePage = activePage,
             isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
@@ -172,6 +179,8 @@ private fun SettingsStackedPageHost(
         PhoneSettingsPageTransitionHost(
             activePage = activePage,
             isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            backEnabled = backEnabled,
+            onBack = onBack,
             content = content
         )
     }

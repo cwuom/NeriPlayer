@@ -32,7 +32,6 @@ import android.content.res.Configuration
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.PowerManager
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
@@ -254,8 +253,6 @@ fun LyricsScreen(
     offlineMode: Boolean = false,
     lyricsAdjustBehavior: Boolean = false,
 ) {
-    // 处理返回键
-    BackHandler(onBack = onNavigateBack)
     val lyricFontScale = lyricFontScales.lyricsPageLyric
     val translationFontScale = lyricFontScales.lyricsPageTranslation
 

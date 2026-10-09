@@ -37,6 +37,8 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassSceneOpacity
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
 
 internal const val SETTINGS_PAGE_ENTER_DURATION_MS = 300
 // 旧页稍慢退场，让新页接上时画面和模糊遮罩保持连续
@@ -142,12 +144,20 @@ internal fun SettingsPageTransitionHost(
 internal fun PhoneSettingsPageTransitionHost(
     activePage: SettingsPage?,
     isolateAdvancedGlassTransitions: Boolean,
+    backEnabled: Boolean,
+    onBack: () -> Unit,
     content: @Composable (SettingsPage?) -> Unit
 ) {
-    AnimatedContent(
+    // 返回手势按进度拖动同一个横向转场，松手后返回上一级，取消时回弹
+    val pageTransition = rememberHostPredictiveBackTransition(
         targetState = activePage,
+        backEnabled = backEnabled,
+        backTargetState = activePage?.backTargetPage(),
+        onBack = { onBack() },
+        label = "settings_page_switch"
+    )
+    pageTransition.AnimatedContent(
         modifier = Modifier.fillMaxSize(),
-        label = "settings_page_switch",
         transitionSpec = {
             isolatedAdvancedGlassHorizontalTransition(
                 forward = isForwardSettingsPageTransition(initialState, targetState)

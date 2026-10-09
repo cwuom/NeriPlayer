@@ -140,6 +140,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsDownloadsPageI
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageCacheDetailsItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStoragePageItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageProcessingItem
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.canNavigateBackFromSettingsPage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1086,6 +1087,8 @@ internal fun SettingsScreen(
         activePage = activeSettingsPage,
         splitLayout = isSettingsSplitLayout,
         isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+        backEnabled = canNavigateBackFromSettingsPage(activeSettingsPage, isSettingsSplitLayout),
+        onBack = ::navigateBackFromActiveSettingsPage,
         content = settingsPageContent
     )
 
