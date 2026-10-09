@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.playback.visual
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -28,7 +27,10 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
 import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
+import moe.ouom.neriplayer.ui.component.common.predictiveDismissTransform
+import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 
@@ -99,8 +101,10 @@ internal fun AppNowPlayingOverlay(
     val focusManager = LocalFocusManager.current
     val textToolbar = LocalTextToolbar.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val dismissState = rememberPredictiveDismissState()
     LaunchedEffect(visible) {
         if (visible) {
+            dismissState.reset()
             releaseNowPlayingInputSession(focusManager, textToolbar, keyboardController)
         }
     }
@@ -131,11 +135,12 @@ internal fun AppNowPlayingOverlay(
             paletteStyle = theme.paletteStyle,
             colorSpec = theme.colorSpec
         ) {
-            BackHandler(onBack = onClose)
+            PredictiveDismissHandler(state = dismissState, onDismiss = onClose)
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .predictiveDismissTransform(dismissState)
                     .blockUnderlyingTouches()
             ) {
                 NowPlayingBackdrop(
