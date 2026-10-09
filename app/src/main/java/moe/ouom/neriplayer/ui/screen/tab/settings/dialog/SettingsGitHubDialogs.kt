@@ -37,9 +37,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +60,26 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.sync.upgrade.syncProtocolStartupConfigurationGate
+
+@Stable
+internal class GitHubConfigDraft(
+    val token: MutableState<String>,
+    val newRepoName: MutableState<String>,
+    val useExistingRepo: MutableState<Boolean>,
+    val existingRepoName: MutableState<String>
+)
+
+/** The token is deliberately kept out of saved instance state. */
+@Composable
+internal fun rememberGitHubConfigDraft(): GitHubConfigDraft {
+    val token = remember { mutableStateOf("") }
+    val newRepoName = rememberSaveable { mutableStateOf("neriplayer-backup") }
+    val useExistingRepo = rememberSaveable { mutableStateOf(false) }
+    val existingRepoName = rememberSaveable { mutableStateOf("") }
+    return remember(token, newRepoName, useExistingRepo, existingRepoName) {
+        GitHubConfigDraft(token, newRepoName, useExistingRepo, existingRepoName)
+    }
+}
 
 @Composable
 internal fun SettingsGitHubDialogs(
@@ -82,12 +105,11 @@ internal fun SettingsGitHubDialogs(
 
     if (showGitHubConfigDialog) {
         val githubState by githubVm.uiState.collectAsStateWithLifecycleCompat()
-        var githubToken by remember(showGitHubConfigDialog) { mutableStateOf("") }
-        var githubRepoName by remember(showGitHubConfigDialog) {
-            mutableStateOf("neriplayer-backup")
-        }
-        var useExistingRepo by remember(showGitHubConfigDialog) { mutableStateOf(false) }
-        var existingRepoName by remember(showGitHubConfigDialog) { mutableStateOf("") }
+        val draft = rememberGitHubConfigDraft()
+        var githubToken by draft.token
+        var githubRepoName by draft.newRepoName
+        var useExistingRepo by draft.useExistingRepo
+        var existingRepoName by draft.existingRepoName
 
         val dismissConfigDialog = {
             githubVm.clearMessages()
