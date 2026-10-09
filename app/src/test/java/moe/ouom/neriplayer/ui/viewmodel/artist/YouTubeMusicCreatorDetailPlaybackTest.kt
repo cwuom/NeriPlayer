@@ -89,10 +89,12 @@ class YouTubeMusicCreatorDetailPlaybackTest {
     }
 
     @Test
-    fun `a slow section load shows loading and is dropped when the creator changes`() = runTest {
+    fun `a slow section load shows loading and ignores taps until the queue arrives`() = runTest {
         val viewModel = loadedViewModel()
         val gate = CompletableDeferred<Unit>()
+        val requestedTitles = mutableListOf<String>()
         viewModel.fetchCreatorItems = { _, title ->
+            requestedTitles += title
             gate.await()
             YouTubeMusicCreatorItemsPage(title = title, items = listOf(song(2)))
         }
@@ -101,18 +103,21 @@ class YouTubeMusicCreatorDetailPlaybackTest {
             items = listOf(song(1)),
             moreEndpoint = YouTubeMusicCreatorBrowseEndpoint("UC_a", "songs")
         )
+        val otherSection = section.copy(title = "Singles")
 
         viewModel.playSectionSong(section, song(1))
         runCurrent()
         assertEquals(youtubeMusicCreatorSectionKey(section), viewModel.uiState.value.playbackQueueLoadingSectionKey)
 
-        viewModel.start(creator("UC_b"))
+        viewModel.playSectionSong(otherSection, song(1))
+        val queue = async { viewModel.playbackRequests.first() }
+        runCurrent()
         gate.complete(Unit)
-        val reloaded = viewModel.uiState.first { !it.loading }
 
-        assertEquals("UC_b", reloaded.detail?.header?.browseId)
-        assertNull(reloaded.playbackQueueLoadingSectionKey)
-        assertNull(reloaded.playbackQueueError)
+        assertEquals(listOf("Song 1", "Song 2"), queue.await().songs.map { it.name })
+        assertEquals(listOf("Songs"), requestedTitles)
+        runCurrent()
+        assertNull(viewModel.uiState.value.playbackQueueLoadingSectionKey)
     }
 
     private suspend fun TestScope.loadedViewModel(): YouTubeMusicCreatorDetailViewModel {
