@@ -270,13 +270,9 @@ fun LocalAudioImportManager.mergeFolderScanResults(
 }
 
 private fun folderScanFallbackKey(song: SongItem): String? {
-    val fileName = song.localFileName
-        ?.trim()
-        ?.lowercase(Locale.ROOT)
-        ?.takeIf(String::isNotBlank)
-        ?: return null
-    val durationMs = song.durationMs.takeIf { it > 0L } ?: return null
-    return "$fileName|$durationMs"
+    val fileName = song.localFileName.orEmpty().trim().lowercase(Locale.ROOT)
+    if (fileName.isBlank() || song.durationMs <= 0L) return null
+    return "$fileName|${song.durationMs}"
 }
 
 internal fun LocalAudioImportManager.buildKnownManagedSidecarReferences(
