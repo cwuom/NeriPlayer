@@ -180,6 +180,15 @@ class PlayHistoryRepository private constructor(
 
     internal suspend fun awaitInitialLoad() = initialLoad.join()
 
+    /** 冷启动时历史在后台加载，加载完成前 [rememberedPlaybackPosition] 只能返回 0 */
+    val isHistoryLoaded: Boolean
+        get() = initialized
+
+    suspend fun awaitHistoryLoaded(): Boolean {
+        initialLoad.join()
+        return initialized
+    }
+
     private suspend fun loadTrustedHistory(): List<PlayedEntry> {
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore

@@ -618,6 +618,7 @@ internal fun PlayerManager.playAtIndex(
     cancelGenericUrlPrefetchUnlessReusableForSong(song, reason = "play_at_index")
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
+    resumeLongFormWhenHistoryLoads(song, allowRememberedLongFormPosition, requestToken)
     BiliSponsorBlockPlaybackController.onPlaybackRequestStarted(song, requestToken)
     BiliVideoSkipPlaybackController.onPlaybackRequestStarted(song, requestToken)
     if (isBiliTrack(song) && !isListenTogetherActive()) {
