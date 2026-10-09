@@ -1085,8 +1085,7 @@ private fun boxBlurPass(
             var green = 0
             var blue = 0
             var count = 0
-            var offset = -radius
-            while (offset <= radius) {
+            for (offset in -radius..radius) {
                 val sampleIndex = if (horizontal) {
                     y * bitmapWidth + (x + offset).coerceIn(0, bitmapWidth - 1)
                 } else {
@@ -1098,7 +1097,6 @@ private fun boxBlurPass(
                 green += AndroidColor.green(color)
                 blue += AndroidColor.blue(color)
                 count += 1
-                offset += 1
             }
             target[y * bitmapWidth + x] = AndroidColor.argb(
                 alpha / count,
