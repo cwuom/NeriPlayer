@@ -489,7 +489,9 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
             } else {
                 SettingsPageTransitionHost(
                     activePage = selectedPage,
-                    isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions
+                    isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+                    backEnabled = showSplitDetailBackButton,
+                    onBack = onBack
                 ) { page ->
                     if (page != null) {
                         MiuixSettingsDetailScaffold(

@@ -22,7 +22,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
  * File: moe.ouom.neriplayer.ui.screen.tab.settings.navigation/SettingsNavigationSearch
  */
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -151,7 +150,7 @@ internal fun SettingsPageHost(
     content: @Composable (SettingsPage?) -> Unit
 ) {
     if (splitLayout) {
-        BackHandler(enabled = backEnabled, onBack = onBack)
+        // 分栏详情页的返回手势由 MiuixSettingsScaffold 里的转场处理
         AdvancedGlassScene(active = true) {
             content(activePage)
         }
@@ -169,10 +168,11 @@ private fun SettingsStackedPageHost(
     content: @Composable (SettingsPage?) -> Unit
 ) {
     if (shouldUseTabletSettingsTransitions(LocalConfiguration.current.smallestScreenWidthDp)) {
-        BackHandler(enabled = backEnabled, onBack = onBack)
         SettingsPageTransitionHost(
             activePage = activePage,
             isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            backEnabled = backEnabled,
+            onBack = onBack,
             content = content
         )
     } else {
