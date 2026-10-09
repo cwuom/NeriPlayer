@@ -44,7 +44,6 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.net.toUri
@@ -97,6 +96,10 @@ class BiliWebLoginActivity : ComponentActivity() {
     }
 
     private lateinit var webView: WebView
+    private val webBackNavigation = WebLoginBackNavigation(
+        canGoBack = { this::webView.isInitialized && webView.canGoBack() },
+        goBack = { webView.goBack() }
+    )
     private lateinit var toolbar: MaterialToolbar
     private var foregroundWebLoginToken: AutoCloseable? = null
     private var hasReturned = false
@@ -183,18 +186,7 @@ class BiliWebLoginActivity : ComponentActivity() {
             insets
         }
 
-        onBackPressedDispatcher.addCallback(
-            this,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    if (this@BiliWebLoginActivity::webView.isInitialized && webView.canGoBack()) {
-                        webView.goBack()
-                    } else {
-                        finish()
-                    }
-                }
-            }
-        )
+        onBackPressedDispatcher.addCallback(this, webBackNavigation.callback)
 
         loginCompletionWatcher.start()
         reloadLoginPage("create")
@@ -348,6 +340,11 @@ class BiliWebLoginActivity : ComponentActivity() {
     }
 
     private inner class InnerClient : WebViewClient() {
+        override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+            super.doUpdateVisitedHistory(view, url, isReload)
+            webBackNavigation.refresh()
+        }
+
 
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val currentRequest = request ?: return false
