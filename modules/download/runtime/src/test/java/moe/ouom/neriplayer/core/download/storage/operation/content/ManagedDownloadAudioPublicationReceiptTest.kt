@@ -148,6 +148,28 @@ class ManagedDownloadAudioPublicationReceiptTest {
     }
 
     @Test
+    fun `publication owner falls back from explicit owner to cleanup token to legacy key`() {
+        fun pending(json: JSONObject) = json.put("audioPublicationPending", true).toString()
+        fun preserved(previous: String, incoming: JSONObject) =
+            JSONObject(preserveAudioPublicationReceipt(previous, incoming.toString())).optBoolean("audioPublicationPending")
+
+        val explicitOwner = pending(identity().put("audioPublicationOwnerId", "owner-1"))
+        assertTrue(preserved(explicitOwner, identity(operationId = "op-2").put("audioPublicationOwnerId", "owner-1")))
+        assertFalse(preserved(explicitOwner, identity()))
+
+        val token = JSONObject().put("stableKey", STABLE_KEY).put("terminalTemporaryWriteCleanupToken", "tok")
+        assertTrue(preserved(pending(JSONObject(token.toString())), token))
+
+        val legacy = JSONObject().put("stableKey", STABLE_KEY)
+        assertTrue(preserved(pending(JSONObject(legacy.toString())), legacy))
+
+        val otherSong = identity().put("stableKey", "2|Album|")
+        assertEquals(otherSong.toString(), preserveAudioPublicationReceipt(pending(identity()), otherSong.toString()))
+        val keyless = pending(JSONObject().put("operationId", "op-1"))
+        assertEquals(identity().toString(), preserveAudioPublicationReceipt(keyless, identity().toString()))
+    }
+
+    @Test
     fun `publication references compare documents rather than raw strings`() {
         val document = "content://com.example.docs/tree/root/document/primary%3ASong.mp3"
         val sameDocument = "content://com.example.docs/document/primary%3ASong.mp3"

@@ -40,6 +40,7 @@ class ManagedDownloadStorageFacadeDefaultRootTest {
     /** Context-free invalidation: a context would schedule Room snapshot jobs that cannot open outside the app process. */
     @After
     fun tearDown() {
+        storage.settings.updateDirectoryUri(null)
         storage.clearTreeDirectoryCache()
         storage.invalidateSnapshotCache()
     }
@@ -159,6 +160,31 @@ class ManagedDownloadStorageFacadeDefaultRootTest {
     }
 
     @Test
+    fun `configured tree without persisted permission is unavailable but keeps its identity`() = runTest {
+        assertEquals("file:${rootDir.absolutePath}", storage.currentSnapshotRootKey(context))
+
+        storage.settings.updateDirectoryUri(UNGRANTED_TREE_URI)
+
+        assertEquals(ManagedDownloadRootProbeResult.Unavailable, storage.probeStorageRoot(context))
+        val treeKey = storage.currentSnapshotRootKey(context)
+        assertTrue(treeKey.startsWith("tree:"))
+        assertEquals(storage.settings.snapshotCacheKey(context), treeKey)
+    }
+
+    @Test
+    fun `operation source directories resolve to root keys only when usable`() = runTest {
+        assertNull(storage.snapshotRootKeyForOperation(context, UNGRANTED_TREE_URI))
+        assertEquals(
+            "file:${rootDir.absolutePath}",
+            storage.snapshotRootKeyForOperation(context, " ", useDefaultRootWhenDirectoryUriMissing = true)
+        )
+        assertEquals("file:${rootDir.absolutePath}", storage.snapshotRootKeyForOperation(context))
+
+        val audio = StoredEntry("Song.mp3", "/x", "/x", null, 1L, 0L)
+        assertNull(storage.readDownloadedMetadataFromRoot(context, audio, directoryUri = UNGRANTED_TREE_URI))
+    }
+
+    @Test
     fun `pending metadata is written to the temporary root and read back`() = runTest {
         val json = """{"stableKey":"1|Album|","name":"Song","operationId":"op-1"}"""
         val pendingAudio = StoredEntry("Song.mp3.npdl_pending.op-1.pending", "/x", "/x", null, 0L, 0L)
@@ -219,5 +245,9 @@ class ManagedDownloadStorageFacadeDefaultRootTest {
 
     private fun fileEntry(file: File): StoredEntry {
         return StoredEntry(file.name, file.absolutePath, file.absolutePath, file.absolutePath, file.length(), file.lastModified())
+    }
+
+    private companion object {
+        const val UNGRANTED_TREE_URI = "content://com.android.externalstorage.documents/tree/primary%3AMusic"
     }
 }
