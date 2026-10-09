@@ -1320,20 +1320,20 @@ private fun Modifier.onboardingLyricEdgeFade(
 }
 
 internal fun resolveOnboardingCoverPreviewLineCount(scale: Float): Int {
-    return when (normalizeLyricFontScale(scale)) {
-        in MIN_LYRIC_FONT_SCALE..0.74f -> 8
-        in 0.74f..0.94f -> 6
-        in 0.94f..1.16f -> 3
-        in 1.16f..1.38f -> 3
+    val normalizedScale = normalizeLyricFontScale(scale)
+    return when {
+        normalizedScale <= 0.74f -> 8
+        normalizedScale <= 0.94f -> 6
         else -> 3
     }
 }
 
 internal fun resolveOnboardingPlaybackPreviewLyricHeight(scale: Float): Dp {
-    return when (normalizeLyricFontScale(scale)) {
-        in MIN_LYRIC_FONT_SCALE..0.74f -> 136.dp
-        in 0.74f..0.94f -> 124.dp
-        in 0.94f..1.16f -> 112.dp
+    val normalizedScale = normalizeLyricFontScale(scale)
+    return when {
+        normalizedScale <= 0.74f -> 136.dp
+        normalizedScale <= 0.94f -> 124.dp
+        normalizedScale <= 1.16f -> 112.dp
         else -> 120.dp
     }
 }

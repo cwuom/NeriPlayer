@@ -1059,64 +1059,55 @@ private fun Bitmap.boxBlur(
     return working
 }
 
-private fun Bitmap.boxBlurOnce(radius: Int) {
+internal fun Bitmap.boxBlurOnce(radius: Int) {
     val bitmapWidth = width
     val bitmapHeight = height
     val pixels = IntArray(bitmapWidth * bitmapHeight)
     val temp = IntArray(bitmapWidth * bitmapHeight)
     getPixels(pixels, 0, bitmapWidth, 0, 0, bitmapWidth, bitmapHeight)
-
-    for (y in 0 until bitmapHeight) {
-        for (x in 0 until bitmapWidth) {
-            var alpha = 0
-            var red = 0
-            var green = 0
-            var blue = 0
-            var count = 0
-            for (offset in -radius..radius) {
-                val sampleX = (x + offset).coerceIn(0, bitmapWidth - 1)
-                val color = pixels[y * bitmapWidth + sampleX]
-                alpha += AndroidColor.alpha(color)
-                red += AndroidColor.red(color)
-                green += AndroidColor.green(color)
-                blue += AndroidColor.blue(color)
-                count += 1
-            }
-            temp[y * bitmapWidth + x] = AndroidColor.argb(
-                alpha / count,
-                red / count,
-                green / count,
-                blue / count
-            )
-        }
-    }
-
-    for (y in 0 until bitmapHeight) {
-        for (x in 0 until bitmapWidth) {
-            var alpha = 0
-            var red = 0
-            var green = 0
-            var blue = 0
-            var count = 0
-            for (offset in -radius..radius) {
-                val sampleY = (y + offset).coerceIn(0, bitmapHeight - 1)
-                val color = temp[sampleY * bitmapWidth + x]
-                alpha += AndroidColor.alpha(color)
-                red += AndroidColor.red(color)
-                green += AndroidColor.green(color)
-                blue += AndroidColor.blue(color)
-                count += 1
-            }
-            pixels[y * bitmapWidth + x] = AndroidColor.argb(
-                alpha / count,
-                red / count,
-                green / count,
-                blue / count
-            )
-        }
-    }
-
+    boxBlurPass(pixels, temp, bitmapWidth, bitmapHeight, radius, horizontal = true)
+    boxBlurPass(temp, pixels, bitmapWidth, bitmapHeight, radius, horizontal = false)
     setPixels(pixels, 0, bitmapWidth, 0, 0, bitmapWidth, bitmapHeight)
+}
+
+private fun boxBlurPass(
+    source: IntArray,
+    target: IntArray,
+    bitmapWidth: Int,
+    bitmapHeight: Int,
+    radius: Int,
+    horizontal: Boolean
+) {
+    for (y in 0 until bitmapHeight) {
+        for (x in 0 until bitmapWidth) {
+            var alpha = 0
+            var red = 0
+            var green = 0
+            var blue = 0
+            var count = 0
+            var offset = -radius
+            while (offset <= radius) {
+                val sampleIndex = if (horizontal) {
+                    y * bitmapWidth + (x + offset).coerceIn(0, bitmapWidth - 1)
+                } else {
+                    (y + offset).coerceIn(0, bitmapHeight - 1) * bitmapWidth + x
+                }
+                val color = source[sampleIndex]
+                alpha += AndroidColor.alpha(color)
+                red += AndroidColor.red(color)
+                green += AndroidColor.green(color)
+                blue += AndroidColor.blue(color)
+                count += 1
+                offset += 1
+            }
+            target[y * bitmapWidth + x] = AndroidColor.argb(
+                alpha / count,
+                red / count,
+                green / count,
+                blue / count
+            )
+        }
+    }
 }
 
 private fun buildLyricCardShareText(

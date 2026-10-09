@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.component.playback
 
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -82,12 +83,12 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
-import coil.compose.AsyncImagePainter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -171,33 +172,25 @@ internal fun resolveMiniPlayerTextAutoSizeRange(
     )
 }
 
+internal fun resolveMiniPlayerBaseFontSizeSp(fontSize: TextUnit): Float {
+    val value = fontSize.value
+    return if (fontSize.isSp && value.isFinite() && value > 0f) value else 16f
+}
+
 @Composable
-private fun rememberMiniPlayerTextAutoSizeRange(
+private fun currentMiniPlayerTextAutoSizeRange(
     style: TextStyle,
     maxLineHeightDp: Float,
     minVisualFontSizeSp: Float,
     lineHeightEm: Float
 ): MiniPlayerTextAutoSizeRange {
-    val fontScale = LocalDensity.current.fontScale
-    val baseFontSizeSp = style.fontSize.value.takeIf {
-        style.fontSize.isSp && it.isFinite() && it > 0f
-    } ?: 16f
-    val range = remember(
-        baseFontSizeSp,
-        maxLineHeightDp,
-        fontScale,
-        minVisualFontSizeSp,
-        lineHeightEm
-    ) {
-        resolveMiniPlayerTextAutoSizeRange(
-            baseFontSizeSp = baseFontSizeSp,
-            maxLineHeightDp = maxLineHeightDp,
-            fontScale = fontScale,
-            minVisualFontSizeSp = minVisualFontSizeSp,
-            lineHeightEm = lineHeightEm
-        )
-    }
-    return range
+    return resolveMiniPlayerTextAutoSizeRange(
+        baseFontSizeSp = resolveMiniPlayerBaseFontSizeSp(style.fontSize),
+        maxLineHeightDp = maxLineHeightDp,
+        fontScale = LocalDensity.current.fontScale,
+        minVisualFontSizeSp = minVisualFontSizeSp,
+        lineHeightEm = lineHeightEm
+    )
 }
 
 @Composable
@@ -214,7 +207,7 @@ private fun rememberMiniPlayerTextAutoSize(
     }
 }
 
-private fun TextStyle.miniPlayerLineHeightEm(): Float {
+internal fun TextStyle.miniPlayerLineHeightEm(): Float {
     val fontSizeUnit = fontSize
     val lineHeightUnit = lineHeight
     val fontSizeValue = fontSizeUnit.value
@@ -235,14 +228,16 @@ private fun TextStyle.withMiniPlayerLineHeight(lineHeightEm: Float): TextStyle =
     lineHeight = lineHeightEm.em
 )
 
+private fun String?.trimmedNonEmptyOrNull(): String? = this?.trim()?.takeIf(String::isNotEmpty)
+
 internal fun resolveMiniPlayerDisplayedCoverUrl(
     requestedCoverUrl: String?,
     displayedCoverUrl: String?,
     requestSucceeded: Boolean,
     clearDelayElapsed: Boolean = false
 ): String? {
-    val requested = requestedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    val displayed = displayedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    val requested = requestedCoverUrl.trimmedNonEmptyOrNull()
+    val displayed = displayedCoverUrl.trimmedNonEmptyOrNull()
     return when {
         requested == null && clearDelayElapsed -> null
         requested == null -> displayed
@@ -265,10 +260,7 @@ internal fun miniPlayerCoverIdentityKey(
     identityKey: String?,
     coverUrl: String?
 ): String? {
-    return identityKey
-        ?.trim()
-        ?.takeIf(String::isNotEmpty)
-        ?: coverUrl?.trim()?.takeIf(String::isNotEmpty)
+    return identityKey.trimmedNonEmptyOrNull() ?: coverUrl.trimmedNonEmptyOrNull()
 }
 
 internal fun sameMiniPlayerCoverRequest(
@@ -305,9 +297,7 @@ internal fun shouldCommitMiniPlayerCoverFrame(
     }
     val retainedFrame = latestRetainedFrame ?: return false
     if (!sameMiniPlayerCoverRequest(completedFrame, retainedFrame)) return false
-    val normalizedCurrentIdentity = currentIdentityKey
-        ?.trim()
-        ?.takeIf(String::isNotEmpty)
+    val normalizedCurrentIdentity = currentIdentityKey.trimmedNonEmptyOrNull()
     return normalizedCurrentIdentity == null ||
         completedFrame.identityKey == normalizedCurrentIdentity
 }
@@ -334,42 +324,48 @@ internal fun resolveMiniPlayerVisibleCoverFrame(
     failedFrame: MiniPlayerCoverFrame? = null,
     clearRetainedFrame: Boolean = false
 ): MiniPlayerCoverFrame? {
-    if (!hasCurrentSong) return null
-    if (clearRetainedFrame) return null
-    val retainedCandidate = cachedFrame ?: displayedFrame ?: retainedFrame
-    val retained = if (
-        retainedCandidate != null &&
-            requestedFrame != null &&
-            retainedCandidate.decodedBitmap == null &&
-            sameMiniPlayerCoverFrame(retainedCandidate, requestedFrame)
-    ) {
-        requestedFrame
-    } else {
-        retainedCandidate
-    }
-    if (retained?.decodedBitmap != null) {
-        return retained
-    }
+    if (!hasCurrentSong || clearRetainedFrame) return null
+    val retained = resolveMiniPlayerRetainedCoverFrame(
+        requestedFrame = requestedFrame,
+        cachedFrame = cachedFrame,
+        displayedFrame = displayedFrame,
+        retainedFrame = retainedFrame
+    )
     if (
         retained != null &&
-        (failedFrame == null || !sameMiniPlayerCoverRequest(retained, failedFrame))
+        (retained.decodedBitmap != null || !isFailedMiniPlayerCoverRequest(retained, failedFrame))
     ) {
         return retained
     }
-    return requestedFrame?.takeUnless { frame ->
-        failedFrame != null && sameMiniPlayerCoverRequest(frame, failedFrame)
-    }
+    return requestedFrame?.takeUnless { frame -> isFailedMiniPlayerCoverRequest(frame, failedFrame) }
 }
+
+// 尚未解码的旧封面若与新请求是同一张图, 改用新请求的令牌, 避免旧回调覆盖新请求
+private fun resolveMiniPlayerRetainedCoverFrame(
+    requestedFrame: MiniPlayerCoverFrame?,
+    cachedFrame: MiniPlayerCoverFrame?,
+    displayedFrame: MiniPlayerCoverFrame?,
+    retainedFrame: MiniPlayerCoverFrame?
+): MiniPlayerCoverFrame? {
+    val retainedCandidate = cachedFrame ?: displayedFrame ?: retainedFrame
+    val adoptRequest = retainedCandidate != null &&
+        requestedFrame != null &&
+        retainedCandidate.decodedBitmap == null &&
+        sameMiniPlayerCoverFrame(retainedCandidate, requestedFrame)
+    return if (adoptRequest) requestedFrame else retainedCandidate
+}
+
+private fun isFailedMiniPlayerCoverRequest(
+    frame: MiniPlayerCoverFrame,
+    failedFrame: MiniPlayerCoverFrame?
+): Boolean = failedFrame != null && sameMiniPlayerCoverRequest(frame, failedFrame)
 
 internal fun miniPlayerCoverCacheKey(frame: MiniPlayerCoverFrame): String {
     return "${frame.identityKey}|data=${frame.coverUrl}"
 }
 
-private fun resolveMiniPlayerCoverBitmap(
-    state: AsyncImagePainter.State.Success
-): ImageBitmap? {
+internal fun resolveMiniPlayerCoverBitmap(drawable: Drawable): ImageBitmap? {
     return runCatching {
-        val drawable = state.result.drawable
         val maxDimension = MINI_PLAYER_COVER_BITMAP_MAX_DIMENSION_PX
         if (drawable is BitmapDrawable) {
             val sourceBitmap = drawable.bitmap
@@ -408,7 +404,7 @@ internal fun AutoSizingMiniPlayerText(
     onTextLayout: (TextLayoutResult) -> Unit = {}
 ) {
     val lineHeightEm = style.miniPlayerLineHeightEm()
-    val range = rememberMiniPlayerTextAutoSizeRange(
+    val range = currentMiniPlayerTextAutoSizeRange(
         style = style,
         maxLineHeightDp = maxLineHeightDp,
         minVisualFontSizeSp = minVisualFontSizeSp,
@@ -439,7 +435,7 @@ internal fun EllipsizingMiniPlayerText(
     onTextLayout: (TextLayoutResult) -> Unit = {}
 ) {
     val lineHeightEm = style.miniPlayerLineHeightEm()
-    val range = rememberMiniPlayerTextAutoSizeRange(
+    val range = currentMiniPlayerTextAutoSizeRange(
         style = style,
         maxLineHeightDp = maxLineHeightDp,
         minVisualFontSizeSp = minVisualFontSizeSp,
@@ -486,8 +482,8 @@ fun NeriMiniPlayer(
     val useTabletControls = tabletControls != null &&
         smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
     val shape = if (useTabletControls) RectangleShape else RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-    val requestedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    val retainedCoverUrl = visualCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    val requestedCoverUrl = coverUrl.trimmedNonEmptyOrNull()
+    val retainedCoverUrl = visualCoverUrl.trimmedNonEmptyOrNull()
     val requestedIdentityKey = miniPlayerCoverIdentityKey(
         identityKey = coverIdentityKey,
         coverUrl = requestedCoverUrl
@@ -760,7 +756,7 @@ fun NeriMiniPlayer(
                             .matchParentSize()
                             .clip(RoundedCornerShape(8.dp)),
                         onSuccess = { state ->
-                            val bitmap = resolveMiniPlayerCoverBitmap(state)
+                            val bitmap = resolveMiniPlayerCoverBitmap(state.result.drawable)
                             if (bitmap != null &&
                                 shouldCommitMiniPlayerCoverFrame(
                                     completedFrame = visibleFrame,
@@ -800,7 +796,7 @@ fun NeriMiniPlayer(
                             .matchParentSize()
                             .graphicsLayer { alpha = 0f },
                         onSuccess = { state ->
-                            resolveMiniPlayerCoverBitmap(state)?.let { bitmap ->
+                            resolveMiniPlayerCoverBitmap(state.result.drawable)?.let { bitmap ->
                                 publishDecodedFrame(requestedFrame, bitmap)
                             } ?: rejectCoverFrame(requestedFrame)
                         },
