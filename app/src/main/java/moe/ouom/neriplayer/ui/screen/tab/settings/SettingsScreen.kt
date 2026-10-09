@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -203,9 +204,9 @@ internal fun SettingsScreen(
 
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var showDpiDialog by remember { mutableStateOf(false) }
-    var showGitHubConfigDialog by remember { mutableStateOf(false) }
+    var showGitHubConfigDialog by rememberSaveable { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
-    var showWebDavConfigDialog by remember { mutableStateOf(false) }
+    var showWebDavConfigDialog by rememberSaveable { mutableStateOf(false) }
     var showClearWebDavConfigDialog by remember { mutableStateOf(false) }
     // ------------------------------------
 

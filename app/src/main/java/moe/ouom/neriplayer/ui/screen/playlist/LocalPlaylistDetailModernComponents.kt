@@ -37,12 +37,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -276,6 +278,19 @@ internal fun resolvePlaylistSearchInputSyncValue(
         )
         else -> null
     }
+}
+
+@Stable
+internal class PlaylistSearchUiState(
+    val visible: MutableState<Boolean>,
+    val query: MutableState<String>
+)
+
+@Composable
+internal fun rememberPlaylistSearchUiState(): PlaylistSearchUiState {
+    val visible = rememberSaveable { mutableStateOf(false) }
+    val query = rememberSaveable { mutableStateOf("") }
+    return remember(visible, query) { PlaylistSearchUiState(visible, query) }
 }
 
 @Composable

@@ -2,8 +2,10 @@ package moe.ouom.neriplayer.ui.screen.download
 
 import android.content.Context
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -65,25 +67,36 @@ class DownloadManagerContentTest {
         callbacks: Callbacks = Callbacks()
     ): Callbacks {
         composeRule.setContent {
-            DownloadManagerContent(
-                downloadedSongs = songs,
-                legacyPreviewClips = legacyPreviewClips,
-                isRefreshing = isRefreshing,
-                deleteProgress = deleteProgress,
-                deleteFailureDismissed = false,
-                listState = LazyListState(),
-                offlineMode = true,
-                onBack = { callbacks.backCount++ },
-                onOpenDownloadProgress = { callbacks.openProgressCount++ },
-                onRefresh = { callbacks.refreshCount++ },
-                onDismissDeleteFailure = { callbacks.dismissedFailures += it },
-                onDeleteSongs = { selected, deleteEntireLibrary, onResult ->
-                    callbacks.deleteCalls += DeleteCall(selected, deleteEntireLibrary, onResult)
-                },
-                onPlaySong = { callbacks.played += it }
-            )
+            TestContent(songs, legacyPreviewClips, isRefreshing, deleteProgress, callbacks)
         }
         return callbacks
+    }
+
+    @Composable
+    private fun TestContent(
+        songs: List<DownloadedSong>,
+        legacyPreviewClips: Map<String, Long> = emptyMap(),
+        isRefreshing: Boolean = false,
+        deleteProgress: DownloadedSongDeleteProgress? = null,
+        callbacks: Callbacks = Callbacks()
+    ) {
+        DownloadManagerContent(
+            downloadedSongs = songs,
+            legacyPreviewClips = legacyPreviewClips,
+            isRefreshing = isRefreshing,
+            deleteProgress = deleteProgress,
+            deleteFailureDismissed = false,
+            listState = LazyListState(),
+            offlineMode = true,
+            onBack = { callbacks.backCount++ },
+            onOpenDownloadProgress = { callbacks.openProgressCount++ },
+            onRefresh = { callbacks.refreshCount++ },
+            onDismissDeleteFailure = { callbacks.dismissedFailures += it },
+            onDeleteSongs = { selected, deleteEntireLibrary, onResult ->
+                callbacks.deleteCalls += DeleteCall(selected, deleteEntireLibrary, onResult)
+            },
+            onPlaySong = { callbacks.played += it }
+        )
     }
 
     private fun string(id: Int, vararg args: Any): String = context.getString(id, *args)
@@ -129,6 +142,22 @@ class DownloadManagerContentTest {
         composeRule.onNodeWithText(string(CoreCommonR.string.download_no_match)).assertIsDisplayed()
         composeRule.onNodeWithText(string(CoreCommonR.string.download_try_other_keywords))
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun `search query survives saved instance state restore`() {
+        val tester = StateRestorationTester(composeRule)
+        tester.setContent { TestContent(songs = listOf(alpha, beta)) }
+
+        composeRule.onNodeWithText(string(CoreCommonR.string.download_search_hint))
+            .performTextInput("northern")
+        composeRule.onNodeWithText("Beta Track").assertDoesNotExist()
+
+        tester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("northern").assertIsDisplayed()
+        composeRule.onNodeWithText("Alpha Track").assertIsDisplayed()
+        composeRule.onNodeWithText("Beta Track").assertDoesNotExist()
     }
 
     @Test

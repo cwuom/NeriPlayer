@@ -87,6 +87,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -180,8 +181,8 @@ fun RecentScreen(
     }
 
     // 搜索
-    var showSearch by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
 
     val displayedSongs = remember(baseSongs, query, context) {
         SearchTextMatcher.filterAndRank(query, baseSongs) { song ->
