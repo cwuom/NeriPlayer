@@ -28,6 +28,7 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.common.PredictiveDismissHandler
+import moe.ouom.neriplayer.ui.component.common.PredictiveDismissState
 import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
 import moe.ouom.neriplayer.ui.component.common.predictiveDismissTransform
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
@@ -95,13 +96,13 @@ internal fun AppNowPlayingOverlay(
     background: NowPlayingOverlayBackground,
     onVisibilityChanged: (Boolean) -> Unit,
     onClose: () -> Unit,
+    dismissState: PredictiveDismissState = rememberPredictiveDismissState(),
     content: @Composable () -> Unit
 ) {
     val latestOnVisibilityChanged by rememberUpdatedState(onVisibilityChanged)
     val focusManager = LocalFocusManager.current
     val textToolbar = LocalTextToolbar.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    val dismissState = rememberPredictiveDismissState()
     LaunchedEffect(visible) {
         if (visible) {
             dismissState.reset()

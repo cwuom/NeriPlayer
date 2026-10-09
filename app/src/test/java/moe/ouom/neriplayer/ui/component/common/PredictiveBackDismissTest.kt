@@ -94,20 +94,21 @@ class PredictiveBackDismissTest {
 
     @Test
     fun `transform scales shifts and rounds in proportion to the gesture`() {
-        val idle = predictiveDismissTransform(0f, BackEventCompat.EDGE_LEFT, 1000f, 56f)
+        val idle = predictiveDismissTransform(0f, BackEventCompat.EDGE_LEFT, 1000f, 56f, 16f)
         assertEquals(PredictiveDismissTransform(1f, 0f, 0f), idle)
 
-        val full = predictiveDismissTransform(1f, BackEventCompat.EDGE_LEFT, 1000f, 56f)
+        val full = predictiveDismissTransform(1f, BackEventCompat.EDGE_LEFT, 1000f, 56f, 16f)
         assertEquals(PREDICTIVE_DISMISS_MIN_SCALE, full.scale, 0.0001f)
-        assertEquals(50f, full.translationX, 0.0001f)
+        assertEquals(34f, full.translationX, 0.0001f)
         assertEquals(56f, full.cornerRadius, 0.0001f)
 
-        val rightEdge = predictiveDismissTransform(0.5f, BackEventCompat.EDGE_RIGHT, 1000f, 56f)
+        val rightEdge = predictiveDismissTransform(0.5f, BackEventCompat.EDGE_RIGHT, 1000f, 56f, 16f)
         assertEquals(0.95f, rightEdge.scale, 0.0001f)
-        assertEquals(-25f, rightEdge.translationX, 0.0001f)
+        assertEquals(-17f, rightEdge.translationX, 0.0001f)
         assertEquals(28f, rightEdge.cornerRadius, 0.0001f)
 
-        assertEquals(full, predictiveDismissTransform(3f, BackEventCompat.EDGE_LEFT, 1000f, 56f))
-        assertEquals(idle, predictiveDismissTransform(-1f, BackEventCompat.EDGE_LEFT, 1000f, 56f))
+        assertEquals(full, predictiveDismissTransform(3f, BackEventCompat.EDGE_LEFT, 1000f, 56f, 16f))
+        assertEquals(idle, predictiveDismissTransform(-1f, BackEventCompat.EDGE_LEFT, 1000f, 56f, 16f))
+        assertEquals(0f, predictiveDismissTransform(1f, BackEventCompat.EDGE_LEFT, 200f, 56f, 16f).translationX, 0f)
     }
 }

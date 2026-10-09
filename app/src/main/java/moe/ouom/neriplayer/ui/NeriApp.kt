@@ -227,6 +227,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
+import androidx.compose.runtime.derivedStateOf
 
 private val EmptyLauncherShortcutRequestFlow =
     MutableStateFlow<LauncherShortcutRequest?>(null)
@@ -370,6 +372,11 @@ private fun NeriAppContent(
     )
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var nowPlayingOverlayMounted by remember { mutableStateOf(showNowPlaying) }
+    val nowPlayingDismissState = rememberPredictiveDismissState()
+    // 只在手势开始和结束时重组，拖动过程中不随进度刷新整个应用
+    val nowPlayingBackRevealing by remember(nowPlayingDismissState) {
+        derivedStateOf { nowPlayingDismissState.revealsUnderlying }
+    }
     val latestOnNowPlayingOpenChanged by rememberUpdatedState(onNowPlayingOpenChanged)
     LaunchedEffect(showNowPlaying) {
         // 方向跟随页面状态，不能让旋转重建时的旧覆盖层销毁关闭横屏
@@ -1777,7 +1784,8 @@ private fun NeriAppContent(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
                             currentDestination = backEntry?.destination,
-                            showNowPlaying = shouldSuppressPlaybackNavigation(
+                            // 返回手势拖动正在播放页时，底下露出的应是关闭后的底栏和迷你播放器
+                            showNowPlaying = !nowPlayingBackRevealing && shouldSuppressPlaybackNavigation(
                                 showNowPlaying, nowPlayingOverlayMounted,
                                 LocalConfiguration.current.smallestScreenWidthDp
                             ),
@@ -1901,7 +1909,8 @@ private fun NeriAppContent(
                             nowPlayingOverlayMounted = mounted
                             latestOnNowPlayingVisibilityChanged(mounted)
                         },
-                        onClose = { showNowPlaying = false }
+                        onClose = { showNowPlaying = false },
+                        dismissState = nowPlayingDismissState
                     ) {
                         NowPlayingScreen(
                             onNavigateUp = { showNowPlaying = false },

@@ -26,6 +26,8 @@ internal const val PREDICTIVE_DISMISS_MIN_SCALE = 0.9f
 internal const val PREDICTIVE_DISMISS_SHIFT_FRACTION = 1f / 20f
 internal const val PREDICTIVE_DISMISS_CANCEL_DURATION_MS = 200
 private val PredictiveDismissMaxCorner = 28.dp
+// Material 规范：横向偏移为屏宽的 1/20 再减去 8dp，缩小后两侧都留出缝隙
+private val PredictiveDismissEdgeMargin = 8.dp
 
 internal data class PredictiveDismissTransform(
     val scale: Float,
@@ -37,13 +39,15 @@ internal fun predictiveDismissTransform(
     progress: Float,
     swipeEdge: Int,
     widthPx: Float,
-    maxCornerRadiusPx: Float
+    maxCornerRadiusPx: Float,
+    edgeMarginPx: Float
 ): PredictiveDismissTransform {
     val fraction = progress.coerceIn(0f, 1f)
     val direction = if (swipeEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
+    val maxShift = (widthPx * PREDICTIVE_DISMISS_SHIFT_FRACTION - edgeMarginPx).coerceAtLeast(0f)
     return PredictiveDismissTransform(
         scale = 1f - (1f - PREDICTIVE_DISMISS_MIN_SCALE) * fraction,
-        translationX = direction * widthPx * PREDICTIVE_DISMISS_SHIFT_FRACTION * fraction,
+        translationX = direction * maxShift * fraction,
         cornerRadius = maxCornerRadiusPx * fraction
     )
 }
@@ -56,6 +60,10 @@ internal class PredictiveDismissState {
         internal set
 
     internal var settleJob: Job? = null
+
+    /** 手势开始后底层界面应按关闭后的样子显示；松手后保持到下次 [reset]，避免退场时又被隐藏 */
+    val revealsUnderlying: Boolean
+        get() = progress > 0f
 
     fun reset() {
         settleJob?.cancel()
@@ -106,7 +114,8 @@ internal fun Modifier.predictiveDismissTransform(state: PredictiveDismissState):
             progress = state.progress,
             swipeEdge = state.swipeEdge,
             widthPx = size.width,
-            maxCornerRadiusPx = PredictiveDismissMaxCorner.toPx()
+            maxCornerRadiusPx = PredictiveDismissMaxCorner.toPx(),
+            edgeMarginPx = PredictiveDismissEdgeMargin.toPx()
         )
         scaleX = transform.scale
         scaleY = transform.scale
