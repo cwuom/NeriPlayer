@@ -36,6 +36,14 @@ internal class AndroidListenTogetherNetworkMonitor(
         }
     }
 
+    // 拿不到系统服务时无法判断，沿用乐观假设，避免重连被永久挂起
+    override fun hasDefaultNetwork(): Boolean = try {
+        connectivityManager()?.let { it.activeNetwork != null } ?: true
+    } catch (error: RuntimeException) {
+        NPLogger.w(TAG, "read default network failed: ${error.message}")
+        true
+    }
+
     private fun connectivityManager(): ConnectivityManager? =
         context().getSystemService(ConnectivityManager::class.java)
 

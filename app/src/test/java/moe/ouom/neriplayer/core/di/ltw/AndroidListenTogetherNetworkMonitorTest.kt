@@ -6,6 +6,8 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import moe.ouom.neriplayer.data.ltw.platform.ListenTogetherNetworkListener
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.any
@@ -38,6 +40,20 @@ class AndroidListenTogetherNetworkMonitorTest {
         monitor.stop()
         monitor.stop()
         verify(connectivity, times(1)).unregisterNetworkCallback(callback)
+    }
+
+    @Test
+    fun `initial availability follows the current default network`() {
+        val connectivity = mock(ConnectivityManager::class.java)
+        val monitor = AndroidListenTogetherNetworkMonitor { contextWith(connectivity) }
+        assertFalse(monitor.hasDefaultNetwork())
+
+        `when`(connectivity.activeNetwork).thenReturn(mock(Network::class.java))
+        assertTrue(monitor.hasDefaultNetwork())
+
+        `when`(connectivity.activeNetwork).thenThrow(SecurityException("denied"))
+        assertTrue(monitor.hasDefaultNetwork())
+        assertTrue(AndroidListenTogetherNetworkMonitor { contextWith(null) }.hasDefaultNetwork())
     }
 
     @Test

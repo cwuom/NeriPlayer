@@ -84,7 +84,7 @@ class ListenTogetherConnectionRecoveryOwner(
         val tracker = synchronized(lock) {
             if (watchingNetwork) return
             watchingNetwork = true
-            networkAvailable = true
+            networkAvailable = networkMonitor.hasDefaultNetwork()
             ListenTogetherDefaultNetworkTracker(::onNetworkAvailable, ::onNetworkLost)
         }
         networkMonitor.start(tracker)

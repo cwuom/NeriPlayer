@@ -9,6 +9,9 @@ interface ListenTogetherNetworkListener {
 interface ListenTogetherNetworkMonitor {
     fun start(listener: ListenTogetherNetworkListener)
     fun stop()
+
+    /** 离线时注册默认网络回调不会收到任何事件，开始监听前用它确定初始状态 */
+    fun hasDefaultNetwork(): Boolean = true
 }
 
 object NoListenTogetherNetworkMonitor : ListenTogetherNetworkMonitor {

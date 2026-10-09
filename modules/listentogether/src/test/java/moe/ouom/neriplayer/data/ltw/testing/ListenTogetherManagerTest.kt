@@ -15,9 +15,13 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 
-internal class FakeListenTogetherNetworkMonitor : ListenTogetherNetworkMonitor {
+internal class FakeListenTogetherNetworkMonitor(
+    var defaultNetworkAvailable: Boolean = true
+) : ListenTogetherNetworkMonitor {
     var listener: ListenTogetherNetworkListener? = null
         private set
+
+    override fun hasDefaultNetwork(): Boolean = defaultNetworkAvailable
     var starts = 0
         private set
     var stops = 0

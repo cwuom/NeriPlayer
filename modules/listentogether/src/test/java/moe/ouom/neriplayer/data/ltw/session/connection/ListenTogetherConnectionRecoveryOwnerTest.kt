@@ -125,6 +125,30 @@ class ListenTogetherConnectionRecoveryOwnerTest {
     }
 
     @Test
+    fun `watching while already offline waits for a network instead of spending attempts`() = runTest {
+        val port = FakePort(controller = true)
+        val monitor = FakeListenTogetherNetworkMonitor(defaultNetworkAvailable = false)
+        val owner = ListenTogetherConnectionRecoveryOwner(this, port, monitor)
+        owner.beginConnect()
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.CONNECTING)
+        owner.watchNetwork()
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
+
+        repeat(LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS * 2) {
+            owner.scheduleReconnect("offline_at_start")
+            advanceTimeBy(15_000L)
+            runCurrent()
+        }
+
+        assertEquals(0, port.connects)
+        assertTrue(port.closedReasons.isEmpty())
+        requireNotNull(monitor.listener).onDefaultNetworkAvailable("wifi")
+        runCurrent()
+        assertEquals(1, port.connects)
+        owner.stop()
+    }
+
+    @Test
     fun `network return during backoff resets attempts and reconnects immediately`() = runTest {
         val port = FakePort(controller = true)
         val monitor = FakeListenTogetherNetworkMonitor()
