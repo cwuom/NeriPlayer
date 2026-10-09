@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherLocalControlOw
 import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherHttpControlFallbackOwner
 import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherHttpControlFallbackPort
 import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherLocalControlPort
+import moe.ouom.neriplayer.data.ltw.session.liveness.LISTEN_TOGETHER_SOFT_SYNC_RECHECK_INTERVAL_MS
 import moe.ouom.neriplayer.data.ltw.session.liveness.ListenTogetherSoftSyncRateRecheckOwner
 import moe.ouom.neriplayer.data.ltw.session.liveness.ListenTogetherSoftSyncRecheckConfig
 import moe.ouom.neriplayer.data.ltw.session.liveness.ListenTogetherHeartbeatOwner
@@ -1308,7 +1309,7 @@ class ListenTogetherSessionManager(
         scope = mainScope,
         playback = playback,
         songMapper = songMapper,
-        config = ListenTogetherSoftSyncRecheckConfig(SOFT_SYNC_RECHECK_INTERVAL_MS, SOFT_SYNC_MIN_DRIFT_MS, SOFT_SYNC_FAST_DRIFT_MS, PLAYING_DRIFT_FORCE_SYNC_MS),
+        config = ListenTogetherSoftSyncRecheckConfig(LISTEN_TOGETHER_SOFT_SYNC_RECHECK_INTERVAL_MS, SOFT_SYNC_MIN_DRIFT_MS, SOFT_SYNC_FAST_DRIFT_MS, PLAYING_DRIFT_FORCE_SYNC_MS),
         session = { _sessionState.value },
         room = { roomState.value },
         isController = ::isCurrentUserController,
@@ -1538,7 +1539,6 @@ class ListenTogetherSessionManager(
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
-        private const val SOFT_SYNC_RECHECK_INTERVAL_MS = 500L
         private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2 * SECOND_MS
     }
 }

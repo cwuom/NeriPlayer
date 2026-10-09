@@ -18,6 +18,8 @@ import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
+internal const val LISTEN_TOGETHER_SOFT_SYNC_RECHECK_INTERVAL_MS = 1_000L
+
 internal data class ListenTogetherSoftSyncRecheckConfig(
     val intervalMs: Long,
     val minDriftMs: Long,
@@ -37,6 +39,7 @@ internal class ListenTogetherSoftSyncRateRecheckOwner(
     private val applyRoom: (ListenTogetherRoomState, String, Long) -> Unit
 ) : ListenTogetherSongMapper by songMapper {
     private var job: Job? = null
+    private var convergedTicks = 0
 
     fun reconcile() {
         if (abs(playback.listenTogetherSyncPlaybackRate - 1f) < 0.001f) {
@@ -44,6 +47,7 @@ internal class ListenTogetherSoftSyncRateRecheckOwner(
             return
         }
         if (job?.isActive == true) return
+        convergedTicks = 0
         job = scope.launch {
             try {
                 while (isActive) {
@@ -70,7 +74,14 @@ internal class ListenTogetherSoftSyncRateRecheckOwner(
                 false
             }
             ListenTogetherSoftSyncRecheckAction.KEEP_RATE -> keepRate(drift)
+            ListenTogetherSoftSyncRecheckAction.CONVERGED -> holdUntilConverged()
         }
+    }
+
+    private fun holdUntilConverged(): Boolean {
+        if (++convergedTicks < CONVERGED_TICKS_TO_RESET) return true
+        playback.resetListenTogetherSyncPlaybackRate()
+        return false
     }
 
     private fun expectedPosition(state: ListenTogetherRoomState?): Long {
@@ -99,9 +110,14 @@ internal class ListenTogetherSoftSyncRateRecheckOwner(
     }
 
     private fun keepRate(drift: Long): Boolean {
+        convergedTicks = 0
         val rate = resolveListenTogetherSoftSyncPlaybackRate(abs(drift), drift, true, false, config.minDriftMs, config.fastDriftMs, config.forcePositionSyncMs)
         if (rate == null) { playback.resetListenTogetherSyncPlaybackRate(); return false }
         playback.setListenTogetherSyncPlaybackRate(rate)
         return true
+    }
+
+    private companion object {
+        const val CONVERGED_TICKS_TO_RESET = 2
     }
 }
