@@ -7,6 +7,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS
+import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON
+import moe.ouom.neriplayer.data.ltw.testing.FakeListenTogetherNetworkMonitor
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherMember
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
@@ -69,14 +72,135 @@ class ListenTogetherConnectionRecoveryOwnerTest {
         assertEquals(0, port.connects)
 
         port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
-        repeat(15) {
+        repeat(LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS) { attempt ->
+            if (attempt == 15) assertTrue(port.closedReasons.isEmpty())
             owner.scheduleReconnect("failed")
             advanceTimeBy(15_000L)
             runCurrent()
         }
         owner.scheduleReconnect("max_attempts")
-        assertEquals(15, port.connects)
-        assertEquals(listOf("reconnect_max_attempts_exceeded"), port.closedReasons)
+        assertEquals(LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS, port.connects)
+        assertEquals(listOf(LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON), port.closedReasons)
+        owner.stop()
+    }
+
+    @Test
+    fun `failures while the network is lost wait for it without spending attempts`() = runTest {
+        val port = FakePort(controller = true)
+        val monitor = FakeListenTogetherNetworkMonitor()
+        val owner = ListenTogetherConnectionRecoveryOwner(this, port, monitor)
+        owner.beginConnect()
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.CONNECTING)
+        owner.watchNetwork()
+        val network = requireNotNull(monitor.listener)
+        network.onDefaultNetworkAvailable("wifi")
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
+        repeat(10) {
+            owner.scheduleReconnect("failed")
+            advanceTimeBy(15_000L)
+            runCurrent()
+        }
+        network.onDefaultNetworkLost("wifi")
+        repeat(LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS * 2) {
+            owner.scheduleReconnect("offline")
+            advanceTimeBy(15_000L)
+            runCurrent()
+        }
+        assertEquals(10, port.connects)
+        assertTrue(port.closedReasons.isEmpty())
+        assertTrue("reconnect_waiting_network:offline" in port.keepAliveReasons)
+
+        network.onDefaultNetworkAvailable("cellular")
+        runCurrent()
+        assertEquals(11, port.connects)
+        repeat(LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS - 1) {
+            owner.scheduleReconnect("server_down")
+            advanceTimeBy(15_000L)
+            runCurrent()
+        }
+        assertTrue(port.closedReasons.isEmpty())
+        owner.scheduleReconnect("server_down")
+        assertEquals(listOf(LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON), port.closedReasons)
+        owner.stop()
+    }
+
+    @Test
+    fun `network return during backoff resets attempts and reconnects immediately`() = runTest {
+        val port = FakePort(controller = true)
+        val monitor = FakeListenTogetherNetworkMonitor()
+        val owner = ListenTogetherConnectionRecoveryOwner(this, port, monitor)
+        owner.beginConnect()
+        owner.watchNetwork()
+        owner.watchNetwork()
+        assertEquals(1, monitor.starts)
+        val network = requireNotNull(monitor.listener)
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.CONNECTED)
+        network.onDefaultNetworkAvailable("wifi")
+        runCurrent()
+        assertEquals(0, port.connects)
+
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
+        repeat(4) {
+            owner.scheduleReconnect("failed")
+            advanceTimeBy(15_000L)
+            runCurrent()
+        }
+        owner.scheduleReconnect("failed")
+        network.onDefaultNetworkLost("wifi")
+        network.onDefaultNetworkValidated("cellular")
+        runCurrent()
+        assertEquals(5, port.connects)
+        assertTrue("reconnect_scheduled:network_available" in port.keepAliveReasons)
+
+        owner.scheduleReconnect("failed_again")
+        advanceTimeBy(3_700L)
+        runCurrent()
+        assertEquals(6, port.connects)
+        owner.scheduleReconnect("signal_change")
+        network.onDefaultNetworkValidated("cellular")
+        network.onDefaultNetworkAvailable("cellular")
+        network.onDefaultNetworkLost("wifi")
+        runCurrent()
+        assertEquals(6, port.connects)
+        owner.stop()
+        owner.stop()
+        assertEquals(1, monitor.stops)
+        network.onDefaultNetworkAvailable("ethernet")
+        advanceTimeBy(20_000L)
+        runCurrent()
+        assertEquals(6, port.connects)
+    }
+
+    @Test
+    fun `network return revives an idle disconnected session but not one already rejoining`() = runTest {
+        val idlePort = FakePort(controller = true)
+        val idleMonitor = FakeListenTogetherNetworkMonitor()
+        val idleOwner = ListenTogetherConnectionRecoveryOwner(this, idlePort, idleMonitor)
+        idleOwner.beginConnect()
+        idleOwner.watchNetwork()
+        requireNotNull(idleMonitor.listener).onDefaultNetworkAvailable("wifi")
+        runCurrent()
+        assertEquals(1, idlePort.connects)
+        idleOwner.stop()
+
+        val port = FakePort(controller = false)
+        val gate = CompletableDeferred<Unit>()
+        port.rejoinGate = gate
+        val monitor = FakeListenTogetherNetworkMonitor()
+        val owner = ListenTogetherConnectionRecoveryOwner(this, port, monitor)
+        owner.beginConnect()
+        owner.watchNetwork()
+        assertTrue(owner.recoverFromMembershipError("member missing", "socket_error"))
+        runCurrent()
+        port.currentSession = port.currentSession.copy(connectionState = ListenTogetherConnectionState.DISCONNECTED)
+        requireNotNull(monitor.listener).onDefaultNetworkValidated("wifi")
+        runCurrent()
+        assertEquals(1, port.recoveryStarts)
+        assertEquals(0, port.connects)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(1, port.rejoins)
+        assertEquals(1, port.connects)
         owner.stop()
     }
 

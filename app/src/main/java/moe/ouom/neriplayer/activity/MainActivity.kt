@@ -144,6 +144,7 @@ import moe.ouom.neriplayer.core.startup.theme.StartupResourceNightMode
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeSnapshotProvider
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
+import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON
 import moe.ouom.neriplayer.data.ltw.validation.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.data.ltw.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherInviteJoinBaseUrl
@@ -1505,6 +1506,9 @@ class MainActivity : ComponentActivity() {
 
             normalized == "controller_reconnected" ->
                 getString(CoreCommonR.string.listen_together_notice_controller_reconnected)
+
+            normalized == LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON ->
+                getString(CoreCommonR.string.listen_together_error_reconnect_exhausted)
 
             normalized.equals("controller_left", ignoreCase = true) ->
                 getString(CoreCommonR.string.listen_together_notice_controller_left)

@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherLocalControlOw
 import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherHttpControlFallbackOwner
 import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherHttpControlFallbackPort
 import moe.ouom.neriplayer.data.ltw.session.control.ListenTogetherLocalControlPort
+import moe.ouom.neriplayer.data.ltw.session.liveness.LISTEN_TOGETHER_SOFT_SYNC_RECHECK_INTERVAL_MS
 import moe.ouom.neriplayer.data.ltw.session.liveness.ListenTogetherSoftSyncRateRecheckOwner
 import moe.ouom.neriplayer.data.ltw.session.liveness.ListenTogetherSoftSyncRecheckConfig
 import moe.ouom.neriplayer.data.ltw.session.liveness.ListenTogetherHeartbeatOwner
@@ -87,6 +88,7 @@ import moe.ouom.neriplayer.data.ltw.session.control.resolveListenTogetherControl
 import moe.ouom.neriplayer.data.ltw.session.connection.resolveListenTogetherForegroundRecoveryAction
 import moe.ouom.neriplayer.data.ltw.session.membership.resolveListenTogetherRoomNotice
 import moe.ouom.neriplayer.data.ltw.session.connection.shouldHoldListenTogetherBackgroundKeepAlive
+import moe.ouom.neriplayer.data.ltw.session.connection.shouldHoldListenTogetherBackgroundWakeLock
 import moe.ouom.neriplayer.data.ltw.session.membership.isNormalListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.data.ltw.session.membership.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.data.ltw.session.membership.resolveListenTogetherSessionRole
@@ -189,7 +191,8 @@ class ListenTogetherSessionManager(
                     lastError = errorMessage
                 )
             }
-        }
+        },
+        networkMonitor = platform.networkMonitor
     )
 
     private val socketHealthOwner = ListenTogetherSocketHealthOwner(
@@ -291,6 +294,7 @@ class ListenTogetherSessionManager(
                 }
             }
         },
+        inSyncDriftMs = SOFT_SYNC_MIN_DRIFT_MS,
         elapsedRealtimeMs = elapsedRealtimeMs
     )
 
@@ -619,6 +623,7 @@ class ListenTogetherSessionManager(
             connectionState = ListenTogetherConnectionState.CONNECTING,
             lastError = null
         )
+        connectionRecoveryOwner.watchNetwork()
         webSocketClient.connect(
             wsUrl = wsUrl,
             listener = object : ListenTogetherWebSocketClient.Listener {
@@ -664,6 +669,7 @@ class ListenTogetherSessionManager(
                 override fun onClosed(code: Int, reason: String) {
                     webSocketConnectingAtElapsedMs = 0L
                     heartbeatOwner.stop()
+                    listenerWatchdogOwner.stop()
                     socketHealthOwner.stopKeepAlive()
                     NPLogger.w(TAG, "websocket.onClosed(): code=$code, reason=$reason")
                     _sessionState.value = _sessionState.value.copy(
@@ -679,6 +685,7 @@ class ListenTogetherSessionManager(
                 override fun onFailure(error: Throwable) {
                     webSocketConnectingAtElapsedMs = 0L
                     heartbeatOwner.stop()
+                    listenerWatchdogOwner.stop()
                     socketHealthOwner.stopKeepAlive()
                     NPLogger.e(TAG, "websocket.onFailure(): ${error.message}", error)
                     _sessionState.value = _sessionState.value.copy(
@@ -1284,13 +1291,7 @@ class ListenTogetherSessionManager(
     }
 
     private fun updateBackgroundKeepAlive(reason: String) {
-        val snapshot = _sessionState.value
-        val shouldHold = shouldHoldListenTogetherBackgroundKeepAlive(
-            sessionActive = !snapshot.roomId.isNullOrBlank(),
-            reconnectEnabled = connectionRecoveryOwner.enabled,
-            applicationInForeground = applicationInForeground
-        )
-        if (shouldHold) {
+        if (shouldHoldBackgroundWakeLock()) {
             if (!platform.isInitialized()) return
             backgroundKeepAlive.renew(
                 context = platform.applicationContext,
@@ -1301,11 +1302,25 @@ class ListenTogetherSessionManager(
         }
     }
 
+    private fun shouldHoldBackgroundWakeLock(): Boolean {
+        val snapshot = _sessionState.value
+        return shouldHoldListenTogetherBackgroundWakeLock(
+            keepAliveNeeded = shouldHoldListenTogetherBackgroundKeepAlive(
+                sessionActive = !snapshot.roomId.isNullOrBlank(),
+                reconnectEnabled = connectionRecoveryOwner.enabled,
+                applicationInForeground = applicationInForeground
+            ),
+            isController = isCurrentUserController(snapshot),
+            playbackServiceForeground = platform.isPlaybackServiceReady(),
+            reconnecting = snapshot.connectionState != ListenTogetherConnectionState.CONNECTED
+        )
+    }
+
     private val softSyncRateRecheckOwner = ListenTogetherSoftSyncRateRecheckOwner(
         scope = mainScope,
         playback = playback,
         songMapper = songMapper,
-        config = ListenTogetherSoftSyncRecheckConfig(SOFT_SYNC_RECHECK_INTERVAL_MS, SOFT_SYNC_MIN_DRIFT_MS, SOFT_SYNC_FAST_DRIFT_MS, PLAYING_DRIFT_FORCE_SYNC_MS),
+        config = ListenTogetherSoftSyncRecheckConfig(LISTEN_TOGETHER_SOFT_SYNC_RECHECK_INTERVAL_MS, SOFT_SYNC_MIN_DRIFT_MS, SOFT_SYNC_FAST_DRIFT_MS, PLAYING_DRIFT_FORCE_SYNC_MS),
         session = { _sessionState.value },
         room = { roomState.value },
         isController = ::isCurrentUserController,
@@ -1535,7 +1550,6 @@ class ListenTogetherSessionManager(
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
-        private const val SOFT_SYNC_RECHECK_INTERVAL_MS = 500L
         private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2 * SECOND_MS
     }
 }

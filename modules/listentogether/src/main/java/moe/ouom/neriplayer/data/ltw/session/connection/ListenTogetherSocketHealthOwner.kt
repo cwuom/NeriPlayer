@@ -42,6 +42,8 @@ class ListenTogetherSocketHealthOwner(
     var serverClockOffsetMs = 0L
         private set
     @Volatile
+    private var hasRoundTripOffset = false
+    @Volatile
     var pendingRefreshAfterReconnect = false
 
     fun noteMessage() {
@@ -91,15 +93,25 @@ class ListenTogetherSocketHealthOwner(
         nowElapsedMs: Long,
         reason: String
     ) {
-        val sample = offsetSample(serverNowMs, sentAtWallMs, sentAtElapsedMs, nowWallMs, nowElapsedMs, reason)
+        val hasRoundTrip = sentAtWallMs > 0L && sentAtElapsedMs > 0L
+        // one-way samples omit the network delay, so they only seed the offset before the first round trip
+        if (!hasRoundTrip && hasRoundTripOffset) return
+        val sample = offsetSample(serverNowMs, hasRoundTrip, sentAtWallMs, sentAtElapsedMs, nowWallMs, nowElapsedMs, reason)
             ?: return
-        val previous = serverClockOffsetMs
-        serverClockOffsetMs = if (previous == 0L) sample else (previous * 7 + sample * 3) / 10
+        serverClockOffsetMs = blendedOffset(sample, hasRoundTrip)
+        if (hasRoundTrip) hasRoundTripOffset = true
         NPLogger.d(TAG, "updateServerClockOffsetFromRoundTrip(): reason=$reason, offset=$serverClockOffsetMs, sample=$sample")
+    }
+
+    private fun blendedOffset(sample: Long, hasRoundTrip: Boolean): Long {
+        val previous = serverClockOffsetMs
+        if (previous == 0L || hasRoundTrip && !hasRoundTripOffset) return sample
+        return (previous * 7 + sample * 3) / 10
     }
 
     private fun offsetSample(
         serverNowMs: Long?,
+        hasRoundTrip: Boolean,
         sentAtWallMs: Long,
         sentAtElapsedMs: Long,
         nowWallMs: Long,
@@ -107,7 +119,6 @@ class ListenTogetherSocketHealthOwner(
         reason: String
     ): Long? {
         if (serverNowMs == null || serverNowMs <= 0L) return null
-        val hasRoundTrip = sentAtWallMs > 0L && sentAtElapsedMs > 0L
         val rtt = if (hasRoundTrip) nowElapsedMs - sentAtElapsedMs else 0L
         if (rtt < 0L) return null
         if (rtt > MAX_RTT_MS) {
@@ -146,6 +157,7 @@ class ListenTogetherSocketHealthOwner(
         pingSentAtWallMs = 0L
         pingSentAtElapsedMs = 0L
         serverClockOffsetMs = 0L
+        hasRoundTripOffset = false
         resetProtocolSupport()
     }
 

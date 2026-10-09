@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.ltw.playback
 
+import androidx.media3.common.Player
 import moe.ouom.neriplayer.data.ltw.testing.*
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
@@ -58,6 +59,37 @@ class ListenTogetherPlayerStateApplierTest {
         assertFalse(f.player.calls.any { it.startsWith("seek") })
         assertTrue(f.player.syncPlaybackRate > 1f)
         f.applier.apply(f.room, "HEARTBEAT", 10_000L)
+        assertEquals(1f, f.player.syncPlaybackRate)
+    }
+
+    @Test
+    fun `soft sync waits for a ready playing player without a pending media load`() {
+        val f = Fixture(testRoom(playing = true))
+        f.player.isPlayingFlow.value = true
+        f.player.playbackPositionFlow.value = 10_000L
+        f.player.playerPlaybackStateFlow.value = Player.STATE_BUFFERING
+        f.applier.apply(f.room, "HEARTBEAT", 11_100L)
+        f.player.playerPlaybackStateFlow.value = Player.STATE_READY
+        f.player.pendingMediaLoad = true
+        f.applier.apply(f.room, "HEARTBEAT", 11_100L)
+        assertEquals(1f, f.player.syncPlaybackRate)
+        assertFalse(f.player.calls.any { it.startsWith("rate:1.") })
+        f.player.pendingMediaLoad = false
+        f.applier.apply(f.room, "HEARTBEAT", 11_100L)
+        assertEquals(1.03f, f.player.syncPlaybackRate)
+    }
+
+    @Test
+    fun `usb exclusive output keeps the normal rate and corrects drift by seeking only`() {
+        val f = Fixture(testRoom(playing = true))
+        f.player.isPlayingFlow.value = true
+        f.player.usbExclusiveOutput = true
+        f.player.playbackPositionFlow.value = 10_000L
+        f.applier.apply(f.room, "HEARTBEAT", 11_100L)
+        assertEquals(1f, f.player.syncPlaybackRate)
+        assertFalse(f.player.calls.any { it.startsWith("rate:1.") || it.startsWith("seek") })
+        f.applier.apply(f.room, "PLAY", 13_000L)
+        assertTrue(f.player.calls.contains("seek:13000"))
         assertEquals(1f, f.player.syncPlaybackRate)
     }
 
@@ -123,6 +155,7 @@ class ListenTogetherPlayerStateApplierTest {
         val player = FakeListenTogetherPlaybackHost().apply {
             currentQueueFlow.value = listOf(testSong())
             currentSongFlow.value = testSong()
+            playerPlaybackStateFlow.value = Player.STATE_READY
         }
         var controller = false
         var now = 1_000L

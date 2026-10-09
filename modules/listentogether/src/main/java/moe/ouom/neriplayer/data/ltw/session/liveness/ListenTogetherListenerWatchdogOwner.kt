@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomState
 import moe.ouom.neriplayer.data.model.ltw.room.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherSessionState
+import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
 internal data class ListenTogetherListenerWatchdogSnapshot(
@@ -41,6 +42,7 @@ internal class ListenTogetherListenerWatchdogOwner(
     private val playback: ListenTogetherPlaybackHost,
     private val songMapper: ListenTogetherSongMapper,
     private val port: ListenTogetherListenerWatchdogPort,
+    private val inSyncDriftMs: Long,
     private val elapsedRealtimeMs: () -> Long
 ) : ListenTogetherSongMapper by songMapper {
     private val stallRecovery = ListenTogetherListenerStallRecovery(
@@ -54,7 +56,7 @@ internal class ListenTogetherListenerWatchdogOwner(
     private var lastRefreshAtElapsedMs = 0L
 
     fun start() {
-        if (watchdogJob?.isActive == true) return
+        if (watchdogJob?.isActive == true || port.isControllerNow()) return
         NPLogger.d(TAG, "startSyncWatchdog()")
         lastRefreshAtElapsedMs = 0L
         watchdogJob = scope.launch { runWatchdog() }
@@ -71,7 +73,7 @@ internal class ListenTogetherListenerWatchdogOwner(
         if (!isActiveListener(snapshot)) return
         port.retryPendingMemberRequest(snapshot.room)
         snapshot.room?.let { room ->
-            applyListenerSync(room, snapshot.serverClockOffsetMs)
+            applyListenerSync(room, snapshot)
             port.requestControllerLink(room, "listener_watchdog", force = false)
         }
         refreshRoomStateIfDue(snapshot, "listener_watchdog")
@@ -98,10 +100,11 @@ internal class ListenTogetherListenerWatchdogOwner(
         stallRecovery.reset()
     }
 
-    private fun applyListenerSync(room: ListenTogetherRoomState, serverClockOffsetMs: Long) {
+    private fun applyListenerSync(room: ListenTogetherRoomState, snapshot: ListenTogetherListenerWatchdogSnapshot) {
         if (!mayApplyListenerSync(room)) return
-        val expectedPositionMs = expectedPosition(room, serverClockOffsetMs)
+        val expectedPositionMs = expectedPosition(room, snapshot.serverClockOffsetMs)
         val needsStallRecovery = stallRecovery.shouldRecover(room, elapsedRealtimeMs())
+        if (!needsStallRecovery && snapshot.pendingRepairVersion < 0L && isListenerInSync(room, expectedPositionMs)) return
         val cause = if (needsStallRecovery) "WATCHDOG_STALL" else "WATCHDOG"
         port.applyRoomStateToPlayer(room, cause, expectedPositionMs)
         requestStallRecoveryIfNeeded(room, cause, needsStallRecovery)
@@ -109,6 +112,17 @@ internal class ListenTogetherListenerWatchdogOwner(
 
     private fun mayApplyListenerSync(room: ListenTogetherRoomState): Boolean =
         !port.isControllerNow() && room.roomStatus == ListenTogetherRoomStatuses.ACTIVE
+
+    private fun isListenerInSync(room: ListenTogetherRoomState, expectedPositionMs: Long): Boolean {
+        val target = room.targetSongItem() ?: return false
+        if (playback.currentSongFlow.value?.sameTrackAs(target) != true) return false
+        if (!localTransportMatches(room.playback.state == "playing")) return false
+        return abs(expectedPositionMs - playback.playbackPositionFlow.value.coerceAtLeast(0L)) < inSyncDriftMs
+    }
+
+    private fun localTransportMatches(desiredPlaying: Boolean): Boolean =
+        if (desiredPlaying) playback.isPlayingFlow.value
+        else !playback.isPlayingFlow.value && !playback.playWhenReadyFlow.value
 
     private fun requestStallRecoveryIfNeeded(room: ListenTogetherRoomState, cause: String, needed: Boolean) {
         if (needed) port.requestControllerLink(room, cause, force = true)
