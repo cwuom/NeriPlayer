@@ -187,7 +187,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 )
                 val mid = when (account) {
                     is LibraryBiliMid.Ready -> account.mid
-                    LibraryBiliMid.Persisted -> return@launch
+                    LibraryBiliMid.Persisted, LibraryBiliMid.Superseded -> return@launch
                     LibraryBiliMid.Missing -> {
                         _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(CoreCommonR.string.error_get_user_id))
                         return@launch

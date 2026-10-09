@@ -101,6 +101,7 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
     private val _authFlow: MutableStateFlow<BiliAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
     private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
+    private val writeLock = Any()
 
     val cookieFlow: StateFlow<Map<String, String>>
         get() = _cookieFlow.asStateFlow()
@@ -129,7 +130,7 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
     fun saveCookies(
         cookies: Map<String, String>,
         savedAt: Long = System.currentTimeMillis()
-    ) {
+    ): Unit = synchronized(writeLock) {
         val normalized = BiliAuthBundle(
             cookies = cookies,
             savedAt = savedAt
@@ -141,13 +142,19 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
         NPLogger.d("NERI-BiliCookieRepo", "Saved Bili cookies: keys=${cookies.keys.joinToString()}")
     }
 
-    /** 只补写 nav 接口查到的 DedeUserID, 保留原来的保存时间 */
-    fun saveUserMid(mid: Long) {
+    /**
+     * 只补写 nav 接口查到的 DedeUserID, 保留原来的保存时间
+     *
+     * nav 请求期间用户可能已退出或换号, Cookie 不再是 [requestedWith] 时放弃写入并返回 false
+     */
+    fun saveUserMid(mid: Long, requestedWith: Map<String, String>): Boolean = synchronized(writeLock) {
         val current = _authFlow.value
+        if (current.cookies != requestedWith) return false
         saveCookies(current.withUserMid(mid).cookies, savedAt = current.savedAt)
+        true
     }
 
-    fun clear() {
+    fun clear(): Unit = synchronized(writeLock) {
         writeAuthBundle(null)
         val cleared = BiliAuthBundle()
         _authFlow.value = cleared

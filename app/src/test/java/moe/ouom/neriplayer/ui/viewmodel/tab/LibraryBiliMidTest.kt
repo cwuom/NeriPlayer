@@ -8,6 +8,7 @@ import org.junit.Test
 class LibraryBiliMidTest {
     private var navCalls = 0
     private val savedMids = mutableListOf<Long>()
+    private var cookiesStillCurrent = true
 
     @Test
     fun `stored DedeUserID is used without asking nav`() = runTest {
@@ -35,6 +36,15 @@ class LibraryBiliMidTest {
     }
 
     @Test
+    fun `mid resolved for cookies that were replaced meanwhile is not reported as persisted`() = runTest {
+        cookiesStillCurrent = false
+        val result = resolve(mapOf("SESSDATA" to "old"), navMid = 42L)
+
+        assertEquals(LibraryBiliMid.Superseded, result)
+        assertTrue(savedMids.isEmpty())
+    }
+
+    @Test
     fun `missing DedeUserID that nav cannot resolve is reported without saving`() = runTest {
         val result = resolve(mapOf("SESSDATA" to "s"), navMid = null)
 
@@ -49,6 +59,10 @@ class LibraryBiliMidTest {
             navCalls += 1
             navMid
         },
-        saveUserMid = { savedMids += it }
+        saveUserMid = { mid, requestedWith ->
+            assertEquals(cookies, requestedWith)
+            if (cookiesStillCurrent) savedMids += mid
+            cookiesStillCurrent
+        }
     )
 }

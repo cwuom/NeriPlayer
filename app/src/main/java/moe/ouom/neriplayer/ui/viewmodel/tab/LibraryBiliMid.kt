@@ -7,6 +7,9 @@ internal sealed interface LibraryBiliMid {
     /** nav 查到的 mid 已写回 Cookie, cookieFlow 会带着 DedeUserID 再触发一次刷新 */
     data object Persisted : LibraryBiliMid
 
+    /** nav 请求期间 Cookie 被替换, 查到的 mid 不属于当前账号, 新 Cookie 会另行触发刷新 */
+    data object Superseded : LibraryBiliMid
+
     /** Cookie 没有 DedeUserID, nav 也查不到登录账号 */
     data object Missing : LibraryBiliMid
 }
@@ -15,11 +18,10 @@ internal sealed interface LibraryBiliMid {
 internal suspend fun resolveLibraryBiliMid(
     cookies: Map<String, String>,
     fetchLoginMid: suspend () -> Long?,
-    saveUserMid: (Long) -> Unit
+    saveUserMid: (mid: Long, requestedWith: Map<String, String>) -> Boolean
 ): LibraryBiliMid {
     val storedMid = cookies["DedeUserID"]?.toLongOrNull()
     if (storedMid != null && storedMid > 0L) return LibraryBiliMid.Ready(storedMid)
     val mid = fetchLoginMid() ?: return LibraryBiliMid.Missing
-    saveUserMid(mid)
-    return LibraryBiliMid.Persisted
+    return if (saveUserMid(mid, cookies)) LibraryBiliMid.Persisted else LibraryBiliMid.Superseded
 }
