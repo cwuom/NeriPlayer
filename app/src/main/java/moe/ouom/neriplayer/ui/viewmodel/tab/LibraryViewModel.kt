@@ -245,25 +245,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             .flatMap { batch ->
                 batch.map { folder ->
                     async(Dispatchers.IO) {
-                        mapLibraryBiliFolder(folder, kind, currentMid) { mediaId ->
-                            loadBiliFolderDetail(mediaId)
-                        }
+                        mapLibraryBiliFolder(
+                            folder = folder,
+                            kind = kind,
+                            currentMid = currentMid,
+                            onDetailFailure = ::logBiliFolderDetailFailure,
+                            loadDetail = biliClient::getFavFolderInfo
+                        )
                     }
                 }.awaitAll()
             }
             .filterNotNull()
     }
 
-    private suspend fun loadBiliFolderDetail(mediaId: Long): FavFolder? {
-        return runCatching { biliClient.getFavFolderInfo(mediaId) }
-            .onFailure { error ->
-                NPLogger.e(
-                    "LibraryViewModel-Bili",
-                    getApplication<Application>().getString(CoreCommonR.string.music_get_detail_failed),
-                    error
-                )
-            }
-            .getOrNull()
+    private fun logBiliFolderDetailFailure(error: Throwable) {
+        NPLogger.e(
+            "LibraryViewModel-Bili",
+            getApplication<Application>().getString(CoreCommonR.string.music_get_detail_failed),
+            error
+        )
     }
 
 
@@ -418,10 +418,15 @@ internal suspend fun mapLibraryBiliFolder(
     folder: FavFolder,
     kind: BiliPlaylistKind,
     currentMid: Long,
+    onDetailFailure: (Throwable) -> Unit,
     loadDetail: suspend (mediaId: Long) -> FavFolder?
 ): BiliPlaylist? {
     val resolvedKind = if (folder.itemType == BILI_RESOURCE_TYPE_COLLECTION) BiliPlaylistKind.COLLECTION else kind
-    val detail = if (resolvedKind == BiliPlaylistKind.COLLECTION) null else loadDetail(folder.mediaId)
+    val detail = if (resolvedKind == BiliPlaylistKind.COLLECTION) {
+        null
+    } else {
+        loadLibraryBiliFolderDetail(folder.mediaId, onDetailFailure, loadDetail)
+    }
     val source = detail ?: folder
     val title = source.title.takeIf { it.isNotBlank() } ?: return null
     return BiliPlaylist(
@@ -434,6 +439,17 @@ internal suspend fun mapLibraryBiliFolder(
         kind = resolvedKind,
         subtitle = source.libraryOwnerLabel(currentMid)
     )
+}
+
+/** 详情只用于补全列表字段, 失败时记录日志并回退到列表数据 */
+private suspend fun loadLibraryBiliFolderDetail(
+    mediaId: Long,
+    onFailure: (Throwable) -> Unit,
+    loadDetail: suspend (mediaId: Long) -> FavFolder?
+): FavFolder? {
+    return runCatching { loadDetail(mediaId) }
+        .onFailure(onFailure)
+        .getOrNull()
 }
 
 private fun FavFolder.libraryOwnerLabel(currentMid: Long): String {

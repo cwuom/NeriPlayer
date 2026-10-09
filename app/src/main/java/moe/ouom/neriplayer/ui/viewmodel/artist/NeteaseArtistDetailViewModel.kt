@@ -273,7 +273,8 @@ class NeteaseArtistDetailViewModel internal constructor(
         headerId: Long
     ): NeteaseArtistHeader? {
         if (artistGeneration != generation) return null
-        return state.header?.takeIf { it.id == headerId }
+        val header = state.header ?: return null
+        return if (header.id == headerId) header else null
     }
 
     private fun publishFollowResult(generation: Long, headerId: Long, followed: Boolean) {

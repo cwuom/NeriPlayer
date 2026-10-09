@@ -67,7 +67,12 @@ class LibraryViewModelMappingTest {
         val listed = folder(title = "Listed", mid = 9L, upperName = "")
         val detail = listed.copy(title = "Detail", coverUrl = "http://i0.hdslb.com/d.jpg", count = 20)
 
-        val mapped = mapLibraryBiliFolder(listed, BiliPlaylistKind.CREATED_FAVORITE, currentMid = 7L) { mediaId ->
+        val mapped = mapLibraryBiliFolder(
+            listed,
+            BiliPlaylistKind.CREATED_FAVORITE,
+            currentMid = 7L,
+            onDetailFailure = ::failOnDetailError
+        ) { mediaId ->
             requested += mediaId
             detail
         }
@@ -91,7 +96,8 @@ class LibraryViewModelMappingTest {
     @Test
     fun `bili folder owner label hides the current user and missing owners`() = runTest {
         suspend fun subtitle(folder: FavFolder) =
-            mapLibraryBiliFolder(folder, BiliPlaylistKind.COLLECTED_FAVORITE, currentMid = 7L) { null }?.subtitle
+            mapLibraryBiliFolder(folder, BiliPlaylistKind.COLLECTED_FAVORITE, 7L, ::failOnDetailError) { null }
+                ?.subtitle
 
         assertEquals("Owner", subtitle(folder(upperName = "Owner", mid = 9L)))
         assertEquals("", subtitle(folder(upperName = "", mid = 7L)))
@@ -103,21 +109,40 @@ class LibraryViewModelMappingTest {
         var detailRequests = 0
         val collection = folder(title = "Season").copy(itemType = 21)
 
-        val mapped = mapLibraryBiliFolder(collection, BiliPlaylistKind.COLLECTED_FAVORITE, currentMid = 7L) {
+        val mapped = mapLibraryBiliFolder(collection, BiliPlaylistKind.COLLECTED_FAVORITE, 7L, ::failOnDetailError) {
             detailRequests++
             null
         }
-        val explicitCollection = mapLibraryBiliFolder(folder(title = "Series"), BiliPlaylistKind.COLLECTION, 7L) {
+        val explicitCollection = mapLibraryBiliFolder(folder(title = "Series"), BiliPlaylistKind.COLLECTION, 7L, ::failOnDetailError) {
             detailRequests++
             null
         }
-        val untitled = mapLibraryBiliFolder(folder(title = " "), BiliPlaylistKind.CREATED_FAVORITE, 7L) { null }
+        val untitled = mapLibraryBiliFolder(folder(title = " "), BiliPlaylistKind.CREATED_FAVORITE, 7L, ::failOnDetailError) { null }
 
         assertEquals(0, detailRequests)
         assertEquals(BiliPlaylistKind.COLLECTION, mapped?.kind)
         assertEquals("Season", mapped?.title)
         assertEquals(BiliPlaylistKind.COLLECTION, explicitCollection?.kind)
         assertNull(untitled)
+    }
+
+    @Test
+    fun `failed bili folder detail is reported and falls back to the listed folder`() = runTest {
+        val failures = mutableListOf<Throwable>()
+        val error = IllegalStateException("offline")
+
+        val mapped = mapLibraryBiliFolder(folder(title = "Listed"), BiliPlaylistKind.CREATED_FAVORITE, 7L, failures::add) {
+            throw error
+        }
+
+        assertEquals(listOf(error), failures)
+        assertEquals("Listed", mapped?.title)
+        assertEquals("https://cover.jpg", mapped?.coverUrl)
+        assertEquals(4, mapped?.count)
+    }
+
+    private fun failOnDetailError(error: Throwable) {
+        throw AssertionError("unexpected detail failure", error)
     }
 
     private fun folder(
