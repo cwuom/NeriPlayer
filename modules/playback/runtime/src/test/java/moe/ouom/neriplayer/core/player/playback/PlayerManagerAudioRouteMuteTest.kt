@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.playback
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.testing.FakeExoPlayer
@@ -30,6 +31,7 @@ class PlayerManagerAudioRouteMuteTest {
         manager.audioRouteMuteRequiresExplicitRestore = false
         manager._audioRouteMuteSuppressedFlow.value = false
         manager._isPlayingFlow.value = false
+        manager.progressJob = null
         manager.mainScope = previousMainScope
         PlayerTestEnvironment.reset()
     }
@@ -98,6 +100,23 @@ class PlayerManagerAudioRouteMuteTest {
             assertEquals(0.6f, fake.volume, 0f)
             assertNull(manager.audioRouteMuteRestoreVolume)
         }
+    }
+
+    @Test
+    fun `stopping progress updates cancels the running progress job`() = runTest {
+        manager.mainScope = backgroundScope
+        val running = Job()
+        manager.progressJob = running
+        manager.stopProgressUpdatesImpl()
+        assertTrue(running.isCancelled)
+        assertNull(manager.progressJob)
+
+        manager.progressJob = Job().apply { complete() }
+        manager.stopProgressUpdatesImpl()
+        assertNull(manager.progressJob)
+
+        manager.stopProgressUpdatesImpl()
+        assertNull(manager.progressJob)
     }
 
     @Test
