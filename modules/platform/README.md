@@ -31,10 +31,18 @@ YouTube scripts are in `src/main/assets/youtube`; `consumer-rules.pro` preserves
 ./gradlew :platform:testDebugUnitTest --tests "*Subsonic*"
 ```
 
-服务器接入沿用现有 SongItem、SongUrlResult、LyricEntry 和 playback host，具体约定与已验证范围见[设计回顾](../../docs/music-server-integration.md)。
+## 音乐服务器接入 / Music server integration
 
-逐文件职责和测试导航见[文件地图](../../docs/music-server-files.md)；请求参数和实际失败/缓存语义见[API 契约](../../docs/music-server-api.md)。
+沿用现有 `SongItem`、`SongUrlResult`、`LyricEntry` 与 playback host；账号、仓库和共享 HTTP 由 app 宿主注入。请求参数、身份和缓存语义见 [API 契约](../../docs/music-server-api.md)。
 
-Server integration reuses SongItem, SongUrlResult, LyricEntry, and the playback host. See the [design review](../../docs/music-server-integration.md) for contracts and validation scope (Chinese).
+The integration reuses the existing song, playback URL, lyric, and playback host models. The app injects accounts, the repository, and shared HTTP. See the [API contract](../../docs/music-server-api.md) for request, identity, and cache semantics (Chinese).
 
-See the [file guide](../../docs/music-server-files.md) and [API contract](../../docs/music-server-api.md) for responsibilities, request parameters, and current failure/cache semantics (Chinese).
+| 核心文件 / Core files | 职责 / Responsibility |
+| --- | --- |
+| [SubsonicClient](src/main/java/moe/ouom/neriplayer/platform/subsonic/api/SubsonicClient.kt) | REST 参数、认证和 JSON 响应 / REST parameters, authentication, and JSON responses |
+| [SubsonicResourceInterceptor](src/main/java/moe/ouom/neriplayer/platform/subsonic/api/SubsonicResourceInterceptor.kt) | 内部资源引用转换为当次认证的音频/图片请求 / Resolve internal references into authenticated media requests |
+| [SubsonicAccounts](src/main/java/moe/ouom/neriplayer/platform/subsonic/auth/SubsonicAccounts.kt) | 加密配置、账号状态和修订检查 / Encrypted profiles, account state, and revision checks |
+| [SubsonicRepository](src/main/java/moe/ouom/neriplayer/platform/subsonic/repository/SubsonicRepository.kt) | 连接检查、曲库查询及歌曲/歌词映射 / Connection checks, library queries, and song/lyric mapping |
+| [SubsonicBrowseCache](src/main/java/moe/ouom/neriplayer/platform/subsonic/repository/SubsonicBrowseCache.kt)、[SubsonicBrowseRoomStore](src/main/java/moe/ouom/neriplayer/platform/subsonic/repository/SubsonicBrowseRoomStore.kt) | 分类分页、请求复用和既有 Room 快照适配 / Paging, shared requests, and existing Room snapshots |
+| [SubsonicLyricsCache](src/main/java/moe/ouom/neriplayer/platform/subsonic/repository/SubsonicLyricsCache.kt)、[SubsonicAudioMetadata](src/main/java/moe/ouom/neriplayer/platform/subsonic/repository/SubsonicAudioMetadata.kt) | 成功歌词缓存和服务器音频信息 / Successful lyric cache and server-declared audio metadata |
+| [ServerSongRef](../model/src/main/java/moe/ouom/neriplayer/data/model/server/ServerSongRef.kt)（`:model`） | 配置 UUID + 原始字符串 ID 的可逆来源引用 / Reversible source reference using profile UUID and raw string ID |

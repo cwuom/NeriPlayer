@@ -34,10 +34,8 @@ When maintaining docs, split them by audience:
   - For developers: module boundaries, extension paths, tests, and PR expectations.
 - [docs/kotlin-helpers_EN.md](docs/kotlin-helpers_EN.md)
   - Usage and boundaries for request generations, units, player reads, and coroutine results.
-- [docs/music-server-integration.md](docs/music-server-integration.md)
-  - Server integration boundaries and design review, with links to the current API, user guide, validation report, and follow-up plan (Chinese).
-- [docs/music-server-files.md](docs/music-server-files.md)
-  - File responsibilities, shared call-site changes, and test navigation for server integration (Chinese); the API contract describes current behavior.
+- [docs/music-server-api.md](docs/music-server-api.md)
+  - Current music-server HTTP endpoints, authentication, identity, and cache contracts (Chinese); see the platform README for core file responsibilities.
 - [tools_pub/quality/README_EN.md](tools_pub/quality/README_EN.md)
   - Scope, commands, and verification limits for CRAP, source ownership, and dependency checks.
 - [modules/native/src/main/cpp/README.md](modules/native/src/main/cpp/README.md)

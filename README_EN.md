@@ -95,7 +95,7 @@ Current positioning:
 
 - **Account as capability**: third-party platform authorization enables search,
   playback, playlists, and favorites access.
-- **Self-hosted music**: connect to Navidrome / OpenSubsonic under Library → Music servers to browse and search albums and songs with the existing player, artwork, lyrics, local favorites, and playlists. Server writes, persistent downloads, Listen Together, and profile migration are not supported yet. See the [server guide](docs/music-server-mvp.md) (Chinese).
+- **Self-hosted music**: connect to Navidrome / OpenSubsonic under Library → Music servers to browse and search albums and songs with the existing player, artwork, lyrics, local favorites, and playlists. Server writes, persistent downloads, Listen Together, and profile migration are not supported yet. See [Connecting a music server](#connecting-a-music-server).
 - **Local-first**: playback cache, downloads, playlists, history, settings, and
   auth data are stored locally on the device by default.
 - **Optional sync**: playlists, favorites, recent plays, track playback stats,
@@ -120,6 +120,15 @@ Current positioning:
 - **Test guardrails**: download storage, sync merging, YouTube playback compatibility,
   Listen Together, lyrics, playback policies, config backup, and safe mode all
   have focused unit or device tests.
+
+### Connecting a music server
+
+1. Under Settings → Third-party platform sign-in → Music servers, enter a name, address, username, and password. Save after the connection check succeeds.
+2. Use the server's base address, such as `https://music.example.com:4533/navidrome/`. Ports and reverse-proxy subpaths are supported; omit `/app/` and `/rest/`.
+3. Open Library → Music servers, select a profile, and browse or search albums and songs. Switching categories keeps the query; searching inside an album filters only that album.
+4. Play a song, or add it to favorites, the queue, or a local playlist. Server lyrics require the `songLyrics` extension; decoding and seeking depend on the server and device.
+
+Profiles and passwords stay in encrypted local storage. Create a new profile when changing accounts or server instances; ordinary sync does not migrate server credentials. Browse caches and next-song prefetch do not provide complete offline downloads. See the [API contract](docs/music-server-api.md) for protocol and client behavior (Chinese).
 
 ---
 

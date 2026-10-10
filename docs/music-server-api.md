@@ -1,8 +1,6 @@
-# 音乐服务器接入 API 与客户端契约 v0.2
+# 音乐服务器 API 与客户端契约
 
-状态更新：2026-10-10。本文对照 `feat/navidrome-mvp` 及当前工作区，说明首个 PR 的实际调用与后续协议规划。已合并的源码基线为 `285beb6b`，尚未创建合并提交；本轮查询上游已前进至 `400e278f`，未对齐或验证该版本。基础请求参数采用 Subsonic 1.16.1，部分行为依赖 OpenSubsonic 约定或扩展；不声明完整实现 OpenSubsonic。标记为“后续”的方法或契约尚未接入，不代表 Navidrome 已实现所有扩展。
-
-本文覆盖认证、曲库、搜索、播放、封面、歌词、缓存及后续扩展边界。当前用户行为见[功能说明](music-server-mvp.md)，实施差异见[设计回顾](music-server-integration.md)，逐文件职责见[文件地图](music-server-files.md)，证据见[验收总报告](music-server-acceptance.md)，排期见[开发计划](music-server-development-plan.md)。
+本文记录 Navidrome / OpenSubsonic 接入的实际 HTTP 请求、模型映射与客户端仓库约定。基础参数使用 Subsonic 1.16.1，歌词依赖可选的 `songLyrics` 扩展；不声明完整实现 OpenSubsonic。用户操作见 [README](../README.md#连接音乐服务器)，核心文件职责见 [平台模块说明](../modules/platform/README.md#音乐服务器接入--music-server-integration)。
 
 ## 1. 分层与术语
 
@@ -10,7 +8,6 @@
 - **客户端仓库契约**：`:platform` 将协议响应转换成音理的 `SongItem`、`SongUrlResult`、`LyricEntry`；页面和播放器不拼接认证 URL。
 - **profileId**：本机一个服务器账号配置的 UUID。同一地址的两个账号拥有不同 ID。
 - **resourceId**：服务器返回的原始字符串，区分大小写，禁止转为 Long 后替代原值。
-- **当前 / 后续**：当前是本工作区已实现契约；后续是提案和待办，其首版排期仍需维护者评审，不能将标记理解为 issue 已确认的范围。
 
 现有网易云、Bilibili、YouTube Music 客户端保持各自登录和仓库。新增适配器通过 `AppContainer` 和已有 playback host 注入；本规范不要求重建统一平台框架。
 
@@ -48,7 +45,7 @@
 
 例：配置 `https://music.example.com:4533/navidrome/`，生成路径 `/navidrome/rest/ping.view`。示意参数中的 `t=<token>&s=<salt>` 不能作为可保存播放地址。token 不是 OAuth 会话，不存在本方案可调用的“刷新 token”接口；每次根据凭据重新计算。HTTP 不加密传输，设置页应明确提示。
 
-API Key 与表单 POST 仅在后续能力协商后增加；不得把 API Key 认证参数与用户名/token 方式混用。[公共 API 规范](https://opensubsonic.netlify.app/docs/api-reference/)
+当前不支持 API Key 与表单 POST；不得把 API Key 认证参数与用户名/token 方式混用。[公共 API 规范](https://opensubsonic.netlify.app/docs/api-reference/)
 
 ### 2.3 连接过程
 
@@ -101,30 +98,19 @@ retryable 只是分类。JSON client 没有额外的业务重试循环，共享 
 
 下表列出本接入所需参数；每个请求还需要第 2 节的公共认证参数。协议的更多可选参数以链接文档为准。
 
-| 阶段 | 方法 | 参数 | 成功数据路径 | 客户端职责 |
-| --- | --- | --- | --- | --- |
-| 当前 | ping | 无 | 响应根 | 连接检查 |
-| 当前 | getOpenSubsonicExtensions | 无 | openSubsonicExtensions[] | name、versions[] |
-| 当前 | getAlbumList2 | type、size、offset | albumList2.album[] | 专辑分页 |
-| 当前 | getAlbum | id | album，album.song[] | 专辑和完整曲目列表 |
-| 当前 | search3 | query；专辑：albumCount/albumOffset，songCount=0、artistCount=0；单曲：songCount/songOffset，albumCount=0、artistCount=0 | searchResult3.album[] 或 song[] | 不发送 artistOffset、不消费 artist[]；空 query 枚举单曲目录 |
-| 当前 | getSong | id | song | 读取服务器声明的音频元数据；forceRefresh 绕过进程缓存 |
-| 当前 | stream | id、format=raw | 二进制音频 | Media3 在线播放 |
-| 当前 | getCoverArt | id、size | 二进制图片 | Coil 与系统封面 |
-| 当前 | getLyricsBySongId | id | lyricsList.structuredLyrics[] | 需 songLyrics，逐行/普通歌词 |
-| 后续 | getMusicFolders | 无 | musicFolders.musicFolder[] | 可选曲库过滤 |
-| 后续 | getArtists / getArtist | musicFolderId? / id | artists / artist | 艺人浏览 |
-| 后续 | getAlbumList2 | type=newest/frequent/random，size，offset | albumList2.album[] | 有明确类型的发现栏目 |
-| 后续 | getRandomSongs | size、musicFolderId? | randomSongs.song[] | 随机歌曲，无 offset 分页 |
-| 后续 | getStarred2 | musicFolderId? | starred2 | 服务器收藏读取 |
-| 后续 | star / unstar | id / albumId / artistId，可重复 | 响应根 | 显式写操作 |
-| 后续 | getPlaylists / getPlaylist | username? / id | playlists.playlist[] / playlist.entry[] | 服务器歌单读取 |
-| 后续 | createPlaylist | name 或 playlistId，重复 songId | playlist | 创建或替换歌单 |
-| 后续 | updatePlaylist | playlistId，name?，comment?，public?，重复 songIdToAdd / songIndexToRemove | 响应根 | 按服务器定义更新；删除索引不等于歌曲 ID |
-| 后续 | deletePlaylist | id | 响应根 | 明确确认后删除 |
-| 后续 | scrobble | id，time?，submission? | 响应根 | 播放事件上报，另定去重策略 |
+| 方法 | 参数 | 成功数据路径 | 客户端职责 |
+| --- | --- | --- | --- |
+| ping | 无 | 响应根 | 连接检查 |
+| getOpenSubsonicExtensions | 无 | openSubsonicExtensions[] | name、versions[] |
+| getAlbumList2 | type、size、offset | albumList2.album[] | 专辑分页 |
+| getAlbum | id | album，album.song[] | 专辑和完整曲目列表 |
+| search3 | query；专辑：albumCount/albumOffset，songCount=0、artistCount=0；单曲：songCount/songOffset，albumCount=0、artistCount=0 | searchResult3.album[] 或 song[] | 不发送 artistOffset、不消费 artist[]；空 query 枚举单曲目录 |
+| getSong | id | song | 读取服务器声明的音频元数据；forceRefresh 绕过进程缓存 |
+| stream | id、format=raw | 二进制音频 | Media3 在线播放 |
+| getCoverArt | id、size | 二进制图片 | Coil 与系统封面 |
+| getLyricsBySongId | id | lyricsList.structuredLyrics[] | 需 songLyrics，逐行/普通歌词 |
 
-主接口依据：[专辑列表](https://opensubsonic.netlify.app/docs/endpoints/getalbumlist2/)、[专辑详情](https://opensubsonic.netlify.app/docs/endpoints/getalbum/)、[搜索](https://opensubsonic.netlify.app/docs/endpoints/search3/)、[歌曲详情](https://opensubsonic.netlify.app/docs/endpoints/getsong/)。后续接口依据：[随机歌曲](https://opensubsonic.netlify.app/docs/endpoints/getrandomsongs/)、[收藏](https://opensubsonic.netlify.app/docs/endpoints/getstarred2/)、[歌单更新](https://opensubsonic.netlify.app/docs/endpoints/updateplaylist/)、[播放上报](https://opensubsonic.netlify.app/docs/endpoints/scrobble/)。
+主接口依据：[专辑列表](https://opensubsonic.netlify.app/docs/endpoints/getalbumlist2/)、[专辑详情](https://opensubsonic.netlify.app/docs/endpoints/getalbum/)、[搜索](https://opensubsonic.netlify.app/docs/endpoints/search3/)、[歌曲详情](https://opensubsonic.netlify.app/docs/endpoints/getsong/)。
 
 ### 4.1 分页和搜索
 
@@ -237,42 +223,13 @@ HTTP 416 保留原始响应头交给 Media3，供其区分文件末尾与读取�
 
 offset 和结构依据：[structuredLyrics](https://opensubsonic.netlify.app/docs/responses/structuredlyrics/)。
 
-## 7. 推荐、标签和上游扩展
+## 7. 本地操作与能力边界
 
-本节均为后续设计提案，尚未接入当前媒体库或探索页面。本文中的匹配策略及可选契约不属于首个 PR 的实现承诺。
+- 收藏和添加歌单修改音理本地数据，不调用服务端 star/歌单写接口，也不上传播放统计。
+- 普通 GitHub/WebDAV 同步可以携带无凭据歌曲引用，不携带服务器配置和密码；另一设备缺少相同配置 ID 时不可播放，不按同名服务器自动重绑定。
+- 永久下载、一起听、探索综合搜索/发现、推荐、上传与配置迁移尚未接入。下载和一起听在 UI 及实际操作路径均拒绝服务器歌曲，不导出认证直链。
 
-### 7.1 发现与匹配
-
-后续计划提供 `newest`（最近添加）、`frequent`（常听）、`random`（随机）栏目，保持实际语义。基础协议不能保证个性化推荐；能力不支持时不显示“为你推荐”。随机结果只做本次展示内去重，不伪造连续游标。
-
-综合匹配拟先覆盖已启用服务器，第三方平台是否参加需在 issue 另行确认。后续拟复用现有文本匹配能力：歌名和歌手为主，热度作为相似文本候选的次级顺序；不同服务器原始播放次数不直接比较。保留来源和版本差异，不自动把失败曲目换成另一个来源。若采用该策略，只对已返回候选排序，不保证全库全局最优。当前没有聚合器或这一排序实现，不是已确认规范。
-
-### 7.2 客户端可选契约（后续提案）
-
-```text
-getServerMetadata(profileId) -> Supported(ServerMetadata) | Unsupported | Failure
-ServerMetadata = { label?: string, iconRef?: ResourceRef, revision?: string }
-
-getDiscovery(profileId, kind, page) -> DiscoverySection | Unsupported | Failure
-DiscoverySection = { kind, title, albums: [...], songs: [...], nextPage? }
-kind = RECENTLY_ADDED | FREQUENT | RANDOM | PERSONALIZED
-```
-
-`ping.type/serverVersion` 仅用于软件识别，`getAvatar` 是用户头像；都不能充当实例自定义标签和品牌图标。当前尚无 `getServerMetadata` 方法；该提案的基础协议回退应为 Unsupported，UI 继续使用用户配置或默认值。
-
-上游规范扩展需另开版本化议题，先确定扩展名称、发现方式、endpoint、认证、字段上限、缓存和失败回退。目前没有可调用的 `/metadata` 或 `/recommendations` 契约，基础接入独立于个性化推荐能力。
-
-## 8. 收藏、同步、下载与上传
-
-- 本地收藏和服务器 star 是两份状态；当前本地收藏按钮不映射为服务端写操作。
-- 更新歌单可能非幂等；失败后先读取实际结果再让用户重试，不能对新增歌曲盲目自动重试。需要处理只读权限、重复歌曲和顺序变化。
-- stream 本身不等于 scrobble。后续单独决定播放上报触发点、重复事件抑制和离线补报；当前只沿用客户端本地统计。[Navidrome 说明](https://www.navidrome.org/docs/developers/subsonic-api/)
-- 服务器配置和密码不进入 GitHub/WebDAV 普通同步。当前已有歌单/历史同步可能携带无凭据的歌曲引用；另一设备没有相同配置 ID 时不可播放，不自动通过同名服务器重绑定。
-- 当前保留已有元数据同步映射中的条目，避免过滤混合歌单时造成删除；跨设备可播放配置迁移仍未实现。混合版本客户端、删除标记和身份/共享往返的专项回归安排在后续多服务器阶段，不作为已验收结论。
-- 当前不支持永久下载与一起听，按钮显示禁用原因，实际操作路径也拒绝，不导出认证直链。
-- 音频上传不在采用的基础协议内，当前未接入。后续需独立定义上传会话、权限、大小/格式限制、分片/续传、校验和、冲突策略、最终提交和取消；不得用客户端 WebDAV 设置冒充 Navidrome 上传 API。
-
-## 9. 当前客户端仓库契约
+## 8. 客户端仓库契约
 
 实际方法位于 [SubsonicRepository](../modules/platform/src/main/java/moe/ouom/neriplayer/platform/subsonic/repository/SubsonicRepository.kt)，客户端未实现一个新的全平台公共 Provider 接口。
 
@@ -292,7 +249,7 @@ kind = RECENTLY_ADDED | FREQUENT | RANDOM | PERSONALIZED
 
 调用顺序：browseKey/albums/albumSongs/search 依赖已加载的账号快照，页面 ViewModel 先 accounts.load；playback/lyrics 自行先加载账号。profile 和 cachedLyrics 是内存读取；credentials 是阻塞加密存储读取，只供 IO worker/拦截器调用。cachedLyrics 无有效账号、缓存或修订匹配时返回 null；lyrics 无可用扩展/歌词时可返回空列表，传输错误仍抛异常。playback 的非法引用返回 Failure，缺少有效配置返回 RequiresLogin；播放器外层另校验账号并转换为安全用户提示。
 
-### 9.1 后续修改的约束
+### 8.1 维护约束
 
 以下是维护这套接入时的规则；已有例外和待修复项以上文实际行为为准。
 
@@ -300,12 +257,4 @@ kind = RECENTLY_ADDED | FREQUENT | RANDOM | PERSONALIZED
 - 账号操作通过仓库先验证再保存；修改成功后才发布状态。credentials 不在 UI 主线程读取，外部取消继续传播。
 - 无凭据引用留在模型/缓存，认证 URL 留在传输边界；错误类不得保存服务端原文、完整请求地址或底层带凭据 cause。新增公开元数据不得包含 password/token/salt。
 - 共享组件新增参数保持原调用默认行为；公共来源分支同时核对原平台、下载/共享和历史恢复，不能只测服务器 UI。
-- 新端点先在本文区分当前调用与后续提案，明确参数/单位、结果、失败、能力依赖、缓存和测试。更严格的 schema、认证窄接口和实例变更缓存隔离尚未完成，不作为已有保证。
-
-后续增量包括能力 TTL/刷新、独立歌词状态、发现/聚合搜索、管理图标/停用/排序、服务端写操作和配置迁移。只在真实调用方需要时引入小接口。
-
-## 10. 验收入口与证据范围
-
-协议 URL、受控请求/解析、缓存、身份、预取及 HTTP 416 测试与真机记录统一见[验收总报告](music-server-acceptance.md)。测试覆盖与实测结论分别记录；不能把构建成功等同于全部协议和设备场景通过。
-
-基础真机闭环按用户反馈已完成。多服务器同 ID、身份持久化往返、混合歌单同步/共享、完整弱网与取消场景的专项回归见[开发计划](music-server-development-plan.md)，不反过来扩展首个 PR 的全部前置功能范围。
+- 新端点同步记录实际参数/单位、结果、失败、能力依赖、缓存和测试。更严格的 schema、认证窄接口和实例变更缓存隔离尚未完成，不作为已有保证。
