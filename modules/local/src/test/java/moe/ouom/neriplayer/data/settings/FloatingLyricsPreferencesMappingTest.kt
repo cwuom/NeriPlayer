@@ -10,6 +10,22 @@ import org.junit.Test
 
 class FloatingLyricsPreferencesMappingTest {
     @Test
+    fun `legacy width is kept for landscape until independently configured`() {
+        val legacy = mutablePreferencesOf(SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP to 350f)
+            .toFloatingLyricsPreferences()
+        assertEquals(350f, legacy.landscapeMaxWidthDp)
+        val configured = mutablePreferencesOf(
+            SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP to 350f,
+            SettingsKeys.FLOATING_LYRICS_LANDSCAPE_MAX_WIDTH_DP to 1000f,
+            SettingsKeys.FLOATING_LYRICS_SENTENCE_COUNT to 3,
+            SettingsKeys.FLOATING_LYRICS_LONG_LINE_MODE to "wrap"
+        ).toFloatingLyricsPreferences()
+        assertEquals(350f, configured.maxWidthDp)
+        assertEquals(1000f, configured.landscapeMaxWidthDp)
+        assertEquals(3, configured.sentenceCount)
+        assertEquals("wrap", configured.longLineMode)
+    }
+    @Test
     fun `missing floating lyric settings resolve to the model defaults`() {
         assertEquals(FloatingLyricsPreferences().normalized(), emptyPreferences().toFloatingLyricsPreferences())
     }

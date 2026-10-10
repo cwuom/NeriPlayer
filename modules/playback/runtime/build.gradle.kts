@@ -9,6 +9,11 @@ android {
     testOptions.unitTests.isIncludeAndroidResources = true
 }
 
+tasks.withType<Test>().configureEach {
+    // Android 16 tests access the JDK file descriptor bridge during shared memory setup.
+    jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+}
+
 dependencies {
     testImplementation(testFixtures(project(":common")))
     implementation(project(":common"))

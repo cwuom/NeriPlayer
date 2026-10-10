@@ -39,6 +39,22 @@ class ConfigSettingsSanitizerImportTest {
     private val sanitizer = ConfigSettingsSanitizer(context)
 
     @Test
+    fun `floating lyric layout choices are included in backup validation`() {
+        val warnings = mutableListOf<String>()
+        val result = sanitizer.sanitize(
+            TypedPreferenceSnapshot(
+                ints = mapOf(SettingsKeys.FLOATING_LYRICS_SENTENCE_COUNT.name to 99),
+                floats = mapOf(SettingsKeys.FLOATING_LYRICS_LANDSCAPE_MAX_WIDTH_DP.name to 2000f),
+                strings = mapOf(SettingsKeys.FLOATING_LYRICS_LONG_LINE_MODE.name to "unknown")
+            ), warnings
+        )
+        assertEquals(3, result.ints[SettingsKeys.FLOATING_LYRICS_SENTENCE_COUNT.name])
+        assertEquals(1200f, result.floats[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_MAX_WIDTH_DP.name])
+        assertEquals("scroll", result.strings[SettingsKeys.FLOATING_LYRICS_LONG_LINE_MODE.name])
+        assertEquals(listOf(INVALID_VALUES_WARNING), warnings)
+    }
+
+    @Test
     fun `int settings outside their supported values are clamped`() {
         val warnings = mutableListOf<String>()
 

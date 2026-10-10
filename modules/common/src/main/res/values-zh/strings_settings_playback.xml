@@ -194,7 +194,7 @@
     <string name="settings_floating_lyrics_lyric_alpha">主歌词不透明度</string>
     <string name="settings_floating_lyrics_translation_alpha">翻译不透明度</string>
     <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>
-    <string name="settings_floating_lyrics_max_width">最大宽度</string>
+    <string name="settings_floating_lyrics_max_width">竖屏最大宽度</string>
     <string name="settings_floating_lyrics_max_width_value">%1$.1f dp</string>
     <string name="settings_floating_lyrics_position_x">水平位置</string>
     <string name="settings_floating_lyrics_position_y">垂直位置</string>
@@ -217,4 +217,16 @@
     <string name="settings_bluetooth_mode_song_and_lyrics">歌曲与歌词，保留歌手</string>
     <string name="car_action_shuffle">切换随机播放</string>
     <string name="car_action_repeat">切换循环模式</string>
+    <string name="settings_floating_lyrics_sentence_count">显示句数</string>
+    <string name="settings_floating_lyrics_sentence_count_desc">当前句突出显示，后续句淡化；译文仅跟随当前句</string>
+    <string name="settings_floating_lyrics_sentence_one">单句</string>
+    <string name="settings_floating_lyrics_sentence_two">两句</string>
+    <string name="settings_floating_lyrics_sentence_three">三句</string>
+    <string name="settings_floating_lyrics_long_line_mode">长句显示</string>
+    <string name="settings_floating_lyrics_long_line_mode_desc">可选择横向滚动或自动换行；换行时每句最多三行，超出部分显示省略号</string>
+    <string name="settings_floating_lyrics_long_line_scroll">横向滚动</string>
+    <string name="settings_floating_lyrics_long_line_wrap">自动换行</string>
+    <string name="settings_floating_lyrics_landscape_max_width">横屏最大宽度</string>
+    <string name="settings_floating_lyrics_preview_next">下一句歌词会提前出现在这里</string>
+    <string name="settings_floating_lyrics_preview_second_next">后续第二句也可以提前预览</string>
 </resources>

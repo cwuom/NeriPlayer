@@ -13,6 +13,8 @@ import moe.ouom.neriplayer.data.settings.playback.toPlaybackSoundConfig
 import moe.ouom.neriplayer.data.ltw.validation.format
 import moe.ouom.neriplayer.core.player.audio.effects.AudioOutputRouteMonitor
 
+import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContent
+import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
 import coil.Coil
 import android.os.SystemClock
@@ -1317,15 +1319,14 @@ private fun PlayerManager.observePlaybackSettings() {
     }
     mainScope.launch {
         combine(
-            externalBluetoothLyricLineFlow,
-            floatingTranslatedLyricLineFlow,
+            floatingLyricsContentSource.content,
             currentSongFlow
-        ) { lyricLine, translatedLine, currentSong ->
-            Triple(lyricLine, translatedLine, currentSong)
-        }.collect { (lyricLine, translatedLine, currentSong) ->
+        ) { content, currentSong ->
+            content.takeIf { currentSong != null && it.songKey == currentSong.stableKey() }
+                ?: FloatingLyricsContent()
+        }.collect { content ->
             FloatingLyricsOverlayManager.updateContent(
-                line = lyricLine.takeIf { currentSong != null },
-                translation = translatedLine.takeIf { currentSong != null }
+                content = content
             )
         }
     }

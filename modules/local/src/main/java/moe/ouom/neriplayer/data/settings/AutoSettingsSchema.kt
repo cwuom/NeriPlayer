@@ -1255,6 +1255,36 @@ object AutoSettingsSchema {
         val floatingLyricsRevealAnimationEnabled = Unit
 
         @AutoSetting(
+            key = "floating_lyrics_sentence_count",
+            type = SettingValueType.Int,
+            defaultInt = 1,
+            order = 25,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsSentenceCount = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_long_line_mode",
+            type = SettingValueType.String,
+            defaultString = "scroll",
+            order = 25,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsLongLineMode = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_landscape_max_width_dp",
+            type = SettingValueType.Float,
+            defaultFloat = 280f,
+            order = 25,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsLandscapeMaxWidthDp = Unit
+
+        @AutoSetting(
             key = "external_bluetooth_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,

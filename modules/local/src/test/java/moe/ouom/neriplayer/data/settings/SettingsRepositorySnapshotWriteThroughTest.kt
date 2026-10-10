@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.settings
 
+import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsRepositorySnapshotWriteThroughTest {
+
+    @Test
+    fun `floating lyric layout choices survive repository recreation and enable toggles`() = withIsolatedSettings { context, repository, _ ->
+        val expected = FloatingLyricsPreferences(
+            enabled = true, sentenceCount = 3, longLineMode = "wrap", maxWidthDp = 300f,
+            landscapeMaxWidthDp = 960f
+        ).normalized()
+        repository.setFloatingLyricsPreferences(expected)
+        assertEquals(expected, SettingsRepository(context).floatingLyricsPreferencesFlow.first())
+        repository.setFloatingLyricsEnabled(false)
+        assertEquals(expected.copy(enabled = false), repository.floatingLyricsPreferencesFlow.first())
+    }
 
     @Test
     fun `theme toggles persist to settings and the startup theme cache`() = withIsolatedSettings { context, repository, _ ->
