@@ -28,6 +28,13 @@ import org.mockito.Mockito.`when`
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerManagerPlaybackQualityPortTest {
     @Test
+    fun `local and raw server quality do not invoke any platform settings writer`() = runTest {
+        // These sources have no writer in the platform map; reaching it would fail.
+        PlayerManagerPlaybackQualityPort.persistPreferredQuality(PlaybackAudioSource.LOCAL, "hires")
+        PlayerManagerPlaybackQualityPort.persistPreferredQuality(PlaybackAudioSource.SUBSONIC, "hires")
+    }
+
+    @Test
     fun `quality refresh does not resume a stopped USB sink with retained playback intent`() =
         withPlaybackState(playWhenReady = true, isPlaying = true, resumeRequested = true) { player ->
             assertTrue(PlayerManagerUsbSinkRoutePort.stopCurrentSink("usb_permission_granted", true))

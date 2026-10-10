@@ -25,6 +25,47 @@ class NowPlayingLyricsFastStageTest {
     )
 
     @Test
+    fun `original cache hydrates initial and fast frames without requiring a network read`() = runTest {
+        val server = localSong.copy(channelId = "subsonic", mediaUri = "neri-server://server/song/id", localFileName = null)
+        val cached = listOf(LyricEntry("cached original", 1000, 2000))
+        for (value in listOf(cached, emptyList(), null)) {
+            val sources = object : FakeNowPlayingLyricsSources() {
+                override fun cachedOriginal(song: SongItem) = value
+            }
+            val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+            val input = request(server)
+            val expected = value.orEmpty()
+            assertEquals(expected, stages.readInitial(input).state.lyrics)
+            assertEquals(expected, stages.readFast(input).state.lyrics)
+            assertTrue(stages.readInitial(input.copy(song = null)).state.lyrics.isEmpty())
+        }
+    }
+
+    @Test
+    fun `cached original cannot replace confirmed clear or chosen lyric source`() = runTest {
+        var cacheReads = 0
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override fun cachedOriginal(song: SongItem): List<LyricEntry> {
+                cacheReads++
+                return listOf(LyricEntry("server cache", 1000, 2000))
+            }
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        for (text in listOf("", "[00:01.00]user edit")) {
+            val input = request(localSong.copy(lyricSyncEdited = true, matchedLyric = text))
+            assertEquals(text, stages.readInitial(input).state.rawLyrics)
+            assertEquals(text, stages.readFast(input).state.rawLyrics)
+        }
+        val preferred = PreferredLyricSourceResult(emptyList(), emptyList(), emptyList(), LyricSourcePreference.Kugou)
+        val automatic = request(localSong).copy(cachedPreferredLyrics = preferred)
+        assertEquals(LyricSourcePreference.Kugou, stages.readInitial(automatic).state.preferredSource)
+        assertTrue(stages.readFast(automatic).state.lyrics.isEmpty())
+        val explicit = automatic.copy(defaultLyricSource = LyricSourcePreference.Kugou)
+        assertTrue(stages.readInitial(explicit).state.lyrics.isEmpty())
+        assertEquals(0, cacheReads)
+    }
+
+    @Test
     fun `confirmed edits overlay stale preferred local and downloaded first frames per variant`() = runTest {
         val preferred = PreferredLyricSourceResult(
             listOf(LyricEntry("preferred original", 1000, 2000)),

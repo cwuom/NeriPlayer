@@ -514,7 +514,8 @@ internal fun SettingsScreen(
                         SettingsPage.Accounts to {
                             item(key = "${selectedPage.name}:content") {
                                 SettingsLoginExpandedContent(
-                                    accountAuth,
+                                    controller = accountAuth,
+                                    onOpenMusicServers = { navigation.activePage = SettingsPage.MusicServers },
                                     isActive = accountProfilesActive,
                                     highlightTargetId = settingsHighlightTargetId,
                                     highlightPulse = settingsHighlightPulse,
@@ -834,6 +835,12 @@ internal fun SettingsScreen(
                                     },
                                     modifier = Modifier.animateItem()
                                 )
+                            }
+                        },
+
+                        SettingsPage.MusicServers to {
+                            miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
+                                moe.ouom.neriplayer.ui.screen.server.MusicServerSettingsContent()
                             }
                         },
 

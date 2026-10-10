@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 
 import android.content.res.Resources
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +55,7 @@ internal fun shouldLoadSettingsAccountProfiles(
 @Composable
 internal fun SettingsLoginExpandedContent(
     controller: SettingsAccountAuthController,
+    onOpenMusicServers: () -> Unit,
     isActive: Boolean = true,
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
@@ -105,40 +109,43 @@ internal fun SettingsLoginExpandedContent(
         youtubeVm.refreshAuthHealth()
     }
 
-    SettingsAccountCardsContent(
-        accounts = listOf(
-            SettingsAccountCardUiState(
-                platform = SettingsAccountPlatform.Netease,
-                hasSavedAuthorization = netease.hasSavedCookies,
-                authorizationComplete = hasValidSavedCookieHealth(netease.health.state),
-                savedAtLabel = accountSavedAtText(netease.health.savedAt),
-                profile = neteaseProfile.profile,
-                profileLoading = neteaseProfile.loading
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SettingsAccountCardsContent(
+            accounts = listOf(
+                SettingsAccountCardUiState(
+                    platform = SettingsAccountPlatform.Netease,
+                    hasSavedAuthorization = netease.hasSavedCookies,
+                    authorizationComplete = hasValidSavedCookieHealth(netease.health.state),
+                    savedAtLabel = accountSavedAtText(netease.health.savedAt),
+                    profile = neteaseProfile.profile,
+                    profileLoading = neteaseProfile.loading
+                ),
+                SettingsAccountCardUiState(
+                    platform = SettingsAccountPlatform.Bilibili,
+                    hasSavedAuthorization = bili.hasSavedCookies,
+                    authorizationComplete = hasValidSavedCookieHealth(bili.health.state),
+                    savedAtLabel = accountSavedAtText(bili.health.savedAt),
+                    profile = biliProfile.profile,
+                    profileLoading = biliProfile.loading
+                ),
+                SettingsAccountCardUiState(
+                    platform = SettingsAccountPlatform.YouTube,
+                    hasSavedAuthorization = youtube.hasSavedAuth,
+                    authorizationComplete = hasValidYouTubeAuthHealth(youtube.health.state),
+                    savedAtLabel = accountSavedAtText(youtube.health.savedAt),
+                    profile = youtubeProfile.profile,
+                    profileLoading = youtubeProfile.loading
+                ),
+                SettingsAccountCardUiState(platform = SettingsAccountPlatform.QqMusic)
             ),
-            SettingsAccountCardUiState(
-                platform = SettingsAccountPlatform.Bilibili,
-                hasSavedAuthorization = bili.hasSavedCookies,
-                authorizationComplete = hasValidSavedCookieHealth(bili.health.state),
-                savedAtLabel = accountSavedAtText(bili.health.savedAt),
-                profile = biliProfile.profile,
-                profileLoading = biliProfile.loading
-            ),
-            SettingsAccountCardUiState(
-                platform = SettingsAccountPlatform.YouTube,
-                hasSavedAuthorization = youtube.hasSavedAuth,
-                authorizationComplete = hasValidYouTubeAuthHealth(youtube.health.state),
-                savedAtLabel = accountSavedAtText(youtube.health.savedAt),
-                profile = youtubeProfile.profile,
-                profileLoading = youtubeProfile.loading
-            ),
-            SettingsAccountCardUiState(platform = SettingsAccountPlatform.QqMusic)
-        ),
-        onLogin = controller.actions::openPlatformLogin,
-        onManageSaved = controller.actions::openPlatformSavedAuthorization,
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
+            onLogin = controller.actions::openPlatformLogin,
+            onManageSaved = controller.actions::openPlatformSavedAuthorization,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
+        SettingsMusicServerCard(onOpenMusicServers)
+    }
 }
 
 internal class SettingsAccountEntryAction(

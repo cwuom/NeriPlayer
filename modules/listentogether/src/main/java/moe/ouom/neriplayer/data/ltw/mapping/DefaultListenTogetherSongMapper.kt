@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.ltw.mapping
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
+
 import android.net.Uri
 import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.ltw.playback.boundedAroundStableKey
@@ -20,7 +22,7 @@ class DefaultListenTogetherSongMapper(
     private val resolvedStreamUrls: () -> List<String> = { emptyList() }
 ) : ListenTogetherSongMapper {
 
-    override fun SongItem.resolvedChannelId(): String? {
+    override fun SongItem.resolvedChannelId(): String {
         val explicit = channelId.nonBlankOrNull()
         if (explicit != null) return explicit
         return when {
@@ -69,7 +71,8 @@ class DefaultListenTogetherSongMapper(
     }
 
     override fun SongItem.toListenTogetherTrackOrNull(includeLocal: Boolean): ListenTogetherTrack? {
-        val channel = resolvedChannelId() ?: return null
+        if (isServerSong()) return null
+        val channel = resolvedChannelId()
         if (channel.equals(ListenTogetherChannels.LOCAL, ignoreCase = true) && !includeLocal) {
             return null
         }

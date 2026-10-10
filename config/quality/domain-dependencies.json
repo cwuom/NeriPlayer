@@ -89,6 +89,7 @@
       "okhttp3.HttpUrl",
       "okhttp3.HttpUrl$Companion",
       "moe.ouom.neriplayer.data.model.SongItem",
+      "moe.ouom.neriplayer.data.model.server.ServerSongRefKt",
       "moe.ouom.neriplayer.data.model.ltw.*",
       "moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi",
       "moe.ouom.neriplayer.api.ltw.http.ListenTogetherBaseUrlKt",

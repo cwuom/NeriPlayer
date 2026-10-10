@@ -736,6 +736,7 @@ fun ExploreScreen(
                     .fillMaxWidth()
                     .padding(horizontal = searchPanelHorizontalPadding, vertical = 8.dp)
             ) {
+                    moe.ouom.neriplayer.ui.screen.server.MusicServerEntry()
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = {

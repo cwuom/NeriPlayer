@@ -13,6 +13,8 @@ import moe.ouom.neriplayer.data.settings.playback.toPlaybackSoundConfig
 import moe.ouom.neriplayer.data.ltw.validation.format
 import moe.ouom.neriplayer.core.player.audio.effects.AudioOutputRouteMonitor
 
+import moe.ouom.neriplayer.core.player.engine.datasource.ServerMediaLoadErrorPolicy
+
 import android.app.Application
 import coil.Coil
 import android.os.SystemClock
@@ -516,7 +518,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
     val mediaSourceFactory = DefaultMediaSourceFactory(
         finalDataSourceFactory,
         extractorsFactory
-    )
+    ).setLoadErrorHandlingPolicy(ServerMediaLoadErrorPolicy())
 
     // USB 独占优先保留解码器的原生整数 PCM, 别在进入 native USB 前强行改成 float
     val enableFloatOutput = shouldEnableFloatPlaybackOutput(
@@ -695,6 +697,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
                 return
             }
 
+            if (handleServerPlaybackError(error)) return
             val currentSong = _currentSongFlow.value
             val currentUrl = _currentMediaUrl.value
             val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true

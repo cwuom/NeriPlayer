@@ -2,6 +2,9 @@
 
 package moe.ouom.neriplayer.core.player.url
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
+import moe.ouom.neriplayer.data.model.server.ServerSongRef
+
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.host.PlayerDownloadAccess
 import moe.ouom.neriplayer.core.player.runtime.source.retrySongUrlResolution
@@ -168,6 +171,21 @@ internal suspend fun PlayerManager.resolveSongUrl(
     playbackRequestTokenOverride: Long? = null,
     shouldApplyCacheMutation: () -> Boolean = { true }
 ): SongUrlResult {
+    val serverSong = song.isServerSong()
+    if (serverSong) {
+        val accounts = PlayerDependencies.repositories.subsonicRepository?.accounts
+        try { accounts?.load() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable))) }
+            return SongUrlResult.Failure
+        }
+        val ref = ServerSongRef.from(song)
+        if (ref == null || accounts?.profile(ref.profileId) == null) {
+            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable))) }
+            return SongUrlResult.Failure
+        }
+    }
     NPLogger.d(
         "NERI-PlayerManager",
         "resolveSongUrl: song=${song.name}, source=${song.album}, forceRefresh=$forceRefresh, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
@@ -242,7 +260,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
     if (
-        shouldUseDirectStreamShortcut(
+        !serverSong && shouldUseDirectStreamShortcut(
             forceRefresh = forceRefresh,
             hasListenTogetherFallback = initialListenTogetherFallback != null
         ) && isDirectStreamUrl(song.streamUrl)
@@ -341,6 +359,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
             )
         }
     }
+    if (serverSong) return resolveServerSongUrl(song, forceRefresh, sideEffects)
     val resolverSideEffects = if (
         initialListenTogetherFallback != null || suppressListenTogetherResolverErrors
     ) {

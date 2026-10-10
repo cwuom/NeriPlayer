@@ -98,7 +98,11 @@ internal fun rememberAppSettingsCacheClearOwner(application: Application): AppSe
                     PlayerLyricsProvider.clearPersistentLyricCache(application)
                 }
             },
-            clearExtraCaches = { options -> clearExtraStorageCaches(context, options) },
+            clearExtraCaches = { options ->
+                // Cancel server snapshot writers before the shared Room cleanup.
+                if (options.serverBrowseCache) moe.ouom.neriplayer.core.di.AppContainer.subsonicRepository.browseCache.clear(clearStore = false)
+                clearExtraStorageCaches(context, options)
+            },
             formatExtraResult = { result ->
                 formatExtraCacheClearResult(
                     result = result,

@@ -99,6 +99,7 @@ import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 enum class LibraryTab(val labelResId: Int) {
     LOCAL(CoreCommonR.string.library_tab_local),
     FAVORITE(CoreCommonR.string.library_tab_favorite),
+    MY_MUSIC(CoreCommonR.string.server_my_music),
     YTMUSIC(CoreCommonR.string.library_tab_youtube_music),
     NETEASE(CoreCommonR.string.library_tab_netease),
     NETEASEALBUM(CoreCommonR.string.library_tab_netease_album),
@@ -195,7 +196,8 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.YTMUSIC,
             LibraryTab.NETEASE,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC
+            LibraryTab.QQMUSIC,
+            LibraryTab.MY_MUSIC
         )
     } else {
         listOf(
@@ -204,7 +206,8 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.NETEASE,
             LibraryTab.YTMUSIC,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC
+            LibraryTab.QQMUSIC,
+            LibraryTab.MY_MUSIC
         )
     }
     return if (youtubeEnabled) orderedTabs else orderedTabs - LibraryTab.YTMUSIC
@@ -319,7 +322,7 @@ fun LibraryScreen(
                     qqMusicListState.canScrollBackward,
                     topAppBarState.collapsedFraction
                 )
-                null -> shouldAllowCollapsingTopAppBar(
+                LibraryTab.MY_MUSIC, null -> shouldAllowCollapsingTopAppBar(
                     canScrollForward = false,
                     canScrollBackward = false,
                     collapsedFraction = topAppBarState.collapsedFraction
@@ -418,6 +421,7 @@ fun LibraryScreen(
                     pageSpacing = 0.dp
                 ) { page ->
                     when (orderedTabs[page]) {
+                        LibraryTab.MY_MUSIC -> moe.ouom.neriplayer.ui.screen.server.MusicServerScreen()
                         LibraryTab.LOCAL -> LocalPlaylistList(
                             playlists = ui.localPlaylists,
                             listState = localListState,

@@ -10,7 +10,8 @@ val storagePlatformCaches = mapOf(
     StorageCacheKind.NeteasePlaylist to "netease",
     StorageCacheKind.BiliFavorite to "bili_favorite",
     StorageCacheKind.BiliArchive to "bili_archive",
-    StorageCacheKind.YouTubePlaylist to "youtube_music"
+    StorageCacheKind.YouTubePlaylist to "youtube_music",
+    StorageCacheKind.ServerBrowse to "subsonic"
 )
 
 val storageCacheItemKinds = mapOf(
@@ -23,6 +24,7 @@ val storageCacheItemKinds = mapOf(
     StorageCacheKind.BiliFavorite to StorageUsageItemKind.BiliFavoriteCache,
     StorageCacheKind.BiliArchive to StorageUsageItemKind.BiliArchiveCache,
     StorageCacheKind.YouTubePlaylist to StorageUsageItemKind.YouTubePlaylistCache,
+    StorageCacheKind.ServerBrowse to StorageUsageItemKind.ServerBrowseCache,
     StorageCacheKind.LogFiles to StorageUsageItemKind.LogFiles,
     StorageCacheKind.CrashLogs to StorageUsageItemKind.CrashLogs
 )
@@ -57,6 +59,7 @@ class StorageLocations(
         StorageCacheKind.BiliFavorite to listOf(File(filesDir, "bili_favorite_cache")),
         StorageCacheKind.BiliArchive to listOf(File(filesDir, "bili_archive_cache")),
         StorageCacheKind.YouTubePlaylist to listOf(File(filesDir, "youtube_music_playlist_cache")),
+        StorageCacheKind.ServerBrowse to emptyList(),
         StorageCacheKind.LogFiles to listOf(logDir),
         StorageCacheKind.CrashLogs to listOf(crashDir)
     )
