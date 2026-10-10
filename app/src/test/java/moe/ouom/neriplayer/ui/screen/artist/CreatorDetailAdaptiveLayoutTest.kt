@@ -50,6 +50,15 @@ class CreatorDetailAdaptiveLayoutTest {
     }
 
     @Test
+    @Config(qualifiers = "w840dp-h360dp")
+    fun `landscape phone window keeps the stacked layout`() {
+        setLayout(tabletDevice = false)
+
+        composeRule.onNodeWithTag("creatorDetailSplitLayout").assertDoesNotExist()
+        composeRule.onNodeWithText("stacked works").assertIsDisplayed()
+    }
+
+    @Test
     @Config(qualifiers = "w673dp-h841dp")
     fun `tablet keeps splitting from 600dp`() {
         setLayout(tabletDevice = true)

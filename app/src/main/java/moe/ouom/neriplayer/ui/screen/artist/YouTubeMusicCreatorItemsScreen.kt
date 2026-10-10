@@ -168,7 +168,7 @@ internal fun YouTubeMusicCreatorItemsContent(
             .windowInsetsPadding(WindowInsets.navigationBars),
         contentAlignment = Alignment.TopCenter
     ) {
-        val tabletLayout = useCreatorDetailSplitLayout(isTabletLayout, maxWidth.value)
+        val tabletLayout = useCreatorDetailSplitLayout(isTabletLayout, maxWidth.value, maxHeight.value)
         Surface(
             modifier = Modifier.widthIn(max = if (tabletLayout) 1000.dp else 1080.dp)
                 .fillMaxSize()
