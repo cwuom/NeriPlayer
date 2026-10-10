@@ -146,4 +146,3 @@
 | [ServerRangeResponseTest.kt](../modules/playback/runtime/src/test/java/moe/ouom/neriplayer/core/player/engine/datasource/ServerRangeResponseTest.kt) | 416 末尾/越界、短读、认证失败与无凭据返回 request；受控响应。 |
 | [ServerPrefetchCancellationTest.kt](../modules/playback/runtime/src/test/java/moe/ouom/neriplayer/core/player/prefetch/ServerPrefetchCancellationTest.kt) | 取消打断阻塞 open/read 并释放任务；不是真机网络矩阵。 |
 | [SyncSongIdentityCompatibilityTest.kt](../modules/sync/src/test/java/moe/ouom/neriplayer/data/sync/identity/SyncSongIdentityCompatibilityTest.kt) | 无凭据引用的身份恢复；不代表混合版本/跨设备专项完成。 |
-
