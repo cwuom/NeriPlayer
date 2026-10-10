@@ -959,6 +959,7 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   next sync.
 - GitHub/WebDAV sync uses a locally generated UUID as the device identifier,
   not `ANDROID_ID`.
+- Opening the app immediately queues persistent sync work for configured providers with auto sync enabled, including during playback. When both providers are enabled, WebDAV starts with a 10-second delay. Automatic settings and sync-format upgrade approval still control execution.
 - GitHub sync creates a raw binary blob through the Git Data API, writes it through
   a tree and commit, and atomically advances the default branch with an expected HEAD condition.
   Reads use the raw content endpoint; Base64 in blob requests is only the API

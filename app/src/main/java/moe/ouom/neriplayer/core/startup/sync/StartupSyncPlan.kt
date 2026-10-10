@@ -7,7 +7,6 @@ internal data class StartupSyncPlan(
 )
 
 internal object StartupSyncPlanner {
-    const val STARTUP_SYNC_SCHEDULE_DELAY_MS = 20_000L
     const val STARTUP_SYNC_STAGGER_DELAY_MS = 10_000L
 
     fun plan(

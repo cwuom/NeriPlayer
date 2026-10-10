@@ -1460,13 +1460,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun scheduleStartupSyncIfNeeded() {
-        lifecycleScope.launch {
+        val appContext = applicationContext
+        AppContainer.launchBackgroundIo {
             StartupSyncScheduler(
-                context = this@MainActivity,
-                ioDispatcher = Dispatchers.IO,
-                isStarted = {
-                    lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-                }
+                context = appContext,
+                ioDispatcher = Dispatchers.IO
             ).scheduleIfNeeded()
         }
     }

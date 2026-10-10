@@ -40,9 +40,11 @@ import moe.ouom.neriplayer.data.sync.work.syncWorkManager
 
 class GitHubSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        SyncWorkerExecution(createGitHubWorkerHost(applicationContext)).execute(
+        val appStartup = inputData.getBoolean("trigger_by_app_startup", false)
+        SyncWorkerExecution(createGitHubWorkerHost(applicationContext, appStartup)).execute(
             forceSync = inputData.getBoolean("force_sync", false),
-            triggerByUserAction = inputData.getBoolean("trigger_by_user_action", false)
+            triggerByUserAction = inputData.getBoolean("trigger_by_user_action", false),
+            triggerByAppStartup = appStartup
         ).toWorkResult()
     }
 
@@ -68,9 +70,10 @@ class GitHubSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
             triggerByUserAction: Boolean = false,
             markMutation: Boolean = false,
             initialDelayMs: Long = DEFAULT_DELAY_MS,
-            appendToCurrentWork: Boolean = false
+            appendToCurrentWork: Boolean = false,
+            triggerByAppStartup: Boolean = false
         ) {
-            scheduler(context).scheduleDelayed(triggerByUserAction, markMutation, initialDelayMs, appendToCurrentWork)
+            scheduler(context).scheduleDelayed(triggerByUserAction, markMutation, initialDelayMs, appendToCurrentWork, triggerByAppStartup)
         }
 
         internal fun delayedSyncWorkPolicy(triggerByUserAction: Boolean, appendToCurrentWork: Boolean): ExistingWorkPolicy =
