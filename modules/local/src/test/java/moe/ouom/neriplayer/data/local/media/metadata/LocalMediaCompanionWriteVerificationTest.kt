@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.local.database.store.expectFailure
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -24,6 +25,7 @@ import org.mockito.MockedStatic
 import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mockStatic
@@ -32,6 +34,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileDescriptor
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -118,6 +121,18 @@ class LocalMediaCompanionWriteVerificationTest {
         assertEquals("original lyric", String(document))
         val entry = requireNotNull(transaction.record).companions.single()
         assertEquals(listOf<Any?>("WRITE_INTENT", false), listOf(entry.phase, entry.writeIdentityVerified))
+    }
+
+    @Test
+    fun `providers without direct rw access still receive the companion through rwt`() {
+        doThrow(FileNotFoundException("no rw")).`when`(resolver).openFileDescriptor(documentUri, "rw")
+        doReturn(writeDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rwt")
+        val transaction = transaction()
+
+        val written = withDescriptors { transaction.write(DOCUMENT, "updated lyric".toByteArray()) }
+
+        assertTrue(written)
+        assertEquals("updated lyric", String(document))
     }
 
     @Test

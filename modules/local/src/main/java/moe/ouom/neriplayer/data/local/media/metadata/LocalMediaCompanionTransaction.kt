@@ -2,12 +2,14 @@ package moe.ouom.neriplayer.data.local.media.metadata
 
 import moe.ouom.neriplayer.data.local.media.*
 import android.content.Context
+import android.net.Uri
 import android.provider.DocumentsContract
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
 import android.system.Os
 import androidx.core.net.toUri
 import java.io.File
+import java.io.FileNotFoundException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.io.FileOutputStream
@@ -397,15 +399,23 @@ private fun bytePrefix(actual: ByteArray, expected: ByteArray): Boolean =
     actual.size <= expected.size && actual.indices.all { actual[it] == expected[it] }
 
 private fun writeRegularCompanion(context: Context, reference: String, bytes: ByteArray, identity: String) {
-    // "rwt" 会在身份校验前截断 URI 当前映射的对象，只能在校验同一描述符后再截断
-    val descriptor = context.contentResolver.openFileDescriptor(reference.toUri(), "rw")
-        ?: throw IOException("伴随文件不可写")
+    val descriptor = openCompanionForRewrite(context, reference.toUri()) ?: throw IOException("伴随文件不可写")
     descriptor.use { fd ->
         val stat = Os.fstat(fd.fileDescriptor)
         check(OsConstants.S_ISREG(stat.st_mode) && "${stat.st_dev}:${stat.st_ino}" == identity) { "伴随写入对象已改变" }
         Os.ftruncate(fd.fileDescriptor, 0)
         ParcelFileDescriptor.AutoCloseOutputStream(fd.dup()).use { it.write(bytes); it.flush(); Os.fsync(fd.fileDescriptor) }
     }
+}
+
+/**
+ * "rwt" 会在身份校验前截断 URI 当前映射的对象，优先用 "rw" 在校验同一描述符后再截断；
+ * 不少 DocumentsProvider 不支持 "rw"，只能退回 "rwt"，这时截断早于校验
+ */
+private fun openCompanionForRewrite(context: Context, uri: Uri): ParcelFileDescriptor? = try {
+    context.contentResolver.openFileDescriptor(uri, "rw")
+} catch (_: FileNotFoundException) {
+    context.contentResolver.openFileDescriptor(uri, "rwt")
 }
 
 internal fun finishLocalMediaCompanionDeletes(context: Context, record: LocalMetadataRecoveryRecord): Boolean {
