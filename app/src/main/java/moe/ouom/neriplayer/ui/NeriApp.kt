@@ -186,6 +186,7 @@ import moe.ouom.neriplayer.ui.navigation.AppNavigationSceneRenderer
 import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationEffect
 import moe.ouom.neriplayer.ui.navigation.MainTabGlassOwner
 import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
+import moe.ouom.neriplayer.ui.navigation.MainTabPredictiveBackHandler
 import moe.ouom.neriplayer.ui.navigation.biliPlaylistSourceRoute
 import moe.ouom.neriplayer.ui.navigation.biliUploaderSourceRoute
 import moe.ouom.neriplayer.ui.navigation.localPlaylistSourceRoute
@@ -1808,40 +1809,6 @@ private fun NeriAppContent(
                             modifier = Modifier
                                 .fillMaxSize()
                         ) {
-                            MainTabLayerHost(
-                                selectedRoute = selectedMainTabRoute,
-                                transitionState = mainTabTransitionState,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .onSizeChanged { size ->
-                                        if (size.height > 0) {
-                                            mainTabDetailContentHeightPx = size.height
-                                        }
-                                    }
-                                    .offset {
-                                        IntOffset(
-                                            x = 0,
-                                            y = (
-                                                    mainTabNavigationMotion.tabLayerTransform
-                                                        .translationYFraction *
-                                                            mainTabDetailContentHeightPx
-                                                    ).roundToInt()
-                                        )
-                                    }
-                                    .graphicsLayer {
-                                        scaleX = mainTabNavigationMotion.tabLayerTransform.scale
-                                        scaleY = mainTabNavigationMotion.tabLayerTransform.scale
-                                        alpha = mainTabNavigationMotion.tabLayerTransform.alpha
-                                        transformOrigin = TransformOrigin.Center
-                                    }
-                                    .zIndex(MAIN_TAB_LAYER_Z_INDEX),
-                                onVisibleGlassOwnersChanged = {
-                                    visibleMainTabGlassOwners = it
-                                },
-                                content = { route ->
-                                    RenderMainTabRoute(route)
-                                }
-                            )
                             AdvancedGlassNavigationHandoff(
                                 enabled = shouldUseAdvancedGlassNavigationHandoff(
                                     visibleNavigationRoutes
@@ -1876,6 +1843,46 @@ private fun NeriAppContent(
                                     )
                                 )
                             }
+                            MainTabPredictiveBackHandler(
+                                navController, mainTabTransitionState, selectedMainTabRoute,
+                                enabled = !showNowPlaying && !nowPlayingOverlayMounted && pendingMainTabRoute == null,
+                                onBackCommitted = { selectedMainTabRoute = it }
+                            )
+                            MainTabLayerHost(
+                                selectedRoute = selectedMainTabRoute,
+                                transitionState = mainTabTransitionState,
+                                backHandlingEnabled = currentRoute == selectedMainTabRoute,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .onSizeChanged { size ->
+                                        if (size.height > 0) {
+                                            mainTabDetailContentHeightPx = size.height
+                                        }
+                                    }
+                                    .offset {
+                                        IntOffset(
+                                            x = 0,
+                                            y = (
+                                                    mainTabNavigationMotion.tabLayerTransform
+                                                        .translationYFraction *
+                                                            mainTabDetailContentHeightPx
+                                                    ).roundToInt()
+                                        )
+                                    }
+                                    .graphicsLayer {
+                                        scaleX = mainTabNavigationMotion.tabLayerTransform.scale
+                                        scaleY = mainTabNavigationMotion.tabLayerTransform.scale
+                                        alpha = mainTabNavigationMotion.tabLayerTransform.alpha
+                                        transformOrigin = TransformOrigin.Center
+                                    }
+                                    .zIndex(MAIN_TAB_LAYER_Z_INDEX),
+                                onVisibleGlassOwnersChanged = {
+                                    visibleMainTabGlassOwners = it
+                                },
+                                content = { route ->
+                                    RenderMainTabRoute(route)
+                                }
+                            )
                         }
                     }
 
