@@ -242,4 +242,92 @@ class LyricTranslationMatcherTest {
         assertFalse(isLyricCreditMetadataLine("3:15 剩下的时间"))
         assertFalse(isLyricCreditMetadataLine(""))
     }
+
+    @Test
+    fun `loose tolerance only applies to translations before the line`() {
+        // 翻译 2200ms 位于第一行结束(1000ms)之后、第二行开始(4000ms)之前;
+        // 它不在严格容差内(距第一行 1201ms), 也不在第一行之前, 应留给第二行
+        val lines = listOf(
+            LyricEntry(text = "第一句", startTimeMs = 0L, endTimeMs = 1_000L),
+            LyricEntry(text = "第二句", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "晚到的翻译", startTimeMs = 2_200L, endTimeMs = 3_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("晚到的翻译", matched[1]?.text)
+    }
+
+    @Test
+    fun `custom wider tolerance is honored for after-line translations`() {
+        val lines = listOf(
+            LyricEntry(text = "第一句", startTimeMs = 0L, endTimeMs = 1_000L),
+            LyricEntry(text = "第二句", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "晚到的翻译", startTimeMs = 2_200L, endTimeMs = 3_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations, toleranceMs = 5_000L)
+
+        assertEquals("晚到的翻译", matched[0]?.text)
+        assertNull(matched[1])
+    }
+
+    @Test
+    fun `late loose translation never displaces the exact following translation`() {
+        val lines = listOf(
+            LyricEntry(text = "第一句", startTimeMs = 0L, endTimeMs = 1_000L),
+            LyricEntry(text = "第二句", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "迟到的翻译", startTimeMs = 2_200L, endTimeMs = 3_000L),
+            LyricEntry(text = "第二句的翻译", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("第二句的翻译", matched[1]?.text)
+    }
+
+    @Test
+    fun `multiple late loose translations never displace the exact following translation`() {
+        val lines = listOf(
+            LyricEntry(text = "第一句", startTimeMs = 0L, endTimeMs = 1_000L),
+            LyricEntry(text = "第二句", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "迟到1", startTimeMs = 2_200L, endTimeMs = 3_000L),
+            LyricEntry(text = "迟到2", startTimeMs = 2_300L, endTimeMs = 3_100L),
+            LyricEntry(text = "第二句的翻译", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("第二句的翻译", matched[1]?.text)
+    }
+
+    @Test
+    fun `late loose translation never displaces exact match in metadata timestamp group`() {
+        val lines = listOf(
+            LyricEntry(text = "第一句", startTimeMs = 0L, endTimeMs = 1_000L),
+            LyricEntry(text = "OP：唯迹文化", startTimeMs = 4_000L, endTimeMs = 4_000L),
+            LyricEntry(text = "第二句", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "迟到的翻译", startTimeMs = 2_200L, endTimeMs = 3_000L),
+            LyricEntry(text = "第二句的翻译", startTimeMs = 4_000L, endTimeMs = 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertNull(matched[1])
+        assertEquals("第二句的翻译", matched[2]?.text)
+    }
 }
