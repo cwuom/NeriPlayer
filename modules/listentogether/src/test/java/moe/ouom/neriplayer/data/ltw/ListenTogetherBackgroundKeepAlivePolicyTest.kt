@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.data.ltw
 import moe.ouom.neriplayer.api.ltw.ws.shouldReconnectListenTogetherSocket
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherConnectionState
 import moe.ouom.neriplayer.data.ltw.session.connection.shouldHoldListenTogetherBackgroundKeepAlive
-import moe.ouom.neriplayer.data.ltw.session.connection.shouldHoldListenTogetherBackgroundWakeLock
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,22 +41,6 @@ class ListenTogetherBackgroundKeepAlivePolicyTest {
             )
         )
     }
-
-    @Test
-    fun `connected listener under the playback service lets the cpu sleep outside reconnect windows`() {
-        assertFalse(wakeLock(isController = false, playbackServiceForeground = true, reconnecting = false))
-        assertTrue(wakeLock(isController = false, playbackServiceForeground = true, reconnecting = true))
-        assertTrue(wakeLock(isController = false, playbackServiceForeground = false, reconnecting = false))
-        assertTrue(wakeLock(isController = true, playbackServiceForeground = true, reconnecting = false))
-        assertFalse(wakeLock(keepAliveNeeded = false, isController = true, playbackServiceForeground = false, reconnecting = true))
-    }
-
-    private fun wakeLock(
-        keepAliveNeeded: Boolean = true,
-        isController: Boolean,
-        playbackServiceForeground: Boolean,
-        reconnecting: Boolean
-    ) = shouldHoldListenTogetherBackgroundWakeLock(keepAliveNeeded, isController, playbackServiceForeground, reconnecting)
 
     @Test
     fun `silent socket is reconnected after the response timeout`() {

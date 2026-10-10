@@ -277,9 +277,9 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        persistObservedAuthIfNeeded()
-        CookieManager.getInstance().flush()
         if (this::webView.isInitialized) {
+            persistObservedAuthIfNeeded()
+            CookieManager.getInstance().flush()
             webView.onPause()
         }
         super.onPause()
@@ -295,9 +295,9 @@ class YouTubeWebLoginActivity : ComponentActivity() {
 
     override fun onDestroy() {
         loginCompletionWatcher.stop()
-        persistObservedAuthIfNeeded()
-        CookieManager.getInstance().flush()
         if (this::webView.isInitialized) {
+            persistObservedAuthIfNeeded()
+            CookieManager.getInstance().flush()
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.destroy()
         }

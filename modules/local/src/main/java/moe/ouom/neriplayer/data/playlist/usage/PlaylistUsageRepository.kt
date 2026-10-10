@@ -216,14 +216,14 @@ class PlaylistUsageRepository internal constructor(
     internal suspend fun awaitInitialLoad() = initialLoad.join()
 
     private fun finishInitialLoad(loaded: List<UsageEntry>?) = synchronized(mutationLock) {
-        if (loaded != null) {
-            _flow.value = loaded
-            persistedEntries = loaded
-            baselineTrusted = true
-            pendingUiChanges = false
-            initialized = true
-        }
         initialLoadInFlight = false
+        // 主存恢复成功前保留早到操作，失败时重放会让这些操作被拒绝并丢失
+        if (loaded == null || initialized) return@synchronized
+        _flow.value = loaded
+        persistedEntries = loaded
+        baselineTrusted = true
+        pendingUiChanges = false
+        initialized = true
         val queued = mutationsAwaitingInitialLoad.toList()
         mutationsAwaitingInitialLoad.clear()
         queued.forEach { mutation -> mutation() }
@@ -289,11 +289,7 @@ class PlaylistUsageRepository internal constructor(
         // 活动保存期间允许 UI 更新，保存结束后未知基线必须先经串行恢复
         if (initialized) return baselineTrusted || writingTrustedSnapshot || forPersistence
         val loaded = runBlocking(context + Dispatchers.IO) { tryLoadEntries() } ?: return false
-        _flow.value = loaded
-        persistedEntries = loaded
-        baselineTrusted = true
-        pendingUiChanges = false
-        initialized = true
+        finishInitialLoad(loaded)
         return true
     }
 
@@ -312,14 +308,7 @@ class PlaylistUsageRepository internal constructor(
 
     private suspend fun retryInitialLoad() {
         val loaded = tryLoadEntries() ?: return
-        synchronized(mutationLock) {
-            if (initialized) return
-            _flow.value = loaded
-            persistedEntries = loaded
-            baselineTrusted = true
-            pendingUiChanges = false
-            initialized = true
-        }
+        finishInitialLoad(loaded)
     }
 
     private suspend fun recoverBaselineLocked(): Boolean = try {

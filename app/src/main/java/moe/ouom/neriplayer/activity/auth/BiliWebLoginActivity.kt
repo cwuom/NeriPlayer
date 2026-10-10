@@ -201,8 +201,8 @@ class BiliWebLoginActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        CookieManager.getInstance().flush()
         if (this::webView.isInitialized) {
+            CookieManager.getInstance().flush()
             webView.onPause()
         }
         super.onPause()

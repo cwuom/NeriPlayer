@@ -20,9 +20,16 @@ sealed interface DatabaseVersionState {
     data class Unreadable(val cause: Exception) : DatabaseVersionState
 }
 
+/** 开库被拒绝时保留检查状态，调用方可以区分应用降级和暂时不可读 */
+class DatabaseOpenException internal constructor(
+    val state: DatabaseVersionState,
+    message: String,
+    cause: Exception? = null
+) : IllegalStateException(message, cause)
+
 /**
- * 不经过 Room 只读读取 user_version，供应用在 [NeriUserDataDatabase.getInstance] 之前判断能否打开。
- * 读取过程不写入、不删除数据库文件。
+ * 不经过 Room 只读读取 user_version，实际开库入口也使用这个结果保护用户数据
+ * 读取过程不写入、不删除数据库文件
  */
 fun NeriUserDataDatabase.Companion.checkVersion(context: Context): DatabaseVersionState =
     databaseVersionState(context.getDatabasePath(NeriUserDataDatabase.DATABASE_NAME))

@@ -515,8 +515,9 @@ internal class UsbExclusiveAudioSink(
             fallbackSink.playToEndOfStream()
             return
         }
-        inputEnded = true
-        pcmWriter.drainInputEnd(nativeHandle)
+        if (!inputEnded) {
+            inputEnded = pcmWriter.drainInputEnd(nativeHandle)
+        }
         if (playing && !startNativeTransportIfReady(allowShortPreroll = true)) {
             requestSystemFailover("native_end_of_stream_start_failed")
         }

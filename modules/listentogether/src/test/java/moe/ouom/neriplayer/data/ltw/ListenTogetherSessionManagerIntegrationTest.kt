@@ -310,12 +310,12 @@ class ListenTogetherSessionManagerIntegrationTest {
     }
 
     @Test
-    fun `backgrounded listener under the playback service holds the wake lock only while reconnecting`() = sessionTest {
+    fun `backgrounded listener under the playback service stays awake for room updates`() = sessionTest {
         val member = fixture(this, "listener")
         member.platform.initialized = true
         member.join(); member.connect()
         member.manager.onApplicationBackgrounded()
-        verify(member.platform.wakeLock, never()).acquire(anyLong())
+        verify(member.platform.wakeLock, atLeastOnce()).acquire(anyLong())
         member.listener.onFailure(IOException("offline"))
         verify(member.platform.wakeLock, atLeastOnce()).acquire(anyLong())
 

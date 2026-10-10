@@ -88,7 +88,6 @@ import moe.ouom.neriplayer.data.ltw.session.control.resolveListenTogetherControl
 import moe.ouom.neriplayer.data.ltw.session.connection.resolveListenTogetherForegroundRecoveryAction
 import moe.ouom.neriplayer.data.ltw.session.membership.resolveListenTogetherRoomNotice
 import moe.ouom.neriplayer.data.ltw.session.connection.shouldHoldListenTogetherBackgroundKeepAlive
-import moe.ouom.neriplayer.data.ltw.session.connection.shouldHoldListenTogetherBackgroundWakeLock
 import moe.ouom.neriplayer.data.ltw.session.membership.isNormalListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.data.ltw.session.membership.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.data.ltw.session.membership.resolveListenTogetherSessionRole
@@ -1312,15 +1311,11 @@ class ListenTogetherSessionManager(
 
     private fun shouldHoldBackgroundWakeLock(): Boolean {
         val snapshot = _sessionState.value
-        return shouldHoldListenTogetherBackgroundWakeLock(
-            keepAliveNeeded = shouldHoldListenTogetherBackgroundKeepAlive(
-                sessionActive = !snapshot.roomId.isNullOrBlank(),
-                reconnectEnabled = connectionRecoveryOwner.enabled,
-                applicationInForeground = applicationInForeground
-            ),
-            isController = isCurrentUserController(snapshot),
-            playbackServiceForeground = platform.isPlaybackServiceReady(),
-            reconnecting = snapshot.connectionState != ListenTogetherConnectionState.CONNECTED
+        // 前台服务不会保持 CPU 唤醒，暂停中的听众也需要及时收到房间指令
+        return shouldHoldListenTogetherBackgroundKeepAlive(
+            sessionActive = !snapshot.roomId.isNullOrBlank(),
+            reconnectEnabled = connectionRecoveryOwner.enabled,
+            applicationInForeground = applicationInForeground
         )
     }
 

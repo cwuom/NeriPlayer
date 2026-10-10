@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.audio.AudioOffloadSupport
 import androidx.media3.exoplayer.audio.AudioSink
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,6 +18,7 @@ import org.junit.After
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
@@ -267,6 +269,32 @@ class UsbExclusiveAudioSinkTest {
         sink.playToEndOfStream()
 
         verify(port).drainInputEnd(7L)
+    }
+
+    @Test
+    fun `native end of stream remains unfinished until the resampler tail is accepted`() {
+        val sink = createSink(mock(AudioSink::class.java))
+        val port = mock(UsbExclusivePcmWritePort::class.java)
+        val handle = UsbExclusiveSessionController.state.value.handle + 1L
+        `when`(port.drainInputEnd(handle)).thenReturn(false, false, true, false)
+        setPrivateField(sink, "pcmWriter", UsbExclusivePcmWriter(port) {})
+        setPrivateField(sink, "usingNative", true)
+        setPrivateField(sink, "nativeHandle", handle)
+
+        sink.playToEndOfStream()
+
+        assertFalse(sink.hasPendingData())
+        assertFalse("an empty native queue must not discard a pending resampler tail", sink.isEnded())
+
+        sink.playToEndOfStream()
+        assertFalse(sink.isEnded())
+
+        sink.playToEndOfStream()
+        assertTrue(sink.isEnded())
+
+        sink.playToEndOfStream()
+        assertTrue(sink.isEnded())
+        verify(port, times(3)).drainInputEnd(handle)
     }
 
     private fun setPrivateField(target: Any, name: String, value: Any) {
