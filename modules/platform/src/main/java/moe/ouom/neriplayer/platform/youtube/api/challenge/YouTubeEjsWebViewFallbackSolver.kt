@@ -103,7 +103,10 @@ private fun buildYouTubeEjsWebViewSessionResultScript(): String {
     """.trimIndent()
 }
 
-internal class YouTubeEjsWebViewFallbackSolver(context: Context) {
+internal class YouTubeEjsWebViewFallbackSolver(
+    context: Context,
+    private val webViewFactory: (Context) -> WebView = { WebView(it) }
+) {
     private data class Session(
         val playerJsUrl: String,
         val webView: WebView,
@@ -210,12 +213,29 @@ internal class YouTubeEjsWebViewFallbackSolver(context: Context) {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     private suspend fun createSession(playerJsUrl: String): Session {
         val pageReady = CompletableDeferred<Unit>()
         val rendererDead = AtomicBoolean(false)
-        val created = withContext(Dispatchers.Main) {
-            WebView(appContext).apply {
+        // 调用方在 Main 块执行期间被取消时 withContext 会丢弃返回值, 所以创建后立刻登记, 交给 Session 前都由这里销毁
+        var unownedWebView: WebView? = null
+        try {
+            val created = openSessionWebView(pageReady, rendererDead) { unownedWebView = it }
+            withTimeout(YOUTUBE_EJS_WEBVIEW_PAGE_TIMEOUT_MS.milliseconds) { pageReady.await() }
+            unownedWebView = null
+            return Session(playerJsUrl = playerJsUrl, webView = created, rendererDead = rendererDead)
+        } finally {
+            unownedWebView?.let { destroyWebView(it) }
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private suspend fun openSessionWebView(
+        pageReady: CompletableDeferred<Unit>,
+        rendererDead: AtomicBoolean,
+        register: (WebView) -> Unit
+    ): WebView {
+        return withContext(Dispatchers.Main) {
+            webViewFactory(appContext).also(register).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = false
                 settings.cacheMode = WebSettings.LOAD_NO_CACHE
@@ -278,13 +298,6 @@ internal class YouTubeEjsWebViewFallbackSolver(context: Context) {
                 }
                 loadUrl(YOUTUBE_EJS_WEBVIEW_PAGE_URL)
             }
-        }
-        return try {
-            withTimeout(YOUTUBE_EJS_WEBVIEW_PAGE_TIMEOUT_MS.milliseconds) { pageReady.await() }
-            Session(playerJsUrl = playerJsUrl, webView = created, rendererDead = rendererDead)
-        } catch (error: Throwable) {
-            destroyWebView(created)
-            throw error
         }
     }
 

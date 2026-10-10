@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
 
 internal object AppListenTogetherPlatform : ListenTogetherPlatformHost {
     override val applicationContext get() = AppContainer.applicationContext
+    override val networkMonitor = AndroidListenTogetherNetworkMonitor { applicationContext }
     override fun isInitialized(): Boolean = AppContainer.isInitialized()
     override fun isPlaybackServiceReady(): Boolean = AudioPlayerService.isReadyForPassiveLocalPlaybackSync()
     override fun startForegroundSync(reason: String) {

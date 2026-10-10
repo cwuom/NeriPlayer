@@ -32,7 +32,6 @@ import android.content.res.Configuration
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.PowerManager
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
@@ -99,7 +98,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -255,36 +253,34 @@ fun LyricsScreen(
     offlineMode: Boolean = false,
     lyricsAdjustBehavior: Boolean = false,
 ) {
-    // 处理返回键
-    BackHandler(onBack = onNavigateBack)
     val lyricFontScale = lyricFontScales.lyricsPageLyric
     val translationFontScale = lyricFontScales.lyricsPageTranslation
 
-    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
     val nowPlayingSongTitleMarqueeEnabled by settingsRepo
         .nowPlayingSongTitleMarqueeEnabledFlow
-        .collectAsState(initial = true)
+        .collectAsStateWithLifecycle(initialValue = true)
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
-        .collectAsState(initial = settingsRepo.defaultPlaybackControlLayoutPreferences)
-    val queue by PlayerManager.currentQueueFlow.collectAsState()
-    val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsState()
+        .collectAsStateWithLifecycle(initialValue = settingsRepo.defaultPlaybackControlLayoutPreferences)
+    val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
+    val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
     val queueDisplayState = remember(queue, currentSong, queueDisplayRevision) {
         PlayerManager.currentQueueDisplaySnapshot()
     }
     val displayedQueueItems = queueDisplayState.items
     val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
-    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
-    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsState()
-    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsState()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
+    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
+    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
         isPlaying = isPlaying,
         usbPlaybackPreparing = usbPlaybackPreparing
     )
-    val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
+    val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) {
         translatedLyrics.orEmpty().flattenWordTimedEntries()
@@ -607,8 +603,8 @@ fun LyricsScreen(
             }
 
             // 收藏按钮 (与 NowPlaying 保持一致的逻辑)
-            val playlists by PlayerManager.playlistsFlow.collectAsState()
-            val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsState()
+            val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
+            val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
             val isFavoriteComputed = remember(currentSong, playlists) {
                 val song = currentSong
                 if (song == null) {
@@ -691,7 +687,7 @@ fun LyricsScreen(
                 )
             }
             if (showMoreOptions && currentSong != null) {
-                val queue by PlayerManager.currentQueueFlow.collectAsState()
+                val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
                 val displayedQueue = remember(queue) { queue }
                 val nowPlayingViewModel: NowPlayingViewModel = viewModel()
                 MoreOptionsSheet(
@@ -1085,7 +1081,7 @@ fun LyricsScreen(
             }
 
             // 定时器按钮
-            val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
+            val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
             var showSleepTimerDialog by remember { mutableStateOf(false) }
             HapticIconButton(onClick = { showSleepTimerDialog = true },
                 modifier = toolbarActionModifier.then(
@@ -1237,7 +1233,7 @@ fun LyricsScreen(
 
             // 添加到歌单弹窗
             if (showAddSheet && currentSong != null) {
-                val playlists by PlayerManager.playlistsFlow.collectAsState()
+                val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
                 val selectablePlaylists = remember(playlists, context) {
                     playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                 }

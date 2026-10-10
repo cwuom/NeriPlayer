@@ -186,6 +186,7 @@ import moe.ouom.neriplayer.ui.navigation.AppNavigationSceneRenderer
 import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationEffect
 import moe.ouom.neriplayer.ui.navigation.MainTabGlassOwner
 import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
+import moe.ouom.neriplayer.ui.navigation.MainTabPredictiveBackHandler
 import moe.ouom.neriplayer.ui.navigation.biliPlaylistSourceRoute
 import moe.ouom.neriplayer.ui.navigation.biliUploaderSourceRoute
 import moe.ouom.neriplayer.ui.navigation.localPlaylistSourceRoute
@@ -227,6 +228,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
+import moe.ouom.neriplayer.ui.component.common.rememberRevealsUnderlying
 
 private val EmptyLauncherShortcutRequestFlow =
     MutableStateFlow<LauncherShortcutRequest?>(null)
@@ -370,6 +373,8 @@ private fun NeriAppContent(
     )
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var nowPlayingOverlayMounted by remember { mutableStateOf(showNowPlaying) }
+    val nowPlayingDismissState = rememberPredictiveDismissState()
+    val nowPlayingBackRevealing = nowPlayingDismissState.rememberRevealsUnderlying()
     val latestOnNowPlayingOpenChanged by rememberUpdatedState(onNowPlayingOpenChanged)
     LaunchedEffect(showNowPlaying) {
         // 方向跟随页面状态，不能让旋转重建时的旧覆盖层销毁关闭横屏
@@ -1779,7 +1784,8 @@ private fun NeriAppContent(
                             currentDestination = backEntry?.destination,
                             showNowPlaying = shouldSuppressPlaybackNavigation(
                                 showNowPlaying, nowPlayingOverlayMounted,
-                                LocalConfiguration.current.smallestScreenWidthDp
+                                LocalConfiguration.current.smallestScreenWidthDp,
+                                backGestureRevealing = nowPlayingBackRevealing.value
                             ),
                             offlineMode = offlineMode,
                             alwaysUseNewTabStyle = alwaysUseNewTabStyle,
@@ -1803,40 +1809,6 @@ private fun NeriAppContent(
                             modifier = Modifier
                                 .fillMaxSize()
                         ) {
-                            MainTabLayerHost(
-                                selectedRoute = selectedMainTabRoute,
-                                transitionState = mainTabTransitionState,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .onSizeChanged { size ->
-                                        if (size.height > 0) {
-                                            mainTabDetailContentHeightPx = size.height
-                                        }
-                                    }
-                                    .offset {
-                                        IntOffset(
-                                            x = 0,
-                                            y = (
-                                                    mainTabNavigationMotion.tabLayerTransform
-                                                        .translationYFraction *
-                                                            mainTabDetailContentHeightPx
-                                                    ).roundToInt()
-                                        )
-                                    }
-                                    .graphicsLayer {
-                                        scaleX = mainTabNavigationMotion.tabLayerTransform.scale
-                                        scaleY = mainTabNavigationMotion.tabLayerTransform.scale
-                                        alpha = mainTabNavigationMotion.tabLayerTransform.alpha
-                                        transformOrigin = TransformOrigin.Center
-                                    }
-                                    .zIndex(MAIN_TAB_LAYER_Z_INDEX),
-                                onVisibleGlassOwnersChanged = {
-                                    visibleMainTabGlassOwners = it
-                                },
-                                content = { route ->
-                                    RenderMainTabRoute(route)
-                                }
-                            )
                             AdvancedGlassNavigationHandoff(
                                 enabled = shouldUseAdvancedGlassNavigationHandoff(
                                     visibleNavigationRoutes
@@ -1871,6 +1843,46 @@ private fun NeriAppContent(
                                     )
                                 )
                             }
+                            MainTabPredictiveBackHandler(
+                                navController, mainTabTransitionState, selectedMainTabRoute,
+                                enabled = !showNowPlaying && !nowPlayingOverlayMounted && pendingMainTabRoute == null,
+                                onBackCommitted = { selectedMainTabRoute = it }
+                            )
+                            MainTabLayerHost(
+                                selectedRoute = selectedMainTabRoute,
+                                transitionState = mainTabTransitionState,
+                                backHandlingEnabled = currentRoute == selectedMainTabRoute,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .onSizeChanged { size ->
+                                        if (size.height > 0) {
+                                            mainTabDetailContentHeightPx = size.height
+                                        }
+                                    }
+                                    .offset {
+                                        IntOffset(
+                                            x = 0,
+                                            y = (
+                                                    mainTabNavigationMotion.tabLayerTransform
+                                                        .translationYFraction *
+                                                            mainTabDetailContentHeightPx
+                                                    ).roundToInt()
+                                        )
+                                    }
+                                    .graphicsLayer {
+                                        scaleX = mainTabNavigationMotion.tabLayerTransform.scale
+                                        scaleY = mainTabNavigationMotion.tabLayerTransform.scale
+                                        alpha = mainTabNavigationMotion.tabLayerTransform.alpha
+                                        transformOrigin = TransformOrigin.Center
+                                    }
+                                    .zIndex(MAIN_TAB_LAYER_Z_INDEX),
+                                onVisibleGlassOwnersChanged = {
+                                    visibleMainTabGlassOwners = it
+                                },
+                                content = { route ->
+                                    RenderMainTabRoute(route)
+                                }
+                            )
                         }
                     }
 
@@ -1901,7 +1913,8 @@ private fun NeriAppContent(
                             nowPlayingOverlayMounted = mounted
                             latestOnNowPlayingVisibilityChanged(mounted)
                         },
-                        onClose = { showNowPlaying = false }
+                        onClose = { showNowPlaying = false },
+                        dismissState = nowPlayingDismissState
                     ) {
                         NowPlayingScreen(
                             onNavigateUp = { showNowPlaying = false },

@@ -19,7 +19,7 @@
     <string name="error_link_recognition">链接识别失败: %s</string>
     <string name="error_load_playlist">加载歌单失败: %s</string>
     <string name="error_search_failed">搜索失败: %s</string>
-    <string name="error_get_user_id">无法获取用户ID，请重新登录</string>
+    <string name="error_get_user_id">无法获取用户ID，Cookie 需要包含 DedeUserID，请导入完整 Cookie 或重新登录</string>
     <string name="error_api_code">接口返回异常 code=%d</string>
     <string name="error_missing_node">缺少 %s 节点</string>
     <string name="exception_title">应用异常</string>
@@ -30,4 +30,5 @@
     <string name="exception_no_detail">无详细信息</string>
     <string name="exception_logged">详细错误信息已记录到日志文件中。</string>
     <string name="exception_contact">如果问题持续存在，请重启应用或联系开发者。</string>
+    <string name="error_no_app_for_action">没有可以完成此操作的应用</string>
 </resources>

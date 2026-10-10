@@ -46,15 +46,13 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -65,8 +63,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -221,53 +217,14 @@ internal fun NeteaseCategoryTabs(
     selectedCategory: Int,
     onCategoryChange: (Int) -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
+    LibrarySecondaryTabs(
+        labels = listOf(
+            stringResource(CoreCommonR.string.library_netease_tab_playlists),
+            stringResource(CoreCommonR.string.library_netease_tab_albums)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-    ) {
-        AdvancedGlassSurface(
-            role = AdvancedGlassRole.ScreenTopTab,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-            tintColor = MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            PrimaryTabRow(
-                selectedTabIndex = selectedCategory,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = selectedCategory == NETEASE_CATEGORY_PLAYLIST,
-                    onClick = { onCategoryChange(NETEASE_CATEGORY_PLAYLIST) },
-                    text = { Text(stringResource(CoreCommonR.string.library_netease_tab_playlists)) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = null
-                        )
-                    }
-                )
-                Tab(
-                    selected = selectedCategory == NETEASE_CATEGORY_ALBUM,
-                    onClick = { onCategoryChange(NETEASE_CATEGORY_ALBUM) },
-                    text = { Text(stringResource(CoreCommonR.string.library_netease_tab_albums)) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.Album,
-                            contentDescription = null
-                        )
-                    }
-                )
-            }
-        }
-    }
+        selectedIndex = selectedCategory,
+        onSelected = onCategoryChange
+    )
 }
 
 @Composable

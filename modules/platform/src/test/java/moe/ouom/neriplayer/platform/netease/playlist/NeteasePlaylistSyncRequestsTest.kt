@@ -20,7 +20,7 @@ class NeteasePlaylistSyncRequestsTest {
     fun `empty batches succeed without network calls`() {
         val client = mock(NeteaseClient::class.java)
 
-        assertTrue(addNeteasePlaylistSongIdsBatch(client, 91L, emptyList()))
+        assertEquals(NeteasePlaylistAddOutcome.Ok, addNeteasePlaylistSongIdsBatch(client, 91L, emptyList()))
         assertEquals(emptySet<Long>(), fetchResolvableNeteaseSongIds(client, emptyList(), "empty"))
         assertEquals(emptySet<Long>(), fetchNeteaseLikedSongDetailSummaryByPages(client, emptyList()).ids)
         verifyNoInteractions(client)
@@ -139,13 +139,13 @@ class NeteasePlaylistSyncRequestsTest {
         val ids = listOf(1L, 2L)
         val recovered = loggedInClient()
         `when`(recovered.addSongsToPlaylist(91L, ids)).thenReturn("{\"code\":301}", "{\"code\":200}")
-        assertTrue(addNeteasePlaylistSongIdsBatch(recovered, 91L, ids))
+        assertEquals(NeteasePlaylistAddOutcome.Ok, addNeteasePlaylistSongIdsBatch(recovered, 91L, ids))
         verify(recovered, times(2)).addSongsToPlaylist(91L, ids)
         verify(recovered).ensureWeapiSession()
 
         val rejected = loggedInClient()
         `when`(rejected.addSongsToPlaylist(91L, ids)).thenReturn("{\"code\":301}")
-        assertFalse(addNeteasePlaylistSongIdsBatch(rejected, 91L, ids))
+        assertEquals(NeteasePlaylistAddOutcome.Rejected(301, null), addNeteasePlaylistSongIdsBatch(rejected, 91L, ids))
         verify(rejected, times(2)).addSongsToPlaylist(91L, ids)
         verify(rejected).ensureWeapiSession()
     }
@@ -153,7 +153,12 @@ class NeteasePlaylistSyncRequestsTest {
     @Test
     fun `playlist insertion preserves direct success and nonretryable outcomes`() {
         val ids = listOf(1L)
-        for ((raw, expected) in listOf("{\"code\":200}" to true, "{\"code\":500}" to false, "{\"code\":301}" to false, "invalid" to false)) {
+        for ((raw, expected) in listOf(
+            "{\"code\":200}" to NeteasePlaylistAddOutcome.Ok,
+            "{\"code\":500}" to NeteasePlaylistAddOutcome.Rejected(500, null),
+            "{\"code\":301}" to NeteasePlaylistAddOutcome.Rejected(301, null),
+            "invalid" to NeteasePlaylistAddOutcome.Transient(-1, null)
+        )) {
             val client = mock(NeteaseClient::class.java)
             `when`(client.addSongsToPlaylist(91L, ids)).thenReturn(raw)
 
@@ -168,15 +173,33 @@ class NeteasePlaylistSyncRequestsTest {
         val ids = listOf(1L)
         val failedRetry = loggedInClient()
         `when`(failedRetry.addSongsToPlaylist(91L, ids)).thenReturn("{\"code\":301}").thenThrow(IllegalStateException("retry failed"))
-        assertFalse(addNeteasePlaylistSongIdsBatch(failedRetry, 91L, ids))
+        assertEquals(NeteasePlaylistAddOutcome.Transient(-1, null), addNeteasePlaylistSongIdsBatch(failedRetry, 91L, ids))
         verify(failedRetry, times(2)).addSongsToPlaylist(91L, ids)
         verify(failedRetry).ensureWeapiSession()
 
         val failedPreheat = loggedInClient()
         doThrow(IllegalStateException("preheat failed")).`when`(failedPreheat).ensureWeapiSession()
         `when`(failedPreheat.addSongsToPlaylist(91L, ids)).thenReturn("{\"code\":301}", "{\"code\":200}")
-        assertTrue(addNeteasePlaylistSongIdsBatch(failedPreheat, 91L, ids))
+        assertEquals(NeteasePlaylistAddOutcome.Ok, addNeteasePlaylistSongIdsBatch(failedPreheat, 91L, ids))
         verify(failedPreheat, times(2)).addSongsToPlaylist(91L, ids)
+    }
+
+    @Test
+    fun `playlist insertion keeps the server reason and treats rate limits as transient`() {
+        val ids = listOf(1L)
+        for ((raw, expected) in listOf(
+            "{\"code\":524,\"message\":\"no copyright\"}" to NeteasePlaylistAddOutcome.Rejected(524, "no copyright"),
+            "{\"code\":405,\"msg\":\"too fast\"}" to NeteasePlaylistAddOutcome.Transient(405, "too fast"),
+            "{\"code\":-462,\"message\":\" \"}" to NeteasePlaylistAddOutcome.Transient(-462, null)
+        )) {
+            val client = mock(NeteaseClient::class.java)
+            `when`(client.addSongsToPlaylist(91L, ids)).thenReturn(raw)
+
+            assertEquals(expected, addNeteasePlaylistSongIdsBatch(client, 91L, ids))
+        }
+        val offline = mock(NeteaseClient::class.java)
+        `when`(offline.addSongsToPlaylist(91L, ids)).thenThrow(IllegalStateException("offline"))
+        assertEquals(NeteasePlaylistAddOutcome.Transient(-1, "offline"), addNeteasePlaylistSongIdsBatch(offline, 91L, ids))
     }
 
     @Test
@@ -304,6 +327,21 @@ class NeteasePlaylistSyncRequestsTest {
         assertEquals(result, reconciled)
         assertEquals(listOf(3L, 1L), reconciled.failedIds.toList())
         assertEquals(linkedSetOf(3L, 1L), result.failedIds)
+    }
+
+    @Test
+    fun `reconciliation drops rejections for songs that reached the remote playlist`() {
+        val client = mock(NeteaseClient::class.java)
+        `when`(client.getPlaylistDetail(91L)).thenReturn("{\"code\":200,\"playlist\":{\"trackIds\":[{\"id\":1}],\"trackCount\":1}}")
+        `when`(client.getSongDetail(listOf(1L))).thenReturn("{\"code\":200,\"songs\":[]}")
+        val rejected = NeteasePlaylistAddOutcome.Rejected(524, "no copyright")
+        val result = NeteasePlaylistBatchAddResult(emptySet(), linkedSetOf(1L, 2L), mapOf(1L to rejected, 2L to rejected))
+
+        val reconciled = reconcileNeteasePlaylistAddResult(client, 91L, result)
+
+        assertEquals(setOf(1L), reconciled.addedIds)
+        assertEquals(setOf(2L), reconciled.failedIds)
+        assertEquals(mapOf(2L to rejected), reconciled.rejections)
     }
 
     private fun loggedInClient(): NeteaseClient {

@@ -43,7 +43,7 @@ class NeteaseYdDeviceTokenProvider(
         NPLogger.d(NETEASE_YD_TOKEN_TAG, "getToken start")
         val pageLoaded = CompletableDeferred<Unit>()
         val tokenResult = CompletableDeferred<NeteaseYdDeviceSnapshot>()
-        val webView = createWebView(pageLoaded, tokenResult)
+        val webView = createWebView(pageLoaded, tokenResult) ?: return NeteaseYdDeviceSnapshot()
 
         return try {
             val pageReady = waitPageReady(webView, pageLoaded)
@@ -72,12 +72,25 @@ class NeteaseYdDeviceTokenProvider(
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private suspend fun createWebView(
         pageLoaded: CompletableDeferred<Unit>,
         tokenResult: CompletableDeferred<NeteaseYdDeviceSnapshot>
-    ): WebView = withContext(Dispatchers.Main) {
-        WebView(context).apply {
+    ): WebView? = withContext(Dispatchers.Main) {
+        // 没有可用的 WebView 提供方或提供方正在更新时构造会抛出运行时异常，令牌直接降级为空
+        try {
+            buildTokenWebView(pageLoaded, tokenResult)
+        } catch (error: RuntimeException) {
+            NPLogger.w(NETEASE_YD_TOKEN_TAG, "getToken skipped because WebView is unavailable: ${error.message}")
+            null
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    private fun buildTokenWebView(
+        pageLoaded: CompletableDeferred<Unit>,
+        tokenResult: CompletableDeferred<NeteaseYdDeviceSnapshot>
+    ): WebView {
+        return WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.userAgentString = NETEASE_YD_TOKEN_UA

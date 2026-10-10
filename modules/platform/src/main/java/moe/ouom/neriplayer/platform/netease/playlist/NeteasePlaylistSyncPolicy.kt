@@ -208,6 +208,12 @@ internal fun parseNeteaseCode(raw: String): Int {
     return runCatching { JSONObject(raw).optInt("code", -1) }.getOrElse { -1 }
 }
 
+/** 网易云的错误原因可能放在 message 或 msg 字段 */
+internal fun parseNeteaseMessage(raw: String): String? {
+    val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+    return json.optString("message").ifBlank { json.optString("msg") }.ifBlank { null }
+}
+
 internal fun buildNeteaseFingerprint(
     name: String?,
     artist: String?,

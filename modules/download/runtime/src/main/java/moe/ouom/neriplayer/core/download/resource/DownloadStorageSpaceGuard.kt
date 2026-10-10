@@ -25,7 +25,8 @@ internal class DownloadStorageSpaceGuard(
     },
     private val storageVolumeKeyOf: (File) -> String = { root ->
         readDefaultStorageVolumeKey(root)
-    }
+    },
+    private val nanoTime: () -> Long = System::nanoTime
 ) {
     init {
         require(minimumFreeBytes >= 0L) {
@@ -86,7 +87,18 @@ internal class DownloadStorageSpaceGuard(
     private data class VolumeState(
         var probeRoot: File,
         var reservedBytes: Long = 0L,
-        val owners: MutableMap<String, Lease> = linkedMapOf()
+        val owners: MutableMap<String, Lease> = linkedMapOf(),
+        var spareProbe: SpareProbe? = null
+    )
+
+    /**
+     * 最近一次探测在 [validUntilNanos] 之前足以覆盖 [coveredBytes] 的需求
+     *
+     * 只在余量远超需求时记录，接近阈值时每次写入仍然实时探测
+     */
+    private data class SpareProbe(
+        val validUntilNanos: Long,
+        val coveredBytes: Long
     )
 
     private val stateLock = Any()
@@ -232,6 +244,9 @@ internal class DownloadStorageSpaceGuard(
         additionalBytes: Long,
         ownerReservedBytes: Long = 0L
     ) {
+        val requiredReservedBytes = safeAdd(state.reservedBytes, additionalBytes)
+        val requiredBytes = safeAdd(requiredReservedBytes, minimumFreeBytes)
+        if (state.isCoveredBySpareProbe(requiredBytes, nanoTime())) return
         val probe = readUsableSpace(state.probeRoot)
         if (!probe.known) {
             throw DownloadStorageSpaceException(
@@ -245,8 +260,6 @@ internal class DownloadStorageSpaceGuard(
             )
         }
         val usableBytes = probe.bytes
-        val requiredReservedBytes = safeAdd(state.reservedBytes, additionalBytes)
-        val requiredBytes = safeAdd(requiredReservedBytes, minimumFreeBytes)
         if (usableBytes < requiredBytes) {
             throw DownloadStorageSpaceException(
                 rootPath = state.probeRoot.path,
@@ -258,6 +271,21 @@ internal class DownloadStorageSpaceGuard(
                 usableSpaceKnown = true
             )
         }
+        state.spareProbe = spareProbeOf(usableBytes, requiredBytes, nanoTime())
+    }
+
+    private fun VolumeState.isCoveredBySpareProbe(requiredBytes: Long, nowNanos: Long): Boolean {
+        val spare = spareProbe ?: return false
+        return spare.validUntilNanos - nowNanos > 0L && requiredBytes <= spare.coveredBytes
+    }
+
+    private fun spareProbeOf(usableBytes: Long, requiredBytes: Long, nowNanos: Long): SpareProbe? {
+        val coveredBytes = usableBytes - SPARE_PROBE_HEADROOM_BYTES
+        if (coveredBytes < requiredBytes) return null
+        return SpareProbe(
+            validUntilNanos = nowNanos + SPARE_PROBE_WINDOW_NANOS,
+            coveredBytes = coveredBytes
+        )
     }
 
     private data class UsableSpaceProbe(
@@ -302,6 +330,10 @@ internal class DownloadStorageSpaceGuard(
     companion object {
         const val DEFAULT_MINIMUM_FREE_BYTES = 16 * MEBIBYTE_BYTES
         const val DEFAULT_UNKNOWN_RESERVATION_BYTES = 8 * MEBIBYTE_BYTES
+
+        /** 复用窗口内即使满速写入也远小于这份余量，外部占用超过它时下一次探测会补上 */
+        internal const val SPARE_PROBE_HEADROOM_BYTES = 64 * MEBIBYTE_BYTES
+        internal const val SPARE_PROBE_WINDOW_NANOS = 250_000_000L
         val global: DownloadStorageSpaceGuard by lazy { DownloadStorageSpaceGuard() }
     }
 }

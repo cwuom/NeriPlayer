@@ -188,6 +188,7 @@ PROVIDER_PARSER_REFERENCES = METADATA_PARSER_REFERENCES | {
     PROJECT_PACKAGE + "lyrics.parser.parseNeteaseLyricsAuto",
     PROJECT_PACKAGE + "lyrics.parser.convertPlainLyricsToEntries",
     PROJECT_PACKAGE + "lyrics.parser.toEditableLyricsText",
+    PROJECT_PACKAGE + "lyrics.parser.isLyricCreditOrNoticeLine",
 }
 PACKAGE_DEPENDENCY_RULES = (
     (("platform.bilibili.api",), {":common", MODEL_MODULE, ":network"}, (), set()),

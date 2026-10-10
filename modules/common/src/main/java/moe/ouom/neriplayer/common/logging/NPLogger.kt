@@ -45,7 +45,7 @@ import java.util.Locale
 
 object NPLogger {
 
-    private data class LogFileEntry(
+    internal data class LogFileEntry(
         val file: File,
         val generation: Long,
         val level: Int,
@@ -145,30 +145,32 @@ object NPLogger {
         return cleared
     }
 
-    private fun log(level: Int, tag: String?, message: Any?, tr: Throwable? = null) {
+    private fun log(level: Int, tag: String?, message: Any?, tr: Throwable? = null) =
+        log(level, tag, message, tr, debugBuild = BuildConfig.DEBUG)
+
+    internal fun log(level: Int, tag: String?, message: Any?, tr: Throwable?, debugBuild: Boolean) {
+        val finalTag = qualifiedTag(tag)
         // Release 构建中不输出 DEBUG/VERBOSE 级别日志到 logcat，防止敏感信息泄露
-        if (!BuildConfig.DEBUG && (level == Log.DEBUG || level == Log.VERBOSE)) {
-            if (isFileLoggingEnabled && level == Log.DEBUG) {
-                val finalTag = if (tag != null && tag != appTag) "$appTag: $tag" else appTag
-                writeToFile(level, finalTag, formatMessage(message), tr)
-            }
+        if (!debugBuild && (level == Log.DEBUG || level == Log.VERBOSE)) {
+            if (isFileLoggingEnabled && level == Log.DEBUG) writeToFile(level, finalTag, formatMessage(message), tr)
             return
         }
-
-        val finalTag = if (tag != null && tag != appTag) "$appTag: $tag" else appTag
-        val safeTag = ensureLogTag(finalTag)
         val finalMessage = formatMessage(message)
-
-        when (level) {
-            Log.DEBUG -> Log.d(safeTag, finalMessage, tr)
-            Log.INFO -> Log.i(safeTag, finalMessage, tr)
-            Log.WARN -> Log.w(safeTag, finalMessage, tr)
-            Log.ERROR -> Log.e(safeTag, finalMessage, tr)
-            Log.VERBOSE -> Log.v(safeTag, finalMessage, tr)
-        }
-
+        writeToLogcat(level, ensureLogTag(finalTag), finalMessage, tr)
         if (isFileLoggingEnabled && level != Log.VERBOSE) {
             writeToFile(level, finalTag, finalMessage, tr)
+        }
+    }
+
+    private fun qualifiedTag(tag: String?): String = if (tag != null && tag != appTag) "$appTag: $tag" else appTag
+
+    private fun writeToLogcat(level: Int, tag: String, message: String, tr: Throwable?) {
+        when (level) {
+            Log.DEBUG -> Log.d(tag, message, tr)
+            Log.INFO -> Log.i(tag, message, tr)
+            Log.WARN -> Log.w(tag, message, tr)
+            Log.ERROR -> Log.e(tag, message, tr)
+            Log.VERBOSE -> Log.v(tag, message, tr)
         }
     }
 
@@ -239,7 +241,7 @@ object NPLogger {
         }
     }
 
-    private fun formatFileLogEntry(entry: LogFileEntry): String {
+    internal fun formatFileLogEntry(entry: LogFileEntry): String {
         val levelChar = when (entry.level) {
             Log.DEBUG -> "D"
             Log.INFO -> "I"

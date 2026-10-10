@@ -180,6 +180,19 @@ size_t PcmResampler::process(const float* input, int inputFrames, std::vector<fl
     return produced;
 }
 
+size_t PcmResampler::drain(std::vector<float>* output) {
+    if (kernel_ == nullptr || output == nullptr) {
+        return 0;
+    }
+    const std::vector<float> silence(
+        static_cast<size_t>(kernel_->halfTaps) * static_cast<size_t>(channels_),
+        0.0f
+    );
+    const size_t produced = process(silence.data(), kernel_->halfTaps, output);
+    reset();
+    return produced;
+}
+
 void PcmResampler::emitFrame(std::vector<float>* output) {
     const Kernel& kernel = *kernel_;
     const int taps = 2 * kernel.halfTaps;

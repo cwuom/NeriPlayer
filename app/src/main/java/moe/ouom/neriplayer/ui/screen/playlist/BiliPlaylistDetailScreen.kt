@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
+import android.content.res.Resources
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -65,6 +66,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -80,6 +82,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -116,7 +119,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.util.format.formatDurationSec
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
-import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
+import moe.ouom.neriplayer.ui.util.copyMessageRes
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -153,6 +156,10 @@ fun BiliPlaylistDetailScreen(
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
     // 使用Unit作为key，确保每次进入都重新加载最新数据
     LaunchedEffect(playlist.mediaId, playlist.kind) { vm.start(playlist) }
+    val errorWithVisibleVideos = ui.error?.takeIf { ui.videos.isNotEmpty() }
+    LaunchedEffect(errorWithVisibleVideos) {
+        errorWithVisibleVideos?.let { snackbarHostState.showNeriSnackbar(it) }
+    }
 
     // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }
@@ -259,8 +266,9 @@ fun BiliPlaylistDetailScreen(
     fun selectAll() { selectedIds = ui.videos.map { it.bvid }.toSet() }
     fun exitSelection() { selectionMode = false; clearSelection() }
 
-    var showSearch by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    val searchUiState = rememberPlaylistSearchUiState()
+    var showSearch by searchUiState.visible
+    var searchQuery by searchUiState.query
     var headerSearchFocused by remember { mutableStateOf(false) }
     var dockedSearchFocused by remember { mutableStateOf(false) }
     val searchInputState = rememberPlaylistSearchInputState(
@@ -782,6 +790,8 @@ fun BiliPlaylistDetailScreen(
                                                     }
                                                 }
                                             },
+                                            onPlayNext = { PlayerManager.addToQueueNext(songItem) },
+                                            onAddToQueueEnd = { PlayerManager.addToQueueEnd(songItem) },
                                             snackbarHostState = snackbarHostState,
                                             offlineMode = offlineMode
                                         )
@@ -1139,7 +1149,7 @@ private fun BiliVideoItem.toSongItem(): SongItem {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun VideoRow(
+internal fun VideoRow(
     index: Int,
     video: BiliVideoItem,
     songItem: SongItem,
@@ -1152,6 +1162,8 @@ private fun VideoRow(
     onToggleSelect: () -> Unit,
     onLongPress: () -> Unit,
     onClick: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueueEnd: () -> Unit,
     snackbarHostState: SnackbarHostState,
     offlineMode: Boolean
 ) {
@@ -1179,33 +1191,18 @@ private fun VideoRow(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = {
-                    context.performHapticFeedback()
-                    if (selectionMode) onToggleSelect() else onClick()
-                },
+                onClick = hapticRowAction(context, if (selectionMode) onToggleSelect else onClick),
                 onLongClick = onLongPress
             )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier.width(40.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelect() }
-                )
-            } else {
-                Text(
-                    text = index.toString(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = playlistModernListTertiaryContentColor(),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
+        VideoRowLeading(
+            index = index,
+            selectionMode = selectionMode,
+            selected = selected,
+            onToggleSelect = onToggleSelect
+        )
 
         AsyncImage(
             model = coverRequest,
@@ -1234,145 +1231,212 @@ private fun VideoRow(
             )
         }
         Spacer(Modifier.width(8.dp))
-        if (isCurrentSong) {
-            PlayingIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                animate = animatePlayingIndicator
-            )
-        } else {
-            Text(
-                text = formatDurationSec(video.durationSec),
-                style = MaterialTheme.typography.bodySmall,
-                color = playlistModernListSecondaryContentColor()
-            )
-        }
+        VideoRowTrailing(
+            isCurrentSong = isCurrentSong,
+            animatePlayingIndicator = animatePlayingIndicator,
+            durationSec = video.durationSec
+        )
         
         // 更多操作菜单
         if (!selectionMode) {
-            var showMoreMenu by remember { mutableStateOf(false) }
-            var showVideoSkipSheet by remember(video.bvid) { mutableStateOf(false) }
-            Box {
-                IconButton(
-                    onClick = { showMoreMenu = true }
-                ) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = stringResource(CoreCommonR.string.common_more_actions),
-                        tint = playlistModernListSecondaryContentColor()
-                    )
-                }
-                
-                DropdownMenu(
-                    expanded = showMoreMenu,
-                    onDismissRequest = { showMoreMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            PlayerManager.addToQueueNext(songItem)
-                            showMoreMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            PlayerManager.addToQueueEnd(songItem)
-                            showMoreMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    if (isFavorite) {
-                                        CoreCommonR.string.favorite_remove
-                                    } else {
-                                        CoreCommonR.string.favorite_add
-                                    }
-                                )
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (isFavorite) {
-                                    Icons.Filled.Favorite
-                                } else {
-                                    Icons.Outlined.FavoriteBorder
-                                },
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            onFavoriteToggle(songItem, isFavorite)
-                            showMoreMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(CoreCommonR.string.bili_video_skip_manage)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.SkipNext,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            showMoreMenu = false
-                            showVideoSkipSheet = true
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.ContentCopy,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            val songInfo = "${video.title}-${video.uploader}"
-                            scope.launch {
-                                val messageRes = when (
-                                    val result = clipboard.copyPlainTextSafely("text", songInfo)
-                                ) {
-                                    is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
-                                        CoreCommonR.string.toast_copy_truncated
-                                    } else {
-                                        CoreCommonR.string.toast_copied
-                                    }
-                                    ClipboardCopyResult.TransactionTooLarge -> CoreCommonR.string.toast_copy_failed
-                                }
-                                snackbarHostState.showNeriSnackbar(composeResources.getString(messageRes))
-                            }
-                            showMoreMenu = false
-                        }
-                    )
-                }
-            }
-            if (showVideoSkipSheet) {
-                BiliVideoSkipIntervalsSheet(
-                    title = stringResource(CoreCommonR.string.bili_video_skip_title),
-                    targetResolverKey = video.bvid,
-                    loadTargetOptions = {
-                        resolveBiliVideoSkipTargetOptions(
-                            bvid = video.bvid,
-                            client = AppContainer.biliClient
-                        )
-                    },
-                    onDismiss = { showVideoSkipSheet = false }
+            VideoRowMoreMenu(
+                video = video,
+                songItem = songItem,
+                isFavorite = isFavorite,
+                onFavoriteToggle = onFavoriteToggle,
+                onPlayNext = onPlayNext,
+                onAddToQueueEnd = onAddToQueueEnd,
+                onCopySongInfo = copyVideoInfoAction(
+                    scope = scope,
+                    clipboard = clipboard,
+                    snackbarHostState = snackbarHostState,
+                    resources = composeResources,
+                    songInfo = "${video.title}-${video.uploader}"
                 )
-            }
+            )
         }
+    }
+}
+
+private fun copyVideoInfoAction(
+    scope: CoroutineScope,
+    clipboard: Clipboard,
+    snackbarHostState: SnackbarHostState,
+    resources: Resources,
+    songInfo: String
+): () -> Unit = {
+    scope.launch {
+        val messageRes = clipboard.copyPlainTextSafely("text", songInfo).copyMessageRes()
+        snackbarHostState.showNeriSnackbar(resources.getString(messageRes))
+    }
+}
+
+@Composable
+private fun VideoRowLeading(
+    index: Int,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit
+) {
+    Box(
+        modifier = Modifier.width(40.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selectionMode) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = { onToggleSelect() }
+            )
+        } else {
+            Text(
+                text = index.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = playlistModernListTertiaryContentColor(),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+private fun VideoRowTrailing(
+    isCurrentSong: Boolean,
+    animatePlayingIndicator: Boolean,
+    durationSec: Int
+) {
+    if (isCurrentSong) {
+        PlayingIndicator(
+            color = MaterialTheme.colorScheme.primary,
+            animate = animatePlayingIndicator
+        )
+    } else {
+        Text(
+            text = formatDurationSec(durationSec),
+            style = MaterialTheme.typography.bodySmall,
+            color = playlistModernListSecondaryContentColor()
+        )
+    }
+}
+
+@Composable
+private fun VideoRowMoreMenu(
+    video: BiliVideoItem,
+    songItem: SongItem,
+    isFavorite: Boolean,
+    onFavoriteToggle: (SongItem, Boolean) -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueueEnd: () -> Unit,
+    onCopySongInfo: () -> Unit
+) {
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var showVideoSkipSheet by remember(video.bvid) { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { showMoreMenu = true }
+        ) {
+            Icon(
+                Icons.Filled.MoreVert,
+                contentDescription = stringResource(CoreCommonR.string.common_more_actions),
+                tint = playlistModernListSecondaryContentColor()
+            )
+        }
+        
+        DropdownMenu(
+            expanded = showMoreMenu,
+            onDismissRequest = { showMoreMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.local_playlist_play_next)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onPlayNext()
+                    showMoreMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.playlist_add_to_end)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onAddToQueueEnd()
+                    showMoreMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (isFavorite) {
+                                CoreCommonR.string.favorite_remove
+                            } else {
+                                CoreCommonR.string.favorite_add
+                            }
+                        )
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onFavoriteToggle(songItem, isFavorite)
+                    showMoreMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.bili_video_skip_manage)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.SkipNext,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    showMoreMenu = false
+                    showVideoSkipSheet = true
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(CoreCommonR.string.action_copy_song_info)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.ContentCopy,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onCopySongInfo()
+                    showMoreMenu = false
+                }
+            )
+        }
+    }
+    if (showVideoSkipSheet) {
+        BiliVideoSkipIntervalsSheet(
+            title = stringResource(CoreCommonR.string.bili_video_skip_title),
+            targetResolverKey = video.bvid,
+            loadTargetOptions = {
+                resolveBiliVideoSkipTargetOptions(
+                    bvid = video.bvid,
+                    client = AppContainer.biliClient
+                )
+            },
+            onDismiss = { showVideoSkipSheet = false }
+        )
     }
 }

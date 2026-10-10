@@ -36,13 +36,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playlist.LocalArtistSummary
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
+
+internal fun localArtistGridMinCellSize(windowWidth: Dp): Dp =
+    if (windowWidth >= 720.dp) 156.dp else 120.dp
 
 @Composable
 internal fun LocalArtistLibraryGrid(
@@ -56,10 +61,11 @@ internal fun LocalArtistLibraryGrid(
 ) {
     val gridState = rememberLazyGridState()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val gridMinCellSize = localArtistGridMinCellSize(currentWindowWidthDp())
 
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(120.dp),
+        columns = GridCells.Adaptive(gridMinCellSize),
         contentPadding = PaddingValues(
             start = 8.dp,
             end = 8.dp,

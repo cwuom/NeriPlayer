@@ -37,6 +37,33 @@ class YouTubeResponseBodyReaderTest {
     }
 
     @Test
+    fun `readErrorPreviewWithLimit keeps only the message of a Google API error body`() {
+        val body = """
+            {
+              "error": {
+                "code": 404,
+                "message": "Requested entity was not found.",
+                "errors": [{ "message": "Requested entity was not found.", "domain": "global" }],
+                "status": "NOT_FOUND"
+              }
+            }
+        """.trimIndent().toResponseBody("application/json".toMediaType())
+
+        assertEquals("Requested entity was not found.", body.readErrorPreviewWithLimit(maxBytes = 4096L))
+    }
+
+    @Test
+    fun `error summary keeps plain text and truncated json previews readable`() {
+        assertEquals("busy", summarizeYouTubeErrorBody("busy"))
+        assertEquals("x".repeat(160), summarizeYouTubeErrorBody("x".repeat(400)))
+        assertEquals(
+            "Quota \\\"exceeded\\\"",
+            summarizeYouTubeErrorBody("""{"error":{"code":429,"message":"Quota \"exceeded\"","err""")
+        )
+        assertEquals("""{"error":{"code":500}}""", summarizeYouTubeErrorBody("""{"error":{"code":500}}"""))
+    }
+
+    @Test
     fun `readErrorPreviewWithLimit reports oversized body without allocating it`() {
         val body = unknownLengthBody("123456789")
 

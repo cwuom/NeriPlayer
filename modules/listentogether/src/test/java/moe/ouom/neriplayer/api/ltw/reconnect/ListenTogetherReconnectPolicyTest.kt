@@ -21,6 +21,14 @@ class ListenTogetherReconnectPolicyTest {
     }
 
     @Test
+    fun `reconnect budget outlasts the server controller offline grace period`() {
+        repeat(20) {
+            val totalMs = (1..LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS).sumOf(::listenTogetherReconnectDelayMs)
+            assertTrue("total=$totalMs", totalMs > 10 * 60_000L)
+        }
+    }
+
+    @Test
     fun `backoff remains bounded including later attempts`() {
         for ((attempt, base) in listOf(1 to 1500L, 2 to 3000L, 3 to 5000L, 4 to 8000L, 15 to 12000L)) {
             repeat(20) {

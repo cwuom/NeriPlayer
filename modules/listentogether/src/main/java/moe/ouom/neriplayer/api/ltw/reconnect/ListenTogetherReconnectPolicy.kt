@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.api.ltw.reconnect
 
-const val LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS = 15
+// even the shortest jittered backoff over this many attempts outlasts the server's 10 minute controller offline grace
+const val LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS = 70
+const val LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON = "reconnect_max_attempts_exceeded"
 
 fun isTerminalListenTogetherReconnectError(errorMessage: String?): Boolean {
     val normalized = errorMessage?.trim()?.lowercase().orEmpty()

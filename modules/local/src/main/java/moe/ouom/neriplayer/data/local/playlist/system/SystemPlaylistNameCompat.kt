@@ -27,10 +27,7 @@ package moe.ouom.neriplayer.data.local.playlist.system
 import java.nio.charset.Charset
 import java.util.concurrent.ConcurrentHashMap
 
-private val legacyMojibakeCharsets: List<Charset> = buildList {
-    runCatching { Charset.forName("GBK") }.getOrNull()?.let(::add)
-    runCatching { Charset.forName("GB18030") }.getOrNull()?.let(::add)
-}
+private val legacyMojibakeCharsets: List<Charset> = supportedCharsets("GBK", "GB18030")
 private val systemPlaylistCandidateNameCache =
     ConcurrentHashMap<SystemPlaylistCandidateNameKey, Set<String>>()
 private const val NUL_CHAR = '\u0000'
@@ -60,6 +57,9 @@ internal fun buildSystemPlaylistCandidateNames(
         }
     }
 }
+
+private fun supportedCharsets(vararg names: String): List<Charset> =
+    names.filter(Charset::isSupported).map(Charset::forName)
 
 private fun generateLegacyMojibakeVariants(sourceName: String): Set<String> {
     if (sourceName.isBlank() || legacyMojibakeCharsets.isEmpty()) return emptySet()

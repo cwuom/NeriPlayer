@@ -53,18 +53,31 @@ private fun importedArtistFavorite(
     now: Long
 ): FavoritePlaylist? {
     if (artist.id == 0L || artist.name.isBlank()) return null
-    if (existing != null && (!existing.isDeleted || existing.modifiedAt >= importStartedAt)) return null
+    if (existing != null && existing.isProtectedFrom(importStartedAt)) return null
+    val merged = artist.withFallbacksFrom(existing)
     return FavoritePlaylist(
-        id = artist.id,
-        name = artist.name.trim(),
-        coverUrl = artist.coverUrl ?: existing?.coverUrl,
-        trackCount = artist.trackCount.coerceAtLeast(0),
+        id = merged.id,
+        name = merged.name.trim(),
+        coverUrl = merged.coverUrl,
+        trackCount = merged.trackCount.coerceAtLeast(0),
         source = source,
-        browseId = artist.browseId ?: existing?.browseId,
-        subtitle = artist.subtitle ?: existing?.subtitle,
+        browseId = merged.browseId,
+        subtitle = merged.subtitle,
         songs = emptyList(),
         addedTime = now,
         sortOrder = now,
         modifiedAt = now
+    )
+}
+
+private fun FavoritePlaylist.isProtectedFrom(importStartedAt: Long): Boolean =
+    !isDeleted || modifiedAt >= importStartedAt
+
+private fun FavoriteArtist.withFallbacksFrom(existing: FavoritePlaylist?): FavoriteArtist {
+    if (existing == null) return this
+    return copy(
+        coverUrl = coverUrl ?: existing.coverUrl,
+        browseId = browseId ?: existing.browseId,
+        subtitle = subtitle ?: existing.subtitle
     )
 }

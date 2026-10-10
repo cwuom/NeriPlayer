@@ -54,8 +54,23 @@ fun ResponseBody.readTextWithLimit(maxBytes: Long): String {
 
 fun ResponseBody.readErrorPreviewWithLimit(maxBytes: Long): String {
     return try {
-        readTextWithLimit(maxBytes).take(160)
+        summarizeYouTubeErrorBody(readTextWithLimit(maxBytes))
     } catch (_: YouTubeResponseTooLargeException) {
         "<response body exceeds $maxBytes bytes>"
     }
+}
+
+private const val YOUTUBE_ERROR_PREVIEW_CHARS = 160
+private val YOUTUBE_ERROR_MESSAGE_FIELD = Regex("\"message\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+
+/**
+ * Google API 的错误体是整段 JSON，异常消息会原样显示在界面上，只保留其中的 error.message；
+ * 预览截断后 JSON 可能不完整，所以按字段匹配而不是整体解析
+ */
+internal fun summarizeYouTubeErrorBody(body: String): String {
+    if (body.trimStart().startsWith("{")) {
+        val message = YOUTUBE_ERROR_MESSAGE_FIELD.find(body)?.groupValues?.get(1)
+        if (!message.isNullOrBlank()) return message.take(YOUTUBE_ERROR_PREVIEW_CHARS)
+    }
+    return body.take(YOUTUBE_ERROR_PREVIEW_CHARS)
 }

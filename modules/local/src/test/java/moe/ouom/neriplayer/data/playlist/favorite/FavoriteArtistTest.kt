@@ -64,6 +64,26 @@ class FavoriteArtistTest {
     }
 
     @Test
+    fun `restored artists keep their own metadata and borrow missing fields from the deleted favorite`() {
+        val deleted = favorite(1L).copy(isDeleted = true, modifiedAt = 99L, browseId = "UClocal", subtitle = "local alias")
+        val result = mergeFollowedArtistFavorites(
+            listOf(deleted, favorite(2L).copy(isDeleted = true, modifiedAt = 99L, browseId = "UCold", subtitle = "old")),
+            "neteaseArtist",
+            listOf(
+                FavoriteArtist(1L, "Bare"),
+                FavoriteArtist(2L, "Full", "https://image.test/2", browseId = "UCnew", subtitle = "new")
+            ),
+            importStartedAt = 100L,
+            now = 200L
+        )
+
+        val bare = result.favorites.single { it.id == 1L }
+        val full = result.favorites.single { it.id == 2L }
+        assertEquals(listOf("https://image.test/local", "UClocal", "local alias"), listOf(bare.coverUrl, bare.browseId, bare.subtitle))
+        assertEquals(listOf("https://image.test/2", "UCnew", "new"), listOf(full.coverUrl, full.browseId, full.subtitle))
+    }
+
+    @Test
     fun `channel browse identity survives a local follow import`() {
         val result = mergeFollowedArtistFavorites(
             emptyList(), "youtubeMusicArtist",

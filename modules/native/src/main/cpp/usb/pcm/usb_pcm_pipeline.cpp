@@ -216,6 +216,37 @@ bool PcmPipeline::canCopyIntegerFrames(
             outputFormat_.channelCount * outputFormat_.subslotBytes;
 }
 
+// 大端整数只换字节序或加宽时按整数移位，32 位样本经 float 会丢掉低位
+bool PcmPipeline::canWidenBigEndianIntegerFrames() const {
+    const int inputBits = integerPcmBitsForEncoding(inputFormat_.encoding);
+    return inputFormat_.sampleRate == outputFormat_.sampleRate &&
+        inputFormat_.channelCount == outputFormat_.channelCount &&
+        isBigEndianIntegerPcmEncoding(inputFormat_.encoding) &&
+        inputBits > 0 &&
+        inputBits <= outputFormat_.bitsPerSample &&
+        outputFormat_.bitsPerSample <= std::min(32, outputFormat_.subslotBytes * 8);
+}
+
+void PcmPipeline::widenIntegerFrame(
+    const uint8_t* source,
+    uint8_t* target,
+    int inputSampleBytes
+) const {
+    const int shift = outputFormat_.bitsPerSample - integerPcmBitsForEncoding(inputFormat_.encoding);
+    for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
+        const int64_t value = readEncodedIntegerPcmSample(
+            source + channel * inputSampleBytes,
+            inputFormat_.encoding
+        );
+        writeIntegerPcmValue(
+            target + channel * outputFormat_.subslotBytes,
+            outputFormat_.subslotBytes,
+            outputFormat_.bitsPerSample,
+            value * (int64_t { 1 } << shift)
+        );
+    }
+}
+
 void PcmPipeline::beginBackpressureLocked(int64_t nowUs) {
     if (backpressureStartedAtUs_ > 0) {
         return;
@@ -368,10 +399,15 @@ size_t PcmPipeline::writeConverted(
         }
         return 0;
     }
+    const bool widenInteger = canWidenBigEndianIntegerFrames();
     for (int frame = 0; frame < inputFrames; ++frame) {
         const uint8_t* source = input + static_cast<size_t>(frame) * static_cast<size_t>(inputFrameBytes);
         uint8_t* target = conversionBuffer_.data() +
             static_cast<size_t>(frame) * static_cast<size_t>(outputFormat_.frameBytes);
+        if (widenInteger) {
+            widenIntegerFrame(source, target, inputSampleBytes);
+            continue;
+        }
         for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
             writeIntegerPcmSample(
                 target + channel * outputFormat_.subslotBytes,
@@ -381,7 +417,8 @@ size_t PcmPipeline::writeConverted(
             );
         }
     }
-    return commitConverted(static_cast<size_t>(inputFrames) * static_cast<size_t>(inputFrameBytes));
+    const size_t consumedBytes = static_cast<size_t>(inputFrames) * static_cast<size_t>(inputFrameBytes);
+    return commitConverted(consumedBytes) ? consumedBytes : 0;
 }
 
 size_t PcmPipeline::writeResampled(
@@ -419,7 +456,51 @@ size_t PcmPipeline::writeResampled(
         }
         return 0;
     }
-    for (size_t frame = 0; frame < produced; ++frame) {
+    encodeResampledOutput(produced);
+    const size_t consumedBytes = static_cast<size_t>(frames) * static_cast<size_t>(inputFrameBytes);
+    if (!commitConverted(consumedBytes)) {
+        resampler_ = std::move(rollback);
+        return 0;
+    }
+    return consumedBytes;
+}
+
+bool PcmPipeline::drainResampler(std::string* error) {
+    std::lock_guard<std::mutex> writeGuard(writeLock_);
+    if (error != nullptr) {
+        error->clear();
+    }
+    if (!resampler_.configured() || outputFormat_.frameBytes <= 0) {
+        return true;
+    }
+    PcmResampler rollback;
+    size_t produced = 0;
+    try {
+        rollback = resampler_;
+        resampleOutput_.clear();
+        produced = resampler_.drain(&resampleOutput_);
+        conversionBuffer_.assign(produced * static_cast<size_t>(outputFormat_.frameBytes), 0);
+    } catch (const std::bad_alloc&) {
+        resampler_ = std::move(rollback);
+        if (error != nullptr) {
+            *error = "pcm_conversion_allocation_failed";
+        }
+        return false;
+    }
+    if (produced == 0) {
+        return true;
+    }
+    encodeResampledOutput(produced);
+    if (!commitConverted(0)) {
+        resampler_ = std::move(rollback);
+        return false;
+    }
+    return true;
+}
+
+void PcmPipeline::encodeResampledOutput(size_t frames) {
+    const int outputChannels = outputFormat_.channelCount;
+    for (size_t frame = 0; frame < frames; ++frame) {
         uint8_t* target = conversionBuffer_.data() + frame * static_cast<size_t>(outputFormat_.frameBytes);
         const float* samples = resampleOutput_.data() + frame * static_cast<size_t>(outputChannels);
         for (int channel = 0; channel < outputChannels; ++channel) {
@@ -431,13 +512,6 @@ size_t PcmPipeline::writeResampled(
             );
         }
     }
-    const size_t consumed = commitConverted(
-        static_cast<size_t>(frames) * static_cast<size_t>(inputFrameBytes)
-    );
-    if (consumed == 0) {
-        resampler_ = std::move(rollback);
-    }
-    return consumed;
 }
 
 // 单声道复制到左右，立体声送单声道设备取平均；设备多出的声道补零，不复制最后一个声道
@@ -462,21 +536,21 @@ float PcmPipeline::inputSampleFor(
     return readEncodedPcmSample(frame + sourceChannel * inputSampleBytes, inputFormat_.encoding);
 }
 
-size_t PcmPipeline::commitConverted(size_t consumedBytes) {
+bool PcmPipeline::commitConverted(size_t consumedBytes) {
     std::lock_guard<std::mutex> guard(lock_);
     if (freeBytesLocked() < conversionBuffer_.size()) {
         beginBackpressureLocked(monotonicMicros());
-        return 0;
+        return false;
     }
     endBackpressureLocked(monotonicMicros());
     const size_t written = conversionBuffer_.empty()
         ? 0
         : writeRingLocked(conversionBuffer_.data(), conversionBuffer_.size());
     if (written != conversionBuffer_.size()) {
-        return 0;
+        return false;
     }
     inputBytes_ += static_cast<int64_t>(consumedBytes);
-    return consumedBytes;
+    return true;
 }
 
 void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {

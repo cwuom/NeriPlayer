@@ -10,15 +10,18 @@ import java.io.File
 import java.net.URI
 
 private const val BILIBILI_SOURCE_ALBUM_PREFIX = "Bilibili"
+private const val BILIBILI_CHANNEL = "bilibili"
+private const val NETEASE_CHANNEL = "netease"
 
 fun localFileNameFromFileReference(reference: String?): String? {
-    val raw = reference?.takeIf(String::isNotBlank) ?: return null
-    val path = when {
-        raw.startsWith('/') -> raw
-        raw.startsWith("file:", ignoreCase = true) -> runCatching { URI(raw).path }.getOrNull()
-        else -> null
-    } ?: return null
+    val path = filePathOf(reference?.takeIf(String::isNotBlank) ?: return null) ?: return null
     return File(path).name.takeIf(String::isNotBlank)
+}
+
+private fun filePathOf(reference: String): String? = when {
+    reference.startsWith('/') -> reference
+    reference.startsWith("file:", ignoreCase = true) -> runCatching { URI(reference).path }.getOrNull()
+    else -> null
 }
 
 fun DownloadedSong.resolvedLocalFileName(): String? {
@@ -33,7 +36,7 @@ fun DownloadedSong.remoteSourceIdentityOrNull(): SongIdentity? {
 }
 
 private fun String?.toRemoteSourceIdentityOrNull(): SongIdentity? {
-    val sourceStableKey = this?.trim()?.takeIf(String::isNotBlank) ?: return null
+    val sourceStableKey = trimmedOrNull() ?: return null
     return SongItem(
         id = 0L,
         name = "",
@@ -47,21 +50,11 @@ private fun String?.toRemoteSourceIdentityOrNull(): SongIdentity? {
 }
 
 private fun DownloadedSong.rebuildRemoteSourceIdentity(): SongIdentity? {
-    val sourceChannel = sourceChannelId
-        ?.trim()
-        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
-    val sourceAlbum = sourceIdentityAlbum
-        ?.trim()
-        ?.takeIf { it.isNotBlank() && it != LocalSongSupport.LOCAL_ALBUM_IDENTITY }
-    val identityAlbum = sourceAlbum ?: sourceChannel ?: return null
-    val sourceAudio = sourceAudioId?.trim()?.takeIf(String::isNotBlank)
-    val sourceMedia = sourceMediaUri
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-        ?.takeUnless(LocalSongSupport::isLocalMediaUri)
-    if (sourceAudio == null && sourceMedia == null && id == 0L) {
-        return null
-    }
+    val sourceChannel = remoteChannelOrNull(sourceChannelId)
+    val identityAlbum = remoteSourceAlbumOrNull() ?: sourceChannel ?: return null
+    val sourceAudio = sourceAudioId.trimmedOrNull()
+    val sourceMedia = remoteSourceMediaOrNull()
+    if (!hasRemoteAddress(sourceAudio, sourceMedia)) return null
 
     val sourceIdentity = SongItem(
         id = id,
@@ -74,12 +67,19 @@ private fun DownloadedSong.rebuildRemoteSourceIdentity(): SongIdentity? {
         mediaUri = sourceMedia,
         channelId = sourceChannel,
         audioId = sourceAudio,
-        subAudioId = sourceSubAudioId?.trim()?.takeIf(String::isNotBlank)
+        subAudioId = sourceSubAudioId.trimmedOrNull()
     ).identity()
-    return sourceIdentity.takeUnless { identity ->
-        identity.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
-    }
+    return sourceIdentity.takeUnless { it.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY }
 }
+
+private fun DownloadedSong.remoteSourceAlbumOrNull(): String? =
+    sourceIdentityAlbum.trimmedOrNull()?.takeUnless { it == LocalSongSupport.LOCAL_ALBUM_IDENTITY }
+
+private fun DownloadedSong.remoteSourceMediaOrNull(): String? =
+    sourceMediaUri.trimmedOrNull()?.takeUnless(LocalSongSupport::isLocalMediaUri)
+
+private fun DownloadedSong.hasRemoteAddress(sourceAudio: String?, sourceMedia: String?): Boolean =
+    sourceAudio != null || sourceMedia != null || id != 0L
 
 fun DownloadedSong.toPlaybackSongItem(): SongItem {
     return toPlaybackSongItem(
@@ -97,57 +97,14 @@ fun DownloadedSong.toPlaybackSongItem(
     resolvedDurationMs: Long
 ): SongItem {
     val remoteSourceIdentity = remoteSourceIdentityOrNull()
-    val hasLegacyBiliSource = album.startsWith(
-        BILIBILI_SOURCE_ALBUM_PREFIX,
-        ignoreCase = true
-    )
-    val legacyBiliCid = album
-        .substringAfter('|', "")
-        .substringBefore('|')
-        .trim()
-        .takeIf { hasLegacyBiliSource && it.isNotBlank() }
-    val remoteSourceChannel = sourceChannelId
-        ?.trim()
-        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
-    val resolvedSourceChannel = remoteSourceChannel
-        ?: remoteSourceIdentity?.album
-        ?: sourceChannelId
-        ?: "bilibili".takeIf { hasLegacyBiliSource }
-    val isBiliSource = resolvedSourceChannel.equals("bilibili", ignoreCase = true)
-    val resolvedSourceAudioId = sourceAudioId
-        ?.trim()
-        ?.takeIf { remoteSourceChannel != null && it.isNotBlank() }
-        ?: remoteSourceIdentity
-            ?.takeIf { resolvedSourceChannel.equals("netease", ignoreCase = true) }
-            ?.id
-            ?.toString()
-        ?: sourceAudioId
-        ?: id.takeIf { isBiliSource && it > 0L }?.toString()
-    val resolvedSourceSubAudioId = sourceSubAudioId
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-        ?: legacyBiliCid
-    val resolvedSongId = remoteSourceIdentity
-        ?.takeIf { identity ->
-            resolvedSourceChannel.equals("netease", ignoreCase = true) &&
-                identity.album.equals("netease", ignoreCase = true) &&
-                identity.mediaUri == null &&
-                identity.id > 0L
-        }
-        ?.id
-        ?: id
-    val resolvedAlbum = if (remoteSourceIdentity != null) {
-        album.trim()
-            .takeIf { it.isNotBlank() && it != LocalSongSupport.LOCAL_ALBUM_IDENTITY }
-            ?: remoteSourceIdentity.album
-    } else {
-        LocalSongSupport.LOCAL_ALBUM_IDENTITY
-    }
+    val remoteSourceChannel = remoteChannelOrNull(sourceChannelId)
+    val resolvedSourceChannel = playbackChannel(remoteSourceChannel, remoteSourceIdentity)
+    val creation = managedCreation()
     return SongItem(
-        id = resolvedSongId,
+        id = neteaseSongIdOrNull(resolvedSourceChannel, remoteSourceIdentity) ?: id,
         name = name,
         artist = artist,
-        album = resolvedAlbum,
+        album = playbackAlbum(remoteSourceIdentity),
         albumId = 0L,
         durationMs = resolvedDurationMs.coerceAtLeast(0L),
         coverUrl = coverPath ?: coverUrl,
@@ -155,9 +112,7 @@ fun DownloadedSong.toPlaybackSongItem(
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
         matchedRomanizedLyric = matchedRomanizedLyric,
-        matchedLyricSource = matchedLyricSource?.let {
-            runCatching { MusicPlatform.valueOf(it) }.getOrNull()
-        },
+        matchedLyricSource = musicPlatformOrNull(matchedLyricSource),
         matchedSongId = matchedSongId,
         userLyricOffsetMs = userLyricOffsetMs,
         customCoverUrl = customCoverUrl,
@@ -165,20 +120,77 @@ fun DownloadedSong.toPlaybackSongItem(
         customArtist = customArtist,
         originalName = originalName,
         originalArtist = originalArtist,
-        originalCoverUrl = originalCoverUrl
-            ?: coverUrl?.takeUnless(LocalSongSupport::isLocalMediaUri),
+        originalCoverUrl = originalRemoteCoverUrl(),
         originalLyric = originalLyric,
         originalTranslatedLyric = originalTranslatedLyric,
         originalRomanizedLyric = originalRomanizedLyric,
         localFileName = localFileName,
         localFilePath = localFilePath,
         channelId = resolvedSourceChannel,
-        audioId = resolvedSourceAudioId,
-        subAudioId = resolvedSourceSubAudioId,
+        audioId = playbackAudioId(remoteSourceChannel, resolvedSourceChannel, remoteSourceIdentity),
+        subAudioId = playbackSubAudioId(),
         playlistContextId = sourcePlaylistContextId,
-        sourceStableKey = remoteSourceIdentity?.stableKey() ?: stableKey,
-        logicalCreatedAtMs = downloadTime.takeIf { it > 0L },
-        createdAtSource = "MANAGED_COMMIT".takeIf { downloadTime > 0L },
-        createdAtConfidence = "EXACT".takeIf { downloadTime > 0L }
+        sourceStableKey = playbackStableKey(remoteSourceIdentity),
+        logicalCreatedAtMs = creation.createdAtMs,
+        createdAtSource = creation.source,
+        createdAtConfidence = creation.confidence
     )
 }
+
+private val DownloadedSong.hasLegacyBiliSource: Boolean
+    get() = album.startsWith(BILIBILI_SOURCE_ALBUM_PREFIX, ignoreCase = true)
+
+private fun DownloadedSong.playbackChannel(remoteSourceChannel: String?, identity: SongIdentity?): String? =
+    remoteSourceChannel ?: identity?.album ?: sourceChannelId ?: BILIBILI_CHANNEL.takeIf { hasLegacyBiliSource }
+
+private fun DownloadedSong.playbackAudioId(
+    remoteSourceChannel: String?,
+    channel: String?,
+    identity: SongIdentity?
+): String? =
+    sourceAudioId.trimmedOrNull()?.takeIf { remoteSourceChannel != null }
+        ?: neteaseSourceAudioId(channel, identity)
+        ?: sourceAudioId
+        ?: biliDownloadAudioId(channel)
+
+private fun neteaseSourceAudioId(channel: String?, identity: SongIdentity?): String? =
+    if (channel.equals(NETEASE_CHANNEL, ignoreCase = true)) identity?.id?.toString() else null
+
+private fun DownloadedSong.biliDownloadAudioId(channel: String?): String? =
+    if (channel.equals(BILIBILI_CHANNEL, ignoreCase = true) && id > 0L) id.toString() else null
+
+private fun DownloadedSong.playbackSubAudioId(): String? =
+    sourceSubAudioId.trimmedOrNull() ?: legacyBiliCid()
+
+private fun DownloadedSong.legacyBiliCid(): String? {
+    if (!hasLegacyBiliSource) return null
+    return album.substringAfter('|', "").substringBefore('|').trim().takeIf(String::isNotBlank)
+}
+
+private fun neteaseSongIdOrNull(channel: String?, identity: SongIdentity?): Long? {
+    if (identity == null || !channel.equals(NETEASE_CHANNEL, ignoreCase = true)) return null
+    return identity.id.takeIf { isPlainNeteaseIdentity(identity) }
+}
+
+private fun isPlainNeteaseIdentity(identity: SongIdentity): Boolean =
+    identity.album.equals(NETEASE_CHANNEL, ignoreCase = true) && identity.mediaUri == null && identity.id > 0L
+
+private fun DownloadedSong.playbackAlbum(identity: SongIdentity?): String {
+    if (identity == null) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
+    return album.trim().takeIf { it.isNotBlank() && it != LocalSongSupport.LOCAL_ALBUM_IDENTITY } ?: identity.album
+}
+
+private fun DownloadedSong.playbackStableKey(identity: SongIdentity?): String? = identity?.stableKey() ?: stableKey
+
+private fun DownloadedSong.originalRemoteCoverUrl(): String? =
+    originalCoverUrl ?: coverUrl?.takeUnless(LocalSongSupport::isLocalMediaUri)
+
+private fun musicPlatformOrNull(name: String?): MusicPlatform? =
+    name?.let { runCatching { MusicPlatform.valueOf(it) }.getOrNull() }
+
+private class ManagedCreation(val createdAtMs: Long?, val source: String?, val confidence: String?)
+
+private val UNKNOWN_CREATION = ManagedCreation(createdAtMs = null, source = null, confidence = null)
+
+private fun DownloadedSong.managedCreation(): ManagedCreation =
+    if (downloadTime > 0L) ManagedCreation(downloadTime, "MANAGED_COMMIT", "EXACT") else UNKNOWN_CREATION

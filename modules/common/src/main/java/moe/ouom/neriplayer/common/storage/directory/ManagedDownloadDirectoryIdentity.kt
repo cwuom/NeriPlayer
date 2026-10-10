@@ -9,22 +9,17 @@ object ManagedDownloadDirectoryIdentity {
     }
 
     fun normalizeConfiguredDirectoryUri(uriString: String?): String? {
-        val normalized = normalizeDirectoryUri(uriString)
-            ?.substringBefore('#')
-            ?.substringBefore('?')
-            ?.trimEnd('/')
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
+        val normalized = withoutQueryOrFragment(uriString) ?: return null
         val authority = extractDirectoryAuthority(normalized).takeIf(String::isNotBlank) ?: return normalized
-        extractEncodedDirectoryDocumentId(normalized, "/tree/")
-            ?.let { encodedDocumentId ->
-                return "content://$authority/tree/$encodedDocumentId"
-            }
-        extractEncodedDirectoryDocumentId(normalized, "/document/")
-            ?.let { encodedDocumentId ->
-                return "content://$authority/tree/$encodedDocumentId"
-            }
-        return normalized
+        val encodedDocumentId = extractEncodedDirectoryDocumentId(normalized, "/tree/")
+            ?: extractEncodedDirectoryDocumentId(normalized, "/document/")
+            ?: return normalized
+        return "content://$authority/tree/$encodedDocumentId"
+    }
+
+    private fun withoutQueryOrFragment(uriString: String?): String? {
+        val trimmed = normalizeDirectoryUri(uriString) ?: return null
+        return trimmed.substringBefore('#').substringBefore('?').trimEnd('/').takeIf { it.isNotBlank() }
     }
 
     fun directoryIdentity(uriString: String?): String? {

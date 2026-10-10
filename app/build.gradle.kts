@@ -13,6 +13,7 @@ plugins {
     id("build-logic.android.compose")
     alias(libs.plugins.kotlin.serialization)
     id("kotlin-parcelize")
+    id("jacoco")
 }
 
 val ownedLibraryPaths = rootProject.file("gradle/owned-modules.txt")
@@ -136,6 +137,8 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric 渲染 Compose 与读取资源需要合并后的应用资源
+        unitTests.isIncludeAndroidResources = true
     }
 
     sourceSets {
@@ -234,6 +237,12 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 tasks.withType<Test>().configureEach {
+    // Robolectric 用沙箱类加载器加载被测类，这些类没有代码源位置，需要显式纳入覆盖率
+    extensions.configure<JacocoTaskExtension> {
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
+    maxHeapSize = "3g"
     // Android 单元测试中的 Context 可能没有真实文件目录，临时文件统一放到任务临时目录
     systemProperty("java.io.tmpdir", temporaryDir.absolutePath)
     systemProperty(
@@ -437,6 +446,10 @@ dependencies {
     testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.junit)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))

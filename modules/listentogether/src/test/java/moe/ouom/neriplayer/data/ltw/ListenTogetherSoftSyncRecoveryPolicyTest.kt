@@ -8,17 +8,17 @@ import org.junit.Test
 class ListenTogetherSoftSyncRecoveryPolicyTest {
 
     @Test
-    fun `soft sync resets as soon as positive drift enters the dead zone`() {
+    fun `soft sync reports convergence as soon as positive drift enters the dead zone`() {
         assertEquals(
-            ListenTogetherSoftSyncRecheckAction.RESET_RATE,
+            ListenTogetherSoftSyncRecheckAction.CONVERGED,
             action(signedDriftMs = 599L)
         )
     }
 
     @Test
-    fun `soft sync resets as soon as negative drift enters the dead zone`() {
+    fun `soft sync reports convergence as soon as negative drift enters the dead zone`() {
         assertEquals(
-            ListenTogetherSoftSyncRecheckAction.RESET_RATE,
+            ListenTogetherSoftSyncRecheckAction.CONVERGED,
             action(signedDriftMs = -599L, currentRate = 0.95f)
         )
     }

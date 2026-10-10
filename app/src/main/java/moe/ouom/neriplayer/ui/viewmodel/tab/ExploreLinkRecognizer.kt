@@ -36,33 +36,36 @@ internal sealed class ExploreLinkTarget {
 internal fun recognizeExploreLink(input: String): ExploreLinkTarget? {
     val normalized = extractExploreHttpUrl(input) ?: return null
     val uri = parseUri(normalized) ?: return null
-    val host = uri.host?.lowercase(Locale.US) ?: return null
+    val host = uri.lowercaseHost() ?: return null
+    return recognizeLinkForHost(host, uri, normalized)
+}
 
+private fun recognizeLinkForHost(host: String, uri: URI, normalized: String): ExploreLinkTarget? {
     return when {
         host.endsWith("music.163.com") -> recognizeNeteaseLink(uri)
         host == "163cn.tv" -> ExploreLinkTarget.NeteaseShortLink(normalized)
-        host.endsWith("bilibili.com") || host == "b23.tv" -> recognizeBiliLink(uri, normalized)
-        host == "youtu.be" || host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com") -> {
-            recognizeYouTubeLink(uri)
-        }
+        isBiliHost(host) -> recognizeBiliLink(uri, normalized)
+        isYouTubeHost(host) -> recognizeYouTubeLink(uri)
         else -> null
     }
 }
 
-private fun recognizeNeteaseLink(uri: URI): ExploreLinkTarget? {
-    val path = uri.path.orEmpty()
-    val fragmentPath = uri.rawFragment
-        ?.substringBefore('?')
-        .orEmpty()
-    val targetPath = "$path/$fragmentPath".lowercase(Locale.US)
-    val fragmentQuery = uri.rawFragment
-        ?.takeIf { it.contains('?') }
-        ?.substringAfter('?')
-    val params = queryParameters(uri.rawQuery) + queryParameters(
-        fragmentQuery
-    )
-    val id = params["id"]?.toLongOrNull() ?: return null
+private fun isBiliHost(host: String): Boolean = host.endsWith("bilibili.com") || host == "b23.tv"
 
+private fun isYouTubeHost(host: String): Boolean {
+    return host == "youtu.be" || host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com")
+}
+
+private fun recognizeNeteaseLink(uri: URI): ExploreLinkTarget? {
+    val fragment = uri.rawFragment.orEmpty()
+    val targetPath = "${uri.path.orEmpty()}/${fragment.substringBefore('?')}".lowercase(Locale.US)
+    val fragmentQuery = fragment.takeIf { it.contains('?') }?.substringAfter('?')
+    val params = queryParameters(uri.rawQuery) + queryParameters(fragmentQuery)
+    val id = params["id"]?.toLongOrNull() ?: return null
+    return neteaseTargetForPath(targetPath, id)
+}
+
+private fun neteaseTargetForPath(targetPath: String, id: Long): ExploreLinkTarget? {
     return when {
         targetPath.contains("/song") -> ExploreLinkTarget.NeteaseSong(id)
         targetPath.contains("/playlist") -> ExploreLinkTarget.NeteasePlaylist(id)
@@ -73,136 +76,152 @@ private fun recognizeNeteaseLink(uri: URI): ExploreLinkTarget? {
 
 private fun recognizeBiliLink(uri: URI, raw: String): ExploreLinkTarget? {
     val params = queryParameters(uri.rawQuery)
-    val page = params["p"]?.toIntOrNull()?.takeIf { it > 0 }
-    val cid = params["cid"]?.toLongOrNull()?.takeIf { it > 0L }
-    val seasonId = params["season_id"]?.toLongOrNull()?.takeIf { it > 0L }
-    val isCollectionShare = params["share_from"].equals("season", ignoreCase = true) ||
-        seasonId != null
     val bvid = BILI_BVID_REGEX.find(raw)?.value
-    if (!bvid.isNullOrBlank()) {
-        return ExploreLinkTarget.BiliVideo(
-            bvid = bvid,
-            page = page,
-            cid = cid,
-            seasonId = seasonId,
-            isCollectionShare = isCollectionShare
-        )
+    if (bvid != null) {
+        return biliVideoTarget(params, avid = null, bvid = bvid)
     }
-
-    val aid = params["aid"]?.toLongOrNull()
-        ?: BILI_AVID_REGEX.find(raw)?.groupValues?.getOrNull(1)?.toLongOrNull()
-    if (aid != null && aid > 0L) {
-        return ExploreLinkTarget.BiliVideo(
-            avid = aid,
-            page = page,
-            cid = cid,
-            seasonId = seasonId,
-            isCollectionShare = isCollectionShare
-        )
+    val aid = biliAid(params, raw)
+    if (aid != null) {
+        return biliVideoTarget(params, avid = aid, bvid = null)
     }
-
-    if (uri.host?.lowercase(Locale.US) == "b23.tv") {
+    if (uri.lowercaseHost() == "b23.tv") {
         return ExploreLinkTarget.BiliShortLink(raw)
     }
-
     return recognizeBiliCollectionLink(uri)
         ?: recognizeBiliFavoriteFolderLink(uri)
         ?: recognizeBiliArtistLink(uri)
 }
 
+private fun biliVideoTarget(
+    params: Map<String, String>,
+    avid: Long?,
+    bvid: String?
+): ExploreLinkTarget.BiliVideo {
+    val seasonId = params["season_id"].positiveLong()
+    return ExploreLinkTarget.BiliVideo(
+        avid = avid,
+        bvid = bvid,
+        page = params["p"]?.toIntOrNull()?.takeIf { it > 0 },
+        cid = params["cid"].positiveLong(),
+        seasonId = seasonId,
+        isCollectionShare = params["share_from"].equals("season", ignoreCase = true) || seasonId != null
+    )
+}
+
+/** 查询参数里的 aid 即使无效也优先于路径里的 av 号 */
+private fun biliAid(params: Map<String, String>, raw: String): Long? {
+    return (params["aid"]?.toLongOrNull() ?: biliAidFromPath(raw))?.takeIf { it > 0L }
+}
+
+private fun biliAidFromPath(raw: String): Long? {
+    return BILI_AVID_REGEX.find(raw)?.groupValues?.getOrNull(1)?.toLongOrNull()
+}
+
 private fun recognizeBiliCollectionLink(uri: URI): ExploreLinkTarget? {
-    if (uri.host?.lowercase(Locale.US) != "space.bilibili.com") return null
-    val segments = uri.pathSegments()
-    val ownerMid = segments.getOrNull(0)?.toLongOrNull()?.takeIf { it > 0L } ?: return null
-    if (segments.getOrNull(1) != "lists") return null
-    val seasonId = segments.getOrNull(2)?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+    val space = uri.biliSpaceSection("lists") ?: return null
+    val seasonId = space.segments.getOrNull(2).positiveLong() ?: return null
     val listType = queryParameters(uri.rawQuery)["type"]?.lowercase(Locale.US)
     return if (listType == "series") {
         ExploreLinkTarget.Unsupported(platform = "Bilibili", type = "series playlist")
     } else {
-        ExploreLinkTarget.BiliCollection(ownerMid = ownerMid, seasonId = seasonId)
+        ExploreLinkTarget.BiliCollection(ownerMid = space.ownerMid, seasonId = seasonId)
     }
 }
 
 private fun recognizeBiliFavoriteFolderLink(uri: URI): ExploreLinkTarget? {
-    val host = uri.host?.lowercase(Locale.US)
-    val path = uri.path.orEmpty()
-    BILI_MEDIA_LIST_REGEX.find(path)?.groupValues?.getOrNull(1)
-        ?.toLongOrNull()
-        ?.takeIf { it > 0L }
-        ?.let { return ExploreLinkTarget.BiliFavoriteFolder(it) }
-
-    if (host != "space.bilibili.com") return null
-    val segments = uri.pathSegments()
-    val ownerMid = segments.getOrNull(0)?.toLongOrNull()?.takeIf { it > 0L } ?: return null
-    if (segments.getOrNull(1) != "favlist") return null
-    val folderId = queryParameters(uri.rawQuery)["fid"]
-        ?.removePrefix("ml")
-        ?.toLongOrNull()
-        ?.takeIf { it > 0L }
-        ?: return null
+    biliMediaListId(uri)?.let { return ExploreLinkTarget.BiliFavoriteFolder(it) }
+    val space = uri.biliSpaceSection("favlist") ?: return null
+    val folderId = queryParameters(uri.rawQuery)["fid"]?.removePrefix("ml").positiveLong() ?: return null
     return ExploreLinkTarget.BiliFavoriteFolderByOwner(
-        ownerMid = ownerMid,
+        ownerMid = space.ownerMid,
         folderId = folderId
     )
 }
 
+private fun biliMediaListId(uri: URI): Long? {
+    return BILI_MEDIA_LIST_REGEX.find(uri.path.orEmpty())?.groupValues?.getOrNull(1).positiveLong()
+}
+
+private class BiliSpaceSection(val ownerMid: Long, val segments: List<String>)
+
+private fun URI.biliSpaceSection(section: String): BiliSpaceSection? {
+    if (lowercaseHost() != "space.bilibili.com") return null
+    val segments = pathSegments()
+    val ownerMid = segments.getOrNull(0).positiveLong() ?: return null
+    if (segments.getOrNull(1) != section) return null
+    return BiliSpaceSection(ownerMid, segments)
+}
+
 private fun recognizeBiliArtistLink(uri: URI): ExploreLinkTarget? {
-    val host = uri.host?.lowercase(Locale.US)
-    val segments = uri.pathSegments()
-    val artistId = when {
-        host == "space.bilibili.com" -> segments.firstOrNull()?.toLongOrNull()
-        segments.firstOrNull() == "space" -> segments.getOrNull(1)?.toLongOrNull()
-        else -> null
-    }?.takeIf { it > 0L } ?: return null
+    val artistId = biliArtistIdSegment(uri).positiveLong() ?: return null
     return ExploreLinkTarget.Unsupported(
         platform = "Bilibili",
         type = "artist/UP $artistId"
     )
 }
 
+private fun biliArtistIdSegment(uri: URI): String? {
+    val segments = uri.pathSegments()
+    return when {
+        uri.lowercaseHost() == "space.bilibili.com" -> segments.firstOrNull()
+        segments.firstOrNull() == "space" -> segments.getOrNull(1)
+        else -> null
+    }
+}
+
 private fun extractExploreHttpUrl(input: String): String? {
     val trimmed = input.trim()
     if (trimmed.isBlank()) return null
-    return HTTP_URL_REGEX.find(trimmed)
-        ?.value
-        ?.trimEnd('。', '，', ',', '.', '）', ')', '】', ']', '}', '》', '>')
-        ?.takeIf { it.isNotBlank() }
+    return embeddedHttpUrl(trimmed)
         ?: trimmed.takeIf { it.startsWith("http://") || it.startsWith("https://") }
 }
 
+private fun embeddedHttpUrl(text: String): String? {
+    return HTTP_URL_REGEX.find(text)
+        ?.value
+        ?.trimEnd('。', '，', ',', '.', '）', ')', '】', ']', '}', '》', '>')
+        ?.takeIf { it.isNotBlank() }
+}
+
 private fun recognizeYouTubeLink(uri: URI): ExploreLinkTarget? {
-    val host = uri.host?.lowercase(Locale.US)
     val path = uri.path.orEmpty().trim('/')
     val params = queryParameters(uri.rawQuery)
-    val playlistId = params["list"]?.takeIf { it.isNotBlank() }
-    val videoId = when {
-        host == "youtu.be" -> path.takeIf { it.isNotBlank() }?.substringBefore('/')
-        path == "embed" || path.startsWith("embed/") -> path.substringAfter("embed/").takeIf { it.isNotBlank() }
-        path == "shorts" || path.startsWith("shorts/") -> path.substringAfter("shorts/").takeIf { it.isNotBlank() }
-        path == "live" || path.startsWith("live/") -> path.substringAfter("live/").takeIf { it.isNotBlank() }
-        else -> params["v"]?.takeIf { it.isNotBlank() }
+    val playlistId = params.nonBlank("list")
+    val videoId = youTubeVideoId(uri.lowercaseHost(), path, params)
+    return when {
+        !videoId.isNullOrBlank() -> ExploreLinkTarget.YouTubeVideo(videoId = videoId, playlistId = playlistId)
+        playlistId != null -> ExploreLinkTarget.YouTubePlaylist(playlistId)
+        isYouTubeArtistPath(path) -> ExploreLinkTarget.Unsupported(platform = "YouTube", type = "artist")
+        else -> null
     }
-
-    if (!videoId.isNullOrBlank()) {
-        return ExploreLinkTarget.YouTubeVideo(
-            videoId = videoId,
-            playlistId = playlistId
-        )
-    }
-    if (!playlistId.isNullOrBlank()) {
-        return ExploreLinkTarget.YouTubePlaylist(playlistId)
-    }
-    if (
-        path.startsWith("channel/") ||
-        path.startsWith("@") ||
-        path.startsWith("c/") ||
-        path.startsWith("browse/")
-    ) {
-        return ExploreLinkTarget.Unsupported(platform = "YouTube", type = "artist")
-    }
-    return null
 }
+
+/** 命中 embed/shorts/live 路径后不再回退到 v 参数, 即使路径里的 id 为空 */
+private fun youTubeVideoId(host: String?, path: String, params: Map<String, String>): String? {
+    if (host == "youtu.be") return youtuBeVideoId(path)
+    val section = youTubeVideoPathSection(path) ?: return params.nonBlank("v")
+    return path.substringAfter("$section/", missingDelimiterValue = "").takeIf { it.isNotBlank() }
+}
+
+private fun youtuBeVideoId(path: String): String? {
+    return path.takeIf { it.isNotBlank() }?.substringBefore('/')
+}
+
+private fun youTubeVideoPathSection(path: String): String? {
+    return YOUTUBE_VIDEO_PATH_SECTIONS.firstOrNull { section ->
+        path == section || path.startsWith("$section/")
+    }
+}
+
+private fun isYouTubeArtistPath(path: String): Boolean {
+    return YOUTUBE_ARTIST_PATH_PREFIXES.any { prefix -> path.startsWith(prefix) }
+}
+
+private fun Map<String, String>.nonBlank(key: String): String? = this[key]?.takeIf { it.isNotBlank() }
+
+private fun String?.positiveLong(): Long? = this?.toLongOrNull()?.takeIf { it > 0L }
+
+private fun URI.lowercaseHost(): String? = host?.lowercase(Locale.US)
 
 private fun parseUri(raw: String): URI? {
     val candidate = if (raw.contains("://")) raw else "https://$raw"
@@ -257,3 +276,5 @@ private val BILI_MEDIA_LIST_REGEX = Regex(
     RegexOption.IGNORE_CASE
 )
 private val HTTP_URL_REGEX = Regex("""https?://[^\s]+""", RegexOption.IGNORE_CASE)
+private val YOUTUBE_VIDEO_PATH_SECTIONS = listOf("embed", "shorts", "live")
+private val YOUTUBE_ARTIST_PATH_PREFIXES = listOf("channel/", "@", "c/", "browse/")

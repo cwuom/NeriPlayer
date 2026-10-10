@@ -302,4 +302,20 @@ class ExternalBluetoothLyricsTest {
         assertEquals("Artist", metadata.displaySubtitle)
         assertNull(metadata.displayDescription)
     }
+
+    @Test
+    fun `time until the next lyric line follows the offset and ends after the last line`() {
+        val lyrics = listOf(
+            LyricEntry(text = "a", startTimeMs = 1_000L, endTimeMs = 3_000L),
+            LyricEntry(text = "b", startTimeMs = 3_000L, endTimeMs = 6_000L),
+            LyricEntry(text = "c", startTimeMs = 6_000L, endTimeMs = 9_000L)
+        )
+
+        assertEquals(1_000L, msUntilNextExternalLyricLine(lyrics, positionMs = 0L, lyricOffsetMs = 0L))
+        assertEquals(500L, msUntilNextExternalLyricLine(lyrics, positionMs = 2_500L, lyricOffsetMs = 0L))
+        assertEquals(1_500L, msUntilNextExternalLyricLine(lyrics, positionMs = 2_500L, lyricOffsetMs = 2_000L))
+        assertEquals(3_000L, msUntilNextExternalLyricLine(lyrics, positionMs = 3_000L, lyricOffsetMs = 0L))
+        assertNull(msUntilNextExternalLyricLine(lyrics, positionMs = 7_000L, lyricOffsetMs = 0L))
+        assertNull(msUntilNextExternalLyricLine(emptyList(), positionMs = 0L, lyricOffsetMs = 0L))
+    }
 }

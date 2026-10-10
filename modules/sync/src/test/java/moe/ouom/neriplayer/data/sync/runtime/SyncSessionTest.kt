@@ -326,6 +326,48 @@ class SyncSessionTest {
         assertTrue(session.execute { backend }.isSuccess)
     }
 
+    @Test
+    fun `remote additions published after the fetch survive the next local edit`() = runTest {
+        var now = 50L
+        val clockedSession = SyncSession(
+            local = local,
+            datasetStore = store,
+            merger = SyncDataMerger(Messages, nowMs = { now }),
+            noChangeMessage = "unchanged",
+            initialUploadMessage = "initial",
+            inProgressError = { IllegalStateException("busy") },
+            nowMs = { now },
+            deferredMessage = "pending"
+        )
+        val x = SyncSong(id = 1L, name = "x", album = "netease", addedAt = 10L)
+        val shared = SyncPlaylist(id = 7L, name = "local", songs = listOf(x), modifiedAt = 10L, songOrderVersion = 1)
+        local.data = SyncData(playlists = listOf(shared))
+        backend.data = local.data.copy(deviceId = "remote")
+        backend.firstSync = false
+        backend.lastSyncTime = 10L
+        backend.onFetch = { now = 100L }
+
+        assertTrue(clockedSession.execute { backend }.getOrThrow().success)
+        assertEquals(50L, backend.savedTime)
+        assertEquals(100L, backend.completedTime)
+
+        val y = SyncSong(id = 2L, name = "y", album = "netease", addedAt = 60L)
+        backend.data = backend.data!!.copy(playlists = listOf(shared.copy(songs = listOf(x, y), modifiedAt = 60L)))
+        backend.version++
+        backend.changed = true
+        backend.lastSyncTime = backend.savedTime!!
+        val z = SyncSong(id = 3L, name = "z", album = "netease", addedAt = 110L)
+        local.data = local.data.copy(playlists = listOf(shared.copy(songs = listOf(x, z), modifiedAt = 110L)))
+        local.epoch++
+        now = 120L
+        backend.onFetch = {}
+
+        clockedSession.execute { backend }.getOrThrow()
+
+        assertEquals(setOf(1L, 2L, 3L), local.data.playlists.single().songs.map { it.id }.toSet())
+        assertEquals(setOf(1L, 2L, 3L), backend.data!!.playlists.single().songs.map { it.id }.toSet())
+    }
+
     private fun history(id: Long) = SyncRecentPlay(id, SyncSong(id = id, album = "netease"), id * 100L, "remote")
 
     private class MemoryStore(private val store: SyncPlaybackDatasetStore) : SyncLocalDataStore {

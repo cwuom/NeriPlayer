@@ -57,24 +57,23 @@ object JsonUtil {
         val sb = StringBuilder(s.length + 16)
         sb.append('"')
         for (ch in s) {
-            when (ch) {
-                '\\' -> sb.append("\\\\")
-                '"'  -> sb.append("\\\"")
-                '\b' -> sb.append("\\b")
-                '\u000C' -> sb.append("\\f")
-                '\n' -> sb.append("\\n")
-                '\r' -> sb.append("\\r")
-                '\t' -> sb.append("\\t")
-                else -> {
-                    if (ch < ' ') {
-                        sb.append(String.format("\\u%04x", ch.code))
-                    } else {
-                        sb.append(ch)
-                    }
-                }
-            }
+            val escaped = jsonEscape(ch)
+            if (escaped != null) sb.append(escaped) else sb.append(ch)
         }
         sb.append('"')
         return sb.toString()
     }
+
+    private val JsonCharEscapes = mapOf(
+        '\\' to "\\\\",
+        '"' to "\\\"",
+        '\b' to "\\b",
+        '\u000C' to "\\f",
+        '\n' to "\\n",
+        '\r' to "\\r",
+        '\t' to "\\t"
+    )
+
+    private fun jsonEscape(ch: Char): String? =
+        JsonCharEscapes[ch] ?: if (ch < ' ') String.format("\\u%04x", ch.code) else null
 }

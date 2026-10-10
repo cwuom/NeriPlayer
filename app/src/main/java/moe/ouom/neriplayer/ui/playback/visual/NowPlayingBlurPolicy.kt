@@ -1,9 +1,14 @@
 package moe.ouom.neriplayer.ui.playback.visual
 
+import android.os.Build
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
+
+/** 封面模糊是 Coil + RenderScript 位图模糊（support mode），不依赖 Android 12 的 RenderEffect */
+internal fun isNowPlayingCoverBlurSupported(sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+    sdkInt >= Build.VERSION_CODES.P
 
 internal fun hasNowPlayingCoverBlur(
     blurAvailable: Boolean,

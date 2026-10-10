@@ -26,7 +26,8 @@ import moe.ouom.neriplayer.data.sync.merge.song.SyncSongLyricMergePolicy
 internal fun createGitHubSyncBackend(
     context: Context,
     storage: SecureTokenStorage,
-    expectedTargetId: String? = null
+    expectedTargetId: String? = null,
+    triggerByAppStartup: Boolean = false
 ): GitHubSyncBackend {
     val metadataGuard = storage.captureSyncMetadataGuard()
     val configuredOwner = storage.getRepoOwner()
@@ -45,7 +46,8 @@ internal fun createGitHubSyncBackend(
         storage, createGitHubSyncClient(context, token), owner, repo, syncDecoder(context),
         invalidBackup = { invalidBackup(context, CoreCommonR.string.github_backup_file_invalid) },
         followUp = {
-            GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false, markMutation = false, appendToCurrentWork = true)
+            GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false, markMutation = false,
+                appendToCurrentWork = true, triggerByAppStartup = triggerByAppStartup)
         },
         archive = archiveRepository(context, "github", "$owner/$repo", target),
         authorizeLegacyMigration = { content ->
@@ -56,7 +58,11 @@ internal fun createGitHubSyncBackend(
     )
 }
 
-internal fun createWebDavSyncBackend(context: Context, expectedTargetId: String? = null): WebDavSyncBackend {
+internal fun createWebDavSyncBackend(
+    context: Context,
+    expectedTargetId: String? = null,
+    triggerByAppStartup: Boolean = false
+): WebDavSyncBackend {
     val webDavStorage = WebDavStorage(context)
     val metadataGuard = webDavStorage.captureSyncMetadataGuard()
     val serverUrl = webDavStorage.getServerUrl()?.takeIf { it.isNotBlank() }
@@ -76,7 +82,8 @@ internal fun createWebDavSyncBackend(context: Context, expectedTargetId: String?
         webDavStorage, createWebDavSyncClient(context, username, password), remoteUrl, syncDecoder(context),
         invalidBackup = { invalidBackup(context, CoreCommonR.string.webdav_backup_file_invalid) },
         followUp = {
-            WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false, markMutation = false, appendToCurrentWork = true)
+            WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false, markMutation = false,
+                appendToCurrentWork = true, triggerByAppStartup = triggerByAppStartup)
         },
         archive = archiveRepository(context, "webdav", remoteUrl, target),
         authorizeLegacyMigration = { content ->

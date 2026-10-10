@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.ltw.validation.format
 import moe.ouom.neriplayer.core.player.audio.effects.AudioOutputRouteMonitor
 
 import android.app.Application
+import coil.Coil
 import android.os.SystemClock
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -1635,44 +1636,15 @@ internal suspend fun PlayerManager.clearCacheImpl(
     clearImage: Boolean = true
 ): Pair<Boolean, String> {
     return kotlinx.coroutines.withContext(Dispatchers.IO) {
-        var apiRemovedCount = 0
-
         try {
-            if (clearAudio) {
-                val mediaCache = cache
-                if (mediaCache != null) {
-                    val keysSnapshot = HashSet(mediaCache.keys)
-                    keysSnapshot.forEach { key ->
-                        try {
-                            mediaCache.removeResource(key)
-                            apiRemovedCount++
-                        } catch (_: Exception) {
-                        }
-                    }
-                }
-            }
-
-            if (clearImage) {
-                val imageCacheDir = File(application.cacheDir, "image_cache")
-                if (imageCacheDir.exists() && imageCacheDir.isDirectory) {
-                    val deleted = imageCacheDir.deleteRecursively()
-                    if (deleted) {
-                        imageCacheDir.mkdirs()
-                    }
-                }
-            }
-
+            val audio = if (clearAudio) clearMediaCacheResources() else MediaCacheClearCount()
+            val imagesCleared = !clearImage || clearImageCaches()
             NPLogger.d(
                 "NERI-Player",
-                "Cache Clear: removed $apiRemovedCount resources through SimpleCache."
+                "Cache Clear: removed ${audio.removed} resources through SimpleCache, " +
+                    "failed=${audio.failed}, imagesCleared=$imagesCleared."
             )
-
-            val msg = if (apiRemovedCount > 0 || clearImage) {
-                getLocalizedString(CoreCommonR.string.cache_clear_complete)
-            } else {
-                getLocalizedString(CoreCommonR.string.settings_cache_empty)
-            }
-            Pair(true, msg)
+            cacheClearResult(audio, clearImage, imagesCleared)
         } catch (e: Exception) {
             NPLogger.e("NERI-Player", "Clear cache failed", e)
             Pair(
@@ -1684,6 +1656,49 @@ internal suspend fun PlayerManager.clearCacheImpl(
             )
         }
     }
+}
+
+internal data class MediaCacheClearCount(val removed: Int = 0, val failed: Int = 0)
+
+private fun PlayerManager.clearMediaCacheResources(): MediaCacheClearCount {
+    val mediaCache = cache ?: return MediaCacheClearCount()
+    var removed = 0
+    var failed = 0
+    HashSet(mediaCache.keys).forEach { key ->
+        if (runCatching { mediaCache.removeResource(key) }.isSuccess) removed++ else failed++
+    }
+    return MediaCacheClearCount(removed, failed)
+}
+
+/** 通过 Coil 自己的缓存接口清理，避免绕过正在使用的磁盘缓存日志，内存里的图片也一起清掉 */
+private fun PlayerManager.clearImageCaches(): Boolean = runCatching {
+    val imageLoader = Coil.imageLoader(application)
+    imageLoader.memoryCache?.clear()
+    imageLoader.diskCache?.clear()
+}.onFailure { NPLogger.w("NERI-Player", "Clear image cache failed", it) }.isSuccess
+
+private fun PlayerManager.cacheClearResult(
+    audio: MediaCacheClearCount,
+    clearImage: Boolean,
+    imagesCleared: Boolean
+): Pair<Boolean, String> {
+    val (success, messageRes) = cacheClearOutcome(audio, clearImage, imagesCleared)
+    return Pair(success, getLocalizedString(messageRes))
+}
+
+/** 任何一项没删掉都报告部分失败，避免设置页把未完成的清理显示成成功 */
+internal fun cacheClearOutcome(
+    audio: MediaCacheClearCount,
+    clearImage: Boolean,
+    imagesCleared: Boolean
+): Pair<Boolean, Int> {
+    val success = audio.failed == 0 && imagesCleared
+    val messageRes = when {
+        !success -> CoreCommonR.string.cache_clear_partial
+        audio.removed > 0 || clearImage -> CoreCommonR.string.cache_clear_complete
+        else -> CoreCommonR.string.settings_cache_empty
+    }
+    return success to messageRes
 }
 
 internal fun PlayerManager.ensureInitializedImpl() {
@@ -1705,6 +1720,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         audioReactiveActive = AudioReactive.enabled,
         audioSource = _currentPlaybackAudioInfo.value?.source,
         listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
+        offloadStallFallbackActive = audioOffloadStallFallbackActive,
     )
     val requiresPcmProcessing = pcmRequirements.isNotEmpty()
     if (lastRequiresPcmAudioProcessing == requiresPcmProcessing) return

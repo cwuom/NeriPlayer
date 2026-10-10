@@ -29,7 +29,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -196,6 +195,7 @@ import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import moe.ouom.neriplayer.ui.screen.playback.resolveListenTogetherProgressSeekEnabled
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
 import kotlin.time.Duration.Companion.milliseconds
+import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
 
 private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
@@ -1035,13 +1035,17 @@ fun NowPlayingScreen(
     )
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-        BackHandler(enabled = useWideLandscapeLayout && showLyricsScreen) {
-            onShowLyricsScreenChange(false)
-        }
+        // 歌词页和宽屏歌词共用一个可拖动的转场，返回手势按进度淡回播放页
+        val lyricsTransition = rememberHostPredictiveBackTransition(
+            targetState = showLyricsScreen,
+            backEnabled = showLyricsScreen,
+            backTargetState = false,
+            onBack = { onShowLyricsScreenChange(false) },
+            label = "lyrics_transition"
+        )
         SharedTransitionLayout {
             Box(modifier = Modifier.fillMaxSize()) {
-                AnimatedContent(
-                    targetState = showLyricsScreen,
+                lyricsTransition.AnimatedContent(
                     transitionSpec = {
                         fadeIn(
                             animationSpec = tween(
@@ -1054,8 +1058,7 @@ fun NowPlayingScreen(
                                 easing = LinearEasing
                             )
                         )
-                    },
-                    label = "lyrics_transition"
+                    }
                 ) { isLyricsMode ->
                     if (shouldUseStandaloneNowPlayingLyricsPage(isLyricsMode, useWideLandscapeLayout)) {
                         // 歌词全屏页面

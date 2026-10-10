@@ -97,6 +97,22 @@ class WebViewRemoteLoginStateClearRequestTest {
         verify(webStorage).deleteAllData()
     }
 
+    @Test
+    fun `logout without a usable WebView provider still asks every login process to clear`() = runTest {
+        repliesPerRequest += listOf(
+            reply(receiver = NETEASE, succeeded = true),
+            reply(receiver = BILI, succeeded = true),
+            reply(receiver = YOUTUBE, succeeded = true)
+        )
+
+        withBroadcasts(webViewAvailable = false) {
+            clearAllWebViewLoginState(context)
+        }
+
+        assertEquals(listOf(NETEASE, BILI, YOUTUBE), requestedReceivers)
+        verify(webStorage, never()).deleteAllData()
+    }
+
     private fun reply(receiver: String?, succeeded: Boolean, requestId: String? = null): Intent {
         val reply = mock(Intent::class.java)
         doAnswer { requestId ?: requestIds.last() }.`when`(reply).getStringExtra(EXTRA_WEBVIEW_CLEAR_REQUEST_ID)
@@ -105,9 +121,17 @@ class WebViewRemoteLoginStateClearRequestTest {
         return reply
     }
 
-    private suspend fun withBroadcasts(block: suspend (MockedStatic<Log>) -> Unit) {
+    private suspend fun withBroadcasts(
+        webViewAvailable: Boolean = true,
+        block: suspend (MockedStatic<Log>) -> Unit
+    ) {
         mockStatic(CookieManager::class.java).use { cookies ->
-            cookies.`when`<CookieManager> { CookieManager.getInstance() }.thenReturn(cookieManager)
+            if (webViewAvailable) {
+                cookies.`when`<CookieManager> { CookieManager.getInstance() }.thenReturn(cookieManager)
+            } else {
+                cookies.`when`<CookieManager> { CookieManager.getInstance() }
+                    .thenThrow(IllegalStateException("WebView provider missing"))
+            }
             mockStatic(WebStorage::class.java).use { storage ->
                 storage.`when`<WebStorage> { WebStorage.getInstance() }.thenReturn(webStorage)
                 mockConstruction(ComponentName::class.java) { component, construction ->

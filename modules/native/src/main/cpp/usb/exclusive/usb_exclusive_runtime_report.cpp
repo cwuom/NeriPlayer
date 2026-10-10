@@ -2,7 +2,6 @@
 
 #include <android/log.h>
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
 #include <limits>
 #include <mutex>
@@ -151,10 +150,6 @@ uint64_t saturatedCounterSum(uint64_t first, uint64_t second) {
     return second > std::numeric_limits<uint64_t>::max() - first
         ? std::numeric_limits<uint64_t>::max()
         : first + second;
-}
-
-double feedbackRateHz(neri::usb::feedback::FeedbackRateQ32 rateQ32) {
-    return std::ldexp(static_cast<double>(rateQ32), -32);
 }
 
 int64_t signedFeedbackRatePpm(
@@ -310,7 +305,10 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
             ? trustedFeedbackRateQ32
             : 0;
         v2Snapshot.feedbackRateHz = explicitFeedback
-            ? feedbackRateHz(trustedFeedbackRateQ32)
+            ? neri::usb::feedback::feedbackRateHz(
+                trustedFeedbackRateQ32,
+                static_cast<uint32_t>(std::max(0, holder->transfer.intervalsPerSecond))
+            )
             : 0.0;
         v2Snapshot.feedbackRatePpm = explicitFeedback
             ? signedFeedbackRatePpm(

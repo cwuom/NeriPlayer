@@ -61,17 +61,45 @@ class SafStorageBackendWriteCapabilityTest {
     }
 
     @Test
-    fun `provider without rename creates a new target with the requested name`() = runBlocking {
+    fun `provider without rename creates a new target with the requested name`() {
+        val write = writeThroughDirectCreate(
+            targetName = "x".repeat(226) + ".mp3",
+            requestedMimeType = "audio/mpeg",
+            expectedCreateMimeType = "application/octet-stream"
+        )
+
+        assertTrue("result=${write.result}", write.result is StorageWriteResult.Written)
+        assertEquals("audio", write.finalContent)
+        assertTrue(write.temporaryName.startsWith(".npdl_tmp_v2_"))
+        assertTrue(write.temporaryName.toByteArray(Charsets.UTF_8).size < 64)
+    }
+
+    @Test
+    fun `direct create normalizes text mime types so lyric files keep their extension`() {
+        val write = writeThroughDirectCreate(
+            targetName = "song.lrc",
+            requestedMimeType = "text/plain",
+            expectedCreateMimeType = "application/octet-stream"
+        )
+
+        assertTrue("result=${write.result}", write.result is StorageWriteResult.Written)
+        assertEquals("audio", write.finalContent)
+    }
+
+    private fun writeThroughDirectCreate(
+        targetName: String,
+        requestedMimeType: String,
+        expectedCreateMimeType: String
+    ): DirectCreateWrite = runBlocking {
         val parentUri = mock(Uri::class.java)
         val temporaryUri = mock(Uri::class.java)
         val finalUri = mock(Uri::class.java)
         val childrenUri = mock(Uri::class.java)
         val operationUuid = UUID.fromString("00000000-0000-0000-0000-000000000001")
-        val targetName = "x".repeat(226) + ".mp3"
         val target = StorageTarget.SafTarget(
             parent = StorageReference.SafRef(parentUri),
             displayName = targetName,
-            mimeType = "audio/mpeg"
+            mimeType = requestedMimeType
         )
         val temporaryName = ManagedTemporaryWriteArtifacts.displayNameFor(
             target = target,
@@ -158,7 +186,7 @@ class SafStorageBackendWriteCapabilityTest {
                 DocumentsContract.createDocument(
                     resolver,
                     parentUri,
-                    "audio/mpeg",
+                    expectedCreateMimeType,
                     targetName
                 )
             }.thenReturn(finalUri)
@@ -169,13 +197,16 @@ class SafStorageBackendWriteCapabilityTest {
                 output.write("audio".toByteArray())
             }
 
-            assertTrue("result=$result", result is StorageWriteResult.Written)
-            assertEquals("audio", finalBytes.toString())
-            assertTrue(temporaryName.startsWith(".npdl_tmp_v2_"))
-            assertTrue(temporaryName.toByteArray(Charsets.UTF_8).size < 64)
+            DirectCreateWrite(result, finalBytes.toString(), temporaryName)
             }
         }
     }
+
+    private data class DirectCreateWrite(
+        val result: StorageWriteResult,
+        val finalContent: String,
+        val temporaryName: String
+    )
 
     @Test
     fun `provider auto numbered rename preserves the renamed document`() = runBlocking {
@@ -324,7 +355,7 @@ class SafStorageBackendWriteCapabilityTest {
                     DocumentsContract.createDocument(
                         resolver,
                         parentUri,
-                        "audio/mpeg",
+                        "application/octet-stream",
                         "song.mp3"
                     )
                 }.thenReturn(finalUri)

@@ -67,23 +67,14 @@ object BiliVideoSkipPlaybackController {
     ) {
         val shouldLoadTarget = synchronized(lock) {
             val current = activeTrack
-            val incomingCid = song.biliCidOrNull()
-            val explicitTarget = song.explicitBiliVideoSkipTargetOrNull()
-            val track = if (
-                current?.requestToken == requestToken &&
-                    current.song.sameIdentityAs(song) &&
-                    !shouldReplaceBiliVideoSkipTrackForCid(
-                        activeCid = current.song.biliCidOrNull(),
-                        incomingCid = incomingCid
-                    )
-            ) {
+            val track = if (current != null && current.isReusableFor(song, requestToken)) {
                 current
             } else {
                 clearActiveTrackLocked()
                 ActiveTrack(
                     song = song,
                     requestToken = requestToken,
-                    target = explicitTarget
+                    target = song.explicitBiliVideoSkipTargetOrNull()
                 ).also {
                     activeTrack = it
                     notifyActiveTrackChangedLocked()
@@ -237,7 +228,15 @@ object BiliVideoSkipPlaybackController {
         val requestToken: Long,
         var target: BiliVideoSkipTarget? = null,
         val skipTracker: BiliVideoSkipTracker = BiliVideoSkipTracker()
-    )
+    ) {
+        fun isReusableFor(incoming: SongItem, incomingRequestToken: Long): Boolean =
+            requestToken == incomingRequestToken &&
+                song.sameIdentityAs(incoming) &&
+                !shouldReplaceBiliVideoSkipTrackForCid(
+                    activeCid = song.biliCidOrNull(),
+                    incomingCid = incoming.biliCidOrNull()
+                )
+    }
 
     private data class PlaybackRequest(
         val song: SongItem,

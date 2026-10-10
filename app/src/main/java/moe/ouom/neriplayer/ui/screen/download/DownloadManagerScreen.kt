@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.screen.download
 
 
 import android.app.Application
+import android.content.res.Resources
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -40,12 +41,15 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
@@ -60,6 +64,7 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteProgress
 import moe.ouom.neriplayer.data.model.download.DownloadedSongDeleteResult
 import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
@@ -75,7 +80,17 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal const val DOWNLOAD_MANAGER_STATS_TAG = "downloadManagerStats"
+internal const val DOWNLOAD_MANAGER_LIST_TAG = "downloadManagerList"
+internal val DownloadPageContentMaxWidth = 920.dp
+
+/** 下载页面内容在宽窗口中居中并限制宽度，窄窗口仍然铺满 */
+internal fun Modifier.downloadPageContentWidth(): Modifier = this
+    .fillMaxWidth()
+    .wrapContentWidth(Alignment.CenterHorizontally)
+    .widthIn(max = DownloadPageContentMaxWidth)
+    .fillMaxWidth()
+
 @Composable
 fun DownloadManagerScreen(
     onBack: () -> Unit,
@@ -92,8 +107,9 @@ fun DownloadManagerScreen(
             }
         }
     )
-    val miniPlayerHeight = LocalMiniPlayerHeight.current
     val downloadedSongs by viewModel.downloadedSongs.collectAsStateWithLifecycle()
+    val legacyPreviewClips by viewModel.legacyPreviewClips.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val deleteProgress by viewModel.downloadedSongDeleteProgress.collectAsStateWithLifecycle()
     val deleteFailureDismissed by
         viewModel.downloadedSongDeleteFailureDismissed.collectAsStateWithLifecycle()
@@ -104,54 +120,209 @@ fun DownloadManagerScreen(
         }
     }
 
-    var searchQuery by remember { mutableStateOf("") }
-    var selectionMode by remember { mutableStateOf(false) }
-    var selectedSongKeys by remember { mutableStateOf(setOf<String>()) }
+    DownloadManagerContent(
+        downloadedSongs = downloadedSongs,
+        legacyPreviewClips = legacyPreviewClips,
+        isRefreshing = isRefreshing,
+        deleteProgress = deleteProgress,
+        deleteFailureDismissed = deleteFailureDismissed,
+        listState = listState,
+        offlineMode = offlineMode,
+        onBack = onBack,
+        onOpenDownloadProgress = onOpenDownloadProgress,
+        onRefresh = { viewModel.refreshDownloadedSongs(forceRefresh = true) },
+        onDismissDeleteFailure = viewModel::dismissDownloadedSongDeleteFailure,
+        onDeleteSongs = viewModel::deleteDownloadedSongs,
+        onPlaySong = viewModel::playDownloadedSong
+    )
+}
 
-    // State for deletion confirmation dialogs
-    var showSingleDeleteDialog by remember { mutableStateOf(false) }
-    var songToDelete by remember { mutableStateOf<DownloadedSong?>(null) }
-    var showMultiDeleteDialog by remember { mutableStateOf(false) }
-    var songsPendingDelete by remember { mutableStateOf<List<DownloadedSong>>(emptyList()) }
-    var fullLibrarySelectionRequested by remember { mutableStateOf(false) }
-    var deleteEntireLibraryPending by remember { mutableStateOf(false) }
-    var deletingSongCount by remember { mutableIntStateOf(0) }
-    var deleteResult by remember { mutableStateOf<DownloadedSongDeleteResult?>(null) }
-    val deletionInProgress = deletingSongCount > 0 ||
-        isDownloadedSongDeletionRunning(deleteProgress)
+/** 已下载页面的多选与删除确认状态，所有修改都发生在点击回调或删除结果回调中 */
+@Stable
+internal class DownloadManagerSelectionState {
+    var selectionMode by mutableStateOf(false)
+        private set
+    var selectedSongKeys by mutableStateOf(setOf<String>())
+        private set
+    var songsPendingDelete by mutableStateOf<List<DownloadedSong>>(emptyList())
+        private set
+    var songToDelete by mutableStateOf<DownloadedSong?>(null)
+        private set
+    var showMultiDeleteDialog by mutableStateOf(false)
+        private set
+    var deletingSongCount by mutableIntStateOf(0)
+        private set
+    var deleteResult by mutableStateOf<DownloadedSongDeleteResult?>(null)
+        private set
+    private var fullLibrarySelectionRequested by mutableStateOf(false)
+    private var deleteEntireLibraryPending by mutableStateOf(false)
 
-    val deleteResultMessage = deleteResult?.let { result ->
-        val deletedCount = result.deletedSongs.size
-        val failedCount = result.failedSongs.size
-        when {
-            result.physicalCleanupPending -> pluralStringResource(
-                CoreCommonR.plurals.local_files_delete_downloaded_cleanup_pending,
-                deletedCount + failedCount,
-                deletedCount + failedCount
-            )
-            deletedCount > 0 && failedCount == 0 -> pluralStringResource(
-                CoreCommonR.plurals.local_files_delete_downloaded_success,
-                deletedCount,
-                deletedCount
-            )
-            deletedCount > 0 -> pluralStringResource(
-                CoreCommonR.plurals.local_files_delete_downloaded_partial,
-                deletedCount,
-                deletedCount,
-                failedCount
-            )
-            else -> stringResource(CoreCommonR.string.local_files_delete_downloaded_failed)
+    fun enterSelectionMode() {
+        selectionMode = true
+    }
+
+    fun exitSelectionMode() {
+        songsPendingDelete = emptyList()
+        selectionMode = false
+        selectedSongKeys = emptySet()
+        fullLibrarySelectionRequested = false
+    }
+
+    fun toggleSelectAll(downloadedSongs: List<DownloadedSong>) {
+        if (isAllDownloadedSongsSelected(selectedSongKeys, downloadedSongs)) {
+            fullLibrarySelectionRequested = false
+            selectedSongKeys = emptySet()
+        } else {
+            fullLibrarySelectionRequested = true
+            selectedSongKeys = downloadedSongs.mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
         }
     }
-    LaunchedEffect(deleteResult, deleteResultMessage) {
-        val message = deleteResultMessage ?: return@LaunchedEffect
-        AppFeedback.showToast(context = context, message = message)
-        deleteResult = null
+
+    fun toggleSong(selectionKey: String, selected: Boolean) {
+        fullLibrarySelectionRequested = false
+        selectedSongKeys = toggleSelectedDownloadSongKeys(
+            currentSelection = selectedSongKeys,
+            selectionKey = selectionKey,
+            selected = selected
+        )
+    }
+
+    fun startSelectionFrom(song: DownloadedSong) {
+        if (selectionMode) return
+        selectionMode = true
+        fullLibrarySelectionRequested = false
+        selectedSongKeys = setOf(song.deletionIdentity())
+    }
+
+    fun requestDeleteSelected(downloadedSongs: List<DownloadedSong>) {
+        if (selectedSongKeys.isEmpty()) return
+        songsPendingDelete = captureSongsPendingDelete(
+            downloadedSongs = downloadedSongs,
+            selectedSongKeys = selectedSongKeys
+        )
+        if (songsPendingDelete.isNotEmpty()) {
+            deleteEntireLibraryPending = fullLibrarySelectionRequested
+            showMultiDeleteDialog = true
+        }
+    }
+
+    fun dismissMultiDelete() {
+        showMultiDeleteDialog = false
+        songsPendingDelete = emptyList()
+        deleteEntireLibraryPending = false
+    }
+
+    fun confirmMultiDelete(delete: (List<DownloadedSong>, Boolean) -> Unit) {
+        val songsToDelete = songsPendingDelete
+        deletingSongCount = songsToDelete.size
+        delete(songsToDelete, deleteEntireLibraryPending)
+        songsPendingDelete = emptyList()
+        deleteEntireLibraryPending = false
+        fullLibrarySelectionRequested = false
+        selectedSongKeys = emptySet()
+        selectionMode = false
+        showMultiDeleteDialog = false
+    }
+
+    fun requestDelete(song: DownloadedSong) {
+        songToDelete = song
+    }
+
+    fun dismissSingleDelete() {
+        songToDelete = null
+    }
+
+    fun confirmSingleDelete(delete: (DownloadedSong) -> Unit) {
+        songToDelete?.let { song ->
+            deletingSongCount = 1
+            delete(song)
+        }
+        songToDelete = null
     }
 
     fun reportDeleteResult(result: DownloadedSongDeleteResult) {
         deletingSongCount = 0
         deleteResult = result
+    }
+
+    fun consumeDeleteResult() {
+        deleteResult = null
+    }
+
+    fun sanitize(downloadedSongs: List<DownloadedSong>) {
+        val sanitizedState = sanitizeDownloadSelectionState(
+            selectionMode = selectionMode,
+            selectedSongKeys = selectedSongKeys,
+            downloadedSongs = downloadedSongs
+        )
+        if (sanitizedState.selectionMode != selectionMode) {
+            selectionMode = sanitizedState.selectionMode
+        }
+        if (sanitizedState.selectedSongKeys != selectedSongKeys) {
+            selectedSongKeys = sanitizedState.selectedSongKeys
+        }
+    }
+}
+
+internal fun downloadDeleteResultMessage(
+    resources: Resources,
+    result: DownloadedSongDeleteResult
+): String {
+    val deletedCount = result.deletedSongs.size
+    val failedCount = result.failedSongs.size
+    return when {
+        result.physicalCleanupPending -> resources.getQuantityString(
+            CoreCommonR.plurals.local_files_delete_downloaded_cleanup_pending,
+            deletedCount + failedCount,
+            deletedCount + failedCount
+        )
+        deletedCount > 0 && failedCount == 0 -> resources.getQuantityString(
+            CoreCommonR.plurals.local_files_delete_downloaded_success,
+            deletedCount,
+            deletedCount
+        )
+        deletedCount > 0 -> resources.getQuantityString(
+            CoreCommonR.plurals.local_files_delete_downloaded_partial,
+            deletedCount,
+            deletedCount,
+            failedCount
+        )
+        else -> resources.getString(CoreCommonR.string.local_files_delete_downloaded_failed)
+    }
+}
+
+@Composable
+internal fun DownloadManagerContent(
+    downloadedSongs: List<DownloadedSong>,
+    legacyPreviewClips: Map<String, Long>,
+    isRefreshing: Boolean,
+    deleteProgress: DownloadedSongDeleteProgress?,
+    deleteFailureDismissed: Boolean,
+    listState: LazyListState,
+    offlineMode: Boolean,
+    onBack: () -> Unit,
+    onOpenDownloadProgress: () -> Unit,
+    onRefresh: () -> Unit,
+    onDismissDeleteFailure: (Long) -> Unit,
+    onDeleteSongs: (List<DownloadedSong>, Boolean, (DownloadedSongDeleteResult) -> Unit) -> Unit,
+    onPlaySong: (DownloadedSong) -> Unit
+) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val selection = remember { DownloadManagerSelectionState() }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val deletionInProgress = selection.deletingSongCount > 0 ||
+        isDownloadedSongDeletionRunning(deleteProgress)
+
+    val deleteResult = selection.deleteResult
+    LaunchedEffect(deleteResult) {
+        val result = deleteResult ?: return@LaunchedEffect
+        AppFeedback.showToast(
+            context = context,
+            message = downloadDeleteResultMessage(resources, result)
+        )
+        selection.consumeDeleteResult()
     }
 
     Column(
@@ -160,391 +331,381 @@ fun DownloadManagerScreen(
             .background(Color.Transparent)
             .padding(bottom = miniPlayerHeight)
     ) {
-        // 顶部栏
-        TopAppBar(
-            title = {
-                Column {
-                    Text(
-                        stringResource(CoreCommonR.string.download_manager_title),
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        stringResource(CoreCommonR.string.download_manager_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent,
-                scrolledContainerColor = Color.Transparent
+        DownloadManagerTopBar(
+            selectionMode = selection.selectionMode,
+            selectedCount = selection.selectedSongKeys.size,
+            allSelected = isAllDownloadedSongsSelected(
+                selectedSongKeys = selection.selectedSongKeys,
+                downloadedSongs = downloadedSongs
             ),
-            actions = {
-                if (selectionMode) {
-                    // 多选模式下的操作按钮
-                    Text(
-                        text = pluralStringResource(
-                            CoreCommonR.plurals.download_selected_count,
-                            selectedSongKeys.size,
-                            selectedSongKeys.size
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    // 全选/取消全选按钮
-                    val allSelected = isAllDownloadedSongsSelected(
-                        selectedSongKeys = selectedSongKeys,
-                        downloadedSongs = downloadedSongs
-                    )
-                    IconButton(
-                        enabled = !deletionInProgress,
-                        onClick = {
-                            context.performHapticFeedback()
-                            selectedSongKeys = if (allSelected) {
-                                fullLibrarySelectionRequested = false
-                                emptySet()
-                            } else {
-                                fullLibrarySelectionRequested = true
-                                downloadedSongs
-                                    .mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
-                            }
-                        }
-                    ) {
-                        Icon(
-                            if (allSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
-                            contentDescription = if (allSelected) stringResource(CoreCommonR.string.action_deselect_all) else stringResource(CoreCommonR.string.action_select_all)
-                        )
-                    }
-                    IconButton(
-                        enabled = !deletionInProgress,
-                        onClick = {
-                            context.performHapticFeedback()
-                            if (selectedSongKeys.isNotEmpty()) {
-                                songsPendingDelete = captureSongsPendingDelete(
-                                    downloadedSongs = downloadedSongs,
-                                    selectedSongKeys = selectedSongKeys
-                                )
-                                if (songsPendingDelete.isNotEmpty()) {
-                                    deleteEntireLibraryPending = fullLibrarySelectionRequested
-                                    showMultiDeleteDialog = true
-                                }
-                            }
-                        }
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = stringResource(CoreCommonR.string.download_delete_selected))
-                    }
-                    IconButton(
-                        onClick = {
-                            context.performHapticFeedback()
-                            songsPendingDelete = emptyList()
-                            selectedSongKeys = emptySet()
-                            fullLibrarySelectionRequested = false
-                            selectionMode = false
-                        }
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(CoreCommonR.string.download_exit_selection))
-                    }
-                } else {
-                    // 正常模式下的操作按钮
-                    IconButton(
-                        onClick = {
-                            context.performHapticFeedback()
-                            onOpenDownloadProgress()
-                        }
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = stringResource(CoreCommonR.string.download_progress))
-                    }
-                    IconButton(
-                        onClick = {
-                            context.performHapticFeedback()
-                            viewModel.refreshDownloadedSongs(forceRefresh = true)
-                        }
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = stringResource(CoreCommonR.string.action_refresh))
-                    }
-                    IconButton(
-                        onClick = {
-                            context.performHapticFeedback()
-                            selectionMode = true
-                        }
-                    ) {
-                        Icon(Icons.Default.CheckBoxOutlineBlank, contentDescription = stringResource(CoreCommonR.string.action_multi_select))
-                    }
-                }
-            }
+            deletionInProgress = deletionInProgress,
+            onBack = onBack,
+            onToggleSelectAll = { selection.toggleSelectAll(downloadedSongs) },
+            onDeleteSelected = { selection.requestDeleteSelected(downloadedSongs) },
+            onExitSelection = selection::exitSelectionMode,
+            onOpenDownloadProgress = onOpenDownloadProgress,
+            onRefresh = onRefresh,
+            onEnterSelection = selection::enterSelectionMode
         )
 
         DownloadedSongDeleteProgressCard(
             progress = deleteProgress,
             failureDismissed = deleteFailureDismissed,
-            onDismissFailure = viewModel::dismissDownloadedSongDeleteFailure,
-            requestedSongCount = deletingSongCount,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            onDismissFailure = onDismissDeleteFailure,
+            requestedSongCount = selection.deletingSongCount,
+            modifier = Modifier
+                .downloadPageContentWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
         // 下载统计信息
         val totalSize = remember(downloadedSongs) {
             downloadedSongs.sumOf { it.fileSize }
         }
-        LaunchedEffect(downloadedSongs, selectionMode) {
-            val sanitizedState = sanitizeDownloadSelectionState(
-                selectionMode = selectionMode,
-                selectedSongKeys = selectedSongKeys,
-                downloadedSongs = downloadedSongs
-            )
-            if (sanitizedState.selectionMode != selectionMode) {
-                selectionMode = sanitizedState.selectionMode
-            }
-            if (sanitizedState.selectedSongKeys != selectedSongKeys) {
-                selectedSongKeys = sanitizedState.selectedSongKeys
-            }
+        LaunchedEffect(downloadedSongs, selection.selectionMode) {
+            selection.sanitize(downloadedSongs)
         }
-
-        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-            val shape = RoundedCornerShape(16.dp)
-            val baseColor = MaterialTheme.colorScheme.surfaceVariant
-            AdvancedGlassSurface(
-                role = AdvancedGlassRole.SemanticCard,
-                modifier = Modifier.fillMaxWidth(),
-                shape = shape,
-                fallbackColor = baseColor.copy(alpha = 0.3f),
-                tintColor = baseColor
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = downloadedSongs.size.toString(),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = stringResource(CoreCommonR.string.downloaded_songs),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    VerticalDivider(
-                        modifier = Modifier
-                            .height(32.dp)
-                            .width(1.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                    )
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = formatFileSize(totalSize),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = stringResource(CoreCommonR.string.download_space_used),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
+        DownloadManagerStatsCard(songCount = downloadedSongs.size, totalSize = totalSize)
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 搜索框
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            placeholder = { Text(stringResource(CoreCommonR.string.download_search_hint)) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(CoreCommonR.string.action_search)) },
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            )
-        )
+        DownloadManagerSearchField(query = searchQuery, onQueryChange = { searchQuery = it })
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        fun exitSelectionMode() {
-            songsPendingDelete = emptyList()
-            selectionMode = false
-            selectedSongKeys = emptySet()
-            fullLibrarySelectionRequested = false
-        }
 
         // 多选优先退出
-        BackHandler(enabled = selectionMode) { exitSelectionMode() }
+        BackHandler(enabled = selection.selectionMode) { selection.exitSelectionMode() }
 
-        // 已下载歌曲列表
         DownloadedSongsList(
-            viewModel = viewModel,
+            downloadedSongs = downloadedSongs,
+            legacyPreviewClips = legacyPreviewClips,
+            isRefreshing = isRefreshing,
             searchQuery = searchQuery,
             listState = listState,
-            selectionMode = selectionMode,
-            selectedSongKeys = selectedSongKeys,
-            onSelectionChanged = {
-                fullLibrarySelectionRequested = false
-                selectedSongKeys = it
-            },
-            onSelectionToggle = { selectionKey, selected ->
-                fullLibrarySelectionRequested = false
-                selectedSongKeys = toggleSelectedDownloadSongKeys(
-                    currentSelection = selectedSongKeys,
-                    selectionKey = selectionKey,
-                    selected = selected
-                )
-            },
-            onSelectionModeChanged = { selectionMode = it },
-            onDeleteRequest = { song ->
-                songToDelete = song
-                showSingleDeleteDialog = true
-            },
+            selectionMode = selection.selectionMode,
+            selectedSongKeys = selection.selectedSongKeys,
             deletionInProgress = deletionInProgress,
-            offlineMode = offlineMode
+            offlineMode = offlineMode,
+            onPlay = onPlaySong,
+            onDeleteRequest = selection::requestDelete,
+            onSelectionToggle = selection::toggleSong,
+            onLongClick = selection::startSelectionFrom
         )
     }
 
-    // Single song delete confirmation dialog
-    if (showSingleDeleteDialog && songToDelete != null) {
-        AlertDialog(
-            onDismissRequest = {
-                showSingleDeleteDialog = false
-                songToDelete = null
-            },
-            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
-            text = { Text(stringResource(CoreCommonR.string.download_delete_confirm, songToDelete?.name ?: "")) },
-            confirmButton = {
-                TextButton(
-                    enabled = !deletionInProgress,
-                    onClick = {
-                        songToDelete?.let { song ->
-                            deletingSongCount = 1
-                            viewModel.deleteDownloadedSong(song) { result ->
-                                reportDeleteResult(result)
-                            }
-                        }
-                        showSingleDeleteDialog = false
-                        songToDelete = null
-                    }
-                ) {
-                    Text(stringResource(CoreCommonR.string.action_delete))
+    selection.songToDelete?.let { song ->
+        DownloadSingleDeleteDialog(
+            songName = song.name,
+            deletionInProgress = deletionInProgress,
+            onConfirm = {
+                selection.confirmSingleDelete { target ->
+                    onDeleteSongs(listOf(target), false, selection::reportDeleteResult)
                 }
             },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showSingleDeleteDialog = false
-                        songToDelete = null
-                    }
-                ) {
-                    Text(stringResource(CoreCommonR.string.action_cancel))
-                }
-            }
+            onDismiss = selection::dismissSingleDelete
         )
     }
 
-    // Multiple songs delete confirmation dialog
-    if (showMultiDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showMultiDeleteDialog = false
-                songsPendingDelete = emptyList()
-                deleteEntireLibraryPending = false
+    if (selection.showMultiDeleteDialog) {
+        DownloadMultiDeleteDialog(
+            songCount = selection.songsPendingDelete.size,
+            deletionInProgress = deletionInProgress,
+            onConfirm = {
+                selection.confirmMultiDelete { songs, deleteEntireLibrary ->
+                    onDeleteSongs(songs, deleteEntireLibrary, selection::reportDeleteResult)
+                }
             },
-            title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
-            text = {
+            onDismiss = selection::dismissMultiDelete
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DownloadManagerTopBar(
+    selectionMode: Boolean,
+    selectedCount: Int,
+    allSelected: Boolean,
+    deletionInProgress: Boolean,
+    onBack: () -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    onExitSelection: () -> Unit,
+    onOpenDownloadProgress: () -> Unit,
+    onRefresh: () -> Unit,
+    onEnterSelection: () -> Unit
+) {
+    val context = LocalContext.current
+    TopAppBar(
+        title = {
+            Column {
                 Text(
-                        pluralStringResource(
-                            CoreCommonR.plurals.download_delete_selected_confirm,
-                            songsPendingDelete.size,
-                            songsPendingDelete.size
-                        )
+                    stringResource(CoreCommonR.string.download_manager_title),
+                    style = MaterialTheme.typography.titleLarge
                 )
-            },
-            confirmButton = {
-                TextButton(
+                Text(
+                    stringResource(CoreCommonR.string.download_manager_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = Color.Transparent,
+            scrolledContainerColor = Color.Transparent
+        ),
+        actions = {
+            if (selectionMode) {
+                // 多选模式下的操作按钮
+                Text(
+                    text = pluralStringResource(
+                        CoreCommonR.plurals.download_selected_count,
+                        selectedCount,
+                        selectedCount
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                // 全选/取消全选按钮
+                IconButton(
                     enabled = !deletionInProgress,
                     onClick = {
-                        val songsToDelete = songsPendingDelete
-                        deletingSongCount = songsToDelete.size
-                        viewModel.deleteDownloadedSongs(
-                            songs = songsToDelete,
-                            deleteEntireLibrary = deleteEntireLibraryPending
-                        ) { result ->
-                            reportDeleteResult(result)
-                        }
-                        songsPendingDelete = emptyList()
-                        deleteEntireLibraryPending = false
-                        fullLibrarySelectionRequested = false
-                        selectedSongKeys = emptySet()
-                        selectionMode = false
-                        showMultiDeleteDialog = false
+                        context.performHapticFeedback()
+                        onToggleSelectAll()
                     }
                 ) {
-                    Text(stringResource(CoreCommonR.string.action_delete))
+                    Icon(
+                        if (allSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                        contentDescription = stringResource(
+                            if (allSelected) CoreCommonR.string.action_deselect_all else CoreCommonR.string.action_select_all
+                        )
+                    )
                 }
-            },
-            dismissButton = {
-                TextButton(
+                IconButton(
+                    enabled = !deletionInProgress,
                     onClick = {
-                        showMultiDeleteDialog = false
-                        songsPendingDelete = emptyList()
-                        deleteEntireLibraryPending = false
+                        context.performHapticFeedback()
+                        onDeleteSelected()
                     }
                 ) {
-                    Text(stringResource(CoreCommonR.string.action_cancel))
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(CoreCommonR.string.download_delete_selected))
+                }
+                IconButton(
+                    onClick = {
+                        context.performHapticFeedback()
+                        onExitSelection()
+                    }
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = stringResource(CoreCommonR.string.download_exit_selection))
+                }
+            } else {
+                // 正常模式下的操作按钮
+                IconButton(
+                    onClick = {
+                        context.performHapticFeedback()
+                        onOpenDownloadProgress()
+                    }
+                ) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = stringResource(CoreCommonR.string.download_progress))
+                }
+                IconButton(
+                    onClick = {
+                        context.performHapticFeedback()
+                        onRefresh()
+                    }
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = stringResource(CoreCommonR.string.action_refresh))
+                }
+                IconButton(
+                    onClick = {
+                        context.performHapticFeedback()
+                        onEnterSelection()
+                    }
+                ) {
+                    Icon(Icons.Default.CheckBoxOutlineBlank, contentDescription = stringResource(CoreCommonR.string.action_multi_select))
                 }
             }
+        }
+    )
+}
+
+@Composable
+private fun DownloadManagerStatsCard(songCount: Int, totalSize: Long) {
+    Box(
+        modifier = Modifier
+            .downloadPageContentWidth()
+            .padding(horizontal = 16.dp)
+            .testTag(DOWNLOAD_MANAGER_STATS_TAG)
+    ) {
+        val shape = RoundedCornerShape(16.dp)
+        val baseColor = MaterialTheme.colorScheme.surfaceVariant
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.SemanticCard,
+            modifier = Modifier.fillMaxWidth(),
+            shape = shape,
+            fallbackColor = baseColor.copy(alpha = 0.3f),
+            tintColor = baseColor
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DownloadManagerStat(
+                    value = songCount.toString(),
+                    label = stringResource(CoreCommonR.string.downloaded_songs)
+                )
+
+                VerticalDivider(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .width(1.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                )
+
+                DownloadManagerStat(
+                    value = formatFileSize(totalSize),
+                    label = stringResource(CoreCommonR.string.download_space_used)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadManagerStat(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
 @Composable
+private fun DownloadManagerSearchField(query: String, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .downloadPageContentWidth()
+            .padding(horizontal = 16.dp),
+        placeholder = { Text(stringResource(CoreCommonR.string.download_search_hint)) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(CoreCommonR.string.action_search)) },
+        singleLine = true,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+        )
+    )
+}
+
+@Composable
+private fun DownloadSingleDeleteDialog(
+    songName: String,
+    deletionInProgress: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+        text = { Text(stringResource(CoreCommonR.string.download_delete_confirm, songName)) },
+        confirmButton = {
+            TextButton(enabled = !deletionInProgress, onClick = onConfirm) {
+                Text(stringResource(CoreCommonR.string.action_delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(CoreCommonR.string.action_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun DownloadMultiDeleteDialog(
+    songCount: Int,
+    deletionInProgress: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(CoreCommonR.string.dialog_confirm_delete)) },
+        text = {
+            Text(
+                pluralStringResource(
+                    CoreCommonR.plurals.download_delete_selected_confirm,
+                    songCount,
+                    songCount
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = !deletionInProgress, onClick = onConfirm) {
+                Text(stringResource(CoreCommonR.string.action_delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(CoreCommonR.string.action_cancel))
+            }
+        }
+    )
+}
+
+internal fun filterDownloadedSongs(
+    downloadedSongs: List<DownloadedSong>,
+    searchQuery: String
+): List<DownloadedSong> {
+    if (searchQuery.isBlank()) return downloadedSongs
+    return downloadedSongs.filter { song -> song.matchesDownloadSearch(searchQuery) }
+}
+
+private fun DownloadedSong.matchesDownloadSearch(query: String): Boolean =
+    displayName().contains(query, ignoreCase = true) ||
+        displayArtist().contains(query, ignoreCase = true) ||
+        name.contains(query, ignoreCase = true) ||
+        artist.contains(query, ignoreCase = true) ||
+        album.contains(query, ignoreCase = true)
+
+@Composable
 private fun DownloadedSongsList(
-    viewModel: DownloadManagerViewModel,
+    downloadedSongs: List<DownloadedSong>,
+    legacyPreviewClips: Map<String, Long>,
+    isRefreshing: Boolean,
     searchQuery: String,
     listState: LazyListState,
     selectionMode: Boolean,
     selectedSongKeys: Set<String>,
-    onSelectionChanged: (Set<String>) -> Unit,
-    onSelectionToggle: (String, Boolean) -> Unit,
-    onSelectionModeChanged: (Boolean) -> Unit,
-    onDeleteRequest: (DownloadedSong) -> Unit,
     deletionInProgress: Boolean,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    onPlay: (DownloadedSong) -> Unit,
+    onDeleteRequest: (DownloadedSong) -> Unit,
+    onSelectionToggle: (String, Boolean) -> Unit,
+    onLongClick: (DownloadedSong) -> Unit
 ) {
-    val downloadedSongs by viewModel.downloadedSongs.collectAsStateWithLifecycle()
-    val legacyPreviewClips by viewModel.legacyPreviewClips.collectAsStateWithLifecycle()
-    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     // 过滤搜索结果
     val filteredSongs = remember(downloadedSongs, searchQuery) {
-        if (searchQuery.isBlank()) {
-            downloadedSongs
-        } else {
-            downloadedSongs.filter { song ->
-                song.displayName().contains(searchQuery, ignoreCase = true) ||
-                        song.displayArtist().contains(searchQuery, ignoreCase = true) ||
-                        song.name.contains(searchQuery, ignoreCase = true) ||
-                        song.artist.contains(searchQuery, ignoreCase = true) ||
-                        song.album.contains(searchQuery, ignoreCase = true)
-            }
-        }
+        filterDownloadedSongs(downloadedSongs, searchQuery)
     }
 
     Box(
@@ -552,32 +713,13 @@ private fun DownloadedSongsList(
         contentAlignment = Alignment.Center
     ) {
         if (filteredSongs.isEmpty()) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(32.dp)
-            ) {
-                Icon(
-                    Icons.Outlined.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    if (searchQuery.isBlank()) stringResource(CoreCommonR.string.download_no_songs) else stringResource(CoreCommonR.string.download_no_match),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    if (searchQuery.isBlank()) stringResource(CoreCommonR.string.download_songs_hint) else stringResource(CoreCommonR.string.download_try_other_keywords),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            DownloadedSongsEmptyState(searchActive = searchQuery.isNotBlank())
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .downloadPageContentWidth()
+                    .fillMaxHeight()
+                    .testTag(DOWNLOAD_MANAGER_LIST_TAG),
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(
@@ -593,19 +735,13 @@ private fun DownloadedSongsList(
                         isLegacyPreviewClip = legacyPreviewClips[song.filePath] == song.fileSize,
                         isSelected = selectedSongKeys.contains(song.deletionIdentity()),
                         selectionMode = selectionMode,
-                        onPlay = { viewModel.playDownloadedSong(song) },
+                        onPlay = { onPlay(song) },
                         onDelete = { onDeleteRequest(song) },
                         deletionInProgress = deletionInProgress,
                         onSelectionChanged = { selected ->
-                            val selectionKey = song.deletionIdentity()
-                            onSelectionToggle(selectionKey, selected)
+                            onSelectionToggle(song.deletionIdentity(), selected)
                         },
-                        onLongClick = {
-                            if (!selectionMode) {
-                                onSelectionModeChanged(true)
-                                onSelectionChanged(setOf(song.deletionIdentity()))
-                            }
-                        },
+                        onLongClick = { onLongClick(song) },
                         offlineMode = offlineMode
                     )
                 }
@@ -616,13 +752,44 @@ private fun DownloadedSongsList(
             LinearProgressIndicator(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .fillMaxWidth()
+                    .downloadPageContentWidth()
                     .padding(horizontal = 16.dp)
                     .clip(RoundedCornerShape(999.dp))
                     .height(3.dp),
                 trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.18f)
             )
         }
+    }
+}
+
+@Composable
+private fun DownloadedSongsEmptyState(searchActive: Boolean) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(32.dp)
+    ) {
+        Icon(
+            Icons.Outlined.MusicNote,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            stringResource(
+                if (searchActive) CoreCommonR.string.download_no_match else CoreCommonR.string.download_no_songs
+            ),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            stringResource(
+                if (searchActive) CoreCommonR.string.download_try_other_keywords else CoreCommonR.string.download_songs_hint
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -639,7 +806,6 @@ private fun DownloadedSongItem(
     deletionInProgress: Boolean,
     offlineMode: Boolean
 ) {
-    val context = LocalContext.current
     val resolvedCover = remember(song.coverPath, song.customCoverUrl, song.coverUrl) {
         resolveDownloadedSongCoverReference(song)
     }
@@ -691,121 +857,147 @@ private fun DownloadedSongItem(
                 )
             }
 
-            // 封面或音乐图标
-            if (!resolvedCover.isNullOrBlank()) {
-                AsyncImage(
-                    model = remember(context, resolvedCover, offlineMode) {
-                        offlineCachedImageRequest(
-                            context = context,
-                            data = resolvedCover,
-                            sizePx = 128,
-                            allowHardware = false,
-                            offlineMode = offlineMode
-                        )
-                    },
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp)),
-                    contentScale = ContentScale.Crop,
-                    error = painterResource(id = R.drawable.ic_launcher_foreground)
-                )
-            } else {
-                // 显示默认音乐图标
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Outlined.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
+            DownloadedSongCover(resolvedCover = resolvedCover, offlineMode = offlineMode)
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // 歌曲信息
-            Column(
+            DownloadedSongInfo(
+                song = song,
+                isLegacyPreviewClip = isLegacyPreviewClip,
                 modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = song.displayName(),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = song.displayArtist(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${formatFileSize(song.fileSize)} • ${formatDate(song.downloadTime)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (isLegacyPreviewClip) {
-                    Text(
-                        text = stringResource(CoreCommonR.string.download_legacy_preview_clip),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
+            )
 
             Spacer(modifier = Modifier.width(8.dp))
 
 
             // 操作按钮
             if (!selectionMode) {
-                Row {
-                    IconButton(onClick = onPlay) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = stringResource(CoreCommonR.string.download_play),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    IconButton(onClick = onDelete, enabled = !deletionInProgress) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = stringResource(CoreCommonR.string.download_delete),
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
+                DownloadedSongActions(
+                    deletionInProgress = deletionInProgress,
+                    onPlay = onPlay,
+                    onDelete = onDelete
+                )
             }
         }
     }
 }
 
-internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? {
-    return song.customCoverUrl
-        ?.takeIf(String::isNotBlank)
-        ?.takeUnless(::isMediaStoreCoverReference)
-        ?: song.coverPath
-            ?.takeIf(String::isNotBlank)
-            ?.takeUnless(::isMediaStoreCoverReference)
-            ?.let { coverPath ->
-                if (!coverPath.startsWith("/")) {
-                    coverPath
-                } else {
-                    File(coverPath).takeIf(File::exists)?.toURI()?.toString()
-                }
-            }
-        ?: song.coverUrl?.takeIf(String::isNotBlank)?.takeUnless(::isMediaStoreCoverReference)
+@Composable
+private fun DownloadedSongCover(resolvedCover: String?, offlineMode: Boolean) {
+    val context = LocalContext.current
+    // 封面或音乐图标
+    if (!resolvedCover.isNullOrBlank()) {
+        AsyncImage(
+            model = remember(context, resolvedCover, offlineMode) {
+                offlineCachedImageRequest(
+                    context = context,
+                    data = resolvedCover,
+                    sizePx = 128,
+                    allowHardware = false,
+                    offlineMode = offlineMode
+                )
+            },
+            contentDescription = null,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp)),
+            contentScale = ContentScale.Crop,
+            error = painterResource(id = R.drawable.ic_launcher_foreground)
+        )
+    } else {
+        // 显示默认音乐图标
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Outlined.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadedSongInfo(
+    song: DownloadedSong,
+    isLegacyPreviewClip: Boolean,
+    modifier: Modifier = Modifier
+) {
+    // 歌曲信息
+    Column(modifier = modifier) {
+        Text(
+            text = song.displayName(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = song.displayArtist(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = "${formatFileSize(song.fileSize)} • ${formatDate(song.downloadTime)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (isLegacyPreviewClip) {
+            Text(
+                text = stringResource(CoreCommonR.string.download_legacy_preview_clip),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadedSongActions(
+    deletionInProgress: Boolean,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row {
+        IconButton(onClick = onPlay) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = stringResource(CoreCommonR.string.download_play),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        IconButton(onClick = onDelete, enabled = !deletionInProgress) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = stringResource(CoreCommonR.string.download_delete),
+                tint = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? =
+    song.customCoverUrl.usableCoverReference()
+        ?: song.coverPath.usableCoverReference()?.let(::resolveDownloadedCoverPath)
+        ?: song.coverUrl.usableCoverReference()
+
+private fun String?.usableCoverReference(): String? =
+    takeUnless { it.isNullOrBlank() || isMediaStoreCoverReference(it) }
+
+private fun resolveDownloadedCoverPath(coverPath: String): String? {
+    if (!coverPath.startsWith("/")) return coverPath
+    return File(coverPath).takeIf(File::exists)?.toURI()?.toString()
 }
 
 internal fun toggleSelectedDownloadSongKeys(

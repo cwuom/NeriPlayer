@@ -32,20 +32,20 @@ internal fun mergeDailyBucket(
     remote: SyncPlaybackStatBucket
 ): PlaybackStatBucket {
     val remoteBucket = remote.toPlaybackStatBucket()
-    val useRemoteMetadata = remote.lastPlayedAt > local.lastPlayedAt
+    val metadata = if (remote.lastPlayedAt > local.lastPlayedAt) remoteBucket else local
     return local.copy(
-        id = if (useRemoteMetadata) remoteBucket.id else local.id,
-        name = if (useRemoteMetadata) remoteBucket.name else local.name,
-        artist = if (useRemoteMetadata) remoteBucket.artist else local.artist,
-        album = if (useRemoteMetadata) remoteBucket.album else local.album,
-        albumId = if (useRemoteMetadata) remoteBucket.albumId else local.albumId,
-        coverUrl = if (useRemoteMetadata) remoteBucket.coverUrl else local.coverUrl,
-        durationMs = if (useRemoteMetadata) remoteBucket.durationMs else local.durationMs,
+        id = metadata.id,
+        name = metadata.name,
+        artist = metadata.artist,
+        album = metadata.album,
+        albumId = metadata.albumId,
+        coverUrl = metadata.coverUrl,
+        durationMs = metadata.durationMs,
         totalListenMs = remoteBucket.totalListenMs,
         playCount = remoteBucket.playCount,
         lastPlayedAt = remoteBucket.lastPlayedAt,
         firstPlayedAt = remoteBucket.firstPlayedAt,
-        mediaUri = if (useRemoteMetadata) remoteBucket.mediaUri else local.mediaUri
+        mediaUri = metadata.mediaUri
     )
 }
 

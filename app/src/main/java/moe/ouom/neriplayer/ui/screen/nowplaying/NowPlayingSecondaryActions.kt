@@ -92,6 +92,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricBehaviorSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricFontSizeSheet
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
 
 private val NowPlayingFeedbackExtraBottomPadding = 24.dp
 private val EditSongInfoFeedbackControlClearance = 72.dp
@@ -382,6 +383,11 @@ internal class MoreOptionsSheetOwner(
     fun open(target: MoreOptionsPage) {
         if (!isEditSongSaving) page = target
     }
+
+    /** 返回会回到面板主页；会直接关闭面板或正在保存时为 false，交给弹层自身或保存期间的拦截处理 */
+    val canGoBackToMainPage: Boolean
+        get() = !isEditSongSaving && page != MoreOptionsPage.MAIN &&
+            !(page == initialPage && initialPage != MoreOptionsPage.MAIN)
 
     fun back() {
         if (isEditSongSaving) return
@@ -698,20 +704,13 @@ internal fun isCompactMoreOptionsEditSheet(page: MoreOptionsPage, compactLandsca
 internal fun shouldHideCompactEditSongHandle(compactEditSheet: Boolean, imeVisible: Boolean): Boolean =
     compactEditSheet && imeVisible
 
+/**
+ * 子页返回主页由 [MoreOptionsAnimatedPage] 的可拖动转场处理，关闭面板交给 Material 弹层自带的预测性返回；
+ * 这里只在保存歌曲信息期间吞掉返回，避免面板被收起
+ */
 @Composable
 private fun MoreOptionsBackHandlers(owner: MoreOptionsSheetOwner) {
-    MoreOptionsSubpageBackHandler(owner)
-    MoreOptionsMainBackHandler(owner)
-}
-
-@Composable
-private fun MoreOptionsSubpageBackHandler(owner: MoreOptionsSheetOwner) {
-    BackHandler(enabled = owner.page != MoreOptionsPage.MAIN, onBack = owner.onBack)
-}
-
-@Composable
-private fun MoreOptionsMainBackHandler(owner: MoreOptionsSheetOwner) {
-    BackHandler(enabled = owner.page == MoreOptionsPage.MAIN, onBack = owner.onDismissRequest)
+    BackHandler(enabled = owner.isEditSongSaving) {}
 }
 
 @Composable
@@ -740,14 +739,19 @@ private fun MoreOptionsAnimatedPage(
     owner: MoreOptionsSheetOwner,
     content: @Composable (MoreOptionsPage) -> Unit
 ) {
-    AnimatedContent(
+    val pageTransition = rememberHostPredictiveBackTransition(
         targetState = owner.page,
+        backEnabled = owner.canGoBackToMainPage,
+        backTargetState = MoreOptionsPage.MAIN,
+        onBack = { owner.back() },
+        label = "more_options_sheet_content"
+    )
+    pageTransition.AnimatedContent(
         transitionSpec = {
             (fadeIn(animationSpec = tween(220, delayMillis = 90)) +
                 scaleIn(initialScale = 0.92f, animationSpec = tween(220, delayMillis = 90)))
                 .togetherWith(fadeOut(animationSpec = tween(90)))
         },
-        label = "more_options_sheet_content",
         content = { targetState -> content(targetState) }
     )
 }

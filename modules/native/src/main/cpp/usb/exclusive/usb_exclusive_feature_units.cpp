@@ -28,6 +28,7 @@ constexpr uint8_t kSetCur = 0x01;
 constexpr uint8_t kUac1GetCur = 0x81;
 constexpr uint8_t kUac1GetMin = 0x82;
 constexpr uint8_t kUac1GetMax = 0x83;
+constexpr uint8_t kUac1GetRes = 0x84;
 constexpr uint8_t kUac2Cur = 0x01;
 constexpr uint8_t kUac2Range = 0x02;
 constexpr uint16_t kUac2RangeBytes = 14;
@@ -99,16 +100,21 @@ int setVolume(libusb_device_handle* devh, const FeatureUnitControl& control, int
 
 bool readVolumeRange(
     libusb_device_handle* devh,
-    const FeatureUnitControl& control,
     int interfaceNumber,
     int uacVersion,
-    int16_t* minimum,
-    int16_t* maximum
+    FeatureUnitVolume* volume
 ) {
+    const FeatureUnitControl& control = volume->control;
     if (uacVersion == 2) {
         uint8_t range[kUac2RangeBytes] = {};
         const int rc = controlRequest(devh, kLibusbEndpointIn, kUac2Range, control, interfaceNumber, range, kUac2RangeBytes);
-        return rc > 0 && neri::usb::control::decodeUac2VolumeRange(range, static_cast<size_t>(rc), minimum, maximum);
+        return rc > 0 && neri::usb::control::decodeUac2VolumeRange(
+            range,
+            static_cast<size_t>(rc),
+            &volume->minimum,
+            &volume->maximum,
+            &volume->resolution
+        );
     }
     uint8_t low[2] = {};
     uint8_t high[2] = {};
@@ -116,8 +122,13 @@ bool readVolumeRange(
         controlRequest(devh, kLibusbEndpointIn, kUac1GetMax, control, interfaceNumber, high, 2) != 2) {
         return false;
     }
-    *minimum = neri::usb::control::decodeLittleEndianInt16(low);
-    *maximum = neri::usb::control::decodeLittleEndianInt16(high);
+    volume->minimum = neri::usb::control::decodeLittleEndianInt16(low);
+    volume->maximum = neri::usb::control::decodeLittleEndianInt16(high);
+    // 读不到步进时保持 1/256 dB，与原先直接写目标值一致
+    uint8_t step[2] = {};
+    if (controlRequest(devh, kLibusbEndpointIn, kUac1GetRes, control, interfaceNumber, step, 2) == 2) {
+        volume->resolution = static_cast<uint16_t>(step[0] | (step[1] << 8));
+    }
     return true;
 }
 
@@ -145,21 +156,26 @@ void applyMute(UsbExclusiveHandle* handle, const FeatureUnitControl& control, Ap
         return;
     }
     result->mutes.push_back(control);
-    if (known && current != 0) state.restore.push_back(FeatureUnitRestoreEntry { control, current });
+    state.restore.push_back(FeatureUnitRestoreEntry { control, neri::usb::control::muteRestoreValue(known, current) });
 }
 
 void applyVolume(UsbExclusiveHandle* handle, const FeatureUnitControl& control, ApplyResult* result) {
     UsbFeatureUnitState& state = handle->featureUnits;
     libusb_device_handle* devh = handle->device.devh;
     FeatureUnitVolume volume { control, 0, 0 };
-    if (!readVolumeRange(devh, control, state.interfaceNumber, handle->device.uacVersion, &volume.minimum, &volume.maximum)) {
+    if (!readVolumeRange(devh, state.interfaceNumber, handle->device.uacVersion, &volume)) {
         ++result->failures;
         return;
     }
     const uint8_t getCur = handle->device.uacVersion == 2 ? kUac2Cur : kUac1GetCur;
     uint8_t current[2] = {};
     const bool known = controlRequest(devh, kLibusbEndpointIn, getCur, control, state.interfaceNumber, current, 2) == 2;
-    const int16_t unity = neri::usb::control::unityVolumeWithinRange(volume.minimum, volume.maximum);
+    const int16_t unity = neri::usb::control::quantizeVolumeToResolution(
+        neri::usb::control::unityVolumeWithinRange(volume.minimum, volume.maximum),
+        volume.minimum,
+        volume.maximum,
+        volume.resolution
+    );
     const int rc = setVolume(devh, control, state.interfaceNumber, unity);
     if (rc != 2) {
         recordFailure(result, rc);
@@ -243,7 +259,12 @@ bool setHardwareVolumeFraction(UsbExclusiveHandle* handle, float fraction) {
     if (std::fabs(target - state.appliedFraction) < kVolumeFractionEpsilon) return true;
     bool applied = false;
     for (const auto& volume : state.hardwareVolume) {
-        const int16_t value = neri::usb::control::hardwareVolumeForFraction(target, volume.minimum, volume.maximum);
+        const int16_t value = neri::usb::control::hardwareVolumeForFraction(
+            target,
+            volume.minimum,
+            volume.maximum,
+            volume.resolution
+        );
         const int rc = setVolume(handle->device.devh, volume.control, state.interfaceNumber, value);
         if (rc == LIBUSB_ERROR_NO_DEVICE) return false;
         applied = applied || rc == 2;

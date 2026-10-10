@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -139,6 +140,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsDownloadsPageI
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageCacheDetailsItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStoragePageItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageProcessingItem
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.canNavigateBackFromSettingsPage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -203,9 +205,9 @@ internal fun SettingsScreen(
 
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var showDpiDialog by remember { mutableStateOf(false) }
-    var showGitHubConfigDialog by remember { mutableStateOf(false) }
+    var showGitHubConfigDialog by rememberSaveable { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
-    var showWebDavConfigDialog by remember { mutableStateOf(false) }
+    var showWebDavConfigDialog by rememberSaveable { mutableStateOf(false) }
     var showClearWebDavConfigDialog by remember { mutableStateOf(false) }
     // ------------------------------------
 
@@ -1085,6 +1087,8 @@ internal fun SettingsScreen(
         activePage = activeSettingsPage,
         splitLayout = isSettingsSplitLayout,
         isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+        backEnabled = canNavigateBackFromSettingsPage(activeSettingsPage, isSettingsSplitLayout),
+        onBack = ::navigateBackFromActiveSettingsPage,
         content = settingsPageContent
     )
 

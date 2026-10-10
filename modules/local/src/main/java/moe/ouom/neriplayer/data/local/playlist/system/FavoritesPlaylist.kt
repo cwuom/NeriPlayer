@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.data.local.playlist.system
 import android.content.Context
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.common.locale.LanguageManager
 
@@ -64,20 +65,27 @@ object FavoritesPlaylist {
     }
 
     fun merge(playlists: List<LocalPlaylist>, context: Context): LocalPlaylist {
-        val deduper = SystemPlaylistSongDeduper(
-            playlists.sumOf { playlist -> playlist.songs.size }
-        )
-        playlists.forEach { playlist ->
-            deduper.addAll(playlist.songs)
-        }
-
         return LocalPlaylist(
             id = SYSTEM_ID,
             name = currentName(context),
-            songs = deduper.takeSongs(),
-            modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
-            customCoverUrl = playlists.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl,
+            songs = mergedSongs(playlists),
+            modifiedAt = latestModifiedAt(playlists),
+            customCoverUrl = lastCustomCoverUrl(playlists),
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
         )
     }
+
+    private fun mergedSongs(playlists: List<LocalPlaylist>): MutableList<SongItem> {
+        val deduper = SystemPlaylistSongDeduper(playlists.sumOf { playlist -> playlist.songs.size })
+        playlists.forEach { playlist -> deduper.addAll(playlist.songs) }
+        return deduper.takeSongs()
+    }
+
+    private fun latestModifiedAt(playlists: List<LocalPlaylist>): Long =
+        playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis()
+
+    private fun lastCustomCoverUrl(playlists: List<LocalPlaylist>): String? =
+        playlists.asReversed().firstNotNullOfOrNull { playlist ->
+            playlist.customCoverUrl?.takeIf(String::isNotBlank)
+        }
 }

@@ -46,6 +46,7 @@ internal data class UsbExclusiveBackpressureObservation(
 
 internal interface UsbExclusivePcmWritePort {
     fun write(handle: Long, buffer: ByteBuffer, offset: Int, size: Int, volume: Float): Int
+    fun drainInputEnd(handle: Long): Boolean
     fun runtimeReport(handle: Long): String
     fun freeBytes(handle: Long): Long?
     fun refreshRuntime(handle: Long)
@@ -58,6 +59,8 @@ internal interface UsbExclusivePcmWritePort {
 internal object AndroidUsbExclusivePcmWritePort : UsbExclusivePcmWritePort {
     override fun write(handle: Long, buffer: ByteBuffer, offset: Int, size: Int, volume: Float): Int =
         UsbExclusiveSessionController.writePlayerPcm(handle, buffer, offset, size, volume)
+
+    override fun drainInputEnd(handle: Long): Boolean = UsbExclusiveSessionController.drainPlayerPcm(handle)
 
     override fun runtimeReport(handle: Long): String =
         UsbExclusiveSessionController.runtimeReportForWritePlanning(handle)
@@ -136,6 +139,9 @@ internal class UsbExclusivePcmWriter(
         softwareFloatInputFormat = null
         softwareFloatConversionLogged = false
     }
+
+    /** 重采样器还压着最后几十帧；返回 false 时队列仍有数据，下一次 playToEndOfStream 会重试 */
+    fun drainInputEnd(handle: Long): Boolean = handle != 0L && port.drainInputEnd(handle)
 
     /**
      * 传输已在跑时一次回调写到水位：动态调度下播放线程按上报缓冲休眠，

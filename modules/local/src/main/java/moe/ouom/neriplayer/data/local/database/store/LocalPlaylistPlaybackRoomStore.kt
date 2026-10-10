@@ -47,6 +47,10 @@ internal class LocalPlaylistPlaybackRoomStore(
         }
     }
 
+    suspend fun commitLegacyFallback(writeSnapshot: () -> Unit) {
+        database.commitLegacyJsonFallback(writeSnapshot) { markLegacyJsonPrimary() }
+    }
+
     suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
         database.syncMetadataDao().upsertMigrationMetadata(
             metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)

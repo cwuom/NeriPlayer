@@ -7,6 +7,15 @@ plugins {
     id("jacoco")
 }
 
+tasks.withType<Test>().configureEach {
+    // Robolectric 沙箱加载的类没有代码源位置，需要显式纳入覆盖率
+    extensions.configure<JacocoTaskExtension> {
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
+    maxHeapSize = "2g"
+}
+
 val moduleTestExecution = providers.provider {
     tasks.named<Test>("testDebugUnitTest").get()
         .extensions.getByType<JacocoTaskExtension>().destinationFile

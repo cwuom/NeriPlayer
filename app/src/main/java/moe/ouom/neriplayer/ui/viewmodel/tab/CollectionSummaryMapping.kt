@@ -59,14 +59,16 @@ private data class BiliFavoriteReference(
 )
 
 private fun parseBiliFavoriteReference(value: String?): BiliFavoriteReference? {
-    val segments = value
-        ?.takeIf { it.startsWith(BILI_FAVORITE_REFERENCE_PREFIX) }
-        ?.removePrefix(BILI_FAVORITE_REFERENCE_PREFIX)
-        ?.split('/')
-        ?: return null
-    if (segments.size != 3) return null
+    val segments = biliFavoriteReferenceSegments(value) ?: return null
     val kind = runCatching { BiliPlaylistKind.valueOf(segments[0]) }.getOrNull() ?: return null
     val fid = segments[1].toLongOrNull() ?: return null
     val mid = segments[2].toLongOrNull() ?: return null
     return BiliFavoriteReference(kind = kind, fid = fid, mid = mid)
+}
+
+private fun biliFavoriteReferenceSegments(value: String?): List<String>? {
+    if (value == null || !value.startsWith(BILI_FAVORITE_REFERENCE_PREFIX)) return null
+    return value.removePrefix(BILI_FAVORITE_REFERENCE_PREFIX)
+        .split('/')
+        .takeIf { it.size == 3 }
 }

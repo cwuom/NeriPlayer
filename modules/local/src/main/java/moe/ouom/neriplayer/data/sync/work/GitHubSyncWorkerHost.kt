@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerFailureClassifier
 import moe.ouom.neriplayer.data.sync.schedule.SyncWorkerHost
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 
-internal fun createGitHubWorkerHost(context: Context): SyncWorkerHost {
+internal fun createGitHubWorkerHost(context: Context, triggerByAppStartup: Boolean = false): SyncWorkerHost {
     val storage by lazy { SecureTokenStorage(context) }
     val notification = SyncFailureNotification(
         context, "github_sync_channel", 1001,
@@ -32,7 +32,10 @@ internal fun createGitHubWorkerHost(context: Context): SyncWorkerHost {
         },
         readPlayback = { SyncPlaybackActivity.isActive }, readNetwork = { hasValidatedSyncNetwork(context) },
         defer = { GitHubSyncWorker.scheduleDelayedSync(context, initialDelayMs = 60_000L, appendToCurrentWork = true) },
-        sync = { GitHubSyncManager.getInstance(context).performSync() },
+        sync = {
+            val manager = GitHubSyncManager.getInstance(context)
+            if (triggerByAppStartup) manager.performSync(triggerByAppStartup) else manager.performSync()
+        },
         classifier = SyncWorkerFailureClassifier(mapOf(
             TokenExpiredException::class.java to SyncWorkerFailureKind.AUTHENTICATION,
             GitHubSyncInProgressException::class.java to SyncWorkerFailureKind.ALREADY_RUNNING
@@ -42,7 +45,8 @@ internal fun createGitHubWorkerHost(context: Context): SyncWorkerHost {
     )
     return GitHubRateLimitedWorkerHost(delegate, scheduleContinuation = { delayMillis, manual ->
         GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = manual,
-            markMutation = false, initialDelayMs = delayMillis, appendToCurrentWork = true)
+            markMutation = false, initialDelayMs = delayMillis, appendToCurrentWork = true,
+            triggerByAppStartup = triggerByAppStartup)
     })
 }
 

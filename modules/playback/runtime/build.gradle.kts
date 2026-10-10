@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "moe.ouom.neriplayer.feature.player"
     defaultConfig.consumerProguardFiles("consumer-rules.pro")
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 dependencies {
@@ -49,6 +50,8 @@ dependencies {
     testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.kotlinx.coroutines.test)

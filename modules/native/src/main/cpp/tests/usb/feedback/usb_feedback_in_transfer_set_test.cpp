@@ -50,6 +50,14 @@ public:
     std::vector<RecordedCompletion> completions;
 };
 
+bool contains(const std::vector<libusb_transfer*>& transfers, libusb_transfer* transfer) {
+    return std::find(transfers.begin(), transfers.end(), transfer) != transfers.end();
+}
+
+void erase(std::vector<libusb_transfer*>* transfers, libusb_transfer* transfer) {
+    transfers->erase(std::remove(transfers->begin(), transfers->end(), transfer), transfers->end());
+}
+
 class FakeBackend final : public FeedbackTransferBackend {
 public:
     ~FakeBackend() override {
@@ -78,17 +86,37 @@ public:
     int submitTransfer(libusb_transfer* transfer) override {
         ++submitCalls;
         submitted.push_back(transfer);
-        return failSubmitAt == submitCalls ? LIBUSB_ERROR_IO : LIBUSB_SUCCESS;
+        if (failSubmitAt == submitCalls) {
+            return LIBUSB_ERROR_IO;
+        }
+        inFlight.push_back(transfer);
+        callbackOwed.push_back(transfer);
+        return LIBUSB_SUCCESS;
     }
 
+    // 与 libusb 一致：已请求过取消、或回调已开始投递时返回 NOT_FOUND，回调照样会来
     int cancelTransfer(libusb_transfer* transfer) override {
         cancelled.push_back(transfer);
+        if (!contains(inFlight, transfer) || contains(cancelling, transfer)) {
+            return LIBUSB_ERROR_NOT_FOUND;
+        }
+        cancelling.push_back(transfer);
         return cancelResult;
     }
 
     void freeTransfer(libusb_transfer* transfer) override {
+        // 回调投递前释放，libusb 之后会回调到已释放的传输
+        assert(!contains(callbackOwed, transfer));
+        assert(!contains(freed, transfer));
         freed.push_back(transfer);
         ::operator delete(transfer);
+    }
+
+    // libusb 先清掉在途标记再调用回调
+    void beginDelivery(size_t slot) {
+        assert(slot < allocated.size());
+        erase(&inFlight, allocated[slot]);
+        erase(&cancelling, allocated[slot]);
     }
 
     void complete(
@@ -102,6 +130,9 @@ public:
         assert(slot < allocated.size());
         libusb_transfer* transfer = allocated[slot];
         assert(transfer != nullptr);
+        assert(contains(callbackOwed, transfer));
+        beginDelivery(slot);
+        erase(&callbackOwed, transfer);
         if (payload != nullptr && payloadBytes > 0) {
             std::memcpy(transfer->buffer, payload, payloadBytes);
         }
@@ -120,7 +151,14 @@ public:
     std::vector<libusb_transfer*> submitted;
     std::vector<libusb_transfer*> cancelled;
     std::vector<libusb_transfer*> freed;
+    std::vector<libusb_transfer*> inFlight;
+    std::vector<libusb_transfer*> cancelling;
+    std::vector<libusb_transfer*> callbackOwed;
 };
+
+void deliverCancelled(FakeBackend* backend, size_t slot) {
+    backend->complete(slot, LIBUSB_TRANSFER_CANCELLED, LIBUSB_TRANSFER_CANCELLED, nullptr, 0, 0);
+}
 
 FeedbackInTransferConfig config(uint32_t transferCount = 2) {
     return FeedbackInTransferConfig {
@@ -212,20 +250,166 @@ void rejectsInvalidLengthsWithoutResubmit() {
     assert(transfers.freeDrained(&error));
 }
 
-void cancelNotFoundSettlesWithoutCallback() {
+void cancelNotFoundWaitsForCallbackInDelivery() {
     FakeBackend backend;
-    backend.cancelResult = LIBUSB_ERROR_NOT_FOUND;
+    RecordingConsumer consumer;
+    FeedbackInTransferSet transfers(&backend);
+    std::string error;
+    assert(transfers.allocate(config(1), &consumer, &error));
+    assert(transfers.submitAll(&error));
+    // 传输刚好完成：libusb 已摘掉在途标记，回调还没进来
+    backend.beginDelivery(0);
+    assert(transfers.beginStop(&error));
+    auto state = transfers.snapshot();
+    assert(state.cancelNotFound == 1U);
+    assert(state.state == FeedbackInTransferSetState::Stopping);
+    assert(state.inFlight == 1U);
+    assert(!transfers.freeDrained(&error));
+    assert(backend.freed.empty());
+
+    const std::array<uint8_t, 4> payload { 0x00, 0x00, 0x06, 0x00 };
+    backend.complete(
+        0,
+        LIBUSB_TRANSFER_COMPLETED,
+        LIBUSB_TRANSFER_COMPLETED,
+        payload.data(),
+        payload.size(),
+        static_cast<unsigned int>(payload.size())
+    );
+    state = transfers.snapshot();
+    assert(state.state == FeedbackInTransferSetState::Drained);
+    assert(state.transferErrors == 0U);
+    assert(state.submissions == 1U);
+    assert(consumer.completions.size() == 1U);
+    assert(transfers.freeDrained(&error));
+    assert(backend.freed.size() == 1U);
+}
+
+void repeatedStopCancelsEachTransferOnce() {
+    FakeBackend backend;
+    RecordingConsumer consumer;
+    FeedbackInTransferSet transfers(&backend);
+    std::string error;
+    assert(transfers.allocate(config(), &consumer, &error));
+    assert(transfers.submitAll(&error));
+    for (int stop = 0; stop < 3; ++stop) {
+        assert(transfers.beginStop(&error));
+        assert(error.empty());
+    }
+    auto state = transfers.snapshot();
+    assert(backend.cancelled.size() == 2U);
+    assert(state.state == FeedbackInTransferSetState::Stopping);
+    assert(state.inFlight == 2U);
+    assert(state.cancelNotFound == 0U);
+    assert(!transfers.freeDrained(&error));
+    assert(backend.freed.empty());
+
+    deliverCancelled(&backend, 0);
+    deliverCancelled(&backend, 1);
+    state = transfers.snapshot();
+    assert(state.state == FeedbackInTransferSetState::Drained);
+    assert(state.transferErrors == 0U);
+    assert(transfers.beginStop(&error));
+    assert(backend.cancelled.size() == 2U);
+    assert(transfers.freeDrained(&error));
+    assert(backend.freed.size() == 2U);
+}
+
+void secondStopKeepsTransferUntilLateCallback() {
+    FakeBackend backend;
     RecordingConsumer consumer;
     FeedbackInTransferSet transfers(&backend);
     std::string error;
     assert(transfers.allocate(config(1), &consumer, &error));
     assert(transfers.submitAll(&error));
     assert(transfers.beginStop(&error));
-    const auto state = transfers.snapshot();
+    // 回调没到时再次停止：libusb 对已在取消中的传输只会返回 NOT_FOUND
+    assert(transfers.beginStop(&error));
+    auto state = transfers.snapshot();
+    assert(state.state == FeedbackInTransferSetState::Stopping);
+    assert(state.inFlight == 1U);
+    assert(!transfers.freeDrained(&error));
+    assert(error == "feedback_transfer_free_requires_drained");
+    assert(backend.freed.empty());
+
+    deliverCancelled(&backend, 0);
+    state = transfers.snapshot();
     assert(state.state == FeedbackInTransferSetState::Drained);
-    assert(state.inFlight == 0U);
-    assert(state.cancelNotFound == 1U);
+    assert(state.completions == 1U);
+    assert(state.transferErrors == 0U);
+    assert(consumer.completions.size() == 1U);
+    assert(consumer.completions.front().status == FeedbackInCompletionStatus::Cancelled);
     assert(transfers.freeDrained(&error));
+    assert(!transfers.freeDrained(&error));
+    assert(backend.freed.size() == 1U);
+}
+
+void deviceLossDuringStopWaitsForDisconnectCallbacks() {
+    FakeBackend backend;
+    backend.cancelResult = LIBUSB_ERROR_NO_DEVICE;
+    RecordingConsumer consumer;
+    FeedbackInTransferSet transfers(&backend);
+    std::string error;
+    assert(transfers.allocate(config(), &consumer, &error));
+    assert(transfers.submitAll(&error));
+    assert(!transfers.beginStop(&error));
+    assert(error == "feedback_transfer_cancel_failed");
+    auto state = transfers.snapshot();
+    assert(state.cancelErrors == 2U);
+    assert(state.state == FeedbackInTransferSetState::Stopping);
+    assert(state.inFlight == 2U);
+    assert(!transfers.freeDrained(&error));
+
+    assert(transfers.beginStop(&error));
+    assert(backend.cancelled.size() == 2U);
+    assert(transfers.snapshot().inFlight == 2U);
+    assert(!transfers.freeDrained(&error));
+    assert(backend.freed.empty());
+
+    // 设备断开后 libusb 以 NO_DEVICE 补齐每个回调
+    for (size_t slot = 0; slot < 2; ++slot) {
+        backend.complete(slot, LIBUSB_TRANSFER_NO_DEVICE, LIBUSB_TRANSFER_NO_DEVICE, nullptr, 0, 0);
+    }
+    state = transfers.snapshot();
+    assert(state.state == FeedbackInTransferSetState::Drained);
+    assert(consumer.completions.size() == 2U);
+    assert(consumer.completions[0].status == FeedbackInCompletionStatus::NoDevice);
+    assert(consumer.completions[1].status == FeedbackInCompletionStatus::NoDevice);
+    assert(transfers.freeDrained(&error));
+    assert(backend.freed.size() == 2U);
+}
+
+void pauseDrainTimeoutThenCloseFreesOnlyAfterCallbacks() {
+    FakeBackend backend;
+    RecordingConsumer consumer;
+    FeedbackInTransferSet transfers(&backend);
+    std::string error;
+    assert(transfers.allocate(config(), &consumer, &error));
+    assert(transfers.submitAll(&error));
+
+    // 暂停：取消后只等到一个回调就超时，传输留在隔离区
+    assert(transfers.beginStop(&error));
+    deliverCancelled(&backend, 0);
+    assert(transfers.snapshot().inFlight == 1U);
+    assert(!transfers.freeDrained(&error));
+
+    // 关闭：再次停止同一组传输，仍然要等剩下的回调
+    assert(transfers.beginStop(&error));
+    auto state = transfers.snapshot();
+    assert(state.state == FeedbackInTransferSetState::Stopping);
+    assert(state.inFlight == 1U);
+    assert(state.cancelNotFound == 0U);
+    assert(!transfers.freeDrained(&error));
+    assert(backend.freed.empty());
+
+    // 隔离区事件泵收到迟到的回调后才释放，每个传输只释放一次
+    deliverCancelled(&backend, 1);
+    state = transfers.snapshot();
+    assert(state.state == FeedbackInTransferSetState::Drained);
+    assert(state.transferErrors == 0U);
+    assert(transfers.freeDrained(&error));
+    assert(backend.freed.size() == 2U);
+    assert(backend.freed[0] != backend.freed[1]);
 }
 
 void partialSubmitFailureRemainsDrainable() {
@@ -273,7 +457,11 @@ void rejectsInvalidConfigurationAndExposesNames() {
 int main() {
     submitsCompletesAndResubmitsIndependently();
     rejectsInvalidLengthsWithoutResubmit();
-    cancelNotFoundSettlesWithoutCallback();
+    cancelNotFoundWaitsForCallbackInDelivery();
+    repeatedStopCancelsEachTransferOnce();
+    secondStopKeepsTransferUntilLateCallback();
+    deviceLossDuringStopWaitsForDisconnectCallbacks();
+    pauseDrainTimeoutThenCloseFreesOnlyAfterCallbacks();
     partialSubmitFailureRemainsDrainable();
     rejectsInvalidConfigurationAndExposesNames();
     return 0;

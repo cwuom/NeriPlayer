@@ -71,7 +71,7 @@ fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
     return when {
         isTtmlLyrics(content) -> parseTtmlLyrics(content)
         isNeteaseYrc(content) -> runCatching { parseNeteaseYrc(content) }.getOrDefault(emptyList())
-        isEnhancedLrc(content) -> parseEnhancedLrc(content)
+        isEnhancedLrc(content) -> parseEnhancedLrc(content).withoutLyricCredits()
         else -> parseNeteaseLrc(content)
     }
 }
@@ -82,6 +82,7 @@ fun parseTtmlLyrics(content: String): List<LyricEntry> {
             .mapNotNull(::toLyricEntry)
             .filter { it.text.isNotBlank() }
             .sortedBy { it.startTimeMs }
+            .withoutLyricCredits()
     }.getOrDefault(emptyList())
 }
 
@@ -224,7 +225,7 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
             )
         }
     }
-    return out.sortedBy { it.startTimeMs }
+    return out.sortedBy { it.startTimeMs }.withoutLyricCredits()
 }
 
 private fun Long.saturatingAdd(other: Long): Long {
@@ -445,7 +446,7 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
 //    NPLogger.d("parseLyc-N", lrc)
     val normalizedLrc = normalizeLegacyLrcTimestamps(lrc)
     if (isEnhancedLrc(normalizedLrc)) {
-        return parseEnhancedLrc(normalizedLrc)
+        return parseEnhancedLrc(normalizedLrc).withoutLyricCredits()
     }
     val timeline = mutableListOf<LrcTimelineEntry>()
 
@@ -527,5 +528,5 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
         nextTimestampMs = entry.startTimeMs
     }
     out.reverse()
-    return foldAdjacentSquareBracketTranslations(out)
+    return foldAdjacentSquareBracketTranslations(out).withoutLyricCredits()
 }

@@ -145,14 +145,17 @@ internal fun SettingsPageHost(
     activePage: SettingsPage?,
     splitLayout: Boolean,
     isolateAdvancedGlassTransitions: Boolean,
+    backEnabled: Boolean,
+    onBack: () -> Unit,
     content: @Composable (SettingsPage?) -> Unit
 ) {
     if (splitLayout) {
+        // 分栏详情页的返回手势由 MiuixSettingsScaffold 里的转场处理
         AdvancedGlassScene(active = true) {
             content(activePage)
         }
     } else {
-        SettingsStackedPageHost(activePage, isolateAdvancedGlassTransitions, content)
+        SettingsStackedPageHost(activePage, isolateAdvancedGlassTransitions, backEnabled, onBack, content)
     }
 }
 
@@ -160,18 +163,24 @@ internal fun SettingsPageHost(
 private fun SettingsStackedPageHost(
     activePage: SettingsPage?,
     isolateAdvancedGlassTransitions: Boolean,
+    backEnabled: Boolean,
+    onBack: () -> Unit,
     content: @Composable (SettingsPage?) -> Unit
 ) {
     if (shouldUseTabletSettingsTransitions(LocalConfiguration.current.smallestScreenWidthDp)) {
         SettingsPageTransitionHost(
             activePage = activePage,
             isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            backEnabled = backEnabled,
+            onBack = onBack,
             content = content
         )
     } else {
         PhoneSettingsPageTransitionHost(
             activePage = activePage,
             isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+            backEnabled = backEnabled,
+            onBack = onBack,
             content = content
         )
     }

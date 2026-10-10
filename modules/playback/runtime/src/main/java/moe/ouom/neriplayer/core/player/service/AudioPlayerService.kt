@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.player.policy.service.shouldKeepPlaybackServiceS
 import moe.ouom.neriplayer.core.player.policy.service.shouldPreservePlayerRuntimeOnForegroundPromotionFailure
 import moe.ouom.neriplayer.core.player.policy.service.shouldSchedulePlaybackServiceIdleShutdown
 import moe.ouom.neriplayer.core.player.policy.service.shouldUseStickyStartModeWhilePlayerRuntimeInitializes
+import moe.ouom.neriplayer.core.player.service.lifecycle.ScreenInteractiveMonitor
 import moe.ouom.neriplayer.core.player.service.lifecycle.suspendPlaybackForServiceRestart
 import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.core.player.service.notification.isFloatingLyricsEffectivelyEnabled
@@ -582,6 +583,8 @@ class AudioPlayerService : Service() {
         line = null,
     )
     private var floatingLyricsEnabledForNotification = false
+    private var screenInteractive = true
+    private val screenInteractiveMonitor = ScreenInteractiveMonitor(this, ::onScreenInteractiveChanged)
     private var usbDeviceAttachHandlingEnabled = true
     private var playerInitializationJob: Job? = null
     private var playerRuntimeReady = false
@@ -862,6 +865,7 @@ class AudioPlayerService : Service() {
         ensurePlaybackNotificationChannel()
 
         presentationOwner.initializeSession(mediaSessionCallback)
+        screenInteractiveMonitor.start()
         initializePlayerRuntime()
     }
 
@@ -995,7 +999,7 @@ class AudioPlayerService : Service() {
             PlayerManager.externalBluetoothLyricPayloadFlow.collectSafely(
                 "externalBluetoothLyricPayloadFlow"
             ) {
-                updateMetadata()
+                refreshLyricMetadata()
             }
         }
         serviceScope.launch {
@@ -1482,6 +1486,25 @@ class AudioPlayerService : Service() {
         presentationOwner.updateMetadata()
     }
 
+    private fun refreshLyricMetadata() {
+        presentationOwner.refreshLyricMetadata(
+            screenInteractive = screenInteractive,
+            foregroundStarted = isForegroundStarted,
+            lyricState = statusBarLyricState,
+            floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
+        )
+    }
+
+    private fun onScreenInteractiveChanged(interactive: Boolean) {
+        screenInteractive = interactive
+        if (!interactive || !presentationOwnerDelegate.isInitialized()) return
+        presentationOwner.onScreenInteractive(
+            foregroundStarted = isForegroundStarted,
+            lyricState = statusBarLyricState,
+            floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
+        )
+    }
+
     private fun updatePlaybackState(force: Boolean = false) {
         presentationOwner.updatePlaybackState(force, isFloatingLyricsCurrentlyEnabled())
     }
@@ -1627,6 +1650,7 @@ class AudioPlayerService : Service() {
         pendingStartCommands.clear()
         pendingPlayerActions.clear()
         flushPlaybackStatsSafely("service_destroy", "destroy")
+        screenInteractiveMonitor.stop()
         unregisterNoisyReceiverForDestroy()
         cancelUsbKeepAliveForDestroy()
         closeArtworkOwnerForDestroy()

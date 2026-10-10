@@ -383,42 +383,43 @@ internal object UsbExclusiveOutputFormatResolver {
             candidates.putIfAbsent(candidate.description, candidate)
         }
 
+        val layouts = candidateBitLayouts(preferred, allowBitDepthFallback)
         candidateRates.forEach { sampleRate ->
-            when (preferred.bitDepth) {
-                24 -> {
-                    addCandidate(
-                        sampleRate = sampleRate,
-                        bitDepth = 24,
-                        subslotBytes = preferred.subslotBytes
-                    )
-                    addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
-                    addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
-                    if (allowBitDepthFallback) {
-                        addCandidate(sampleRate = sampleRate, bitDepth = 32, subslotBytes = 4)
-                        addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
-                    }
-                }
-                32 -> {
-                    addCandidate(sampleRate = sampleRate, bitDepth = 32, subslotBytes = 4)
-                    if (allowBitDepthFallback) {
-                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
-                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
-                    }
-                    if (allowBitDepthFallback) {
-                        addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
-                    }
-                }
-                16 -> {
-                    addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
-                    if (allowBitDepthFallback) {
-                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
-                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
-                        addCandidate(sampleRate = sampleRate, bitDepth = 32, subslotBytes = 4)
-                    }
-                }
+            layouts.forEach { layout ->
+                addCandidate(sampleRate = sampleRate, bitDepth = layout.bitDepth, subslotBytes = layout.subslotBytes)
             }
         }
         return candidates.values.toList()
+    }
+
+    private data class CandidateBitLayout(val bitDepth: Int, val subslotBytes: Int)
+
+    private fun candidateBitLayouts(
+        preferred: ResolvedUsbOutputFormat,
+        allowBitDepthFallback: Boolean
+    ): List<CandidateBitLayout> {
+        val primary: List<CandidateBitLayout>
+        val fallback: List<CandidateBitLayout>
+        when (preferred.bitDepth) {
+            24 -> {
+                primary = listOf(
+                    CandidateBitLayout(24, preferred.subslotBytes),
+                    CandidateBitLayout(24, 4),
+                    CandidateBitLayout(24, 3)
+                )
+                fallback = listOf(CandidateBitLayout(32, 4), CandidateBitLayout(16, 2))
+            }
+            32 -> {
+                primary = listOf(CandidateBitLayout(32, 4))
+                fallback = listOf(CandidateBitLayout(24, 3), CandidateBitLayout(24, 4), CandidateBitLayout(16, 2))
+            }
+            16 -> {
+                primary = listOf(CandidateBitLayout(16, 2))
+                fallback = listOf(CandidateBitLayout(24, 3), CandidateBitLayout(24, 4), CandidateBitLayout(32, 4))
+            }
+            else -> return emptyList()
+        }
+        return if (allowBitDepthFallback) primary + fallback else primary
     }
 
     private fun candidateRateMode(description: String): String {

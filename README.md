@@ -737,6 +737,7 @@ python3 -B tools_pub/quality/module_boundaries.py
   GitHub/WebDAV 管理器通过后端接口接入共享会话，app 中不再维护同步实现目录。
   删除记录会和撤销操作一起进入合并策略，避免本地撤销后的歌曲在下一轮同步又被旧删除记录移除。
 - GitHub/WebDAV 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。
+- 已配置且开启自动同步时，打开应用会立即提交持久同步任务，播放期间也会执行；双后端启用时，WebDAV 任务错开 10 秒。自动同步开关和同步格式升级确认仍决定任务是否允许执行。
 - GitHub 同步通过 Git Data API 在用户仓库中创建原始二进制 blob，再以预期 HEAD 的原子条件更新发布到默认分支；
   读取使用 raw 内容，API 请求中的 Base64 只属于传输封装，不会改变仓库内保存的正文。
   新同步使用 Protobuf 记录流和 ZSTD 内容分块，每个压缩对象不超过 2 MiB；

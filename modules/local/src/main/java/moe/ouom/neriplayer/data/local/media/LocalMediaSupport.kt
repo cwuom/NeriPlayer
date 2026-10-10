@@ -247,48 +247,30 @@ object LocalMediaSupport {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is TagLibMetadata) return false
-
-            return title == other.title &&
-                artist == other.artist &&
-                album == other.album &&
-                albumArtist == other.albumArtist &&
-                composer == other.composer &&
-                genre == other.genre &&
-                year == other.year &&
-                trackNumber == other.trackNumber &&
-                discNumber == other.discNumber &&
-                durationMs == other.durationMs &&
-                bitrateKbps == other.bitrateKbps &&
-                sampleRateHz == other.sampleRateHz &&
-                channelCount == other.channelCount &&
-                lyrics == other.lyrics &&
-                translatedLyrics == other.translatedLyrics &&
-                romanizedLyrics == other.romanizedLyrics &&
-                sourceStableKey == other.sourceStableKey &&
-                (coverBytes?.contentEquals(other.coverBytes) ?: (other.coverBytes == null))
+            return comparableFields() == other.comparableFields() && coverBytes.contentEquals(other.coverBytes)
         }
 
-        override fun hashCode(): Int {
-            var result = title?.hashCode() ?: 0
-            result = 31 * result + (artist?.hashCode() ?: 0)
-            result = 31 * result + (album?.hashCode() ?: 0)
-            result = 31 * result + (albumArtist?.hashCode() ?: 0)
-            result = 31 * result + (composer?.hashCode() ?: 0)
-            result = 31 * result + (genre?.hashCode() ?: 0)
-            result = 31 * result + (year ?: 0)
-            result = 31 * result + (trackNumber ?: 0)
-            result = 31 * result + (discNumber ?: 0)
-            result = 31 * result + (durationMs?.hashCode() ?: 0)
-            result = 31 * result + (bitrateKbps ?: 0)
-            result = 31 * result + (sampleRateHz ?: 0)
-            result = 31 * result + (channelCount ?: 0)
-            result = 31 * result + (lyrics?.hashCode() ?: 0)
-            result = 31 * result + (translatedLyrics?.hashCode() ?: 0)
-            result = 31 * result + (romanizedLyrics?.hashCode() ?: 0)
-            result = 31 * result + (sourceStableKey?.hashCode() ?: 0)
-            result = 31 * result + (coverBytes?.contentHashCode() ?: 0)
-            return result
-        }
+        override fun hashCode(): Int = 31 * comparableFields().hashCode() + coverBytes.contentHashCode()
+
+        private fun comparableFields(): List<Any?> = listOf(
+            title,
+            artist,
+            album,
+            albumArtist,
+            composer,
+            genre,
+            year,
+            trackNumber,
+            discNumber,
+            durationMs,
+            bitrateKbps,
+            sampleRateHz,
+            channelCount,
+            lyrics,
+            translatedLyrics,
+            romanizedLyrics,
+            sourceStableKey
+        )
     }
 
     internal data class QuickLocalMetadataSelection(
@@ -1456,16 +1438,11 @@ object LocalMediaSupport {
 
 
     internal fun ContainerMetadata.hasAnyValue(): Boolean {
-        return !title.isNullOrBlank() ||
-            !artist.isNullOrBlank() ||
-            !album.isNullOrBlank() ||
-            !albumArtist.isNullOrBlank() ||
-            !composer.isNullOrBlank() ||
-            !genre.isNullOrBlank() ||
-            year != null ||
-            trackNumber != null ||
-            discNumber != null
+        return listOf(title, artist, album, albumArtist, composer, genre).any(::hasText) ||
+            listOfNotNull(year, trackNumber, discNumber).isNotEmpty()
     }
+
+    private fun hasText(value: String?): Boolean = !value.isNullOrBlank()
 
 
 
@@ -1754,36 +1731,38 @@ object LocalMediaSupport {
 
 
     internal fun ByteArray.decodeContainerText(): String? {
-        if (isEmpty()) return null
-        val trimmed = dropLastWhile { it == 0.toByte() || it == 32.toByte() }.toByteArray()
+        val trimmed = withoutContainerPadding()
         if (trimmed.isEmpty()) return null
+        val decoded = detectBomCharset(trimmed)
+            ?.let { (charset, offset) -> trimmed.copyOfRange(offset, trimmed.size).decodeContainerBytes(charset) }
+            ?: decodeContainerBytesWithBestScore(trimmed)
+        return decoded?.takeIf { it.isNotBlank() }
+    }
 
-        detectBomCharset(trimmed)?.let { (charset, offset) ->
-            return trimmed.copyOfRange(offset, trimmed.size)
-                .toString(charset)
-                .normalizeDecodedText()
-                .trim(NUL_CHAR, ' ')
-                .takeIf { it.isNotBlank() }
-        }
+    private val containerTextCharsets: List<Charset> by lazy {
+        listOfNotNull(
+            StandardCharsets.UTF_8,
+            StandardCharsets.UTF_16LE,
+            StandardCharsets.UTF_16BE,
+            supportedCharsetOrNull("GB18030"),
+            supportedCharsetOrNull("GBK"),
+            supportedCharsetOrNull("windows-1252"),
+            StandardCharsets.ISO_8859_1
+        ).distinct()
+    }
 
-        val candidates = buildList {
-            add(StandardCharsets.UTF_8)
-            add(StandardCharsets.UTF_16LE)
-            add(StandardCharsets.UTF_16BE)
-            runCatching { Charset.forName("GB18030") }.getOrNull()?.let(::add)
-            runCatching { Charset.forName("GBK") }.getOrNull()?.let(::add)
-            runCatching { Charset.forName("windows-1252") }.getOrNull()?.let(::add)
-            add(StandardCharsets.ISO_8859_1)
-        }.distinct()
+    private fun ByteArray.withoutContainerPadding(): ByteArray {
+        return dropLastWhile { it == 0.toByte() || it == 32.toByte() }.toByteArray()
+    }
 
-        return candidates
-            .map { charset ->
-                charset to scoreDecodedText(trimmed.toString(charset).normalizeDecodedText().trim(NUL_CHAR, ' '))
-            }
-            .maxByOrNull { it.second }
-            ?.first
-            ?.let { trimmed.toString(it).normalizeDecodedText().trim(NUL_CHAR, ' ') }
-            ?.takeIf { it.isNotBlank() }
+    private fun ByteArray.decodeContainerBytes(charset: Charset): String {
+        return toString(charset).normalizeDecodedText().trim(NUL_CHAR, ' ')
+    }
+
+    private fun decodeContainerBytesWithBestScore(bytes: ByteArray): String? {
+        return containerTextCharsets
+            .maxByOrNull { charset -> scoreDecodedText(bytes.decodeContainerBytes(charset)) }
+            ?.let { charset -> bytes.decodeContainerBytes(charset) }
     }
 
 
@@ -1818,14 +1797,16 @@ internal fun MediaMetadataRetriever.extractNonBlankMetadata(keyCode: Int): Strin
 
 internal fun Map<String, Array<String>>?.readFirstValue(vararg keys: String): String? {
     val propertyMap = this ?: return null
-    return keys.firstNotNullOfOrNull { key ->
-        propertyMap.entries.firstOrNull { (entryKey, _) -> entryKey.equals(key, ignoreCase = true) }
-            ?.value
-            ?.firstOrNull()
-            ?.replace(BOM_CHAR.toString(), "")
-            ?.trim(NUL_CHAR, ' ')
-            ?.takeIf { it.isNotBlank() }
-    }
+    return keys.firstNotNullOfOrNull { key -> cleanTagValue(propertyMap.firstValueIgnoringKeyCase(key)) }
+}
+
+private fun Map<String, Array<String>>.firstValueIgnoringKeyCase(key: String): String? {
+    val values = entries.firstOrNull { (entryKey, _) -> entryKey.equals(key, ignoreCase = true) }?.value
+    return values?.firstOrNull()
+}
+
+private fun cleanTagValue(raw: String?): String? {
+    return raw?.replace(BOM_CHAR.toString(), "")?.trim(NUL_CHAR, ' ')?.takeIf { it.isNotBlank() }
 }
 
 internal fun Map<String, Array<String>>?.readNeriSourceStableKey(): String? {
@@ -1910,16 +1891,11 @@ internal fun ByteArray.readSynchsafeInt(offset: Int): Int {
         (this[offset + 3].toInt() and 0x7F)
 }
 
-internal fun Char.isAsciiLetterOrDigit(): Boolean {
-    return this in '0'..'9' || this in 'A'..'Z' || this in 'a'..'z'
-}
+internal fun Char.isAsciiLetterOrDigit(): Boolean = code < 0x80 && isLetterOrDigit()
 
-internal fun Char.isCjkUnifiedIdeograph(): Boolean {
-    val code = code
-    return code in 0x3400..0x4DBF ||
-        code in 0x4E00..0x9FFF ||
-        code in 0xF900..0xFAFF
-}
+private val CJK_UNIFIED_IDEOGRAPH_RANGES = listOf(0x3400..0x4DBF, 0x4E00..0x9FFF, 0xF900..0xFAFF)
+
+internal fun Char.isCjkUnifiedIdeograph(): Boolean = CJK_UNIFIED_IDEOGRAPH_RANGES.any { code in it }
 
 internal fun MediaFormat.getOptionalInt(key: String): Int? {
     if (!containsKey(key)) return null

@@ -91,6 +91,8 @@ private fun playbackWidgetPalette(
 
 private const val ARTWORK_MAX_DIMENSION_PX = 192
 private const val SURFACE_MAX_DIMENSION_PX = 1024
+private const val BACKDROP_BLUR_SOURCE_MAX_PX = 40
+private const val BACKDROP_BLUR_RADIUS_PX = 2
 private const val PRIMARY_CONTROL_SIZE_PX = 96
 private const val MINI_SCRIM_START_COLOR = 0x99000000.toInt()
 private const val MINI_SCRIM_END_COLOR = 0xB3000000.toInt()
@@ -125,18 +127,15 @@ internal fun playbackWidgetBackdrop(
     val output = playbackWidgetSurface(size, cornerRadiusDp, Color.WHITE, renderScale)
     val width = output.width
     val height = output.height
-    val cropWidth = minOf(artwork.width, (artwork.height * width.toFloat() / height).roundToInt()).coerceAtLeast(1)
-    val cropHeight = minOf(artwork.height, (artwork.width * height.toFloat() / width).roundToInt()).coerceAtLeast(1)
-    val left = (artwork.width - cropWidth) / 2
-    val top = (artwork.height - cropHeight) / 2
-    val source = Rect(left, top, left + cropWidth, top + cropHeight)
+    val blurSource = playbackWidgetBlurSource(artwork, width, height)
     val target = RectF(0f, 0f, width.toFloat(), height.toFloat())
     val canvas = Canvas(output)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
         // an opaque base keeps the scrim readable even when cover pixels are transparent
         xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
     }
-    canvas.drawBitmap(artwork, source, target, paint)
+    canvas.drawBitmap(blurSource, null, target, paint)
+    blurSource.recycle()
     if (applyScrim) {
         paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
         paint.shader = LinearGradient(
@@ -147,6 +146,88 @@ internal fun playbackWidgetBackdrop(
         canvas.drawRect(target, paint)
     }
     return output
+}
+
+/**
+ * 按目标比例居中裁切封面并逐级缩到很小，放大时由双线性过滤得到柔和的模糊底图，
+ * 避免 192px 封面被直接拉伸到整块小组件时显得发糊发虚
+ */
+internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+    val cropWidth = minOf(artwork.width, (artwork.height * targetWidth.toFloat() / targetHeight).roundToInt())
+        .coerceAtLeast(1)
+    val cropHeight = minOf(artwork.height, (artwork.width * targetHeight.toFloat() / targetWidth).roundToInt())
+        .coerceAtLeast(1)
+    val left = (artwork.width - cropWidth) / 2
+    val top = (artwork.height - cropHeight) / 2
+    val scale = minOf(1f, BACKDROP_BLUR_SOURCE_MAX_PX.toFloat() / maxOf(cropWidth, cropHeight))
+    val blurWidth = (cropWidth * scale).roundToInt().coerceAtLeast(1)
+    val blurHeight = (cropHeight * scale).roundToInt().coerceAtLeast(1)
+    var current = artwork
+    var currentSource = Rect(left, top, left + cropWidth, top + cropHeight)
+    // halving first keeps every bilinear step within 2x so cover details average instead of aliasing
+    while (maxOf(currentSource.width(), currentSource.height()) / 2 >= maxOf(blurWidth, blurHeight)) {
+        val halved = scaledBitmap(
+            current,
+            currentSource,
+            (currentSource.width() / 2).coerceAtLeast(blurWidth),
+            (currentSource.height() / 2).coerceAtLeast(blurHeight),
+        )
+        if (current !== artwork) current.recycle()
+        current = halved
+        currentSource = Rect(0, 0, halved.width, halved.height)
+    }
+    val blurSource = scaledBitmap(current, currentSource, blurWidth, blurHeight)
+    if (current !== artwork) current.recycle()
+    val pixels = IntArray(blurWidth * blurHeight)
+    blurSource.getPixels(pixels, 0, blurWidth, 0, 0, blurWidth, blurHeight)
+    val horizontal = boxBlurPass(pixels, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = true)
+    val blurred = boxBlurPass(horizontal, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = false)
+    blurSource.setPixels(blurred, 0, blurWidth, 0, 0, blurWidth, blurHeight)
+    return blurSource
+}
+
+/** 单方向盒式模糊，边缘取最近像素；横竖各一次即可近似高斯模糊 */
+internal fun boxBlurPass(
+    source: IntArray,
+    width: Int,
+    height: Int,
+    radius: Int,
+    horizontal: Boolean,
+): IntArray {
+    val output = IntArray(source.size)
+    val lineCount = if (horizontal) height else width
+    val lineLength = if (horizontal) width else height
+    val taps = radius * 2 + 1
+    for (line in 0 until lineCount) {
+        for (position in 0 until lineLength) {
+            var alpha = 0
+            var red = 0
+            var green = 0
+            var blue = 0
+            for (offset in -radius..radius) {
+                val sample = (position + offset).coerceIn(0, lineLength - 1)
+                val color = if (horizontal) source[line * width + sample] else source[sample * width + line]
+                alpha += color ushr 24
+                red += color ushr 16 and 0xFF
+                green += color ushr 8 and 0xFF
+                blue += color and 0xFF
+            }
+            val index = if (horizontal) line * width + position else position * width + line
+            output[index] = (alpha / taps shl 24) or (red / taps shl 16) or (green / taps shl 8) or (blue / taps)
+        }
+    }
+    return output
+}
+
+private fun scaledBitmap(source: Bitmap, sourceRect: Rect, width: Int, height: Int): Bitmap {
+    return createBitmap(width, height).also { output ->
+        Canvas(output).drawBitmap(
+            source,
+            sourceRect,
+            Rect(0, 0, width, height),
+            Paint(Paint.FILTER_BITMAP_FLAG),
+        )
+    }
 }
 
 private fun Bitmap.toSquareBitmap(): Bitmap {

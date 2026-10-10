@@ -23,13 +23,11 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/1/17
  */
 
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
@@ -50,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
@@ -76,7 +73,6 @@ import moe.ouom.neriplayer.ui.navigation.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -84,17 +80,37 @@ import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
 import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.util.SAVED_TYPE_KEY
+import moe.ouom.neriplayer.ui.util.biliPlaylistKindOrDefault
+import moe.ouom.neriplayer.ui.util.restoreSavedByType
+import moe.ouom.neriplayer.ui.util.savedMap
+import moe.ouom.neriplayer.ui.util.savedNonBlankString
+import moe.ouom.neriplayer.ui.util.savedNumber
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 
 // 用密封类承载四种目标
-private sealed class HomeSelectedItem {
-    data class Netease(val playlist: PlaylistSummary) : HomeSelectedItem()
-    data class NeteaseAlbumList(val album: AlbumSummary) : HomeSelectedItem()
-    data class Local(val playlistId: Long) : HomeSelectedItem()
-    data class LocalArtist(val artistName: String) : HomeSelectedItem()
-    data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem()
-    data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem()
+internal sealed class HomeSelectedItem {
+    abstract fun saveState(): Map<String, Any?>
+
+    data class Netease(val playlist: PlaylistSummary) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "netease", "playlist" to playlist.toSaveMap())
+    }
+    data class NeteaseAlbumList(val album: AlbumSummary) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "neteaseAlbum", "album" to album.toSaveMap())
+    }
+    data class Local(val playlistId: Long) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "local", "playlistId" to playlistId)
+    }
+    data class LocalArtist(val artistName: String) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "localArtist", "artistName" to artistName)
+    }
+    data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "bili", "playlist" to playlist.toSaveMap())
+    }
+    data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "ytmusic", "playlist" to playlist.toSaveMap())
+    }
 }
 
 private val HomeSelectedItem?.navigationDepth: Int
@@ -267,16 +283,11 @@ fun HomeHostScreen(
         }
     }
 
-    PredictiveBackHandler(enabled = selected != null) { progress ->
-        try {
-            progress.collect { }
-            closeSelectedDetail()
-        } catch (_: CancellationException) {
-        }
-    }
-
-    val navigationTransition = updateTransition(
+    val navigationTransition = rememberHostPredictiveBackTransition(
         targetState = selected,
+        backEnabled = selected != null,
+        backTargetState = null,
+        onBack = { closeSelectedDetail() },
         label = "home_host_switch"
     )
 
@@ -551,50 +562,18 @@ fun HomeHostScreen(
     }
 }
 
-private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
-    save = { item ->
-        when (item) {
-            null -> emptyMap()
-            is HomeSelectedItem.Local -> hashMapOf(
-                "type" to "local",
-                "playlistId" to item.playlistId
-            )
-            is HomeSelectedItem.LocalArtist -> hashMapOf(
-                "type" to "localArtist",
-                "artistName" to item.artistName
-            )
-            is HomeSelectedItem.Netease -> hashMapOf(
-                "type" to "netease",
-                "playlist" to item.playlist.toSaveMap()
-            )
-            is HomeSelectedItem.NeteaseAlbumList -> hashMapOf(
-                "type" to "neteaseAlbum",
-                "album" to item.album.toSaveMap()
-            )
-            is HomeSelectedItem.Bili -> hashMapOf(
-                "type" to "bili",
-                "playlist" to item.playlist.toSaveMap()
-            )
-            is HomeSelectedItem.YouTubeMusic -> hashMapOf(
-                "type" to "ytmusic",
-                "playlist" to item.playlist.toSaveMap()
-            )
-        }
-    },
-    restore = { saved ->
-        when (saved["type"] as? String) {
-            null -> null
-            "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { HomeSelectedItem.Local(it) }
-            "localArtist" -> (saved["artistName"] as? String)
-                ?.takeIf { it.isNotBlank() }
-                ?.let { HomeSelectedItem.LocalArtist(it) }
-            "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
-            "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
-            "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
-            "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.YouTubeMusic(it) }
-            else -> null
-        }
-    }
+internal val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
+    save = { item -> item?.saveState().orEmpty() },
+    restore = { saved -> restoreSavedByType(saved, homeSelectedItemRestorers) }
+)
+
+private val homeSelectedItemRestorers: Map<String, (Map<String, Any?>) -> HomeSelectedItem?> = mapOf(
+    "local" to { saved -> saved.savedNumber("playlistId")?.toLong()?.let(HomeSelectedItem::Local) },
+    "localArtist" to { saved -> saved.savedNonBlankString("artistName")?.let(HomeSelectedItem::LocalArtist) },
+    "neteaseAlbum" to { saved -> restoreAlbumSummary(saved.savedMap("album"))?.let(HomeSelectedItem::NeteaseAlbumList) },
+    "netease" to { saved -> restorePlaylistSummary(saved.savedMap("playlist"))?.let(HomeSelectedItem::Netease) },
+    "bili" to { saved -> restoreBiliPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::Bili) },
+    "ytmusic" to { saved -> restoreYouTubeMusicPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::YouTubeMusic) }
 )
 
 /** 根据 UsageEntry 分发到不同平台详情 */
@@ -602,80 +581,70 @@ private fun openRecent(
     entry: UsageEntry,
     onSelected: (HomeSelectedItem) -> Unit
 ) {
-    when (entry.source.lowercase()) {
-        "netease" -> {
-            onSelected(
-                HomeSelectedItem.Netease(
-                    PlaylistSummary(
-                        id = entry.id,
-                        name = entry.name,
-                        picUrl = entry.picUrl ?: "",
-                        playCount = 0L,
-                        trackCount = entry.trackCount
-                    )
-                )
-            )
-        }
-        "neteasealbum" -> {
-            onSelected(
-                HomeSelectedItem.NeteaseAlbumList(
-                    AlbumSummary(
-                        id = entry.id,
-                        name = entry.name,
-                        picUrl = entry.picUrl ?: "",
-                        size = entry.trackCount
-                    )
-                )
-            )
-        }
-        "local" -> {
-            onSelected(HomeSelectedItem.Local(entry.id))
-        }
-        PlaylistUsageRepository.SOURCE_LOCAL_ARTIST.lowercase() -> {
-            onSelected(HomeSelectedItem.LocalArtist(entry.name))
-        }
-        "bili" -> {
-            val kind = entry.subtype
-                ?.let { runCatching { BiliPlaylistKind.valueOf(it) }.getOrNull() }
-                ?: BiliPlaylistKind.CREATED_FAVORITE
-            val bili = BiliPlaylist(
-                mediaId = entry.id,
-                title = entry.name,
-                coverUrl = entry.picUrl ?: "",
-                count = entry.trackCount,
-                fid = entry.fid ?: 0L,
-                mid = entry.mid ?: 0L,
-                kind = kind,
-                subtitle = entry.subtitle.orEmpty()
-            )
-            onSelected(HomeSelectedItem.Bili(bili))
-        }
-        "youtubemusic" -> {
-            val resolvedBrowseId = entry.browseId
-                ?.takeIf { it.isNotBlank() }
-                ?: entry.playlistId
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { if (it.startsWith("VL")) it else "VL$it" }
-                ?: return
-            onSelected(
-                HomeSelectedItem.YouTubeMusic(
-                    YouTubeMusicPlaylist(
-                        browseId = resolvedBrowseId,
-                        playlistId = entry.playlistId.orEmpty().ifBlank {
-                            if (resolvedBrowseId.startsWith("VL")) {
-                                resolvedBrowseId.removePrefix("VL")
-                            } else {
-                                resolvedBrowseId
-                            }
-                        },
-                        title = entry.name,
-                        subtitle = "",
-                        coverUrl = entry.picUrl ?: "",
-                        trackCount = entry.trackCount
-                    )
-                )
-            )
-        }
-        else -> {}
-    }
+    recentSelectedItem(entry)?.let(onSelected)
 }
+
+internal fun recentSelectedItem(entry: UsageEntry): HomeSelectedItem? =
+    recentSelectedItemFactories[entry.source.lowercase()]?.invoke(entry)
+
+private val recentSelectedItemFactories: Map<String, (UsageEntry) -> HomeSelectedItem?> = mapOf(
+    "netease" to ::recentNeteaseItem,
+    "neteasealbum" to ::recentNeteaseAlbumItem,
+    "local" to { entry -> HomeSelectedItem.Local(entry.id) },
+    PlaylistUsageRepository.SOURCE_LOCAL_ARTIST.lowercase() to { entry -> HomeSelectedItem.LocalArtist(entry.name) },
+    "bili" to ::recentBiliItem,
+    "youtubemusic" to ::recentYouTubeMusicItem
+)
+
+private fun recentNeteaseItem(entry: UsageEntry): HomeSelectedItem = HomeSelectedItem.Netease(
+    PlaylistSummary(
+        id = entry.id,
+        name = entry.name,
+        picUrl = entry.picUrl.orEmpty(),
+        playCount = 0L,
+        trackCount = entry.trackCount
+    )
+)
+
+private fun recentNeteaseAlbumItem(entry: UsageEntry): HomeSelectedItem = HomeSelectedItem.NeteaseAlbumList(
+    AlbumSummary(
+        id = entry.id,
+        name = entry.name,
+        picUrl = entry.picUrl.orEmpty(),
+        size = entry.trackCount
+    )
+)
+
+private fun recentBiliItem(entry: UsageEntry): HomeSelectedItem = HomeSelectedItem.Bili(
+    BiliPlaylist(
+        mediaId = entry.id,
+        title = entry.name,
+        coverUrl = entry.picUrl.orEmpty(),
+        count = entry.trackCount,
+        fid = entry.fid ?: 0L,
+        mid = entry.mid ?: 0L,
+        kind = biliPlaylistKindOrDefault(entry.subtype),
+        subtitle = entry.subtitle.orEmpty()
+    )
+)
+
+private fun recentYouTubeMusicItem(entry: UsageEntry): HomeSelectedItem? {
+    val browseId = recentYouTubeMusicBrowseId(entry) ?: return null
+    return HomeSelectedItem.YouTubeMusic(
+        YouTubeMusicPlaylist(
+            browseId = browseId,
+            playlistId = entry.playlistId.orEmpty().ifBlank { browseId.removePrefix(YOUTUBE_PLAYLIST_BROWSE_PREFIX) },
+            title = entry.name,
+            subtitle = "",
+            coverUrl = entry.picUrl.orEmpty(),
+            trackCount = entry.trackCount
+        )
+    )
+}
+
+private fun recentYouTubeMusicBrowseId(entry: UsageEntry): String? =
+    entry.browseId?.takeIf(String::isNotBlank)
+        ?: entry.playlistId?.takeIf(String::isNotBlank)
+            ?.let { YOUTUBE_PLAYLIST_BROWSE_PREFIX + it.removePrefix(YOUTUBE_PLAYLIST_BROWSE_PREFIX) }
+
+private const val YOUTUBE_PLAYLIST_BROWSE_PREFIX = "VL"

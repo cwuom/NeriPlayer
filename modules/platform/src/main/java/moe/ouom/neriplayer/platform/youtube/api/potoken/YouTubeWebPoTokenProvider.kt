@@ -456,7 +456,7 @@ class YouTubeWebPoTokenProvider(
             return readPageSnapshot()
         }
 
-        val activeWebView = ensureWebView()
+        val activeWebView = ensureWebView() ?: return null
         setWebViewActive(active = true)
         syncCookies(activeWebView, auth)
         preparedCookieFingerprint = authFingerprint
@@ -498,10 +498,16 @@ class YouTubeWebPoTokenProvider(
         return readPageSnapshot()
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private suspend fun ensureWebView(): WebView = withContext(Dispatchers.Main) {
-        webView?.let { return@withContext it }
+    private suspend fun ensureWebView(): WebView? = withContext(Dispatchers.Main) {
+        webView ?: createPoTokenWebViewOrNull()?.also { created ->
+            backgroundWebViewGuard = installYouTubeBackgroundWebViewGuard(created, TAG)
+            webView = created
+        }
+    }
 
+    /** 没有可用的 WebView 提供方或提供方正在更新时构造会抛出运行时异常，PO token 直接降级为无 */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createPoTokenWebViewOrNull(): WebView? = try {
         WebView(applicationContext).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -517,10 +523,10 @@ class YouTubeWebPoTokenProvider(
             webChromeClient = WebChromeClient()
             webViewClient = BootstrapWebViewClient()
             addJavascriptInterface(WebPoResultBridge(), JS_BRIDGE_NAME)
-        }.also { created ->
-            backgroundWebViewGuard = installYouTubeBackgroundWebViewGuard(created, TAG)
-            webView = created
         }
+    } catch (error: Exception) {
+        NPLogger.w(TAG, "PO token WebView unavailable: ${error.message}")
+        null
     }
 
     private suspend fun setWebViewActive(active: Boolean) = withContext(Dispatchers.Main) {

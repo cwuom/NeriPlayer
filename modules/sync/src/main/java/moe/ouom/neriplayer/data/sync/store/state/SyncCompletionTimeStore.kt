@@ -46,12 +46,42 @@ internal class SyncCompletionTimeStore(
         }
     }
 
+    /**
+     * 合并检查点和远端版本只属于写入它们的目标，配置其他目标时必须与新目标在同一次提交中清除；
+     * 清空目标不改变归属，恢复回原目标时检查点仍然有效
+     */
+    fun editTarget(
+        storedTarget: () -> List<String>,
+        nextTarget: List<String>,
+        checkpointKeys: List<String>,
+        action: SharedPreferences.Editor.() -> Unit
+    ) {
+        val targetChanged = synchronized(configurationLock) {
+            val owner = preferences.getString(KEY_CHECKPOINT_TARGET, null) ?: targetKey(storedTarget())
+            val next = targetKey(nextTarget)
+            val changed = isOtherTarget(owner, next)
+            editConfiguration {
+                if (changed) (checkpointKeys + KEY_LAST_COMPLETED_SYNC_TIME).forEach { remove(it) }
+                (next ?: owner)?.let { putString(KEY_CHECKPOINT_TARGET, it) }
+                action()
+            }
+            changed
+        }
+        if (targetChanged) notifyChanged()
+    }
+
+    private fun isOtherTarget(owner: String?, next: String?): Boolean = owner != null && next != null && owner != next
+
+    private fun targetKey(target: List<String>): String? =
+        if (target.all { it.isEmpty() }) null else target.joinToString("") { "${it.length}:$it" }
+
     private fun configurationGeneration(): Long = preferences.getLong(KEY_CONFIGURATION_GENERATION, 0L)
 
     fun observe(): Flow<Long> = changes.map { read() }.distinctUntilChanged()
 
     fun clear(editor: SharedPreferences.Editor) {
         editor.remove(KEY_LAST_COMPLETED_SYNC_TIME)
+        editor.remove(KEY_CHECKPOINT_TARGET)
     }
 
     fun notifyChanged() {
@@ -62,5 +92,6 @@ internal class SyncCompletionTimeStore(
     private companion object {
         const val KEY_LAST_COMPLETED_SYNC_TIME = "last_completed_sync_time"
         const val KEY_CONFIGURATION_GENERATION = "sync_configuration_generation"
+        const val KEY_CHECKPOINT_TARGET = "sync_checkpoint_target"
     }
 }

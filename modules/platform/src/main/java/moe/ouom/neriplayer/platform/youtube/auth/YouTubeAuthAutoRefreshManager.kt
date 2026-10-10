@@ -313,6 +313,7 @@ class YouTubeAuthAutoRefreshManager(
             )
 
             val activeWebView = ensureWebView()
+                ?: return@withLock YouTubeAuthAutoRefreshResult(reason = "webview_unavailable")
             try {
                 syncCookies(activeWebView, currentAuth)
                 REFRESH_URLS.forEach { url ->
@@ -484,10 +485,17 @@ class YouTubeAuthAutoRefreshManager(
         return RefreshGateDecision(allowed = true, reason = "allowed")
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private suspend fun ensureWebView(): WebView = withContext(Dispatchers.Main) {
-        webView?.let { return@withContext it }
+    private suspend fun ensureWebView(): WebView? = withContext(Dispatchers.Main) {
+        webView ?: createRefreshWebViewOrNull()?.also { created ->
+            backgroundWebViewGuard = installYouTubeBackgroundWebViewGuard(created, TAG)
+            webViewUserAgent = created.settings.userAgentString.orEmpty()
+            webView = created
+        }
+    }
 
+    /** 没有可用的 WebView 提供方或提供方正在更新时构造会抛出运行时异常，刷新直接降级 */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createRefreshWebViewOrNull(): WebView? = try {
         WebView(applicationContext).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -497,11 +505,10 @@ class YouTubeAuthAutoRefreshManager(
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()
             webViewClient = RefreshWebViewClient()
-        }.also { created ->
-            backgroundWebViewGuard = installYouTubeBackgroundWebViewGuard(created, TAG)
-            webViewUserAgent = created.settings.userAgentString.orEmpty()
-            webView = created
         }
+    } catch (error: Exception) {
+        NPLogger.w(TAG, "refresh WebView unavailable: ${error.message}")
+        null
     }
 
     private suspend fun releaseWebView() = withContext(Dispatchers.Main) {

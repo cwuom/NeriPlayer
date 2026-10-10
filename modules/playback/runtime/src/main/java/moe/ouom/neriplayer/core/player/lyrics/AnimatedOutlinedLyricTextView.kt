@@ -110,18 +110,9 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
             if (nextStyle.bold) Typeface.BOLD else Typeface.NORMAL
         )
         val usesOutline = this.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE
-        shadowBlurRadiusPx = if (usesOutline) 0f else nextStyle.effectWidthPx
-        shadowOffsetYPx = if (usesOutline) 0f else nextStyle.effectWidthPx * SHADOW_OFFSET_RATIO
-        val horizontalPadding = if (usesOutline) {
-            ceil(nextStyle.effectWidthPx + dp(1)).toInt()
-        } else {
-            ceil(shadowBlurRadiusPx + dp(1)).toInt()
-        }
-        val verticalPadding = if (usesOutline) {
-            ceil(nextStyle.effectWidthPx * 0.5f).toInt()
-        } else {
-            ceil(shadowBlurRadiusPx + abs(shadowOffsetYPx) + dp(1)).toInt()
-        }
+        val effect = resolveTextEffectMetrics(usesOutline, nextStyle.effectWidthPx, onePx = dp(1))
+        shadowBlurRadiusPx = effect.shadowBlurRadiusPx
+        shadowOffsetYPx = effect.shadowOffsetYPx
         fillPaint.color = nextStyle.textColor
         fillPaint.textSize = nextStyle.textSizePx
         fillPaint.typeface = typeface
@@ -136,7 +127,7 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         outlinePaint.color = nextStyle.effectColor
         outlinePaint.textSize = nextStyle.textSizePx
         outlinePaint.typeface = typeface
-        outlinePaint.strokeWidth = if (usesOutline) nextStyle.effectWidthPx else 0f
+        outlinePaint.strokeWidth = effect.strokeWidthPx
         if (usesOutline || shadowBlurRadiusPx <= 0f) {
             fillPaint.clearShadowLayer()
             setLayerType(LAYER_TYPE_NONE, null)
@@ -149,7 +140,12 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
             )
             setLayerType(LAYER_TYPE_SOFTWARE, null)
         }
-        setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
+        setPadding(
+            effect.horizontalPaddingPx,
+            effect.verticalPaddingPx,
+            effect.horizontalPaddingPx,
+            effect.verticalPaddingPx
+        )
         requestLayout()
         invalidate()
         restartScrollAfterLayout()
@@ -198,16 +194,24 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         }
         playbackActive = active
         if (active) {
-            val animator = scrollAnimator
-            if (animator?.isPaused == true) {
-                if (screenOn) animator.resume()
-            } else {
-                restartScrollAfterLayout()
-            }
+            resumeScrollForPlayback()
         } else {
             scrollStartRequestId += 1
-            scrollAnimator?.takeIf { it.isStarted }?.pause()
+            pauseStartedScroll()
         }
+    }
+
+    private fun resumeScrollForPlayback() {
+        val animator = scrollAnimator
+        if (animator?.isPaused == true) {
+            if (screenOn) animator.resume()
+        } else {
+            restartScrollAfterLayout()
+        }
+    }
+
+    private fun pauseStartedScroll() {
+        scrollAnimator?.takeIf { it.isStarted }?.pause()
     }
 
     // 熄屏时悬浮歌词不可见，无限滚动动画仍会逐帧重绘；亮屏后从暂停位置继续，可见效果不变
@@ -216,7 +220,7 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         screenOn = screenState != SCREEN_STATE_OFF
         val animator = scrollAnimator
         when {
-            !screenOn -> animator?.takeIf { it.isStarted }?.pause()
+            !screenOn -> pauseStartedScroll()
             !playbackActive -> Unit
             animator == null -> restartScrollAfterLayout()
             animator.isPaused -> animator.resume()
@@ -278,56 +282,61 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         val textHeight = fontMetrics.descent - fontMetrics.ascent
         val baseline = paddingTop + (contentHeight - textHeight) / 2f - fontMetrics.ascent
 
+        val reveal = revealWindow(baseX, fullTextWidth, contentLeft, contentRight) ?: return
+        canvas.withSave {
+            clipRect(reveal.left, 0f, reveal.right, height.toFloat())
+            drawText(lyricText, baseX, baseline, baseFillPaint)
+        }
+        if (outlinePaint.strokeWidth > 0f || shadowBlurRadiusPx > 0f) {
+            drawTextEffectLayer(canvas, reveal, baseX, baseline, contentWidth, edgeMaskProgress)
+        }
+    }
+
+    private fun revealWindow(
+        baseX: Float,
+        fullTextWidth: Float,
+        contentLeft: Float,
+        contentRight: Float
+    ): LyricRevealWindow? {
         val usesShadow = renderStyle == FLOATING_LYRICS_RENDER_STYLE_SHADOW
-        val revealBoundLeft = if (usesShadow) 0f else contentLeft
-        val revealBoundRight = if (usesShadow) width.toFloat() else contentRight
-        val revealEffectExtent = if (usesShadow) {
-            shadowBlurRadiusPx + abs(shadowOffsetYPx)
-        } else {
-            outlineWidth
-        }
-        val revealLeft = if (revealProgress >= 1f) {
-            revealBoundLeft
-        } else {
-            (baseX - revealEffectExtent).coerceIn(revealBoundLeft, revealBoundRight)
-        }
-        val revealRight = if (revealProgress >= 1f) {
-            revealBoundRight
-        } else {
-            (baseX + fullTextWidth * revealProgress + revealEffectExtent)
-                .coerceIn(revealBoundLeft, revealBoundRight)
-        }
-        if (revealRight <= revealLeft) {
-            return
-        }
-        val hasTextEffect = outlinePaint.strokeWidth > 0f || shadowBlurRadiusPx > 0f
-        if (hasTextEffect) {
-            canvas.withSave {
-                clipRect(revealLeft, 0f, revealRight, height.toFloat())
-                drawText(lyricText, baseX, baseline, baseFillPaint)
+        return resolveRevealWindow(
+            revealProgress = revealProgress,
+            baseX = baseX,
+            textWidthPx = fullTextWidth,
+            boundLeft = if (usesShadow) 0f else contentLeft,
+            boundRight = if (usesShadow) width.toFloat() else contentRight,
+            effectExtentPx = if (usesShadow) {
+                shadowBlurRadiusPx + abs(shadowOffsetYPx)
+            } else {
+                outlinePaint.strokeWidth
             }
-            val layerSaveCount = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
-            canvas.withSave {
-                clipRect(revealLeft, 0f, revealRight, height.toFloat())
-                if (outlinePaint.strokeWidth > 0f) {
-                    drawText(lyricText, baseX, baseline, outlinePaint)
-                } else {
-                    drawText(lyricText, baseX, baseline, fillPaint)
-                }
-                eraseFillPaint.xfermode = eraseFillXfermode
-                drawText(lyricText, baseX, baseline, eraseFillPaint)
-                eraseFillPaint.xfermode = null
+        )
+    }
+
+    private fun drawTextEffectLayer(
+        canvas: Canvas,
+        reveal: LyricRevealWindow,
+        baseX: Float,
+        baseline: Float,
+        contentWidth: Float,
+        edgeMaskProgress: Float
+    ) {
+        val layerSaveCount = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
+        canvas.withSave {
+            clipRect(reveal.left, 0f, reveal.right, height.toFloat())
+            if (outlinePaint.strokeWidth > 0f) {
+                drawText(lyricText, baseX, baseline, outlinePaint)
+            } else {
+                drawText(lyricText, baseX, baseline, fillPaint)
             }
-            if (edgeMaskProgress > 0f) {
-                drawEdgeMask(canvas, contentWidth, edgeMaskProgress)
-            }
-            canvas.restoreToCount(layerSaveCount)
-        } else {
-            canvas.withSave {
-                clipRect(revealLeft, 0f, revealRight, height.toFloat())
-                drawText(lyricText, baseX, baseline, baseFillPaint)
-            }
+            eraseFillPaint.xfermode = eraseFillXfermode
+            drawText(lyricText, baseX, baseline, eraseFillPaint)
+            eraseFillPaint.xfermode = null
         }
+        if (edgeMaskProgress > 0f) {
+            drawEdgeMask(canvas, contentWidth, edgeMaskProgress)
+        }
+        canvas.restoreToCount(layerSaveCount)
     }
 
     override fun onDetachedFromWindow() {
@@ -506,6 +515,16 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         val bold: Boolean
     )
 
+    internal data class LyricTextEffectMetrics(
+        val shadowBlurRadiusPx: Float,
+        val shadowOffsetYPx: Float,
+        val strokeWidthPx: Float,
+        val horizontalPaddingPx: Int,
+        val verticalPaddingPx: Int
+    )
+
+    internal data class LyricRevealWindow(val left: Float, val right: Float)
+
     companion object {
         private const val SHORT_REVEAL_CHARACTER_COUNT = 10
         private const val SHORT_REVEAL_DURATION_PER_CHARACTER_MS = 36L
@@ -527,6 +546,51 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
                 shortCharacterCount.toLong() * SHORT_REVEAL_DURATION_PER_CHARACTER_MS +
                     longCharacterCount.toLong() * LONG_REVEAL_DURATION_PER_CHARACTER_MS
                 ).coerceIn(MIN_REVEAL_DURATION_MS, MAX_REVEAL_DURATION_MS)
+        }
+
+        internal fun resolveTextEffectMetrics(
+            usesOutline: Boolean,
+            effectWidthPx: Float,
+            onePx: Int
+        ): LyricTextEffectMetrics {
+            val horizontalPaddingPx = ceil(effectWidthPx + onePx).toInt()
+            if (usesOutline) {
+                return LyricTextEffectMetrics(
+                    shadowBlurRadiusPx = 0f,
+                    shadowOffsetYPx = 0f,
+                    strokeWidthPx = effectWidthPx,
+                    horizontalPaddingPx = horizontalPaddingPx,
+                    verticalPaddingPx = ceil(effectWidthPx * 0.5f).toInt()
+                )
+            }
+            val shadowOffsetYPx = effectWidthPx * SHADOW_OFFSET_RATIO
+            return LyricTextEffectMetrics(
+                shadowBlurRadiusPx = effectWidthPx,
+                shadowOffsetYPx = shadowOffsetYPx,
+                strokeWidthPx = 0f,
+                horizontalPaddingPx = horizontalPaddingPx,
+                verticalPaddingPx = ceil(effectWidthPx + abs(shadowOffsetYPx) + onePx).toInt()
+            )
+        }
+
+        internal fun resolveRevealWindow(
+            revealProgress: Float,
+            baseX: Float,
+            textWidthPx: Float,
+            boundLeft: Float,
+            boundRight: Float,
+            effectExtentPx: Float
+        ): LyricRevealWindow? {
+            val window = if (revealProgress >= 1f) {
+                LyricRevealWindow(boundLeft, boundRight)
+            } else {
+                LyricRevealWindow(
+                    left = (baseX - effectExtentPx).coerceIn(boundLeft, boundRight),
+                    right = (baseX + textWidthPx * revealProgress + effectExtentPx)
+                        .coerceIn(boundLeft, boundRight)
+                )
+            }
+            return window.takeUnless { it.right <= it.left }
         }
 
         internal fun shouldStartScroll(

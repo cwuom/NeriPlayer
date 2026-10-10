@@ -22,11 +22,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockingDetails
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(AndroidJUnit4::class)
 class PlaybackServicePresentationOwnerTest {
     @Test
     fun `transport intent without engine playback remains paused`() {
@@ -246,6 +249,63 @@ class PlaybackServicePresentationOwnerTest {
     }
 
     @Test
+    fun `lyric metadata changes repost the notification once while the screen is on`() = runTest {
+        val current = song()
+        val source = FakeSource(playback(current))
+        val port = mock(PlaybackServicePresentationPort::class.java)
+        val artwork = lyricArtwork(current)
+        val owner = owner(source, backgroundScope, port, artwork)
+        val lyricState = StatusBarLyricNotificationState(false, null)
+        owner.updateNotification(false, true, lyricState, false)
+
+        source.lyric = ExternalBluetoothLyricPayload("first line")
+        owner.refreshLyricMetadata(true, true, lyricState, false)
+        owner.refreshLyricMetadata(true, true, lyricState, false)
+        source.lyric = ExternalBluetoothLyricPayload("second line")
+        owner.refreshLyricMetadata(true, true, lyricState, false)
+
+        assertEquals(2, callCount(port, "setMetadata"))
+        assertEquals(3, callCount(port, "publishNotification"))
+    }
+
+    @Test
+    fun `screen off defers the lyric repost until the screen turns on`() = runTest {
+        val current = song()
+        val source = FakeSource(playback(current))
+        val port = mock(PlaybackServicePresentationPort::class.java)
+        val owner = owner(source, backgroundScope, port, lyricArtwork(current))
+        val lyricState = StatusBarLyricNotificationState(false, null)
+        owner.updateNotification(false, true, lyricState, false)
+
+        source.lyric = ExternalBluetoothLyricPayload("first line")
+        owner.refreshLyricMetadata(false, true, lyricState, false)
+        source.lyric = ExternalBluetoothLyricPayload("second line")
+        owner.refreshLyricMetadata(false, true, lyricState, false)
+        assertEquals(1, callCount(port, "publishNotification"))
+
+        owner.onScreenInteractive(true, lyricState, false)
+        owner.onScreenInteractive(true, lyricState, false)
+
+        assertEquals(2, callCount(port, "publishNotification"))
+    }
+
+    @Test
+    fun `flyme status bar lyrics keep their own per line notification`() = runTest {
+        val current = song()
+        val source = FakeSource(playback(current))
+        val port = mock(PlaybackServicePresentationPort::class.java)
+        val owner = owner(source, backgroundScope, port, lyricArtwork(current))
+        val flymeState = StatusBarLyricNotificationState(true, "line")
+        owner.updateNotification(false, true, flymeState, false)
+
+        source.lyric = ExternalBluetoothLyricPayload("first line")
+        owner.refreshLyricMetadata(true, true, flymeState, false)
+
+        assertEquals(1, callCount(port, "setMetadata"))
+        assertEquals(1, callCount(port, "publishNotification"))
+    }
+
+    @Test
     fun `floating lyrics action persists the selected state in the owner scope`() = runTest {
         val source = FakeSource(playback(null))
         val owner = owner(source, backgroundScope)
@@ -290,6 +350,11 @@ class PlaybackServicePresentationOwnerTest {
 
     private fun artwork(source: String?) = PlaybackArtworkSnapshot(source, null, null, false, false, false)
 
+    private fun lyricArtwork(song: SongItem): PlaybackArtworkOwner = mock(PlaybackArtworkOwner::class.java).also {
+        `when`(it.snapshotFor(song)).thenReturn(artwork(null))
+        `when`(it.observe(song)).thenReturn(artwork(null))
+    }
+
     private fun callCount(port: PlaybackServicePresentationPort, method: String): Int =
         mockingDetails(port).invocations.count { it.method.name == method }
 
@@ -299,9 +364,10 @@ class PlaybackServicePresentationOwnerTest {
         var localSong = false
         val floatingLyricsWrites = mutableListOf<Boolean>()
         var shareUrlRequests = 0
+        var lyric = ExternalBluetoothLyricPayload()
 
         override fun playback() = currentPlayback
-        override fun metadata() = PlaybackServiceMetadataInputs(ExternalBluetoothLyricPayload(), null, false)
+        override fun metadata() = PlaybackServiceMetadataInputs(lyric, null, lyric.lyric != null)
         override fun timer() = PlaybackServiceTimerInputs(SleepTimerState(), "")
         override fun favoriteSongKeys() = favorites
         override fun localPlaylistsReady() = playlistsReady

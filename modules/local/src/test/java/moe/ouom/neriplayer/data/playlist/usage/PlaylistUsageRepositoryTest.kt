@@ -21,8 +21,19 @@ import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
+import moe.ouom.neriplayer.data.local.database.store.mockPlaylistUsageRoomStore
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -33,6 +44,7 @@ import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
@@ -704,7 +716,127 @@ class PlaylistUsageRepositoryTest {
         )
     }
 
-    private fun createRepository(context: Context): PlaylistUsageRepository {
+    @Test
+    fun `construction does not wait for usage loading and early mutations replay in order`() = runTest {
+        val stored = listOf(
+            UsageEntry(1, "stored", null, 3, "netease", lastOpened = 100, openCount = 1),
+            UsageEntry(2, "gone", null, 3, "netease", lastOpened = 90, openCount = 4)
+        )
+        val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val room = mockPlaylistUsageRoomStore()
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            readStarted.countDown()
+            releaseRead.await()
+            stored
+        }
+        val reference = createRepository(mockContext(), roomReturning(stored))
+        val repository = createRepository(mockContext(), room, awaitInitialLoad = false)
+        assertTrue(readStarted.await(5, TimeUnit.SECONDS))
+
+        listOf(reference, repository).forEach { usage ->
+            usage.recordOpen(1, "renamed", null, 3, source = "netease", now = 300)
+            usage.removeEntry(2, "netease")
+            usage.updateInfo(3, "added", null, 5, source = "netease", now = 400)
+        }
+        assertTrue(repository.frequentPlaylistsFlow.value.isEmpty())
+        releaseRead.countDown()
+        repository.awaitInitialLoad()
+
+        val entries = repository.frequentPlaylistsFlow.value
+        assertEquals(reference.frequentPlaylistsFlow.value, entries)
+        assertEquals(listOf(3L to "added", 1L to "renamed"), entries.map { it.id to it.name })
+    }
+
+    @Test
+    fun `failed initial load retains early mutations until background recovery succeeds`() = runTest {
+        assertEarlyMutationsSurviveFailedLoad(backgroundRecovery = true)
+    }
+
+    @Test
+    fun `failed initial load retains early mutations until awaited recovery succeeds`() = runTest {
+        assertEarlyMutationsSurviveFailedLoad(backgroundRecovery = false)
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.assertEarlyMutationsSurviveFailedLoad(backgroundRecovery: Boolean) {
+        var stored = listOf(
+            UsageEntry(1, "stored", null, 3, "netease", lastOpened = 100, openCount = 1),
+            UsageEntry(2, "gone", null, 3, "netease", lastOpened = 90, openCount = 4)
+        )
+        var unavailable = true
+        var firstRead = true
+        val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val room = mockPlaylistUsageRoomStore()
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            if (firstRead) {
+                firstRead = false
+                readStarted.countDown()
+                releaseRead.await()
+            }
+            if (unavailable) throw IOException("primary temporarily unavailable")
+            stored
+        }
+        doAnswer {
+            assertEquals(stored, it.getArgument<List<UsageEntry>>(0))
+            stored = it.getArgument<List<UsageEntry>>(1).toList()
+            Unit
+        }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+        val repository = createRepository(mockContext(), room, awaitInitialLoad = false)
+        try {
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS))
+            val recoveryScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+            ownedScopes.add(recoveryScope)
+            PlaylistUsageRepository::class.java.getDeclaredField("scope")
+                .also { it.isAccessible = true }.set(repository, recoveryScope)
+
+            repository.recordOpen(1, "opened", null, 3, source = "netease", now = 300)
+            repository.updateInfo(1, "refreshed", null, 3, source = "netease", now = 400)
+            repository.removeEntry(2, "netease")
+            repository.updateInfo(3, "added", null, 5, source = "netease", now = 500)
+            releaseRead.countDown()
+            repository.awaitInitialLoad()
+            runCurrent()
+            assertTrue(repository.frequentPlaylistsFlow.value.isEmpty())
+            assertEquals(listOf(1L, 2L), stored.map { it.id })
+            assertTrue(!repository.awaitInitialized())
+
+            unavailable = false
+            if (backgroundRecovery) {
+                repository.recordOpen(9, "retry trigger", null, 1, source = "netease", now = 600)
+                runCurrent()
+            } else {
+                assertTrue(repository.awaitInitialized())
+            }
+            assertTrue(repository.awaitInitialized())
+            runCurrent()
+
+            val recovered = repository.frequentPlaylistsFlow.value
+            assertEquals(listOf(3L to "added", 1L to "refreshed"), recovered.map { it.id to it.name })
+            assertEquals(2, recovered.single { it.id == 1L }.openCount)
+            assertEquals(300L, recovered.single { it.id == 1L }.lastOpened)
+            assertEquals(recovered, stored)
+            assertTrue(repository.awaitInitialized())
+            runCurrent()
+            assertEquals(recovered, stored)
+            assertEquals(recovered, createRepository(mockContext(), room).frequentPlaylistsFlow.value)
+        } finally {
+            releaseRead.countDown()
+        }
+    }
+
+    private suspend fun roomReturning(entries: List<UsageEntry>): PlaylistUsageRoomStore {
+        return mockPlaylistUsageRoomStore().also { room ->
+            `when`(room.readIfRoomPrimary()).thenReturn(entries)
+        }
+    }
+
+    private fun createRepository(
+        context: Context,
+        room: PlaylistUsageRoomStore? = null,
+        awaitInitialLoad: Boolean = true
+    ): PlaylistUsageRepository {
         val removals = mutableMapOf<String, Long>()
         val storage = mock(SecureTokenStorage::class.java)
         `when`(storage.getOrCreateDeviceId()).thenReturn("usage-fixture-device")
@@ -720,9 +852,10 @@ class PlaylistUsageRepositoryTest {
             removals.remove(it.getArgument<String>(0))
             Unit
         }.`when`(storage).removePlaylistUsageDeletion(anyString(), anyBoolean())
-        val repository = PlaylistUsageRepository(context)
+        val repository = PlaylistUsageRepository(context, room)
         PlaylistUsageRepository::class.java.getDeclaredField("syncStorage\$delegate")
             .also { it.isAccessible = true }.set(repository, lazy { storage })
+        if (awaitInitialLoad) runBlocking { repository.awaitInitialLoad() }
         val scope = PlaylistUsageRepository::class.java.getDeclaredField("scope")
             .also { it.isAccessible = true }.get(repository) as CoroutineScope
         ownedScopes.add(scope)

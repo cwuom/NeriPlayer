@@ -61,14 +61,15 @@ fun resolveLegacyMobileDataQualityPreset(
     }
 }
 
+private val LEGACY_MOBILE_DATA_FOLLOWS_DEFAULT_QUALITY = mapOf(
+    "off" to true,
+    "low" to false,
+    "medium" to false,
+    "high" to false
+)
+
 fun resolveLegacyMobileDataFollowDefaultAudioQuality(value: String?): Boolean? {
-    return when (value?.trim()?.lowercase()) {
-        "off" -> true
-        "low",
-        "medium",
-        "high" -> false
-        else -> null
-    }
+    return LEGACY_MOBILE_DATA_FOLLOWS_DEFAULT_QUALITY[value?.trim()?.lowercase()]
 }
 
 fun resolveLegacyMobileDataNeteaseAudioQuality(value: String?): String? {

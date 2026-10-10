@@ -276,7 +276,7 @@ internal fun LocalMediaSupport.parseLocalMetadataSidecarImpl(
         val root = JSONObject(raw)
         LocalMetadataSidecar(
             reference = reference,
-            sourceModifiedAtMs = root.optLong("sourceModifiedAtMs").takeIf { it > 0L },
+            sourceModifiedAtMs = root.optPositiveLong("sourceModifiedAtMs"),
             name = root.optPresentLocalMetadataString("name"),
             artist = root.optPresentLocalMetadataString("artist"),
             album = root.optPresentLocalMetadataString("album")
@@ -286,7 +286,7 @@ internal fun LocalMediaSupport.parseLocalMetadataSidecarImpl(
             originalName = root.optPresentLocalMetadataString("originalName"),
             originalArtist = root.optPresentLocalMetadataString("originalArtist"),
             stableKey = root.optPresentLocalMetadataString("stableKey"),
-            songId = root.optLong("songId").takeIf { root.has("songId") && it != 0L },
+            songId = root.optNonZeroLong("songId"),
             channelId = root.optPresentLocalMetadataString("channelId"),
             audioId = root.optPresentLocalMetadataString("audioId"),
             subAudioId = root.optPresentLocalMetadataString("subAudioId"),
@@ -296,11 +296,9 @@ internal fun LocalMediaSupport.parseLocalMetadataSidecarImpl(
             originalCoverUrl = root.optPresentLocalMetadataString("originalCoverUrl"),
             customCoverUrl = root.optPresentLocalMetadataString("customCoverUrl"),
             durationMs = root.optLong("durationMs").coerceAtLeast(0L),
-            hasLyricOverride = root.has("matchedLyric") || root.has("originalLyric"),
-            hasTranslatedLyricOverride = root.has("matchedTranslatedLyric") ||
-                root.has("originalTranslatedLyric"),
-            hasRomanizedLyricOverride = root.has("matchedRomanizedLyric") ||
-                root.has("originalRomanizedLyric"),
+            hasLyricOverride = root.hasAnyKey("matchedLyric", "originalLyric"),
+            hasTranslatedLyricOverride = root.hasAnyKey("matchedTranslatedLyric", "originalTranslatedLyric"),
+            hasRomanizedLyricOverride = root.hasAnyKey("matchedRomanizedLyric", "originalRomanizedLyric"),
             matchedLyric = root.optPresentLocalMetadataString("matchedLyric"),
             matchedTranslatedLyric = root.optPresentLocalMetadataString(
                 "matchedTranslatedLyric"
@@ -320,6 +318,12 @@ internal fun LocalMediaSupport.parseLocalMetadataSidecarImpl(
         NPLogger.w(TAG, "parse local metadata sidecar failed for $reference: ${it.message}")
     }.getOrNull()
 }
+
+private fun JSONObject.optPositiveLong(key: String): Long? = optLong(key).takeIf { it > 0L }
+
+private fun JSONObject.optNonZeroLong(key: String): Long? = optLong(key).takeIf { has(key) && it != 0L }
+
+private fun JSONObject.hasAnyKey(vararg keys: String): Boolean = keys.any(::has)
 
 internal fun LocalMediaSupport.buildLocalLyricsMetadataJsonImpl(
     existingRaw: String?,

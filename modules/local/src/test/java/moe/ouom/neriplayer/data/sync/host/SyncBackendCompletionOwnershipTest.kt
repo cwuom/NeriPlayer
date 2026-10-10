@@ -102,14 +102,14 @@ class SyncBackendCompletionOwnershipTest(private val provider: String) {
     }
 
     @Test
-    fun `changing the target preserves historical metadata and rejects the old backend`() {
+    fun `changing the target drops the previous target metadata and rejects the old backend`() {
         val fixture = fixture()
         val old = fixture.capture()
 
         fixture.changeTarget()
         assertFalse(old.complete("stale-version", 900L))
 
-        assertEquals(Metadata(40L, 70L, "previous-version"), fixture.persistedMetadata())
+        assertEquals(Metadata(0L, 0L, null), fixture.persistedMetadata())
         assertTrue(fixture.capture().complete("current-version", 1_000L))
         assertEquals(Metadata(1_000L, 1_000L, "current-version"), fixture.persistedMetadata())
     }

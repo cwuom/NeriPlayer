@@ -44,6 +44,8 @@ class SyncSession(
     private suspend fun <TVersion> sync(backend: SyncBackend<TVersion>): Result<SyncResult> {
         val mutationVersion = local.mutationVersion()
         local.snapshot().use { localData ->
+            // 合并检查点只能代表已观察到的远端，拉取之后其他设备的修改必须在下次被视为远端变更
+            val observedAt = nowMs()
             val fetched = backend.fetch()
             if (fetched.isFailure) return failure(backend, fetched.exceptionOrNull())
             val remote = fetched.getOrThrow()
@@ -53,7 +55,8 @@ class SyncSession(
             if (resolved.isFailure) return uploadFailure(backend, resolved.exceptionOrNull())
             val resolution = resolved.getOrThrow()
             resolution.merged.dataset.use {
-                if (!SyncSessionCommitter(local, nowMs).commit(backend, resolution, firstSync, mutationVersion)) {
+                val committer = SyncSessionCommitter(local, nowMs)
+                if (!committer.commit(backend, resolution, firstSync, mutationVersion, observedAt)) {
                     return Result.success(SyncResult(success = false, message = deferredMessage))
                 }
                 return Result.success(SyncSessionResultPolicy.result(

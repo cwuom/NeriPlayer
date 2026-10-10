@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -43,6 +45,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -65,6 +68,14 @@ internal data class YouTubeBrowseState(
     val loading: Boolean,
     val error: String?
 )
+
+internal val ExploreBrowseContentMaxWidth = 1240.dp
+
+internal fun Modifier.exploreCenteredMaxWidth(maxWidth: Dp): Modifier = this
+    .fillMaxSize()
+    .wrapContentWidth(Alignment.CenterHorizontally)
+    .widthIn(max = maxWidth)
+    .fillMaxSize()
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -103,6 +114,7 @@ internal fun NeteaseDefaultContent(
             top = 16.dp,
             bottom = 16.dp + miniPlayerHeight
         ),
+        modifier = Modifier.exploreCenteredMaxWidth(ExploreBrowseContentMaxWidth)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.fillMaxWidth()) {
@@ -304,7 +316,7 @@ internal fun YouTubeMusicExploreContent(
                 ),
                 verticalArrangement = Arrangement.spacedBy(gridSpacing),
                 horizontalArrangement = Arrangement.spacedBy(gridSpacing),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.exploreCenteredMaxWidth(ExploreBrowseContentMaxWidth)
             ) {
                 items(
                     items = browse.playlists,

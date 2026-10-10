@@ -139,17 +139,18 @@ class SyncRepositoryFallbackRoomTest {
         }
         fun allowFallbackMarker() = sqlite.execSQL("DROP TRIGGER reject_sync_marker")
 
-        fun history(store: PlayHistoryRoomStore): PlayHistoryRepository {
+        // 仓库在后台加载初始快照，重新打开后要等加载完成才能读 Flow 的值
+        suspend fun history(store: PlayHistoryRoomStore): PlayHistoryRepository {
             val constructor = PlayHistoryRepository::class.java.getDeclaredConstructor(Context::class.java, PlayHistoryRoomStore::class.java)
             constructor.isAccessible = true
-            return constructor.newInstance(context, store).also { keepScope(it, "scope") }
+            return constructor.newInstance(context, store).also { keepScope(it, "scope"); it.awaitInitialLoad() }
         }
-        fun usage(store: PlaylistUsageRoomStore): PlaylistUsageRepository = PlaylistUsageRepository(context, store)
-            .also { keepScope(it, "scope") }
-        fun localPlayback(store: LocalPlaylistPlaybackRoomStore): LocalPlaylistPlaybackStatsRepository {
+        suspend fun usage(store: PlaylistUsageRoomStore): PlaylistUsageRepository = PlaylistUsageRepository(context, store)
+            .also { keepScope(it, "scope"); it.awaitInitialLoad() }
+        suspend fun localPlayback(store: LocalPlaylistPlaybackRoomStore): LocalPlaylistPlaybackStatsRepository {
             val constructor = LocalPlaylistPlaybackStatsRepository::class.java.getDeclaredConstructor(Context::class.java, LocalPlaylistPlaybackRoomStore::class.java)
             constructor.isAccessible = true
-            return constructor.newInstance(context, store)
+            return constructor.newInstance(context, store).also { it.awaitInitialLoad() }
         }
         private fun keepScope(repository: Any, fieldName: String) {
             scopes += repository.javaClass.getDeclaredField(fieldName).also { it.isAccessible = true }.get(repository) as CoroutineScope

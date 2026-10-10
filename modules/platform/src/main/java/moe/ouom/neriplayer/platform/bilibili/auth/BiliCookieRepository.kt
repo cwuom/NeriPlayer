@@ -46,11 +46,13 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import org.json.JSONObject
+import java.io.File
 
 private const val BILI_AUTH_PREFS = "bili_auth_secure_prefs"
 private const val KEY_BILI_AUTH_BUNDLE = "bili_auth_bundle"
 
-private val Context.biliCookieStore by preferencesDataStore("bili_auth_store")
+private const val LEGACY_COOKIE_STORE_NAME = "bili_auth_store"
+private val Context.biliCookieStore by preferencesDataStore(LEGACY_COOKIE_STORE_NAME)
 
 object BiliCookieKeys {
     val COOKIE_JSON = stringPreferencesKey("bili_cookie_json")
@@ -99,6 +101,7 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
     private val _authFlow: MutableStateFlow<BiliAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
     private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
+    private val writeLock = Any()
 
     val cookieFlow: StateFlow<Map<String, String>>
         get() = _cookieFlow.asStateFlow()
@@ -127,7 +130,7 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
     fun saveCookies(
         cookies: Map<String, String>,
         savedAt: Long = System.currentTimeMillis()
-    ) {
+    ): Unit = synchronized(writeLock) {
         val normalized = BiliAuthBundle(
             cookies = cookies,
             savedAt = savedAt
@@ -139,7 +142,19 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
         NPLogger.d("NERI-BiliCookieRepo", "Saved Bili cookies: keys=${cookies.keys.joinToString()}")
     }
 
-    fun clear() {
+    /**
+     * 只补写 nav 接口查到的 DedeUserID, 保留原来的保存时间
+     *
+     * nav 请求期间用户可能已退出或换号, Cookie 不再是 [requestedWith] 时放弃写入并返回 false
+     */
+    fun saveUserMid(mid: Long, requestedWith: Map<String, String>): Boolean = synchronized(writeLock) {
+        val current = _authFlow.value
+        if (current.cookies != requestedWith) return false
+        saveCookies(current.withUserMid(mid).cookies, savedAt = current.savedAt)
+        true
+    }
+
+    fun clear(): Unit = synchronized(writeLock) {
         writeAuthBundle(null)
         val cleared = BiliAuthBundle()
         _authFlow.value = cleared
@@ -170,7 +185,14 @@ class BiliCookieRepository(private val context: Context) : BiliCookieSource {
         return migrateLegacyCookies() ?: BiliAuthBundle()
     }
 
+    // preferencesDataStore 的文件固定在 files/datastore/<name>.preferences_pb，
+    // 从没写过旧存储的安装不必在启动时阻塞主线程打开 DataStore
+    private fun hasLegacyCookieStore(): Boolean = runCatching {
+        File(context.filesDir, "datastore/$LEGACY_COOKIE_STORE_NAME.preferences_pb").exists()
+    }.getOrDefault(true)
+
     private fun loadLegacyCookies(): Map<String, String> {
+        if (!hasLegacyCookieStore()) return emptyMap()
         return runCatching {
             val prefs = runBlocking { context.biliCookieStore.data.first() }
             val json = prefs[BiliCookieKeys.COOKIE_JSON] ?: "{}"

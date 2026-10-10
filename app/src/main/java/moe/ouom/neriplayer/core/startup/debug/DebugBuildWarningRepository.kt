@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.map
 
 internal val debugBuildWarningCorruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
 
-private val Context.debugBuildWarningDataStore by preferencesDataStore(
+internal val Context.debugBuildWarningDataStore by preferencesDataStore(
     name = "debug_build_warning",
     corruptionHandler = debugBuildWarningCorruptionHandler
 )

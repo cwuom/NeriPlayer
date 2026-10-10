@@ -270,13 +270,9 @@ fun LocalAudioImportManager.mergeFolderScanResults(
 }
 
 private fun folderScanFallbackKey(song: SongItem): String? {
-    val fileName = song.localFileName
-        ?.trim()
-        ?.lowercase(Locale.ROOT)
-        ?.takeIf(String::isNotBlank)
-        ?: return null
-    val durationMs = song.durationMs.takeIf { it > 0L } ?: return null
-    return "$fileName|$durationMs"
+    val fileName = song.localFileName.orEmpty().trim().lowercase(Locale.ROOT)
+    if (fileName.isBlank() || song.durationMs <= 0L) return null
+    return "$fileName|${song.durationMs}"
 }
 
 internal fun LocalAudioImportManager.buildKnownManagedSidecarReferences(
@@ -330,12 +326,10 @@ internal fun LocalAudioImportManager.buildKnownManagedSidecarReferences(
 }
 
 internal fun LocalAudioImportManager.configuredManagedDownloadTreeDocumentId(): String? {
-    val configuredUri = LocalMediaHostAccess.downloads.configuredDirectoryUri()
-        ?.takeIf(String::isNotBlank)
-        ?.toUri()
-        ?: return null
+    val configuredUri = LocalMediaHostAccess.downloads.configuredDirectoryUri() ?: return null
+    if (configuredUri.isBlank()) return null
     return runCatching {
-        DocumentsContract.getTreeDocumentId(configuredUri)
+        DocumentsContract.getTreeDocumentId(configuredUri.toUri())
     }.getOrNull()
 }
 
@@ -345,44 +339,35 @@ internal suspend fun LocalAudioImportManager.loadManagedDownloadSnapshotForScan(
     forceRefresh: Boolean = false
 ): DownloadLibrarySnapshot? {
     val cachedSnapshot = if (forceRefresh) null else runCatching {
-        if (progress == null) {
+        readDownloadIndexStage(progress) {
             LocalMediaHostAccess.downloads.cachedDownloadLibrarySnapshot(context)
-        } else {
-            awaitScanStage(
-                progress = progress,
-                phase = LocalAudioScanPhase.READING_DOWNLOAD_INDEX
-            ) {
-                LocalMediaHostAccess.downloads.cachedDownloadLibrarySnapshot(context)
-            }
         }
     }.getOrNull()
-    if (
-        cachedSnapshot != null &&
-            cachedSnapshot.rootEntriesComplete &&
-            cachedSnapshot.sidecarEntriesComplete
-    ) {
+    if (cachedSnapshot?.isCompleteForScan() == true) {
         return cachedSnapshot
     }
     return runCatching {
-        if (progress == null) {
+        readDownloadIndexStage(progress) {
             LocalMediaHostAccess.downloads.buildDownloadLibrarySnapshot(
                 context = context,
                 forceRefresh = true
             )
-        } else {
-            awaitScanStage(
-                progress = progress,
-                phase = LocalAudioScanPhase.READING_DOWNLOAD_INDEX
-            ) {
-                LocalMediaHostAccess.downloads.buildDownloadLibrarySnapshot(
-                    context = context,
-                    forceRefresh = true
-                )
-            }
         }
     }.getOrRethrowCancellation { error ->
         NPLogger.w(TAG, "managed download snapshot unavailable for local scan: ${error.message}")
     }
+}
+
+private fun DownloadLibrarySnapshot.isCompleteForScan(): Boolean {
+    return rootEntriesComplete && sidecarEntriesComplete
+}
+
+private suspend fun <T> LocalAudioImportManager.readDownloadIndexStage(
+    progress: LocalAudioScanProgressEmitter?,
+    block: suspend () -> T
+): T {
+    if (progress == null) return block()
+    return awaitScanStage(progress = progress, phase = LocalAudioScanPhase.READING_DOWNLOAD_INDEX, block = block)
 }
 
 internal fun LocalAudioImportManager.isManagedExternalAudioCandidate(
@@ -390,12 +375,18 @@ internal fun LocalAudioImportManager.isManagedExternalAudioCandidate(
     uri: Uri,
     sourceFile: File?
 ): Boolean {
-    val displayName = sourceFile?.name
-        ?: uri.lastPathSegment
-        ?: uri.toString()
-    val probe = SongItem(
+    val probe = managedExternalAudioProbe(uri, sourceFile)
+    return runCatching {
+        LocalMediaHostAccess.downloads.isLikelyManagedDownloadSong(context, probe)
+    }.getOrRethrowCancellation { error ->
+        NPLogger.d(TAG, "managed external audio check unavailable for $uri: ${error.message}")
+    } == true
+}
+
+private fun managedExternalAudioProbe(uri: Uri, sourceFile: File?): SongItem {
+    return SongItem(
         id = 0L,
-        name = displayName,
+        name = sourceFile?.name ?: uri.lastPathSegment ?: uri.toString(),
         artist = "",
         album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
         albumId = 0L,
@@ -406,11 +397,6 @@ internal fun LocalAudioImportManager.isManagedExternalAudioCandidate(
         localFilePath = sourceFile?.absolutePath,
         channelId = "local"
     )
-    return runCatching {
-        LocalMediaHostAccess.downloads.isLikelyManagedDownloadSong(context, probe)
-    }.getOrRethrowCancellation { error ->
-        NPLogger.d(TAG, "managed external audio check unavailable for $uri: ${error.message}")
-    } ?: false
 }
 
 internal suspend fun LocalAudioImportManager.completeScannedSongs(

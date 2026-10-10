@@ -66,6 +66,22 @@ class PlaybackAudioOffloadPolicyTest {
     }
 
     @Test
+    fun `offload stall fallback keeps downloaded local audio on pcm while reactive is off`() {
+        assertEquals(
+            emptySet<PcmAudioRequirement>(),
+            resolvePcmRequirements(audioSource = PlaybackAudioSource.LOCAL, audioReactiveActive = false)
+        )
+        assertEquals(
+            setOf(PcmAudioRequirement.OFFLOAD_STALL_FALLBACK),
+            resolvePcmRequirements(
+                audioSource = PlaybackAudioSource.LOCAL,
+                audioReactiveActive = false,
+                offloadStallFallbackActive = true
+            )
+        )
+    }
+
+    @Test
     fun `default playback does not require pcm processing`() {
         assertTrue(resolvePcmRequirements().isEmpty())
     }
@@ -170,8 +186,10 @@ class PlaybackAudioOffloadPolicyTest {
         audioReactiveActive: Boolean = false,
         audioSource: PlaybackAudioSource? = null,
         listenTogetherPlaybackRate: Float = 1f,
+        offloadStallFallbackActive: Boolean = false,
     ): Set<PcmAudioRequirement> {
         return pcmAudioRequirements(
+            offloadStallFallbackActive = offloadStallFallbackActive,
             usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled,
             playbackSpeed = playbackSpeed,
             playbackPitch = playbackPitch,

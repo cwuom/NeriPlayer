@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -252,6 +253,32 @@ internal fun shouldRenderExploreSearchResults(
 internal fun exploreSearchResultsBottomPadding(miniPlayerHeight: Dp): Dp =
     16.dp + miniPlayerHeight
 
+internal val ExploreSearchContentMaxWidth = 1040.dp
+
+internal fun exploreSearchResultsHorizontalPadding(isTabletLayout: Boolean): Dp =
+    if (isTabletLayout) 28.dp else 0.dp
+
+@Composable
+internal fun ExploreSearchResultsList(
+    state: LazyListState,
+    isTabletLayout: Boolean,
+    miniPlayerHeight: Dp,
+    content: LazyListScope.() -> Unit
+) {
+    val horizontalPadding = exploreSearchResultsHorizontalPadding(isTabletLayout)
+    LazyColumn(
+        state = state,
+        contentPadding = PaddingValues(
+            start = horizontalPadding,
+            end = horizontalPadding,
+            top = 8.dp,
+            bottom = exploreSearchResultsBottomPadding(miniPlayerHeight)
+        ),
+        modifier = Modifier.exploreCenteredMaxWidth(ExploreSearchContentMaxWidth),
+        content = content
+    )
+}
+
 internal fun shouldShowBiliPartsPicker(song: SongItem): Boolean {
     return song.album == PlayerManager.BILI_SOURCE_TAG ||
         song.album.startsWith("${PlayerManager.BILI_SOURCE_TAG}|")
@@ -414,7 +441,6 @@ fun ExploreScreen(
     val windowWidthDp = currentWindowWidthDp()
     val isTabletLayout = windowWidthDp >= 720.dp
     val searchPanelHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
-    val searchResultHorizontalPadding = if (isTabletLayout) 88.dp else 0.dp
     val youtubeGridState = rememberLazyGridState()
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
@@ -706,7 +732,7 @@ fun ExploreScreen(
         ) {
             Column(
                 Modifier
-                    .widthIn(max = 1040.dp)
+                    .widthIn(max = ExploreSearchContentMaxWidth)
                     .fillMaxWidth()
                     .padding(horizontal = searchPanelHorizontalPadding, vertical = 8.dp)
             ) {
@@ -865,15 +891,10 @@ fun ExploreScreen(
                                 ) { Text(stringResource(CoreCommonR.string.search_no_result)) }
                             }
                             else -> {
-                                LazyColumn(
+                                ExploreSearchResultsList(
                                     state = searchListState,
-                                    contentPadding = PaddingValues(
-                                        start = searchResultHorizontalPadding,
-                                        end = searchResultHorizontalPadding,
-                                        top = 8.dp,
-                                        bottom = exploreSearchResultsBottomPadding(miniPlayerHeight)
-                                    ),
-                                    modifier = Modifier.fillMaxSize()
+                                    isTabletLayout = isTabletLayout,
+                                    miniPlayerHeight = miniPlayerHeight
                                 ) {
                                 itemsIndexed(
                                     items = ui.searchItems,

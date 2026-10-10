@@ -119,31 +119,39 @@ class NeteaseArtistDetailViewModel internal constructor(
                 if (artistGeneration != generation) return@launch
                 songOffset = loaded.songs.size
                 albumOffset = loaded.albums.size
-                _uiState.update { current ->
-                    loaded.copy(
-                        loading = false,
-                        error = null,
-                        followUpdating = current.followUpdating,
-                        header = loaded.header?.copy(
-                            followed = favoriteRepo.isFavorite(summary.id, FAVORITE_SOURCE_NETEASE_ARTIST)
-                        )
-                    )
-                }
+                publishLoadedArtist(summary.id, loaded)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (artistGeneration != generation) return@launch
                 NPLogger.e(TAG, "load artist failed", e)
-                _uiState.update {
-                    it.copy(
-                        loading = false,
-                        error = getApplication<Application>().getString(
-                            CoreCommonR.string.artist_load_failed,
-                            e.message ?: e.javaClass.simpleName
-                        )
-                    )
-                }
+                publishLoadFailure(e)
             }
+        }
+    }
+
+    private fun publishLoadedArtist(artistId: Long, loaded: NeteaseArtistDetailUiState) {
+        _uiState.update { current ->
+            loaded.copy(
+                loading = false,
+                error = null,
+                followUpdating = current.followUpdating,
+                header = loaded.header?.copy(
+                    followed = favoriteRepo.isFavorite(artistId, FAVORITE_SOURCE_NETEASE_ARTIST)
+                )
+            )
+        }
+    }
+
+    private fun publishLoadFailure(error: Exception) {
+        _uiState.update {
+            it.copy(
+                loading = false,
+                error = getApplication<Application>().getString(
+                    CoreCommonR.string.artist_load_failed,
+                    error.message ?: error.javaClass.simpleName
+                )
+            )
         }
     }
 
@@ -247,30 +255,48 @@ class NeteaseArtistDetailViewModel internal constructor(
                         throw IOException("Artist follow change could not be saved")
                     }
                     favoriteRepo.isFavorite(header.id, FAVORITE_SOURCE_NETEASE_ARTIST)
-                }
-                if (followed == null) return@launch
-                _uiState.update {
-                    if (artistGeneration != generation || it.header?.id != header.id) return@update it
-                    it.copy(
-                        followUpdating = false,
-                        header = it.header.copy(followed = followed)
-                    )
-                }
+                } ?: return@launch
+                publishFollowResult(generation, header.id, followed)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 NPLogger.e(TAG, "toggle artist follow failed", error)
-                _uiState.update {
-                    if (artistGeneration != generation || it.header?.id != header.id) return@update it
-                    it.copy(
-                        followUpdating = false,
-                        error = getApplication<Application>().getString(
-                            CoreCommonR.string.artist_follow_failed,
-                            error.message ?: error.javaClass.simpleName
-                        )
-                    )
-                }
+                publishFollowFailure(generation, header.id, error)
             }
+        }
+    }
+
+    /** 关注写入期间切换了歌手时, 旧请求的结果不能落到新歌手上 */
+    private fun currentFollowHeader(
+        state: NeteaseArtistDetailUiState,
+        generation: Long,
+        headerId: Long
+    ): NeteaseArtistHeader? {
+        if (artistGeneration != generation) return null
+        val header = state.header ?: return null
+        return if (header.id == headerId) header else null
+    }
+
+    private fun publishFollowResult(generation: Long, headerId: Long, followed: Boolean) {
+        _uiState.update { state ->
+            val header = currentFollowHeader(state, generation, headerId) ?: return@update state
+            state.copy(
+                followUpdating = false,
+                header = header.copy(followed = followed)
+            )
+        }
+    }
+
+    private fun publishFollowFailure(generation: Long, headerId: Long, error: Exception) {
+        _uiState.update { state ->
+            if (currentFollowHeader(state, generation, headerId) == null) return@update state
+            state.copy(
+                followUpdating = false,
+                error = getApplication<Application>().getString(
+                    CoreCommonR.string.artist_follow_failed,
+                    error.message ?: error.javaClass.simpleName
+                )
+            )
         }
     }
 
@@ -304,20 +330,24 @@ class NeteaseArtistDetailViewModel internal constructor(
         val code = root.optInt("code", -1)
         require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
 
-        val data = root.optJSONObject("data")
-        val artist = data?.optJSONObject("artist") ?: root.optJSONObject("artist")
-        val alias = artist?.optJSONArray("alias").joinNames()
+        val artist = root.optJSONObject("data")?.optJSONObject("artist")
+            ?: root.optJSONObject("artist")
+            ?: JSONObject()
         return NeteaseArtistHeader(
-            id = artist?.optLong("id", fallback.id) ?: fallback.id,
-            name = artist?.optString("name", fallback.name).orEmpty().ifBlank { fallback.name },
-            coverUrl = toHttps(artist.optNonBlankString("cover") ?: artist.optNonBlankString("picUrl")),
-            avatarUrl = toHttps(artist.optNonBlankString("avatar") ?: artist.optNonBlankString("img1v1Url")),
-            alias = alias,
-            briefDesc = artist?.optString("briefDesc", "").orEmpty(),
-            musicSize = artist?.optInt("musicSize", 0) ?: 0,
-            albumSize = artist?.optInt("albumSize", 0) ?: 0,
-            followed = artist?.optBoolean("followed", false) == true
+            id = artist.optLong("id", fallback.id),
+            name = artist.optString("name", fallback.name).ifBlank { fallback.name },
+            coverUrl = artist.httpsUrl(primary = "cover", fallback = "picUrl"),
+            avatarUrl = artist.httpsUrl(primary = "avatar", fallback = "img1v1Url"),
+            alias = artist.optJSONArray("alias").joinNames(),
+            briefDesc = artist.optString("briefDesc", ""),
+            musicSize = artist.optInt("musicSize", 0),
+            albumSize = artist.optInt("albumSize", 0),
+            followed = artist.optBoolean("followed", false)
         )
+    }
+
+    private fun JSONObject.httpsUrl(primary: String, fallback: String): String {
+        return toHttps(optNonBlankString(primary) ?: optNonBlankString(fallback))
     }
 
     private fun parseArtistSongs(raw: String): Page<SongItem> {
@@ -364,18 +394,17 @@ class NeteaseArtistDetailViewModel internal constructor(
         if (id <= 0L || name.isBlank()) return null
 
         val artists = parseNeteaseArtistsFromSongJson(song)
-        val album = song.optJSONObject("al") ?: song.optJSONObject("album")
-        val albumName = album?.optString("name", "").orEmpty()
-        val cover = toHttps(album?.optString("picUrl", ""))
+        val album = song.optJSONObject("al") ?: song.optJSONObject("album") ?: JSONObject()
+        val cover = toHttps(album.optString("picUrl", "")).takeIf { it.isNotBlank() }
         return SongItem(
             id = id,
             name = name,
             artist = artists.joinToString(" / ") { it.name },
-            album = "${PlayerManager.NETEASE_SOURCE_TAG}$albumName",
-            albumId = album?.optLong("id", 0L) ?: 0L,
+            album = "${PlayerManager.NETEASE_SOURCE_TAG}${album.optString("name", "")}",
+            albumId = album.optLong("id", 0L),
             durationMs = song.optLong("dt", 0L),
-            coverUrl = cover.takeIf { it.isNotBlank() },
-            originalCoverUrl = cover.takeIf { it.isNotBlank() },
+            coverUrl = cover,
+            originalCoverUrl = cover,
             channelId = "netease",
             audioId = id.toString(),
             neteaseArtists = artists
@@ -391,10 +420,8 @@ class NeteaseArtistDetailViewModel internal constructor(
         return names.joinToString(" / ")
     }
 
-    private fun JSONObject?.optNonBlankString(name: String): String? {
-        return this?.optString(name, "")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+    private fun JSONObject.optNonBlankString(name: String): String? {
+        return optString(name, "").trim().takeIf { it.isNotBlank() }
     }
 
     private fun toHttps(url: String?): String {

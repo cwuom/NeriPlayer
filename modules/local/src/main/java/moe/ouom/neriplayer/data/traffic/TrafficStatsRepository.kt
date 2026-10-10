@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -50,17 +49,25 @@ class TrafficStatsRepository internal constructor(
     private val dailyFile: File by lazy { File(app.filesDir, "traffic_stats_daily.json") }
     @Volatile
     private var roomStorageEnabled = true
-    // 必须先于 initialStats 声明，否则初始化顺序会把 loadInitialStats 的结果覆盖回 false
     @Volatile
     private var persistenceSuspended = false
-    private val initialStats = loadInitialStats()
-    private val _dailyStats = MutableStateFlow(initialStats)
-    private var persistedStats = initialStats
+    private val _dailyStats = MutableStateFlow(emptyList<TrafficStatsBucket>())
+    private var persistedStats = emptyList<TrafficStatsBucket>()
     private var persistJob: Job? = null
     private var persistDeferredSinceMs = 0L
     private var persistGeneration = 0L
+    // 首次访问常在主线程，Room 与旧 JSON 读取放到后台；写入先等待加载完成再叠加
+    private val initialLoad: Job = scope.launch {
+        val loaded = loadInitialStats()
+        statsMutex.withLock {
+            persistedStats = loaded
+            _dailyStats.value = loaded
+        }
+    }
 
     val dailyStatsFlow: StateFlow<List<TrafficStatsBucket>> = _dailyStats
+
+    internal suspend fun awaitInitialLoad() = initialLoad.join()
 
     fun currentNetworkType(): TrafficNetworkType = app.currentTrafficNetworkType()
 
@@ -71,6 +78,7 @@ class TrafficStatsRepository internal constructor(
     ) {
         if (bytes <= 0L) return
         scope.launch {
+            initialLoad.join()
             statsMutex.withLock {
                 val updated = upsertTodayBucket { bucket ->
                     val base = when (networkType) {
@@ -97,6 +105,7 @@ class TrafficStatsRepository internal constructor(
     fun recordCacheHitBytes(bytes: Long) {
         if (bytes <= 0L) return
         scope.launch {
+            initialLoad.join()
             statsMutex.withLock {
                 val updated = upsertTodayBucket { bucket ->
                     bucket.copy(
@@ -111,6 +120,7 @@ class TrafficStatsRepository internal constructor(
 
     fun clearAll() {
         scope.launch {
+            initialLoad.join()
             statsMutex.withLock {
                 persistJob?.cancel()
                 persistJob = null
@@ -156,9 +166,9 @@ class TrafficStatsRepository internal constructor(
         }
     }
 
-    private fun loadInitialStats(): List<TrafficStatsBucket> {
+    private suspend fun loadInitialStats(): List<TrafficStatsBucket> {
         val roomStats = try {
-            runBlocking { roomStore.readIfRoomPrimary() }
+            roomStore.readIfRoomPrimary()
         } catch (error: Exception) {
             // 读失败时无法确认 Room 是否已是主存，导入旧 JSON 会覆盖甚至清空更新的数据
             roomStorageEnabled = false
@@ -184,7 +194,7 @@ class TrafficStatsRepository internal constructor(
             NPLogger.e(TAG, "Failed to load traffic stats", it)
         }.getOrDefault(emptyList())
         runCatching {
-            runBlocking { roomStore.importLegacyAndPromote(legacyStats) }
+            roomStore.importLegacyAndPromote(legacyStats)
             LegacyJsonCleanupRequests.schedule(app, "traffic-stats-import")
             roomStorageEnabled = true
         }.onFailure {

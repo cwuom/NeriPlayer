@@ -338,6 +338,61 @@ class TrafficStatsRepositoryTest {
     }
 
     @Test
+    fun `construction does not wait for Room and early traffic merges into the loaded stats`() = runTest {
+        var pendingRead: Continuation<List<TrafficStatsBucket>?>? = null
+        val fixture = fixture {
+            doAnswer { invocation ->
+                @Suppress("UNCHECKED_CAST")
+                pendingRead = invocation.rawArguments.last() as Continuation<List<TrafficStatsBucket>?>
+                COROUTINE_SUSPENDED
+            }.`when`(room).readIfRoomPrimary()
+        }
+        fixture.repository.recordCacheHitBytes(5L)
+        fixture.repository.recordNetworkBytes(TrafficNetworkType.WIFI, 3L, TrafficUsageSource.PLAYBACK)
+        runCurrent()
+        assertTrue(fixture.stats.isEmpty())
+
+        val stored = listOf(
+            TrafficStatsBucket(dayStartAt = 100L, mobileBytes = 9L),
+            TrafficStatsBucket(dayStartAt = fixture.dayStart, cacheHitBytes = 10L, cacheHitCount = 2)
+        )
+        requireNotNull(pendingRead).resumeWith(Result.success(stored))
+        fixture.repository.awaitInitialLoad()
+        runCurrent()
+
+        val merged = listOf(
+            stored[0],
+            TrafficStatsBucket(dayStartAt = fixture.dayStart, wifiBytes = 3L, playbackNetworkBytes = 3L,
+                cacheHitBytes = 15L, requestCount = 1, cacheHitCount = 3)
+        )
+        assertEquals(merged, fixture.stats)
+        advanceTimeBy(5_000L)
+        runCurrent()
+        assertEquals(SnapshotWrite(stored, merged), fixture.writes.single())
+    }
+
+    @Test
+    fun `clear requested before loading finishes removes the loaded stats`() = runTest {
+        var pendingRead: Continuation<List<TrafficStatsBucket>?>? = null
+        val fixture = fixture {
+            doAnswer { invocation ->
+                @Suppress("UNCHECKED_CAST")
+                pendingRead = invocation.rawArguments.last() as Continuation<List<TrafficStatsBucket>?>
+                COROUTINE_SUSPENDED
+            }.`when`(room).readIfRoomPrimary()
+        }
+        fixture.repository.clearAll()
+        runCurrent()
+
+        val stored = listOf(TrafficStatsBucket(dayStartAt = 100L, mobileBytes = 9L))
+        requireNotNull(pendingRead).resumeWith(Result.success(stored))
+        runCurrent()
+
+        assertTrue(fixture.stats.isEmpty())
+        assertEquals(SnapshotWrite(stored, emptyList()), fixture.writes.single())
+    }
+
+    @Test
     fun `persist delay shrinks to the remaining deferral budget`() {
         assertEquals(5_000L, trafficPersistDelayMs(pendingForMs = 0L))
         assertEquals(4_000L, trafficPersistDelayMs(pendingForMs = 26_000L))
@@ -365,6 +420,7 @@ class TrafficStatsRepositoryTest {
         }
         fixture.prepare()
         fixture.repository = TrafficStatsRepository(app, fixture.room, backgroundScope, fixture.clock::get)
+        runCurrent()
         return fixture
     }
 

@@ -18,6 +18,9 @@ FeedbackMathStatus makeFeedbackRateQ32(
     FeedbackRateQ32* output
 );
 
+/** makeFeedbackRateQ32 的逆运算：每服务间隔帧数（Q32）乘每秒服务间隔数得到 Hz */
+double feedbackRateHz(FeedbackRateQ32 rateQ32, uint32_t intervalsPerSecond);
+
 FeedbackMathStatus normalizeFeedbackRateQ32(
     uint64_t rawValue,
     uint8_t fractionalBits,
