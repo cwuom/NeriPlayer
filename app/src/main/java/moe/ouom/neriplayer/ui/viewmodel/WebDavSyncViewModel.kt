@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.sync.host.createWebDavSyncClient
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -33,13 +34,14 @@ class WebDavSyncViewModel : ViewModel() {
     private var storage: WebDavStorage? = null
     internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
     internal var targetSyncOperation: (suspend (String) -> Result<SyncResult>)? = null
+    internal var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var syncJob: Job? = null
     private var completionTimeJob: Job? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 if (storage == null) {
                     storage = WebDavStorage(appContext)
                     val manager = WebDavSyncManager.getInstance(appContext)
@@ -94,7 +96,7 @@ class WebDavSyncViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isValidating = true, errorMessage = null)
 
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
+            val result = withContext(ioDispatcher) {
                 createWebDavSyncClient(appContext, normalizedUsername, password)
                     .validateConnection(normalizedServerUrl, normalizedBasePath)
             }

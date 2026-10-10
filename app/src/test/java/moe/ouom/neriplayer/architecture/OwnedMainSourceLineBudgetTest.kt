@@ -47,8 +47,6 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/presentation/PlaybackServiceMetadataPresentation.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/UsbExclusiveServiceKeepAliveOwner.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveKeepAlivePort.kt",
-            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/UsbExclusiveMediaSessionVolumeRouter.kt",
-            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/usb/AndroidUsbExclusiveVolumeRoutingPort.kt",
             "modules/platform/src/main/java/moe/ouom/neriplayer/platform/youtube/api/challenge/YouTubeStreamingCipherResolution.kt",
             "modules/platform/src/main/java/moe/ouom/neriplayer/platform/youtube/api/protocol/YouTubePlayerRequestComposer.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/AudioPlayerService.kt",
@@ -220,7 +218,12 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/logic/src/main/java/moe/ouom/neriplayer/core/player/runtime/progress/PlaybackProgressOwner.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/playback/PlayerManagerPlaybackProgressPort.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/playback/PlaybackAutoSkipPolicy.kt",
-            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt"
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/usb/confirmation/PlayerManagerUsbLoudPlaybackSnapshotPort.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/audio/effects/AudioEffectsAudioSink.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/audio/effects/AudioEffectsOwner.kt",
+            "modules/model/src/main/java/moe/ouom/neriplayer/data/model/playback/effects/AudioEffectsPresets.kt",
+            "modules/model/src/main/java/moe/ouom/neriplayer/data/model/playback/effects/NeriDspParams.kt",
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/settings/audio/AudioEffectsSettingsPage.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)
             assertTrue("缺少受保护源码：$path", file.isFile)
@@ -231,17 +234,22 @@ class OwnedMainSourceLineBudgetTest {
             )
         }
 
-        val nativeSources = File(projectRoot, "modules/native/src/main/cpp/usb/exclusive")
-        assertTrue("缺少 USB 独占输出源码目录", nativeSources.isDirectory)
-        val nativeFiles = nativeSources.listFiles().orEmpty()
-            .filter { it.isFile && it.extension in setOf("cpp", "h") }
-        assertTrue("USB 独占输出源码目录为空", nativeFiles.isNotEmpty())
-        nativeFiles.forEach { file ->
-            val physicalLines = LocalManagementLineBudget.countPhysicalLines(file)
-            assertTrue(
-                "${file.relativeTo(projectRoot)} 有 $physicalLines 行，必须少于 ${LocalManagementLineBudget.MAX_EXCLUSIVE} 行",
-                LocalManagementLineBudget.isWithinBudget(physicalLines)
-            )
+        listOf(
+            "modules/native/src/main/cpp/usb/exclusive",
+            "modules/native/src/main/cpp/dsp"
+        ).forEach { directory ->
+            val nativeSources = File(projectRoot, directory)
+            assertTrue("缺少 native 源码目录：$directory", nativeSources.isDirectory)
+            val nativeFiles = nativeSources.listFiles().orEmpty()
+                .filter { it.isFile && it.extension in setOf("cpp", "h") }
+            assertTrue("native 源码目录为空：$directory", nativeFiles.isNotEmpty())
+            nativeFiles.forEach { file ->
+                val physicalLines = LocalManagementLineBudget.countPhysicalLines(file)
+                assertTrue(
+                    "${file.relativeTo(projectRoot)} 有 $physicalLines 行，必须少于 ${LocalManagementLineBudget.MAX_EXCLUSIVE} 行",
+                    LocalManagementLineBudget.isWithinBudget(physicalLines)
+                )
+            }
         }
     }
 }

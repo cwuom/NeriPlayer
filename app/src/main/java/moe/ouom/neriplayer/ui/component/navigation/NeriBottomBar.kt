@@ -59,6 +59,11 @@ internal fun resolveBottomBarSelectionAlpha(
     DEFAULT_BOTTOM_BAR_SELECTION_ALPHA
 }
 
+internal fun isNeriNavigationDestinationSelected(
+    currentDestination: NavDestination?,
+    destination: Destinations
+): Boolean = currentDestination?.hierarchy?.any { it.route == destination.route } == true
+
 @Composable
 fun NeriBottomBar(
     items: List<Pair<Destinations, ImageVector>>,
@@ -94,7 +99,7 @@ fun NeriBottomBar(
             tonalElevation = 0.dp,
         ) {
             items.forEach { (dest, icon) ->
-                val selected = currentDestination?.hierarchy?.any { it.route == dest.route } == true
+                val selected = isNeriNavigationDestinationSelected(currentDestination, dest)
                 val label = stringResource(dest.labelResId)
                 NavigationBarItem(
                     selected = selected,

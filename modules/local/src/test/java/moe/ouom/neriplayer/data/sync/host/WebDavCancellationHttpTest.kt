@@ -51,7 +51,7 @@ class WebDavCancellationHttpTest {
                     return MockResponse(code = 404)
                 }
             }
-            server.start()
+            server.startOnLoopback()
             val backend = WebDavSyncBackend(mock(WebDavStorage::class.java),
                 WebDavApiClient("test-user", "test-password", client, "auth"), server.url("/backup").toString(),
                 SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { }, SyncArchiveRepository(temporary.newFolder()),

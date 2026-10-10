@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="server_my_music">My music</string>
+    <string name="server_my_music">Music servers</string>
     <string name="server_manage">Music servers</string>
+    <string name="server_manage_accounts">Manage servers</string>
     <string name="server_empty">Add a server in Settings → Third-party Sign-in → Music servers.</string>
     <string name="server_search_hint">Search songs or artists</string>
     <string name="server_search">Search</string>
@@ -46,6 +47,20 @@
     <string name="settings_search_results_title">Search results</string>
     <string name="settings_search_clear_query">Clear search</string>
     <string name="server_refresh">Refresh</string>
+    <string name="server_search_results">Results for “%1$s”</string>
+    <string name="server_play_selected">Play selected</string>
+    <string name="server_play_loaded">Play loaded tracks</string>
+    <string name="server_loaded_results_note">Playback and Select all include only the currently loaded tracks.</string>
+    <string name="server_tab_albums">Albums</string>
+    <string name="server_tab_songs">Songs</string>
+    <string name="server_search_albums_hint">Search albums or artists</string>
+    <string name="server_search_songs_hint">Search songs, albums or artists</string>
+    <string name="server_search_album_tracks_hint">Search tracks in this album</string>
+    <string name="server_action_failed">Could not complete the action. Please retry.</string>
+    <string name="server_add_playlist_confirm_title">Add to playlist?</string>
+    <string name="server_add_playlist_confirm_action">Add</string>
+    <string name="server_download_unavailable">Offline downloads are not available for server tracks yet.</string>
+    <string name="server_listen_together_unavailable">Listen together is not available for server tracks yet.</string>
     <string name="storage_type_server_browse_cache">Music Server Browsing Cache</string>
     <string name="storage_desc_server_browse_cache">Server album and track snapshots; does not include offline audio.</string>
 </resources>

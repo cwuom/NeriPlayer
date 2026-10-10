@@ -6,6 +6,11 @@ import androidx.compose.runtime.Composition
 import androidx.compose.runtime.Recomposer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -44,6 +49,97 @@ import org.mockito.Mockito
 class NowPlayingLyricsLoadOwnerTest {
     private val context = Mockito.mock(Context::class.java)
     private val song = SongItem(41L, "Current", "Artist", "Album", 1L, 60_000L, null)
+
+    @Test
+    fun `server lyric failure retains fast frame and retry clears error with a new result`() = runTest {
+        Mockito.`when`(context.getString(Mockito.anyInt())).thenReturn("safe server error")
+        var attempts = 0
+        val stages = object : NowPlayingLyricsStages {
+            override suspend fun readFast(request: NowPlayingLyricsLoadRequest) = fastState("cached")
+            override suspend fun readBackground(request: NowPlayingLyricsLoadRequest, fast: NowPlayingFastLyricsResult): LoadedLyricsState {
+                attempts++
+                if (attempts == 1) throw java.io.IOException("transport")
+                return lyricState("recovered")
+            }
+        }
+        val owner = NowPlayingLyricsLoadOwner(lyricState(null), this, stages)
+        owner.retry()
+        owner.reload(request(song.copy(channelId = "subsonic")))
+        runCurrent()
+        assertEquals("cached", owner.state.rawLyrics)
+        assertEquals("safe server error", owner.errorMessage)
+        assertTrue(owner.secondaryResolved)
+        owner.retry()
+        assertNull(owner.errorMessage)
+        runCurrent()
+        assertEquals("recovered", owner.state.rawLyrics)
+        assertNull(owner.errorMessage)
+        assertEquals(2, attempts)
+    }
+
+    @Test
+    fun `server timeout is retryable while cancellation and other sources propagate`() = runTest {
+        Mockito.`when`(context.getString(Mockito.anyInt())).thenReturn("safe timeout")
+        val received = mutableListOf<Throwable>()
+        val parent = SupervisorJob(backgroundScope.coroutineContext[Job])
+        val scope = CoroutineScope(backgroundScope.coroutineContext + parent + CoroutineExceptionHandler { _, error -> received += error })
+        var failure: Exception = java.io.IOException("other source")
+        var timeout = false
+        val stages = object : NowPlayingLyricsStages {
+            override suspend fun readFast(request: NowPlayingLyricsLoadRequest) = fastState("fast")
+            override suspend fun readBackground(request: NowPlayingLyricsLoadRequest, fast: NowPlayingFastLyricsResult): LoadedLyricsState {
+                if (timeout) withTimeout(0L) { error("not reached") }
+                throw failure
+            }
+        }
+        val owner = NowPlayingLyricsLoadOwner(lyricState(null), scope, stages)
+        try {
+            owner.reload(request(song))
+            runCurrent()
+            assertEquals(listOf(failure), received)
+            assertNull(owner.errorMessage)
+            timeout = true
+            owner.reload(request(song.copy(channelId = "subsonic")))
+            runCurrent()
+            assertEquals("safe timeout", owner.errorMessage)
+            assertTrue(owner.secondaryResolved)
+            timeout = false
+            failure = CancellationException("left song")
+            owner.reload(request(song.copy(channelId = "subsonic")))
+            runCurrent()
+            assertNull(owner.errorMessage)
+            assertFalse(owner.secondaryResolved)
+            assertEquals(1, received.size)
+        } finally {
+            owner.dispose()
+            parent.cancel()
+        }
+    }
+
+    @Test
+    fun `late server failure after switching song cannot publish an error`() = runTest {
+        val pending = CompletableDeferred<Unit>()
+        val stages = object : NowPlayingLyricsStages {
+            override suspend fun readFast(request: NowPlayingLyricsLoadRequest) = fastState("fast")
+            override suspend fun readBackground(request: NowPlayingLyricsLoadRequest, fast: NowPlayingFastLyricsResult): LoadedLyricsState {
+                if (request.song?.name == "old") {
+                    withContext(NonCancellable) { pending.await() }
+                    throw java.io.IOException("old request failed")
+                }
+                return lyricState("new song")
+            }
+        }
+        val owner = NowPlayingLyricsLoadOwner(lyricState(null), this, stages)
+        owner.reload(request(song.copy(name = "old", channelId = "subsonic")))
+        runCurrent()
+        owner.reload(request(song.copy(name = "new", channelId = "subsonic")))
+        runCurrent()
+        pending.complete(Unit)
+        runCurrent()
+        assertEquals("new song", owner.state.rawLyrics)
+        assertNull(owner.errorMessage)
+        assertTrue(owner.secondaryResolved)
+    }
 
     @Test
     fun `same revision confirmed clear replaces rendered state and rejects late old network publication`() = runTest {

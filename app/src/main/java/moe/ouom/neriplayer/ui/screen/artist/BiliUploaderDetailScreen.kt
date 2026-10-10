@@ -29,6 +29,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -78,6 +79,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -110,7 +112,6 @@ import moe.ouom.neriplayer.ui.screen.playlist.preloadBiliPlaylistDetailVisuals
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
-import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.util.format.formatDurationSec
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -172,7 +173,7 @@ fun BiliUploaderDetailScreen(
     val ui by viewModel.uiState.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var selectedTab by rememberSaveable(uploader.mid) { mutableIntStateOf(0) }
-    val isTabletLayout = currentWindowWidthDp() >= 720.dp
+    val tabletDevice = LocalConfiguration.current.smallestScreenWidthDp >= 600
     val videosListState = rememberSaveable(uploader.mid, saver = LazyListState.Saver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
@@ -246,14 +247,14 @@ fun BiliUploaderDetailScreen(
                     onContentClick(playlist)
                 },
                 offlineMode = offlineMode,
-                isTabletLayout = isTabletLayout
+                tabletDevice = tabletDevice
             )
         }
     }
 }
 
 @Composable
-private fun BiliUploaderContent(
+internal fun BiliUploaderContent(
     ui: BiliUploaderDetailUiState,
     followFavorite: FavoritePlaylist,
     listState: LazyListState,
@@ -265,123 +266,146 @@ private fun BiliUploaderContent(
     onVideoClick: (UploaderVideo, Int) -> Unit,
     onContentClick: (UploaderContent) -> Unit,
     offlineMode: Boolean,
-    isTabletLayout: Boolean
+    tabletDevice: Boolean
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val collectionsEmptyText = stringResource(CoreCommonR.string.bili_uploader_collections_empty)
     val seriesEmptyText = stringResource(CoreCommonR.string.bili_uploader_series_empty)
-    Box(
+    val showTabs = ui.videos.isNotEmpty() || ui.collections.isNotEmpty() ||
+        ui.series.isNotEmpty() || (!ui.loading && ui.error == null)
+    CreatorDetailAdaptiveLayout(
+        tabletDevice = tabletDevice,
+        miniPlayerHeight = miniPlayerHeight,
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.navigationBars),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .widthIn(max = 1080.dp)
-                .fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = if (isTabletLayout) 36.dp else 20.dp,
-                end = if (isTabletLayout) 36.dp else 20.dp,
-                top = 4.dp,
-                bottom = 40.dp + miniPlayerHeight
-            ),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            item {
-                BiliUploaderHeaderCard(
-                    header = ui.header,
-                    followFavorite = followFavorite,
-                    videoCount = ui.videos.size,
-                    collectionCount = ui.collections.size,
-                    seriesCount = ui.series.size,
-                    offlineMode = offlineMode,
-                    isTabletLayout = isTabletLayout
-                )
-            }
-
-            if (ui.error != null && !ui.loading) {
-                item {
-                    Text(
-                        text = ui.error,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
-            }
-
-            if (ui.loading && ui.videos.isEmpty() && ui.collections.isEmpty() && ui.series.isEmpty()) {
-                item { LoadingBlock() }
-                return@LazyColumn
-            }
-
-            if (ui.error != null && ui.videos.isEmpty() && ui.collections.isEmpty() && ui.series.isEmpty()) {
-                item { ErrorBlock(error = ui.error, onRetry = onRetry) }
-                return@LazyColumn
-            }
-
-            item {
+        profile = {
+            BiliUploaderHeaderCard(
+                header = ui.header,
+                followFavorite = followFavorite,
+                videoCount = ui.videos.size,
+                collectionCount = ui.collections.size,
+                seriesCount = ui.series.size,
+                offlineMode = offlineMode,
+                isTabletLayout = true
+            )
+        }
+    ) { tabletLayout ->
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (tabletLayout && showTabs) {
                 BiliUploaderTabs(
                     selectedTab = selectedTab,
                     onTabSelected = onTabSelected
                 )
             }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .widthIn(max = 1080.dp)
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(
+                    start = if (tabletLayout) 16.dp else 20.dp,
+                    end = if (tabletLayout) 16.dp else 20.dp,
+                    top = 4.dp,
+                    bottom = if (tabletLayout) 16.dp else 40.dp + miniPlayerHeight
+                ),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                item(key = "uploader_header") {
+                    if (!tabletLayout) BiliUploaderHeaderCard(
+                        header = ui.header,
+                        followFavorite = followFavorite,
+                        videoCount = ui.videos.size,
+                        collectionCount = ui.collections.size,
+                        seriesCount = ui.series.size,
+                        offlineMode = offlineMode,
+                        isTabletLayout = false
+                    )
+                }
 
-            when (selectedTab) {
-                0 -> {
-                    if (ui.videos.isEmpty()) {
-                        item { EmptyBlock(stringResource(CoreCommonR.string.bili_uploader_videos_empty)) }
-                    } else {
-                        itemsIndexed(ui.videos, key = { _, video -> video.bvid }) { index, video ->
-                            BiliUploaderVideoRow(
-                                video = video,
-                                onClick = { onVideoClick(video, index) },
-                                offlineMode = offlineMode
-                            )
-                        }
-                    }
-                    if (ui.videosHasMore) {
-                        item {
-                            BiliUploaderLoadMoreButton(
-                                loading = ui.videosLoadingMore,
-                                onClick = onLoadMoreVideos
-                            )
-                        }
+                if (ui.error != null && !ui.loading) {
+                    item {
+                        Text(
+                            text = ui.error,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
                     }
                 }
 
-                1 -> {
-                    BiliUploaderContentRows(
-                        items = ui.collections,
-                        emptyText = collectionsEmptyText,
-                        onContentClick = onContentClick,
-                        offlineMode = offlineMode
-                    )
-                    if (ui.contentsHasMore) {
-                        item {
-                            BiliUploaderLoadMoreButton(
-                                loading = ui.contentsLoadingMore,
-                                onClick = onLoadMoreContents
-                            )
-                        }
-                    }
+                if (ui.loading && ui.videos.isEmpty() && ui.collections.isEmpty() && ui.series.isEmpty()) {
+                    item { LoadingBlock() }
+                    return@LazyColumn
                 }
 
-                else -> {
-                    BiliUploaderContentRows(
-                        items = ui.series,
-                        emptyText = seriesEmptyText,
-                        onContentClick = onContentClick,
-                        offlineMode = offlineMode
+                if (ui.error != null && ui.videos.isEmpty() && ui.collections.isEmpty() && ui.series.isEmpty()) {
+                    item { ErrorBlock(error = ui.error, onRetry = onRetry) }
+                    return@LazyColumn
+                }
+
+                item(key = "uploader_tabs") {
+                    if (!tabletLayout) BiliUploaderTabs(
+                        selectedTab = selectedTab,
+                        onTabSelected = onTabSelected
                     )
-                    if (ui.contentsHasMore) {
-                        item {
-                            BiliUploaderLoadMoreButton(
-                                loading = ui.contentsLoadingMore,
-                                onClick = onLoadMoreContents
-                            )
+                }
+
+                when (selectedTab) {
+                    0 -> {
+                        if (ui.videos.isEmpty()) {
+                            item { EmptyBlock(stringResource(CoreCommonR.string.bili_uploader_videos_empty)) }
+                        } else {
+                            itemsIndexed(ui.videos, key = { _, video -> video.bvid }) { index, video ->
+                                BiliUploaderVideoRow(
+                                    video = video,
+                                    onClick = { onVideoClick(video, index) },
+                                    offlineMode = offlineMode
+                                )
+                            }
+                        }
+                        if (ui.videosHasMore) {
+                            item {
+                                BiliUploaderLoadMoreButton(
+                                    loading = ui.videosLoadingMore,
+                                    onClick = onLoadMoreVideos
+                                )
+                            }
+                        }
+                    }
+
+                    1 -> {
+                        BiliUploaderContentRows(
+                            items = ui.collections,
+                            emptyText = collectionsEmptyText,
+                            onContentClick = onContentClick,
+                            offlineMode = offlineMode
+                        )
+                        if (ui.contentsHasMore) {
+                            item {
+                                BiliUploaderLoadMoreButton(
+                                    loading = ui.contentsLoadingMore,
+                                    onClick = onLoadMoreContents
+                                )
+                            }
+                        }
+                    }
+
+                    else -> {
+                        BiliUploaderContentRows(
+                            items = ui.series,
+                            emptyText = seriesEmptyText,
+                            onContentClick = onContentClick,
+                            offlineMode = offlineMode
+                        )
+                        if (ui.contentsHasMore) {
+                            item {
+                                BiliUploaderLoadMoreButton(
+                                    loading = ui.contentsLoadingMore,
+                                    onClick = onLoadMoreContents
+                                )
+                            }
                         }
                     }
                 }
@@ -420,7 +444,7 @@ private fun BiliUploaderHeaderCard(
     isTabletLayout: Boolean
 ) {
     val context = LocalContext.current
-    val heroHeight = if (isTabletLayout) 260.dp else 210.dp
+    val heroHeight = if (isTabletLayout) 160.dp else 210.dp
     val avatarSize = if (isTabletLayout) 82.dp else 64.dp
     val backdrop = resolveBiliUploaderBackdropSources(
         bannerUrl = header?.bannerUrl,
@@ -465,6 +489,29 @@ private fun BiliUploaderHeaderCard(
             offlineMode = offlineMode
         )
     }
+    val avatar: @Composable () -> Unit = {
+        AsyncImage(
+            model = remember(context, header?.avatarUrl, offlineMode) {
+                offlineCachedImageRequest(
+                    context = context,
+                    data = buildBiliThumbnailUrl(
+                        imageUrl = header?.avatarUrl.orEmpty(),
+                        width = 160,
+                        height = 160
+                    ),
+                    sizePx = 160,
+                    allowHardware = false,
+                    offlineMode = offlineMode
+                )
+            },
+            contentDescription = header?.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(avatarSize)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        )
+    }
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -496,54 +543,33 @@ private fun BiliUploaderHeaderCard(
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
             )
-            Row(
+            if (isTabletLayout) {
+                Box(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                    avatar()
+                }
+            } else Row(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AsyncImage(
-                    model = remember(context, header?.avatarUrl, offlineMode) {
-                        offlineCachedImageRequest(
-                            context = context,
-                            data = buildBiliThumbnailUrl(
-                                imageUrl = header?.avatarUrl.orEmpty(),
-                                width = 160,
-                                height = 160
-                            ),
-                            sizePx = 160,
-                            allowHardware = false,
-                            offlineMode = offlineMode
-                        )
-                    },
-                    contentDescription = header?.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(avatarSize)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                )
+                avatar()
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        text = header?.name.orEmpty(),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = stringResource(CoreCommonR.string.bili_uploader_mid, header?.mid ?: 0L),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.82f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    BiliUploaderIdentity(header, contentColor = Color.White, maxNameLines = 1)
                 }
             }
         }
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(if (isTabletLayout) 16.dp else 20.dp)) {
+            if (isTabletLayout) {
+                BiliUploaderIdentity(
+                    header = header,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    maxNameLines = 3
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(
                     onClick = {},
                     label = {
@@ -583,6 +609,28 @@ private fun BiliUploaderHeaderCard(
             CreatorFollowButton(favorite = followFavorite)
         }
     }
+}
+
+@Composable
+private fun BiliUploaderIdentity(
+    header: BiliUploaderHeader?,
+    contentColor: Color,
+    maxNameLines: Int
+) {
+    Text(
+        text = header?.name.orEmpty(),
+        style = MaterialTheme.typography.headlineSmall,
+        color = contentColor,
+        maxLines = maxNameLines,
+        overflow = TextOverflow.Ellipsis
+    )
+    Text(
+        text = stringResource(CoreCommonR.string.bili_uploader_mid, header?.mid ?: 0L),
+        style = MaterialTheme.typography.bodySmall,
+        color = contentColor.copy(alpha = 0.82f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
 @Composable

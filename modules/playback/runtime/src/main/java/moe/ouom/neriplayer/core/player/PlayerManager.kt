@@ -56,6 +56,10 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.audio.reactive.AudioReactive
+import moe.ouom.neriplayer.core.player.audio.effects.AudioEffectsOwner
+import moe.ouom.neriplayer.core.player.audio.effects.AudioEffectsRuntimeState
+import moe.ouom.neriplayer.core.player.audio.effects.AudioOutputRouteMonitor
+import moe.ouom.neriplayer.core.player.audio.effects.PlayerManagerAudioEffectsPort
 import moe.ouom.neriplayer.core.player.audio.output.PlaybackSoundOwner
 import moe.ouom.neriplayer.core.player.audio.output.PlayerManagerPlaybackSoundPort
 import moe.ouom.neriplayer.core.player.runtime.quality.PlaybackQualityOwner
@@ -80,6 +84,9 @@ import moe.ouom.neriplayer.data.model.playback.PreferredQualityKeys
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsRuntimeStats
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
+import moe.ouom.neriplayer.data.model.playback.effects.AudioOutputRoute
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayState
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
 import moe.ouom.neriplayer.core.player.session.PlayerQueueSessionBindings
@@ -176,6 +183,8 @@ import moe.ouom.neriplayer.core.player.persistence.updateSongTranslatedLyricsImp
 import moe.ouom.neriplayer.core.player.persistence.updateUserLyricOffsetImpl
 import moe.ouom.neriplayer.core.player.timer.SleepTimerManager
 import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
+import moe.ouom.neriplayer.core.player.service.lyrics.XiaomiSuperIslandLyricBridge
+import moe.ouom.neriplayer.core.player.service.lyrics.LiveLyricNotificationBridge
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
@@ -211,6 +220,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSE
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.model.settings.usb.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.ltw.mapping.buildStableTrackKey
 import moe.ouom.neriplayer.core.player.ltw.resolvedAudioId
@@ -339,6 +349,8 @@ object PlayerManager {
     @Volatile
     internal var listenTogetherSafetyResumeInFlight = false
     internal var playbackSoundOwner = PlaybackSoundOwner(mainScope, ioScope, PlayerManagerPlaybackSoundPort)
+    internal val audioEffectsOwner = AudioEffectsOwner(ioScope, PlayerManagerAudioEffectsPort)
+    internal var audioOutputRouteMonitor: AudioOutputRouteMonitor? = null
     internal var playbackTransportOwner = PlaybackTransportOwner(
         mainScope, PlayerManagerPlaybackTransportPort, SystemClock::elapsedRealtime
     )
@@ -424,6 +436,10 @@ object PlayerManager {
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
     internal var dynamicIslandLyricsEnabled = false
+    internal var xiaomiSuperIslandLyricEnabled = false
+    internal var liveUpdateLyricEnabled = false
+    internal var xiaomiSuperIslandLyricBridge: XiaomiSuperIslandLyricBridge? = null
+    internal var liveLyricNotificationBridge: LiveLyricNotificationBridge? = null
     internal var floatingLyricsEnabled = false
     internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -447,6 +463,8 @@ object PlayerManager {
         get() = usbExclusiveLivenessOwner.appInForeground
     @Volatile
     internal var usbExclusivePreferences = UsbExclusivePreferences()
+    @Volatile
+    internal var usbExclusiveFloatingKeepAliveEnabled = false
     internal var allowMixedPlaybackEnabled = false
 
     internal val queueStore = PlayerQueueStateStore(AppQueueSongIdentity)
@@ -651,6 +669,13 @@ object PlayerManager {
 
     val playbackSoundStateFlow: StateFlow<PlaybackSoundState>
         get() = playbackSoundOwner.state
+
+    val audioEffectsSettingsFlow: StateFlow<AudioEffectsSettings>
+        get() = audioEffectsOwner.settings
+    val audioOutputRouteFlow: StateFlow<AudioOutputRoute>
+        get() = audioEffectsOwner.route
+    val audioEffectsStatsFlow: StateFlow<AudioEffectsRuntimeStats>
+        get() = AudioEffectsRuntimeState.stats
 
     /** 本地歌单快照, 供收藏状态和歌单选择弹窗使用 */
     internal val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
@@ -1315,9 +1340,19 @@ object PlayerManager {
         playbackSoundOwner.setPitch(pitch, persist)
     }
 
-    fun setPlaybackLoudnessGain(levelMb: Int, persist: Boolean = true) {
+    fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean = true) {
         ensureInitialized()
-        playbackSoundOwner.setLoudnessGain(levelMb, persist)
+        playbackSoundOwner.setSpeedAndPitch(speed, pitch, persist)
+    }
+
+    fun resetPlaybackSpeedAndPitch(persist: Boolean = true) {
+        ensureInitialized()
+        playbackSoundOwner.resetSpeedAndPitch(persist)
+    }
+
+    fun updateAudioEffects(persist: Boolean = true, transform: (AudioEffectsSettings) -> AudioEffectsSettings) {
+        ensureInitialized()
+        audioEffectsOwner.update(persist, transform)
     }
 
     fun setPlaybackVolumeBalance(balance: Float, persist: Boolean = true) {
@@ -1333,30 +1368,6 @@ object PlayerManager {
     fun setPlaybackHighResolutionOutputEnabled(enabled: Boolean, persist: Boolean = true) {
         ensureInitialized()
         playbackSoundOwner.setHighResolutionEnabled(enabled, persist)
-    }
-
-    fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
-        ensureInitialized()
-        playbackSoundOwner.setEqualizerEnabled(enabled, persist)
-    }
-
-    fun selectPlaybackEqualizerPreset(presetId: String, persist: Boolean = true) {
-        ensureInitialized()
-        playbackSoundOwner.selectEqualizerPreset(presetId, persist)
-    }
-
-    fun updatePlaybackEqualizerBandLevel(
-        index: Int,
-        levelMb: Int,
-        persist: Boolean = true
-    ) {
-        ensureInitialized()
-        playbackSoundOwner.updateEqualizerBandLevel(index, levelMb, persist)
-    }
-
-    fun resetPlaybackSoundSettings(persist: Boolean = true) {
-        ensureInitialized()
-        playbackSoundOwner.reset(persist)
     }
 
     internal fun applyPlaybackSoundConfig(newConfig: PlaybackSoundConfig, persist: Boolean) {
@@ -1451,6 +1462,10 @@ object PlayerManager {
         reason: String
     ) {
         playbackStatsOwner.onPlayingChanged(playing, reason, writesEnabled = initialized)
+    }
+
+    internal fun syncPlaybackStatsEnginePlayingState(isPlaying: Boolean) {
+        playbackStatsOwner.onEnginePlayingChanged(isPlaying, playbackProgressAdvanceReported, writesEnabled = initialized)
     }
 
     internal fun drainPlaybackStatsPersistJobBlocking(reason: String) {
@@ -1564,8 +1579,9 @@ object PlayerManager {
     internal fun cancelPendingPauseRequest(resetVolumeToFull: Boolean = false) =
         this.cancelPendingPauseRequestImpl(resetVolumeToFull)
 
-    fun initialize(app: Application, maxCacheSize: Long = 1024L * 1024 * 1024) =
-        initializeImpl(app, maxCacheSize)
+    /** 未预读偏好的入口同样要遵循用户的缓存上限，包括 0 表示关闭缓存 */
+    fun initialize(app: Application) =
+        initializePreloaded(app, readPlaybackPreferenceSnapshotSync(app))
 
     fun initializePreloaded(
         app: Application,

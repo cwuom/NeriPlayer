@@ -1,7 +1,10 @@
 #pragma once
 
+#include "usb/uac2/usb_uac2_format.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -68,6 +71,19 @@ ClockGraphResult resolveClockGraph(
     const std::vector<AudioFunctionClockGraph>& functions,
     int terminalLink,
     size_t maxDepth = 16
+);
+
+// 返回选择器当前输入脚（从 0 计）；读不到时返回负数，按第一个输入脚处理
+using ClockSelectorPinReader = std::function<int(int selectorId, int pinCount)>;
+
+// 终端经时钟选择器/倍频器连到时钟源时，按选择器当前输入脚走到最终时钟源
+ClockGraphResult resolveTerminalClockSource(
+    int audioControlInterface,
+    int terminalLink,
+    int terminalClockId,
+    const std::vector<int>& clockSourceIds,
+    const std::vector<ClockRouting>& routings,
+    const ClockSelectorPinReader& readSelectorPin
 );
 
 const char* clockGraphStatusName(ClockGraphStatus status);

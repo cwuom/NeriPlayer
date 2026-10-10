@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveCompletedPo
 import moe.ouom.neriplayer.core.player.policy.usb.shouldBypassCooldownForUsbExclusiveOpenGateRetry
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSuppressSystemFallbackForUsbExclusiveFailure
 import moe.ouom.neriplayer.core.player.lifecycle.markUsbExclusiveNativePathActive
+import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveRunningQueueTargetMs
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusiveTransportRecovery
@@ -116,6 +117,8 @@ internal class UsbExclusiveAudioSink(
     private fun syncVolumeRoute() {
         volumeOwner.setNativeHandle(if (usingNative) nativeHandle else 0L)
     }
+
+    fun isNativeOutputActive(): Boolean = usingNative
     private var fallbackConfigured = false
     private var configuredFormat: Format? = null
     private var configuredBufferSize = 0
@@ -657,9 +660,9 @@ internal class UsbExclusiveAudioSink(
         }
     }
 
-    override fun getAudioTrackBufferSizeUs(): Long {
-        return if (usingNative) C.TIME_UNSET else fallbackSink.audioTrackBufferSizeUs
-    }
+    override fun getAudioTrackBufferSizeUs(): Long = if (usingNative) {
+        usbExclusiveSchedulingBufferUs(pcmWriter.currentQueueTargetMs(lifecycleQueueTargetMs()))
+    } else fallbackSink.audioTrackBufferSizeUs
 
     override fun enableTunnelingV21() {
         if (usingNative && PlayerManager.usbExclusivePlaybackEnabled) {
@@ -975,8 +978,6 @@ internal class UsbExclusiveAudioSink(
             listenTogetherSyncPlaybackRate = PlayerManager.listenTogetherSyncPlaybackRate,
             usbExclusivePlaybackEnabled = true
         )
-        if (soundConfig.equalizerEnabled) return "equalizer_requires_system_audio_session"
-        if (soundConfig.loudnessGainMb > 0) return "loudness_requires_system_audio_session"
         if (
             abs(soundConfig.speed - 1f) > PARAMETER_EPSILON ||
             abs(soundConfig.pitch - 1f) > PARAMETER_EPSILON ||
@@ -1003,10 +1004,15 @@ internal class UsbExclusiveAudioSink(
         usingNative = usingNative,
         hasQueuedPcm = nativeHasQueuedPcm,
         prerollMs = NATIVE_START_PREROLL_MS,
+        runningQueueTargetMs = lifecycleQueueTargetMs(),
+    )
+
+    private fun lifecycleQueueTargetMs(): Long = usbExclusiveRunningQueueTargetMs(
+        PlayerManager.usbExclusivePreferences.bufferDurationMs(PlayerManager.usbExclusiveAppInForeground)
     )
 
     private fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float): Int =
-        pcmWriter.writeNative(buffer, size, nativeVolume, nativeWriteSnapshot())
+        pcmWriter.writeNativeUntilQueueTarget(buffer, size, nativeVolume, nativeWriteSnapshot())
 
     private fun nativeWriteSizeForAvailablePcmSpace(remaining: Int, directBuffer: Boolean): Int =
         pcmWriter.writeSize(remaining, directBuffer, nativeWriteSnapshot())
@@ -1185,12 +1191,12 @@ internal class UsbExclusiveAudioSink(
         pcmWriter.ensureUrgentAudioThreadPriority()
     }
 
-    private fun effectiveNativeVolume(): Float = volumeOwner.effectiveNativeVolume()
+    private fun effectiveNativeVolume(): Float = volumeOwner.nativeWriteVolume()
 
     private fun applyEffectiveNativeVolume(): Float = volumeOwner.applyEffectiveNativeVolume()
 
     private fun updateSoftwareFloatConversionState() {
-        pcmWriter.configureSoftwareFloatInput(usingNative, pcmEncoding)
+        pcmWriter.configureSoftwareFloatInput(usingNative, pcmEncoding, sampleRate)
     }
 
     private fun currentNativePositionUs(): Long {

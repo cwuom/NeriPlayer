@@ -10,6 +10,7 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.database.maintenance.LegacyJsonCleanupRequests
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.TrafficStatsRoomStore
@@ -48,10 +50,14 @@ class TrafficStatsRepository internal constructor(
     private val dailyFile: File by lazy { File(app.filesDir, "traffic_stats_daily.json") }
     @Volatile
     private var roomStorageEnabled = true
+    // 必须先于 initialStats 声明，否则初始化顺序会把 loadInitialStats 的结果覆盖回 false
+    @Volatile
+    private var persistenceSuspended = false
     private val initialStats = loadInitialStats()
     private val _dailyStats = MutableStateFlow(initialStats)
     private var persistedStats = initialStats
     private var persistJob: Job? = null
+    private var persistDeferredSinceMs = 0L
     private var persistGeneration = 0L
 
     val dailyStatsFlow: StateFlow<List<TrafficStatsBucket>> = _dailyStats
@@ -138,20 +144,28 @@ class TrafficStatsRepository internal constructor(
     private fun schedulePersistLocked(snapshot: List<TrafficStatsBucket>) {
         persistGeneration += 1L
         val generation = persistGeneration
-        persistJob?.cancel()
+        val now = currentTimeMillis()
+        val previous = persistJob
+        if (previous == null || previous.isCompleted) persistDeferredSinceMs = now
+        val waitMs = trafficPersistDelayMs(pendingForMs = now - persistDeferredSinceMs)
+        previous?.cancel()
         persistJob = scope.launch {
-            delay(PERSIST_DEBOUNCE_MS.milliseconds)
-            persistSnapshot(snapshot, generation)
+            delay(waitMs.milliseconds)
+            // 新流量只能取消等待中的防抖，已开始的 Room 事务被取消会被误判为写入失败并切到 JSON
+            withContext(NonCancellable) { persistSnapshot(snapshot, generation) }
         }
     }
 
     private fun loadInitialStats(): List<TrafficStatsBucket> {
-        val roomStats = runCatching {
+        val roomStats = try {
             runBlocking { roomStore.readIfRoomPrimary() }
-        }.onFailure {
+        } catch (error: Exception) {
+            // 读失败时无法确认 Room 是否已是主存，导入旧 JSON 会覆盖甚至清空更新的数据
             roomStorageEnabled = false
-            NPLogger.e(TAG, "Failed to read Room traffic stats", it)
-        }.getOrNull()
+            persistenceSuspended = true
+            NPLogger.e(TAG, "Failed to read Room traffic stats; keeping stored data untouched", error)
+            return emptyList()
+        }
         if (roomStats != null) {
             LegacyJsonCleanupRequests.schedule(app, "traffic-stats-room-load")
             return roomStats
@@ -185,6 +199,7 @@ class TrafficStatsRepository internal constructor(
         expectedGeneration: Long? = null
     ) {
         persistenceMutex.withLock {
+            if (persistenceSuspended) return@withLock
             if (roomStorageEnabled) {
                 val roomSucceeded = runCatching {
                     roomStore.writeIncremental(
@@ -231,7 +246,6 @@ class TrafficStatsRepository internal constructor(
 
     companion object {
         private const val TAG = "TrafficStatsRepo"
-        private const val PERSIST_DEBOUNCE_MS = 5_000L
 
         @Volatile
         private var instance: TrafficStatsRepository? = null
@@ -243,3 +257,10 @@ class TrafficStatsRepository internal constructor(
         }
     }
 }
+
+private const val PERSIST_DEBOUNCE_MS = 5_000L
+private const val PERSIST_MAX_DEFER_MS = 30_000L
+
+/** 持续下载或播放时每次新流量都会推迟落盘，进程被杀会丢掉整段统计，因此累计推迟不超过上限 */
+internal fun trafficPersistDelayMs(pendingForMs: Long): Long =
+    (PERSIST_MAX_DEFER_MS - pendingForMs).coerceIn(0L, PERSIST_DEBOUNCE_MS)

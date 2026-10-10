@@ -459,6 +459,85 @@ class ManagedDownloadPendingArtifactCleanupPlannerTest {
         assertFalse(plan.referencesToDelete.contains("tmp-unknown"))
     }
 
+    @Test
+    fun `explicit clear treats finalized and stateless metadata as protection instead of transient state`() {
+        val finalizedPending = entry("final.mp3.npdl_pending.f.pending", "root-final-pending")
+        val finalizedMetadata = entry("final.mp3.npmeta.json", "root-final-metadata")
+        val statelessPending = entry("stateless.mp3.npdl_pending.s.pending", "root-stateless-pending")
+        val statelessMetadata = entry("stateless.mp3.npmeta.pending.json", "root-stateless-metadata")
+        val orphanPending = entry("orphan.mp3.npdl_pending.o.pending", "root-orphan-pending")
+
+        val plan = ManagedDownloadPendingArtifactCleanupPlanner
+            .planUnownedForExplicitClear(
+                entries = listOf(
+                    finalizedPending,
+                    finalizedMetadata,
+                    statelessPending,
+                    statelessMetadata,
+                    orphanPending
+                ),
+                temporaryReferences = emptySet(),
+                parsedMetadataEntries = listOf(
+                    parsed(
+                        entry = finalizedMetadata,
+                        stableKey = "final",
+                        operationId = "operation-final",
+                        audioName = "final.mp3",
+                        downloadFinalized = true,
+                        artifactState = "DOWNLOADING"
+                    ),
+                    parsed(
+                        entry = statelessMetadata,
+                        stableKey = "stateless",
+                        operationId = "operation-stateless",
+                        audioName = "stateless.mp3",
+                        downloadFinalized = null,
+                        artifactState = null
+                    )
+                ),
+                unreadableMetadataReferences = emptySet()
+            )
+
+        assertEquals(setOf("root-orphan-pending"), plan.referencesToDelete)
+        assertEquals(
+            setOf("root-final-pending", "root-stateless-pending", "root-stateless-metadata"),
+            plan.protectedReferences
+        )
+    }
+
+    @Test
+    fun `cancelled operation deletes pending audio only when the listing proves the owned pair`() {
+        val audioName = "Artist - Song.mp3"
+        val metadata = entry("$audioName.npmeta.pending.json", "metadata-current")
+        val pendingAudio = entry("$audioName.npdl_pending.current.pending", "audio-current")
+        val owned = listOf(
+            parsed(
+                entry = metadata,
+                stableKey = "song-key",
+                operationId = "operation-current",
+                audioName = audioName
+            )
+        )
+
+        val unlistedMetadata = ManagedDownloadPendingArtifactCleanupPlanner
+            .planCancelledOperationReferences(
+                rootEntries = listOf(pendingAudio),
+                parsedMetadataEntries = owned,
+                stableKey = "song-key",
+                operationId = "operation-current"
+            )
+        val missingAudio = ManagedDownloadPendingArtifactCleanupPlanner
+            .planCancelledOperationReferences(
+                rootEntries = listOf(metadata),
+                parsedMetadataEntries = owned,
+                stableKey = " song-key ",
+                operationId = "operation-current"
+            )
+
+        assertEquals(setOf("metadata-current"), unlistedMetadata)
+        assertEquals(setOf("metadata-current"), missingAudio)
+    }
+
     private fun parsed(
         entry: ManagedDownloadStorage.StoredEntry,
         stableKey: String,

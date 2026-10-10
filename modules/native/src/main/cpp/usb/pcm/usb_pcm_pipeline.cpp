@@ -12,7 +12,6 @@ namespace {
 
 constexpr int kGainRampDurationMs = 80;
 constexpr int kUnderrunEdgeRampMs = 5;
-constexpr double kPositionEpsilon = 0.000000001;
 constexpr int64_t kMaximumRingBufferBytes = 64LL * 1024LL * 1024LL;
 
 bool calculateRingBytes(
@@ -45,40 +44,6 @@ bool calculateRingBytes(
     }
     *ringBytes = static_cast<size_t>(boundedBytes);
     return true;
-}
-
-bool canRender(double position, int inputFrames, bool hasPreviousFrame) {
-    if (inputFrames <= 0 || position < -1.0 - kPositionEpsilon) {
-        return false;
-    }
-    if (position < 0.0) {
-        return hasPreviousFrame;
-    }
-    const int leftIndex = static_cast<int>(std::floor(position));
-    if (leftIndex < 0 || leftIndex >= inputFrames) {
-        return false;
-    }
-    const double fraction = position - static_cast<double>(leftIndex);
-    return fraction <= kPositionEpsilon || leftIndex + 1 < inputFrames;
-}
-
-size_t countOutputFrames(
-    int inputFrames,
-    double initialPosition,
-    bool hasPreviousFrame,
-    double ratio,
-    size_t stopAfter
-) {
-    size_t outputFrames = 0;
-    double position = initialPosition;
-    while (canRender(position, inputFrames, hasPreviousFrame)) {
-        ++outputFrames;
-        if (outputFrames > stopAfter) {
-            break;
-        }
-        position += ratio;
-    }
-    return outputFrames;
 }
 
 int64_t monotonicMicros() {
@@ -116,10 +81,14 @@ bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error)
         return false;
     }
     std::vector<uint8_t> newRing;
-    std::vector<float> newPreviousInputFrame;
+    PcmResampler newResampler;
     try {
         newRing.assign(ringBytes, 0);
-        newPreviousInputFrame.assign(static_cast<size_t>(config.input.channelCount), 0.0f);
+        newResampler.configure(
+            config.input.sampleRate,
+            config.output.sampleRate,
+            config.output.channelCount
+        );
     } catch (const std::bad_alloc&) {
         if (error != nullptr) {
             *error = "pcm_ring_allocation_failed";
@@ -135,9 +104,7 @@ bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error)
     readIndex_ = 0;
     writeIndex_ = 0;
     levelBytes_ = 0;
-    resamplePosition_ = 0.0;
-    hasPreviousInputFrame_ = false;
-    previousInputFrame_.swap(newPreviousInputFrame);
+    resampler_ = std::move(newResampler);
     conversionBuffer_.clear();
     inputBytes_ = 0;
     outputBytes_ = 0;
@@ -363,156 +330,160 @@ size_t PcmPipeline::write(const uint8_t* input, size_t inputBytes, std::string* 
         return copyBytes;
     }
 
-    const double ratio = static_cast<double>(inputFormat_.sampleRate) /
-        static_cast<double>(outputFormat_.sampleRate);
-    if (inputFormat_.sampleRate == outputFormat_.sampleRate) {
-        inputFrames = std::min(
+    if (inputFormat_.sampleRate != outputFormat_.sampleRate) {
+        return writeResampled(
+            input,
             inputFrames,
-            static_cast<int>(std::min<size_t>(
-                freeOutputFrames,
-                static_cast<size_t>(std::numeric_limits<int32_t>::max())
-            ))
-        );
-    } else {
-        int low = 1;
-        int high = inputFrames;
-        int best = 0;
-        while (low <= high) {
-            const int candidate = low + (high - low) / 2;
-            const size_t outputFrames = countOutputFrames(
-                candidate,
-                resamplePosition_,
-                hasPreviousInputFrame_,
-                ratio,
-                freeOutputFrames
-            );
-            if (outputFrames <= freeOutputFrames) {
-                best = candidate;
-                low = candidate + 1;
-            } else {
-                high = candidate - 1;
-            }
-        }
-        inputFrames = best;
-    }
-    if (inputFrames <= 0) {
-        return 0;
-    }
-
-    double localPosition = resamplePosition_;
-    bool localHasPrevious = hasPreviousInputFrame_;
-    std::vector<float> localPrevious = previousInputFrame_;
-    const size_t outputFrameCapacity = inputFormat_.sampleRate == outputFormat_.sampleRate
-        ? static_cast<size_t>(inputFrames)
-        : std::min(
+            inputSampleBytes,
+            inputFrameBytes,
             freeOutputFrames,
-            countOutputFrames(
-                inputFrames,
-                localPosition,
-                localHasPrevious,
-                ratio,
-                freeOutputFrames
-            )
+            error
         );
-    const size_t requiredOutputBytes =
-        outputFrameCapacity * static_cast<size_t>(outputFormat_.frameBytes);
+    }
+    inputFrames = std::min(
+        inputFrames,
+        static_cast<int>(std::min<size_t>(
+            freeOutputFrames,
+            static_cast<size_t>(std::numeric_limits<int32_t>::max())
+        ))
+    );
+    return writeConverted(input, inputFrames, inputSampleBytes, inputFrameBytes, error);
+}
+
+size_t PcmPipeline::writeConverted(
+    const uint8_t* input,
+    int inputFrames,
+    int inputSampleBytes,
+    int inputFrameBytes,
+    std::string* error
+) {
     try {
-        conversionBuffer_.clear();
-        conversionBuffer_.reserve(requiredOutputBytes);
+        conversionBuffer_.assign(
+            static_cast<size_t>(inputFrames) * static_cast<size_t>(outputFormat_.frameBytes),
+            0
+        );
     } catch (const std::bad_alloc&) {
         if (error != nullptr) {
             *error = "pcm_conversion_allocation_failed";
         }
         return 0;
     }
-    auto& output = conversionBuffer_;
-
-    auto readFrameSample = [&](int frameIndex, int channel) {
-        const int mappedChannel = std::min(channel, inputChannels - 1);
-        if (frameIndex < 0) {
-            if (!localHasPrevious || localPrevious.empty()) {
-                return 0.0f;
-            }
-            return localPrevious[static_cast<size_t>(
-                std::min(mappedChannel, static_cast<int>(localPrevious.size()) - 1)
-            )];
-        }
-        const uint8_t* frame = input + static_cast<size_t>(frameIndex) * inputFrameBytes;
-        return readEncodedPcmSample(
-            frame + mappedChannel * inputSampleBytes,
-            inputFormat_.encoding
-        );
-    };
-    auto appendOutputFrame = [&](double position) {
-        int leftIndex = -1;
-        int rightIndex = 0;
-        double fraction = position + 1.0;
-        if (position >= 0.0) {
-            leftIndex = static_cast<int>(std::floor(position));
-            fraction = position - static_cast<double>(leftIndex);
-            rightIndex = fraction <= kPositionEpsilon ? leftIndex : leftIndex + 1;
-        }
-        const size_t outputOffset = output.size();
-        output.resize(outputOffset + static_cast<size_t>(outputFormat_.frameBytes), 0);
-        uint8_t* outputFrame = output.data() + outputOffset;
+    for (int frame = 0; frame < inputFrames; ++frame) {
+        const uint8_t* source = input + static_cast<size_t>(frame) * static_cast<size_t>(inputFrameBytes);
+        uint8_t* target = conversionBuffer_.data() +
+            static_cast<size_t>(frame) * static_cast<size_t>(outputFormat_.frameBytes);
         for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
-            const float left = readFrameSample(leftIndex, channel);
-            const float right = readFrameSample(rightIndex, channel);
-            const float mixed = left + static_cast<float>((right - left) * fraction);
             writeIntegerPcmSample(
-                outputFrame + channel * outputFormat_.subslotBytes,
+                target + channel * outputFormat_.subslotBytes,
                 outputFormat_.subslotBytes,
                 outputFormat_.bitsPerSample,
-                mixed
+                inputSampleFor(source, inputSampleBytes, channel)
             );
         }
-    };
+    }
+    return commitConverted(static_cast<size_t>(inputFrames) * static_cast<size_t>(inputFrameBytes));
+}
 
-    if (inputFormat_.sampleRate == outputFormat_.sampleRate) {
-        for (int frame = 0; frame < inputFrames; ++frame) {
-            appendOutputFrame(static_cast<double>(frame));
+size_t PcmPipeline::writeResampled(
+    const uint8_t* input,
+    int inputFrames,
+    int inputSampleBytes,
+    int inputFrameBytes,
+    size_t freeOutputFrames,
+    std::string* error
+) {
+    const int frames = resampler_.inputFramesForOutput(inputFrames, freeOutputFrames);
+    if (frames <= 0) {
+        return 0;
+    }
+    const int outputChannels = outputFormat_.channelCount;
+    PcmResampler rollback;
+    size_t produced = 0;
+    try {
+        rollback = resampler_;
+        resampleInput_.resize(static_cast<size_t>(frames) * static_cast<size_t>(outputChannels));
+        for (int frame = 0; frame < frames; ++frame) {
+            const uint8_t* source = input + static_cast<size_t>(frame) * static_cast<size_t>(inputFrameBytes);
+            float* target = resampleInput_.data() + static_cast<size_t>(frame) * static_cast<size_t>(outputChannels);
+            for (int channel = 0; channel < outputChannels; ++channel) {
+                target[channel] = inputSampleFor(source, inputSampleBytes, channel);
+            }
         }
-        localPosition = 0.0;
-    } else {
-        while (canRender(localPosition, inputFrames, localHasPrevious)) {
-            appendOutputFrame(localPosition);
-            localPosition += ratio;
+        resampleOutput_.clear();
+        produced = resampler_.process(resampleInput_.data(), frames, &resampleOutput_);
+        conversionBuffer_.assign(produced * static_cast<size_t>(outputFormat_.frameBytes), 0);
+    } catch (const std::bad_alloc&) {
+        resampler_ = std::move(rollback);
+        if (error != nullptr) {
+            *error = "pcm_conversion_allocation_failed";
         }
-        localPosition -= static_cast<double>(inputFrames);
-        if (std::abs(localPosition) < kPositionEpsilon) {
-            localPosition = 0.0;
+        return 0;
+    }
+    for (size_t frame = 0; frame < produced; ++frame) {
+        uint8_t* target = conversionBuffer_.data() + frame * static_cast<size_t>(outputFormat_.frameBytes);
+        const float* samples = resampleOutput_.data() + frame * static_cast<size_t>(outputChannels);
+        for (int channel = 0; channel < outputChannels; ++channel) {
+            writeIntegerPcmSample(
+                target + channel * outputFormat_.subslotBytes,
+                outputFormat_.subslotBytes,
+                outputFormat_.bitsPerSample,
+                samples[channel]
+            );
         }
     }
+    const size_t consumed = commitConverted(
+        static_cast<size_t>(frames) * static_cast<size_t>(inputFrameBytes)
+    );
+    if (consumed == 0) {
+        resampler_ = std::move(rollback);
+    }
+    return consumed;
+}
 
-    localPrevious.assign(static_cast<size_t>(inputChannels), 0.0f);
-    const uint8_t* finalFrame = input + static_cast<size_t>(inputFrames - 1) * inputFrameBytes;
-    for (int channel = 0; channel < inputChannels; ++channel) {
-        localPrevious[static_cast<size_t>(channel)] = readEncodedPcmSample(
-            finalFrame + channel * inputSampleBytes,
-            inputFormat_.encoding
+// 单声道复制到左右，立体声送单声道设备取平均；设备多出的声道补零，不复制最后一个声道
+float PcmPipeline::inputSampleFor(
+    const uint8_t* frame,
+    int inputSampleBytes,
+    int outputChannel
+) const {
+    const int inputChannels = std::max(1, inputFormat_.channelCount);
+    if (outputFormat_.channelCount == 1 && inputChannels >= 2) {
+        return 0.5f * (
+            readEncodedPcmSample(frame, inputFormat_.encoding) +
+            readEncodedPcmSample(frame + inputSampleBytes, inputFormat_.encoding)
         );
     }
+    const int sourceChannel = inputChannels == 1
+        ? (outputChannel < 2 ? 0 : -1)
+        : (outputChannel < inputChannels ? outputChannel : -1);
+    if (sourceChannel < 0) {
+        return 0.0f;
+    }
+    return readEncodedPcmSample(frame + sourceChannel * inputSampleBytes, inputFormat_.encoding);
+}
 
+size_t PcmPipeline::commitConverted(size_t consumedBytes) {
     std::lock_guard<std::mutex> guard(lock_);
-    if (freeBytesLocked() < output.size()) {
+    if (freeBytesLocked() < conversionBuffer_.size()) {
         beginBackpressureLocked(monotonicMicros());
         return 0;
     }
     endBackpressureLocked(monotonicMicros());
-    const size_t written = output.empty() ? 0 : writeRingLocked(output.data(), output.size());
-    resamplePosition_ = localPosition;
-    previousInputFrame_ = std::move(localPrevious);
-    hasPreviousInputFrame_ = true;
-    const auto consumedBytes = static_cast<size_t>(inputFrames * inputFrameBytes);
+    const size_t written = conversionBuffer_.empty()
+        ? 0
+        : writeRingLocked(conversionBuffer_.data(), conversionBuffer_.size());
+    if (written != conversionBuffer_.size()) {
+        return 0;
+    }
     inputBytes_ += static_cast<int64_t>(consumedBytes);
-    return written == output.size() ? consumedBytes : 0;
+    return consumedBytes;
 }
 
 void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
     const int frames = outputFormat_.frameBytes > 0
         ? static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes))
         : 0;
-    if (output == nullptr || frames <= 0) {
+    if (output == nullptr || frames <= 0 || applyBitPerfectGain(output, bytes)) {
         return;
     }
     float applied = appliedGain_.load();
@@ -552,6 +523,22 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
         }
     }
     appliedGain_.store(applied);
+}
+
+bool PcmPipeline::applyBitPerfectGain(uint8_t* output, size_t bytes) {
+    if (!bitPerfect_.load()) {
+        return false;
+    }
+    const bool muted = targetGain_.load() <= 0.000001f;
+    if (muted) {
+        std::memset(output, 0, bytes);
+    }
+    const float applied = muted ? 0.0f : 1.0f;
+    appliedGain_.store(applied);
+    // 退出比特完美后从当前实际增益开始斜坡，避免增益跳变
+    gainRampTarget_ = applied;
+    gainRampFramesRemaining_ = 0;
+    return true;
 }
 
 void PcmPipeline::fadeOutTrailingFrames(uint8_t* output, size_t bytes) const {
@@ -678,7 +665,9 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
     } else {
         applyGain(output, partialUnderrun ? read : bytes);
         if (partialUnderrun) {
-            fadeOutTrailingFrames(output, read);
+            if (!bitPerfect_.load()) {
+                fadeOutTrailingFrames(output, read);
+            }
             markSilentOutputLocked();
         }
         updateOutputSignalStatsLocked(output, bytes);
@@ -693,9 +682,7 @@ void PcmPipeline::clear() {
     writeIndex_ = 0;
     levelBytes_ = 0;
     endBackpressureLocked(monotonicMicros());
-    resamplePosition_ = 0.0;
-    hasPreviousInputFrame_ = false;
-    std::fill(previousInputFrame_.begin(), previousInputFrame_.end(), 0.0f);
+    resampler_.reset();
 }
 
 void PcmPipeline::resetCounters() {
@@ -734,6 +721,14 @@ void PcmPipeline::setTargetGain(float gain) {
     targetGain_.store(std::clamp(gain, 0.0f, 1.0f));
 }
 
+void PcmPipeline::setBitPerfect(bool enabled) {
+    bitPerfect_.store(enabled);
+}
+
+bool PcmPipeline::bitPerfect() const {
+    return bitPerfect_.load();
+}
+
 void PcmPipeline::armTransportStartRamp() {
     std::lock_guard<std::mutex> guard(lock_);
     transportStartRampFramesTotal_ = std::max(
@@ -745,6 +740,10 @@ void PcmPipeline::armTransportStartRamp() {
 
 void PcmPipeline::applyTransportStartRamp(uint8_t* output, size_t bytes) {
     if (output == nullptr || transportStartRampFramesRemaining_.load() <= 0) {
+        return;
+    }
+    if (bitPerfect_.load()) {
+        transportStartRampFramesRemaining_.store(0);
         return;
     }
     std::lock_guard<std::mutex> guard(lock_);

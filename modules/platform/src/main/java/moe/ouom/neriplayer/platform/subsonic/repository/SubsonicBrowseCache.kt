@@ -6,12 +6,22 @@ import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.server.ServerSongRef
 
+enum class ServerLibraryCategory {
+    ALBUMS, SONGS;
+
+    fun browseKind(query: String): String = when (this) {
+        ALBUMS -> if (query.isBlank()) "albums" else "search-albums"
+        SONGS -> if (query.isBlank()) "songs" else "search"
+    }
+}
+
+/** Include category, page and configuration revision; album/song searches never share a page. */
 data class ServerBrowseKey(
     val profileId: String, val revision: Long, val kind: String,
     val value: String = "", val offset: Int = 0, val size: Int = 30
 ) {
     val cacheKey: String get() = "$profileId:$revision:$kind:${ServerSongRef.encode(value)}:$offset:$size"
-    val persistent: Boolean get() = kind != "search"
+    val persistent: Boolean get() = !kind.startsWith("search")
 }
 
 data class ServerBrowsePage(

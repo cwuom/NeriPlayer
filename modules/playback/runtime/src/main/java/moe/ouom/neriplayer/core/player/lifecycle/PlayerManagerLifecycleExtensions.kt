@@ -1,4 +1,6 @@
-@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+@file:androidx.annotation.OptIn(
+    markerClass = [androidx.media3.common.util.UnstableApi::class, androidx.media3.common.util.ExperimentalApi::class]
+)
 
 package moe.ouom.neriplayer.core.player.lifecycle
 
@@ -6,11 +8,11 @@ import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsTracker
 
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 
+import moe.ouom.neriplayer.data.settings.playback.toAudioEffectsSettings
 import moe.ouom.neriplayer.data.settings.playback.toPlaybackSoundConfig
 import moe.ouom.neriplayer.data.ltw.validation.format
+import moe.ouom.neriplayer.core.player.audio.effects.AudioOutputRouteMonitor
 
-import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
-import moe.ouom.neriplayer.platform.subsonic.api.subsonicErrorMessageRes
 import moe.ouom.neriplayer.core.player.engine.datasource.ServerMediaLoadErrorPolicy
 
 import android.app.Application
@@ -60,7 +62,9 @@ import moe.ouom.neriplayer.core.player.audio.processing.PlaybackVolumeNormalizat
 import moe.ouom.neriplayer.core.player.engine.ReactiveRenderersFactory
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.core.player.lyrics.attachLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.clearExternalBluetoothLyricLine
+import moe.ouom.neriplayer.core.player.lyrics.releaseLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
@@ -338,6 +342,7 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
     ioScope = newIoScope()
     mainScope = newMainScope()
     playbackSoundOwner.rebindScopes(mainScope, ioScope)
+    audioEffectsOwner.rebindScope(ioScope)
     playbackQualityOwner.rebindScope(ioScope)
     playbackTransportOwner.rebindScope(mainScope)
 
@@ -475,6 +480,7 @@ private fun PlayerManager.applyInitialPlaybackPreferences(
         initialPlaybackPreferences.toPlaybackSoundConfig(),
         initialPlaybackPreferences.playbackHighResolutionOutputEnabled
     )
+    audioEffectsOwner.restore(initialPlaybackPreferences.toAudioEffectsSettings())
     NPLogger.d(
         "NERI-PlayerManager",
         "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, rememberLongFormProgress=$rememberLongFormPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, neteaseLocalSourceFallback=$neteaseLocalSourceFallbackEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, highResolutionOutput=$playbackHighResolutionOutputEnabled, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
@@ -527,6 +533,8 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
     player = ExoPlayer.Builder(app, renderersFactory)
         .setMediaSourceFactory(mediaSourceFactory)
         .setLoadControl(buildAudioLoadControl())
+        // 纯音频播放按 AudioTrack 缓冲余量休眠，息屏时不再每 10 ms 唤醒一次播放线程
+        .experimentalSetDynamicSchedulingEnabled(true)
         .build()
     player.addAnalyticsListener(object : AnalyticsListener {
         override fun onAudioInputFormatChanged(
@@ -604,6 +612,8 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
     applyInitialPlaybackWakeMode()
     playbackSoundOwner.attachPlayer(player)
     applyPlaybackSoundConfig(playbackSoundConfig, persist = false)
+    audioOutputRouteMonitor?.stop()
+    audioOutputRouteMonitor = AudioOutputRouteMonitor(app, audioEffectsOwner::onRouteChanged).also { it.start() }
     applyAudioFocusPolicy()
     applyUsbExclusivePlaybackPolicy()
     _playWhenReadyFlow.value = player.playWhenReady
@@ -686,18 +696,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
                 return
             }
 
-            // Transport retries have finished. Preserve this track instead of advancing through
-            // every song on an unavailable server; later recovery work can resume the same session.
-            SubsonicException.find(error)?.let { serverError ->
-                val failedSong = _currentSongFlow.value
-                val failedPosition = player.currentPosition.coerceAtLeast(0L)
-                pause()
-                if (failedSong != null) {
-                    serverRecoveryPosition = AppQueueSongIdentity.stableKey(failedSong) to failedPosition
-                }
-                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(subsonicErrorMessageRes(serverError))))
-                return
-            }
+            if (handleServerPlaybackError(error)) return
             val currentSong = _currentSongFlow.value
             val currentUrl = _currentMediaUrl.value
             val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
@@ -919,12 +918,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
             logPlaybackStateTransition("is_playing_changed:$isPlaying")
             _isPlayingFlow.value = isPlaying
             LyriconManager.setPlaybackState(isPlaying)
-            if (!isPlaying) {
-                syncPlaybackStatsPlayingState(
-                    playing = false,
-                    reason = "exo_is_playing_changed"
-                )
-            }
+            syncPlaybackStatsEnginePlayingState(isPlaying)
             if (isPlaying) {
                 startProgressUpdates()
                 schedulePlaybackStartupWatchdog(reason = "is_playing_true")
@@ -1056,10 +1050,6 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
             syncExoRepeatMode()
             _repeatModeFlow.value = repeatModeSetting
         }
-
-        override fun onAudioSessionIdChanged(audioSessionId: Int) {
-            playbackSoundOwner.onAudioSessionIdChanged(audioSessionId)
-        }
     })
 
     player.playWhenReady = false
@@ -1126,6 +1116,7 @@ private fun PlayerManager.createCachedPlaybackDataSourceFactory(
 }
 
 private fun PlayerManager.observePlaybackSettings() {
+    attachLiveLyricSurfaces()
     ioScope.launch {
         settingsRepo.audioQualityFlow.collect { q ->
             val previousQuality = preferredQuality
@@ -1416,13 +1407,6 @@ private fun PlayerManager.observePlaybackSettings() {
         }
     }
     ioScope.launch {
-        settingsRepo.playbackLoudnessGainMbFlow.collect { levelMb ->
-            applyPlaybackSoundConfigIfChanged(
-                playbackSoundConfig.copy(loudnessGainMb = levelMb)
-            )
-        }
-    }
-    ioScope.launch {
         settingsRepo.playbackVolumeBalanceFlow.collect { balance ->
             applyPlaybackSoundConfigIfChanged(
                 playbackSoundConfig.copy(volumeBalance = balance)
@@ -1436,26 +1420,11 @@ private fun PlayerManager.observePlaybackSettings() {
             )
         }
     }
-    ioScope.launch {
-        settingsRepo.playbackEqualizerEnabledFlow.collect { enabled ->
-            applyPlaybackSoundConfigIfChanged(
-                playbackSoundConfig.copy(equalizerEnabled = enabled)
-            )
-        }
+    mainScope.launch {
+        settingsRepo.audioEffectsSettingsFlow.collect(audioEffectsOwner::applyStored)
     }
     ioScope.launch {
-        settingsRepo.playbackEqualizerPresetFlow.collect { presetId ->
-            applyPlaybackSoundConfigIfChanged(
-                playbackSoundConfig.copy(presetId = presetId)
-            )
-        }
-    }
-    ioScope.launch {
-        settingsRepo.playbackEqualizerCustomBandLevelsFlow.collect { levels ->
-            applyPlaybackSoundConfigIfChanged(
-                playbackSoundConfig.copy(customBandLevelsMb = levels)
-            )
-        }
+        settingsRepo.usbExclusiveFloatingKeepAliveFlow.collect { usbExclusiveFloatingKeepAliveEnabled = it }
     }
     ioScope.launch {
         settingsRepo.keepLastPlaybackProgressFlow.collect { enabled ->
@@ -1616,6 +1585,7 @@ private fun PlayerManager.rollbackInitialization(e: Throwable, effectiveMaxCache
     )
     rollbackInitializationStep("unregistered audio device callback", "unregister audio callback") {
         audioDeviceRouteOwner.release()
+        stopAudioOutputRouteMonitor()
     }
     rollbackInitializationStep("closed conditional http factory", "close conditional factory") {
         conditionalHttpFactory?.close()
@@ -1631,6 +1601,7 @@ private fun PlayerManager.rollbackInitialization(e: Throwable, effectiveMaxCache
     rollbackInitializationStep("cancelled mainScope", "cancel mainScope") { mainScope.cancel() }
     rollbackInitializationStep("cancelled ioScope", "cancel ioScope") { ioScope.cancel() }
     rollbackInitializationStep("released lyricon", "release lyricon") { LyriconManager.release() }
+    rollbackInitializationStep("released live lyrics", "release live lyrics") { releaseLiveLyricSurfaces() }
     initialized = false
 }
 
@@ -1730,8 +1701,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled,
         playbackSpeed = playbackSoundConfig.speed,
         playbackPitch = playbackSoundConfig.pitch,
-        equalizerEnabled = playbackSoundConfig.equalizerEnabled,
-        loudnessGainMb = playbackSoundConfig.loudnessGainMb,
+        audioEffectsActive = audioEffectsOwner.isDspActive,
         volumeBalance = playbackSoundConfig.volumeBalance,
         volumeNormalizationEnabled = playbackSoundConfig.volumeNormalizationEnabled,
         highResolutionOutputEnabled = playbackHighResolutionOutputEnabled,
@@ -1932,13 +1902,20 @@ private fun PlayerManager.releaseMediaJobsAndLyrics() {
     floatingLyricsShowTranslation = true
     statusBarLyricsEnable = false
     clearExternalBluetoothLyricLine()
+    releaseLiveLyricSurfaces()
     FloatingLyricsOverlayManager.release()
     LyriconManager.release()
+}
+
+private fun PlayerManager.stopAudioOutputRouteMonitor() {
+    audioOutputRouteMonitor?.stop()
+    audioOutputRouteMonitor = null
 }
 
 private fun PlayerManager.releasePlayerEngine() {
     releasePlayerIfInitialized()
     playbackSoundOwner.releaseEngine()
+    stopAudioOutputRouteMonitor()
     _playWhenReadyFlow.value = false
     _playerPlaybackStateFlow.value = Player.STATE_IDLE
     releaseMediaCache()

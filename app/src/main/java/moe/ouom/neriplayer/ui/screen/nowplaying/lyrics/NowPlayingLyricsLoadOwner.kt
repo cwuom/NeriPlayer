@@ -136,14 +136,20 @@ internal class NowPlayingLyricsLoadOwner(
             publish(generation, request.song, background, "background")
             markSecondaryResolved(generation)
         } catch (error: Exception) {
-            if (error is CancellationException && error !is TimeoutCancellationException) throw error
-            currentCoroutineContext().ensureActive()
-            if (request.song?.isServerSong() != true) throw error
-            if (isCurrent(generation)) {
-                // Keep the successful fast frame/user overrides while exposing a retryable failure.
-                errorMessage = request.context.getString(subsonicErrorMessageRes(error))
-                markSecondaryResolved(generation)
-            }
+            handleBackgroundFailure(generation, request, error)
+        }
+    }
+
+    private suspend fun handleBackgroundFailure(
+        generation: Long, request: NowPlayingLyricsLoadRequest, error: Exception
+    ) {
+        if (error is CancellationException && error !is TimeoutCancellationException) throw error
+        currentCoroutineContext().ensureActive()
+        if (request.song?.isServerSong() != true) throw error
+        if (isCurrent(generation)) {
+            // Keep the successful fast frame/user overrides while exposing a retryable failure.
+            errorMessage = request.context.getString(subsonicErrorMessageRes(error))
+            markSecondaryResolved(generation)
         }
     }
 

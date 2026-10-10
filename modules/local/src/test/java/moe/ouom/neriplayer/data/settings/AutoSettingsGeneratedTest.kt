@@ -396,9 +396,17 @@ class AutoSettingsGeneratedTest {
     fun inheritedPlaybackSectionKeepsEveryGeneratedSetting() {
         val settings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.playback)
 
-        assertEquals(39, settings.size)
-        assertEquals(39, settings.map { it.keyName }.toSet().size)
+        assertEquals(41, settings.size)
+        assertEquals(41, settings.map { it.keyName }.toSet().size)
         assertEquals("playback_fade_in", settings.first().keyName)
+        assertEquals(
+            AutoSettingsSections.playback,
+            AutoSettingsMetadata.requireSetting(SettingsKeys.AUDIO_EFFECTS_SETTINGS).section
+        )
+        assertEquals(
+            AutoSettingsSections.playback,
+            AutoSettingsMetadata.requireSetting(SettingsKeys.USB_EXCLUSIVE_FLOATING_KEEP_ALIVE).section
+        )
         assertEquals(
             AutoSettingsSchema.playback.youtubePlaybackSource.key,
             AutoSettingsMetadata.requireSetting(SettingsKeys.YOUTUBE_PLAYBACK_SOURCE).keyName

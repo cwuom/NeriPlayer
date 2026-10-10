@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.time.elapsedMillisSince
 import org.json.JSONObject
@@ -477,6 +478,7 @@ internal class DownloadedAudioMetadataStore(
             coverAssetFileName = materialized?.fileName
         )
             ?: return false
+        if (patchedPayload == raw) return true
         var lastError: Throwable? = null
         repeat(writeAttempts) { attempt ->
             val result = try {
@@ -675,7 +677,7 @@ internal class DownloadedAudioMetadataStore(
             put("stableKey", identity.stableKey())
             put("songId", song.id)
             put("identityAlbum", identity.album)
-            put("album", song.album)
+            put("album", persistedDownloadedAlbum(song.album))
             put("name", song.name)
             put("artist", song.artist)
             put("coverUrl", song.coverUrl)
@@ -849,6 +851,10 @@ internal fun resolveDownloadedAudioTime(
     return existingTimeMs?.takeIf { it > 0L }
         ?: fallbackTimeMs?.takeIf { it > 0L }
 }
+
+/** 目录里的“本地文件”是显示兜底值，写进元数据会在别的语言和文件名里原样出现 */
+internal fun persistedDownloadedAlbum(album: String?): String? =
+    album?.takeUnless(LocalSongSupport::isPlaceholderAlbum)
 
 internal data class DownloadedMetadataCreatedAt(
     val timestampMs: Long,
@@ -1046,7 +1052,7 @@ internal fun mergeRestorableBaseline(
     return current.copy(
         title = current.title ?: song.originalName ?: song.name,
         artist = current.artist ?: song.originalArtist ?: song.artist,
-        album = current.album ?: song.album,
+        album = current.album ?: persistedDownloadedAlbum(song.album),
         // 第一次写入要记录来源封面，不能误用当前的覆盖封面
         coverReference = current.coverReference
             ?: song.originalCoverUrl

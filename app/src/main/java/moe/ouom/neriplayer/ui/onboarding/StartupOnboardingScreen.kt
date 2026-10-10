@@ -29,11 +29,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -41,7 +38,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -68,12 +64,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,7 +94,6 @@ import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
-import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
@@ -112,10 +105,10 @@ import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.LoginSuccessDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountPlatform
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
@@ -145,7 +138,6 @@ import androidx.core.graphics.createBitmap
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
 import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
-import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -271,14 +263,9 @@ fun StartupOnboardingScreen(
     val effectiveBackgroundImageBlur = pendingBackgroundImageBlur ?: backgroundImageBlur
     val effectiveBackgroundImageAlpha = pendingBackgroundImageAlpha ?: backgroundImageAlpha
     val playbackControlLayoutPreferences by repo.playbackControlLayoutPreferencesFlow
-        .collectAsStateWithLifecycle(initialValue = PlaybackControlLayoutPreferences())
+        .collectAsStateWithLifecycle(initialValue = repo.defaultPlaybackControlLayoutPreferences)
     val lyricFontScales by repo.lyricFontScalesFlow.collectAsStateWithLifecycle(
-        initialValue = LyricFontScales(
-            coverLyric = 1.0f,
-            coverTranslation = 1.0f,
-            lyricsPageLyric = 1.0f,
-            lyricsPageTranslation = 1.0f
-        )
+        initialValue = repo.defaultLyricFontScales
     )
     val neteaseAutoSourceSwitch by repo.neteaseAutoSourceSwitchFlow.collectAsStateWithLifecycle(
         initialValue = false
@@ -791,41 +778,39 @@ fun StartupOnboardingScreen(
                     selectedLanguage = selectedLanguage,
                     onSelectLanguage = ::selectLanguage
                 )
-                StartupStep.Platforms -> PlatformContent(
+                StartupStep.Platforms -> StartupPlatformAccounts(
                     inlineMessage = inlineMessage,
                     onInlineMessageChange = { inlineMessage = it },
-                    biliState = biliState.health.state,
-                    hasSavedBiliCookies = biliState.hasSavedCookies,
-                    neteaseState = neteaseState.health.state,
-                    hasSavedNeteaseCookies = neteaseState.hasSavedCookies,
-                    youTubeState = youTubeState.health.state,
-                    hasSavedYouTubeAuth = youTubeState.hasSavedAuth,
-                    onOpenBili = {
+                    biliState = biliState,
+                    neteaseState = neteaseState,
+                    youTubeState = youTubeState,
+                    isActive = stepIndex == currentStep && !stepTransitionState.isRunning && !finishing,
+                    onLogin = { platform ->
                         inlineMessage = null
-                        biliSheetTab = 0
-                        showBiliSheet = true
+                        when (platform) {
+                            SettingsAccountPlatform.Bilibili -> {
+                                biliSheetTab = 0
+                                showBiliSheet = true
+                            }
+                            SettingsAccountPlatform.Netease -> {
+                                neteaseSheetTab = 0
+                                showNeteaseSheet = true
+                            }
+                            SettingsAccountPlatform.YouTube -> {
+                                youTubeSheetTab = 0
+                                showYouTubeSheet = true
+                            }
+                            SettingsAccountPlatform.QqMusic -> Unit
+                        }
                     },
-                    onManageBili = {
+                    onManageSaved = { platform ->
                         inlineMessage = null
-                        showBiliSavedCookieDialog = true
-                    },
-                    onOpenNetease = {
-                        inlineMessage = null
-                        neteaseSheetTab = 0
-                        showNeteaseSheet = true
-                    },
-                    onManageNetease = {
-                        inlineMessage = null
-                        showNeteaseSavedCookieDialog = true
-                    },
-                    onOpenYouTube = {
-                        inlineMessage = null
-                        youTubeSheetTab = 0
-                        showYouTubeSheet = true
-                    },
-                    onManageYouTube = {
-                        inlineMessage = null
-                        showYouTubeSavedCookieDialog = true
+                        when (platform) {
+                            SettingsAccountPlatform.Bilibili -> showBiliSavedCookieDialog = true
+                            SettingsAccountPlatform.Netease -> showNeteaseSavedCookieDialog = true
+                            SettingsAccountPlatform.YouTube -> showYouTubeSavedCookieDialog = true
+                            SettingsAccountPlatform.QqMusic -> Unit
+                        }
                     }
                 )
                 StartupStep.PlaybackSources -> StartupPlaybackSourceContent(
@@ -1032,132 +1017,117 @@ fun StartupOnboardingScreen(
                             .fillMaxSize()
                             .captureAdvancedGlassBackdrop(contentGlassBackdrop)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .widthIn(max = 680.dp)
-                                .align(Alignment.Center)
-                                .statusBarsPadding()
-                                .navigationBarsPadding()
-                                .padding(horizontal = 24.dp, vertical = 20.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(999.dp),
-                                color = colorScheme.secondaryContainer
-                            ) {
-                                Text(
-                                    text = stringResource(CoreCommonR.string.onboarding_badge),
-                                    modifier = Modifier.padding(
-                                        horizontal = 12.dp,
-                                        vertical = 6.dp
-                                    ),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = colorScheme.onSecondaryContainer
-                                )
-                            }
-                            Spacer(Modifier.height(14.dp))
-                            Text(
-                                text = stringResource(CoreCommonR.string.onboarding_title),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = colorScheme.onSurface
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = stringResource(CoreCommonR.string.onboarding_subtitle),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(18.dp))
-                            LinearProgressIndicator(
-                                progress = { animatedProgress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(999.dp))
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                text = stringResource(
-                                    CoreCommonR.string.onboarding_step_counter,
-                                    stepIndex + 1,
-                                    steps.size
-                                ),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(18.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth()
-                            ) {
-                                StartupOnboardingLayerHost(
-                                    transitionState = stepTransitionState,
-                                    modifier = Modifier.fillMaxSize(),
-                                ) { scene ->
-                                    key(scene.stepIndex) {
-                                        CompositionLocalProvider(
-                                            LocalAdvancedGlassNavigationOwner provides
-                                                steps[scene.stepIndex]
-                                        ) {
-                                            AdvancedGlassSceneLayer(
-                                                controller = advancedGlassController,
-                                                modifier = Modifier.fillMaxSize(),
-                                                disableStretchOverscroll =
-                                                    backgroundImageUri != null,
-                                                fixedBackground = true,
-                                                background = {
-                                                    Box(Modifier.fillMaxSize())
-                                                },
-                                                content = {
-                                                    Box(Modifier.fillMaxSize()) {
-                                                        RenderOnboardingStepContent(
-                                                            scene.stepIndex
-                                                        )
-                                                    }
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(Modifier.height(16.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (stepIndex > 0) {
-                                    HapticTextButton(
-                                        onClick = {
-                                            transitionToStep(stepIndex - 1)
-                                        },
-                                        enabled = canNavigateBack,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(stringResource(CoreCommonR.string.action_back))
-                                    }
-                                } else {
-                                    Spacer(Modifier.weight(1f))
-                                }
-
-                                HapticButton(
-                                    onClick = ::goNextStep,
-                                    enabled = canNavigateNext,
-                                    modifier = Modifier.weight(1.4f),
-                                    shape = OnboardingControlShape
+                        StartupOnboardingLayout(
+                            header = {
+                                Surface(
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = colorScheme.secondaryContainer
                                 ) {
                                     Text(
-                                        text = if (stepIndex == steps.lastIndex) {
-                                            stringResource(CoreCommonR.string.onboarding_learning_enter_app)
-                                        } else {
-                                            stringResource(CoreCommonR.string.onboarding_action_next)
-                                        }
+                                        text = stringResource(CoreCommonR.string.onboarding_badge),
+                                        modifier = Modifier.padding(
+                                            horizontal = 12.dp,
+                                            vertical = 6.dp
+                                        ),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colorScheme.onSecondaryContainer
                                     )
+                                }
+                                Spacer(Modifier.height(14.dp))
+                                Text(
+                                    text = stringResource(CoreCommonR.string.onboarding_title),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colorScheme.onSurface
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = stringResource(CoreCommonR.string.onboarding_subtitle),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(18.dp))
+                                LinearProgressIndicator(
+                                    progress = { animatedProgress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(999.dp))
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    text = stringResource(
+                                        CoreCommonR.string.onboarding_step_counter,
+                                        stepIndex + 1,
+                                        steps.size
+                                    ),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = colorScheme.onSurfaceVariant
+                                )
+                            },
+                            actions = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (stepIndex > 0) {
+                                        HapticTextButton(
+                                            onClick = {
+                                                transitionToStep(stepIndex - 1)
+                                            },
+                                            enabled = canNavigateBack,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(stringResource(CoreCommonR.string.action_back))
+                                        }
+                                    } else {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+
+                                    HapticButton(
+                                        onClick = ::goNextStep,
+                                        enabled = canNavigateNext,
+                                        modifier = Modifier.weight(1.4f),
+                                        shape = OnboardingControlShape
+                                    ) {
+                                        Text(
+                                            text = if (stepIndex == steps.lastIndex) {
+                                                stringResource(CoreCommonR.string.onboarding_learning_enter_app)
+                                            } else {
+                                                stringResource(CoreCommonR.string.onboarding_action_next)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            StartupOnboardingLayerHost(
+                                transitionState = stepTransitionState,
+                                modifier = Modifier.fillMaxSize(),
+                            ) { scene ->
+                                key(scene.stepIndex) {
+                                    CompositionLocalProvider(
+                                        LocalAdvancedGlassNavigationOwner provides
+                                            steps[scene.stepIndex]
+                                    ) {
+                                        AdvancedGlassSceneLayer(
+                                            controller = advancedGlassController,
+                                            modifier = Modifier.fillMaxSize(),
+                                            disableStretchOverscroll =
+                                                backgroundImageUri != null,
+                                            fixedBackground = true,
+                                            background = {
+                                                Box(Modifier.fillMaxSize())
+                                            },
+                                            content = {
+                                                Box(Modifier.fillMaxSize()) {
+                                                    RenderOnboardingStepContent(scene.stepIndex)
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1349,81 +1319,6 @@ private fun LanguageContent(
 }
 
 @Composable
-private fun PlatformContent(
-    inlineMessage: String?,
-    onInlineMessageChange: (String?) -> Unit,
-    biliState: SavedCookieAuthState,
-    hasSavedBiliCookies: Boolean,
-    neteaseState: SavedCookieAuthState,
-    hasSavedNeteaseCookies: Boolean,
-    youTubeState: YouTubeAuthState,
-    hasSavedYouTubeAuth: Boolean,
-    onOpenBili: () -> Unit,
-    onManageBili: () -> Unit,
-    onOpenNetease: () -> Unit,
-    onManageNetease: () -> Unit,
-    onOpenYouTube: () -> Unit,
-    onManageYouTube: () -> Unit
-) {
-    StepHeader(
-        icon = Icons.Outlined.Tune,
-        title = stringResource(CoreCommonR.string.onboarding_platforms_title),
-        description = stringResource(CoreCommonR.string.onboarding_platforms_desc)
-    )
-    Spacer(Modifier.height(18.dp))
-    inlineMessage?.let {
-        InlineMessage(text = it, onClose = { onInlineMessageChange(null) })
-        Spacer(Modifier.height(14.dp))
-    }
-    PlatformCard(
-        icon = painterResource(CoreCommonR.drawable.ic_bilibili),
-        title = stringResource(CoreCommonR.string.platform_bilibili),
-        status = statusTextForSavedCookie(biliState),
-        connected = biliState == SavedCookieAuthState.Valid,
-        actionText = if (hasSavedBiliCookies) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
-        } else if (biliState == SavedCookieAuthState.Valid) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
-        } else {
-            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
-        },
-        onClick = if (hasSavedBiliCookies) onManageBili else onOpenBili
-    )
-    Spacer(Modifier.height(12.dp))
-    PlatformCard(
-        icon = painterResource(CoreCommonR.drawable.ic_netease_cloud_music),
-        title = stringResource(CoreCommonR.string.platform_netease),
-        status = statusTextForSavedCookie(neteaseState),
-        connected = neteaseState == SavedCookieAuthState.Valid,
-        actionText = if (hasSavedNeteaseCookies) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
-        } else if (neteaseState == SavedCookieAuthState.Valid) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
-        } else {
-            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
-        },
-        onClick = if (hasSavedNeteaseCookies) onManageNetease else onOpenNetease
-    )
-    Spacer(Modifier.height(12.dp))
-    PlatformCard(
-        icon = painterResource(CoreCommonR.drawable.ic_youtube),
-        title = stringResource(CoreCommonR.string.common_youtube),
-        status = statusTextForYouTube(youTubeState),
-        connected = youTubeState == YouTubeAuthState.Valid,
-        actionText = if (hasSavedYouTubeAuth) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
-        } else if (youTubeState == YouTubeAuthState.Valid) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
-        } else {
-            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
-        },
-        onClick = if (hasSavedYouTubeAuth) onManageYouTube else onOpenYouTube
-    )
-    Spacer(Modifier.height(18.dp))
-    HintCard(body = stringResource(CoreCommonR.string.onboarding_platforms_hint))
-}
-
-@Composable
 private fun PersonalizeContent(
     pendingUiScale: Float,
     onUiScaleChange: (Float) -> Unit,
@@ -1550,11 +1445,12 @@ private fun PersonalizeContent(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = stringResource(CoreCommonR.string.onboarding_enhanced_blur_switch_title),
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.onSurface
@@ -1589,11 +1485,12 @@ private fun OptionCard(title: String, selected: Boolean, onClick: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 18.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 title,
+                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = if (selected) colors.onSecondaryContainer else colors.onSurface
@@ -1601,58 +1498,6 @@ private fun OptionCard(title: String, selected: Boolean, onClick: () -> Unit) {
             if (selected) {
                 Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = colors.onSecondaryContainer)
             }
-        }
-    }
-}
-
-@Composable
-private fun PlatformCard(
-    icon: Painter,
-    title: String,
-    status: String,
-    connected: Boolean,
-    actionText: String,
-    onClick: () -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    OnboardingGlassSurface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(OnboardingCardShape)
-            .clickable(onClick = onClick),
-        shape = OnboardingCardShape,
-        color = if (connected) colors.secondaryContainer else colors.surfaceContainerHigh
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(52.dp),
-                shape = OnboardingControlShape,
-                color = colors.surface
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(painter = icon, contentDescription = title, tint = colors.onSurface, modifier = Modifier.size(28.dp))
-                }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface
-                )
-                Spacer(Modifier.height(6.dp))
-                StatusPill(status, connected)
-            }
-            OnboardingActionButton(
-                text = actionText,
-                onClick = onClick
-            )
         }
     }
 }
@@ -1767,23 +1612,6 @@ private fun StartupNotificationPermissionWarningDialog(
             }
         }
     )
-}
-
-@Composable
-private fun statusTextForSavedCookie(state: SavedCookieAuthState): String {
-    return when (state) {
-        SavedCookieAuthState.Valid -> stringResource(CoreCommonR.string.onboarding_platform_status_connected)
-        SavedCookieAuthState.Checking -> stringResource(CoreCommonR.string.onboarding_platform_status_not_connected)
-        SavedCookieAuthState.Missing -> stringResource(CoreCommonR.string.onboarding_platform_status_not_connected)
-    }
-}
-
-@Composable
-private fun statusTextForYouTube(state: YouTubeAuthState): String {
-    return when (state) {
-        YouTubeAuthState.Valid -> stringResource(CoreCommonR.string.onboarding_platform_status_connected)
-        YouTubeAuthState.Missing -> stringResource(CoreCommonR.string.onboarding_platform_status_not_connected)
-    }
 }
 
 private suspend fun captureStartupThemeRevealSnapshot(

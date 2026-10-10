@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountAuthController
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAuthDialogState
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountPlatform
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
@@ -17,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 
 class SettingsAccountAuthControllerTest {
     private val neteaseVm = mock(NeteaseAuthViewModel::class.java)
@@ -32,6 +34,80 @@ class SettingsAccountAuthControllerTest {
     private val controller = SettingsAccountAuthController(
         neteaseVm, biliVm, youtubeVm, dialogs, latestMessageAction
     )
+
+    @Test
+    fun `platform login opens only its own sheet and resets its selected tab`() {
+        listOf(
+            SettingsAccountPlatform.Netease,
+            SettingsAccountPlatform.Bilibili,
+            SettingsAccountPlatform.YouTube
+        ).forEach { platform ->
+            dialogs.showNeteaseSheet = false
+            dialogs.showBiliSheet = false
+            dialogs.showYouTubeSheet = false
+            dialogs.neteaseTab.intValue = 2
+            dialogs.biliTab.intValue = 3
+            dialogs.youtubeTab.intValue = 4
+
+            controller.actions.openPlatformLogin(platform)
+
+            assertEquals(platform == SettingsAccountPlatform.Netease, dialogs.showNeteaseSheet)
+            assertEquals(platform == SettingsAccountPlatform.Bilibili, dialogs.showBiliSheet)
+            assertEquals(platform == SettingsAccountPlatform.YouTube, dialogs.showYouTubeSheet)
+            assertEquals(if (platform == SettingsAccountPlatform.Netease) 0 else 2, dialogs.neteaseTab.intValue)
+            assertEquals(if (platform == SettingsAccountPlatform.Bilibili) 0 else 3, dialogs.biliTab.intValue)
+            assertEquals(if (platform == SettingsAccountPlatform.YouTube) 0 else 4, dialogs.youtubeTab.intValue)
+        }
+        assertEquals(listOf<String?>(null, null, null), messages)
+        verifyNoInteractions(neteaseVm, biliVm, youtubeVm)
+    }
+
+    @Test
+    fun `platform saved authorization opens only its own management dialog`() {
+        listOf(
+            SettingsAccountPlatform.Netease,
+            SettingsAccountPlatform.Bilibili,
+            SettingsAccountPlatform.YouTube
+        ).forEach { platform ->
+            dialogs.showNeteaseSavedCookieDialog = false
+            dialogs.showBiliSavedCookieDialog = false
+            dialogs.showYouTubeSavedCookieDialog = false
+
+            controller.actions.openPlatformSavedAuthorization(platform)
+
+            assertEquals(platform == SettingsAccountPlatform.Netease, dialogs.showNeteaseSavedCookieDialog)
+            assertEquals(platform == SettingsAccountPlatform.Bilibili, dialogs.showBiliSavedCookieDialog)
+            assertEquals(platform == SettingsAccountPlatform.YouTube, dialogs.showYouTubeSavedCookieDialog)
+            assertFalse(dialogs.showNeteaseSheet)
+            assertFalse(dialogs.showBiliSheet)
+            assertFalse(dialogs.showYouTubeSheet)
+        }
+        assertEquals(listOf<String?>(null, null, null), messages)
+        verifyNoInteractions(neteaseVm, biliVm, youtubeVm)
+    }
+
+    @Test
+    fun `unavailable qq platform does not open a dialog or clear an existing message`() {
+        messages += "retained"
+        dialogs.neteaseTab.intValue = 2
+        dialogs.biliTab.intValue = 3
+        dialogs.youtubeTab.intValue = 4
+
+        controller.actions.openPlatformLogin(SettingsAccountPlatform.QqMusic)
+        controller.actions.openPlatformSavedAuthorization(SettingsAccountPlatform.QqMusic)
+
+        assertFalse(dialogs.showNeteaseSheet)
+        assertFalse(dialogs.showBiliSheet)
+        assertFalse(dialogs.showYouTubeSheet)
+        assertFalse(dialogs.showNeteaseSavedCookieDialog)
+        assertFalse(dialogs.showBiliSavedCookieDialog)
+        assertFalse(dialogs.showYouTubeSavedCookieDialog)
+        assertEquals(2, dialogs.neteaseTab.intValue)
+        assertEquals(3, dialogs.biliTab.intValue)
+        assertEquals(4, dialogs.youtubeTab.intValue)
+        assertEquals(listOf("retained"), messages)
+        verifyNoInteractions(neteaseVm, biliVm, youtubeVm)
+    }
 
     @Test
     fun `login events own their sheet and success state`() {

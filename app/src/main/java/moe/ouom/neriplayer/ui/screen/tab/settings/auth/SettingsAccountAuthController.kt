@@ -153,6 +153,24 @@ internal class SettingsAccountAuthController(
 }
 
 internal class SettingsAccountAuthActions(controller: SettingsAccountAuthController) {
+    fun openPlatformLogin(platform: SettingsAccountPlatform) {
+        when (platform) {
+            SettingsAccountPlatform.Netease -> openNeteaseSheet()
+            SettingsAccountPlatform.Bilibili -> openBiliSheet()
+            SettingsAccountPlatform.YouTube -> openYouTubeSheet()
+            SettingsAccountPlatform.QqMusic -> Unit
+        }
+    }
+
+    fun openPlatformSavedAuthorization(platform: SettingsAccountPlatform) {
+        when (platform) {
+            SettingsAccountPlatform.Netease -> openNeteaseSavedCookieDialog()
+            SettingsAccountPlatform.Bilibili -> openBiliSavedCookieDialog()
+            SettingsAccountPlatform.YouTube -> openYouTubeSavedCookieDialog()
+            SettingsAccountPlatform.QqMusic -> Unit
+        }
+    }
+
     val dismissNeteaseSheet: () -> Unit = controller::dismissNeteaseSheet
     val dismissNeteaseConfirmDialog: () -> Unit = controller::dismissNeteaseConfirmDialog
     val dismissNeteaseSavedCookieDialog: () -> Unit = controller::dismissNeteaseSavedCookieDialog

@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.data.sync.host.createGitHubSyncClient
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -61,13 +62,14 @@ class GitHubSyncViewModel : ViewModel() {
     private var storage: SecureTokenStorage? = null
     internal var syncOperation: (suspend () -> Result<SyncResult>)? = null
     internal var targetSyncOperation: (suspend (String) -> Result<SyncResult>)? = null
+    internal var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var syncJob: Job? = null
     private var completionTimeJob: Job? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 if (storage == null) {
                     storage = SecureTokenStorage(appContext)
                     val manager = GitHubSyncManager.getInstance(appContext)

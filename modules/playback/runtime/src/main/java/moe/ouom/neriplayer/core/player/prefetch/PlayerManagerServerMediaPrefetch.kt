@@ -4,6 +4,7 @@ package moe.ouom.neriplayer.core.player.prefetch
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.os.StatFs
 import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -98,7 +99,8 @@ internal suspend fun PlayerManager.canStartServerPrefetch(cacheKey: String): Boo
 internal suspend fun PlayerManager.prefetchServerIntoPlayerCache(url: String, cacheKey: String, targetBytes: Long,
                                                                configurationValid: () -> Boolean): Long {
     if (targetBytes <= 0L || !canStartServerPrefetch(cacheKey)) return 0L
-    if (application.cacheDir.usableSpace < targetBytes + 1024 * 1024L) return 0L
+    // Speculative reads use only currently writable space, without reclaiming other cached data.
+    if (StatFs(application.cacheDir.absolutePath).availableBytes < targetBytes + 1024 * 1024L) return 0L
     val mediaCache = cache ?: return 0L
     val calls = PrefetchCallFactory(PlayerDependencies.repositories.sharedOkHttpClient)
     val upstream = conditionalHttpFactory?.forServerPrefetch(calls) ?: return 0L

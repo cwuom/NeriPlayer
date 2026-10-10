@@ -426,10 +426,19 @@ class LocalAudioImportManagerTest {
             )
         )
         assertEquals(
-            ManagedDownloadCandidatePublication.WITHHELD,
+            ManagedDownloadCandidatePublication.FINALIZED,
             publication(
                 DownloadedAudioMetadata(
                     downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                )
+            )
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            publication(
+                DownloadedAudioMetadata(
+                    downloadFinalized = false,
                     metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
                 )
             )

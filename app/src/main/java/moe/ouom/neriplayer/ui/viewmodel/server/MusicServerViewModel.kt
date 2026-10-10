@@ -14,10 +14,13 @@ import moe.ouom.neriplayer.platform.subsonic.api.subsonicErrorMessageRes
 import moe.ouom.neriplayer.platform.subsonic.repository.ServerAlbum
 import moe.ouom.neriplayer.platform.subsonic.repository.ServerBrowsePage
 import moe.ouom.neriplayer.platform.subsonic.repository.ServerBrowseKey
+import moe.ouom.neriplayer.platform.subsonic.repository.ServerLibraryCategory
+import moe.ouom.neriplayer.platform.subsonic.repository.SubsonicRepository
 import moe.ouom.neriplayer.common.R as CoreCommonR
 
 data class MusicServerState(
     val profileId: String? = null,
+    val category: ServerLibraryCategory = ServerLibraryCategory.ALBUMS,
     val album: ServerAlbum? = null,
     val query: String = "",
     val inputQuery: String = "",
@@ -34,8 +37,9 @@ data class MusicServerState(
     val failedMore: Boolean = false
 )
 
-class MusicServerViewModel : ViewModel() {
-    private val repository = AppContainer.subsonicRepository
+class MusicServerViewModel(
+    private val repository: SubsonicRepository = AppContainer.subsonicRepository
+) : ViewModel() {
     val accounts = repository.accounts
     val profiles = accounts.profiles
     private val mutableState = MutableStateFlow(MusicServerState(accountsLoading = true))
@@ -52,15 +56,17 @@ class MusicServerViewModel : ViewModel() {
     val locationKey: String get() = locationKey(state.value)
     private fun locationKey(value: MusicServerState): String =
         ServerBrowseKey(value.profileId ?: "", selectedRevision ?: -1L,
-            if (value.album != null) "album" else if (value.query.isNotBlank()) "search" else "albums",
-            value.album?.id ?: value.query).cacheKey
+            if (value.album != null) "album" else value.category.browseKind(value.query),
+            value.album?.id ?: value.query).cacheKey + if (value.album != null) ":${value.category}" else ""
 
     fun listPosition(key: String): Pair<Int, Int> = positions[key] ?: (0 to 0)
     fun saveListPosition(key: String, index: Int, offset: Int) {
         positions[key] = index to offset
         if (positions.size > 32) positions.keys.firstOrNull { it !in locations && it != locationKey }?.let(positions::remove)
     }
-    fun editQuery(value: String) { mutableState.update { it.copy(inputQuery = value) } }
+    fun editQuery(value: String) {
+        mutableState.update { it.copy(inputQuery = value, query = if (it.album != null) value.trim() else it.query) }
+    }
 
     init { reloadAccounts() }
 
@@ -91,13 +97,15 @@ class MusicServerViewModel : ViewModel() {
         }
     }
 
-    private fun navigate(destination: MusicServerState, saveCurrent: Boolean = true) {
+    private fun navigate(destination: MusicServerState, saveCurrent: Boolean = true, resetInput: Boolean = false) {
         if (saveCurrent && state.value.profileId != null) {
             rememberLocation()
         }
         request?.cancel()
         requestVersion++
-        mutableState.value = locations[locationKey(destination)] ?: destination
+        val restored = locations[locationKey(destination)] ?: destination
+        mutableState.value = if (resetInput) restored.copy(inputQuery = destination.inputQuery,
+            query = if (destination.album != null) destination.query else restored.query) else restored
         val cached = state.value
         if (cached.loadedOffsets.isEmpty() || System.currentTimeMillis() - cached.savedAtMs !in 0 until 60_000L) load()
     }
@@ -126,19 +134,33 @@ class MusicServerViewModel : ViewModel() {
 
     fun search(query: String) {
         val normalized = query.trim()
-        if (state.value.album == null && state.value.query == normalized) return
+        // Album detail searches only its fully loaded tracks; they never leave the album.
+        if (state.value.album != null || state.value.query == normalized) {
+            mutableState.update { it.copy(query = normalized, inputQuery = normalized) }
+            return
+        }
         parent = null
-        navigate(MusicServerState(profileId = state.value.profileId, query = normalized, inputQuery = normalized))
+        navigate(MusicServerState(profileId = state.value.profileId, category = state.value.category,
+            query = normalized, inputQuery = normalized), resetInput = true)
+    }
+
+    fun setCategory(category: ServerLibraryCategory) {
+        val current = state.value
+        if (current.category == category && current.album == null) return
+        val root = if (current.album != null) parent ?: current.copy(query = "", inputQuery = "") else current
+        parent = null
+        navigate(MusicServerState(profileId = current.profileId, category = category,
+            query = root.query, inputQuery = root.inputQuery), resetInput = true)
     }
 
     fun open(album: ServerAlbum) {
         parent = state.value.copy(loading = false)
-        navigate(MusicServerState(profileId = album.profileId, album = album))
+        navigate(MusicServerState(profileId = album.profileId, category = state.value.category, album = album), resetInput = true)
     }
 
     fun back() {
-        val destination = if (state.value.album != null) parent ?: MusicServerState(profileId = state.value.profileId)
-            else MusicServerState(profileId = state.value.profileId)
+        val destination = if (state.value.album != null) parent ?: MusicServerState(profileId = state.value.profileId, category = state.value.category)
+            else MusicServerState(profileId = state.value.profileId, category = state.value.category)
         parent = null
         navigate(destination)
     }
@@ -159,18 +181,26 @@ class MusicServerViewModel : ViewModel() {
             try {
                 // Read all retained pages first, so a background refresh cannot briefly drop pagination.
                 if (!more && snapshot.loadedOffsets.isEmpty()) {
-                    val key = repository.browseKey(id, snapshot.album?.id, snapshot.query)
+                    val key = repository.browseKey(id, snapshot.album?.id,
+                        if (snapshot.album != null) "" else snapshot.query, category = snapshot.category)
                     repository.browseCache.snapshot(key)?.let { page ->
-                        if (version == requestVersion) mutableState.value = appendPage(aggregate, page, 0).copy(loading = true)
+                        if (version == requestVersion) mutableState.update { current ->
+                            appendPage(aggregate, page, 0).copy(query = current.query,
+                                inputQuery = current.inputQuery, loading = true)
+                        }
                     }
                 }
                 for (offset in offsets) {
-                    val key = repository.browseKey(id, snapshot.album?.id, snapshot.query, offset)
+                    val key = repository.browseKey(id, snapshot.album?.id,
+                        if (snapshot.album != null) "" else snapshot.query, offset, category = snapshot.category)
                     val page = repository.browse(key, force)
                     aggregate = appendPage(aggregate, page, offset)
                     if (!page.hasMore) break
                 }
-                if (version == requestVersion) mutableState.value = aggregate.copy(loading = false, error = null, failedMore = false)
+                if (version == requestVersion) mutableState.update { current ->
+                    aggregate.copy(query = current.query, inputQuery = current.inputQuery,
+                        loading = false, error = null, failedMore = false)
+                }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 if (version == requestVersion) mutableState.update { it.copy(loading = false, error = userError(error), failedMore = more) }
@@ -181,7 +211,7 @@ class MusicServerViewModel : ViewModel() {
     private fun appendPage(current: MusicServerState, page: ServerBrowsePage, offset: Int) = current.copy(
         albums = (current.albums + page.albums).distinctBy { it.id },
         songs = (current.songs + page.songs).distinctBy { it.audioId },
-        hasMore = page.hasMore, nextOffset = offset + if (current.album == null && current.query.isBlank()) page.albums.size else page.songs.size,
+        hasMore = page.hasMore, nextOffset = offset + if (current.album == null && current.category == ServerLibraryCategory.ALBUMS) page.albums.size else page.songs.size,
         savedAtMs = if (current.loadedOffsets.isEmpty()) page.savedAtMs else minOf(current.savedAtMs, page.savedAtMs),
         loadedOffsets = current.loadedOffsets + offset
     )

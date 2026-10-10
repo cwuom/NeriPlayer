@@ -109,15 +109,23 @@ class DownloadedMp3IntegrityTest {
 
     @Test
     fun completeSourceChecksumResolvesBothLoggedCatalogDurationDiscrepancies() = runBlocking {
-        for ((frames, catalogDuration) in listOf(7491 to 200869L, 7624 to 197000L)) {
+        // 第二组目录时长是整秒，相差 1.7 s 仍在整秒取整精度内（#498），无需来源校验也会通过
+        for ((frames, catalogDuration, plainCheckError) in listOf(
+            Triple(7491, 200869L, "DOWNLOAD_INTEGRITY_DURATION_MISMATCH"),
+            Triple(7624, 197000L, null)
+        )) {
             val audio = createSilentMp3(frames)
             try {
                 val track = song().copy(durationMs = catalogDuration)
                 val payload = AudioDownloadManager.DownloadedPayloadSummary(audio.length(), audio.length())
-                val oldCheck = runCatching {
+                val plainError = runCatching {
                     AudioDownloadManager.verifyDownloadedAudioPayload(track, audio, audio.name, payload)
-                }.exceptionOrNull() as? DownloadIntegrityException
-                assertEquals("DOWNLOAD_INTEGRITY_DURATION_MISMATCH", oldCheck?.errorCode)
+                }.exceptionOrNull()
+                if (plainCheckError == null) {
+                    assertNull(plainError)
+                } else {
+                    assertEquals(plainCheckError, (plainError as? DownloadIntegrityException)?.errorCode)
+                }
                 val verified = AudioDownloadManager.verifyDownloadedAudioPayload(
                     track, audio, audio.name, payload, source(audio)
                 )

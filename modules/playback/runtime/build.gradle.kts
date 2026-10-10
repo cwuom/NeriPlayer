@@ -35,6 +35,13 @@ dependencies {
     implementation(libs.compose.icons)
     implementation(libs.androidx.appcompat)
 
+    // HyperOS Focus notifications and privileged UID network control.
+    implementation(libs.focus.api)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
+    implementation(libs.hidden.api.bypass)
+    compileOnly(project(":hidden-api"))
+
     // 解码器的 native 库由应用打包, 库模块只使用编译接口
     compileOnly(files(rootProject.file("app/libs/lib-decoder-ffmpeg-media3-1.8.0-ffmpeg-6.0-api28-common-release.aar")))
     testImplementation(files(rootProject.file("app/libs/lib-decoder-ffmpeg-media3-1.8.0-ffmpeg-6.0-api28-common-release.aar")))

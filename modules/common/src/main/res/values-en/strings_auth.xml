@@ -109,4 +109,13 @@
     <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=…; bili_jct=…)</string>
     <string name="login_paste_youtube_cookie_hint">Paste Cookie or browser request headers (must include Cookie)</string>
     <string name="settings_cookie_input_hint">Please enter Cookie</string>
+    <string name="settings_account_authorization_saved">Authorization saved</string>
+    <string name="settings_account_authorization_missing">No saved authorization</string>
+    <string name="settings_account_authorization_incomplete">Authorization details are incomplete. Sign in again or import them.</string>
+    <string name="settings_account_last_updated">Last updated %1$s</string>
+    <string name="settings_account_profile_loading">Loading account details…</string>
+    <string name="settings_account_profile_unavailable">Account details unavailable</string>
+    <string name="settings_account_sign_in_hint">Sign in to use platform features</string>
+    <string name="settings_account_sign_in_again">Sign in again</string>
+    <string name="settings_account_avatar">%1$s account avatar</string>
 </resources>

@@ -22,7 +22,7 @@ class DefaultListenTogetherSongMapper(
     private val resolvedStreamUrls: () -> List<String> = { emptyList() }
 ) : ListenTogetherSongMapper {
 
-    override fun SongItem.resolvedChannelId(): String? {
+    override fun SongItem.resolvedChannelId(): String {
         val explicit = channelId.nonBlankOrNull()
         if (explicit != null) return explicit
         return when {
@@ -72,7 +72,7 @@ class DefaultListenTogetherSongMapper(
 
     override fun SongItem.toListenTogetherTrackOrNull(includeLocal: Boolean): ListenTogetherTrack? {
         if (isServerSong()) return null
-        val channel = resolvedChannelId() ?: return null
+        val channel = resolvedChannelId()
         if (channel.equals(ListenTogetherChannels.LOCAL, ignoreCase = true) && !includeLocal) {
             return null
         }

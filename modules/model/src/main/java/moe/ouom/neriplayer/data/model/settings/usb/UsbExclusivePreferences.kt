@@ -24,6 +24,7 @@ const val DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS = -6
 const val MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS = -24
 const val MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS = -1
 const val USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_STEP_DB = 1
+const val MAX_USB_EXCLUSIVE_CHANNELS = 8
 
 enum class UsbExclusiveSampleRateMode(
     val storageValue: String,
@@ -197,7 +198,8 @@ data class UsbExclusivePreferences(
             2 in normalizedSupported -> 2
             sourceChannelCount in normalizedSupported && sourceChannelCount in 1..2 ->
                 sourceChannelCount
-            else -> null
+            // 只有多声道模式的声卡用最少的声道数，立体声送前两个声道、其余补零
+            else -> normalizedSupported.filter { it in 3..MAX_USB_EXCLUSIVE_CHANNELS }.minOrNull()
         }
     }
 

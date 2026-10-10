@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.core.download.presentation.ExplicitDownloadResumeCand
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.presentation.batchDownloadProgressForDisplay
+import moe.ouom.neriplayer.core.download.presentation.downloadFailureReasonMessageRes
 import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.download.presentation.visibleDownloadProgressTasks
@@ -1514,7 +1515,9 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
 
         DownloadStatus.FAILED -> {
             Text(
-                text = stringResource(CoreCommonR.string.download_failed),
+                text = stringResource(
+                    downloadFailureReasonMessageRes(task) ?: CoreCommonR.string.download_failed
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )

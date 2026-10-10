@@ -189,6 +189,74 @@ internal fun Int.audioEncodingLabel(): String {
     }
 }
 
+internal sealed interface UsbBitPerfectStatus {
+    data object Off : UsbBitPerfectStatus
+    data object Active : UsbBitPerfectStatus
+    data class Resampled(val inputRate: Int, val outputRate: Int) : UsbBitPerfectStatus
+    data class Truncated(val inputBits: Int, val outputBits: Int) : UsbBitPerfectStatus
+    data class ChannelsMapped(val inputChannels: Int, val outputChannels: Int) : UsbBitPerfectStatus
+}
+
+/**
+ * 只有原生输出格式已知时才判断；浮点解码看不出音源位深，
+ * ≤24 位整数源解出的浮点能逐位还原，所以不按浮点判定截断
+ */
+internal fun resolveUsbBitPerfectStatus(
+    bitPerfect: Boolean,
+    inputFormat: String,
+    outputFormat: String
+): UsbBitPerfectStatus? {
+    val outputRate = outputFormat.valueAfter("rate")?.toIntOrNull() ?: return null
+    if (!bitPerfect) return UsbBitPerfectStatus.Off
+    val inputRate = inputFormat.valueAfter("sampleRate")?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+    if (inputRate != outputRate) return UsbBitPerfectStatus.Resampled(inputRate, outputRate)
+    val inputChannels = inputFormat.valueAfter("channels")?.toIntOrNull()
+    val outputChannels = outputFormat.valueAfter("channels")?.toIntOrNull()
+    if (inputChannels != null && outputChannels != null && inputChannels > outputChannels) {
+        return UsbBitPerfectStatus.ChannelsMapped(inputChannels, outputChannels)
+    }
+    val inputBits = inputFormat.valueAfter("encoding")?.toIntOrNull()?.integerPcmBits()
+    val outputBits = outputFormat.valueAfter("bits")?.toIntOrNull()
+    if (inputBits != null && outputBits != null && outputBits < inputBits) {
+        return UsbBitPerfectStatus.Truncated(inputBits, outputBits)
+    }
+    return UsbBitPerfectStatus.Active
+}
+
+@Composable
+internal fun usbBitPerfectStatusLabel(status: UsbBitPerfectStatus): String = when (status) {
+    UsbBitPerfectStatus.Off -> stringResource(CoreCommonR.string.settings_usb_exclusive_bit_perfect_status_off)
+    UsbBitPerfectStatus.Active -> stringResource(CoreCommonR.string.settings_usb_exclusive_bit_perfect_status_active)
+    is UsbBitPerfectStatus.Resampled -> stringResource(
+        CoreCommonR.string.settings_usb_exclusive_bit_perfect_status_resampled,
+        status.inputRate.formatSampleRate(),
+        status.outputRate.formatSampleRate()
+    )
+    is UsbBitPerfectStatus.Truncated -> stringResource(
+        CoreCommonR.string.settings_usb_exclusive_bit_perfect_status_truncated,
+        status.inputBits,
+        status.outputBits
+    )
+    is UsbBitPerfectStatus.ChannelsMapped -> stringResource(
+        CoreCommonR.string.settings_usb_exclusive_bit_perfect_status_channels,
+        status.inputChannels,
+        status.outputChannels
+    )
+}
+
+private fun Int.integerPcmBits(): Int? = when (this) {
+    AudioFormat.ENCODING_PCM_8BIT -> 8
+    AudioFormat.ENCODING_PCM_16BIT -> 16
+    AudioFormat.ENCODING_PCM_24BIT_PACKED -> 24
+    AudioFormat.ENCODING_PCM_32BIT -> 32
+    else -> null
+}
+
+internal fun String.valueAfter(key: String): String? {
+    val regex = Regex("(?:^|\\s)${Regex.escape(key)}=([^\\s]+)")
+    return regex.find(this)?.groupValues?.getOrNull(1)
+}
+
 internal data class UsbStatusPresentation(
     val title: String,
     val description: String,

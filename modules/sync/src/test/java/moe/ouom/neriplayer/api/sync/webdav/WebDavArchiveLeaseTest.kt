@@ -7,6 +7,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import moe.ouom.neriplayer.api.sync.http.startOnLoopback
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavArchiveEntry
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -44,14 +45,80 @@ class WebDavArchiveLeaseTest {
         assertEquals(token, WebDavArchiveLockResponse.read(response(200, xml).newBuilder().removeHeader("Lock-Token").build(), root, "auth", token).token)
     }
 
-    @Test fun `header tokens require one bracketed bounded absolute token`() {
+    @Test fun `header tokens require one bounded URI or decimal token with optional brackets`() {
         assertNull(WebDavArchiveLockResponse.headerToken(response(200, xml).newBuilder().removeHeader("Lock-Token").build()))
-        for (header in listOf("", token, "<$token", "$token>", "<>", "<relative>", "<urn:>", "<urn:contains space>", "<$token>>", "<urn:${"a".repeat(1021)}>")) {
+        for (header in listOf("", "<$token", "$token>", "<>", "<relative>", "relative", "<urn:>", "<urn:contains space>", "<$token>>", "<urn:${"a".repeat(1021)}>", "123 456", "-123", "123abc", "1".repeat(1025))) {
             assertNull(header, WebDavArchiveLockResponse.headerToken(response(200, xml).newBuilder().header("Lock-Token", header).build()))
         }
         assertEquals(token, WebDavArchiveLockResponse.headerToken(response(200, xml).newBuilder().header("Lock-Token", "  <$token>  ").build()))
+        assertEquals(token, WebDavArchiveLockResponse.headerToken(response(200, xml).newBuilder().header("Lock-Token", token).build()))
+        assertEquals("123456", WebDavArchiveLockResponse.headerToken(response(200, xml).newBuilder().header("Lock-Token", "<123456>").build()))
+        assertEquals("123456", WebDavArchiveLockResponse.headerToken(response(200, xml).newBuilder().header("Lock-Token", "123456").build()))
         val longest = "urn:" + "a".repeat(1020)
         assertEquals(longest, WebDavArchiveLockResponse.headerToken(response(200, xml).newBuilder().header("Lock-Token", "<$longest>").build()))
+    }
+
+    @Test fun `WsgiDAV bare and rclone decimal tokens protect requests and release before reacquisition`() {
+        for (grantToken in listOf(token, "1770000123456789")) {
+            val requests = arrayListOf<Request>()
+            val client = client(requests) { request ->
+                response(if (request.method == "UNLOCK") 204 else 200, xml.replace(token, grantToken), request)
+                    .newBuilder().header("Lock-Token", grantToken).build()
+            }
+            repeat(2) {
+                acquire(client).use { lease -> lease.execute<Unit>(Request.Builder().url(root)) { _, _ -> } }
+            }
+            assertEquals(listOf("LOCK", "GET", "UNLOCK", "LOCK", "GET", "UNLOCK"), requests.map { it.method })
+            assertTrue(requests.filter { it.method == "GET" }.all { it.header("If") == "<$root> (<$grantToken>)" })
+            assertTrue(requests.filter { it.method == "UNLOCK" }.all { it.header("Lock-Token") == "<$grantToken>" })
+        }
+    }
+
+    @Test fun `rejected bare or decimal grants release the header token without trusting a different XML token`() {
+        for (grantToken in listOf(token, "1770000123456789")) {
+            val requests = arrayListOf<Request>()
+            val client = client(requests) { request ->
+                response(if (request.method == "UNLOCK") 204 else 200, xml.replace(token, "urn:uuid:other"), request)
+                    .newBuilder().header("Lock-Token", grantToken).build()
+            }
+            assertThrows(IOException::class.java) { acquire(client) }
+            assertEquals(listOf("LOCK", "UNLOCK"), requests.map { it.method })
+            assertEquals("<$grantToken>", requests.last().header("Lock-Token"))
+        }
+    }
+
+    @Test fun `rclone refresh may canonicalize only the trailing collection slash`() {
+        var now = 0L
+        val requests = arrayListOf<Request>()
+        val client = client(requests) { request ->
+            val body = if (request.method == "LOCK" && request.body == null) xml.replace(root.toString(), "https://sync.test/dav") else xml
+            response(if (request.method == "UNLOCK") 204 else 200, body, request)
+        }
+        acquire(client) { now }.use { lease ->
+            now = 250_000L
+            lease.execute<Unit>(Request.Builder().url(root)) { _, _ -> }
+        }
+        assertEquals(listOf("LOCK", "LOCK", "GET", "UNLOCK"), requests.map { it.method })
+        assertThrows(IOException::class.java) {
+            WebDavArchiveLockResponse.read(response(200, xml.replace(root.toString(), "https://sync.test/dav")), root, "auth")
+        }
+        for (otherRoot in listOf("https://sync.test/other", "https://other.test/dav", "https://sync.test/dav?other=1")) {
+            assertThrows(IOException::class.java) {
+                WebDavArchiveLockResponse.read(response(200, xml.replace(root.toString(), otherRoot)), root, "auth", token)
+            }
+        }
+    }
+
+    @Test fun `legacy DAV grants may omit lockroot but cannot provide empty or ambiguous roots`() {
+        val rootElement = "<d:lockroot><d:href>https://sync.test/dav/</d:href></d:lockroot>"
+        val withoutRoot = xml.replace(rootElement, "")
+        assertEquals(token, WebDavArchiveLockResponse.read(response(200, withoutRoot), root, "auth").token)
+        assertEquals(token, WebDavArchiveLockResponse.read(response(200, withoutRoot), root, "auth", token).token)
+        for (bad in listOf(xml.replace(rootElement, "$rootElement$rootElement"),
+            xml.replace("https://sync.test/dav/", "http://[invalid"),
+            xml.replace(rootElement, "<d:lockroot><d:href/></d:lockroot>"))) {
+            assertThrows(IOException::class.java) { WebDavArchiveLockResponse.read(response(200, bad), root, "auth") }
+        }
     }
 
     @Test fun `timeout seconds require decimal digits and a valid unsigned 32 bit value`() {
@@ -78,6 +145,28 @@ class WebDavArchiveLeaseTest {
         val client = client(requests) { request -> response(if (request.method == "UNLOCK") 204 else 200, "<bad/>", request) }
         assertThrows(IOException::class.java) { acquire(client) }
         assertEquals(listOf("LOCK", "UNLOCK"), requests.map { it.method })
+    }
+
+    @Test fun `a created resource grant is rejected and released before returning the acquisition error`() {
+        for (unlockCode in listOf(204, 500)) {
+            val requests = arrayListOf<Request>()
+            val client = client(requests) { request ->
+                response(if (request.method == "UNLOCK") unlockCode else 201, xml, request)
+            }
+            val error = assertThrows(WebDavApiException::class.java) { acquire(client) }
+            assertEquals(201, error.statusCode)
+            assertEquals(listOf("LOCK", "UNLOCK"), requests.map { it.method })
+            assertEquals("<$token>", requests.last().header("Lock-Token"))
+            assertEquals(if (unlockCode == 204) 0 else 1, error.suppressed.size)
+        }
+    }
+
+    @Test fun `a created resource without a valid token cannot release an unrelated lock`() {
+        val requests = arrayListOf<Request>()
+        val client = client(requests) { request -> response(201, xml, request).newBuilder().removeHeader("Lock-Token").build() }
+        val error = assertThrows(WebDavApiException::class.java) { acquire(client) }
+        assertEquals(201, error.statusCode)
+        assertEquals(listOf("LOCK"), requests.map { it.method })
     }
 
     @Test fun `first valid unbounded grant is released before falling back without a lease`() {
@@ -214,7 +303,7 @@ class WebDavArchiveLeaseTest {
             val client = OkHttpClient()
             try {
                 MockWebServer().use { server ->
-                    server.start()
+                    server.startOnLoopback()
                     val lockedRoot = server.url("/dav/")
                     server.dispatcher = object : Dispatcher() {
                         override fun dispatch(request: RecordedRequest): MockResponse {

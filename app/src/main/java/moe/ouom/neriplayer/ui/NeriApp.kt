@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
@@ -125,7 +126,6 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
-import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
@@ -174,6 +174,8 @@ import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.network.rememberOfflineModeState
 import moe.ouom.neriplayer.ui.haptic.syncHapticFeedbackSetting
 import moe.ouom.neriplayer.ui.navigation.AppBottomBarPresentation
+import moe.ouom.neriplayer.ui.navigation.playbackSourceNavigationAction
+import moe.ouom.neriplayer.ui.navigation.shouldSuppressPlaybackNavigation
 import moe.ouom.neriplayer.ui.navigation.AppMiniPlayerPresentation
 import moe.ouom.neriplayer.ui.navigation.AppNavigationGraph
 import moe.ouom.neriplayer.ui.navigation.AppNavigationGraphOwner
@@ -211,6 +213,7 @@ import moe.ouom.neriplayer.ui.playback.visual.rememberPlaybackVisualCoverState
 import moe.ouom.neriplayer.ui.playback.visual.resolveActiveCoverSeedHex
 import moe.ouom.neriplayer.ui.playback.visual.resolveCoverSeedWarmupDelayMillis
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsHostEnvironment
+import moe.ouom.neriplayer.ui.settings.route.isAppSettingsVisible
 import moe.ouom.neriplayer.ui.settings.route.AppSettingsRoute
 import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealOverlayHost
@@ -283,6 +286,8 @@ fun NeriApp(
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
+    onNowPlayingOpenChanged: (Boolean) -> Unit = {},
+    onPhoneLandscapeBack: (() -> Unit)? = null,
     onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
     Box(
@@ -299,6 +304,8 @@ fun NeriApp(
                 onLauncherShortcutRequestConsumed = onLauncherShortcutRequestConsumed,
                 onIsDarkChanged = onIsDarkChanged,
                 onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged,
+                onNowPlayingOpenChanged = onNowPlayingOpenChanged,
+                onPhoneLandscapeBack = onPhoneLandscapeBack,
                 onLanguageChanged = onLanguageChanged
             )
         }
@@ -325,6 +332,8 @@ private fun NeriAppContent(
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
+    onNowPlayingOpenChanged: (Boolean) -> Unit = {},
+    onPhoneLandscapeBack: (() -> Unit)? = null,
     onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -360,6 +369,12 @@ private fun NeriAppContent(
         initialValue = initialThemeSnapshot.forceDark
     )
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
+    var nowPlayingOverlayMounted by remember { mutableStateOf(showNowPlaying) }
+    val latestOnNowPlayingOpenChanged by rememberUpdatedState(onNowPlayingOpenChanged)
+    LaunchedEffect(showNowPlaying) {
+        // 方向跟随页面状态，不能让旋转重建时的旧覆盖层销毁关闭横屏
+        latestOnNowPlayingOpenChanged(showNowPlaying)
+    }
     var showNowPlayingLyrics by rememberSaveable { mutableStateOf(false) }
     var currentPlaybackSourceRoute by rememberSaveable { mutableStateOf<String?>(null) }
     var restoreLyricsAfterAlbumBack by rememberSaveable { mutableStateOf(false) }
@@ -405,12 +420,7 @@ private fun NeriAppContent(
     val nowPlayingCoverBlurAmount by repo.nowPlayingCoverBlurAmountFlow.collectAsStateWithLifecycle(initialValue = 1.5f)
     val nowPlayingCoverBlurDarken by repo.nowPlayingCoverBlurDarkenFlow.collectAsStateWithLifecycle(initialValue = 0.2f)
     val lyricFontScales by repo.lyricFontScalesFlow.collectAsStateWithLifecycle(
-        initialValue = LyricFontScales(
-            coverLyric = 1.0f,
-            coverTranslation = 1.0f,
-            lyricsPageLyric = 1.0f,
-            lyricsPageTranslation = 1.0f
-        )
+        initialValue = repo.defaultLyricFontScales
     )
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsStateWithLifecycle(initialValue = 0f)
@@ -468,7 +478,7 @@ private fun NeriAppContent(
     var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
     var themeModeWriteInFlight by remember { mutableStateOf(false) }
     var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
-    var coverArtRefreshToken by remember { mutableIntStateOf(0) }
+    var coverArtRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var showUsbExclusiveBackgroundPermissionDialog by rememberSaveable { mutableStateOf(false) }
     var usbExclusiveBackgroundPermissionPromptHandled by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -564,8 +574,6 @@ private fun NeriAppContent(
         }
     }
 
-    // 缓存当前封面的取色结果, 避免开关动态取色时先闪到默认种子色
-    var coverSeed by remember { mutableStateOf<PlaybackCoverSeed?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val displayCoverUrl = rememberSongDisplayCoverUrl(currentSong)
     val currentSongKey = remember(currentSong) { currentSong?.stableKey() }
@@ -585,6 +593,14 @@ private fun NeriAppContent(
         playbackVisualCoverRequest(displayCoverUrl, currentSongVisualKey)
     )
     val playbackVisualCoverUrl = playbackVisualCoverState.url
+    // 旋转重建时直接复用当前封面颜色，避免首帧回到默认主题
+    var coverSeed by remember {
+        mutableStateOf(playbackVisualCoverUrl?.let { url ->
+            CoverArtColorCache.peek(url)?.let { sample ->
+                PlaybackCoverSeed(url, sample.seedHex, currentSongVisualKey)
+            }
+        })
+    }
     val coverAssetRefreshKey = remember(
         coverArtRefreshToken,
         coverAssetRootGeneration,
@@ -1613,7 +1629,8 @@ private fun NeriAppContent(
                             homeHasRecentUsage = homeUsageSnapshot.entries.isNotEmpty(),
                             onBeforeLanguageRestart = clearThemeRevealState,
                             onLanguageChanged = onLanguageChanged,
-                            coherentFeedbackEnabled = coherentFeedbackEnabled
+                            coherentFeedbackEnabled = coherentFeedbackEnabled,
+                            settingsVisible = isAppSettingsVisible(selectedMainTabRoute, showNowPlaying)
                         ),
                         onBackgroundImageAlphaPreview = { pendingBackgroundImageAlpha = it },
                         snackbarHostState = snackbarHostState,
@@ -1721,6 +1738,11 @@ private fun NeriAppContent(
                 }
             }
 
+            val onOpenCurrentPlaybackSource = playbackSourceNavigationAction(
+                currentPlaybackSourceRoute,
+                ::navigateToPlaybackSourceRoute
+            )
+
             AdvancedGlassHost(
                 controller = advancedGlassController,
                 backgroundBackdrop = backgroundGlassBackdrop,
@@ -1755,7 +1777,10 @@ private fun NeriAppContent(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
                             currentDestination = backEntry?.destination,
-                            showNowPlaying = showNowPlaying,
+                            showNowPlaying = shouldSuppressPlaybackNavigation(
+                                showNowPlaying, nowPlayingOverlayMounted,
+                                LocalConfiguration.current.smallestScreenWidthDp
+                            ),
                             offlineMode = offlineMode,
                             alwaysUseNewTabStyle = alwaysUseNewTabStyle,
                             backgroundImageUri = backgroundImageUri
@@ -1771,7 +1796,8 @@ private fun NeriAppContent(
                         baseBlurRequested = advancedGlassController.isBaseBlurRequested,
                         snackbarHostState = snackbarHostState,
                         onMainTabSelected = ::navigateToMainTab,
-                        onExpandNowPlaying = { showNowPlaying = true }
+                        onExpandNowPlaying = { showNowPlaying = true },
+                        onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
                     ) { _ ->
                         Box(
                             modifier = Modifier
@@ -1871,17 +1897,16 @@ private fun NeriAppContent(
                             dynamicEnabled = effectiveDynamicBackgroundEnabled,
                             offlineMode = offlineMode
                         ),
-                        onVisibilityChanged = latestOnNowPlayingVisibilityChanged,
+                        onVisibilityChanged = { mounted ->
+                            nowPlayingOverlayMounted = mounted
+                            latestOnNowPlayingVisibilityChanged(mounted)
+                        },
                         onClose = { showNowPlaying = false }
                     ) {
-                        val currentSourceRoute = currentPlaybackSourceRoute
                         NowPlayingScreen(
                             onNavigateUp = { showNowPlaying = false },
-                            onOpenCurrentPlaybackSource = currentSourceRoute?.let { route ->
-                                {
-                                    navigateToPlaybackSourceRoute(route)
-                                }
-                            },
+                            onPhoneLandscapeBack = onPhoneLandscapeBack,
+                            onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource,
                             showLyricsScreen = showNowPlayingLyrics,
                             onShowLyricsScreenChange = { showNowPlayingLyrics = it },
                             onEnterAlbum = { album ->

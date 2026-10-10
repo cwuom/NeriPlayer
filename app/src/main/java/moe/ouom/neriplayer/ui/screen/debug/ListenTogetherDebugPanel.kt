@@ -70,6 +70,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.BuildConfig
@@ -159,7 +160,7 @@ fun ListenTogetherRoomPanel(
     val currentQueue by PlayerManager.currentQueueFlow.collectAsState()
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-    val positionMs by PlayerManager.playbackPositionFlow.collectAsState()
+    val positionMs by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
 
     var baseUrl by rememberSaveable { mutableStateOf("") }
     var roomIdInput by rememberSaveable { mutableStateOf("") }

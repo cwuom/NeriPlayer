@@ -118,6 +118,7 @@ bool ExplicitFeedbackRuntime::configure(
     longGapReacquisitions_ = 0;
     lastRawValue_ = 0;
     lastPayloadBytes_ = 0;
+    formatShift_.reset();
     hasTerminalGateSnapshot_ = false;
     terminalGateSnapshot_ = {};
 
@@ -260,9 +261,13 @@ bool ExplicitFeedbackRuntime::onFeedbackInCompletion(
                 return failLocked(ExplicitFeedbackRuntimeFailure::InternalInvariant);
             }
 
-            const FeedbackEstimateResult estimate = estimator_.ingest(
-                decoded.sample.normalized
-            );
+            NormalizedFeedbackSample sample = decoded.sample.normalized;
+            sample.rateQ32 = formatShift_.apply(sample.rateQ32, config_.nominalRateQ32);
+            if (sample.rateQ32 == 0) {
+                incrementSaturated(&invalidPackets_);
+                return handleRejectedSampleLocked(completion.receivedAtNs);
+            }
+            const FeedbackEstimateResult estimate = estimator_.ingest(sample);
             if (estimate.status != FeedbackEstimateStatus::Accepted) {
                 incrementSaturated(&invalidPackets_);
                 return handleRejectedSampleLocked(completion.receivedAtNs);
@@ -325,6 +330,7 @@ ExplicitFeedbackRuntimeSnapshot ExplicitFeedbackRuntime::snapshot() const {
         longGapReacquisitions_,
         lastRawValue_,
         lastPayloadBytes_,
+        formatShift_.shift(),
         estimator_.snapshot(),
         gate
     };

@@ -47,10 +47,12 @@ bool uac2EndpointPacketSizeValidForSpeed(
     uint16_t rawMaxPacketSize
 );
 
+/** legacyAudioEndpoints 用于 UAC1 异步端点：9 字节描述符、同步端点可能没有用途位 */
 Uac2FeedbackTimingProfile buildUac2FeedbackTimingProfile(
     UsbBusSpeed busSpeed,
     const EndpointSnapshot& output,
-    const EndpointSnapshot& feedback
+    const EndpointSnapshot& feedback,
+    bool legacyAudioEndpoints = false
 );
 
 const char* usbBusSpeedName(UsbBusSpeed speed);

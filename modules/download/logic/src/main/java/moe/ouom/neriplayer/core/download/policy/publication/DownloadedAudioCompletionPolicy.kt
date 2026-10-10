@@ -50,6 +50,8 @@ fun isUnfinalizedDownloadedMetadata(
 fun isFinalizedDownloadedMetadata(
     metadata: DownloadedAudioMetadata?
 ): Boolean {
+    // 写不了内嵌标签的容器只能靠 sidecar 完成；该状态本身不是完成证据，必须有显式 downloadFinalized
     return metadata?.downloadFinalized == true &&
-        isAcceptedDownloadedAudioEmbeddingState(metadata.metadataEmbeddingState)
+        (isAcceptedDownloadedAudioEmbeddingState(metadata.metadataEmbeddingState) ||
+            metadata.metadataEmbeddingState == DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER)
 }

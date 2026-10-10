@@ -127,6 +127,26 @@ void verifiesUacTransportModeRegressionMatrix() {
     assert(isoTransferTargetCount(true, 8000, 8, 100, 16, 64) == 16);
     assert(isoTransferTargetCount(true, 8000, 8, 3000, 16, 64) == 16);
 
+    // Explicit-feedback requests keep the fixed 16-request set but span 8 ms,
+    // so high-speed DACs queue ~128 ms instead of ~16 ms.
+    assert(explicitFeedbackPacketsPerTransfer(8000) == 64);
+    assert(explicitFeedbackPacketsPerTransfer(4000) == 32);
+    assert(explicitFeedbackPacketsPerTransfer(1000) == 8);
+    assert(explicitFeedbackPacketsPerTransfer(0) == 8);
+    assert(explicitFeedbackPacketsPerTransfer(64000) == 128);
+    const IsoTransferWindowPlan highSpeedExplicitFeedback = planIsoTransferWindow(
+        8000,
+        explicitFeedbackPacketsPerTransfer(8000),
+        16,
+        3000
+    );
+    assert(highSpeedExplicitFeedback.packetsPerTransfer == 64);
+    assert(highSpeedExplicitFeedback.baselineTransferCount == 16);
+    assert(highSpeedExplicitFeedback.reserveTransferCount == 16);
+    assert(highSpeedExplicitFeedback.packetsPerTransfer *
+        highSpeedExplicitFeedback.baselineTransferCount * 1000 / 8000 == 128);
+    assert(isoTransferTargetCount(true, 8000, 64, 3000, 16, 16) == 16);
+
     assert(isoTransferCountForDuration(8000, 128, 12000) == 256);
     assert(isoTransferCountForDuration(8000, 128, 400) == 25);
     assert(isoTransferCountForDuration(1000, 32, 1500) == 47);

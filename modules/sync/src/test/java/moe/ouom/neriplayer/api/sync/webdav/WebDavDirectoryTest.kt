@@ -149,6 +149,41 @@ class WebDavDirectoryTest {
     }
 
     @Test
+    fun `archive lease reports a deleted sync directory instead of a generic lock failure`() {
+        for (status in listOf(404, 409)) {
+            val fixture = SyncHttpFixture(status = status, directoryStatus = 404)
+
+            val result = api(fixture).acquireArchiveLease(remote, knownSupported = false) {}
+
+            assertTrue(result.exceptionOrNull() is WebDavDirectoryNotFoundException)
+            assertEquals(listOf("LOCK", "PROPFIND"), fixture.requests.map { it.method })
+            assertEquals("https://example.test/dav/a%20b/nested/", fixture.requests.last().url.toString())
+        }
+    }
+
+    @Test
+    fun `archive lease keeps the lock failure when the sync directory exists`() {
+        val fixture = SyncHttpFixture(status = 409, directoryStatus = 207)
+
+        val error = api(fixture).acquireArchiveLease(remote, knownSupported = false) {}.exceptionOrNull()
+
+        assertTrue(error is WebDavApiException)
+        assertFalse(error is WebDavDirectoryNotFoundException)
+        assertEquals(409, (error as WebDavApiException).statusCode)
+        assertEquals(listOf("LOCK", "PROPFIND"), fixture.requests.map { it.method })
+    }
+
+    @Test
+    fun `archive lease failures other than missing paths skip the directory probe`() {
+        val fixture = SyncHttpFixture(status = 500, directoryStatus = 404)
+
+        val error = api(fixture).acquireArchiveLease(remote, knownSupported = false) {}.exceptionOrNull()
+
+        assertEquals(500, (error as WebDavApiException).statusCode)
+        assertEquals(listOf("LOCK"), fixture.requests.map { it.method })
+    }
+
+    @Test
     fun `missing properties do not mean the directory itself is missing`() {
         val body = """
             <d:multistatus xmlns:d="DAV:"><d:response><d:href>/</d:href>

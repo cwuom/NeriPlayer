@@ -36,6 +36,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import moe.ouom.neriplayer.common.storage.SecurePreferencesOpener
+import moe.ouom.neriplayer.common.storage.VolatileSharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -211,9 +213,7 @@ class NeteaseCookieRepository(private val context: Context) {
             cookies = validation.sanitizedCookies,
             savedAt = savedAt
         ).normalized(savedAt = savedAt)
-        encryptedPrefs.edit {
-            putString(KEY_NETEASE_AUTH_BUNDLE, normalized.toJson())
-        }
+        writeAuthBundle(normalized)
         _authFlow.value = normalized
         _cookieFlow.value = normalized.cookies
         _authHealthFlow.value = evaluateNeteaseAuthHealth(normalized)
@@ -226,9 +226,7 @@ class NeteaseCookieRepository(private val context: Context) {
 
     fun clear() {
         synchronized(mutationLock) {
-            encryptedPrefs.edit {
-                remove(KEY_NETEASE_AUTH_BUNDLE)
-            }
+            writeAuthBundle(null)
             val cleared = NeteaseAuthBundle()
             _authFlow.value = cleared
             _cookieFlow.value = cleared.cookies
@@ -250,10 +248,10 @@ class NeteaseCookieRepository(private val context: Context) {
         }.getOrElse { error ->
             NPLogger.w(
                 "NERI-CookieRepo",
-                "Failed to read NetEase secure prefs, clearing corrupted storage and retrying.",
+                "Failed to read NetEase secure prefs, recovering storage.",
                 error
             )
-            rebuildEncryptedStorage()
+            recoverUnreadableStorage(error)
             ""
         }
         if (raw.isNotBlank()) {
@@ -281,8 +279,9 @@ class NeteaseCookieRepository(private val context: Context) {
             cookies = legacyCookies,
             savedAt = 0L
         ).normalized(savedAt = 0L)
-        encryptedPrefs.edit {
-            putString(KEY_NETEASE_AUTH_BUNDLE, migrated.toJson())
+        // 加密存储不可写时保留旧 Cookie，下次启动再迁移
+        if (!writeAuthBundle(migrated) || !SecurePreferencesOpener.isPersistent(encryptedPrefs)) {
+            return migrated
         }
         runCatching {
             runBlocking {
@@ -305,24 +304,31 @@ class NeteaseCookieRepository(private val context: Context) {
         return result
     }
 
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
-        return runCatching {
-            createEncryptedPrefs()
-        }.getOrElse { error ->
-            NPLogger.w(
-                "NERI-CookieRepo",
-                "Failed to open NetEase secure prefs, clearing storage and recreating.",
-                error
-            )
+    private fun openEncryptedPrefsWithRecovery(): SharedPreferences = SecurePreferencesOpener.open(
+        name = NETEASE_AUTH_PREFS,
+        create = { createEncryptedPrefs() },
+        delete = { clearEncryptedStorage() },
+        report = { event, error -> NPLogger.w("NERI-CookieRepo", "NetEase secure prefs $event", error) }
+    )
+
+    /** Keystore 不可用时删除文件也读不回凭据，只有数据损坏才删除重建 */
+    private fun recoverUnreadableStorage(error: Throwable) {
+        encryptedPrefs = if (SecurePreferencesOpener.isKeystoreUnavailable(error)) {
+            VolatileSharedPreferences.shared(NETEASE_AUTH_PREFS)
+        } else {
             clearEncryptedStorage()
-            createEncryptedPrefs()
+            openEncryptedPrefsWithRecovery()
         }
     }
 
-    private fun rebuildEncryptedStorage() {
-        clearEncryptedStorage()
-        encryptedPrefs = openEncryptedPrefsWithRecovery()
-    }
+    private fun writeAuthBundle(bundle: NeteaseAuthBundle?): Boolean = runCatching {
+        encryptedPrefs.edit {
+            if (bundle == null) remove(KEY_NETEASE_AUTH_BUNDLE)
+            else putString(KEY_NETEASE_AUTH_BUNDLE, bundle.toJson())
+        }
+    }.onFailure { error ->
+        NPLogger.w("NERI-CookieRepo", "Failed to write NetEase secure prefs", error)
+    }.isSuccess
 
     private fun clearEncryptedStorage() {
         runCatching {

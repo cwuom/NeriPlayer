@@ -1,12 +1,14 @@
 package moe.ouom.neriplayer.core.download.manager.runtime
 
 import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.download.DownloadFailureReason
 import moe.ouom.neriplayer.data.model.download.DownloadProgress
 import moe.ouom.neriplayer.data.model.download.DownloadStage
 
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.PreExistingDownloadedAudioAction
+import moe.ouom.neriplayer.core.download.policy.downloadSourceUnavailableErrorCode
 import moe.ouom.neriplayer.core.download.policy.publication.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.policy.resolvePreExistingDownloadedAudioAction
 import moe.ouom.neriplayer.core.download.policy.shouldClearNetworkPolicyPauseAfterCancellationSettled
@@ -1156,7 +1158,12 @@ internal suspend fun GlobalDownloadManager.startDownloadConfirmed(
                 operationId = operationId,
                 expectedAttemptId = attemptId,
                 expectedLeaseId = acquiredLeaseId,
-                requestGeneration = requestGeneration
+                requestGeneration = requestGeneration,
+                failureReason = if (error.previewOnly) {
+                    DownloadFailureReason.PREVIEW_ONLY
+                } else {
+                    DownloadFailureReason.SOURCE_UNAVAILABLE
+                }
             )
         }
         if (!settled) {
@@ -1321,7 +1328,8 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
     operationId: String?,
     expectedAttemptId: Long?,
     expectedLeaseId: String?,
-    requestGeneration: Long
+    requestGeneration: Long,
+    failureReason: DownloadFailureReason = DownloadFailureReason.SOURCE_UNAVAILABLE
 ): Boolean {
     val appContext = context.applicationContext
     val songKey = song.stableKey()
@@ -1404,7 +1412,7 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
                 context = appContext,
                 operationId = normalizedOperationId,
                 state = "INVALID",
-                errorCode = DOWNLOAD_SOURCE_UNAVAILABLE_ERROR_CODE
+                errorCode = downloadSourceUnavailableErrorCode(failureReason)
             )
         }.onFailure { persistError ->
             NPLogger.w(
@@ -1435,7 +1443,8 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
         songKey = songKey,
         status = DownloadStatus.FAILED,
         expectedAttemptId = expectedAttemptId,
-        operationId = normalizedOperationId
+        operationId = normalizedOperationId,
+        failureReason = failureReason
     )
     if (normalizedOperationId == null) {
         forgetPendingDownloadQueueEntriesIfCurrent(
@@ -1451,7 +1460,7 @@ internal suspend fun GlobalDownloadManager.settleUnavailableDownloadSourceFailur
     NPLogger.w(
         TAG,
         "下载来源确认不可用，已停止自动重试并触发补位: " +
-            "song=${song.name}, operationId=$normalizedOperationId"
+            "song=${song.name}, operationId=$normalizedOperationId, reason=$failureReason"
     )
     return true
 }

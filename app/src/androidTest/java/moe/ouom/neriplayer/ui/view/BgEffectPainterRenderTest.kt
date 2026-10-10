@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.view
 
 import android.graphics.Color as AndroidColor
+import android.graphics.Bitmap
 import android.graphics.RenderEffect
 import android.os.Build
 import android.view.View
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -22,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
+import androidx.test.platform.app.InstrumentationRegistry
+import coil.Coil
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -30,6 +35,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
+import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
@@ -149,6 +155,68 @@ class BgEffectPainterRenderTest {
             "HyperBackground rendered transparent or black: colored=$coloredPixelRatio",
             coloredPixelRatio >= MinColoredPixelRatio
         )
+    }
+
+    @Test
+    fun hyperBackground_recreatedHostRetainsPaletteWithoutReloadingCover() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val cover = File(context.cacheDir, "rotation-palette-${System.nanoTime()}.png")
+        val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(AndroidColor.rgb(220, 20, 40))
+            cover.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        } finally {
+            bitmap.recycle()
+        }
+        val generation = mutableIntStateOf(0)
+        try {
+            composeRule.mainClock.autoAdvance = false
+            composeRule.setContent {
+                key(generation.intValue) {
+                    Box(Modifier.size(if (generation.intValue % 2 == 0) 192.dp else 128.dp,
+                        if (generation.intValue % 2 == 0) 128.dp else 192.dp).background(Color.Black)) {
+                        HyperBackground(
+                            modifier = Modifier.fillMaxSize().testTag(ProductionTag),
+                            isDark = true,
+                            coverUrl = cover.absolutePath,
+                            coverIdentityKey = cover.name
+                        )
+                    }
+                }
+            }
+            composeRule.waitUntil(DrawTimeoutMs) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                redPalettePixelRatio(composeRule.onNodeWithTag(ProductionTag).captureToImage()) > 0.90
+            }
+
+            // 排除图片缓存重新提色，重建必须直接使用已经提取的颜色
+            val memoryCache = Coil.imageLoader(context).memoryCache
+            memoryCache?.keys?.filter { it.key.contains(cover.absolutePath) }
+                ?.forEach { memoryCache.remove(it) }
+            check(cover.delete())
+            repeat(2) {
+                composeRule.runOnIdle { generation.intValue++ }
+                composeRule.mainClock.advanceTimeBy(64L)
+                val ratio = redPalettePixelRatio(composeRule.onNodeWithTag(ProductionTag).captureToImage())
+                assertTrue("横竖尺寸重建后必须保留封面取色，红色像素比例=$ratio", ratio > 0.90)
+            }
+        } finally {
+            if (cover.exists()) check(cover.delete())
+        }
+    }
+
+    private fun redPalettePixelRatio(image: ImageBitmap): Double {
+        val pixels = image.toPixelMap()
+        var redPixels = 0
+        var comparedPixels = 0
+        for (y in PixelInset until image.height - PixelInset) {
+            for (x in PixelInset until image.width - PixelInset) {
+                val color = pixels[x, y]
+                if (color.red > color.green + 0.025f && color.red > color.blue + 0.025f) redPixels++
+                comparedPixels++
+            }
+        }
+        return redPixels.toDouble() / comparedPixels
     }
 
     private fun configurePainter(painter: BgEffectPainter, animTime: Float) {

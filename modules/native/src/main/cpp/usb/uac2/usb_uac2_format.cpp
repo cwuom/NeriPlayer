@@ -15,6 +15,8 @@ constexpr uint8_t kEndpointGeneralSubtype = 0x01;
 constexpr uint8_t kInputTerminalSubtype = 0x02;
 constexpr uint8_t kOutputTerminalSubtype = 0x03;
 constexpr uint8_t kClockSourceSubtype = 0x0A;
+constexpr uint8_t kClockSelectorSubtype = 0x0B;
+constexpr uint8_t kClockMultiplierSubtype = 0x0C;
 constexpr uint8_t kFormatTypeI = 0x01;
 constexpr uint8_t kControlCapabilityMask = 0x03;
 constexpr uint8_t kIsoSyncTypeMask = 0x0C;
@@ -301,6 +303,54 @@ bool parseClockSourceDescriptor(
         return false;
     }
     *output = parsed;
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
+bool parseClockRoutingDescriptor(
+    const uint8_t* descriptor,
+    int descriptorLength,
+    ClockRouting* output,
+    std::string* error
+) {
+    if (descriptor == nullptr || output == nullptr) {
+        assignError(error, "invalid_clock_routing_input");
+        return false;
+    }
+    if (descriptorLength < 5 || descriptor[1] != kClassSpecificInterface) {
+        assignError(error, "descriptor_not_clock_routing");
+        return false;
+    }
+    ClockRouting parsed;
+    parsed.id = descriptor[3];
+    if (descriptor[2] == kClockSelectorSubtype) {
+        const int pins = descriptor[4];
+        if (pins <= 0 || descriptorLength < 5 + pins) {
+            assignError(error, "clock_selector_descriptor_too_short");
+            return false;
+        }
+        parsed.selector = true;
+        for (int pin = 0; pin < pins; ++pin) {
+            parsed.sourceIds.push_back(descriptor[5 + pin]);
+        }
+    } else if (descriptor[2] == kClockMultiplierSubtype) {
+        parsed.sourceIds.push_back(descriptor[4]);
+    } else {
+        assignError(error, "descriptor_not_clock_routing");
+        return false;
+    }
+    const bool invalidSource = std::any_of(
+        parsed.sourceIds.begin(),
+        parsed.sourceIds.end(),
+        [](int sourceId) { return sourceId <= 0; }
+    );
+    if (parsed.id <= 0 || invalidSource) {
+        assignError(error, "clock_routing_id_invalid");
+        return false;
+    }
+    *output = std::move(parsed);
     if (error != nullptr) {
         error->clear();
     }

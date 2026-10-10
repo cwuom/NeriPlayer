@@ -650,6 +650,123 @@ class LegacyDownloadUpgradeCoordinatorTest {
         }
     }
 
+    @Test
+    fun unreadableExternalCoverStopsBlockingTheUpgradeOnTheNextLaunch() = runTest {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val sourceCover = File(File(fixture.sandbox, "old-covers").apply { mkdirs() }, "protected.jpg").apply {
+            writeBytes(byteArrayOf())
+        }
+        try {
+            seedMetadataUpgrade(database, fixture.managedRoot, itemCount = 1)
+            setLegacyCoverPayload(database, sourceCover.absolutePath)
+            val audio = File(fixture.managedRoot, audioName(0))
+            val originalAudio = audio.readBytes()
+            val metadataFile = File(fixture.managedRoot, audioName(0) + METADATA_SUFFIX)
+            Os.chmod(sourceCover.absolutePath, 0)
+            val firstLaunch = LegacyDownloadUpgradeCoordinator(
+                fixture.context, database, LegacyUpgradeLaunchCounter("launch-1")
+            )
+
+            repeat(2) {
+                val retried = firstLaunch.execute()
+                assertEquals(LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE, retried.rowResults.single().status)
+            }
+            assertFalse(metadataFile.exists())
+
+            val nextLaunch = LegacyDownloadUpgradeCoordinator(
+                fixture.context, database, LegacyUpgradeLaunchCounter("launch-2")
+            ).execute()
+
+            assertTrue("result=$nextLaunch", nextLaunch.isComplete)
+            assertEquals(1, nextLaunch.rowsCompleted)
+            assertFalse(payloadTableExists(database))
+            val metadata = JSONObject(metadataFile.readText())
+            assertPreservedCoverFixtureMetadata(metadata)
+            assertFalse(metadata.optString("coverPath") == sourceCover.absolutePath)
+            val recovery = metadata.getJSONObject("restorableMetadata").getJSONObject("assetRefs")
+                .getJSONArray("legacyCoverRecoveryReferences")
+            assertTrue((0 until recovery.length()).any { recovery.getString(it) == sourceCover.absolutePath })
+            assertTrue(sourceCover.isFile)
+            assertArrayEquals(originalAudio, audio.readBytes())
+        } finally {
+            if (sourceCover.exists()) {
+                Os.chmod(sourceCover.absolutePath, OsConstants.S_IRUSR or OsConstants.S_IWUSR)
+            }
+            database.close()
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun rowThatKeepsFailingForThreeLaunchesMovesToQuarantineWithoutRequeueLoops() = runTest {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = createStorageFixture(baseContext)
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val root = fixture.managedRoot
+        try {
+            seedMetadataUpgrade(database, root, itemCount = 1)
+            val audio = File(root, audioName(0))
+            val originalAudio = audio.readBytes()
+            val metadataFile = File(root, audioName(0) + METADATA_SUFFIX)
+            val existingMetadata = JSONObject()
+                .put("stableKey", stableKey(0))
+                .put("audioFileName", audioName(0))
+                .put("downloadFinalized", true)
+                .toString()
+            metadataFile.writeText(existingMetadata)
+            // 根目录只读：音频与旧 metadata 可读，但升级后的 metadata 每次都写不进去
+            Os.chmod(root.absolutePath, OsConstants.S_IRUSR or OsConstants.S_IXUSR)
+            val statuses = listOf("launch-1", "launch-2", "launch-3").map { token ->
+                LegacyDownloadUpgradeCoordinator(fixture.context, database, LegacyUpgradeLaunchCounter(token))
+                    .execute()
+                    .also { result -> if (token != "launch-3") assertFalse("result=$result", result.isSettled) }
+            }
+            Os.chmod(root.absolutePath, OsConstants.S_IRWXU)
+
+            assertEquals(
+                listOf(
+                    LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE,
+                    LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE,
+                    LegacyDownloadUpgradeRowStatus.QUARANTINED
+                ),
+                statuses.map { it.rowResults.single().status }
+            )
+            val finalLaunch = statuses.last()
+            assertTrue("result=$finalLaunch", finalLaunch.isComplete)
+            assertEquals(1, finalLaunch.rowsQuarantined)
+            assertFalse(payloadTableExists(database))
+            assertEquals(
+                LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE_EXHAUSTED.name,
+                database.openHelper.writableDatabase.query(
+                    "SELECT reason FROM legacy_download_upgrade_quarantine"
+                ).use { cursor ->
+                    check(cursor.moveToFirst())
+                    cursor.getString(0)
+                }
+            )
+            assertEquals(existingMetadata, metadataFile.readText())
+            assertArrayEquals(originalAudio, audio.readBytes())
+
+            val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(fixture.context, forceRefresh = true)
+            assertEquals(
+                0,
+                LegacyDownloadUpgradeCoordinator(fixture.context, database).requeueResolvableQuarantinedRows(snapshot)
+            )
+        } finally {
+            Os.chmod(root.absolutePath, OsConstants.S_IRWXU)
+            database.close()
+            fixture.close()
+        }
+    }
+
     private fun setLegacyCoverPayload(database: NeriUserDataDatabase, coverReference: String) {
         val sqliteDatabase = database.openHelper.writableDatabase
         val payload = sqliteDatabase.query(

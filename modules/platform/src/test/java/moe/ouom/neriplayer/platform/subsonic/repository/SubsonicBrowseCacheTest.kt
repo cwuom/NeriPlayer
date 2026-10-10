@@ -133,6 +133,30 @@ class SubsonicBrowseCacheTest {
         assertTrue(store.pages.isEmpty())
         assertNull(cache.snapshot(key))
     }
+
+    @Test fun `album and song searches are isolated and neither is persisted`() = runTest {
+        val store = Store()
+        val cache = SubsonicBrowseCache(store, backgroundScope)
+        val albums = key.copy(kind = "search-albums", value = "Artist")
+        val songs = key.copy(kind = "search", value = "Artist")
+        cache.fetch(albums) { page }
+        assertNull(cache.snapshot(songs))
+        cache.fetch(songs) { ServerBrowsePage() }
+        assertEquals(page.albums, cache.snapshot(albums)?.albums)
+        assertTrue(cache.snapshot(songs)?.albums?.isEmpty() == true)
+        assertEquals(0, store.writes)
+    }
+
+    @Test fun `song directory persists without colliding with the album directory`() = runTest {
+        val store = Store()
+        val cache = SubsonicBrowseCache(store, backgroundScope)
+        val songs = key.copy(kind = "songs")
+        cache.fetch(songs) { ServerBrowsePage() }
+        assertEquals(1, store.writes)
+        val restored = SubsonicBrowseCache(store, backgroundScope)
+        assertNotNull(restored.snapshot(songs))
+        assertNull(restored.snapshot(key))
+    }
     @Test fun `Room adapter preserves arbitrary server album and song ids across persistence`() = runTest {
         var saved: moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord? = null
         val room = org.mockito.Mockito.mock(moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore::class.java) { call ->

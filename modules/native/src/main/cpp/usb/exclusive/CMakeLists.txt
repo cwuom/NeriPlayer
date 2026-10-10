@@ -4,6 +4,7 @@ add_library(
     usb_exclusive_bridge.cpp
     usb_exclusive_device_selection.cpp
     usb_exclusive_device_session.cpp
+    usb_exclusive_feature_units.cpp
     usb_exclusive_handle_registry.cpp
     usb_exclusive_recovery.cpp
     usb_exclusive_runtime_report.cpp

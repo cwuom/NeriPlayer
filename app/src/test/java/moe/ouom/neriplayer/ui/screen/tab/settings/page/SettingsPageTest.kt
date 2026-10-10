@@ -88,6 +88,14 @@ class SettingsPageTest {
     }
 
     @Test
+    fun accountSearchTargetsUseTheSinglePlatformCardsItem() {
+        listOf("page:Accounts", "manual:netease_login", "manual:bili_login", "manual:youtube_login")
+            .forEach { target ->
+                assertEquals(0, settingsSearchScrollAnchor(SettingsPage.Accounts, target).itemIndex)
+            }
+    }
+
+    @Test
     fun themePersonalizationAndMotionStayInOneHomeGroup() {
         val visualGroup = SettingsHomePageGroups.first {
             SettingsPage.Theme in it

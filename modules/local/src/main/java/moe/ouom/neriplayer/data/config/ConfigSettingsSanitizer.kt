@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadParallelism
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB
 import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresets
 import moe.ouom.neriplayer.data.model.playback.decodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.data.model.playback.encodePlaybackEqualizerBandLevels
@@ -252,6 +253,9 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
             onAdjusted,
             ::normalizePlaybackEqualizerBandLevels
         )
+        sanitizeStringValue(strings, SettingsKeys.AUDIO_EFFECTS_SETTINGS.name, onAdjusted) { raw ->
+            AudioEffectsSettingsCodec.decodeOrNull(raw)?.let(AudioEffectsSettingsCodec::encode)
+        }
     }
 
     private fun sanitizeThemeStrings(

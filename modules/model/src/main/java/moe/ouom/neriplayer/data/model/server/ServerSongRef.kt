@@ -12,6 +12,7 @@ data class ServerSongRef(val profileId: String, val songId: String) {
     val audioId: String get() = "v1:$profileId:${encode(songId)}"
     val mediaUri: String get() = "neri-server://$profileId/song/${encode(songId)}"
     val cacheKey: String get() = "subsonic:$audioId:raw:v1"
+    // Compatibility value for SongItem's Long fields; deduplication and API requests use the full ref.
     val numericId: Long get() = surrogateId("song:$audioId")
 
     fun resourceUrl(kind: String = "stream", id: String = songId): String {

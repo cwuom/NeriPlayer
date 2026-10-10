@@ -73,4 +73,14 @@ class DownloadRecoveryIdentityTest {
         assertFalse(hasDownloadedAudioDurationMismatch(216870L, 216921L))
         assertFalse(hasDownloadedAudioDurationMismatch(275000L, null))
     }
+
+    @Test
+    fun `whole second source duration allows its rounding precision`() {
+        // #498: Bilibili 页面时长 171 秒，Hi-Res 音轨实测 169.984 秒
+        assertFalse(hasDownloadedAudioDurationMismatch(171000L, 169984L))
+        assertFalse(hasDownloadedAudioDurationMismatch(171000L, 172990L))
+        assertTrue(hasDownloadedAudioDurationMismatch(171000L, 168900L))
+        assertTrue(hasDownloadedAudioDurationMismatch(171000L, 30000L))
+        assertTrue(hasDownloadedAudioDurationMismatch(171001L, 169984L))
+    }
 }

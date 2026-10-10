@@ -7,69 +7,26 @@ import org.junit.Test
 
 class UsbExclusiveBufferResizePolicyTest {
     @Test
-    fun `active stream defers destructive buffer shrink`() {
-        assertFalse(
-            shouldApplyActiveUsbBufferResize(
-                streaming = true,
-                currentBufferMs = 12_000,
-                targetBufferMs = 5_000
-            )
-        )
+    fun `active stream never resizes the ring`() {
+        assertFalse(shouldRestoreReservedUsbBuffer(streaming = true, currentBufferMs = 250, reservedBufferMs = 1_500))
+        assertFalse(shouldRestoreReservedUsbBuffer(streaming = true, currentBufferMs = 12_000, reservedBufferMs = 5_000))
     }
 
     @Test
-    fun `active stream defers buffer growth to avoid live reallocation`() {
-        assertFalse(
-            shouldApplyActiveUsbBufferResize(
-                streaming = true,
-                currentBufferMs = 5_000,
-                targetBufferMs = 12_000
-            )
-        )
+    fun `idle stream grows back to the reserved ring`() {
+        assertTrue(shouldRestoreReservedUsbBuffer(streaming = false, currentBufferMs = 250, reservedBufferMs = 1_500))
     }
 
     @Test
-    fun `background transition only changes the transfer window`() {
-        assertFalse(
-            shouldApplyActiveUsbBufferResize(
-                streaming = true,
-                currentBufferMs = 250,
-                targetBufferMs = 1_500
-            )
-        )
+    fun `idle stream never shrinks below the reserved ring`() {
+        assertFalse(shouldRestoreReservedUsbBuffer(streaming = false, currentBufferMs = 1_500, reservedBufferMs = 1_500))
+        assertFalse(shouldRestoreReservedUsbBuffer(streaming = false, currentBufferMs = 12_000, reservedBufferMs = 5_000))
     }
 
     @Test
-    fun `unchanged active capacity only needs transfer window update`() {
-        assertFalse(
-            shouldApplyActiveUsbBufferResize(
-                streaming = true,
-                currentBufferMs = 3_000,
-                targetBufferMs = 3_000
-            )
-        )
-    }
-
-    @Test
-    fun `idle stream applies the next configured buffer`() {
-        assertTrue(
-            shouldApplyActiveUsbBufferResize(
-                streaming = false,
-                currentBufferMs = 12_000,
-                targetBufferMs = 5_000
-            )
-        )
-    }
-
-    @Test
-    fun `idle stream skips an unchanged buffer`() {
-        assertFalse(
-            shouldApplyActiveUsbBufferResize(
-                streaming = false,
-                currentBufferMs = 1_500,
-                targetBufferMs = 1_500
-            )
-        )
+    fun `running waterline keeps half of the lifecycle buffer`() {
+        assertEquals(125L, usbExclusiveRunningQueueTargetMs(250))
+        assertEquals(750L, usbExclusiveRunningQueueTargetMs(1_500))
     }
 
     @Test

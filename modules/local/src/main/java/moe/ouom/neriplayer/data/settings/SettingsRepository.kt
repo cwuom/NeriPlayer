@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.lyrics.offset.normalizeLyricDefaultOffsetMs
@@ -76,6 +77,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
@@ -94,7 +96,10 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
+import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.data.settings.playback.toAudioEffectsSettings
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import java.util.Locale
 
@@ -106,12 +111,20 @@ private val NOW_PLAYING_CONTROL_SIZE =
     intPreferencesKey("nowplaying_control_size")
 private val LYRICS_CONTROL_SIZE =
     intPreferencesKey("lyrics_control_size")
+private val XIAOMI_SUPER_ISLAND_SETTINGS =
+    stringPreferencesKey("xiaomi_super_island_settings")
 
 class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
     private val autoSettingSpecRepository = AutoSettingSpecRepository(context)
     private val usbExclusiveSettingsStore = UsbExclusiveSettingsStore(context)
     private val isDimensityBuild = isCurrentBuildDimensity()
+
+    val defaultPlaybackControlLayoutPreferences: PlaybackControlLayoutPreferences
+        get() = defaultPlaybackControlLayoutPreferences(context.resources.configuration.smallestScreenWidthDp)
+
+    val defaultLyricFontScales: LyricFontScales
+        get() = defaultLyricFontScales(context.resources.configuration.smallestScreenWidthDp)
 
     private fun <T> dataStoreSettingFlow(transform: (Preferences) -> T): Flow<T> {
         return context.dataStore.data
@@ -150,7 +163,8 @@ class SettingsRepository(private val context: Context) {
             resolvePlaybackControlLayoutPreferences(
                 nowPlayingPlacementValue = preferences[NOW_PLAYING_CONTROL_PLACEMENT],
                 nowPlayingSizeValue = preferences[NOW_PLAYING_CONTROL_SIZE],
-                lyricsSizeValue = preferences[LYRICS_CONTROL_SIZE]
+                lyricsSizeValue = preferences[LYRICS_CONTROL_SIZE],
+                defaults = defaultPlaybackControlLayoutPreferences
             )
         }
 
@@ -328,6 +342,9 @@ class SettingsRepository(private val context: Context) {
         settingFlow(AutoSettingsSchema.lyricSource.defaultLyricSource)
             .map(LyricSourcePreferencePolicy::fromStorage)
 
+    val liveUpdateLyricEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.liveUpdateLyricEnabledFlow
+
     val statusBarLyricsEnabledFlow : Flow<Boolean> =
         autoSettingsRepository.statusBarLyricsFlow
 
@@ -337,8 +354,18 @@ class SettingsRepository(private val context: Context) {
     val externalBluetoothTranslationEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.externalBluetoothTranslationEnabledFlow
 
+    val bluetoothMetadataModeFlow: Flow<BluetoothMetadataMode> =
+        settingFlow(AutoSettingsSchema.lyrics.bluetoothMetadataMode)
+            .map(BluetoothMetadataMode::fromStorage)
+
     val dynamicIslandLyricsEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled)
+
+    val xiaomiSuperIslandLyricEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.xiaomiSuperIslandLyricEnabledFlow
+
+    val xiaomiSuperIslandSettingsFlow: Flow<XiaomiSuperIslandSettings> =
+        dataStoreSettingFlow { XiaomiSuperIslandSettings.decode(it[XIAOMI_SUPER_ISLAND_SETTINGS]) }
 
     val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
         dataStoreSettingFlow { prefs ->
@@ -421,11 +448,12 @@ class SettingsRepository(private val context: Context) {
     val lyricFontScalesFlow: Flow<LyricFontScales> =
         dataStoreSettingFlow { prefs ->
             resolveLyricFontScales(
-                legacyScale = prefs[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f,
+                legacyScale = prefs[SettingsKeys.LYRIC_FONT_SCALE],
                 coverLyric = prefs[SettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE],
                 coverTranslation = prefs[SettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE],
                 lyricsPageLyric = prefs[SettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE],
-                lyricsPageTranslation = prefs[SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE]
+                lyricsPageTranslation = prefs[SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE],
+                defaults = defaultLyricFontScales
             )
         }
 
@@ -584,6 +612,12 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow {
             it[SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED] ?: false
         }
+
+    val audioEffectsSettingsFlow: Flow<AudioEffectsSettings> =
+        dataStoreSettingFlow { it.toAudioEffectsSettings() }
+
+    val usbExclusiveFloatingKeepAliveFlow: Flow<Boolean> =
+        dataStoreSettingFlow { it[SettingsKeys.USB_EXCLUSIVE_FLOATING_KEEP_ALIVE] ?: false }
 
     val keepLastPlaybackProgressFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
@@ -974,12 +1008,26 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.setExternalBluetoothTranslationEnabled(enabled)
     }
 
+    suspend fun setBluetoothMetadataMode(mode: BluetoothMetadataMode) {
+        setSetting(AutoSettingsSchema.lyrics.bluetoothMetadataMode, mode.storageValue)
+    }
+
     suspend fun setDynamicIslandLyricsEnabled(enabled: Boolean) {
         if (enabled) {
             setExternalBluetoothLyricsEnabled(true)
             setExternalBluetoothTranslationEnabled(true)
         }
         setSetting(AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled, enabled)
+    }
+
+    suspend fun setXiaomiSuperIslandLyricEnabled(enabled: Boolean) {
+        setSetting(AutoSettingsSchema.lyrics.xiaomiSuperIslandLyricEnabled, enabled)
+    }
+
+    suspend fun setXiaomiSuperIslandSettings(settings: XiaomiSuperIslandSettings) {
+        context.dataStore.edit {
+            it[XIAOMI_SUPER_ISLAND_SETTINGS] = settings.sanitized().encode()
+        }
     }
 
     suspend fun setFloatingLyricsPreferences(preferences: FloatingLyricsPreferences) {
@@ -1355,6 +1403,16 @@ class SettingsRepository(private val context: Context) {
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(playbackHighResolutionOutputEnabled = enabled)
         }
+    }
+
+    suspend fun setAudioEffectsSettings(settings: AudioEffectsSettings) {
+        val encoded = AudioEffectsSettingsCodec.encode(settings)
+        context.dataStore.edit { it[SettingsKeys.AUDIO_EFFECTS_SETTINGS] = encoded }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(audioEffectsSettingsJson = encoded) }
+    }
+
+    suspend fun setUsbExclusiveFloatingKeepAlive(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.USB_EXCLUSIVE_FLOATING_KEEP_ALIVE] = enabled }
     }
 
     suspend fun setKeepLastPlaybackProgress(enabled: Boolean) {

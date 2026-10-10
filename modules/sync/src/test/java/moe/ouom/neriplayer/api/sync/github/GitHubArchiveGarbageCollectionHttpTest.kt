@@ -12,6 +12,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import moe.ouom.neriplayer.api.sync.http.startOnLoopback
 import okhttp3.OkHttpClient
 import okhttp3.Call
 import okhttp3.EventListener
@@ -203,7 +204,7 @@ class GitHubArchiveGarbageCollectionHttpTest {
                     }
                 }
             }
-            server.start()
+            server.startOnLoopback()
             transport = GitHubRepositorySyncTransport(client, "test", server.url("/").toString().trimEnd('/'), "expired")
         }
 

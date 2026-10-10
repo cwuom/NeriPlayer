@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
+import android.media.AudioDeviceInfo
+
 internal enum class UsbExclusiveBackgroundAudioAnchorTransferMode {
     StaticLoop,
     Streaming
@@ -47,15 +49,17 @@ internal fun usbExclusiveBackgroundAudioAnchorCarrier(
     return carrier
 }
 
+/** 载波只写到确认的内置扬声器路由；USB 等外部路由一律静音，避免独占释放后漏到 DAC */
 internal fun shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
     transferMode: UsbExclusiveBackgroundAudioAnchorTransferMode,
-    builtInOutputRequested: Boolean,
-    routedToRequestedBuiltInOutput: Boolean
+    routedToBuiltInOutput: Boolean
 ): Boolean {
     return transferMode == UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming &&
-        builtInOutputRequested &&
-        routedToRequestedBuiltInOutput
+        routedToBuiltInOutput
 }
+
+internal fun isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(routedOutputType: Int?): Boolean =
+    routedOutputType == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
 
 internal fun usbExclusiveBackgroundAudioAnchorSpecs(): List<UsbExclusiveBackgroundAudioAnchorSpec> {
     return listOf(

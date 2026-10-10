@@ -20,7 +20,10 @@ import java.io.IOException
 import java.net.URLConnection
 import kotlin.time.Duration.Companion.milliseconds
 
-internal class DownloadSourceUnavailableException(message: String) : IOException(message)
+internal class DownloadSourceUnavailableException(
+    message: String,
+    val previewOnly: Boolean = false
+) : IOException(message)
 
 /** 将临时失败交给持久下载队列，保留工作文件和已有恢复预算 */
 internal class RetryableDownloadFailureException(
@@ -46,6 +49,7 @@ internal object AudioDownloadSourceResolver {
         ) : NeteaseDownloadLookup
 
         data object ExplicitlyUnavailable : NeteaseDownloadLookup
+        data object PreviewOnly : NeteaseDownloadLookup
         data object Missing : NeteaseDownloadLookup
     }
 
@@ -75,7 +79,7 @@ internal object AudioDownloadSourceResolver {
         eapiLookup: suspend (Long, String) -> NeteaseDownloadLookup,
         weapiLookup: (Long, Int) -> NeteaseDownloadLookup
     ): AudioDownloadManager.ResolvedDownloadSource? {
-        var explicitlyUnavailable = false
+        val refusals = HashSet<NeteaseDownloadLookup>()
         for (level in downloadQualityFallbacks(preferredQuality)) {
             val primary = eapiLookup(songId, level)
             if (primary is NeteaseDownloadLookup.Resolved) {
@@ -87,16 +91,22 @@ internal object AudioDownloadSourceResolver {
                 logNeteaseQualityFallback(songId, preferredQuality, level)
                 return fallback.source
             }
-            explicitlyUnavailable = explicitlyUnavailable ||
-                primary == NeteaseDownloadLookup.ExplicitlyUnavailable ||
-                fallback == NeteaseDownloadLookup.ExplicitlyUnavailable
+            refusals += primary
+            refusals += fallback
         }
-        if (explicitlyUnavailable) {
+        throwIfNeteaseSourceRefused(songId, refusals)
+        return null
+    }
+
+    private fun throwIfNeteaseSourceRefused(songId: Long, refusals: Set<NeteaseDownloadLookup>) {
+        val previewOnly = NeteaseDownloadLookup.PreviewOnly in refusals
+        if (previewOnly || NeteaseDownloadLookup.ExplicitlyUnavailable in refusals) {
             throw DownloadSourceUnavailableException(
-                "netease download source is explicitly unavailable: songId=$songId"
+                "netease download source is explicitly unavailable: " +
+                    "songId=$songId, previewOnly=$previewOnly",
+                previewOnly = previewOnly
             )
         }
-        return null
     }
 
     private fun logNeteaseQualityFallback(songId: Long, preferred: String, resolved: String) {
@@ -137,7 +147,7 @@ internal object AudioDownloadSourceResolver {
                     return NeteaseDownloadLookup.Missing
                 }
                 if (parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
-                    return NeteaseDownloadLookup.ExplicitlyUnavailable
+                    return NeteaseDownloadLookup.PreviewOnly
                 }
                 val finalUrl = ensureHttps(parsed.url)
                 NeteaseDownloadLookup.Resolved(

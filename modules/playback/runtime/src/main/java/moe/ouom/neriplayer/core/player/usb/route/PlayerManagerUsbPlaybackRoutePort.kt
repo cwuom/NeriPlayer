@@ -83,6 +83,7 @@ internal object PlayerManagerUsbPlaybackRoutePort : UsbPlaybackRoutePort {
 
     override fun setPreferences(preferences: UsbExclusivePreferences) {
         PlayerManager.usbExclusivePreferences = preferences
+        PlayerManager.audioEffectsOwner.onUsbPreferencesChanged()
     }
 
     override fun markPreparing(preparing: Boolean, reason: String) {

@@ -2,7 +2,9 @@
 
 package moe.ouom.neriplayer.platform.subsonic.auth
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +18,10 @@ import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
 import moe.ouom.neriplayer.platform.subsonic.api.SubsonicFailureKind
 import java.util.UUID
 
-/** Public configuration deliberately excludes authentication material. */
+/**
+ * Public configuration excludes the password. Editing an existing instance keeps its ID and
+ * increments revision so requests and caches cannot publish results from the previous settings.
+ */
 data class SubsonicProfile(
     val id: String,
     val label: String,
@@ -72,8 +77,10 @@ class SubsonicAccounts(context: Context) {
                 }
             }
             val all = current.filterNot { it.id == profile.id } + profile
-            check(preferences.edit().putString("profiles", serialize(all))
-                .putString("password:${profile.id}", password).commit()) { "无法保存服务器账号" }
+            check(preferences.commitEdit {
+                putString("profiles", serialize(all))
+                putString("password:${profile.id}", password)
+            }) { "无法保存服务器账号" }
             publish(all)
         }
     }
@@ -81,8 +88,10 @@ class SubsonicAccounts(context: Context) {
     suspend fun remove(id: String) = withContext(Dispatchers.IO) {
         synchronized(this@SubsonicAccounts) {
             val all = readProfiles().filterNot { it.id == id }
-            check(preferences.edit().putString("profiles", serialize(all))
-                .remove("password:$id").commit()) { "无法移除服务器账号" }
+            check(preferences.commitEdit {
+                putString("profiles", serialize(all))
+                remove("password:$id")
+            }) { "无法移除服务器账号" }
             publish(all)
         }
     }
@@ -120,4 +129,12 @@ class SubsonicAccounts(context: Context) {
                 normalized.toString(), username.trim())
         }
     }
+}
+
+@SuppressLint("UseKtx")
+private inline fun SharedPreferences.commitEdit(action: SharedPreferences.Editor.() -> Unit): Boolean {
+    // KTX edit(commit = true) hides commit failure; account state must only publish after success.
+    val editor = edit()
+    editor.action()
+    return editor.commit()
 }

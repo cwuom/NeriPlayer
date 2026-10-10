@@ -1,6 +1,7 @@
 #pragma once
 
 #include "usb_pcm_codec.h"
+#include "usb_pcm_resampler.h"
 
 #include <atomic>
 #include <cstddef>
@@ -77,6 +78,9 @@ public:
     void resetCounters();
     void addDroppedFrames(int64_t frames);
     void setTargetGain(float gain);
+    // 比特完美：单位增益原样透传，增益为 0 时硬静音，不做任何斜坡和淡入淡出
+    void setBitPerfect(bool enabled);
+    [[nodiscard]] bool bitPerfect() const;
     void armTransportStartRamp();
     void applyTransportStartRamp(uint8_t* output, size_t bytes);
 
@@ -89,11 +93,33 @@ private:
         int inputSampleBytes,
         int inputFrameBytes
     ) const;
+    size_t writeResampled(
+        const uint8_t* input,
+        int inputFrames,
+        int inputSampleBytes,
+        int inputFrameBytes,
+        size_t freeOutputFrames,
+        std::string* error
+    );
+    size_t writeConverted(
+        const uint8_t* input,
+        int inputFrames,
+        int inputSampleBytes,
+        int inputFrameBytes,
+        std::string* error
+    );
+    size_t commitConverted(size_t consumedBytes);
+    [[nodiscard]] float inputSampleFor(
+        const uint8_t* frame,
+        int inputSampleBytes,
+        int outputChannel
+    ) const;
     void beginBackpressureLocked(int64_t nowUs);
     void endBackpressureLocked(int64_t nowUs);
     size_t writeRingLocked(const uint8_t* input, size_t bytes);
     size_t readRingLocked(uint8_t* output, size_t bytes);
     void applyGain(uint8_t* output, size_t bytes);
+    bool applyBitPerfectGain(uint8_t* output, size_t bytes);
     void fadeOutTrailingFrames(uint8_t* output, size_t bytes) const;
     void markSilentOutputLocked();
     void updateOutputSignalStatsLocked(const uint8_t* output, size_t bytes);
@@ -106,9 +132,9 @@ private:
     size_t readIndex_ = 0;
     size_t writeIndex_ = 0;
     size_t levelBytes_ = 0;
-    double resamplePosition_ = 0.0;
-    bool hasPreviousInputFrame_ = false;
-    std::vector<float> previousInputFrame_;
+    PcmResampler resampler_;
+    std::vector<float> resampleInput_;
+    std::vector<float> resampleOutput_;
     std::vector<uint8_t> conversionBuffer_;
     int64_t inputBytes_ = 0;
     int64_t outputBytes_ = 0;
@@ -132,6 +158,7 @@ private:
     float lastChannel1OutputPeak_ = 0.0f;
     std::atomic<float> targetGain_ { 1.0f };
     std::atomic<float> appliedGain_ { 1.0f };
+    std::atomic<bool> bitPerfect_ { false };
     float gainRampTarget_ = 1.0f;
     int gainRampFramesRemaining_ = 0;
     int transportStartRampFramesTotal_ = 0;

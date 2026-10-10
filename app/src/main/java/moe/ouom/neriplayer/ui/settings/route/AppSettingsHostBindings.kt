@@ -8,6 +8,10 @@ import moe.ouom.neriplayer.data.ltw.ListenTogetherSessionManager
 import moe.ouom.neriplayer.api.ltw.http.ListenTogetherApi
 import moe.ouom.neriplayer.ui.settings.owner.AppUsbExclusiveSettingsActions
 import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.navigation.Destinations
+
+internal fun isAppSettingsVisible(selectedMainTabRoute: String, playbackOpen: Boolean): Boolean =
+    selectedMainTabRoute == Destinations.Settings.route && !playbackOpen
 
 internal class AppSettingsHostEnvironment(
     val isDarkTheme: Boolean,
@@ -19,7 +23,8 @@ internal class AppSettingsHostEnvironment(
     val homeHasRecentUsage: Boolean,
     val onBeforeLanguageRestart: () -> Unit,
     val onLanguageChanged: (LanguageManager.Language) -> Unit,
-    val coherentFeedbackEnabled: Boolean
+    val coherentFeedbackEnabled: Boolean,
+    val settingsVisible: Boolean = true
 )
 
 internal class AppSettingsHostBindings(

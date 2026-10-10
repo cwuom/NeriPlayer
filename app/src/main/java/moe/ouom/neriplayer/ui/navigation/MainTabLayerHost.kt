@@ -14,6 +14,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -24,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -31,10 +33,16 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -43,7 +51,9 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_NAVIGATION_CLOSE_DURATION_MS
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassNavigationOwner
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassSceneOpacity
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabTransitionSpec
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -80,6 +90,41 @@ internal fun resolveMainTabLayerSceneOffsetFraction(
         MainTabLayerScenePhase.Exiting -> -direction * clampedProgress
         MainTabLayerScenePhase.Entering -> direction * (1f - clampedProgress)
     }
+}
+
+private const val MAIN_TAB_HIDDEN_SCALE = 0.94f
+
+internal fun shouldUseMainTabScaleTransition(smallestScreenWidthDp: Int): Boolean =
+    smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
+
+@Immutable
+internal data class MainTabLayerSceneTransform(
+    val scale: Float,
+    val alpha: Float
+)
+
+internal fun resolveMainTabLayerSceneTransform(offsetFraction: Float): MainTabLayerSceneTransform {
+    val alpha = 1f - abs(offsetFraction).coerceIn(0f, 1f)
+    return MainTabLayerSceneTransform(
+        scale = MAIN_TAB_HIDDEN_SCALE + (1f - MAIN_TAB_HIDDEN_SCALE) * alpha,
+        alpha = alpha
+    )
+}
+
+internal fun shouldBlockMainTabSceneInput(phase: MainTabLayerScenePhase, offsetFraction: Float): Boolean =
+    phase == MainTabLayerScenePhase.Exiting || abs(offsetFraction) >= 1f
+
+private fun Modifier.blockInactiveMainTabScene(blocked: Boolean): Modifier = if (blocked) {
+    // 准备中和退场场景不能响应触摸或无障碍操作
+    clearAndSetSemantics { hideFromAccessibility() }.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+            }
+        }
+    }
+} else {
+    this
 }
 
 internal val LocalMainTabSceneRestored = staticCompositionLocalOf { false }
@@ -237,6 +282,9 @@ internal fun MainTabLayerHost(
     onVisibleGlassOwnersChanged: (Set<MainTabGlassOwner>) -> Unit = {},
     content: @Composable (route: String) -> Unit
 ) {
+    val useScaleTransition = shouldUseMainTabScaleTransition(
+        LocalConfiguration.current.smallestScreenWidthDp
+    )
     LaunchedEffect(transitionState, selectedRoute) {
         transitionState.request(selectedRoute)
     }
@@ -264,20 +312,65 @@ internal fun MainTabLayerHost(
         ) {
             visibleScenes.forEach { scene ->
                 key(scene.route) {
+                    val parentGlassOpacity = LocalAdvancedGlassSceneOpacity.current
+                    val glassOpacity = remember(
+                        transitionState,
+                        scene,
+                        parentGlassOpacity,
+                        useScaleTransition
+                    ) {
+                        {
+                            val sceneAlpha = if (useScaleTransition) {
+                                resolveMainTabLayerSceneTransform(
+                                    transitionState.offsetFractionFor(scene)
+                                ).alpha
+                            } else {
+                                1f
+                            }
+                            parentGlassOpacity() * sceneAlpha
+                        }
+                    }
+                    val blockSceneInput by remember(transitionState, scene) {
+                        derivedStateOf(structuralEqualityPolicy()) {
+                            shouldBlockMainTabSceneInput(scene.phase, transitionState.offsetFractionFor(scene))
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .offset {
-                                IntOffset(
-                                    x = (
-                                        transitionState.offsetFractionFor(scene) * widthPx
-                                    ).roundToInt(),
-                                    y = 0
-                                )
+                            .then(
+                                if (useScaleTransition) {
+                                    Modifier
+                                } else {
+                                    Modifier.offset {
+                                        IntOffset(
+                                            x = (
+                                                transitionState.offsetFractionFor(scene) * widthPx
+                                            ).roundToInt(),
+                                            y = 0
+                                        )
+                                    }
+                                }
+                            )
+                            .blockInactiveMainTabScene(blockSceneInput)
+                            .graphicsLayer {
+                                if (useScaleTransition) {
+                                    val transform = resolveMainTabLayerSceneTransform(
+                                        transitionState.offsetFractionFor(scene)
+                                    )
+                                    scaleX = transform.scale
+                                    scaleY = transform.scale
+                                    alpha = transform.alpha
+                                } else {
+                                    scaleX = 1f
+                                    scaleY = 1f
+                                    alpha = 1f
+                                }
+                                transformOrigin = TransformOrigin.Center
                             }
-                            .graphicsLayer()
                     ) {
                         CompositionLocalProvider(
+                            LocalAdvancedGlassSceneOpacity provides glassOpacity,
                             LocalAdvancedGlassNavigationOwner provides scene.glassOwner,
                             LocalMainTabSceneRestored provides scene.restored
                         ) {

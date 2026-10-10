@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.metadata
 
 import android.media.AudioDeviceInfo
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
+import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -255,7 +256,8 @@ class ExternalBluetoothLyricsTest {
                 lyric = "current line",
                 translation = "当前翻译"
             ),
-            useBluetoothLyrics = true
+            useBluetoothLyrics = true,
+            mode = BluetoothMetadataMode.Lyrics
         )
 
         assertEquals("current line", metadata.title)
@@ -272,7 +274,8 @@ class ExternalBluetoothLyricsTest {
             normalTitle = "Song",
             normalArtist = "Artist",
             payload = ExternalBluetoothLyricPayload(translation = "当前翻译"),
-            useBluetoothLyrics = true
+            useBluetoothLyrics = true,
+            mode = BluetoothMetadataMode.Lyrics
         )
 
         assertEquals("当前翻译", metadata.title)

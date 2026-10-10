@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.drawscope.draw
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.withSave
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 internal class AdvancedGlassLocalBlurRenderer {
@@ -151,6 +152,11 @@ internal class AdvancedGlassLocalBlurRenderer {
     }
 
     private fun drawCachedLocalFrame(scope: ContentDrawScope, activeNodeCount: Int) {
+        if (hasTranslucentRegions(activeNodeCount)) {
+            scope.drawContext.canvas.nativeCanvas.drawRenderNode(sourceNode)
+            drawTranslucentLocalBlur(scope, activeNodeCount)
+            return
+        }
         with(scope.drawContext.canvas) {
             withSave {
                 repeat(activeNodeCount) { index ->
@@ -176,6 +182,11 @@ internal class AdvancedGlassLocalBlurRenderer {
             sourceHeight == height
 
     private fun drawCurrentContentWithCachedLocalBlur(scope: ContentDrawScope) {
+        if (hasTranslucentRegions(activeLocalNodeCount)) {
+            scope.drawContent()
+            drawTranslucentLocalBlur(scope, activeLocalNodeCount)
+            return
+        }
         with(scope.drawContext.canvas) {
             withSave {
                 repeat(activeLocalNodeCount) { index ->
@@ -193,6 +204,38 @@ internal class AdvancedGlassLocalBlurRenderer {
             }
         }
     }
+
+    private fun hasTranslucentRegions(activeNodeCount: Int): Boolean =
+        (0 until activeNodeCount).any { index ->
+            effectNodes[index].outputRegions.any { it.region.opacity < 1f }
+        }
+
+    private fun drawTranslucentLocalBlur(scope: ContentDrawScope, activeNodeCount: Int) {
+        val orderedRegions = (0 until activeNodeCount).flatMap { index ->
+            effectNodes[index].outputRegions.map { region -> effectNodes[index] to region }
+        }.sortedByDescending { (_, output) -> output.region.opacity }
+        val coveredPaths = mutableListOf<Path>()
+        orderedRegions.forEach { (node, output) ->
+            with(scope.drawContext.canvas) {
+                withSave {
+                    clipPath(output.path)
+                    // 重叠玻璃取最大可见度，避免两个转场场景把模糊重复叠加
+                    coveredPaths.forEach { clipPath(it, ClipOp.Difference) }
+                    val region = output.region
+                    val saveCount = nativeCanvas.saveLayerAlpha(
+                        region.left, region.top, region.right, region.bottom,
+                        (region.opacity * 255f).roundToInt().coerceIn(0, 255)
+                    )
+                    try {
+                        nativeCanvas.drawRenderNode(node.renderNode)
+                    } finally {
+                        nativeCanvas.restoreToCount(saveCount)
+                    }
+                }
+            }
+            coveredPaths += output.path
+        }
+    }
 }
 
 private data class AdvancedGlassLocalBlurTarget(
@@ -204,6 +247,7 @@ private data class AdvancedGlassLocalBlurTarget(
 private class AdvancedGlassLocalBlurNode {
     val renderNode = RenderNode("AdvancedGlassRegion")
     val outputPath = Path()
+    val outputRegions = mutableListOf<AdvancedGlassWeightedBlurRegion>()
 
     private var inputBounds = AdvancedGlassLocalBlurBounds(0f, 0f, 0f, 0f)
     private var regions: List<AdvancedGlassRenderRegion> = emptyList()
@@ -266,8 +310,20 @@ private class AdvancedGlassLocalBlurNode {
 
     private fun updateOutputPath() {
         outputPath.updateForRegions(regions)
+        outputRegions.clear()
+        regions.forEach { region ->
+            outputRegions += AdvancedGlassWeightedBlurRegion(
+                region = region,
+                path = Path().apply { updateForRegions(listOf(region)) }
+            )
+        }
     }
 }
+
+private data class AdvancedGlassWeightedBlurRegion(
+    val region: AdvancedGlassRenderRegion,
+    val path: Path
+)
 
 private fun Path.updateForRegions(regions: List<AdvancedGlassRenderRegion>) {
     rewind()

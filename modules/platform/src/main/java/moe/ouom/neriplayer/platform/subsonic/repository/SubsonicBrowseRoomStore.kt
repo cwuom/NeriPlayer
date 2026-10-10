@@ -15,7 +15,7 @@ class SubsonicBrowseRoomStore(private val store: PlatformPlaylistCacheRoomStore)
                 ServerAlbum(key.profileId, requireNotNull(track.itemKey), track.name, track.artist,
                     track.coverUrl, track.addedAt.toInt())
             } else emptyList(),
-            songs = if (key.kind == "album") record.tracks.map { track ->
+            songs = if (key.kind == "album" || key.kind == "songs") record.tracks.map { track ->
                 val ref = ServerSongRef(key.profileId, requireNotNull(track.itemKey))
                 SongItem(id = ref.numericId, name = track.name, artist = track.artist, album = track.album,
                     albumId = track.albumId ?: 0L, durationMs = track.durationMs, coverUrl = track.coverUrl,

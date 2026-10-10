@@ -35,7 +35,8 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
     outputFrameBytes: Int = 0,
     currentPcmLevelBytes: Long = -1L,
     previousStallTicks: Int,
-    recoveryTicks: Int
+    recoveryTicks: Int,
+    starvationRecoveryTicks: Int = recoveryTicks
 ): UsbExclusiveKeepAliveDecision {
     val previous = UsbKeepAliveCounters(
         previousHandle, previousCompletedFrames, previousSignalBytes, previousZeroFillBytes, previousOutputPeak
@@ -53,7 +54,8 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
         val queue = UsbKeepAliveQueue(outputSampleRate, outputFrameBytes, currentPcmLevelBytes)
         val progress = classifyAdvancedUsbKeepAliveProgress(previous, current, queue)
         if (progress == UsbExclusiveKeepAliveProgress.ADVANCED) return healthyUsbKeepAliveDecision(progress)
-        return stalledUsbKeepAliveDecision(progress, previousStallTicks, recoveryTicks)
+        // USB 仍在出帧只是写入方没跟上：重建整条链路只会再断一次，给写入方更多时间补齐
+        return stalledUsbKeepAliveDecision(progress, previousStallTicks, starvationRecoveryTicks)
     }
     return stalledUsbKeepAliveDecision(UsbExclusiveKeepAliveProgress.STALLED, previousStallTicks, recoveryTicks)
 }

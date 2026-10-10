@@ -97,10 +97,11 @@ std::string profileId(
     const EndpointSnapshot& output,
     const EndpointSnapshot& feedback,
     uint8_t payloadBytes,
-    uint8_t fractionalBits
+    uint8_t fractionalBits,
+    bool legacyAudioEndpoints
 ) {
     std::ostringstream stream;
-    stream << "uac2-" << usbBusSpeedName(speed)
+    stream << (legacyAudioEndpoints ? "uac1-" : "uac2-") << usbBusSpeedName(speed)
            << "-q" << static_cast<unsigned>(fractionalBits)
            << "-p" << static_cast<unsigned>(payloadBytes)
            << "-out" << static_cast<unsigned>(output.endpointAddress)
@@ -145,7 +146,8 @@ bool uac2EndpointPacketSizeValidForSpeed(
 Uac2FeedbackTimingProfile buildUac2FeedbackTimingProfile(
     UsbBusSpeed busSpeed,
     const EndpointSnapshot& output,
-    const EndpointSnapshot& feedbackEndpoint
+    const EndpointSnapshot& feedbackEndpoint,
+    bool legacyAudioEndpoints
 ) {
     SpeedProfile speed;
     if (!speedProfileFor(busSpeed, &speed)) {
@@ -170,6 +172,7 @@ Uac2FeedbackTimingProfile buildUac2FeedbackTimingProfile(
     std::string endpointReason;
     FeedbackResolverPolicy outputPolicy;
     outputPolicy.requireAsynchronousOutput = true;
+    outputPolicy.legacyAudioEndpoints = legacyAudioEndpoints;
     if (validateOutputEndpointSnapshot(output, outputPolicy, &endpointReason) !=
         DescriptorValidationStatus::Valid) {
         return fail(
@@ -179,7 +182,7 @@ Uac2FeedbackTimingProfile buildUac2FeedbackTimingProfile(
                 : endpointReason.c_str()
         );
     }
-    if (validateFeedbackEndpointSnapshot(feedbackEndpoint, &endpointReason) !=
+    if (validateFeedbackEndpointSnapshot(feedbackEndpoint, &endpointReason, outputPolicy) !=
         DescriptorValidationStatus::Valid) {
         return fail(
             Uac2FeedbackProfileStatus::InvalidEndpointDescriptor,
@@ -256,7 +259,8 @@ Uac2FeedbackTimingProfile buildUac2FeedbackTimingProfile(
             output,
             feedbackEndpoint,
             speed.payloadBytes,
-            speed.fractionalBits
+            speed.fractionalBits,
+            legacyAudioEndpoints
         )
     };
     return result;

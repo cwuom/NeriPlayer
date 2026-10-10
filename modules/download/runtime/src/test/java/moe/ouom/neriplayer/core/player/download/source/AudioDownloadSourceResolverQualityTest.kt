@@ -3,7 +3,9 @@ package moe.ouom.neriplayer.core.player.download.source
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioDownloadSourceResolverQualityTest {
@@ -38,6 +40,20 @@ class AudioDownloadSourceResolverQualityTest {
     }
 
     @Test
+    fun `netease download uses the weapi source when eapi misses`() = runBlocking {
+        val source = AudioDownloadManager.ResolvedDownloadSource(url = "https://example.com/weapi.mp3")
+
+        val resolved = AudioDownloadSourceResolver.resolveNeteaseWithLookups(
+            songId = 42L,
+            preferredQuality = "standard",
+            eapiLookup = { _, _ -> AudioDownloadSourceResolver.NeteaseDownloadLookup.PreviewOnly },
+            weapiLookup = { _, _ -> AudioDownloadSourceResolver.NeteaseDownloadLookup.Resolved(source) }
+        )
+
+        assertEquals(source, resolved)
+    }
+
+    @Test
     fun `netease download does not repeat qualities below standard`() = runBlocking {
         val requested = mutableListOf<String>()
         val resolved = AudioDownloadSourceResolver.resolveNeteaseWithLookups(
@@ -55,7 +71,7 @@ class AudioDownloadSourceResolverQualityTest {
 
     @Test
     fun `netease download remains unavailable when every quality is denied`() {
-        assertThrows(DownloadSourceUnavailableException::class.java) {
+        val error = assertThrows(DownloadSourceUnavailableException::class.java) {
             runBlocking {
                 AudioDownloadSourceResolver.resolveNeteaseWithLookups(
                     songId = 42L,
@@ -65,5 +81,39 @@ class AudioDownloadSourceResolverQualityTest {
                 )
             }
         }
+        assertFalse(error.previewOnly)
+    }
+
+    @Test
+    fun `netease preview clip at any quality reports a preview only failure`() {
+        val error = assertThrows(DownloadSourceUnavailableException::class.java) {
+            runBlocking {
+                AudioDownloadSourceResolver.resolveNeteaseWithLookups(
+                    songId = 42L,
+                    preferredQuality = "lossless",
+                    eapiLookup = { _, quality ->
+                        if (quality == "exhigh") AudioDownloadSourceResolver.NeteaseDownloadLookup.PreviewOnly
+                        else AudioDownloadSourceResolver.NeteaseDownloadLookup.ExplicitlyUnavailable
+                    },
+                    weapiLookup = { _, _ -> AudioDownloadSourceResolver.NeteaseDownloadLookup.Missing }
+                )
+            }
+        }
+        assertTrue(error.previewOnly)
+    }
+
+    @Test
+    fun `netease preview clip alone stops automatic retries`() {
+        val error = assertThrows(DownloadSourceUnavailableException::class.java) {
+            runBlocking {
+                AudioDownloadSourceResolver.resolveNeteaseWithLookups(
+                    songId = 42L,
+                    preferredQuality = "standard",
+                    eapiLookup = { _, _ -> AudioDownloadSourceResolver.NeteaseDownloadLookup.PreviewOnly },
+                    weapiLookup = { _, _ -> AudioDownloadSourceResolver.NeteaseDownloadLookup.Missing }
+                )
+            }
+        }
+        assertTrue(error.previewOnly)
     }
 }

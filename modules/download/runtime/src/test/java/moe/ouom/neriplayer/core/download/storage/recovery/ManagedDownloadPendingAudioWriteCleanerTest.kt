@@ -69,6 +69,84 @@ class ManagedDownloadPendingAudioWriteCleanerTest {
         }
     }
 
+    @Test
+    fun `missing file root has nothing to clean`() {
+        val directory = createTempDirectory()
+        try {
+            val result = ManagedDownloadPendingAudioWriteCleaner.cleanup(
+                context = mock(Context::class.java),
+                root = ManagedDownloadRootHandle.FileRoot(File(directory, "missing")),
+                names = ManagedDownloadPendingAudioWriteNames(),
+                treeChildRegistry = mock(ManagedDownloadTreeChildRegistry::class.java),
+                deleteTreeChild = { StorageMutationResult.OutOfScope },
+                tag = "test"
+            )
+
+            assertEquals(0, result.cleanedCount)
+            assertEquals(0, result.failedCount)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `tree enumeration failure reports an empty recovery result`() {
+        val context = mock(Context::class.java)
+        val tree = mock(DocumentFile::class.java)
+        val registry = mock(ManagedDownloadTreeChildRegistry::class.java)
+        `when`(registry.queryTreeChildren(context, tree)).thenThrow(IllegalStateException("provider crashed"))
+        var deleteCalls = 0
+
+        val result = ManagedDownloadPendingAudioWriteCleaner.cleanup(
+            context = context,
+            root = ManagedDownloadRootHandle.TreeRoot(tree),
+            names = ManagedDownloadPendingAudioWriteNames(),
+            treeChildRegistry = registry,
+            deleteTreeChild = {
+                deleteCalls++
+                StorageMutationResult.Deleted
+            },
+            tag = "test"
+        )
+
+        assertEquals(0, result.cleanedCount)
+        assertEquals(0, result.failedCount)
+        assertEquals(0, deleteCalls)
+    }
+
+    @Test
+    fun `preserved pending files are kept and files removed concurrently count as cleaned`() {
+        val directory = createTempDirectory()
+        try {
+            val vanishing = File(directory, "a.mp3$PENDING_AUDIO_WRITE_MARKER.1.pending").apply { writeText("partial") }
+            val preserved = File(directory, "b.mp3$PENDING_AUDIO_WRITE_MARKER.2.pending").apply { writeText("partial") }
+            val finished = File(directory, "c.mp3").apply { writeText("audio") }
+
+            val result = ManagedDownloadPendingAudioWriteCleaner.cleanup(
+                context = mock(Context::class.java),
+                root = ManagedDownloadRootHandle.FileRoot(directory),
+                names = ManagedDownloadPendingAudioWriteNames(),
+                treeChildRegistry = mock(ManagedDownloadTreeChildRegistry::class.java),
+                deleteTreeChild = { StorageMutationResult.OutOfScope },
+                preserveEntry = { name ->
+                    if (name == vanishing.name) {
+                        vanishing.delete()
+                    }
+                    name == preserved.name
+                },
+                tag = "test"
+            )
+
+            assertEquals(1, result.cleanedCount)
+            assertEquals(0, result.failedCount)
+            assertEquals(false, vanishing.exists())
+            assertEquals(true, preserved.exists())
+            assertEquals(true, finished.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
     private fun createTempDirectory(): File {
         return Files.createTempDirectory("neriplayer-pending-cleaner").toFile()
     }

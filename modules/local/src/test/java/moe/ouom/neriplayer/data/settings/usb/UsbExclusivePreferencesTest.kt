@@ -409,6 +409,17 @@ class UsbExclusivePreferencesTest {
         assertEquals(192_000, preferences.resolveSampleRateHz(48_000, listOf(192_000)))
         assertEquals(32, preferences.resolveBitDepth(16, listOf(32)))
         assertEquals(2, preferences.resolveChannelCount(2, listOf(2)))
+        assertNull(preferences.resolveChannelCount(2, listOf(4)))
+    }
+
+    @Test
+    fun `multichannel only interfaces carry stereo in their smallest layout`() {
+        val preferences = UsbExclusivePreferences()
+
+        assertEquals(4, preferences.resolveChannelCount(2, listOf(8, 4)))
+        assertEquals(2, preferences.resolveChannelCount(2, listOf(4, 2)))
+        assertEquals(4, preferences.resolveChannelCount(1, listOf(4)))
+        assertNull(preferences.resolveChannelCount(2, listOf(16)))
     }
 
     @Test

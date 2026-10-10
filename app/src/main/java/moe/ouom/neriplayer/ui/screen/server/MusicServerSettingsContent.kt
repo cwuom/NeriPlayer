@@ -39,7 +39,6 @@ fun MusicServerSettingsContent() {
         catch (_: Exception) { error = CoreCommonR.string.server_error_load_accounts }
     }
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(CoreCommonR.string.server_settings_desc))
         if (!loaded && error == null) LinearProgressIndicator(Modifier.fillMaxWidth())
         error?.let {
             Text(stringResource(it), color = MaterialTheme.colorScheme.error)

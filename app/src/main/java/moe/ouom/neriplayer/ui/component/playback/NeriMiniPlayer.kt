@@ -35,6 +35,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +45,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -66,15 +69,19 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -91,6 +98,8 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
+import moe.ouom.neriplayer.util.format.formatDuration
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.min
@@ -100,7 +109,28 @@ import kotlin.time.Duration.Companion.milliseconds
 
 object NeriMiniPlayerDefaults {
     val Height = 64.dp
+    val TabletHeight = 80.dp
+    internal val TabletProgressHeight = 12.dp
+    internal val TabletProgressThickness = 4.dp
+    internal val TabletMetadataVerticalPadding = 2.dp
     internal val ContentVerticalPadding = 8.dp
+    internal val ContentHorizontalPadding = 12.dp
+    internal val ContentSpacing = 12.dp
+    internal val CoverSize = 40.dp
+    internal val ControlButtonSize = 48.dp
+    internal val MinMetadataWidthWithSkipControls = 144.dp
+}
+
+internal fun shouldShowMiniPlayerSkipControls(
+    smallestScreenWidthDp: Int,
+    availableSurfaceWidth: Dp
+): Boolean {
+    val requiredWidth = NeriMiniPlayerDefaults.ContentHorizontalPadding * 2 +
+        NeriMiniPlayerDefaults.CoverSize + NeriMiniPlayerDefaults.ContentSpacing * 2 +
+        NeriMiniPlayerDefaults.MinMetadataWidthWithSkipControls +
+        NeriMiniPlayerDefaults.ControlButtonSize * 3
+    return smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP &&
+        availableSurfaceWidth >= requiredWidth
 }
 
 private const val MINI_PLAYER_COVER_CLEAR_DELAY_MS = 900L
@@ -448,10 +478,14 @@ fun NeriMiniPlayer(
     visualCoverUrl: String? = null,
     coverIdentityKey: String? = null,
     visualCoverIdentityKey: String? = null,
-    hasCurrentSong: Boolean = true
+    hasCurrentSong: Boolean = true,
+    tabletControls: MiniPlayerTabletControls? = null
 ) {
-    val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val context = LocalContext.current
+    val smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
+    val useTabletControls = tabletControls != null &&
+        smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
+    val shape = if (useTabletControls) RectangleShape else RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val requestedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
     val retainedCoverUrl = visualCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
     val requestedIdentityKey = miniPlayerCoverIdentityKey(
@@ -687,14 +721,119 @@ fun NeriMiniPlayer(
         }
     }
 
+    val cover: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier
+                .size(NeriMiniPlayerDefaults.CoverSize)
+                .background(
+                    color = if (visibleFrame != null) {
+                        Color.Transparent
+                    } else {
+                        MaterialTheme.colorScheme.primaryContainer
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                )
+        ) {
+            if (visibleFrame?.decodedBitmap != null) {
+                Image(
+                    bitmap = visibleFrame.decodedBitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            } else if (visibleFrame != null) {
+                key(visibleFrame.requestToken) {
+                    AsyncImage(
+                        model = fastScrollableImageRequest(
+                            context = context,
+                            data = visibleFrame.coverUrl,
+                            sizePx = 128,
+                            crossfade = false,
+                            offlineMode = offlineMode,
+                            cacheKey = miniPlayerCoverCacheKey(visibleFrame)
+                        ),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(RoundedCornerShape(8.dp)),
+                        onSuccess = { state ->
+                            val bitmap = resolveMiniPlayerCoverBitmap(state)
+                            if (bitmap != null &&
+                                shouldCommitMiniPlayerCoverFrame(
+                                    completedFrame = visibleFrame,
+                                    latestRequestedFrame = latestRequestedFrame,
+                                    latestRetainedFrame = latestRetainedFrame,
+                                    currentIdentityKey = coverIdentityKey
+                                )
+                            ) {
+                                publishDecodedFrame(visibleFrame, bitmap)
+                            } else if (bitmap == null) {
+                                rejectCoverFrame(visibleFrame)
+                            }
+                        },
+                        onError = { rejectCoverFrame(visibleFrame) }
+                    )
+                }
+            }
+
+            if (
+                requestedFrame != null &&
+                failedFrameForVisibleState == null &&
+                !sameMiniPlayerCoverFrame(requestedFrame, visibleFrame)
+            ) {
+                key(requestedFrame.requestToken) {
+                    AsyncImage(
+                        model = fastScrollableImageRequest(
+                            context = context,
+                            data = requestedFrame.coverUrl,
+                            sizePx = 128,
+                            crossfade = false,
+                            offlineMode = offlineMode,
+                            cacheKey = miniPlayerCoverCacheKey(requestedFrame)
+                        ),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer { alpha = 0f },
+                        onSuccess = { state ->
+                            resolveMiniPlayerCoverBitmap(state)?.let { bitmap ->
+                                publishDecodedFrame(requestedFrame, bitmap)
+                            } ?: rejectCoverFrame(requestedFrame)
+                        },
+                        onError = { rejectCoverFrame(requestedFrame) }
+                    )
+                }
+            }
+
+            if (visibleFrame == null) {
+                Box(
+                    modifier = Modifier.matchParentSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+    }
+
     AdvancedGlassSurface(
         role = AdvancedGlassRole.MiniPlayer,
         modifier = modifier
             .fillMaxWidth()
-            .height(NeriMiniPlayerDefaults.Height)
-            .padding(horizontal = 8.dp)
+            .height(if (useTabletControls) NeriMiniPlayerDefaults.TabletHeight else NeriMiniPlayerDefaults.Height)
+            .padding(horizontal = if (useTabletControls) 0.dp else 8.dp)
             .clip(shape)
-            .pointerInput(Unit) {
+            .pointerInput(useTabletControls) {
+                if (useTabletControls) return@pointerInput
                 detectHorizontalDragGestures(
                     onDragStart = {
                         swipeJob?.cancel()
@@ -756,158 +895,152 @@ fun NeriMiniPlayer(
             shape = shape,
             modifier = Modifier.matchParentSize()
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier
-                    .graphicsLayer {
-                        translationX = swipeOffset.value
-                        val offsetRatio = (abs(swipeOffset.value) / reboundPeakPx).coerceIn(0f, 1f)
-                        scaleX = 1f - offsetRatio * 0.025f
-                        scaleY = 1f - offsetRatio * 0.025f
-                    }
-                    .padding(
-                        horizontal = 12.dp,
-                        vertical = NeriMiniPlayerDefaults.ContentVerticalPadding
-                    )
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            color = if (visibleFrame != null) {
-                                Color.Transparent
-                            } else {
-                                MaterialTheme.colorScheme.primaryContainer
-                            },
-                            shape = RoundedCornerShape(8.dp)
+            if (useTabletControls) {
+                TabletMiniPlayerContent(
+                    controls = tabletControls,
+                    playPauseEnabled = playPauseEnabled,
+                    onPlayPause = onPlayPause,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    onExpand = onExpand,
+                    cover = cover,
+                    metadata = { metadataModifier ->
+                        Column(metadataModifier.padding(vertical = NeriMiniPlayerDefaults.TabletMetadataVerticalPadding)) {
+                            EllipsizingMiniPlayerText(
+                                text = title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLineHeightDp = 20f,
+                                minVisualFontSizeSp = MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AutoSizingMiniPlayerText(
+                                text = artist,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                                maxLineHeightDp = 16f,
+                                minVisualFontSizeSp = MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AutoSizingMiniPlayerText(
+                                text = "${formatDuration(tabletControls.positionMs.coerceAtLeast(0L))} / " +
+                                    formatDuration(tabletControls.durationMs.coerceAtLeast(0L)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.65f),
+                                maxLineHeightDp = 12f,
+                                minVisualFontSizeSp = 9f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    playPauseIcon = {
+                        PlaybackControlIndicator(
+                            isPlaying = isPlaying,
+                            isPlaybackWaiting = isPlaybackWaiting,
+                            isAudioRouteMuted = isAudioRouteMuted,
+                            playContentDescription = stringResource(CoreCommonR.string.lyrics_play),
+                            pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
+                            restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
+                            waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            progressIndicatorSize = 22.dp,
+                            progressStrokeWidth = 2.dp
                         )
-                ) {
-                    if (visibleFrame?.decodedBitmap != null) {
-                        Image(
-                            bitmap = visibleFrame.decodedBitmap,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .matchParentSize()
-                                .clip(RoundedCornerShape(8.dp))
-                        )
-                    } else if (visibleFrame != null) {
-                        key(visibleFrame.requestToken) {
-                            AsyncImage(
-                                model = fastScrollableImageRequest(
-                                    context = context,
-                                    data = visibleFrame.coverUrl,
-                                    sizePx = 128,
-                                    crossfade = false,
-                                    offlineMode = offlineMode,
-                                    cacheKey = miniPlayerCoverCacheKey(visibleFrame)
-                                ),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .clip(RoundedCornerShape(8.dp)),
-                                onSuccess = { state ->
-                                    val bitmap = resolveMiniPlayerCoverBitmap(state)
-                                    if (bitmap != null &&
-                                        shouldCommitMiniPlayerCoverFrame(
-                                            completedFrame = visibleFrame,
-                                            latestRequestedFrame = latestRequestedFrame,
-                                            latestRetainedFrame = latestRetainedFrame,
-                                            currentIdentityKey = coverIdentityKey
-                                        )
-                                    ) {
-                                        publishDecodedFrame(visibleFrame, bitmap)
-                                    } else if (bitmap == null) {
-                                        rejectCoverFrame(visibleFrame)
-                                    }
-                                },
-                                onError = { rejectCoverFrame(visibleFrame) }
+                    }
+                )
+            } else {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    // 窄窗口优先保留歌曲文字，切歌仍可使用原来的左右滑动
+                    val showSkipControls = shouldShowMiniPlayerSkipControls(smallestScreenWidthDp, maxWidth)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(NeriMiniPlayerDefaults.ContentSpacing),
+                        modifier = Modifier
+                            .graphicsLayer {
+                                translationX = swipeOffset.value
+                                val offsetRatio = (abs(swipeOffset.value) / reboundPeakPx).coerceIn(0f, 1f)
+                                scaleX = 1f - offsetRatio * 0.025f
+                                scaleY = 1f - offsetRatio * 0.025f
+                            }
+                            .padding(
+                                horizontal = NeriMiniPlayerDefaults.ContentHorizontalPadding,
+                                vertical = NeriMiniPlayerDefaults.ContentVerticalPadding
+                            )
+                    ) {
+                        cover()
+
+                        Column(modifier = Modifier.weight(1f).testTag("miniPlayerMetadata")) {
+                            EllipsizingMiniPlayerText(
+                                text = title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLineHeightDp = MINI_PLAYER_TITLE_LINE_HEIGHT_DP,
+                                minVisualFontSizeSp = MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AutoSizingMiniPlayerText(
+                                text = artist,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                                maxLineHeightDp = MINI_PLAYER_ARTIST_LINE_HEIGHT_DP,
+                                minVisualFontSizeSp = MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
 
-        if (
-            requestedFrame != null &&
-            failedFrameForVisibleState == null &&
-            !sameMiniPlayerCoverFrame(requestedFrame, visibleFrame)
-        ) {
-                        key(requestedFrame.requestToken) {
-                            AsyncImage(
-                                model = fastScrollableImageRequest(
-                                    context = context,
-                                    data = requestedFrame.coverUrl,
-                                    sizePx = 128,
-                                    crossfade = false,
-                                    offlineMode = offlineMode,
-                                    cacheKey = miniPlayerCoverCacheKey(requestedFrame)
-                                ),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .graphicsLayer { alpha = 0f },
-                                onSuccess = { state ->
-                                    resolveMiniPlayerCoverBitmap(state)?.let { bitmap ->
-                                        publishDecodedFrame(requestedFrame, bitmap)
-                                    } ?: rejectCoverFrame(requestedFrame)
-                                },
-                                onError = { rejectCoverFrame(requestedFrame) }
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (showSkipControls) {
+                                HapticIconButton(
+                                    onClick = onPrevious,
+                                    modifier = Modifier
+                                        .size(NeriMiniPlayerDefaults.ControlButtonSize)
+                                        .testTag("miniPlayerPrevious")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.SkipPrevious,
+                                        contentDescription = stringResource(CoreCommonR.string.player_previous),
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
+                            HapticIconButton(
+                                onClick = { onPlayPause() },
+                                enabled = playPauseEnabled,
+                                modifier = (if (showSkipControls) {
+                                    Modifier.size(NeriMiniPlayerDefaults.ControlButtonSize)
+                                } else {
+                                    Modifier
+                                }).testTag("miniPlayerPlayPause")
+                            ) {
+                                PlaybackControlIndicator(
+                                    isPlaying = isPlaying,
+                                    isPlaybackWaiting = isPlaybackWaiting,
+                                    isAudioRouteMuted = isAudioRouteMuted,
+                                    playContentDescription = stringResource(CoreCommonR.string.lyrics_play),
+                                    pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
+                                    restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
+                                    waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    progressIndicatorSize = 22.dp,
+                                    progressStrokeWidth = 2.dp
+                                )
+                            }
+                            if (showSkipControls) {
+                                HapticIconButton(
+                                    onClick = onNext,
+                                    modifier = Modifier
+                                        .size(NeriMiniPlayerDefaults.ControlButtonSize)
+                                        .testTag("miniPlayerNext")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.SkipNext,
+                                        contentDescription = stringResource(CoreCommonR.string.player_next),
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
                         }
                     }
-
-                    if (visibleFrame == null) {
-                        Box(
-                            modifier = Modifier.matchParentSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.MusicNote,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    EllipsizingMiniPlayerText(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        maxLineHeightDp = MINI_PLAYER_TITLE_LINE_HEIGHT_DP,
-                        minVisualFontSizeSp = MINI_PLAYER_TITLE_MIN_VISUAL_FONT_SIZE_SP,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    AutoSizingMiniPlayerText(
-                        text = artist,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                        maxLineHeightDp = MINI_PLAYER_ARTIST_LINE_HEIGHT_DP,
-                        minVisualFontSizeSp = MINI_PLAYER_ARTIST_MIN_VISUAL_FONT_SIZE_SP,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                HapticIconButton(
-                    onClick = { onPlayPause() },
-                    enabled = playPauseEnabled
-                ) {
-                    PlaybackControlIndicator(
-                        isPlaying = isPlaying,
-                        isPlaybackWaiting = isPlaybackWaiting,
-                        isAudioRouteMuted = isAudioRouteMuted,
-                        playContentDescription = stringResource(CoreCommonR.string.lyrics_play),
-                        pauseContentDescription = stringResource(CoreCommonR.string.lyrics_pause),
-                        restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
-                        waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        progressIndicatorSize = 22.dp,
-                        progressStrokeWidth = 2.dp
-                    )
                 }
             }
         }

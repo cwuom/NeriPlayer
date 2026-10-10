@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthHealth
 import moe.ouom.neriplayer.platform.youtube.api.auth.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.common.storage.VolatileSharedPreferences
 
 private const val YOUTUBE_AUTH_PREFS = "youtube_auth_secure_prefs"
 private const val YOUTUBE_AUTH_RECOVERY_PREFS = "youtube_auth_secure_prefs_recovery"
@@ -280,11 +281,11 @@ class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider 
                 "Failed to open primary YouTube secure prefs, preserving it and using recovery storage.",
                 error
             )
-            switchToRecoveryStorageOrThrow()
+            switchToRecoveryStorageOrVolatile()
         }
     }
 
-    private fun switchToRecoveryStorageOrThrow(): SharedPreferences {
+    private fun switchToRecoveryStorageOrVolatile(): SharedPreferences {
         val recoveryPrefs = runCatching { createRecoveryEncryptedPrefs() }
             .onFailure { recoveryError ->
                 NPLogger.e(
@@ -293,12 +294,8 @@ class YouTubeAuthRepository(private val context: Context) : YouTubeAuthProvider 
                     recoveryError
                 )
             }
-            .getOrElse { recoveryError ->
-                throw IllegalStateException(
-                    "Unable to open YouTube secure storage without deleting credentials",
-                    recoveryError
-                )
-            }
+            // 两份加密存储都打不开时保留原文件，本进程以未登录状态运行，不能让启动崩溃
+            .getOrElse { return VolatileSharedPreferences.shared(YOUTUBE_AUTH_RECOVERY_PREFS) }
         usingRecoveryStorage = true
         return recoveryPrefs
     }

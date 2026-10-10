@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.platform.search.api.client.QQMusicSearchApi
 import moe.ouom.neriplayer.platform.lyrics.search.SearchManager
 import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
+import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeAccountProfileClient
 import moe.ouom.neriplayer.platform.youtube.repository.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.platform.youtube.api.bootstrap.YouTubePlaybackBootstrapCoordinator
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -410,6 +411,23 @@ object AppContainer {
     val youtubeMusicClient: YouTubeMusicClient
         get() = youtubeMusicClientDelegate.value
 
+    // 资料请求保留授权快照，不经过会更新账号 Cookie 的共享拦截器
+    private val youtubeAccountProfileHttpClientDelegate = lazy {
+        val clientBuilder = OkHttpClient.Builder()
+            .proxySelector(DynamicProxySelector)
+            .followRedirects(false)
+            .addInterceptor { chain ->
+                if (!YouTubeFeatureGate.isEnabled()) {
+                    throw YouTubeFeatureDisabledException()
+                }
+                chain.proceed(chain.request())
+            }
+        configureSharedOkHttpClient(clientBuilder).build()
+    }
+    val youtubeAccountProfileClient by lazy {
+        YouTubeAccountProfileClient(youtubeAccountProfileHttpClientDelegate.value)
+    }
+
     // 功能 Repo 和 API
     val biliPlaybackRepository by lazy {
         val dataSource = BiliClientAudioDataSource(biliClient)
@@ -645,6 +663,9 @@ object AppContainer {
             .onEach { enabled ->
                 DynamicProxySelector.bypassProxy = enabled
                 sharedOkHttpClient.connectionPool.evictAll()
+                if (youtubeAccountProfileHttpClientDelegate.isInitialized()) {
+                    youtubeAccountProfileHttpClientDelegate.value.connectionPool.evictAll()
+                }
                 neteaseClient.evictConnections()
                 AudioDownloadManager.notifyRecoveryOpportunity("proxy_changed")
             }
@@ -708,6 +729,9 @@ object AppContainer {
             sharedOkHttpClient.dispatcher.runningCalls()
         calls.filter { call -> isYouTubeHost(call.request().url.host) }
             .forEach { call -> call.cancel() }
+        if (youtubeAccountProfileHttpClientDelegate.isInitialized()) {
+            youtubeAccountProfileHttpClientDelegate.value.dispatcher.cancelAll()
+        }
     }
 
     private fun isYouTubeHost(host: String): Boolean {

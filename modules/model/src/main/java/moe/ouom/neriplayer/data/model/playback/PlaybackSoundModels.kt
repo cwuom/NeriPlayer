@@ -52,12 +52,8 @@ private val DEFAULT_EQUALIZER_CENTER_FREQUENCIES_HZ = PRESET_ANCHOR_FREQUENCIES_
 data class PlaybackSoundConfig(
     val speed: Float = DEFAULT_PLAYBACK_SPEED,
     val pitch: Float = DEFAULT_PLAYBACK_PITCH,
-    val loudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
     val volumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
-    val volumeNormalizationEnabled: Boolean = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED,
-    val equalizerEnabled: Boolean = false,
-    val presetId: String = PlaybackEqualizerPresetId.FLAT,
-    val customBandLevelsMb: List<Int> = emptyList()
+    val volumeNormalizationEnabled: Boolean = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED
 )
 
 data class PlaybackEqualizerBand(
@@ -72,16 +68,8 @@ data class PlaybackEqualizerBand(
 data class PlaybackSoundState(
     val speed: Float = DEFAULT_PLAYBACK_SPEED,
     val pitch: Float = DEFAULT_PLAYBACK_PITCH,
-    val loudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
     val volumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
-    val volumeNormalizationEnabled: Boolean = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED,
-    val equalizerEnabled: Boolean = false,
-    val presetId: String = PlaybackEqualizerPresetId.FLAT,
-    val bands: List<PlaybackEqualizerBand> = defaultPlaybackEqualizerBands(),
-    val bandLevelRangeMb: IntRange = DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB,
-    val audioSessionId: Int? = null,
-    val equalizerAvailable: Boolean = false,
-    val loudnessEnhancerAvailable: Boolean = false
+    val volumeNormalizationEnabled: Boolean = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED
 )
 
 data class PlaybackEqualizerPreset(

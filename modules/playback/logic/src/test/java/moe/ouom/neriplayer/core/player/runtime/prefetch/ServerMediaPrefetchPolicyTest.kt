@@ -13,6 +13,11 @@ class ServerMediaPrefetchPolicyTest {
         assertFalse(canPrefetchServerMedia(true, true, true, true, 4999, 100000))
         assertTrue(canPrefetchServerMedia(true, true, true, true, 2000, 2000))
         assertFalse(canPrefetchServerMedia(true, true, true, true, 1999, 2000))
+        assertFalse(canPrefetchServerMedia(true, true, true, true, 4999, -1))
+        assertFalse(canPrefetchServerMedia(true, true, true, true, 4999, 0))
+        assertTrue(canPrefetchServerMedia(true, true, true, true, 5000, -1))
+        assertTrue(canPrefetchServerMedia(true, true, true, true, 1, 1))
+        assertFalse(canPrefetchServerMedia(true, true, true, true, 0, 1))
     }
 
     @Test fun `byte budget respects short files and cache capacity`() {

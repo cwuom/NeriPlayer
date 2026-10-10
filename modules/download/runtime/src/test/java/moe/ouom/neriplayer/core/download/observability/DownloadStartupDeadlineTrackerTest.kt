@@ -76,6 +76,44 @@ class DownloadStartupDeadlineTrackerTest {
     }
 
     @Test
+    fun `queue boundary is recorded once and never after blocking or transfer`() {
+        var nowNs = 10L
+        val tracker = DownloadStartupDeadlineTracker(nowNs = { nowNs })
+        assertEquals(DownloadStartupDeadlineTracker.Phase.IDLE, tracker.markQueueReady()?.phase)
+        val generation = tracker.begin().generation
+        nowNs = 20L
+        assertEquals(20L, tracker.markQueueReady(generation)?.t1Ns)
+        nowNs = 30L
+        assertEquals(20L, tracker.markQueueReady(generation)?.t1Ns)
+        tracker.markTransferStarted(generation)
+        nowNs = 40L
+        val afterTransfer = requireNotNull(tracker.markQueueReady(generation))
+        assertEquals(DownloadStartupDeadlineTracker.Phase.TRANSFER_STARTED, afterTransfer.phase)
+        assertEquals(20L, afterTransfer.t1Ns)
+
+        val blockedTracker = DownloadStartupDeadlineTracker(nowNs = { nowNs })
+        val blockedGeneration = blockedTracker.begin().generation
+        blockedTracker.markBlocked("offline", blockedGeneration)
+        val blocked = requireNotNull(blockedTracker.markQueueReady(blockedGeneration))
+        assertEquals(DownloadStartupDeadlineTracker.Phase.BLOCKED, blocked.phase)
+        assertEquals(null, blocked.t1Ns)
+    }
+
+    @Test
+    fun `blocking is ignored before startup begins and after transfer started`() {
+        val tracker = DownloadStartupDeadlineTracker(nowNs = { 5L })
+        val idle = requireNotNull(tracker.markBlocked("offline"))
+        assertEquals(DownloadStartupDeadlineTracker.Phase.IDLE, idle.phase)
+        assertEquals(null, idle.blockedReason)
+
+        val generation = tracker.begin().generation
+        tracker.markTransferStarted(generation)
+        val afterTransfer = requireNotNull(tracker.markBlocked("offline", generation))
+        assertEquals(DownloadStartupDeadlineTracker.Phase.TRANSFER_STARTED, afterTransfer.phase)
+        assertEquals(null, afterTransfer.blockedReason)
+    }
+
+    @Test
     fun `callback failure does not affect boundary recording`() {
         var callbackCount = 0
         val tracker = DownloadStartupDeadlineTracker(

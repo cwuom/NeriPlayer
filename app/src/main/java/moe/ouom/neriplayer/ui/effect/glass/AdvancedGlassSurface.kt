@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -23,17 +24,20 @@ import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.isSpecified as isColorSpecified
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toSize
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlin.math.min
 
 internal fun isAdvancedGlassNavigationOwnerActive(
-    requiresContentBackdrop: Boolean,
+    isGlobalNavigationSurface: Boolean,
     activeNavigationOwners: Set<Any>?,
     navigationOwner: Any?
-): Boolean = requiresContentBackdrop ||
+): Boolean = isGlobalNavigationSurface ||
     activeNavigationOwners == null ||
     navigationOwner in activeNavigationOwners
 
@@ -55,6 +59,11 @@ internal fun shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
     !belongsToActiveNavigationScreen &&
     belongsToPrewarmedNavigationScreen
 
+internal fun resolveAdvancedGlassRelativeOpacity(sceneOpacity: Float, backdropOpacity: Float): Float {
+    if (!sceneOpacity.isFinite() || !backdropOpacity.isFinite() || backdropOpacity <= 0f) return 0f
+    return (sceneOpacity / backdropOpacity).coerceIn(0f, 1f)
+}
+
 @Composable
 internal fun AdvancedGlassSurface(
     role: AdvancedGlassRole,
@@ -74,6 +83,7 @@ internal fun AdvancedGlassSurface(
     val activeNavigationOwners = LocalAdvancedGlassActiveNavigationOwners.current
     val prewarmedNavigationOwners = LocalAdvancedGlassPrewarmedNavigationOwners.current
     val sceneActive = LocalAdvancedGlassSceneActive.current
+    val sceneOpacity = LocalAdvancedGlassSceneOpacity.current
     val backdropRegistrationEnabled = LocalAdvancedGlassBackdropRegistrationEnabled.current
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -93,7 +103,7 @@ internal fun AdvancedGlassSurface(
             (!requiresContentBackdrop || backdrops.content.positionInWindow.isSpecified)
     } == true
     val belongsToActiveNavigationScreen = isAdvancedGlassNavigationOwnerActive(
-        requiresContentBackdrop = requiresContentBackdrop,
+        isGlobalNavigationSurface = isGlobalAdvancedGlassNavigation(role),
         activeNavigationOwners = activeNavigationOwners,
         navigationOwner = navigationOwner
     )
@@ -115,12 +125,50 @@ internal fun AdvancedGlassSurface(
         belongsToPrewarmedNavigationScreen = belongsToPrewarmedNavigationScreen
     )
     val regionKey = remember { Any() }
+    val regionCoordinates = remember { AdvancedGlassSurfaceRegionCoordinates() }
+    val latestSceneOpacity = rememberUpdatedState(sceneOpacity)
+    val latestBackdropOpacity = rememberUpdatedState(availableBackdrops?.sceneOpacity)
+    // 坐标回调晚于宿主组合，宿主直接读取当前变换，避免遮罩落后动画一帧
+    val regionProvider = remember(role, shape, density, layoutDirection, navigationOwner) {
+        {
+            val coordinates = regionCoordinates.coordinates
+            if (coordinates == null || !coordinates.isAttached) {
+                null
+            } else {
+                val opacity = resolveAdvancedGlassRelativeOpacity(
+                    sceneOpacity = latestSceneOpacity.value(),
+                    backdropOpacity = latestBackdropOpacity.value?.invoke() ?: 1f
+                )
+                val bounds = coordinates.boundsInWindow()
+                if (bounds.width <= 0f || bounds.height <= 0f) {
+                    null
+                } else {
+                    val windowScale = coordinates.advancedGlassScaleInWindow()
+                    val localCornerRadii = resolveCornerRadiiPx(
+                        shape = shape,
+                        size = coordinates.size.toSize(),
+                        layoutDirection = layoutDirection,
+                        density = density
+                    )
+                    AdvancedGlassRegion(
+                        role = role,
+                        boundsInWindow = bounds,
+                        cornerRadiiPx = localCornerRadii.toWindowPixels(min(windowScale.x, windowScale.y)),
+                        navigationOwner = advancedGlassRegionNavigationOwner(role, navigationOwner),
+                        opacity = opacity
+                    )
+                }
+            }
+        }
+    }
 
     DisposableEffect(availableBackdrops, regionKey, registersBackdrop) {
         if (!registersBackdrop) {
+            regionCoordinates.coordinates = null
             availableBackdrops?.regionRegistry?.remove(regionKey)
         }
         onDispose {
+            regionCoordinates.coordinates = null
             availableBackdrops?.regionRegistry?.remove(regionKey)
         }
     }
@@ -128,29 +176,13 @@ internal fun AdvancedGlassSurface(
     val regionRegistrationModifier = if (registersBackdrop) {
         Modifier.onGloballyPositioned { coordinates ->
             val registry = availableBackdrops.regionRegistry
-            if (!coordinates.isAttached) {
+            regionCoordinates.coordinates = coordinates
+            val region = regionProvider()
+            if (region == null) {
                 registry.remove(regionKey)
-                return@onGloballyPositioned
+            } else {
+                registry.update(regionKey, region.copy(regionProvider = regionProvider))
             }
-            val bounds = coordinates.boundsInWindow()
-            if (bounds.width <= 0f || bounds.height <= 0f) {
-                registry.remove(regionKey)
-                return@onGloballyPositioned
-            }
-            registry.update(
-                regionKey,
-                AdvancedGlassRegion(
-                    role = role,
-                    boundsInWindow = bounds,
-                    cornerRadiiPx = resolveCornerRadiiPx(
-                        shape = shape,
-                        size = bounds.size,
-                        layoutDirection = layoutDirection,
-                        density = density
-                    ),
-                    navigationOwner = if (requiresContentBackdrop) null else navigationOwner
-                )
-            )
         }
     } else {
         Modifier
@@ -190,6 +222,17 @@ internal fun AdvancedGlassSurface(
         }
     }
 }
+
+private class AdvancedGlassSurfaceRegionCoordinates {
+    var coordinates: LayoutCoordinates? = null
+}
+
+private fun AdvancedGlassCornerRadii.toWindowPixels(scale: Float) = AdvancedGlassCornerRadii(
+    topLeft = topLeft * scale,
+    topRight = topRight * scale,
+    bottomRight = bottomRight * scale,
+    bottomLeft = bottomLeft * scale
+)
 
 private fun resolveCornerRadiiPx(
     shape: Shape,
@@ -259,6 +302,7 @@ private fun BoxScope.GlassEdgeLayer(
 private fun advancedGlassRoleColor(role: AdvancedGlassRole): Color = when (role) {
     AdvancedGlassRole.MiniPlayer -> MaterialTheme.colorScheme.secondaryContainer
     AdvancedGlassRole.BottomNavigation,
+    AdvancedGlassRole.NavigationRail,
     AdvancedGlassRole.ScreenTopTab,
     AdvancedGlassRole.SettingsGroup,
     AdvancedGlassRole.SettingsSection -> MaterialTheme.colorScheme.surfaceContainerHighest

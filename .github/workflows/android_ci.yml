@@ -7,10 +7,14 @@ on:
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - 'site/**'
+      - '.github/workflows/site_pages.yml'
   pull_request:
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - 'site/**'
+      - '.github/workflows/site_pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -42,6 +46,9 @@ jobs:
 
       - name: Grant execute permission
         run: chmod +x gradlew
+
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
 
       - name: Run unit tests, CRAP gate and lint
         run: >-
@@ -91,6 +98,9 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
+
       - name: Install Worker dependencies
         run: npm ci --prefix np-submodule/NeriPlayer-LTW
 
@@ -135,11 +145,21 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
+
       - name: Enable KVM
         run: |
           sudo sh -c 'echo "KERNEL==\"kvm\", GROUP=\"kvm\", MODE=\"0666\", OPTIONS+=\"static_node=kvm\"" > /etc/udev/rules.d/99-kvm4all.rules'
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+
+      # 先编译好测试 APK 再启动模拟器，避免编译与空闲模拟器争抢 CPU 时 Launcher 无响应
+      - name: Build instrumented test APKs
+        run: >-
+          ./gradlew :database:assembleDebugAndroidTest :local:assembleDebugAndroidTest
+          :playback:runtime:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest
+          --warning-mode all --stacktrace
 
       - name: Run connected Android tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -149,7 +169,13 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          # 保留 Launcher 的系统导航服务，用设置页承接构建期间的前台焦点
+          # 首次沉浸模式提示会抢走原生输入，测试 AVD 预先标记已确认
+          # 系统应用 ANR 时不弹窗而是直接结束该进程，否则对话框会抢走焦点并挡住 SAF 选择器
           script: >-
+            adb shell settings put global hide_error_dialogs 1 &&
+            adb shell settings --user 0 put secure immersive_mode_confirmations confirmed &&
+            adb shell am start -W -a android.settings.SETTINGS &&
             ./gradlew :database:connectedDebugAndroidTest :local:connectedDebugAndroidTest :playback:runtime:connectedDebugAndroidTest :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=moe.ouom.neriplayer.testing.ManualInstrumentedTest
             --warning-mode all --stacktrace
@@ -222,6 +248,9 @@ jobs:
 
       - name: Grant execute permission
         run: chmod +x gradlew
+
+      - name: Install Android NDK
+        uses: ./.github/actions/android-ndk
 
       - name: Verify Native USB behavior before packaging
         run: |

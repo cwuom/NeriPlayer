@@ -8,6 +8,8 @@ namespace {
 
 constexpr uint8_t kEndpointDescriptorType = 0x05;
 constexpr uint8_t kUac2EndpointDescriptorLength = 7;
+// UAC1 音频端点描述符多出 bRefresh 和 bSynchAddress
+constexpr uint8_t kUac1AudioEndpointDescriptorLength = 9;
 constexpr uint8_t kTransferTypeMask = 0x03;
 constexpr uint8_t kSyncTypeMask = 0x0C;
 constexpr uint8_t kUsageTypeMask = 0x30;
@@ -63,13 +65,22 @@ void fail(
     result->reason = reason;
 }
 
-bool validateDescriptorFields(const EndpointSnapshot& endpoint, std::string* reason) {
+bool validDescriptorLength(const EndpointSnapshot& endpoint, bool legacyAudioEndpoints) {
+    return endpoint.descriptorLength == kUac2EndpointDescriptorLength ||
+        (legacyAudioEndpoints && endpoint.descriptorLength == kUac1AudioEndpointDescriptorLength);
+}
+
+bool validateDescriptorFields(
+    const EndpointSnapshot& endpoint,
+    bool legacyAudioEndpoints,
+    std::string* reason
+) {
     if (endpoint.configurationValue <= 0 || endpoint.interfaceNumber < 0 ||
         endpoint.alternateSetting < 0) {
         *reason = "endpoint_identity_invalid";
         return false;
     }
-    if (endpoint.descriptorLength != kUac2EndpointDescriptorLength) {
+    if (!validDescriptorLength(endpoint, legacyAudioEndpoints)) {
         *reason = "uac2_endpoint_descriptor_length_invalid";
         return false;
     }
@@ -77,8 +88,8 @@ bool validateDescriptorFields(const EndpointSnapshot& endpoint, std::string* rea
         *reason = "endpoint_descriptor_type_invalid";
         return false;
     }
-    if (endpoint.hasRefresh || endpoint.hasSynchAddress ||
-        endpoint.bRefresh != 0 || endpoint.bSynchAddress != 0) {
+    if (!legacyAudioEndpoints && (endpoint.hasRefresh || endpoint.hasSynchAddress ||
+        endpoint.bRefresh != 0 || endpoint.bSynchAddress != 0)) {
         *reason = "uac2_endpoint_legacy_fields_present";
         return false;
     }
@@ -133,7 +144,7 @@ bool validateOutput(
     const FeedbackResolverPolicy& policy,
     std::string* reason
 ) {
-    if (!validateDescriptorFields(output, reason)) {
+    if (!validateDescriptorFields(output, policy.legacyAudioEndpoints, reason)) {
         return false;
     }
     if (!output.isOut()) {
@@ -173,9 +184,10 @@ bool validateOutput(
 
 bool validateFeedback(
     const EndpointSnapshot& feedback,
+    bool legacyAudioEndpoints,
     std::string* reason
 ) {
-    if (!validateDescriptorFields(feedback, reason)) {
+    if (!validateDescriptorFields(feedback, legacyAudioEndpoints, reason)) {
         return false;
     }
     if (!feedback.isIn()) {
@@ -186,7 +198,9 @@ bool validateFeedback(
         *reason = "feedback_endpoint_transfer_type_invalid";
         return false;
     }
-    if (feedback.usageType() != kFeedbackUsageType) {
+    // USB 1.1 时代的 UAC1 同步端点没有用途位，靠数据端点的 bSynchAddress 指认
+    const bool legacyUnmarkedSync = legacyAudioEndpoints && feedback.usageType() == kDataUsageType;
+    if (feedback.usageType() != kFeedbackUsageType && !legacyUnmarkedSync) {
         *reason = "feedback_endpoint_usage_invalid";
         return false;
     }
@@ -347,10 +361,11 @@ DescriptorValidationStatus validateOutputEndpointSnapshot(
 
 DescriptorValidationStatus validateFeedbackEndpointSnapshot(
     const EndpointSnapshot& feedback,
-    std::string* reason
+    std::string* reason,
+    const FeedbackResolverPolicy& policy
 ) {
     std::string validationReason;
-    if (validateFeedback(feedback, &validationReason)) {
+    if (validateFeedback(feedback, policy.legacyAudioEndpoints, &validationReason)) {
         if (reason != nullptr) {
             reason->clear();
         }
@@ -438,7 +453,7 @@ FeedbackEndpointResolution resolveExplicitFeedbackEndpoint(
     if (standardFeedback != nullptr) {
         result.matches.push_back(*standardFeedback);
         result.feedback = *standardFeedback;
-        if (!validateFeedback(result.feedback, &reason)) {
+        if (!validateFeedback(result.feedback, policy.legacyAudioEndpoints, &reason)) {
             if (reason == "endpoint_capacity_unknown") {
                 fail(&result, DescriptorValidationStatus::CapacityUnknown, reason.c_str());
             } else {
@@ -494,7 +509,7 @@ FeedbackEndpointResolution resolveExplicitFeedbackEndpoint(
         return result;
     }
     result.feedback = *profiledFeedback;
-    if (!validateFeedback(result.feedback, &reason)) {
+    if (!validateFeedback(result.feedback, policy.legacyAudioEndpoints, &reason)) {
         if (reason == "endpoint_capacity_unknown") {
             fail(&result, DescriptorValidationStatus::CapacityUnknown, reason.c_str());
         } else {

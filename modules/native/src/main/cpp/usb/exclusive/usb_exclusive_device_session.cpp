@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include "usb/control/usb_sample_rate_readback.h"
 #include "usb/exclusive/usb_streaming_interface_lifecycle.h"
 #include "usb/feedback/usb_feedback_rate_math.h"
 
@@ -51,6 +52,39 @@ int remainingInterfaceTransitionCooldownMsLocked() {
 void markInterfaceTransitionLocked() {
     g_lastInterfaceTransitionAt = std::chrono::steady_clock::now();
 }
+
+namespace {
+
+using neri::usb::control::SampleRateReadback;
+
+void acceptSampleRateReadback(
+    SampleRateReadback readback,
+    int requestedRate,
+    int reportedRate,
+    int attempt,
+    int* negotiatedSampleRate,
+    std::string* status
+) {
+    if (readback == SampleRateReadback::Verified) {
+        *negotiatedSampleRate = reportedRate;
+        *status = attempt == 0 ? "set_cur_verified" : "set_cur_verified_after_settle";
+        return;
+    }
+    LOGW(
+        "sample rate readback differs: requested=%d reported=%d attempts=%d",
+        requestedRate,
+        reportedRate,
+        attempt + 1
+    );
+    *negotiatedSampleRate = requestedRate;
+    *status = "set_cur_unverified_readback=" + std::to_string(reportedRate);
+}
+
+void waitForClockSettle(int attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(neri::usb::control::sampleRateSettleDelayMs(attempt)));
+}
+
+} // namespace
 
 bool negotiateUac1SampleRate(
     libusb_device_handle* deviceHandle,
@@ -124,37 +158,37 @@ bool negotiateUac1SampleRate(
         return false;
     }
 
-    uint8_t verifiedBytes[3] = { 0, 0, 0 };
     const auto inRequestType = makeClassEndpointRequestType(kLibusbEndpointIn);
-    const int getResult = libusb_control_transfer(
-        deviceHandle,
-        inRequestType,
-        kGetCurRequest,
-        kSamplingFrequencyControl,
-        endpointAddress,
-        verifiedBytes,
-        sizeof(verifiedBytes),
-        kControlTimeoutMs
-    );
-    if (getResult == LIBUSB_ERROR_NO_DEVICE) {
-        if (error != nullptr) {
-            *error = "sample_rate_get_cur_failed:LIBUSB_ERROR_NO_DEVICE";
-        }
-        return false;
-    }
-    if (getResult == static_cast<int>(sizeof(verifiedBytes))) {
-        const int verifiedRate = static_cast<int>(verifiedBytes[0]) |
-            (static_cast<int>(verifiedBytes[1]) << 8) |
-            (static_cast<int>(verifiedBytes[2]) << 16);
-        if (verifiedRate != sampleRate) {
+    int getResult = 0;
+    for (int attempt = 0;; ++attempt) {
+        uint8_t verifiedBytes[3] = { 0, 0, 0 };
+        getResult = libusb_control_transfer(
+            deviceHandle,
+            inRequestType,
+            kGetCurRequest,
+            kSamplingFrequencyControl,
+            endpointAddress,
+            verifiedBytes,
+            sizeof(verifiedBytes),
+            kControlTimeoutMs
+        );
+        if (getResult == LIBUSB_ERROR_NO_DEVICE) {
             if (error != nullptr) {
-                *error = "sample_rate_verify_mismatch_requested=" +
-                    std::to_string(sampleRate) + "/actual=" + std::to_string(verifiedRate);
+                *error = "sample_rate_get_cur_failed:LIBUSB_ERROR_NO_DEVICE";
             }
             return false;
         }
-        *negotiatedSampleRate = verifiedRate;
-        *status = "set_cur_verified";
+        if (getResult != static_cast<int>(sizeof(verifiedBytes))) break;
+        const int verifiedRate = static_cast<int>(verifiedBytes[0]) |
+            (static_cast<int>(verifiedBytes[1]) << 8) |
+            (static_cast<int>(verifiedBytes[2]) << 16);
+        const SampleRateReadback readback =
+            neri::usb::control::classifySampleRateReadback(sampleRate, verifiedRate, attempt);
+        if (readback == SampleRateReadback::Settle) {
+            waitForClockSettle(attempt);
+            continue;
+        }
+        acceptSampleRateReadback(readback, sampleRate, verifiedRate, attempt, negotiatedSampleRate, status);
         return true;
     }
 
@@ -368,23 +402,20 @@ bool negotiateUac2SampleRate(
 
     int verifiedRate = 0;
     std::string getStatus;
-    if (readUac2CurrentSampleRate(
+    for (int attempt = 0; readUac2CurrentSampleRate(
             deviceHandle,
             audioControlInterface,
             clockSourceId,
             &verifiedRate,
             &getStatus
-        )) {
-        if (verifiedRate != sampleRate) {
-            if (error != nullptr) {
-                *error = "uac2_sample_rate_verify_mismatch_requested=" +
-                    std::to_string(sampleRate) + "/actual=" +
-                    std::to_string(verifiedRate);
-            }
-            return false;
+        ); ++attempt) {
+        const SampleRateReadback readback =
+            neri::usb::control::classifySampleRateReadback(sampleRate, verifiedRate, attempt);
+        if (readback == SampleRateReadback::Settle) {
+            waitForClockSettle(attempt);
+            continue;
         }
-        *negotiatedSampleRate = verifiedRate;
-        *status = "set_cur_verified";
+        acceptSampleRateReadback(readback, sampleRate, verifiedRate, attempt, negotiatedSampleRate, status);
         return true;
     }
 
@@ -918,6 +949,7 @@ void finishClosedUsbResources(UsbExclusiveHandle* handle) {
                 );
             }
         }
+        releaseFeatureUnits(handle, true);
         releaseClaimedAudioInterfaces(handle);
         libusb_close(handle->device.devh);
         handle->device.devh = nullptr;
@@ -926,6 +958,7 @@ void finishClosedUsbResources(UsbExclusiveHandle* handle) {
         handle->device.streamingAlternateActive = false;
         handle->device.streamingAlternateStatus = "close:detached";
         handle->device.claimedAudioInterfaces.clear();
+        releaseFeatureUnits(handle, false);
         libusb_close(handle->device.devh);
         handle->device.devh = nullptr;
     }
@@ -1126,6 +1159,7 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
             closeHandleInternal(handle);
             return 0L;
         }
+        applyBitPerfectFeatureUnits(handle.get());
 
         if (selection.uacVersion == 1) {
             rc = setStreamingAlternateLocked(

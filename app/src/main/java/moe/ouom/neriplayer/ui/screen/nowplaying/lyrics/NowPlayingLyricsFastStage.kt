@@ -78,8 +78,7 @@ internal class NowPlayingLyricsLoadStages(
         request: NowPlayingLyricsLoadRequest,
         state: LoadedLyricsState
     ): LoadedLyricsState {
-        if (request.defaultLyricSource != LyricSourcePreference.Automatic ||
-            state.rawLyrics != null || state.lyrics.isNotEmpty() || state.preferredSource != null) return state
+        if (request.defaultLyricSource != LyricSourcePreference.Automatic || state.hasOriginalSource()) return state
         val song = request.song ?: return state
         val cached = sources.cachedOriginal(song)?.takeIf { it.isNotEmpty() } ?: return state
         return overlayConfirmedUserLyrics(song, state.copy(
@@ -87,6 +86,9 @@ internal class NowPlayingLyricsLoadStages(
             plainLyrics = cached.flattenWordTimedEntries()
         ))
     }
+
+    private fun LoadedLyricsState.hasOriginalSource(): Boolean =
+        rawLyrics != null || lyrics.isNotEmpty() || preferredSource != null
 
     private fun isManagedLocalLyricSong(song: SongItem?): Boolean =
         song?.let { it.isLocalSong() && sources.hasManagedDownload(it) } == true

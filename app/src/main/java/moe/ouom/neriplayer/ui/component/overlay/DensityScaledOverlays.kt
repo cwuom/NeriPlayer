@@ -79,7 +79,10 @@ internal fun DensityScaledAlertDialog(
     val surfaceScale = LocalOverlaySurfaceScale.current
     MaterialAlertDialog(
         onDismissRequest = onDismissRequest,
-        confirmButton = confirmButton,
+        confirmButton = {
+            ApplyOverlayWindowNavigationBarPolicy()
+            confirmButton()
+        },
         modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
         dismissButton = dismissButton,
         icon = icon,
@@ -135,6 +138,7 @@ internal fun DensityScaledModalBottomSheet(
         contentWindowInsets = contentWindowInsets,
         properties = properties,
         content = {
+            ApplyOverlayWindowNavigationBarPolicy()
             if (dragHandle != null) {
                 Box(
                     modifier = Modifier

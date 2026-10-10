@@ -43,10 +43,11 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
     }
 
     fun browseKey(profileId: String, albumId: String? = null, query: String = "",
-                  offset: Int = 0, size: Int = 30): ServerBrowseKey {
+                  offset: Int = 0, size: Int = 30,
+                  category: ServerLibraryCategory = ServerLibraryCategory.ALBUMS): ServerBrowseKey {
         val profile = accounts.profile(profileId) ?: throw SubsonicException.accountUnavailable()
         return ServerBrowseKey(profileId, profile.revision,
-            if (albumId != null) "album" else if (query.isNotBlank()) "search" else "albums",
+            if (albumId != null) "album" else category.browseKind(query),
             albumId ?: query.trim(), offset, size)
     }
 
@@ -55,8 +56,11 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
         browseCache.fetch(key, force) {
             val page = when (key.kind) {
                 "album" -> ServerBrowsePage(songs = fetchAlbumSongs(key.profileId, key.value))
-                "search" -> fetchSearch(key.profileId, key.value, key.offset, key.size).let {
+                "search", "songs" -> fetchSearch(key.profileId, key.value, key.offset, key.size).let {
                     ServerBrowsePage(songs = it, hasMore = it.size == key.size)
+                }
+                "search-albums" -> fetchAlbumSearch(key.profileId, key.value, key.offset, key.size).let {
+                    ServerBrowsePage(albums = it, hasMore = it.size == key.size)
                 }
                 else -> fetchAlbums(key.profileId, key.offset, key.size).let {
                     ServerBrowsePage(albums = it, hasMore = it.size == key.size)
@@ -101,11 +105,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
         val data = call(profileId, "getAlbumList2", mapOf("type" to "alphabeticalByName",
             "offset" to offset.toString(), "size" to size.toString()))
             .optJSONObject("albumList2")?.optJSONArray("album") ?: JSONArray()
-        return data.objects().map { json ->
-            val id = json.getString("id")
-            ServerAlbum(profileId, id, json.optString("name", id),
-                json.optString("artist"), cover(profileId, id, json), json.optInt("songCount"))
-        }
+        return data.objects().map { mapAlbum(profileId, it) }
     }
 
     suspend fun albumSongs(profileId: String, albumId: String): List<SongItem> =
@@ -116,7 +116,13 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             .optJSONArray("song").objects().map { mapSong(profileId, it) }
 
     suspend fun search(profileId: String, query: String, offset: Int, size: Int = 30): List<SongItem> =
-        browse(browseKey(profileId, query = query, offset = offset, size = size)).songs
+        browse(browseKey(profileId, query = query, offset = offset, size = size,
+            category = ServerLibraryCategory.SONGS)).songs
+
+    private suspend fun fetchAlbumSearch(profileId: String, query: String, offset: Int, size: Int): List<ServerAlbum> =
+        call(profileId, "search3", mapOf("query" to query, "albumOffset" to offset.toString(),
+            "albumCount" to size.toString(), "artistCount" to "0", "songCount" to "0"))
+            .optJSONObject("searchResult3")?.optJSONArray("album").objects().map { mapAlbum(profileId, it) }
 
     private suspend fun fetchSearch(profileId: String, query: String, offset: Int, size: Int): List<SongItem> =
         call(profileId, "search3", mapOf("query" to query, "songOffset" to offset.toString(),
@@ -126,6 +132,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
     suspend fun song(ref: ServerSongRef): SongItem = mapSong(ref.profileId,
         call(ref.profileId, "getSong", mapOf("id" to ref.songId)).getJSONObject("song"))
 
+    /** Return the existing playback result with an opaque URL; authentication occurs on HTTP open. */
     suspend fun playback(song: SongItem, forceRefresh: Boolean = false): SongUrlResult {
         accounts.load()
         val ref = ServerSongRef.from(song) ?: return SongUrlResult.Failure
@@ -247,6 +254,12 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             durationMs = json.optLong("duration", 0).coerceIn(0, 604800) * 1000L,
             coverUrl = cover(profileId, id, json), mediaUri = ref.mediaUri,
             channelId = ServerSongRef.CHANNEL, audioId = ref.audioId)
+    }
+
+    private fun mapAlbum(profileId: String, json: JSONObject): ServerAlbum {
+        val id = json.getString("id")
+        return ServerAlbum(profileId, id, json.optString("name", id),
+            json.optString("artist"), cover(profileId, id, json), json.optInt("songCount"))
     }
 
     private fun cover(profileId: String, resourceId: String, json: JSONObject): String? =

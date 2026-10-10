@@ -193,21 +193,21 @@ internal fun libraryTabDisplayOrder(
         listOf(
             LibraryTab.LOCAL,
             LibraryTab.FAVORITE,
-            LibraryTab.MY_MUSIC,
             LibraryTab.YTMUSIC,
             LibraryTab.NETEASE,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC
+            LibraryTab.QQMUSIC,
+            LibraryTab.MY_MUSIC
         )
     } else {
         listOf(
             LibraryTab.LOCAL,
             LibraryTab.FAVORITE,
-            LibraryTab.MY_MUSIC,
             LibraryTab.NETEASE,
             LibraryTab.YTMUSIC,
             LibraryTab.BILI,
-            LibraryTab.QQMUSIC
+            LibraryTab.QQMUSIC,
+            LibraryTab.MY_MUSIC
         )
     }
     return if (youtubeEnabled) orderedTabs else orderedTabs - LibraryTab.YTMUSIC

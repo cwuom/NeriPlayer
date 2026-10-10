@@ -26,7 +26,6 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Tune
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,6 +33,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -47,6 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -65,6 +67,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.presentation.downloadFailureReasonMessageRes
 import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -74,6 +77,7 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.server.isServerSong
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -107,7 +111,6 @@ internal fun MoreOptionsMainContent(
     snackbarHostState: SnackbarHostState,
     onOpenSearch: () -> Unit,
     onOpenEditInfo: () -> Unit,
-    onOpenPlaybackSound: () -> Unit,
     onOpenLyricBehavior: () -> Unit,
     onOpenFontSize: () -> Unit,
     onOpenBiliVideoSkip: () -> Unit,
@@ -129,7 +132,6 @@ internal fun MoreOptionsMainContent(
             isDismissing = isDismissing,
             onOpenSearch = onOpenSearch,
             onOpenEditInfo = onOpenEditInfo,
-            onOpenPlaybackSound = onOpenPlaybackSound,
             onShowQualitySwitch = onShowQualitySwitch
         )
         DownloadOrDetailsAction(
@@ -163,8 +165,16 @@ internal fun MoreOptionsMainContent(
         PlaybackStatsAction(originalSong)
         ListItem(
             headlineContent = { Text(stringResource(CoreCommonR.string.listen_together_title)) },
+            supportingContent = if (originalSong.isServerSong()) {
+                { Text(stringResource(CoreCommonR.string.server_listen_together_unavailable)) }
+            } else null,
             leadingContent = { Icon(Icons.Outlined.Headphones, null) },
-            modifier = Modifier.clickable(onClick = onOpenListenTogether)
+            colors = if (originalSong.isServerSong()) ListItemDefaults.colors(
+                headlineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .38f),
+                leadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
+            ) else ListItemDefaults.colors(),
+            modifier = if (originalSong.isServerSong()) Modifier.semantics { disabled() }
+                else Modifier.clickable(onClick = onOpenListenTogether)
         )
     }
 }
@@ -175,7 +185,6 @@ private fun MetadataAndPlaybackActions(
     isDismissing: Boolean,
     onOpenSearch: () -> Unit,
     onOpenEditInfo: () -> Unit,
-    onOpenPlaybackSound: () -> Unit,
     onShowQualitySwitch: () -> Unit
 ) {
     ListItem(
@@ -201,12 +210,6 @@ private fun MetadataAndPlaybackActions(
             modifier = Modifier.clickable(onClick = onShowQualitySwitch)
         )
     }
-    ListItem(
-        headlineContent = { Text(stringResource(CoreCommonR.string.nowplaying_audio_effects_title)) },
-        leadingContent = { Icon(Icons.Outlined.Tune, null) },
-        supportingContent = { Text(stringResource(CoreCommonR.string.nowplaying_audio_effects_desc)) },
-        modifier = Modifier.clickable(onClick = onOpenPlaybackSound)
-    )
 }
 
 @Composable
@@ -216,6 +219,19 @@ private fun DownloadOrDetailsAction(
     isLocalSong: Boolean,
     onShowSongDetails: () -> Unit
 ) {
+    if (song.isServerSong()) {
+        ListItem(
+            headlineContent = { Text(stringResource(CoreCommonR.string.download_to_local)) },
+            supportingContent = { Text(stringResource(CoreCommonR.string.server_download_unavailable)) },
+            leadingContent = { Icon(Icons.Outlined.Download, null) },
+            colors = ListItemDefaults.colors(
+                headlineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .38f),
+                leadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
+            ),
+            modifier = Modifier.semantics { disabled() }
+        )
+        return
+    }
     if (isLocalSong) {
         ListItem(
             headlineContent = { Text(stringResource(CoreCommonR.string.local_song_open_details)) },
@@ -359,7 +375,11 @@ internal fun DownloadProgressContent(task: DownloadTask?) {
                 }
             }
         }
-        task?.status == DownloadStatus.FAILED -> Text(stringResource(CoreCommonR.string.download_failed))
+        task?.status == DownloadStatus.FAILED -> Text(
+            stringResource(
+                task?.let(::downloadFailureReasonMessageRes) ?: CoreCommonR.string.download_failed
+            )
+        )
     }
 }
 

@@ -83,7 +83,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
@@ -123,16 +122,19 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -143,13 +145,13 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
-import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.lyrics.scaledLyricFontSize
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.identity.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
+import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
 import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
 import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
@@ -197,7 +199,30 @@ import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import moe.ouom.neriplayer.ui.screen.playback.resolveLyricPreviewTimeMs
 import moe.ouom.neriplayer.ui.screen.playback.shouldReleaseLyricSeekPreview
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarDescription
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarIcon
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+
+internal data class LyricsTabletPortraitWidths(
+    val header: Dp,
+    val lyrics: Dp,
+    val controls: Dp,
+    val toolbar: Dp
+)
+
+internal fun isLyricsTabletPortrait(smallestScreenWidthDp: Int, isLandscape: Boolean): Boolean =
+    smallestScreenWidthDp >= 600 && !isLandscape
+
+internal fun resolveLyricsTabletPortraitWidths(availableWidth: Dp): LyricsTabletPortraitWidths {
+    val readingWidth = minOf(availableWidth.coerceAtLeast(0.dp), 560.dp)
+    return LyricsTabletPortraitWidths(
+        header = readingWidth,
+        lyrics = readingWidth,
+        controls = minOf(readingWidth, 440.dp),
+        toolbar = minOf(readingWidth, 400.dp)
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -228,6 +253,7 @@ fun LyricsScreen(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedContentScope: AnimatedContentScope? = null,
     offlineMode: Boolean = false,
+    lyricsAdjustBehavior: Boolean = false,
 ) {
     // 处理返回键
     BackHandler(onBack = onNavigateBack)
@@ -241,7 +267,7 @@ fun LyricsScreen(
         .collectAsState(initial = true)
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
-        .collectAsState(initial = PlaybackControlLayoutPreferences())
+        .collectAsState(initial = settingsRepo.defaultPlaybackControlLayoutPreferences)
     val queue by PlayerManager.currentQueueFlow.collectAsState()
     val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsState()
     val queueDisplayState = remember(queue, currentSong, queueDisplayRevision) {
@@ -307,6 +333,8 @@ fun LyricsScreen(
 
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
+    var showMoreOptions by remember { mutableStateOf(false) }
+    var startMoreOptionsWithLyricBehavior by remember { mutableStateOf(false) }
     var detailSong by remember { mutableStateOf<SongItem?>(null) }
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
@@ -322,6 +350,10 @@ fun LyricsScreen(
     val density = LocalDensity.current
     val isTabletLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
         with(density) { windowInfo.containerSize.width.toDp() } >= 720.dp
+    val isTabletPortrait = isLyricsTabletPortrait(
+        configuration.smallestScreenWidthDp,
+        configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    )
     val horizontalPadding = if (isTabletLandscape) 36.dp else 20.dp
     val verticalPadding = if (isTabletLandscape) 14.dp else 12.dp
     val contentWidthFraction = if (isTabletLandscape) 0.86f else 1f
@@ -395,7 +427,8 @@ fun LyricsScreen(
 
     // 播放控件动画 - 轻微上浮/下沉, 保持常驻在安全区域内
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().testTag("lyricsScreen")) {
+        val portraitWidths = resolveLyricsTabletPortraitWidths(maxWidth - horizontalPadding * 2)
         // 使用填充整个屏幕, 不创建新背景, 复用现有背景
         Column(
             modifier = Modifier
@@ -410,15 +443,18 @@ fun LyricsScreen(
                         }
                     }
                 }
-                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding)
+                .testTag("lyricsScreenContent"),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
         // 顶部区域 - 包含缩小的封面 + 收藏 + 更多
         Row(
             modifier = Modifier
+                .then(if (isTabletPortrait) Modifier.width(portraitWidths.header) else Modifier)
                 .fillMaxWidth(contentWidthFraction)
                 .widthIn(max = 1320.dp)
-                .height(lyricsTopBarHeight),
+                .height(lyricsTopBarHeight)
+                .testTag("lyricsScreenHeader"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
         ) {
@@ -629,9 +665,11 @@ fun LyricsScreen(
             }
 
             // 更多按钮
-            var showMoreOptions by remember { mutableStateOf(false) }
             HapticIconButton(
-                onClick = { showMoreOptions = true },
+                onClick = {
+                    startMoreOptionsWithLyricBehavior = false
+                    showMoreOptions = true
+                },
                 modifier = Modifier.size(lyricsTopActionButtonSize)
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -673,7 +711,8 @@ fun LyricsScreen(
                         },
                         onShowSongDetails = { detailSong = it },
                         onEnterAlbum = onEnterAlbum,
-                        onNavigateUp = onExitNowPlaying
+                        onNavigateUp = onExitNowPlaying,
+                        startWithLyricBehavior = startMoreOptionsWithLyricBehavior
                     ),
                     snackbarHostState = snackbarHostState,
                     fontSettings = MoreOptionsFontSettings(
@@ -694,8 +733,10 @@ fun LyricsScreen(
         Box(
             modifier = Modifier
                 .weight(1f)
+                .then(if (isTabletPortrait) Modifier.width(portraitWidths.lyrics) else Modifier)
                 .fillMaxWidth(lyricsWidthFraction)
                 .widthIn(max = 860.dp)
+                .testTag("lyricsScreenReadingPane")
         ) {
             LyricsContentPane(
                 lyrics = lyrics,
@@ -728,11 +769,13 @@ fun LyricsScreen(
         // 底部控件 - 使用共享元素动画
         Column(
             modifier = Modifier
+                .then(if (isTabletPortrait) Modifier.width(portraitWidths.controls) else Modifier)
                 .fillMaxWidth(controlWidthFraction)
                 .widthIn(max = 980.dp)
+                .testTag("lyricsScreenControlPanel")
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(
-                    horizontal = if (isTabletLandscape) 8.dp else 20.dp,
+                    horizontal = if (isTabletLandscape || isTabletPortrait) 8.dp else 20.dp,
                     vertical = if (isTabletLandscape) 6.dp else 10.dp
                 )
         ) {
@@ -870,6 +913,7 @@ fun LyricsScreen(
                 onPreviewPositionChange = { previewPositionOverrideMs = it },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag("lyricsScreenProgress")
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {
                             with(sharedTransitionScope) {
@@ -888,7 +932,7 @@ fun LyricsScreen(
 
             // 播放控制按钮
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("lyricsScreenPlaybackControls"),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -976,9 +1020,11 @@ fun LyricsScreen(
         // 底部操作栏 (固定在底部, 与 NowPlayingScreen 完全一致)
         BoxWithConstraints(
             modifier = Modifier
+                .then(if (isTabletPortrait) Modifier.width(portraitWidths.toolbar) else Modifier)
                 .fillMaxWidth(toolbarWidthFraction)
                 .widthIn(max = 720.dp)
                 .windowInsetsPadding(WindowInsets.navigationBars)
+                .testTag("lyricsScreenActionToolbar")
         ) {
             val toolbarLayout = resolvePlaybackActionToolbarLayout(
                 availableWidth = maxWidth,
@@ -1094,10 +1140,18 @@ fun LyricsScreen(
                 )
             }
 
-            // 歌词按钮 (返回封面页, 高亮显示)
+            // 横屏调整歌词行为，竖屏保留返回封面页入口
             @SuppressLint("UnusedContentLambdaTargetStateParameter")
-            HapticIconButton(onClick = onNavigateBack,
-                modifier = toolbarActionModifier.then(
+            HapticIconButton(
+                onClick = resolveNowPlayingLyricsToolbarAction(
+                    lyricsAdjustBehavior = lyricsAdjustBehavior,
+                    onAdjust = {
+                        startMoreOptionsWithLyricBehavior = true
+                        showMoreOptions = true
+                    },
+                    onSwitchPage = onNavigateBack
+                ),
+                modifier = toolbarActionModifier.testTag("nowPlayingLyricsAction").then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
@@ -1117,8 +1171,10 @@ fun LyricsScreen(
                     label = "lyrics_icon"
                 ) { _ ->
                     Icon(
-                        imageVector = Icons.Outlined.LibraryMusic,
-                        contentDescription = stringResource(CoreCommonR.string.lyrics_back_to_cover),
+                        imageVector = nowPlayingLyricsToolbarIcon(lyricsAdjustBehavior),
+                        contentDescription = stringResource(nowPlayingLyricsToolbarDescription(
+                            lyricsAdjustBehavior, CoreCommonR.string.lyrics_back_to_cover
+                        )),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(toolbarLayout.iconSize)
                     )
@@ -1261,8 +1317,16 @@ fun LyricsScreen(
     }
 }
 
+internal data class LyricsContentViewport(
+    val baseFontSizeSp: Float,
+    val offset: Dp,
+    val topFadeLength: Dp,
+    val bottomFadeLength: Dp,
+    val bottomContentInset: Dp
+)
+
 @Composable
-private fun LyricsContentPane(
+internal fun LyricsContentPane(
     lyrics: List<LyricEntry>,
     plainLyrics: List<LyricEntry>,
     plainTranslatedLyrics: List<LyricEntry>,
@@ -1286,7 +1350,8 @@ private fun LyricsContentPane(
     lowPowerRendering: Boolean,
     useTabletLayout: Boolean = false,
     onLyricLongClick: (LyricEntry) -> Unit,
-    onSeekTo: (Long) -> Unit
+    onSeekTo: (Long) -> Unit,
+    viewport: LyricsContentViewport? = null
 ) {
     if (lyrics.isEmpty()) {
         Box(
@@ -1301,7 +1366,7 @@ private fun LyricsContentPane(
         return
     }
 
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition
     val isPreviewingSeek = previewPositionOverrideMs != null
     val shouldAnimateFromPlayback = isPlaying && !isPreviewingSeek
@@ -1340,13 +1405,13 @@ private fun LyricsContentPane(
             animateViewportScroll = isPreviewingSeek,
             playbackSpeed = playbackSpeed,
             lowPowerRendering = lowPowerRendering,
-            baseFontSizeSp = if (useTabletLayout) 22f else 20f,
-            offset = if (useTabletLayout) 72.dp else 48.dp,
+            baseFontSizeSp = viewport?.baseFontSizeSp ?: if (useTabletLayout) 22f else 20f,
+            offset = viewport?.offset ?: if (useTabletLayout) 72.dp else 48.dp,
             keepAliveZone = if (useTabletLayout) 128.dp else 108.dp,
             playedLyricViewportFraction = if (useTabletLayout) 0.36f else 0.30f,
-            topFadeLength = if (useTabletLayout) 132.dp else 80.dp,
-            bottomFadeLength = if (useTabletLayout) 220.dp else 196.dp,
-            bottomContentInset = if (useTabletLayout) 40.dp else 0.dp,
+            topFadeLength = viewport?.topFadeLength ?: if (useTabletLayout) 132.dp else 80.dp,
+            bottomFadeLength = viewport?.bottomFadeLength ?: if (useTabletLayout) 220.dp else 196.dp,
+            bottomContentInset = viewport?.bottomContentInset ?: if (useTabletLayout) 40.dp else 0.dp,
             onLyricLongClick = onLyricLongClick,
             onSeekTo = onSeekTo
         )
@@ -1358,7 +1423,7 @@ private fun LyricsContentPane(
         currentTimeMs = effectiveLyricTimeMs,
         modifier = Modifier.fillMaxSize(),
         textColor = textColor,
-        fontSize = scaledLyricFontSize(20f, lyricFontScale).sp,
+        fontSize = scaledLyricFontSize(viewport?.baseFontSizeSp ?: 20f, lyricFontScale).sp,
         centerPadding = 24.dp,
         visualSpec = LyricVisualSpec(
             activeScale = 1.06f,
@@ -1380,12 +1445,14 @@ private fun LyricsContentPane(
         isPlaying = shouldAnimateFromPlayback,
         playbackSpeed = playbackSpeed,
         interpolatePlaybackPosition = !lowPowerRendering,
+        edgeFadeHeight = viewport?.let { minOf(it.topFadeLength, it.bottomFadeLength) }
+            ?: resolveLyricEdgeFadeHeight(isEmbedded = false),
         playbackSessionKey = playbackSessionKey,
         stableEmbeddedViewport = true
     )
 }
 
-private fun Context.isSystemPowerSaveMode(): Boolean {
+internal fun Context.isSystemPowerSaveMode(): Boolean {
     val powerManager = getSystemService(PowerManager::class.java) ?: return false
     return powerManager.isPowerSaveMode
 }
@@ -1406,7 +1473,7 @@ private fun LyricsProgressSection(
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
     val lyricSeekHaptic = rememberLyricSeekHapticFeedback(
         lyrics = lyrics,

@@ -63,6 +63,19 @@ class UsbExclusiveWakeLockPolicyTest {
     }
 
     @Test
+    fun `held lease is renewed only after half of its timeout`() {
+        assertTrue(shouldRenewUsbExclusiveWakeLockLease(held = false, elapsedSinceRenewMs = 0L))
+        assertFalse(shouldRenewUsbExclusiveWakeLockLease(held = true, elapsedSinceRenewMs = 1_000L))
+        assertFalse(shouldRenewUsbExclusiveWakeLockLease(held = true, elapsedSinceRenewMs = 299_999L))
+        assertTrue(shouldRenewUsbExclusiveWakeLockLease(held = true, elapsedSinceRenewMs = 300_000L))
+    }
+
+    @Test
+    fun `clock going backwards renews instead of trusting a stale lease`() {
+        assertTrue(shouldRenewUsbExclusiveWakeLockLease(held = true, elapsedSinceRenewMs = -1L))
+    }
+
+    @Test
     fun `runtime stop overrides stale streaming state`() {
         assertFalse(
             resolveUsbExclusiveStreamingState(

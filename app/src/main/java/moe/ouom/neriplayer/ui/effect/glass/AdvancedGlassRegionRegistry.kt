@@ -8,8 +8,17 @@ internal data class AdvancedGlassRegion(
     val role: AdvancedGlassRole,
     val boundsInWindow: Rect,
     val cornerRadiiPx: AdvancedGlassCornerRadii,
-    val navigationOwner: Any?
+    val navigationOwner: Any?,
+    val opacity: Float = 1f,
+    val regionProvider: (() -> AdvancedGlassRegion?)? = null
 )
+
+internal fun resolveCurrentAdvancedGlassRegions(
+    regions: Collection<AdvancedGlassRegion>
+): List<AdvancedGlassRegion> = regions.mapNotNull { region ->
+    val provider = region.regionProvider
+    if (provider == null) region else provider()
+}
 
 internal data class AdvancedGlassCornerRadii(
     val topLeft: Float,

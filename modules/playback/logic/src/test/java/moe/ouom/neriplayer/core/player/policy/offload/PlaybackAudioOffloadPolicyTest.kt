@@ -31,12 +31,8 @@ class PlaybackAudioOffloadPolicyTest {
             resolvePcmRequirements(playbackPitch = 0.9f)
         )
         assertEquals(
-            setOf(PcmAudioRequirement.EQUALIZER),
-            resolvePcmRequirements(equalizerEnabled = true)
-        )
-        assertEquals(
-            setOf(PcmAudioRequirement.LOUDNESS),
-            resolvePcmRequirements(loudnessGainMb = 100)
+            setOf(PcmAudioRequirement.AUDIO_EFFECTS),
+            resolvePcmRequirements(audioEffectsActive = true)
         )
         assertEquals(
             setOf(PcmAudioRequirement.BALANCE),
@@ -63,8 +59,8 @@ class PlaybackAudioOffloadPolicyTest {
     @Test
     fun `pcm requirements retain multiple reasons and speed tolerance`() {
         assertEquals(
-            setOf(PcmAudioRequirement.NETEASE_STREAM, PcmAudioRequirement.EQUALIZER),
-            resolvePcmRequirements(audioSource = PlaybackAudioSource.NETEASE, equalizerEnabled = true)
+            setOf(PcmAudioRequirement.NETEASE_STREAM, PcmAudioRequirement.AUDIO_EFFECTS),
+            resolvePcmRequirements(audioSource = PlaybackAudioSource.NETEASE, audioEffectsActive = true)
         )
         assertEquals(emptySet<PcmAudioRequirement>(), resolvePcmRequirements(playbackSpeed = 1.0005f))
     }
@@ -167,8 +163,7 @@ class PlaybackAudioOffloadPolicyTest {
         usbExclusivePlaybackEnabled: Boolean = false,
         playbackSpeed: Float = 1f,
         playbackPitch: Float = 1f,
-        equalizerEnabled: Boolean = false,
-        loudnessGainMb: Int = 0,
+        audioEffectsActive: Boolean = false,
         volumeBalance: Float = 0f,
         volumeNormalizationEnabled: Boolean = false,
         highResolutionOutputEnabled: Boolean = false,
@@ -180,8 +175,7 @@ class PlaybackAudioOffloadPolicyTest {
             usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled,
             playbackSpeed = playbackSpeed,
             playbackPitch = playbackPitch,
-            equalizerEnabled = equalizerEnabled,
-            loudnessGainMb = loudnessGainMb,
+            audioEffectsActive = audioEffectsActive,
             volumeBalance = volumeBalance,
             volumeNormalizationEnabled = volumeNormalizationEnabled,
             highResolutionOutputEnabled = highResolutionOutputEnabled,

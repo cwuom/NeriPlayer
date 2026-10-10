@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.data.model.download.BatchDownloadPresentationState
 import moe.ouom.neriplayer.data.model.download.DownloadProgress
+import moe.ouom.neriplayer.data.model.download.DownloadFailureReason
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.data.model.download.DownloadTask
 import moe.ouom.neriplayer.data.model.download.DownloadTaskSummary
@@ -122,6 +123,7 @@ import java.util.concurrent.atomic.AtomicLong
 object GlobalDownloadManager {
     internal const val TAG = "GlobalDownloadManager"
     internal const val DOWNLOAD_SOURCE_UNAVAILABLE_ERROR_CODE = "DOWNLOAD_SOURCE_UNAVAILABLE"
+    internal const val DOWNLOAD_SOURCE_PREVIEW_ONLY_ERROR_CODE = "DOWNLOAD_SOURCE_PREVIEW_ONLY"
     internal const val DOWNLOAD_NETWORK_UNAVAILABLE_ERROR_CODE = "NETWORK_UNAVAILABLE"
     internal const val DOWNLOAD_TRANSIENT_FAILURE_ERROR_CODE = "DOWNLOAD_TRANSIENT_FAILURE"
     internal const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v4.json"
@@ -544,6 +546,9 @@ object GlobalDownloadManager {
 
     internal val downloadedSongsMutable = MutableStateFlow<List<DownloadedSong>>(emptyList())
     val downloadedSongs: StateFlow<List<DownloadedSong>> = downloadedSongsMutable.asStateFlow()
+    internal val legacyPreviewClipsMutable = MutableStateFlow<Map<String, Long>>(emptyMap())
+    /** 旧版保存的试听片段：音频引用到文件大小，大小不一致说明已重新下载 */
+    val legacyPreviewClips: StateFlow<Map<String, Long>> = legacyPreviewClipsMutable.asStateFlow()
     internal val downloadPresenceVersionMutable = MutableStateFlow(0)
     val downloadPresenceVersion: StateFlow<Int> = downloadPresenceVersionMutable.asStateFlow()
 
@@ -667,6 +672,7 @@ object GlobalDownloadManager {
     internal var finalizationRecoverySnapshotCache: FinalizationRecoverySnapshotCache? = null
     internal val startupArtifactRecoveryActive = AtomicBoolean(false)
     internal val finalizedCoverRepairActive = AtomicBoolean(false)
+    internal val legacyPreviewClipCheckActive = AtomicBoolean(false)
     internal val activeBatchDownloadJobs = Collections.newSetFromMap(ConcurrentHashMap<Job, Boolean>())
     /** 磁盘确实耗尽时只启动一轮全局取消，避免多个并发 operation 重复建清空栅栏 */
     internal val storageExhaustionCancellationScheduled = AtomicBoolean(false)
@@ -1234,33 +1240,6 @@ object GlobalDownloadManager {
         return this.shouldRestartPostCoreOperationForFreshTransferImpl(operationState, artifactClaim)
     }
 
-    internal suspend fun isMetadataEmbeddingActionRequired(
-        context: Context,
-        operationId: String,
-        songKey: String
-    ): Boolean = runCatching {
-        val request = DownloadExecutionRoomStore.read(context, operationId)
-            ?.takeIf { it.song.stableKey() == songKey }
-            ?: return@runCatching false
-        val storedAudio = findPendingAudioForFinalization(
-            context = context,
-            song = request.song,
-            operationId = operationId,
-            preferredAudioName = null
-        ) ?: resolveStoredAudio(context, request.song)
-            ?: ManagedDownloadStorage.findDownloadedAudio(context, request.song, forceRefresh = true)
-            ?: return@runCatching false
-        readDownloadedMetadata(context, storedAudio)?.metadataEmbeddingState ==
-            DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
-    }.getOrElse { error ->
-        NPLogger.w(
-            TAG,
-            "读取元信息嵌入待处理状态失败，保留可重试 operation: " +
-                "operationId=$operationId, error=${error.message}"
-        )
-        false
-    }
-
     internal fun stopDownloadOperation(
         context: Context,
         songKey: String,
@@ -1364,9 +1343,17 @@ object GlobalDownloadManager {
         status: DownloadStatus,
         expectedAttemptId: Long? = null,
         settleBatchPresentation: Boolean = true,
-        operationId: String? = null
+        operationId: String? = null,
+        failureReason: DownloadFailureReason? = null
     ) {
-        return this.updateTaskStatusImpl(songKey, status, expectedAttemptId, settleBatchPresentation, operationId)
+        return this.updateTaskStatusImpl(
+            songKey,
+            status,
+            expectedAttemptId,
+            settleBatchPresentation,
+            operationId,
+            failureReason
+        )
     }
 
     fun removeDownloadTask(songKey: String, expectedAttemptId: Long? = null) {

@@ -802,6 +802,12 @@ internal fun resolveNowPlayingCoverSize(
     else -> minOf(maxWidth * 0.6f, maxHeight * 0.65f)
 }
 
+internal fun resolveNowPlayingAdaptiveCoverSize(
+    maxWidth: Dp,
+    maxHeight: Dp,
+    preferredSize: Dp
+): Dp = minOf(maxWidth, maxHeight, preferredSize).coerceAtLeast(0.dp)
+
 internal data class NowPlayingCoverViewport(
     val windowWidth: Dp,
     val landscape: Boolean,
@@ -833,14 +839,15 @@ internal fun NowPlayingCoverPanel(
     animateSourceBadge: Boolean,
     playbackSourceType: PlaybackSourceType?,
     onPreviewUnavailable: () -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
+    preferredSize: Dp? = null
 ) {
     val viewport = currentNowPlayingCoverViewport()
     NowPlayingCoverSizedPanel(
         owner, source, song, previewSessionKey, offlineMode,
         sharedTransitionScope, animatedVisibilityScope, showSourceBadge,
         animateSourceBadge, playbackSourceType, onPreviewUnavailable,
-        viewport, modifier
+        viewport, modifier, preferredSize
     )
 }
 
@@ -859,13 +866,18 @@ private fun NowPlayingCoverSizedPanel(
     playbackSourceType: PlaybackSourceType?,
     onPreviewUnavailable: () -> Unit,
     viewport: NowPlayingCoverViewport,
-    modifier: Modifier
+    modifier: Modifier,
+    preferredSize: Dp?
 ) {
     val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier) {
-        val coverSize = resolveNowPlayingCoverSize(
-            viewport.wideLandscape, viewport.landscape, viewport.windowWidth, maxWidth, maxHeight
-        )
+        val coverSize = if (preferredSize != null) {
+            resolveNowPlayingAdaptiveCoverSize(maxWidth, maxHeight, preferredSize)
+        } else {
+            resolveNowPlayingCoverSize(
+                viewport.wideLandscape, viewport.landscape, viewport.windowWidth, maxWidth, maxHeight
+            )
+        }
         val requestSizePx = with(density) { coverSize.roundToPx().coerceAtLeast(256) }
         Box(modifier = Modifier.align(Alignment.Center).size(coverSize)) {
             NowPlayingCoverPanelImage(

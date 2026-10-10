@@ -124,7 +124,15 @@ class WebDavApiClient(
     }
 
     fun acquireArchiveLease(remoteUrl: String, knownSupported: Boolean, checkActive: () -> Unit): Result<WebDavArchiveLease?> =
-        syncTransportResult { WebDavArchiveLease.acquire(remoteUrl, client, authorizationHeader, authFailureMessage, knownSupported, checkActive) }
+        syncTransportResult {
+            try {
+                WebDavArchiveLease.acquire(remoteUrl, client, authorizationHeader, authFailureMessage, knownSupported, checkActive)
+            } catch (error: WebDavApiException) {
+                // 同步目录被删除后 LOCK 只返回泛化的 404/409，确认目录后报告可操作的配置错误
+                if (error.statusCode == 404 || error.statusCode == 409) directoryProbe.requireExists(remoteUrl)
+                throw error
+            }
+        }
 
     fun archiveMaintenanceScope(manifestUrl: String): String {
         val resource = manifestUrl.toHttpUrl().newBuilder().fragment(null).build()

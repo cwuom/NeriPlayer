@@ -51,6 +51,10 @@ internal object ManagedDownloadTreeChildQuery {
         return result
     }
 
+    /** 在调用线程查询，不与进行中的查询合并，也不会因等待上限或查询池占满而返回空结果 */
+    fun queryChildrenNow(context: Context, parent: DocumentFile): QueryResult =
+        queryChildrenBlocking(context, parent)
+
     private fun queryChildrenBlocking(context: Context, parent: DocumentFile): QueryResult {
         val parentUri = parent.uri
         val documentId = try {

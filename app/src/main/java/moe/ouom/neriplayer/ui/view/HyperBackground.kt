@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.view
  */
 
 import android.os.Build
+import android.util.LruCache
 import android.view.View
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
@@ -130,6 +131,11 @@ private data class DynamicBackgroundShaderPalette(
     }
 }
 
+// 只缓存颜色和调色参数，旋转后无需重新解码封面或保留旧视图
+private val dynamicBackgroundPaletteCache by lazy {
+    LruCache<String, DynamicBackgroundShaderPalette>(32)
+}
+
 /**
  * 渲染 Hyper 背景
  * - Android 13+ (API 33) 启用 RuntimeShader; 低版本自动降级为透明
@@ -147,6 +153,19 @@ fun HyperBackground(
     val context = LocalContext.current
     val applicationContext = context.applicationContext
     val currentIsDark by rememberUpdatedState(isDark)
+    val coverRequestIdentity = remember(
+        coverIdentityKey, coverUrl, refreshKey, offlineMode, currentIsDark
+    ) {
+        listOf(
+            coverIdentityKey.orEmpty(),
+            coverUrl.orEmpty(),
+            refreshKey.toString(),
+            offlineMode.toString(),
+            currentIsDark.toString()
+        ).joinToString("|")
+    }
+    val latestCoverRequestIdentity by rememberUpdatedState(coverRequestIdentity)
+    val initialPalette = remember { dynamicBackgroundPaletteCache.get(coverRequestIdentity) }
 
     // 仅 T+ 创建 painter
     val painter = remember(currentIsDark, applicationContext) {
@@ -159,8 +178,10 @@ fun HyperBackground(
     var shaderInitialized by remember(painter, hostView, currentIsDark) {
         mutableStateOf(false)
     }
-    var targetShaderPalette by remember { mutableStateOf<DynamicBackgroundShaderPalette?>(null) }
-    var targetShaderPaletteIdentity by remember { mutableStateOf<String?>(null) }
+    var targetShaderPalette by remember { mutableStateOf(initialPalette) }
+    var targetShaderPaletteIdentity by remember {
+        mutableStateOf(initialPalette?.let { coverRequestIdentity })
+    }
     var activeShaderPalette by remember(painter, currentIsDark) {
         mutableStateOf<DynamicBackgroundShaderPalette?>(null)
     }
@@ -206,27 +227,15 @@ fun HyperBackground(
 
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestBoostedAnimationUntilNs by rememberUpdatedState(boostedAnimationUntilNs)
-    val coverRequestIdentity = remember(
-        coverIdentityKey,
-        coverUrl,
-        refreshKey,
-        offlineMode,
-        currentIsDark
-    ) {
-        listOf(
-            coverIdentityKey.orEmpty(),
-            coverUrl.orEmpty(),
-            refreshKey.toString(),
-            offlineMode.toString(),
-            currentIsDark.toString()
-        ).joinToString("|")
-    }
-    val latestCoverRequestIdentity by rememberUpdatedState(coverRequestIdentity)
-
     LaunchedEffect(coverRequestIdentity) {
         val requestIdentity = coverRequestIdentity
         boostedAnimationUntilNs = System.nanoTime() + DynamicBackgroundBoostDurationNs
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || coverUrl.isNullOrBlank()) {
+            return@LaunchedEffect
+        }
+        dynamicBackgroundPaletteCache.get(requestIdentity)?.let { cached ->
+            targetShaderPalette = cached
+            targetShaderPaletteIdentity = requestIdentity
             return@LaunchedEffect
         }
         try {
@@ -255,10 +264,12 @@ fun HyperBackground(
             if (!shouldCommitDynamicBackgroundPalette(requestIdentity, latestCoverRequestIdentity)) {
                 return@LaunchedEffect
             }
-            targetShaderPalette = buildDynamicBackgroundShaderPalette(
+            val shaderPalette = buildDynamicBackgroundShaderPalette(
                 palette = palette,
                 isDark = currentIsDark
             )
+            dynamicBackgroundPaletteCache.put(requestIdentity, shaderPalette)
+            targetShaderPalette = shaderPalette
             targetShaderPaletteIdentity = requestIdentity
         } catch (e: CancellationException) {
             throw e
@@ -297,6 +308,15 @@ fun HyperBackground(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !shaderInitialized) {
             try {
                 painter.showRuntimeShader(context, v, null, currentIsDark)
+                val restoredPalette = targetShaderPalette.takeIf {
+                    targetShaderPaletteIdentity == latestCoverRequestIdentity
+                } ?: dynamicBackgroundPaletteCache.get(latestCoverRequestIdentity)
+                restoredPalette?.let { palette ->
+                    painter.setColors(palette.colors)
+                    painter.setLightOffset(palette.lightOffset)
+                    painter.setSaturateOffset(palette.saturateOffset)
+                }
+                activeShaderPalette = restoredPalette
                 v.setRenderEffect(painter.renderEffect)
                 v.postInvalidateOnAnimation()
                 shaderInitialized = true

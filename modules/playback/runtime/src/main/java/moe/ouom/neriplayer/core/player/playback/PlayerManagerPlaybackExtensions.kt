@@ -2,8 +2,6 @@
 
 package moe.ouom.neriplayer.core.player.playback
 
-import moe.ouom.neriplayer.data.model.server.isServerSong
-
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.session.AppQueueSongIdentity
 
@@ -707,7 +705,6 @@ internal fun PlayerManager.playAtIndex(
                         stopCurrentPlaybackForListenTogetherAwaitingStream()
                         return@withContext
                     }
-                    consecutivePlayFailures = 0
                     result.noticeMessage?.let { message ->
                         if (shouldShowListenTogetherPreviewClipNotice(
                                 isPreviewClip = result.isPreviewClip,
@@ -878,18 +875,7 @@ internal fun PlayerManager.playAtIndex(
                 }
             }
             is SongUrlResult.Failure -> {
-                if (song.isServerSong()) {
-                    withContext(Dispatchers.Main) {
-                        if (shouldApplyResolvedMedia(requestToken, playbackRequestToken)) {
-                            stopPlaybackPreservingQueue(clearMediaUrl = true)
-                            _playbackPositionMs.value = resolvedResumePositionMs
-                            setRestoredPlayback(resolvedResumePositionMs, shouldResume = false)
-                            serverRecoveryPosition = AppQueueSongIdentity.stableKey(song) to resolvedResumePositionMs
-                            scheduleStatePersist(positionMs = resolvedResumePositionMs, shouldResumePlayback = false)
-                        }
-                    }
-                    return@launch
-                }
+                if (preserveServerPlaybackForRetry(song, resolvedResumePositionMs, requestToken)) return@launch
                 if (
                     shouldAwaitListenTogetherSharedStreamFallback(
                         song = song,
@@ -1785,6 +1771,8 @@ private fun PlayerManager.reportFirstProgressAdvanceIfDetected() {
     if (!isPlaybackActuallyAdvancing()) return
     playbackProgressAdvanceReported = true
     startupStallRecoveryAttempts = 0
+    // 解析成功不代表能解码，只有真正出声才结束连续失败计数
+    consecutivePlayFailures = 0
     cancelPlaybackStartupWatchdog(reason = "position_advanced")
     PlaybackTransitionWakeLock.release(playbackRequestToken, "position_advanced")
     recordPlaybackRuntimeProgress(player.currentPosition)
@@ -1945,6 +1933,7 @@ private fun PlayerManager.cancelPrefetchForQueueStop() {
 }
 
 private fun PlayerManager.stopPlayerForQueuePreservation() {
+    runCatching { player.playWhenReady = false }
     runCatching { player.stop() }
     runCatching { player.clearMediaItems() }
     _isPlayingFlow.value = false

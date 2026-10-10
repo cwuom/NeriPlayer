@@ -613,6 +613,31 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
 
 extern "C"
 JNIEXPORT jboolean JNICALL
+Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeSetPlayerBitPerfect(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong handleValue,
+    jboolean enabled
+) {
+    static_cast<void>(env);
+    const auto holder = acquireHandle(handleValue);
+    if (holder == nullptr || holder->recovery.closing.load()) {
+        return JNI_FALSE;
+    }
+    const bool bitPerfect = enabled == JNI_TRUE;
+    if (holder->player.pcmPipeline.bitPerfect() != bitPerfect) {
+        holder->player.pcmPipeline.setBitPerfect(bitPerfect);
+        LOGI(
+            "nativeSetPlayerBitPerfect: handle=%lld enabled=%d",
+            static_cast<long long>(handleValue),
+            bitPerfect ? 1 : 0
+        );
+    }
+    return JNI_TRUE;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
 Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeSetPlayerFocusMuted(
     JNIEnv* env,
     jclass /*clazz*/,

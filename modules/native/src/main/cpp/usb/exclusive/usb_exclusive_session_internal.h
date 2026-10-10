@@ -21,7 +21,6 @@ inline constexpr int kParkedErrorBackoffBaseMs = 100;
 inline constexpr int kParkedErrorBackoffMaxMs = 5000;
 inline constexpr int kGeneratedToneFrequencyHz = 440;
 inline constexpr int kExplicitFeedbackTransferCount = 4;
-inline constexpr int kExplicitFeedbackPacketsPerTransfer = 8;
 inline constexpr int kExplicitFeedbackAudioTransferCount = 16;
 inline constexpr uint32_t kExplicitFeedbackBootstrapPacketLimit = 4096;
 inline constexpr int kHighSpeedTargetInFlightMs = 160;
@@ -130,5 +129,9 @@ bool reconfigureOpenedPlayerPcmOutput(
     std::string* error
 );
 void finishClosedUsbResources(UsbExclusiveHandle* handle);
+void applyBitPerfectFeatureUnits(UsbExclusiveHandle* handle);
+void releaseFeatureUnits(UsbExclusiveHandle* handle, bool restoreDevice);
+bool setHardwareVolumeFraction(UsbExclusiveHandle* handle, float fraction);
+bool hasHardwareVolume(UsbExclusiveHandle* handle);
 
 } // namespace neri::usb::exclusive

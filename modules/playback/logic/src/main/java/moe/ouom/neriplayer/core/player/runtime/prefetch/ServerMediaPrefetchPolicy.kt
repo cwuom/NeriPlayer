@@ -4,7 +4,10 @@ package moe.ouom.neriplayer.core.player.runtime.prefetch
 fun canPrefetchServerMedia(cacheEnabled: Boolean, unmetered: Boolean, playing: Boolean,
                           ready: Boolean, bufferedMs: Long, remainingMs: Long): Boolean =
     cacheEnabled && unmetered && playing && ready &&
-        (bufferedMs >= 5_000L || (remainingMs in 1..5_000L && bufferedMs >= remainingMs))
+        hasServerPrefetchBuffer(bufferedMs, remainingMs)
+
+private fun hasServerPrefetchBuffer(bufferedMs: Long, remainingMs: Long): Boolean =
+    bufferedMs >= 5_000L || (remainingMs in 1..5_000L && bufferedMs >= remainingMs)
 
 fun serverMediaPrefetchBytes(expectedLength: Long?, cacheBudget: Long): Long =
     minOf(GENERIC_MEDIA_PREFETCH_BYTES,

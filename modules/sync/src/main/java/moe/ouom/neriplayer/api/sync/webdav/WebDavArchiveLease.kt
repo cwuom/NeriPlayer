@@ -141,7 +141,8 @@ class WebDavArchiveLease internal constructor(
 
         private fun releaseFailedGrant(response: Response, root: HttpUrl, client: OkHttpClient,
             authorization: String, error: Exception): Boolean {
-            if (response.code != 200) return false
+            // 201 可能已创建并锁住普通资源，拒绝目录租约时也要释放自己的锁
+            if (response.code != 200 && response.code != 201) return false
             val token = WebDavArchiveLockResponse.headerToken(response) ?: return false
             return try { unlock(root, token, client, authorization); true }
             catch (cleanup: Exception) { error.addSuppressed(cleanup); false }
@@ -164,6 +165,7 @@ class WebDavArchiveLease internal constructor(
 internal object WebDavArchiveLockResponse {
     data class Grant(val token: String, val durationMs: Long)
     private val absoluteToken = Regex("[A-Za-z][A-Za-z0-9+.-]*:[^<>\\s\\p{Cntrl}]+")
+    private val decimalToken = Regex("[0-9]+")
     private val secondTimeout = Regex("Second-([0-9]+)")
 
     fun headerToken(response: Response): String? {
@@ -173,18 +175,22 @@ internal object WebDavArchiveLockResponse {
     }
 
     private fun unwrapToken(header: String): String? {
+        // WsgiDAV 返回裸令牌，带括号的响应仍只接受一对完整括号
+        if (!header.startsWith('<') && !header.endsWith('>')) return header
         if (!header.startsWith('<') || !header.endsWith('>')) return null
         return header.substring(1, header.length - 1)
     }
 
-    private fun validToken(token: String): Boolean = token.length <= 1024 && absoluteToken.matches(token)
+    // rclone 使用 Go WebDAV 内存锁，令牌是十进制字符串
+    private fun validToken(token: String): Boolean = token.length <= 1024 &&
+        (absoluteToken.matches(token) || decimalToken.matches(token))
 
     fun read(response: Response, root: HttpUrl, authFailureMessage: String, expectedToken: String? = null): Grant {
         requireSuccess(response, authFailureMessage)
         val lock = lockProperties(response)
         requireElement(lock, "lockscope", "exclusive")
         requireElement(lock, "locktype", "write")
-        requireRoot(lock, root)
+        requireRoot(lock, root, expectedToken != null)
         val token = readToken(lock, response, expectedToken)
         return Grant(token, duration(text(lock, "timeout")))
     }
@@ -205,8 +211,18 @@ internal object WebDavArchiveLockResponse {
         return locks.item(0) as Element
     }
 
-    private fun requireRoot(lock: Element, root: HttpUrl) {
-        if (text(lock, "depth") != "infinity" || root.resolve(text(child(lock, "lockroot"), "href")) != root) {
+    private fun requireRoot(lock: Element, root: HttpUrl, refreshing: Boolean) {
+        if (text(lock, "depth") != "infinity") {
+            throw IOException("WebDAV archive requires an exclusive depth infinity collection lock")
+        }
+        // 旧 DAV 服务器可能省略 lockroot，成功且不重定向的 LOCK 已绑定请求目录
+        val lockRoot = childOrNull(lock, "lockroot") ?: return
+        val href = text(lockRoot, "href")
+        if (href.isEmpty()) throw IOException("Invalid WebDAV archive lock root")
+        val grantedRoot = root.resolve(href) ?: throw IOException("Invalid WebDAV archive lock root")
+        if (grantedRoot == root) return
+        // Go WebDAV 续租会去掉目录末尾斜杠，只兼容已持有锁的同一路径
+        if (!refreshing || grantedRoot.newBuilder().addPathSegment("").build() != root) {
             throw IOException("WebDAV archive requires an exclusive depth infinity collection lock")
         }
     }
@@ -214,8 +230,7 @@ internal object WebDavArchiveLockResponse {
     private fun readToken(lock: Element, response: Response, expectedToken: String?): String {
         val token = text(child(lock, "locktoken"), "href")
         if (!validToken(token)) throw IOException("Invalid WebDAV archive lock token")
-        val header = response.header("Lock-Token")?.trim()
-        if (expectedToken == null && header != "<$token>" || expectedToken != null && token != expectedToken) {
+        if (expectedToken == null && headerToken(response) != token || expectedToken != null && token != expectedToken) {
             throw IOException("WebDAV archive lock token does not match")
         }
         return token
@@ -238,9 +253,13 @@ internal object WebDavArchiveLockResponse {
     private fun requireElement(lock: Element, parent: String, name: String) { child(child(lock, parent), name) }
     private fun text(parent: Element, name: String): String = child(parent, name).textContent.trim()
     private fun child(parent: Element, name: String): Element {
+        return childOrNull(parent, name) ?: throw IOException("Invalid WebDAV archive lock properties")
+    }
+
+    private fun childOrNull(parent: Element, name: String): Element? {
         val children = (0 until parent.childNodes.length).map { parent.childNodes.item(it) }.filterIsInstance<Element>()
         val matching = children.filter { it.namespaceURI == "DAV:" && it.localName == name }
-        if (matching.size != 1) throw IOException("Invalid WebDAV archive lock properties")
-        return matching.single()
+        if (matching.size > 1) throw IOException("Invalid WebDAV archive lock properties")
+        return matching.singleOrNull()
     }
 }

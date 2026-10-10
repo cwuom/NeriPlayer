@@ -91,14 +91,12 @@ bool configureTransferPlan(UsbExclusiveHandle* handle) {
         device.explicitFeedbackEnabled
             ? neri::usb::planIsoTransferWindow(
                 transfer.intervalsPerSecond,
-                kExplicitFeedbackPacketsPerTransfer,
+                neri::usb::explicitFeedbackPacketsPerTransfer(transfer.intervalsPerSecond),
                 kExplicitFeedbackAudioTransferCount,
                 kMaximumPcmRingDurationMs
             )
             : isoTransferWindowPlan(transfer.intervalsPerSecond);
-    transfer.packetsPerTransfer = device.explicitFeedbackEnabled
-        ? kExplicitFeedbackPacketsPerTransfer
-        : transferWindow.packetsPerTransfer;
+    transfer.packetsPerTransfer = transferWindow.packetsPerTransfer;
     transfer.baseTransferCount = device.explicitFeedbackEnabled
         ? kExplicitFeedbackAudioTransferCount
         : transferWindow.baselineTransferCount;
@@ -276,7 +274,10 @@ bool configureExplicitFeedbackRuntime(
         ),
         static_cast<uint32_t>(std::max(1, handle->device.frameBytes)),
         static_cast<uint32_t>(std::max(1, handle->device.endpointMaxPacketBytes)),
-        kExplicitFeedbackBootstrapPacketLimit,
+        // 引导包上限按时间计，加上首批在途请求，较长请求不会压缩时钟锁定窗口
+        kExplicitFeedbackBootstrapPacketLimit + static_cast<uint32_t>(
+            std::max(0, handle->transfer.packetsPerTransfer * handle->transfer.baseTransferCount)
+        ),
         handle->device.feedbackTimingProfile.zeroLengthReportPermitted
     };
     if (!handle->transfer.feedbackRuntime.configure(config)) {

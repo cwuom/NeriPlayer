@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.core.download.manager.runtime.pauseActiveDownloadsFor
 import moe.ouom.neriplayer.core.download.manager.runtime.scheduleUserDownload
 import moe.ouom.neriplayer.core.download.manager.runtime.wakeDownloadExecutionPump
 import moe.ouom.neriplayer.data.model.download.BatchDownloadTerminalState
+import moe.ouom.neriplayer.data.model.download.DownloadFailureReason
 import moe.ouom.neriplayer.data.model.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.presentation.shouldHandoffBlockedWifiRecoveryToSharedPump
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.TrafficRiskDownloadRequest
@@ -61,12 +62,14 @@ internal fun GlobalDownloadManager.updateTaskStatusImpl(
     status: DownloadStatus,
     expectedAttemptId: Long? = null,
     settleBatchPresentation: Boolean = true,
-    operationId: String? = null
+    operationId: String? = null,
+    failureReason: DownloadFailureReason? = null
 ) {
     val updated = taskStore.updateTaskStatus(
         songKey = songKey,
         status = status,
-        expectedAttemptId = expectedAttemptId
+        expectedAttemptId = expectedAttemptId,
+        failureReason = failureReason
     )
     if ((!updated && operationId.isNullOrBlank()) || !settleBatchPresentation) {
         return

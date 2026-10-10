@@ -143,6 +143,15 @@ class DownloadedAudioMetadataStoreTest {
     }
 
     @Test
+    fun `catalog fallback albums are not written into download metadata`() {
+        assertNull(persistedDownloadedAlbum("本地文件"))
+        assertNull(persistedDownloadedAlbum("Local Files"))
+        assertNull(persistedDownloadedAlbum("__local_files__"))
+        assertNull(persistedDownloadedAlbum(null))
+        assertEquals("Parklife", persistedDownloadedAlbum("Parklife"))
+    }
+
+    @Test
     fun `metadata creation time prefers source song time over target mtime`() {
         val song = testSong().copy(
             addedAt = 1_700_000_000_000L,

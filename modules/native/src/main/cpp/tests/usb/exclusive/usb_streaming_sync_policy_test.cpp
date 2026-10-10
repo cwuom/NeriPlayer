@@ -73,9 +73,9 @@ void verifiesUac1AndUac2SynchronizationMatrix() {
             1,
             kAsynchronousData,
             UsbStreamingFeedbackMode::Explicit,
-            false,
-            false,
-            UsbStreamingSyncPolicyReason::Uac1AsyncFeedbackSchedulerUnavailable
+            true,
+            true,
+            UsbStreamingSyncPolicyReason::Accepted
         },
         SyncPolicyCase {
             1,

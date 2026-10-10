@@ -4,9 +4,6 @@ package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.data.model.server.isServerSong
 import moe.ouom.neriplayer.data.model.server.ServerSongRef
-import moe.ouom.neriplayer.platform.subsonic.api.SubsonicException
-import moe.ouom.neriplayer.platform.subsonic.api.subsonicErrorMessageRes
-import kotlinx.coroutines.TimeoutCancellationException
 
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.host.PlayerDownloadAccess
@@ -362,30 +359,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
             )
         }
     }
-    if (serverSong) {
-        return try {
-            val result = PlayerDependencies.repositories.subsonicRepository
-                ?.playback(song, forceRefresh) ?: SongUrlResult.Failure
-            if (result is SongUrlResult.Success) {
-                result.copy(audioInfo = result.audioInfo?.copy(
-                    qualityLabel = getLocalizedString(CoreCommonR.string.server_quality_original)))
-            } else {
-                sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_unavailable))) }
-                SongUrlResult.Failure
-            }
-        } catch (_: TimeoutCancellationException) {
-            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_timeout))) }
-            SongUrlResult.Failure
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (error: SubsonicException) {
-            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(subsonicErrorMessageRes(error)))) }
-            SongUrlResult.Failure
-        } catch (_: Exception) {
-            sideEffects.emitError { postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.server_request_failed))) }
-            SongUrlResult.Failure
-        }
-    }
+    if (serverSong) return resolveServerSongUrl(song, forceRefresh, sideEffects)
     val resolverSideEffects = if (
         initialListenTogetherFallback != null || suppressListenTogetherResolverErrors
     ) {
@@ -1116,7 +1090,7 @@ private suspend fun PlayerManager.handleRefreshResult(
                     resumePlaybackAfterRefresh = semantics.resumePlaybackAfterRefresh
                 )
                 if (!applied) return@withContext
-                if (!gate.runMutation { consecutivePlayFailures = 0 }) return@withContext
+                if (!gate.runMutation {}) return@withContext
                 val resumedCommandSource = semantics.resumedPlaybackCommandSource
                 if (
                     semantics.resumePlaybackAfterRefresh &&

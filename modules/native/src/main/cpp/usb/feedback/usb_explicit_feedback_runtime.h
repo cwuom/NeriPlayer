@@ -1,6 +1,7 @@
 #pragma once
 
 #include "usb/feedback/usb_feedback_decoder.h"
+#include "usb/feedback/usb_feedback_format_shift.h"
 #include "usb/feedback/usb_feedback_in_transfer_set.h"
 #include "usb/feedback/usb_feedback_stream_gate.h"
 
@@ -59,6 +60,7 @@ struct ExplicitFeedbackRuntimeSnapshot {
     uint64_t longGapReacquisitions = 0;
     uint64_t lastRawValue = 0;
     uint32_t lastPayloadBytes = 0;
+    int formatShift = FeedbackFormatShift::kUnknown;
     FeedbackEstimatorSnapshot estimator;
     FeedbackStreamGateSnapshot gate;
 };
@@ -88,6 +90,7 @@ private:
     mutable std::mutex mutex_;
     ExplicitFeedbackRuntimeConfig config_;
     FeedbackEstimator estimator_;
+    FeedbackFormatShift formatShift_;
     FeedbackStreamGate gate_;
     ExplicitFeedbackRuntimeState state_ = ExplicitFeedbackRuntimeState::Disabled;
     ExplicitFeedbackRuntimeFailure failure_ = ExplicitFeedbackRuntimeFailure::None;

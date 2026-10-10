@@ -40,6 +40,20 @@ class ModuleBoundariesTest(unittest.TestCase):
         self.module(":platform", ":model")
         self.assertEqual([], verify(self.root))
 
+    def test_accepts_compile_only_framework_stubs_for_player(self):
+        self.module(":playback:runtime")
+        self.settings.write_text(self.settings.read_text() + 'include(":hidden-api")\n')
+        build_file = self.root / "modules/playback/runtime/build.gradle.kts"
+        build_file.write_text(build_file.read_text() +
+                              'dependencies { compileOnly(project(":hidden-api")) }\n')
+        self.assertEqual([], verify(self.root))
+
+    def test_rejects_packaging_framework_stubs_with_player(self):
+        self.module(":playback:runtime", ":hidden-api")
+        self.settings.write_text(self.settings.read_text() + 'include(":hidden-api")\n')
+        self.assertTrue(any("forbidden domain dependency :hidden-api" in error
+                            for error in verify(self.root)))
+
     def native_module(self):
         self.module(":native")
         directory = self.root / "modules/native"

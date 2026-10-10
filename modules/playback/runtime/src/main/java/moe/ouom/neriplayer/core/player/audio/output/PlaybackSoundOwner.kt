@@ -9,15 +9,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.effects.PlaybackEffectsController
-import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_SPEED
-import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_VOLUME_BALANCE
-import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED
-import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundConfig
 import moe.ouom.neriplayer.data.model.playback.PlaybackSoundState
-import moe.ouom.neriplayer.data.model.playback.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackPitch
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
@@ -38,7 +33,6 @@ internal interface PlaybackSoundPort {
 
 internal interface PlaybackSoundEngine {
     fun attachPlayer(player: ExoPlayer?): PlaybackSoundState
-    fun onAudioSessionIdChanged(audioSessionId: Int?): PlaybackSoundState
     fun updateConfig(config: PlaybackSoundConfig): PlaybackSoundState
     fun release(): PlaybackSoundState
 }
@@ -47,8 +41,6 @@ internal class AndroidPlaybackSoundEngine(
     private val effects: PlaybackEffectsController = PlaybackEffectsController()
 ) : PlaybackSoundEngine {
     override fun attachPlayer(player: ExoPlayer?): PlaybackSoundState = effects.attachPlayer(player)
-    override fun onAudioSessionIdChanged(audioSessionId: Int?): PlaybackSoundState =
-        effects.onAudioSessionIdChanged(audioSessionId)
     override fun updateConfig(config: PlaybackSoundConfig): PlaybackSoundState = effects.updateConfig(config)
     override fun release(): PlaybackSoundState = effects.release()
 }
@@ -92,10 +84,6 @@ internal class PlaybackSoundOwner(
         mutableState.value = engine.attachPlayer(player)
     }
 
-    fun onAudioSessionIdChanged(audioSessionId: Int?) {
-        mutableState.value = engine.onAudioSessionIdChanged(audioSessionId)
-    }
-
     fun releaseEngine() {
         mutableState.value = engine.release()
     }
@@ -113,8 +101,9 @@ internal class PlaybackSoundOwner(
         config.copy(pitch = normalizePlaybackPitch(pitch)), persist
     )
 
-    fun setLoudnessGain(levelMb: Int, persist: Boolean) = applyConfig(
-        config.copy(loudnessGainMb = normalizePlaybackLoudnessGainMb(levelMb)), persist
+    /** 倍速与音调同时变化时只提交一次，避免 Sonic 连续两次排空重建 */
+    fun setSpeedAndPitch(speed: Float, pitch: Float, persist: Boolean) = applyConfig(
+        config.copy(speed = normalizePlaybackSpeed(speed), pitch = normalizePlaybackPitch(pitch)), persist
     )
 
     fun setVolumeBalance(balance: Float, persist: Boolean) = applyConfig(
@@ -124,38 +113,8 @@ internal class PlaybackSoundOwner(
     fun setVolumeNormalizationEnabled(enabled: Boolean, persist: Boolean) =
         applyConfig(config.copy(volumeNormalizationEnabled = enabled), persist)
 
-    fun setEqualizerEnabled(enabled: Boolean, persist: Boolean) =
-        applyConfig(config.copy(equalizerEnabled = enabled), persist)
-
-    fun selectEqualizerPreset(presetId: String, persist: Boolean) =
-        applyConfig(config.copy(equalizerEnabled = true, presetId = presetId), persist)
-
-    fun updateEqualizerBandLevel(index: Int, levelMb: Int, persist: Boolean) {
-        val bands = mutableState.value.bands
-        if (index !in bands.indices) return
-        val updatedLevels = bands.map { it.levelMb }.toMutableList()
-        updatedLevels[index] = levelMb
-        applyConfig(
-            config.copy(
-                equalizerEnabled = true,
-                presetId = PlaybackEqualizerPresetId.CUSTOM,
-                customBandLevelsMb = updatedLevels
-            ),
-            persist
-        )
-    }
-
-    fun reset(persist: Boolean) = applyConfig(
-        PlaybackSoundConfig(
-            speed = DEFAULT_PLAYBACK_SPEED,
-            pitch = DEFAULT_PLAYBACK_PITCH,
-            loudnessGainMb = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
-            volumeBalance = DEFAULT_PLAYBACK_VOLUME_BALANCE,
-            volumeNormalizationEnabled = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED,
-            equalizerEnabled = false,
-            presetId = PlaybackEqualizerPresetId.FLAT,
-            customBandLevelsMb = emptyList()
-        ),
+    fun resetSpeedAndPitch(persist: Boolean) = applyConfig(
+        config.copy(speed = DEFAULT_PLAYBACK_SPEED, pitch = DEFAULT_PLAYBACK_PITCH),
         persist
     )
 
@@ -200,12 +159,7 @@ internal class PlaybackSoundOwner(
             usbExclusivePlaybackEnabled = port.usbExclusiveEnabled()
         )
         applyJob?.cancel()
-        val heavyEffectChanged = previous.equalizerEnabled != next.equalizerEnabled ||
-            previous.presetId != next.presetId ||
-            previous.customBandLevelsMb != next.customBandLevelsMb ||
-            previous.loudnessGainMb != next.loudnessGainMb
         applyJob = mainScope.launch {
-            if (heavyEffectChanged) delay(48L.milliseconds)
             val latest = pendingConfig ?: return@launch
             pendingConfig = null
             mutableState.value = engine.updateConfig(latest)
@@ -224,7 +178,6 @@ internal class PlaybackSoundOwner(
     private fun normalize(config: PlaybackSoundConfig): PlaybackSoundConfig = config.copy(
         speed = normalizePlaybackSpeed(config.speed),
         pitch = normalizePlaybackPitch(config.pitch),
-        loudnessGainMb = normalizePlaybackLoudnessGainMb(config.loudnessGainMb),
         volumeBalance = normalizePlaybackVolumeBalance(config.volumeBalance)
     )
 }

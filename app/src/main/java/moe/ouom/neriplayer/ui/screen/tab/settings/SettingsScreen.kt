@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
@@ -96,6 +97,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutPageContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.BackgroundImagePickerPort
+import moe.ouom.neriplayer.ui.screen.tab.settings.audio.AudioEffectsSettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.EnforceNowPlayingBackgroundExclusion
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.NowPlayingBackgroundExclusionPort
 import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.SettingsLyricsAppearanceContent
@@ -113,6 +115,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.appearance.rememberSettingsBac
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsAccountAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsLoginExpandedContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.rememberSettingsAccountAuthController
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.shouldLoadSettingsAccountProfiles
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.ObserveSettingsBackupPlaylistCount
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.SettingsBackupRemoteDialogPort
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.rememberSettingsBackupTransferController
@@ -127,6 +130,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageHost
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.SettingsPageScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.rememberSettingsNavigationState
 import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.settingsHomePageItems
+import moe.ouom.neriplayer.ui.screen.tab.settings.navigation.shouldShowSettingsDetailHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.playback.rememberSettingsQualityPresentation
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.openStorageSystemSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.storage.rememberSettingsStorageDetailsController
@@ -142,6 +146,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.storage.settingsStorageProcess
 internal fun SettingsScreen(
     listState: LazyListState,
     bindings: AppSettingsHostBindings,
+    isActive: Boolean,
     onNavigateToDownloadManager: () -> Unit
 ) {
     val appearanceState = bindings.state.appearance
@@ -261,6 +266,9 @@ internal fun SettingsScreen(
     )
     val isSettingsSplitLayout = navigation.splitLayout
     val activeSettingsPage = navigation.activePage
+    val accountProfilesActive = shouldLoadSettingsAccountProfiles(
+        isActive, environment.settingsVisible, activeSettingsPage
+    )
     val storageDetailsController = rememberSettingsStorageDetailsController(context)
     LaunchedEffect(activeSettingsPage) {
         storageDetailsController.requestIfDetailsPage(activeSettingsPage)
@@ -304,35 +312,12 @@ internal fun SettingsScreen(
                     content = settingsHomeContent
                 )
             },
-            detail = { selectedPage ->
-                MiuixSettingsResponsiveDetailScaffold(
-                    title = stringResource(selectedPage.titleRes),
-                    onBack = ::navigateBackFromActiveSettingsPage,
-                    listState = detailListStates.getValue(selectedPage),
-                    topAppBarState = detailTopAppBarStates.getValue(selectedPage),
-                    splitLayout = isSettingsSplitLayout,
-                    showSplitDetailBackButton = showSplitDetailBackButton,
-                    selectedPage = selectedPage,
-                    homeListState = listState,
-                    homeTopAppBarState = homeTopAppBarState,
-                    homeTitle = settingsHomeTitle,
-                    homeContent = settingsHomeContent
-                ) {
-                    item(key = "${selectedPage.name}:header") {
-                        MiuixSettingsHeader(
-                            icon = selectedPage.icon,
-                            title = stringResource(selectedPage.titleRes),
-                            description = stringResource(selectedPage.descriptionRes),
-                            modifier = Modifier
-                                .animateItem()
-                                .settingsHighlightTarget(
-                                    targetId = "page:${selectedPage.name}",
-                                    highlightTargetId = settingsHighlightTargetId,
-                                    highlightPulse = settingsHighlightPulse,
-                                    onHighlightFinished = onSettingsHighlightFinished
-                                )
-                        )
-                    }
+            detail = { requestedDetailPage ->
+                val settingsDetailContent: LazyListScope.(SettingsPage) -> Unit = { selectedPage ->
+                    settingsDetailHeaderItem(
+                        selectedPage, settingsHighlightTargetId,
+                        settingsHighlightPulse, onSettingsHighlightFinished
+                    )
 
                     settingsStorageProcessingItem(selectedPage, downloadDirectorySettings)
 
@@ -417,6 +402,15 @@ internal fun SettingsScreen(
                                     highlightPulse = settingsHighlightPulse,
                                     onHighlightFinished = onSettingsHighlightFinished,
                                     onClick = { showDpiDialog = true }
+                                )
+                            }
+                        },
+
+                        SettingsPage.AudioEffects to {
+                            item(key = "${selectedPage.name}:content") {
+                                AudioEffectsSettingsPage(
+                                    usbExclusive = playbackState.playbackOutput.usbExclusivePlayback,
+                                    modifier = Modifier.animateItem()
                                 )
                             }
                         },
@@ -516,10 +510,14 @@ internal fun SettingsScreen(
                         },
 
                         SettingsPage.Accounts to {
-                            miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                            item(key = "${selectedPage.name}:content") {
                                 SettingsLoginExpandedContent(
                                     controller = accountAuth,
-                                    onOpenMusicServers = { navigation.activePage = SettingsPage.MusicServers }
+                                    onOpenMusicServers = { navigation.activePage = SettingsPage.MusicServers },
+                                    isActive = accountProfilesActive,
+                                    highlightTargetId = settingsHighlightTargetId,
+                                    highlightPulse = settingsHighlightPulse,
+                                    onHighlightFinished = onSettingsHighlightFinished
                                 )
                             }
                         },
@@ -811,6 +809,8 @@ internal fun SettingsScreen(
 
                         SettingsPage.UsbExclusive to {
                             item(key = "${selectedPage.name}:content") {
+                                val floatingKeepAlive by repository.usbExclusiveFloatingKeepAliveFlow
+                                    .collectAsStateWithLifecycle(initialValue = false)
                                 UsbExclusiveSettingsSection(
                                     usbExclusivePlayback = playbackState.playbackOutput.usbExclusivePlayback,
                                     onUsbExclusivePlaybackChange = playbackActions.onUsbExclusivePlaybackChange,
@@ -827,6 +827,10 @@ internal fun SettingsScreen(
                                     onForegroundBufferMsChange = usbActions.onForegroundBufferMsChange,
                                     onBackgroundBufferMsChange = usbActions.onBackgroundBufferMsChange,
                                     onVolumeRiskThresholdDbfsChange = usbActions.onVolumeRiskThresholdDbfsChange,
+                                    floatingKeepAliveEnabled = floatingKeepAlive,
+                                    onFloatingKeepAliveChange = { enabled ->
+                                        scope.launch { repository.setUsbExclusiveFloatingKeepAlive(enabled) }
+                                    },
                                     modifier = Modifier.animateItem()
                                 )
                             }
@@ -1062,6 +1066,24 @@ internal fun SettingsScreen(
                     )
                     pageItems.getValue(selectedPage).invoke(this)
                 }
+                MiuixSettingsResponsiveDetailScaffold(
+                    title = stringResource(requestedDetailPage.titleRes),
+                    onBack = ::navigateBackFromActiveSettingsPage,
+                    listState = detailListStates.getValue(requestedDetailPage),
+                    topAppBarState = detailTopAppBarStates.getValue(requestedDetailPage),
+                    splitLayout = isSettingsSplitLayout,
+                    showSplitDetailBackButton = showSplitDetailBackButton,
+                    selectedPage = requestedDetailPage,
+                    homeListState = listState,
+                    homeTopAppBarState = homeTopAppBarState,
+                    homeTitle = settingsHomeTitle,
+                    homeContent = settingsHomeContent,
+                    detailContent = settingsDetailContent,
+                    detailListStates = detailListStates,
+                    detailTopAppBarStates = detailTopAppBarStates
+                ) {
+                    settingsDetailContent(requestedDetailPage)
+                }
             }
         )
     }
@@ -1111,4 +1133,28 @@ internal fun SettingsScreen(
 
     DownloadDirectoryDialogs(controller = downloadDirectorySettings)
 
+}
+
+private fun LazyListScope.settingsDetailHeaderItem(
+    page: SettingsPage,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: () -> Unit
+) {
+    if (!shouldShowSettingsDetailHeader(page)) return
+    item(key = "${page.name}:header") {
+        MiuixSettingsHeader(
+            icon = page.icon,
+            title = stringResource(page.titleRes),
+            description = stringResource(page.descriptionRes),
+            modifier = Modifier
+                .animateItem()
+                .settingsHighlightTarget(
+                    targetId = "page:${page.name}",
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+        )
+    }
 }

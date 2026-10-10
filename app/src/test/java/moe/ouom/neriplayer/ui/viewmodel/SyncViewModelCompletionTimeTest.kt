@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -46,7 +47,7 @@ class SyncViewModelCompletionTimeTest {
     @Test
     fun `background completions update the displayed time and repeated initialization keeps one collector`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        for (fixture in fixtures()) {
+        for (fixture in fixtures(testScheduler)) {
             fixture.initialize()
             fixture.awaitInitialState()
             assertEquals(200L, fixture.lastSyncTime())
@@ -72,7 +73,7 @@ class SyncViewModelCompletionTimeTest {
     @Test
     fun `ordinary and target success read the confirmed completion time`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        for (fixture in fixtures()) {
+        for (fixture in fixtures(testScheduler)) {
             fixture.initialize()
             fixture.awaitInitialState()
             assertEquals(200L, fixture.lastSyncTime())
@@ -97,7 +98,7 @@ class SyncViewModelCompletionTimeTest {
     @Test
     fun `failed sync results do not invent a completion time`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        for (fixture in fixtures()) {
+        for (fixture in fixtures(testScheduler)) {
             fixture.initialize()
             fixture.awaitInitialState()
             assertEquals(200L, fixture.lastSyncTime())
@@ -123,7 +124,7 @@ class SyncViewModelCompletionTimeTest {
     fun `a cancelled manual sync result cannot overwrite the cleared UI`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         mockConstruction(Class.forName("moe.ouom.neriplayer.data.sync.work.SyncWorkScheduler")).use {
-            for (fixture in fixtures()) {
+            for (fixture in fixtures(testScheduler)) {
                 fixture.initialize()
                 fixture.awaitInitialState()
                 assertEquals(200L, fixture.lastSyncTime())
@@ -150,9 +151,11 @@ class SyncViewModelCompletionTimeTest {
         }
     }
 
-    private fun fixtures(): List<Fixture> {
+    // 初始化的 IO 块若跑在真实线程上，测试结束后才切回 Main 会撞上 resetMain，并让下一个测试失败
+    private fun fixtures(scheduler: TestCoroutineScheduler): List<Fixture> {
         val context = mock(Context::class.java).also { `when`(it.applicationContext).thenReturn(it) }
         val github = GitHubSyncViewModel().also(viewModels::add)
+        github.ioDispatcher = StandardTestDispatcher(scheduler)
         val githubStorage = mock(SecureTokenStorage::class.java)
         val githubFixture = Fixture({ github.initialize(context) },
             { github.uiState.value.lastSyncTime }, { github.uiState.value.isSyncing },
@@ -175,6 +178,7 @@ class SyncViewModelCompletionTimeTest {
         }.`when`(githubStorage).clearAll()
 
         val webDav = WebDavSyncViewModel().also(viewModels::add)
+        webDav.ioDispatcher = StandardTestDispatcher(scheduler)
         val webDavStorage = mock(WebDavStorage::class.java)
         val webDavFixture = Fixture({ webDav.initialize(context) },
             { webDav.uiState.value.lastSyncTime }, { webDav.uiState.value.isSyncing },
