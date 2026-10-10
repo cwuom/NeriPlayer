@@ -25,6 +25,7 @@ internal class AudioHlsResumeStore(
     private val readBufferBytes: Int = DEFAULT_READ_BUFFER_BYTES
 ) {
     private val statesByWorkingPath = ConcurrentHashMap<String, AudioDownloadManager.HlsResumeState>()
+    private val storeLock = Any()
 
     fun buildPlaylistFingerprint(
         segmentUrls: List<String>,
@@ -195,19 +196,21 @@ internal class AudioHlsResumeStore(
             operationId = operationId,
             mediaSequence = mediaSequence
         )
-        val path = destFile.absolutePath
-        val previousState = statesByWorkingPath[path]
-        try {
-            persist(destFile, state)
-            statesByWorkingPath[path] = state
-        } catch (error: Throwable) {
-            if (previousState == null) {
-                statesByWorkingPath.remove(path)
-                deletePersisted(destFile)
-            } else {
-                statesByWorkingPath[path] = previousState
+        synchronized(storeLock) {
+            val path = destFile.absolutePath
+            val previousState = statesByWorkingPath[path]
+            try {
+                persist(destFile, state)
+                statesByWorkingPath[path] = state
+            } catch (error: Throwable) {
+                if (previousState == null) {
+                    statesByWorkingPath.remove(path)
+                    deletePersisted(destFile)
+                } else {
+                    statesByWorkingPath[path] = previousState
+                }
+                throw error
             }
-            throw error
         }
     }
 
@@ -215,16 +218,37 @@ internal class AudioHlsResumeStore(
         destFile: File,
         playlistFingerprint: String,
         operationId: String = ""
-    ): AudioDownloadManager.HlsResumeState? {
-        val state = statesByWorkingPath[destFile.absolutePath]
+    ): AudioDownloadManager.HlsResumeState? = synchronized(storeLock) {
+        val path = destFile.absolutePath
+        val normalizedOperationId = operationId.trim()
+        val current = statesByWorkingPath[path]
             ?: readPersisted(destFile)?.also { persisted ->
-                statesByWorkingPath[destFile.absolutePath] = persisted
+                statesByWorkingPath[path] = persisted
             }
-            ?: return null
-        return state.takeIf {
-            it.playlistFingerprint == playlistFingerprint &&
-                isOwnedByOperation(it, operationId)
+            ?: return@synchronized null
+        if (current.playlistFingerprint != playlistFingerprint) {
+            return@synchronized null
         }
+        if (isOwnedByOperation(current, normalizedOperationId)) {
+            return@synchronized current
+        }
+        if (current.operationId.isNotBlank()) {
+            return@synchronized null
+        }
+        if (normalizedOperationId.isBlank()) {
+            return@synchronized current
+        }
+
+        val claimed = current.copy(operationId = normalizedOperationId)
+        try {
+            persist(destFile, claimed)
+            statesByWorkingPath[path] = claimed
+        } catch (error: Throwable) {
+            // 认领落盘失败不发布内存状态, 避免重启后归属不一致
+            NPLogger.w(TAG, "认领旧 HLS 恢复点失败: ${destFile.name}", error)
+            return@synchronized null
+        }
+        claimed
     }
 
     fun has(destFile: File?): Boolean {
@@ -236,8 +260,10 @@ internal class AudioHlsResumeStore(
 
     fun clear(destFile: File?) {
         destFile ?: return
-        statesByWorkingPath.remove(destFile.absolutePath)
-        deletePersisted(destFile)
+        synchronized(storeLock) {
+            statesByWorkingPath.remove(destFile.absolutePath)
+            deletePersisted(destFile)
+        }
     }
 
     private fun persist(destFile: File, state: AudioDownloadManager.HlsResumeState) {
