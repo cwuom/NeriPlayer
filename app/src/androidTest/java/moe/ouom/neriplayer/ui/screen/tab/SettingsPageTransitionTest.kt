@@ -241,7 +241,7 @@ class SettingsPageTransitionTest {
             assertEquals(listOf(SettingsPage.General), clickedPages)
             selectedPage.value = SettingsPage.Accounts
         }
-        advanceFrame()
+        advanceUntilMounted(actionTag(SettingsPage.Accounts))
         composeRule.onNodeWithTag(actionTag(SettingsPage.General), useUnmergedTree = true).assertExists()
         composeRule.onNodeWithTag(actionTag(SettingsPage.Accounts), useUnmergedTree = true).assertExists()
         composeRule.onAllNodesWithTag(actionTag(SettingsPage.General)).assertCountEquals(0)
@@ -697,6 +697,14 @@ class SettingsPageTransitionTest {
     private fun advanceFrame() {
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.waitForIdle()
+    }
+
+    // 可拖动的转场在下一帧的 effect 里才开始切换目标，新场景会晚一到两帧挂载
+    private fun advanceUntilMounted(tag: String, maxFrames: Int = 3) {
+        repeat(maxFrames) {
+            advanceFrame()
+            if (composeRule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) return
+        }
     }
 
     private fun finishTransition(frameCount: Int = FrameCount) {

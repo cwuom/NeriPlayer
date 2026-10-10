@@ -78,12 +78,12 @@ class SettingsPageHostTest {
             composeRule.onNodeWithTag("settings-detail-General").assertExists()
 
             composeRule.runOnIdle { activePage.value = SettingsPage.Accounts }
-            advanceRecompositionFrame()
+            advanceUntilMounted("settings-detail-Accounts")
             composeRule.onAllNodesWithTag(NAVIGATION_PANE_TAG).assertCountEquals(1)
             composeRule.onNodeWithTag("settings-detail-Accounts", useUnmergedTree = true).assertExists()
 
             composeRule.runOnIdle { activePage.value = SettingsPage.Theme }
-            advanceRecompositionFrame()
+            advanceUntilMounted("settings-detail-Theme")
             composeRule.onAllNodesWithTag(NAVIGATION_PANE_TAG).assertCountEquals(1)
             composeRule.onNodeWithTag("settings-detail-Theme").assertExists()
         } finally {
@@ -133,7 +133,7 @@ class SettingsPageHostTest {
             composeRule.onNodeWithTag("settings-detail-General").assertExists()
 
             composeRule.runOnIdle { activePage.value = SettingsPage.Accounts }
-            advanceRecompositionFrame()
+            advanceUntilMounted("settings-detail-Accounts")
             composeRule.onAllNodesWithTag(NAVIGATION_PANE_TAG).assertCountEquals(1)
             composeRule.onNodeWithTag("settings-detail-Accounts", useUnmergedTree = true).assertExists()
             composeRule.onNodeWithTag("settings-detail-General", useUnmergedTree = true).assertExists()
@@ -252,6 +252,14 @@ class SettingsPageHostTest {
     private fun advanceRecompositionFrame() {
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.waitForIdle()
+    }
+
+    // 可拖动的转场在下一帧的 effect 里才开始切换目标，新场景会晚一到两帧挂载
+    private fun advanceUntilMounted(tag: String, maxFrames: Int = 3) {
+        repeat(maxFrames) {
+            advanceRecompositionFrame()
+            if (composeRule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) return
+        }
     }
 
     private companion object {
