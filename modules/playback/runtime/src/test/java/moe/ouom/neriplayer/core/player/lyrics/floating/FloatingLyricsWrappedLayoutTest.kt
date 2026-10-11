@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.lyrics.floating
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.text.Layout
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -44,6 +45,36 @@ class FloatingLyricsWrappedLayoutTest {
     }
 
     @Test
+    fun `left and right remain physical for RTL LTR and mixed paragraphs`() {
+        val width = 320
+        val texts = listOf(
+            "", "English lyric words", "مرحبا بالعالم", "שלום עולם",
+            "English words\nمرحبا بالعالم\nשלום עולם",
+            "مرحبا بالعالم\nEnglish words\nשלום עולם",
+            "مرحبا بالعالم هذه كلمات أغنية طويلة ".repeat(4),
+            "\nשלום עולם\n"
+        )
+        for (text in texts) {
+            for (factor in listOf(0f, 0.5f, 1f)) {
+                val wrapped = FloatingLyricsWrappedLayout(text, width, paint, factor)
+                val layout = platformLayout(wrapped)
+                for (line in 0 until layout.lineCount) {
+                    if (layout.getLineLeft(line) == layout.getLineRight(line)) continue
+                    when (factor) {
+                        0f -> assertEquals("physical left: $text", 0f, layout.getLineLeft(line), 0.1f)
+                        1f -> assertEquals("physical right: $text", width.toFloat(), layout.getLineRight(line), 0.1f)
+                        else -> assertEquals(width.toFloat(), layout.getLineLeft(line) + layout.getLineRight(line), 0.1f)
+                    }
+                }
+            }
+        }
+        val mixed = platformLayout(FloatingLyricsWrappedLayout("English\nمرحبا\nשלום", width, paint, 0f))
+        assertEquals(1, mixed.getParagraphDirection(0))
+        assertEquals(-1, mixed.getParagraphDirection(1))
+        assertEquals(-1, mixed.getParagraphDirection(2))
+    }
+
+    @Test
     fun `drawing retains layout metrics and reveal clips content`() {
         val layout = FloatingLyricsWrappedLayout("歌词 preview words wrap here", 180, paint, 0.5f)
         val height = layout.heightPx
@@ -64,4 +95,8 @@ class FloatingLyricsWrappedLayoutTest {
         assertEquals(height, layout.heightPx)
         bitmap.recycle()
     }
+
+    private fun platformLayout(wrapped: FloatingLyricsWrappedLayout): Layout =
+        FloatingLyricsWrappedLayout::class.java.getDeclaredField("layout")
+            .apply { isAccessible = true }.get(wrapped) as Layout
 }
