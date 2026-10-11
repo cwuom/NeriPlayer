@@ -10,6 +10,10 @@ android {
 }
 
 tasks.withType<Test>().configureEach {
+    // Android 16 sandbox classes require Java 21; production bytecode still targets Java 17.
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
     // Android 16 tests access the JDK file descriptor bridge during shared memory setup.
     jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
 }
