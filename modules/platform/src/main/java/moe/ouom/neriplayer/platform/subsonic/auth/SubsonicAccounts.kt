@@ -19,7 +19,7 @@ import moe.ouom.neriplayer.platform.subsonic.api.SubsonicFailureKind
 import java.util.UUID
 
 /**
- * Public configuration excludes the password. Editing an existing instance keeps its ID and
+ * Public configuration excludes the password. Its address and username are immutable; editing keeps its ID and
  * increments revision so requests and caches cannot publish results from the previous settings.
  */
 data class SubsonicProfile(
@@ -71,6 +71,11 @@ class SubsonicAccounts(context: Context) {
     suspend fun save(profile: SubsonicProfile, password: String, expectedRevision: Long? = null) = withContext(Dispatchers.IO) {
         synchronized(this@SubsonicAccounts) {
             val current = readProfiles()
+            current.firstOrNull { it.id == profile.id }?.let { existing ->
+                require(existing.baseUrl == profile.baseUrl && existing.username == profile.username) {
+                    "更换服务器地址或用户名请新增配置"
+                }
+            }
             if (expectedRevision != null) {
                 if (current.none { it.id == profile.id && it.revision == expectedRevision && it.username == profile.username }) {
                     throw SubsonicException(-1, "Configuration changed", SubsonicFailureKind.CONFIG_CHANGED)

@@ -27,18 +27,19 @@ internal fun PlayerManager.resolveManualResumeWithServerRecovery(
     )
 }
 
-/** Handle server URL failures without changing the failure path for other sources. */
+/** Preserve the latest seek, including zero, when a server URL request fails in this session. */
 internal suspend fun PlayerManager.preserveServerPlaybackForRetry(
     song: SongItem, positionMs: Long, requestToken: Long
 ): Boolean {
     if (!song.isServerSong()) return false
     withContext(Dispatchers.Main) {
         if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken)) return@withContext
+        val retryPositionMs = pendingSeekPositionOrNull() ?: positionMs
         stopPlaybackPreservingQueue(clearMediaUrl = true)
-        _playbackPositionMs.value = positionMs
-        setRestoredPlayback(positionMs, shouldResume = false)
-        serverRecoveryPosition = AppQueueSongIdentity.stableKey(song) to positionMs
-        scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = false)
+        _playbackPositionMs.value = retryPositionMs
+        setRestoredPlayback(retryPositionMs, shouldResume = false)
+        serverRecoveryPosition = AppQueueSongIdentity.stableKey(song) to retryPositionMs
+        scheduleStatePersist(positionMs = retryPositionMs, shouldResumePlayback = false)
     }
     return true
 }

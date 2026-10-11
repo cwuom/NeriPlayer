@@ -128,7 +128,7 @@ Current positioning:
 3. Open Library → Music servers, select a profile, and browse or search albums and songs. Switching categories keeps the query; searching inside an album filters only that album.
 4. Play a song, or add it to favorites, the queue, or a local playlist. Server lyrics require the `songLyrics` extension; decoding and seeking depend on the server and device.
 
-Profiles and passwords stay in encrypted local storage. Create a new profile when changing accounts or server instances; ordinary sync does not migrate server credentials. Browse caches and next-song prefetch do not provide complete offline downloads. See the [API contract](docs/music-server-api.md) for protocol and client behavior (Chinese).
+Profiles and passwords stay in encrypted local storage. Editing changes only the name and password. A different address or username requires a new profile; existing playlist entries are not migrated automatically, and ordinary sync does not migrate server credentials. Browse caches and next-song prefetch do not provide complete offline downloads. See the [API contract](docs/music-server-api.md) for protocol and client behavior (Chinese).
 
 ---
 

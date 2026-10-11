@@ -101,7 +101,7 @@ private fun ServerAccountEditor(profile: SubsonicProfile?, onDismiss: () -> Unit
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(label, { label = it }, enabled = !busy, singleLine = true,
                     label = { Text(stringResource(CoreCommonR.string.server_label)) })
-                OutlinedTextField(address, { address = it }, enabled = !busy, singleLine = true,
+                OutlinedTextField(address, { address = it }, enabled = !busy && profile == null, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     label = { Text(stringResource(CoreCommonR.string.server_address)) })
                 OutlinedTextField(username, { username = it }, enabled = !busy && profile == null, singleLine = true,

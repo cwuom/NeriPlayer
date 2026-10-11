@@ -24,7 +24,7 @@
     <string name="server_edit">Edit or sign in again</string>
     <string name="server_save">Verify and save</string>
     <string name="server_cancel">Cancel</string>
-    <string name="server_edit_help">Leave the password empty to keep it. Edit the name, address or password of the same server here to retain existing tracks. Add a separate configuration for a different server or account.</string>
+    <string name="server_edit_help">Leave the password empty to keep it. Edit the name or password to retain existing tracks. Add a new configuration to change the address or username; existing playlist entries are not migrated automatically.</string>
     <string name="server_remove_warning">Removing “%1$s” disconnects its existing tracks. Music on the server will not be deleted.</string>
     <string name="server_quality_original">Original</string>
     <string name="server_source">Music server</string>

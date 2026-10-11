@@ -17,7 +17,7 @@
 
 | 当前字段 | 类型 | 规则 |
 | --- | --- | --- |
-| id（profileId） | UUID string | 创建时生成；编辑名称、同实例地址或密码时保留；移除后重加生成新 ID |
+| id（profileId） | UUID string | 创建时生成；编辑名称或密码时保留；移除后重加生成新 ID |
 | label | string | 用户输入优先，空白回退主机名 |
 | baseUrl | HTTP(S) URL | 包含端口和反代子路径，尾部 `/`；不含 userinfo、query、fragment |
 | username | string | 去首尾空白且非空；编辑界面不修改用户名，更换账号应新建配置 |
@@ -28,7 +28,7 @@
 
 添加和更新通过仓库先 `ping` 成功再保存；底层 accounts.save 本身不执行连接检查。更新使用 expectedRevision 检查并发变更，成功后清理该配置的扩展能力、歌词及音频元数据缓存；浏览缓存按 revision 隔离，并由账号流异步清理旧快照/任务。移除只作用于本机配置：浏览缓存订阅账号流清理旧条目，歌词/元数据/能力的进程内条目没有统一删除入口，但缺少配置时不会作为有效账号结果读取。
 
-媒体字节缓存和图片资源引用目前不含配置 revision。编辑地址指向另一实例且原始资源 ID 重合时，仍可能复用旧媒体；此项已列为发布前待修复，不属于浏览/歌词/音频元数据修订隔离已经覆盖的范围。更换账号或实例应新增配置；现有编辑入口没有自动判断新地址是否仍属于同一实例。
+配置地址与用户名创建后不可更改：编辑界面禁用这两项，仓库更新和账号存储也拒绝同一 ID 下改变地址或用户名。更换地址或账号需新增配置，即使是同一实例的另一反代地址，也使用新 UUID；原歌单/历史引用不会自动重绑定。这使媒体字节、预取、封面与旧引用均保持原配置命名空间，避免不同实例同资源 ID 串用缓存。媒体字节缓存和图片引用不含 revision，同一地址下同 ID 资源原地替换的主动失效仍未实现。
 
 ### 2.2 公共请求参数
 
@@ -236,7 +236,7 @@ offset 和结构依据：[structuredLyrics](https://opensubsonic.netlify.app/doc
 | 方法 | 输入 | 输出 / 行为 |
 | --- | --- | --- |
 | addAccount | label、address、username、password | ping 成功后保存；失败不保存 |
-| updateAccount | original profile、label、address、password | 空密码沿用原密码；ping 成功后保留 ID、增加 revision，检查并发修改 |
+| updateAccount | original profile、label、address、password | address 规范化后须与原地址一致；空密码沿用原密码；ping 成功后保留 ID、增加 revision，检查并发修改 |
 | browseKey / browse | profileId、albumId/query、category、offset、size；force | ServerBrowseKey / ServerBrowsePage；绑定配置 revision，支持缓存及强制刷新 |
 | albums | profileId、offset、size=30 | List<ServerAlbum>，根专辑目录 |
 | albumSongs | profileId、albumId | List<SongItem>，专辑完整曲目 |

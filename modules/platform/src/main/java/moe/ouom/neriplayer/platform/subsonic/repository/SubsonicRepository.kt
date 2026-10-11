@@ -90,6 +90,7 @@ class SubsonicRepository(val accounts: SubsonicAccounts, private val client: Sub
             }
             val updated = SubsonicAccounts.draft(label, address, original.username).copy(
                 id = original.id, enabled = original.enabled, revision = original.revision + 1L)
+            require(updated.baseUrl == current.profile.baseUrl) { "更换服务器地址请新增配置" }
             val credential = password.ifEmpty { current.password }
             withTimeout(15_000L) { client.call(updated, credential, "ping") }
             accounts.save(updated, credential, expectedRevision = original.revision)

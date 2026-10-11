@@ -24,7 +24,7 @@
     <string name="server_edit">编辑与重新登录</string>
     <string name="server_save">验证并保存</string>
     <string name="server_cancel">取消</string>
-    <string name="server_edit_help">密码留空则保持原密码。此处用于修改同一服务器的名称、地址或密码，已有歌曲关联会保留；更换服务器实例或账号请新增配置。</string>
+    <string name="server_edit_help">密码留空则保持原密码。可修改名称或密码，已有歌曲关联会保留。更换地址或用户名请新增配置，原歌单条目不会自动迁移。</string>
     <string name="server_remove_warning">移除“%1$s”后，已有歌曲将无法连接此账号。服务器上的音乐不会删除。</string>
     <string name="server_quality_original">原始</string>
     <string name="server_source">音乐服务器</string>

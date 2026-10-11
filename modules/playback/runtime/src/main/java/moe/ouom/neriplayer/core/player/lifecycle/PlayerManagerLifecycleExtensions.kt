@@ -1832,6 +1832,7 @@ internal fun PlayerManager.scheduleUsbAudioSinkReconfiguration(
 }
 
 internal fun PlayerManager.releaseImpl() {
+    serverRecoveryPosition = null
     if (!initialized) {
         NPLogger.d("NERI-PlayerManager", "release(): ignored because manager is already released")
         return
