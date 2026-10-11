@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.lyrics.output.LyriconPreferences
 import moe.ouom.neriplayer.core.player.media.LocalPlaybackMediaResolver
 import moe.ouom.neriplayer.core.player.media.PlaybackMediaItemFactory
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContentSource
 import moe.ouom.neriplayer.data.model.playback.AudioDevice
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PreferredQualityKeys
@@ -642,6 +643,7 @@ object PlayerManager {
     internal val _externalBluetoothLyricLineFlow = MutableStateFlow<String?>(null)
     val externalBluetoothLyricLineFlow: StateFlow<String?> = _externalBluetoothLyricLineFlow
     internal val _floatingTranslatedLyricLineFlow = MutableStateFlow<String?>(null)
+    internal val floatingLyricsContentSource = FloatingLyricsContentSource()
     val floatingTranslatedLyricLineFlow: StateFlow<String?> = _floatingTranslatedLyricLineFlow
     internal val _externalBluetoothLyricPayloadFlow =
         MutableStateFlow(ExternalBluetoothLyricPayload())

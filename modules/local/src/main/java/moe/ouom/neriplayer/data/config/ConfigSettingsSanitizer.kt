@@ -35,6 +35,9 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsMax
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsOutlineWidthDp
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsRenderStyle
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsSentenceCount
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsLongLineMode
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsLandscapeWidthDp
 import moe.ouom.neriplayer.lyrics.offset.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import java.util.Locale
@@ -107,6 +110,8 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 return@forEach
             }
             val normalized = when (name) {
+                SettingsKeys.FLOATING_LYRICS_SENTENCE_COUNT.name ->
+                    normalizeFloatingLyricsSentenceCount(value)
                 SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB.name ->
                     normalizePlaybackLoudnessGainMb(value)
                 SettingsKeys.DOWNLOAD_PARALLELISM.name ->
@@ -242,6 +247,9 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         }
         sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_ALIGNMENT.name, onAdjusted) {
             normalizeFloatingLyricsAlignment(it)
+        }
+        sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_LONG_LINE_MODE.name, onAdjusted) {
+            normalizeFloatingLyricsLongLineMode(it)
         }
     }
 
@@ -418,6 +426,7 @@ private val FLOAT_SETTING_NORMALIZERS: Map<String, (Float) -> Float> = buildMap 
     put(SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP.name) { normalizeFloatingLyricsOutlineWidthDp(it) }
     put(SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA.name) { normalizeFloatingLyricsAlpha(it) }
     put(SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP.name) { normalizeFloatingLyricsMaxWidthDp(it) }
+    put(SettingsKeys.FLOATING_LYRICS_LANDSCAPE_MAX_WIDTH_DP.name) { normalizeFloatingLyricsLandscapeWidthDp(it) }
     put(SettingsKeys.UI_DENSITY_SCALE.name) { it.coerceIn(UI_DENSITY_SCALE_RANGE) }
     put(SettingsKeys.BACKGROUND_IMAGE_BLUR.name) { it.coerceIn(BACKGROUND_IMAGE_BLUR_RANGE) }
     put(SettingsKeys.BACKGROUND_IMAGE_ALPHA.name) { it.coerceIn(BACKGROUND_IMAGE_ALPHA_RANGE) }

@@ -62,6 +62,8 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STY
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
 import moe.ouom.neriplayer.data.model.settings.lyrics.MAX_FLOATING_LYRICS_ALPHA
 import moe.ouom.neriplayer.data.model.settings.lyrics.MAX_FLOATING_LYRICS_FONT_SIZE_SP
+import moe.ouom.neriplayer.data.model.settings.lyrics.MAX_FLOATING_LYRICS_LANDSCAPE_WIDTH_DP
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsLandscapeWidthDp
 import moe.ouom.neriplayer.data.model.settings.lyrics.MAX_FLOATING_LYRICS_MAX_WIDTH_DP
 import moe.ouom.neriplayer.data.model.settings.lyrics.MAX_FLOATING_LYRICS_OUTLINE_WIDTH_DP
 import moe.ouom.neriplayer.data.model.settings.lyrics.MIN_FLOATING_LYRICS_ALPHA
@@ -100,6 +102,7 @@ internal fun SettingsFloatingLyricsSection(
         mutableFloatStateOf(normalizedPreferences.translationAlpha)
     }
     var pendingMaxWidthDp by remember { mutableFloatStateOf(normalizedPreferences.maxWidthDp) }
+    var pendingLandscapeMaxWidthDp by remember { mutableFloatStateOf(normalizedPreferences.landscapeMaxWidthDp) }
     var pendingPositionX by remember { mutableFloatStateOf(normalizedPreferences.positionX) }
     var pendingPositionY by remember { mutableFloatStateOf(normalizedPreferences.positionY) }
     var pendingLandscapePositionX by remember {
@@ -161,6 +164,9 @@ internal fun SettingsFloatingLyricsSection(
     LaunchedEffect(normalizedPreferences.maxWidthDp) {
         pendingMaxWidthDp = normalizedPreferences.maxWidthDp
     }
+    LaunchedEffect(normalizedPreferences.landscapeMaxWidthDp) {
+        pendingLandscapeMaxWidthDp = normalizedPreferences.landscapeMaxWidthDp
+    }
     LaunchedEffect(normalizedPreferences.positionX) {
         pendingPositionX = normalizedPreferences.positionX
     }
@@ -190,6 +196,7 @@ internal fun SettingsFloatingLyricsSection(
         translationOutlineWidthDp: Float = pendingTranslationOutlineWidthDp,
         translationAlpha: Float = pendingTranslationAlpha,
         maxWidthDp: Float = pendingMaxWidthDp,
+        landscapeMaxWidthDp: Float = pendingLandscapeMaxWidthDp,
         positionX: Float = pendingPositionX,
         positionY: Float = pendingPositionY,
         landscapePositionX: Float = pendingLandscapePositionX,
@@ -202,6 +209,7 @@ internal fun SettingsFloatingLyricsSection(
             translationOutlineWidthDp = translationOutlineWidthDp,
             translationAlpha = translationAlpha,
             maxWidthDp = maxWidthDp,
+            landscapeMaxWidthDp = landscapeMaxWidthDp,
             positionX = positionX,
             positionY = positionY,
             landscapePositionX = landscapePositionX,
@@ -218,6 +226,7 @@ internal fun SettingsFloatingLyricsSection(
         translationOutlineWidthDp = pendingTranslationOutlineWidthDp,
         translationAlpha = pendingTranslationAlpha,
         maxWidthDp = pendingMaxWidthDp,
+        landscapeMaxWidthDp = pendingLandscapeMaxWidthDp,
         positionX = pendingPositionX,
         positionY = pendingPositionY,
         landscapePositionX = pendingLandscapePositionX,
@@ -269,6 +278,11 @@ internal fun SettingsFloatingLyricsSection(
             onCheckedChange = { enabled ->
                 updatePreferences { it.copy(longPressDragEnabled = enabled) }
             }
+        )
+        FloatingLyricsLayoutSettings(
+            preferences = normalizedPreferences,
+            onSentenceCountChange = { count -> updatePreferences { it.copy(sentenceCount = count) } },
+            onLongLineModeChange = { mode -> updatePreferences { it.copy(longLineMode = mode) } }
         )
         FloatingLyricsColorPicker(
             titleRes = CoreCommonR.string.settings_floating_lyrics_text_color,
@@ -431,6 +445,21 @@ internal fun SettingsFloatingLyricsSection(
             },
             onValueChangeFinished = {
                 updatePreferences { it.copy(maxWidthDp = pendingMaxWidthDp) }
+            }
+        )
+        FloatingLyricsSliderListItem(
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_landscape_max_width),
+            valueText = stringResource(CoreCommonR.string.settings_floating_lyrics_max_width_value, pendingLandscapeMaxWidthDp),
+            icon = Icons.Outlined.WidthFull,
+            value = pendingLandscapeMaxWidthDp,
+            valueRange = MIN_FLOATING_LYRICS_MAX_WIDTH_DP..MAX_FLOATING_LYRICS_LANDSCAPE_WIDTH_DP,
+            steps = 0,
+            onValueChange = { value ->
+                pendingLandscapeMaxWidthDp = normalizeFloatingLyricsLandscapeWidthDp(value)
+                previewOverlay(buildPendingPreferences(landscapeMaxWidthDp = pendingLandscapeMaxWidthDp))
+            },
+            onValueChangeFinished = {
+                updatePreferences { it.copy(landscapeMaxWidthDp = pendingLandscapeMaxWidthDp) }
             }
         )
         FloatingLyricsOrientationSelector(

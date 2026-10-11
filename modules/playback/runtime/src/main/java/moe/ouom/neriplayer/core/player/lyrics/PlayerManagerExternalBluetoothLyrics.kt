@@ -184,12 +184,24 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
     }
 
     val song = _currentSongFlow.value
-    if (song == null || externalBluetoothLyricsSongKey != song.stableKey()) {
+    val songKey = externalBluetoothLyricsSongKey
+    if (song == null || songKey == null || songKey != song.stableKey()) {
         clearExternalBluetoothLyricLine()
         return
     }
 
     val lyricOffsetMs = externalLyricOffsetMs(song)
+    if (floatingLyricsEnabled) {
+        floatingLyricsContentSource.update(
+            songKey = songKey,
+            lyrics = externalBluetoothLyrics,
+            translations = floatingTranslationMatchesByIndex,
+            positionMs = positionMs,
+            offsetMs = lyricOffsetMs
+        )
+    } else {
+        floatingLyricsContentSource.clear()
+    }
 
     val line = findExternalBluetoothLyricLine(
         lyrics = externalBluetoothLyrics,
@@ -225,6 +237,7 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
 }
 
 internal fun PlayerManager.clearExternalBluetoothLyricLine() {
+    floatingLyricsContentSource.clear()
     if (_externalBluetoothLyricLineFlow.value != null) {
         _externalBluetoothLyricLineFlow.value = null
     }

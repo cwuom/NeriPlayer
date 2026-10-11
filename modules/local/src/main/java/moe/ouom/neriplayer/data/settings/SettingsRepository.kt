@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
+import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsMaxWidthDp
 import moe.ouom.neriplayer.lyrics.offset.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.lyrics.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsLyricAlpha
@@ -1010,6 +1011,9 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA] =
                 normalized.translationAlpha
             prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] = normalized.maxWidthDp
+            prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_MAX_WIDTH_DP] = normalized.landscapeMaxWidthDp
+            prefs[SettingsKeys.FLOATING_LYRICS_SENTENCE_COUNT] = normalized.sentenceCount
+            prefs[SettingsKeys.FLOATING_LYRICS_LONG_LINE_MODE] = normalized.longLineMode
             prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] = normalized.positionX
             prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] = normalized.positionY
             prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X] = normalized.landscapePositionX
@@ -1543,6 +1547,7 @@ internal fun Preferences.toFloatingLyricsPreferences(): FloatingLyricsPreference
     val outlineWidthDp = valueOr(SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP, 1.6f)
     val positionX = valueOr(SettingsKeys.FLOATING_LYRICS_POSITION_X, 0.1f)
     val positionY = valueOr(SettingsKeys.FLOATING_LYRICS_POSITION_Y, 0.7f)
+    val maxWidthDp = normalizeFloatingLyricsMaxWidthDp(valueOr(SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP, 280f))
     return FloatingLyricsPreferences(
         enabled = valueOr(SettingsKeys.FLOATING_LYRICS_ENABLED, false),
         hideInApp = valueOr(SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP, false),
@@ -1560,7 +1565,13 @@ internal fun Preferences.toFloatingLyricsPreferences(): FloatingLyricsPreference
         translationAlpha = resolveFloatingLyricsTranslationAlpha(
             this[SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA]
         ),
-        maxWidthDp = valueOr(SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP, 280f),
+        maxWidthDp = maxWidthDp,
+        landscapeMaxWidthDp = valueOr(
+            SettingsKeys.FLOATING_LYRICS_LANDSCAPE_MAX_WIDTH_DP,
+            maxWidthDp
+        ),
+        sentenceCount = valueOr(SettingsKeys.FLOATING_LYRICS_SENTENCE_COUNT, 1),
+        longLineMode = valueOr(SettingsKeys.FLOATING_LYRICS_LONG_LINE_MODE, "scroll"),
         positionX = positionX,
         positionY = positionY,
         landscapePositionX = valueOr(SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X, positionX),

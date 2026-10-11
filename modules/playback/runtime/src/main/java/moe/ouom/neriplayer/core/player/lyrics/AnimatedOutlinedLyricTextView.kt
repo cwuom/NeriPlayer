@@ -17,6 +17,7 @@ import android.view.animation.PathInterpolator
 import androidx.core.graphics.withSave
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
+import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsWrappedLayout
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -51,6 +52,9 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
     private var edgeMaskShader: LinearGradient? = null
     private var edgeMaskWidthPx = 0f
     private var edgeMaskFadeWidthPx = 0f
+    private var wrapLongLines = false
+    private var wrappedLayout: FloatingLyricsWrappedLayout? = null
+    private var wrappedContentWidth = 0
 
     init {
         fillPaint.style = Paint.Style.FILL
@@ -71,6 +75,7 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
             return
         }
         lyricText = nextText
+        wrappedLayout = null
         stopScroll(resetOffset = true)
         requestLayout()
         if (revealAnimationEnabled) {
@@ -103,7 +108,12 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         if (appliedStyle == nextStyle) {
             return
         }
+        val metricsChanged = appliedStyle?.let {
+            it.textSizePx != nextStyle.textSizePx || it.effectWidthPx != nextStyle.effectWidthPx ||
+                it.bold != nextStyle.bold || it.renderStyle != nextStyle.renderStyle
+        } != false
         appliedStyle = nextStyle
+        if (metricsChanged) wrappedLayout = null
         this.renderStyle = nextStyle.renderStyle
         val typeface = Typeface.create(
             Typeface.DEFAULT,
@@ -157,6 +167,14 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
             return
         }
         targetAlignmentFactor = normalized
+        if (wrapLongLines) {
+            alignmentAnimator?.cancel()
+            alignmentFactor = normalized
+            wrappedLayout = null
+            requestLayout()
+            invalidate()
+            return
+        }
         alignmentAnimator?.cancel()
         alignmentAnimator = ValueAnimator.ofFloat(alignmentFactor, normalized).apply {
             var canceled = false
@@ -186,6 +204,18 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         if (!enabled && revealProgress < 1f) {
             showTextWithoutReveal()
         }
+    }
+
+    fun setWrapLongLines(enabled: Boolean) {
+        if (wrapLongLines == enabled) return
+        wrapLongLines = enabled
+        alignmentAnimator?.cancel()
+        alignmentFactor = targetAlignmentFactor
+        wrappedLayout = null
+        stopScroll(resetOffset = true)
+        requestLayout()
+        invalidate()
+        if (!enabled) restartScrollAfterLayout()
     }
 
     fun setPlaybackActive(active: Boolean) {
@@ -231,6 +261,11 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         restartScrollAfterLayout()
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w != oldw) restartScrollAfterLayout()
+    }
+
     fun preferredMeasuredHeightPx(): Int {
         val fontMetrics = fillPaint.fontMetrics
         val textHeight = fontMetrics.descent - fontMetrics.ascent
@@ -239,6 +274,10 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        if (wrapLongLines) {
+            measureWrappedText(widthMeasureSpec, heightMeasureSpec)
+            return
+        }
         val textWidth = fillPaint.measureText(lyricText).takeIf { it > 0f } ?: 1f
         val fontMetrics = fillPaint.fontMetrics
         val textHeight = fontMetrics.descent - fontMetrics.ascent
@@ -258,6 +297,10 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
             return
         }
         if (revealProgress <= 0f) {
+            return
+        }
+        if (wrapLongLines) {
+            drawWrappedText(canvas)
             return
         }
         val outlineWidth = outlinePaint.strokeWidth
@@ -289,6 +332,39 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         }
         if (outlinePaint.strokeWidth > 0f || shadowBlurRadiusPx > 0f) {
             drawTextEffectLayer(canvas, reveal, baseX, baseline, contentWidth, edgeMaskProgress)
+        }
+    }
+
+    private fun measureWrappedText(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val effectPadding = paddingLeft + paddingRight + ceil(outlinePaint.strokeWidth * 2f).toInt()
+        val desiredWidth = ceil(fillPaint.measureText(lyricText)).toInt() + effectPadding
+        val measuredWidth = resolveSize(desiredWidth, widthMeasureSpec)
+        val contentWidth = (measuredWidth - effectPadding).coerceAtLeast(1)
+        if (wrappedLayout == null || wrappedContentWidth != contentWidth) {
+            wrappedContentWidth = contentWidth
+            wrappedLayout = FloatingLyricsWrappedLayout(lyricText, contentWidth, baseFillPaint, targetAlignmentFactor)
+        }
+        val desiredHeight = wrappedLayout!!.heightPx + paddingTop + paddingBottom
+        setMeasuredDimension(measuredWidth, resolveSize(desiredHeight, heightMeasureSpec))
+    }
+
+    private fun drawWrappedText(canvas: Canvas) {
+        val layout = wrappedLayout ?: return
+        canvas.withSave {
+            translate(paddingLeft + outlinePaint.strokeWidth, paddingTop.toFloat())
+            layout.clipReveal(this, revealProgress, maxOf(outlinePaint.strokeWidth, shadowBlurRadiusPx))
+            layout.draw(this, baseFillPaint)
+            if (outlinePaint.strokeWidth > 0f || shadowBlurRadiusPx > 0f) {
+                val layer = saveLayer(
+                    -paddingLeft.toFloat(), -paddingTop.toFloat(),
+                    width.toFloat(), height.toFloat(), null
+                )
+                layout.draw(this, if (outlinePaint.strokeWidth > 0f) outlinePaint else fillPaint)
+                eraseFillPaint.xfermode = eraseFillXfermode
+                layout.draw(this, eraseFillPaint)
+                eraseFillPaint.xfermode = null
+                restoreToCount(layer)
+            }
         }
     }
 
@@ -386,7 +462,7 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
 
     private fun restartScrollAfterLayout() {
         stopScroll(resetOffset = true)
-        if (!playbackActive || revealProgress < 1f || lyricText.isBlank()) {
+        if (wrapLongLines || !playbackActive || revealProgress < 1f || lyricText.isBlank()) {
             return
         }
         invalidate()
@@ -400,7 +476,7 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
     }
 
     private fun startScrollIfNeeded() {
-        if (!playbackActive || !screenOn || width <= 0 || lyricText.isBlank()) {
+        if (wrapLongLines || !playbackActive || !screenOn || width <= 0 || lyricText.isBlank()) {
             return
         }
         val contentWidth = (width - paddingLeft - paddingRight - outlinePaint.strokeWidth * 2f)

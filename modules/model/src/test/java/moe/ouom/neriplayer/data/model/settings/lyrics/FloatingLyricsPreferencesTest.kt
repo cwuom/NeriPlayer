@@ -6,6 +6,27 @@ import org.junit.Test
 class FloatingLyricsPreferencesTest {
 
     @Test
+    fun `new layout settings are optional and repair invalid values`() {
+        val defaults = FloatingLyricsPreferences()
+        assertEquals(1, defaults.sentenceCount)
+        assertEquals(FLOATING_LYRICS_LONG_LINE_SCROLL, defaults.longLineMode)
+        assertEquals(defaults.maxWidthDp, defaults.landscapeMaxWidthDp)
+        assertEquals(1, normalizeFloatingLyricsSentenceCount(-1))
+        assertEquals(3, normalizeFloatingLyricsSentenceCount(Int.MAX_VALUE))
+        assertEquals(FLOATING_LYRICS_LONG_LINE_WRAP, normalizeFloatingLyricsLongLineMode(" WRAP "))
+        assertEquals(FLOATING_LYRICS_LONG_LINE_SCROLL, normalizeFloatingLyricsLongLineMode("unknown"))
+        assertEquals(FLOATING_LYRICS_LONG_LINE_SCROLL, normalizeFloatingLyricsLongLineMode(null))
+        assertEquals(280f, normalizeFloatingLyricsLandscapeWidthDp(Float.NaN), 0f)
+        assertEquals(280f, normalizeFloatingLyricsMaxWidthDp(Float.POSITIVE_INFINITY), 0f)
+        assertEquals(1200f, normalizeFloatingLyricsLandscapeWidthDp(2000f), 0f)
+        val repaired = defaults.copy(sentenceCount = 9, longLineMode = "invalid", landscapeMaxWidthDp = 3000f).normalized()
+        assertEquals(3, repaired.sentenceCount)
+        assertEquals(FLOATING_LYRICS_LONG_LINE_SCROLL, repaired.longLineMode)
+        assertEquals(1200f, resolveFloatingLyricsWidthDp(repaired, true), 0f)
+        assertEquals(280f, resolveFloatingLyricsWidthDp(repaired, false), 0f)
+    }
+
+    @Test
     fun `alpha values fall back when not finite and clamp otherwise`() {
         assertEquals(0.72f, normalizeFloatingLyricsAlpha(Float.NaN), 0f)
         assertEquals(0.5f, normalizeFloatingLyricsAlpha(Float.NEGATIVE_INFINITY, fallback = 0.5f), 0f)
