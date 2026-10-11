@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncInProgressException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 
-internal fun createWebDavWorkerHost(context: Context): SyncWorkerHost {
+internal fun createWebDavWorkerHost(context: Context, triggerByAppStartup: Boolean = false): SyncWorkerHost {
     val storage by lazy { WebDavStorage(context) }
     val notification = SyncFailureNotification(
         context, "webdav_sync_channel", 1002,
@@ -34,7 +34,10 @@ internal fun createWebDavWorkerHost(context: Context): SyncWorkerHost {
         },
         readPlayback = { SyncPlaybackActivity.isActive }, readNetwork = { hasValidatedSyncNetwork(context) },
         defer = { WebDavSyncWorker.scheduleDelayedSync(context, initialDelayMs = 60_000L, appendToCurrentWork = true) },
-        sync = { WebDavSyncManager.getInstance(context).performSync() },
+        sync = {
+            val manager = WebDavSyncManager.getInstance(context)
+            if (triggerByAppStartup) manager.performSync(triggerByAppStartup) else manager.performSync()
+        },
         classifier = SyncWorkerFailureClassifier(mapOf(
             WebDavAuthException::class.java to SyncWorkerFailureKind.AUTHENTICATION,
             WebDavDirectoryNotFoundException::class.java to SyncWorkerFailureKind.CONFIGURATION,

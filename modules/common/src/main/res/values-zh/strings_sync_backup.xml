@@ -80,6 +80,7 @@
     <string name="sync_after_play_desc">每次播放后立即同步</string>
     <string name="sync_step1_token">步骤1: 输入 GitHub Token</string>
     <string name="sync_create_token">在 GitHub 创建 Token</string>
+    <string name="sync_create_token_open_failed">无法打开浏览器，请手动访问 github.com/settings/tokens 创建 Token</string>
     <string name="sync_step2_repo">步骤2: 选择仓库</string>
     <string name="sync_verify_token">验证Token</string>
     <string name="sync_clear_config_desc">这将清除所有 GitHub 同步配置,包括 Token 和仓库信息。本地数据不会被删除。</string>

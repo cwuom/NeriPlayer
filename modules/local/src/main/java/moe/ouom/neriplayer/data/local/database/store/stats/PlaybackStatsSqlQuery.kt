@@ -11,17 +11,8 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
 internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasBuckets: Boolean, hasLegacyStats: Boolean = !hasBuckets) {
     val usesLegacyBreakdown = query.period != PlaybackStatsPeriod.ALL && hasLegacyStats
     private val arguments = mutableListOf<Any>()
-    private val source: String = when {
-        query.period == PlaybackStatsPeriod.ALL -> "SELECT * FROM playback_stat"
-        hasBuckets -> bucketSource() + " UNION ALL " + legacySource(onlyWithoutBuckets = true)
-        else -> legacySource()
-    }
-    private val sortColumn = when (query.sort) {
-        PlaybackStatsSort.PLAY_COUNT -> "play_count"
-        PlaybackStatsSort.LISTEN_TIME -> "total_listen_ms"
-        PlaybackStatsSort.RECENT -> "last_played_at"
-        PlaybackStatsSort.FIRST_PLAYED -> "first_played_at"
-    }
+    private val source: String = sourceSql(hasBuckets)
+    private val sortColumn = query.sort.sqlColumn()
     private val ascending = query.sort == PlaybackStatsSort.FIRST_PLAYED
     private val hotOrder = query.requirePlayCount && query.sort == PlaybackStatsSort.PLAY_COUNT
     private val filter = "total_listen_ms >= ?" + if (query.requirePlayCount) " AND play_count > 0" else ""
@@ -36,26 +27,31 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
 
     fun page(after: PlaybackStatsCursor?, limit: Int, before: Boolean = false): SimpleSQLiteQuery {
         val params = (arguments + query.minimumListenMs).toMutableList()
-        val cursor = if (after == null) "" else if (hotOrder) {
-            params.addAll(listOf(after.sortValue, after.sortValue, after.secondaryValue, after.sortValue,
-                after.secondaryValue, after.tertiaryValue, after.sortValue, after.secondaryValue, after.tertiaryValue, after.identityKey))
-            val comparison = if (before) ">" else "<"
-            val identityComparison = if (before) "<" else ">"
-            " AND (play_count $comparison ? OR (play_count = ? AND total_listen_ms $comparison ?) OR " +
-                "(play_count = ? AND total_listen_ms = ? AND last_played_at $comparison ?) OR " +
-                "(play_count = ? AND total_listen_ms = ? AND last_played_at = ? AND identity_key $identityComparison ?))"
-        } else {
-            params.addAll(listOf(after.sortValue, after.sortValue, after.identityKey))
-            " AND ($sortColumn ${if (ascending != before) ">" else "<"} ? OR ($sortColumn = ? AND identity_key ${if (before) "<" else ">"} ?))"
-        }
+        val cursor = if (after == null) "" else if (hotOrder) hotCursorClause(after, before, params) else sortedCursorClause(after, before, params)
         params.add(limit)
-        val direction = if (ascending != before) "ASC" else "DESC"
+        return SimpleSQLiteQuery("SELECT * FROM ($source) WHERE $filter$cursor ORDER BY ${orderClause(before)} LIMIT ?", params.toTypedArray())
+    }
+
+    private fun hotCursorClause(after: PlaybackStatsCursor, before: Boolean, params: MutableList<Any>): String {
+        params.addAll(listOf(after.sortValue, after.sortValue, after.secondaryValue, after.sortValue,
+            after.secondaryValue, after.tertiaryValue, after.sortValue, after.secondaryValue, after.tertiaryValue, after.identityKey))
+        val comparison = if (before) ">" else "<"
+        val identityComparison = if (before) "<" else ">"
+        return " AND (play_count $comparison ? OR (play_count = ? AND total_listen_ms $comparison ?) OR " +
+            "(play_count = ? AND total_listen_ms = ? AND last_played_at $comparison ?) OR " +
+            "(play_count = ? AND total_listen_ms = ? AND last_played_at = ? AND identity_key $identityComparison ?))"
+    }
+
+    private fun sortedCursorClause(after: PlaybackStatsCursor, before: Boolean, params: MutableList<Any>): String {
+        params.addAll(listOf(after.sortValue, after.sortValue, after.identityKey))
+        return " AND ($sortColumn ${if (ascending != before) ">" else "<"} ? OR ($sortColumn = ? AND identity_key ${if (before) "<" else ">"} ?))"
+    }
+
+    private fun orderClause(before: Boolean): String {
         val identityDirection = if (before) "DESC" else "ASC"
-        val order = if (hotOrder) {
-            val hotDirection = if (before) "ASC" else "DESC"
-            "play_count $hotDirection, total_listen_ms $hotDirection, last_played_at $hotDirection, identity_key $identityDirection"
-        } else "$sortColumn $direction, identity_key $identityDirection"
-        return SimpleSQLiteQuery("SELECT * FROM ($source) WHERE $filter$cursor ORDER BY $order LIMIT ?", params.toTypedArray())
+        if (!hotOrder) return "$sortColumn ${if (ascending != before) "ASC" else "DESC"}, identity_key $identityDirection"
+        val hotDirection = if (before) "ASC" else "DESC"
+        return "play_count $hotDirection, total_listen_ms $hotDirection, last_played_at $hotDirection, identity_key $identityDirection"
     }
 
     fun cursor(stat: TrackStat): PlaybackStatsCursor = PlaybackStatsCursor(
@@ -66,6 +62,12 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
             PlaybackStatsSort.FIRST_PLAYED -> stat.firstPlayedAt
         }, stat.identityKey, stat.totalListenMs, stat.lastPlayedAt
     )
+
+    private fun sourceSql(hasBuckets: Boolean): String = when {
+        query.period == PlaybackStatsPeriod.ALL -> "SELECT * FROM playback_stat"
+        hasBuckets -> bucketSource() + " UNION ALL " + legacySource(onlyWithoutBuckets = true)
+        else -> legacySource()
+    }
 
     private fun legacySource(onlyWithoutBuckets: Boolean = false): String {
         val range = query.period.resolvePlaybackStatsTimeRange(query.nowMillis)
@@ -96,4 +98,11 @@ internal class PlaybackStatsSqlQuery(private val query: PlaybackStatsQuery, hasB
             "AND newer.day_start_at >= ? AND newer.day_start_at < ? AND " +
             "(newer.last_played_at > b.last_played_at OR (newer.last_played_at = b.last_played_at AND newer.day_start_at > b.day_start_at)))"
     }
+}
+
+private fun PlaybackStatsSort.sqlColumn(): String = when (this) {
+    PlaybackStatsSort.PLAY_COUNT -> "play_count"
+    PlaybackStatsSort.LISTEN_TIME -> "total_listen_ms"
+    PlaybackStatsSort.RECENT -> "last_played_at"
+    PlaybackStatsSort.FIRST_PLAYED -> "first_played_at"
 }

@@ -23,6 +23,9 @@ public:
     // input 与 output 均为交织浮点帧，返回追加到 output 的帧数
     size_t process(const float* input, int inputFrames, std::vector<float>* output);
 
+    // 输入结束时补 halfTaps 个零帧，算出还压在前瞻窗口里的尾部，之后回到初始状态
+    size_t drain(std::vector<float>* output);
+
 private:
     struct Kernel {
         int halfTaps = 0;

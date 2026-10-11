@@ -15,8 +15,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorBrowseEndpoint
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorDetail
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItemsPage
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -42,6 +44,10 @@ class YouTubeMusicCreatorDetailViewModel(
     }
 ) : AndroidViewModel(application) {
     private val client by lazy { AppContainer.youtubeMusicClient }
+    internal var fetchCreatorItems: suspend (YouTubeMusicCreatorBrowseEndpoint, String) -> YouTubeMusicCreatorItemsPage =
+        { endpoint, fallbackTitle -> client.getCreatorItems(endpoint, fallbackTitle) }
+    internal var fetchCreatorItemsContinuation: suspend (String) -> YouTubeMusicCreatorItemsPage =
+        { continuation -> client.getCreatorItemsContinuation(continuation) }
     private val _uiState = MutableStateFlow(YouTubeMusicCreatorDetailUiState())
     val uiState: StateFlow<YouTubeMusicCreatorDetailUiState> = _uiState
     private val _playbackRequests = MutableSharedFlow<YouTubeMusicCreatorPlaybackQueue>()
@@ -74,14 +80,14 @@ class YouTubeMusicCreatorDetailViewModel(
                 val detail = withContext(Dispatchers.IO) {
                     loadDetail(creator)
                 }
-                if (currentCreator?.browseId != creator.browseId) {
+                if (!isCurrentCreator(creator.browseId)) {
                     return@launch
                 }
                 _uiState.value = YouTubeMusicCreatorDetailUiState(detail = detail, loading = false)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (currentCreator?.browseId != creator.browseId) {
+                if (!isCurrentCreator(creator.browseId)) {
                     return@launch
                 }
                 _uiState.value = _uiState.value.copy(
@@ -109,48 +115,62 @@ class YouTubeMusicCreatorDetailViewModel(
         val creatorBrowseId = currentCreator?.browseId ?: return
         val sectionKey = youtubeMusicCreatorSectionKey(section)
         playbackQueueJob = viewModelScope.launch {
-            _uiState.update { current ->
-                if (currentCreator?.browseId != creatorBrowseId) {
-                    current
-                } else {
-                    current.copy(
-                        playbackQueueLoadingSectionKey = sectionKey,
-                        playbackQueueErrorSectionKey = null,
-                        playbackQueueError = null
-                    )
-                }
-            }
+            markPlaybackQueueLoading(creatorBrowseId, sectionKey)
             try {
                 val queue = withContext(Dispatchers.IO) {
                     loadYouTubeMusicCreatorPlaybackQueue(
                         section = section,
                         selectedItem = selectedItem,
-                        fetchFirstPage = client::getCreatorItems,
-                        fetchContinuation = client::getCreatorItemsContinuation
+                        fetchFirstPage = fetchCreatorItems,
+                        fetchContinuation = fetchCreatorItemsContinuation
                     )
                 } ?: throw IllegalStateException("No playable YouTube Music items")
-                if (currentCreator?.browseId != creatorBrowseId) {
+                if (!isCurrentCreator(creatorBrowseId)) {
                     return@launch
                 }
                 _playbackRequests.emit(queue)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (currentCreator?.browseId != creatorBrowseId) {
+                if (!isCurrentCreator(creatorBrowseId)) {
                     return@launch
                 }
-                _uiState.update { current ->
-                    current.copy(
-                        playbackQueueErrorSectionKey = sectionKey,
-                        playbackQueueError = creatorItemsError(section.title, error)
-                    )
-                }
+                publishPlaybackQueueError(sectionKey, section.title, error)
             } finally {
-                if (currentCreator?.browseId == creatorBrowseId) {
-                    _uiState.update { current ->
-                        current.copy(playbackQueueLoadingSectionKey = null)
-                    }
-                }
+                clearPlaybackQueueLoading(creatorBrowseId)
+            }
+        }
+    }
+
+    private fun isCurrentCreator(browseId: String): Boolean = currentCreator?.browseId == browseId
+
+    private fun markPlaybackQueueLoading(creatorBrowseId: String, sectionKey: String) {
+        _uiState.update { current ->
+            if (!isCurrentCreator(creatorBrowseId)) {
+                current
+            } else {
+                current.copy(
+                    playbackQueueLoadingSectionKey = sectionKey,
+                    playbackQueueErrorSectionKey = null,
+                    playbackQueueError = null
+                )
+            }
+        }
+    }
+
+    private fun publishPlaybackQueueError(sectionKey: String, sectionTitle: String, error: Exception) {
+        _uiState.update { current ->
+            current.copy(
+                playbackQueueErrorSectionKey = sectionKey,
+                playbackQueueError = creatorItemsError(sectionTitle, error)
+            )
+        }
+    }
+
+    private fun clearPlaybackQueueLoading(creatorBrowseId: String) {
+        if (isCurrentCreator(creatorBrowseId)) {
+            _uiState.update { current ->
+                current.copy(playbackQueueLoadingSectionKey = null)
             }
         }
     }

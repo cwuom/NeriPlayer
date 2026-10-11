@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -21,6 +22,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
+import moe.ouom.neriplayer.data.local.database.store.mockPlaylistUsageRoomStore
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
@@ -301,7 +303,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `unreadable Room primary cannot replace usage from a stale JSON snapshot`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         val stale = File(temporary.root, "playlist_usage.json").also { it.writeText(com.google.gson.Gson().toJson(listOf(entry()))) }
         val originalBytes = stale.readBytes()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary temporarily unavailable") }
@@ -318,7 +320,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `usage recovery retries the same primary and retains local only entries`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var unavailable = true
         val complete = listOf(entry(), entry().copy(id = 2))
         `when`(room.readIfRoomPrimary()).thenAnswer {
@@ -337,7 +339,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `unknown usage rejects ordinary mutations and leaves the primary untouched`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary unavailable") }
         Fixture(this, room).use { fixture ->
             fixture.repository.recordOpen(2, "new", null, 3, source = "netease")
@@ -355,8 +357,32 @@ class PlaylistUsagePersistenceTest {
     }
 
     @Test
+    fun `unknown usage never reloads on the calling thread and recovers in the background`() = runTest {
+        val room = mockPlaylistUsageRoomStore()
+        var unavailable = true
+        `when`(room.readIfRoomPrimary()).thenAnswer {
+            if (unavailable) throw IOException("primary unavailable") else listOf(entry())
+        }
+        Fixture(this, room, realStorage(RamDiskPreferences())).use { fixture ->
+            clearInvocations(room)
+            unavailable = false
+
+            fixture.repository.recordOpen(2, "new", null, 3, source = "netease")
+
+            verify(room, never()).readIfRoomPrimary()
+            assertTrue(fixture.repository.frequentPlaylistsFlow.value.isEmpty())
+            runCurrent()
+            assertEquals(listOf(1L), fixture.repository.frequentPlaylistsFlow.value.map { it.id })
+
+            fixture.repository.recordOpen(2, "new", null, 3, source = "netease")
+            runCurrent()
+            assertEquals(setOf(1L, 2L), fixture.repository.frequentPlaylistsFlow.value.map { it.id }.toSet())
+        }
+    }
+
+    @Test
     fun `usage recovery cancellation propagates without importing a stale snapshot`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary unavailable") }
         Fixture(this, room).use { fixture ->
             val cancelled = CancellationException("recovery cancelled")
@@ -370,7 +396,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `invalid usage JSON cannot promote empty entries and repair permits retry`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         val file = File(temporary.root, "playlist_usage.json").also { it.writeText("null") }
         Fixture(this, room).use { fixture ->
             assertFalse(fixture.repository.awaitInitialized())
@@ -385,7 +411,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `ordinary failed usage save blocks sync until latest UI counters are persisted`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var roomPrimary = true
         var markerFails = true
         `when`(room.readIfRoomPrimary()).thenAnswer { if (roomPrimary) listOf(entry()) else null }
@@ -415,7 +441,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `readiness flush cannot acknowledge UI counters that changed during persistence`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
         val uiScheduler = TestCoroutineScheduler()
         Fixture(this, room, uiScheduler = uiScheduler).use { fixture ->
@@ -440,7 +466,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `committed then cancelled usage sync recovers the actual primary instead of old UI`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var primary = listOf(entry())
         var cancelAfterCommit = true
         val cancelled = CancellationException("committed before cancellation delivery")
@@ -471,7 +497,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `committed then cancelled usage marker restores JSON records without old UI overwrite`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var roomPrimary = true
         var cancelAfterMarker = true
         val cancelled = CancellationException("marker committed before cancellation delivery")
@@ -493,7 +519,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `ordinary committed usage cancellation retains newer UI while actual primary becomes the delta baseline`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var primary = listOf(entry())
         var unavailable = false
         val previousWrites = mutableListOf<List<UsageEntry>>()
@@ -531,7 +557,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `ordinary remove committed then cancelled retains durable deletion and prevents restored remote rows`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var primary = listOf(entry())
         var writes = 0
         var deletions = emptyMap<String, Long>()
@@ -582,7 +608,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `failed marker propagates across same snapshot retry and restart keeps old Room`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var roomPrimary = true
         var markerFails = true
         var attempts = 0
@@ -614,7 +640,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `JSON failure never switches primary or advances persisted entries`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
         failRoomWrites(room)
         val file = File(temporary.root, "playlist_usage.json")
@@ -637,7 +663,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `Room and marker cancellation propagate without falsely completing sync`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         val cancellation = CancellationException("cancelled")
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
         doAnswer { throw cancellation }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
@@ -657,7 +683,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `successful Room apply waits for persistence before publishing`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var primary = listOf(entry())
         `when`(room.readIfRoomPrimary()).thenAnswer { primary }
         Fixture(this, room).use { fixture ->
@@ -676,7 +702,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `UI mutation during sync save is retained and prevents acknowledgement`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
         Fixture(this, room).use { fixture ->
             doAnswer {
@@ -846,7 +872,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `ordinary asynchronous apply keeps immediate UI and logs failed marker without advancing baseline`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
         failRoomWrites(room)
         doAnswer { throw IOException("marker failed") }.`when`(room).markLegacyJsonPrimary(anyLong())
@@ -862,7 +888,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `sync waiting for persistence cannot acknowledge after a newer UI generation`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
         Fixture(this, room).use { fixture ->
             val mutex = PlaylistUsageRepository::class.java.getDeclaredField("persistenceMutex")
@@ -882,7 +908,7 @@ class PlaylistUsagePersistenceTest {
 
     @Test
     fun `older queued UI save cannot replace a newer successful sync`() = runTest {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(listOf(entry()))
         Fixture(this, room).use { fixture ->
             fixture.repository.applyMergedStats(listOf(remote().copy(name = "queued UI", lastOpenedAt = 150)))
@@ -1168,7 +1194,7 @@ class PlaylistUsagePersistenceTest {
     }
 
     private class UsagePrimary(initial: List<UsageEntry>) {
-        val room = mock(PlaylistUsageRoomStore::class.java)
+        val room = mockPlaylistUsageRoomStore()
         var rows = initial.toList()
         var beforeWrite: (List<UsageEntry>) -> Unit = {}
         var afterWrite: () -> Unit = {}
@@ -1215,6 +1241,7 @@ class PlaylistUsagePersistenceTest {
                 `when`(it.getPlaylistUsageDeletionsConfirmed()).thenReturn(emptyMap())
             }
             repository = PlaylistUsageRepository(context, room)
+            runBlocking { repository.awaitInitialLoad() }
             val scope = PlaylistUsageRepository::class.java.getDeclaredField("scope").also { it.isAccessible = true }
             (scope.get(repository) as CoroutineScope).cancel()
             scope.set(repository, ownedScope)

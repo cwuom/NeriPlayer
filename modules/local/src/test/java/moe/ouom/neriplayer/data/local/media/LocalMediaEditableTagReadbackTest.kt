@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -188,6 +189,51 @@ class LocalMediaEditableTagReadbackTest {
         assertEquals("bmp", LocalMediaSupport.coverExtensionForMimeType("image/x-ms-bmp"))
         assertEquals("jpg", LocalMediaSupport.coverExtensionForMimeType("image/pjpeg"))
         assertEquals("jpg", LocalMediaSupport.coverExtensionForMimeType("image/heic"))
+    }
+
+    @Test
+    fun `one of several tag keys may carry the expected value`() {
+        val tags = propertyMap("ALBUMARTIST" to arrayOf(" Band "), "EMPTY" to emptyArray())
+        val keys = listOf("ALBUM ARTIST", "ALBUMARTIST")
+
+        assertTrue(LocalMediaSupport.hasExpectedOneOfTagValues(tags, keys, "Band "))
+        assertFalse(LocalMediaSupport.hasExpectedOneOfTagValues(tags, keys, "Other"))
+        assertFalse(LocalMediaSupport.hasExpectedOneOfTagValues(tags, keys, " "))
+        assertTrue(LocalMediaSupport.hasExpectedOneOfTagValues(tags, listOf("EMPTY", "MISSING"), "\t"))
+    }
+
+    @Test
+    fun `an unspecified tag value is only checked for absence on request`() {
+        val tags = propertyMap("COMMENT" to arrayOf("kept")).withNullEntry("UNSET")
+
+        assertTrue(LocalMediaSupport.hasExpectedOneOfTagValues(tags, listOf("COMMENT"), null))
+        assertFalse(LocalMediaSupport.hasExpectedOneOfTagValues(tags, listOf("COMMENT"), null, verifyMissing = true))
+        assertTrue(LocalMediaSupport.hasExpectedOneOfTagValues(tags, listOf("UNSET", "MISSING"), null, verifyMissing = true))
+    }
+
+    @Test
+    fun `cover bytes are identified by their magic numbers`() {
+        fun bytes(vararg values: Int) = ByteArray(values.size) { values[it].toByte() }
+        fun ascii(value: String, size: Int = value.length) = value.toByteArray(Charsets.US_ASCII).copyOf(size)
+        val webp = ascii("RIFF", 12).also { "WEBP".toByteArray(Charsets.US_ASCII).copyInto(it, 8) }
+
+        assertEquals("image/jpeg", LocalMediaSupport.detectEditableCoverMimeType(bytes(0xFF, 0xD8, 0xFF)))
+        assertEquals("image/png", LocalMediaSupport.detectEditableCoverMimeType(bytes(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)))
+        assertEquals("image/gif", LocalMediaSupport.detectEditableCoverMimeType(ascii("GIF87a")))
+        assertEquals("image/gif", LocalMediaSupport.detectEditableCoverMimeType(ascii("GIF89a")))
+        assertEquals("image/bmp", LocalMediaSupport.detectEditableCoverMimeType(ascii("BM")))
+        assertEquals("image/webp", LocalMediaSupport.detectEditableCoverMimeType(webp))
+    }
+
+    @Test
+    fun `truncated or unknown cover bytes have no detected type`() {
+        val riffWave = "RIFF\u0000\u0000\u0000\u0000WAVE".toByteArray(Charsets.US_ASCII)
+
+        assertNull(LocalMediaSupport.detectEditableCoverMimeType(ByteArray(0)))
+        assertNull(LocalMediaSupport.detectEditableCoverMimeType(byteArrayOf(0xFF.toByte(), 0xD8.toByte())))
+        assertNull(LocalMediaSupport.detectEditableCoverMimeType(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)))
+        assertNull(LocalMediaSupport.detectEditableCoverMimeType("GIF88a".toByteArray(Charsets.US_ASCII)))
+        assertNull(LocalMediaSupport.detectEditableCoverMimeType(riffWave))
     }
 
     private fun propertyMap(vararg entries: Pair<String, Array<String>>): PropertyMap = hashMapOf(*entries)

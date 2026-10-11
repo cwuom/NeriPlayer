@@ -63,6 +63,26 @@ class EditableLyricSanitizerTest {
     }
 
     @Test
+    fun `sanitizeMatchedEditableLyrics removes company credits and cover notices at the edges`() {
+        val lyrics = """
+            [00:00.00]出品公司：某某文化
+            [00:01.00]配唱制作人 Vocal Producer：某某
+            [00:02.00]【未经著作权人许可，不得翻唱、翻录或使用】
+            [00:15.00]第一句歌词
+            [00:20.00]第二句歌词
+        """.trimIndent()
+
+        val sanitized = sanitizeMatchedEditableLyrics(
+            lyrics = lyrics,
+            translatedLyrics = null,
+            title = "Song",
+            artist = "Artist"
+        )
+
+        assertEquals("[00:15.00]第一句歌词\n[00:20.00]第二句歌词", sanitized.lyrics)
+    }
+
+    @Test
     fun `sanitizeMatchedEditableLyrics keeps ttml document unchanged`() {
         val lyrics = """
             <?xml version="1.0" encoding="UTF-8"?>

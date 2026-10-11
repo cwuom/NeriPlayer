@@ -172,27 +172,30 @@ private fun String.candidateTokens(baseBias: Int): List<SearchCandidate> {
     return buildList {
         add(SearchCandidate(text = normalized, bias = baseBias + WHOLE_TEXT_BIAS))
         splitTokens.forEach { token ->
-            add(SearchCandidate(text = token, bias = baseBias + SPLIT_TOKEN_BIAS))
-            token.toPinyinToken()?.let { pinyin ->
-                add(SearchCandidate(text = pinyin.full, bias = baseBias + PINYIN_FULL_BIAS))
-                if (pinyin.initials.length > 1) {
-                    add(SearchCandidate(text = pinyin.initials, bias = baseBias + PINYIN_INITIALS_BIAS))
-                }
-            }
+            addWithPinyin(token, baseBias, SPLIT_TOKEN_BIAS, PINYIN_FULL_BIAS, PINYIN_INITIALS_BIAS)
         }
         if (compact.isNotBlank()) {
-            add(SearchCandidate(text = compact, bias = baseBias + COMPACT_TOKEN_BIAS))
-            compact.toPinyinToken()?.let { pinyin ->
-                add(SearchCandidate(text = pinyin.full, bias = baseBias + COMPACT_PINYIN_FULL_BIAS))
-                if (pinyin.initials.length > 1) {
-                    add(SearchCandidate(text = pinyin.initials, bias = baseBias + COMPACT_PINYIN_INITIALS_BIAS))
-                }
-            }
+            addWithPinyin(compact, baseBias, COMPACT_TOKEN_BIAS, COMPACT_PINYIN_FULL_BIAS, COMPACT_PINYIN_INITIALS_BIAS)
         }
         if (acronym.length > 1) {
             add(SearchCandidate(text = acronym, bias = baseBias + ACRONYM_BIAS))
         }
     }.distinctBy { it.text to it.bias }
+}
+
+private fun MutableList<SearchCandidate>.addWithPinyin(
+    text: String,
+    baseBias: Int,
+    textBias: Int,
+    pinyinFullBias: Int,
+    pinyinInitialsBias: Int
+) {
+    add(SearchCandidate(text = text, bias = baseBias + textBias))
+    val pinyin = text.toPinyinToken() ?: return
+    add(SearchCandidate(text = pinyin.full, bias = baseBias + pinyinFullBias))
+    if (pinyin.initials.length > 1) {
+        add(SearchCandidate(text = pinyin.initials, bias = baseBias + pinyinInitialsBias))
+    }
 }
 
 private fun matchScore(query: String, candidate: SearchCandidate): Int? {
@@ -241,8 +244,10 @@ private fun String.subsequenceGapPenalty(query: String): Int? {
 }
 
 private fun String.isAsciiLetterOrDigitToken(): Boolean {
-    return isNotEmpty() && all { it in 'a'..'z' || it in '0'..'9' }
+    return isNotEmpty() && all { it.isAsciiLowercaseOrDigit() }
 }
+
+private fun Char.isAsciiLowercaseOrDigit(): Boolean = this in 'a'..'z' || this in '0'..'9'
 
 private fun splitCamelToken(value: String): List<String> {
     if (value.length <= 1) return listOf(value)

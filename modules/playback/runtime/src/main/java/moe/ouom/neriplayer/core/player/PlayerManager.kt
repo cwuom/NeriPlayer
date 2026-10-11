@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -78,6 +79,7 @@ import moe.ouom.neriplayer.lyrics.output.LyriconPreferences
 import moe.ouom.neriplayer.core.player.media.LocalPlaybackMediaResolver
 import moe.ouom.neriplayer.core.player.media.PlaybackMediaItemFactory
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContentSource
 import moe.ouom.neriplayer.data.model.playback.AudioDevice
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PreferredQualityKeys
@@ -360,6 +362,8 @@ object PlayerManager {
         SystemClock::elapsedRealtime
     )
     internal var lastRequiresPcmAudioProcessing: Boolean? = null
+    // 启动卡死证明本机 offload sink 不可靠后, 进程内不再恢复 offload
+    internal var audioOffloadStallFallbackActive = false
     internal var usbSinkRouteOwner = UsbSinkRouteOwner(
         mainScope,
         PlayerManagerUsbSinkRoutePort,
@@ -641,6 +645,7 @@ object PlayerManager {
     internal val _externalBluetoothLyricLineFlow = MutableStateFlow<String?>(null)
     val externalBluetoothLyricLineFlow: StateFlow<String?> = _externalBluetoothLyricLineFlow
     internal val _floatingTranslatedLyricLineFlow = MutableStateFlow<String?>(null)
+    internal val floatingLyricsContentSource = FloatingLyricsContentSource()
     val floatingTranslatedLyricLineFlow: StateFlow<String?> = _floatingTranslatedLyricLineFlow
     internal val _externalBluetoothLyricPayloadFlow =
         MutableStateFlow(ExternalBluetoothLyricPayload())
@@ -1261,7 +1266,7 @@ object PlayerManager {
     }
 
     internal fun bumpCurrentQueueDisplayRevision() {
-        _currentQueueDisplayRevisionFlow.value = _currentQueueDisplayRevisionFlow.value + 1
+        _currentQueueDisplayRevisionFlow.update { it + 1 }
     }
 
     internal fun localMediaSource(song: SongItem): String? {

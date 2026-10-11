@@ -109,6 +109,45 @@ class NeteaseAlbumNavigationTest {
         assertNull(resolveNeteaseSongDetailId(song))
     }
 
+    @Test
+    fun `song detail lookup uses matched id only after local ids are unusable`() {
+        val song = neteaseSong(albumId = 0L).copy(id = 0L, audioId = "not-a-number", matchedSongId = "5")
+
+        assertEquals(5L, resolveNeteaseSongDetailId(song))
+        assertNull(resolveNeteaseSongDetailId(song.copy(matchedSongId = "0")))
+        assertNull(resolveNeteaseSongDetailId(song.copy(audioId = "-1", matchedSongId = null)))
+    }
+
+    @Test
+    fun `song detail parser rejects failed or incomplete responses`() {
+        listOf(
+            """{"code":404,"songs":[{"al":{"id":1}}]}""",
+            """{"code":200}""",
+            """{"code":200,"songs":[]}""",
+            """{"code":200,"songs":[{"id":7}]}"""
+        ).forEach { raw ->
+            assertNull(raw, parseNeteaseAlbumSummaryFromSongDetail(raw, fallbackName = "", fallbackCoverUrl = null))
+        }
+    }
+
+    @Test
+    fun `song detail parser fills blank album fields from the song`() {
+        val raw = """{"code":200,"songs":[{"album":{"id":8,"name":" ","picUrl":"","size":-3}}]}"""
+
+        val withFallbacks = parseNeteaseAlbumSummaryFromSongDetail(
+            raw = raw,
+            fallbackName = "NeteaseFallback Album ",
+            fallbackCoverUrl = "http://example.test/fallback.jpg"
+        )
+        val withoutCover = parseNeteaseAlbumSummaryFromSongDetail(raw, fallbackName = "Album", fallbackCoverUrl = null)
+
+        assertEquals(8L, withFallbacks?.id)
+        assertEquals("Fallback Album", withFallbacks?.name)
+        assertEquals("https://example.test/fallback.jpg", withFallbacks?.picUrl)
+        assertEquals(0, withFallbacks?.size)
+        assertEquals("", withoutCover?.picUrl)
+    }
+
     private fun neteaseSong(albumId: Long): SongItem {
         return SongItem(
             id = 7L,

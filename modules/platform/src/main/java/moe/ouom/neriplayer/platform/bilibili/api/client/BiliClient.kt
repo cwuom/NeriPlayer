@@ -163,8 +163,14 @@ class BiliClient(
         /** UP 主合集和系列接口默认分页尺寸 */
         private const val UPLOADER_CONTENT_PAGE_SIZE = 20
 
-        /** 控制 B 站分页接口并发, 避免大量收藏夹时被限流 */
-        private const val MAX_PARALLEL_PAGE_REQUESTS = 6
+        /** 控制 B 站分页接口并发, 连续并发翻页容易触发 412 风控 */
+        private const val MAX_PARALLEL_PAGE_REQUESTS = 3
+
+        /** 分页批次之间的间隔 */
+        private const val PAGE_CHUNK_GAP_MS = 250L
+
+        /** B 站风控拦截请求时返回的 HTTP 状态码 */
+        private const val HTTP_RISK_CONTROL = 412
 
         /** WebTicket HMAC key */
         private const val WEB_TICKET_KEY = "XgwSnGZ1p"
@@ -531,7 +537,7 @@ class BiliClient(
                     pageSize = COLLECTION_ARCHIVE_PAGE_SIZE
                 ).items
             }
-            (firstPage.items + restPages.flatten())
+            (firstPage.items + restPages.items)
                 .distinctBy { it.bvid.ifBlank { it.aid.toString() } }
         }
 
@@ -681,23 +687,29 @@ class BiliClient(
      */
     suspend fun getAllFavFolderItems(mediaId: Long): List<FavResourceItem> = withContext(Dispatchers.IO) {
         val firstPage = getFavFolderContents(mediaId, page = 1, pageSize = FAV_CONTENT_PAGE_SIZE)
-        collectAllFavFolderItems(mediaId, firstPage)
+        collectAllFavFolderItems(mediaId, firstPage).items
     }
 
     suspend fun getAllFavFolderItems(
         mediaId: Long,
         firstPage: FavResourcePage
-    ): List<FavResourceItem> = withContext(Dispatchers.IO) {
+    ): List<FavResourceItem> = getAllFavFolderItemsResult(mediaId, firstPage).items
+
+    /** 获取收藏夹内所有内容, 并报告是否有分页没拿到 */
+    suspend fun getAllFavFolderItemsResult(
+        mediaId: Long,
+        firstPage: FavResourcePage
+    ): BiliPagedItems<FavResourceItem> = withContext(Dispatchers.IO) {
         collectAllFavFolderItems(mediaId, firstPage)
     }
 
     private suspend fun collectAllFavFolderItems(
         mediaId: Long,
         firstPage: FavResourcePage
-    ): List<FavResourceItem> {
+    ): BiliPagedItems<FavResourceItem> {
         val totalCount = firstPage.info.count
         if (!firstPage.hasMore || totalCount <= firstPage.items.size) {
-            return firstPage.items
+            return BiliPagedItems(firstPage.items)
         }
 
         val totalPages = (totalCount + FAV_CONTENT_PAGE_SIZE - 1) / FAV_CONTENT_PAGE_SIZE
@@ -705,8 +717,10 @@ class BiliClient(
             getFavFolderContents(mediaId, page = page, pageSize = FAV_CONTENT_PAGE_SIZE).items
         }
 
-        return (firstPage.items + restPages.flatten())
-            .distinctBy { "${it.type}:${it.id}:${it.bvid.orEmpty()}" }
+        return restPages.copy(
+            items = (firstPage.items + restPages.items)
+                .distinctBy { "${it.type}:${it.id}:${it.bvid.orEmpty()}" }
+        )
     }
 
     /** 获取合集内容分页 */
@@ -764,26 +778,34 @@ class BiliClient(
 
     /** 获取合集内所有视频 */
     suspend fun getAllCollectionArchives(mid: Long, seasonId: Long): List<CollectionArchiveItem> =
-        withContext(Dispatchers.IO) {
-            val firstPage = getCollectionArchives(mid = mid, seasonId = seasonId, page = 1)
-            val totalCount = firstPage.meta.total
-            if (!firstPage.hasMore || totalCount <= firstPage.items.size) {
-                return@withContext firstPage.items
-            }
+        getAllCollectionArchivesResult(mid, seasonId).items
 
-            val totalPages = (totalCount + COLLECTION_ARCHIVE_PAGE_SIZE - 1) / COLLECTION_ARCHIVE_PAGE_SIZE
-            val restPages = fetchPagesInChunks(2..totalPages) { page ->
-                getCollectionArchives(
-                    mid = mid,
-                    seasonId = seasonId,
-                    page = page,
-                    pageSize = COLLECTION_ARCHIVE_PAGE_SIZE
-                ).items
-            }
-
-            (firstPage.items + restPages.flatten())
-                .distinctBy { it.bvid.ifBlank { it.aid.toString() } }
+    /** 获取合集内所有视频, 并报告是否有分页没拿到 */
+    suspend fun getAllCollectionArchivesResult(
+        mid: Long,
+        seasonId: Long
+    ): BiliPagedItems<CollectionArchiveItem> = withContext(Dispatchers.IO) {
+        val firstPage = getCollectionArchives(mid = mid, seasonId = seasonId, page = 1)
+        val totalCount = firstPage.meta.total
+        if (!firstPage.hasMore || totalCount <= firstPage.items.size) {
+            return@withContext BiliPagedItems(firstPage.items)
         }
+
+        val totalPages = (totalCount + COLLECTION_ARCHIVE_PAGE_SIZE - 1) / COLLECTION_ARCHIVE_PAGE_SIZE
+        val restPages = fetchPagesInChunks(2..totalPages) { page ->
+            getCollectionArchives(
+                mid = mid,
+                seasonId = seasonId,
+                page = page,
+                pageSize = COLLECTION_ARCHIVE_PAGE_SIZE
+            ).items
+        }
+
+        restPages.copy(
+            items = (firstPage.items + restPages.items)
+                .distinctBy { it.bvid.ifBlank { it.aid.toString() } }
+        )
+    }
 
     // 内部实现 //
 
@@ -815,7 +837,7 @@ class BiliClient(
                 )
             )
             parseFavFolderListResult(jo.optJSONObject("data") ?: JSONObject()).folders
-        }.flatten()
+        }.items
     }
 
     private suspend fun fetchCollectedFavFoldersByPage(upMid: Long): List<FavFolder> {
@@ -892,22 +914,34 @@ class BiliClient(
 
     private suspend fun <T> fetchPagesInChunks(
         pages: IntRange,
-        fetch: suspend (Int) -> T
-    ): List<T> = coroutineScope {
-        pages
-            .chunked(MAX_PARALLEL_PAGE_REQUESTS)
-            .flatMap { chunk ->
-                chunk.map { page ->
-                    async {
-                        runCatching { fetch(page) }
-                            .onFailure { error ->
-                                NPLogger.e(TAG, "Failed to fetch Bili page $page", error)
-                            }
-                            .getOrNull()
-                    }
-                }.awaitAll().filterNotNull()
+        fetch: suspend (Int) -> List<T>
+    ): BiliPagedItems<T> = coroutineScope {
+        val items = ArrayList<T>()
+        var missingPages = 0
+        for ((index, chunk) in pages.chunked(MAX_PARALLEL_PAGE_REQUESTS).withIndex()) {
+            if (index > 0) delay(PAGE_CHUNK_GAP_MS.milliseconds)
+            val results = chunk.map { page -> async { fetchPage(page, fetch) } }.awaitAll()
+            for (result in results) {
+                val pageItems = result.getOrNull()
+                if (pageItems == null) missingPages += 1 else items += pageItems
             }
+            if (results.any { it.exceptionOrNull().isRiskControl() }) {
+                val skippedPages = pages.last - chunk.last()
+                NPLogger.w(TAG, "Bili paged fetch hit risk control, skip remaining $skippedPages pages")
+                missingPages += skippedPages
+                break
+            }
+        }
+        BiliPagedItems(items, missingPages)
     }
+
+    private suspend fun <T> fetchPage(page: Int, fetch: suspend (Int) -> List<T>): Result<List<T>> =
+        runCatching { fetch(page) }.onFailure { error ->
+            NPLogger.e(TAG, "Failed to fetch Bili page $page", error)
+        }
+
+    private fun Throwable?.isRiskControl(): Boolean =
+        this is BiliHttpStatusException && statusCode == HTTP_RISK_CONTROL
 
     private fun MutableMap<String, String>.putCommonParams(opts: PlayOptions) {
         opts.qn?.let { put("qn", it.toString()) }
@@ -1219,23 +1253,35 @@ class BiliClient(
         if (stored["SESSDATA"].isNullOrBlank()) {
             return@withContext false
         }
+        runCatching { requestNavLoginMid(stored) > 0L }.getOrNull()
+    }
 
+    /**
+     * 通过 nav 接口查询当前 Cookie 对应的账号 mid
+     *
+     * 手动导入的 Cookie 可能只有 SESSDATA 没有 DedeUserID, 未登录时返回 null, 请求失败直接抛出
+     */
+    suspend fun fetchLoginMid(): Long? = withContext(Dispatchers.IO) {
+        val stored = cookieRepo.getCookiesOnce()
+        if (stored["SESSDATA"].isNullOrBlank()) {
+            return@withContext null
+        }
+        requestNavLoginMid(stored).takeIf { it > 0L }
+    }
+
+    private fun requestNavLoginMid(cookies: Map<String, String>): Long {
         val req = Request.Builder()
             .url(NAV_URL)
             .header("User-Agent", DEFAULT_WEB_UA)
             .header("Referer", REFERER)
-            .apply { headerCookieIfPresent(stored.toCookieHeader()) }
+            .apply { headerCookieIfPresent(cookies.toCookieHeader()) }
             .get()
             .build()
-
-        runCatching {
-            val text = http.newCall(req).executeOrThrow().use { it.body.string() }
-            val jo = JSONObject(text)
-            val data = jo.optJSONObject("data") ?: JSONObject()
-            jo.optInt("code", -1) == 0 &&
-                data.optBoolean("isLogin", false) &&
-                data.optLong("mid", 0L) > 0L
-        }.getOrNull()
+        val text = http.newCall(req).executeOrThrow().use { it.body.string() }
+        val jo = JSONObject(text)
+        val data = jo.optJSONObject("data") ?: JSONObject()
+        val loggedIn = jo.optInt("code", -1) == 0 && data.optBoolean("isLogin", false)
+        return if (loggedIn) data.optLong("mid", 0L) else 0L
     }
 
     // 工具 / 扩展 //
@@ -1276,7 +1322,7 @@ class BiliClient(
             val code = resp.code
             val text = resp.body.string()
             resp.close()
-            throw IOException("HTTP $code: $text")
+            throw BiliHttpStatusException(code, text)
         }
         return resp
     }

@@ -156,6 +156,31 @@ class BiliClientWbiSessionTest {
         }
     }
 
+    @Test
+    fun `login mid comes from nav when the cookie only has sessdata`() = runTest {
+        var cookies: Map<String, String> = emptyMap()
+        var navReply = json("""{"code":0,"data":{"isLogin":true,"mid":42}}""")
+        val http = BiliTestHttp { request -> navReply.takeIf { request.url.encodedPath == NAV_PATH } }
+        val client = BiliClient({ cookies }, http.client)
+        try {
+            assertNull(client.fetchLoginMid())
+            assertTrue(http.requests.isEmpty())
+
+            cookies = mapOf("SESSDATA" to "session")
+            assertEquals(42L, client.fetchLoginMid())
+            assertEquals("SESSDATA=session", http.requests.single().header("Cookie"))
+
+            navReply = json("""{"code":0,"data":{"isLogin":false,"mid":42}}""")
+            assertNull(client.fetchLoginMid())
+            navReply = json("""{"code":-101,"data":{"isLogin":true,"mid":42}}""")
+            assertNull(client.fetchLoginMid())
+            navReply = BiliTestReply("""{"code":-412}""", code = 412)
+            assertThrows(IOException::class.java) { runBlocking { client.fetchLoginMid() } }
+        } finally {
+            http.close()
+        }
+    }
+
     private fun hmacSha256Hex(key: String, message: String): String {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(key.toByteArray(), "HmacSHA256"))

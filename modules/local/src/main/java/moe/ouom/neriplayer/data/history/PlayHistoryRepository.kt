@@ -42,7 +42,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -162,11 +161,11 @@ class PlayHistoryRepository private constructor(
     @Volatile
     private var initialized = false
     private var initialLoadFailure: Exception? = null
-    private val _history = MutableStateFlow(loadInitialHistory())
+    private val _history = MutableStateFlow(emptyList<PlayedEntry>())
     @Volatile
     private var persistedHistory = _history.value
     @Volatile
-    private var baselineTrusted = initialized
+    private var baselineTrusted = false
     private var pendingUiChanges = false
     val historyFlow: StateFlow<List<PlayedEntry>> = _history
     private val storage by lazy { SecureTokenStorage(app) }
@@ -174,11 +173,20 @@ class PlayHistoryRepository private constructor(
     private var lastBatchSyncTime = 0L
     private val historyMutex = Mutex()
     private var pendingSettledSyncJob: Job? = null
+    // 首次访问常在主线程，读取放到后台；写入都在同一把锁内先完成加载再叠加
+    private val initialLoad: Job = scope.launch {
+        historyMutex.withLock { ensureInitializedLocked() }
+    }
 
-    private fun loadInitialHistory(): List<PlayedEntry> {
-        return runBlocking(Dispatchers.IO) {
-            tryLoadHistory()?.also { initialized = true }.orEmpty()
-        }
+    internal suspend fun awaitInitialLoad() = initialLoad.join()
+
+    /** 冷启动时历史在后台加载，加载完成前 [rememberedPlaybackPosition] 只能返回 0 */
+    val isHistoryLoaded: Boolean
+        get() = initialized
+
+    suspend fun awaitHistoryLoaded(): Boolean {
+        initialLoad.join()
+        return initialized
     }
 
     private suspend fun loadTrustedHistory(): List<PlayedEntry> {
@@ -337,9 +345,9 @@ class PlayHistoryRepository private constructor(
         }
 
         currentCoroutineContext().ensureActive()
-        file.writeTextAtomically(gson.toJson(next))
-        currentCoroutineContext().ensureActive()
-        roomStore?.markLegacyJsonPrimary()
+        val snapshot = gson.toJson(next)
+        if (roomStore == null) file.writeTextAtomically(snapshot)
+        else roomStore.commitLegacyFallback { file.writeTextAtomically(snapshot) }
         confirmPersistedHistory(next)
     }
 

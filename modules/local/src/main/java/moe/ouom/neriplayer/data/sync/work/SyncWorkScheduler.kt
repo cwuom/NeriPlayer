@@ -15,14 +15,16 @@ internal class SyncWorkScheduler(
     private val automaticAllowed: () -> Boolean,
     private val markMutation: () -> Unit
 ) {
-    fun scheduleDelayed(userAction: Boolean, mark: Boolean, delayMs: Long, append: Boolean) {
+    fun scheduleDelayed(userAction: Boolean, mark: Boolean, delayMs: Long, append: Boolean, appStartup: Boolean = false) {
         if (mark) markMutation()
         if (!userAction && !automaticAllowed()) return
-        manager().enqueueUniqueWork(workName, delayedPolicy(userAction, append), delayedRequest(userAction, delayMs))
+        // 启动同步不能被等待播放结束的变更任务挡住，同一次启动请求仍按唯一任务去重
+        val uniqueName = if (appStartup) "${workName}_startup" else workName
+        manager().enqueueUniqueWork(uniqueName, delayedPolicy(userAction, append), delayedRequest(userAction, delayMs, appStartup))
     }
 
-    fun delayedRequest(userAction: Boolean, delayMs: Long): OneTimeWorkRequest =
-        SyncWorkRequests.delayed(workerClass, workName, userAction, delayMs)
+    fun delayedRequest(userAction: Boolean, delayMs: Long, appStartup: Boolean = false): OneTimeWorkRequest =
+        SyncWorkRequests.delayed(workerClass, workName, userAction, delayMs, appStartup)
 
     fun schedulePeriodic() {
         val request = SyncWorkRequests.periodic(workerClass, periodicName)

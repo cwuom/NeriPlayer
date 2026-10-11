@@ -11,9 +11,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -31,6 +34,31 @@ import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import moe.ouom.neriplayer.ui.sync.upgrade.syncProtocolStartupConfigurationGate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+
+@Stable
+internal class WebDavConfigDraft(
+    val serverUrl: MutableState<String>,
+    val username: MutableState<String>,
+    val password: MutableState<String>,
+    val basePath: MutableState<String>
+)
+
+/** The password is deliberately kept out of saved instance state and re-read from storage on restore. */
+@Composable
+internal fun rememberWebDavConfigDraft(
+    loadServerUrl: () -> String,
+    loadUsername: () -> String,
+    loadPassword: () -> String,
+    loadBasePath: () -> String
+): WebDavConfigDraft {
+    val serverUrl = rememberSaveable { mutableStateOf(loadServerUrl()) }
+    val username = rememberSaveable { mutableStateOf(loadUsername()) }
+    val password = remember { mutableStateOf(loadPassword()) }
+    val basePath = rememberSaveable { mutableStateOf(loadBasePath()) }
+    return remember(serverUrl, username, password, basePath) {
+        WebDavConfigDraft(serverUrl, username, password, basePath)
+    }
+}
 
 @Composable
 internal fun SettingsWebDavDialogs(
@@ -57,18 +85,16 @@ internal fun SettingsWebDavDialogs(
     if (showWebDavConfigDialog) {
         val webDavState by webDavVm.uiState.collectAsStateWithLifecycleCompat()
         val storage = remember(context) { WebDavStorage(context) }
-        var serverUrl by remember(showWebDavConfigDialog) {
-            mutableStateOf(storage.getServerUrl().orEmpty())
-        }
-        var username by remember(showWebDavConfigDialog) {
-            mutableStateOf(storage.getUsername().orEmpty())
-        }
-        var password by remember(showWebDavConfigDialog) {
-            mutableStateOf(storage.getPassword().orEmpty())
-        }
-        var basePath by remember(showWebDavConfigDialog) {
-            mutableStateOf(storage.getBasePath())
-        }
+        val draft = rememberWebDavConfigDraft(
+            loadServerUrl = { storage.getServerUrl().orEmpty() },
+            loadUsername = { storage.getUsername().orEmpty() },
+            loadPassword = { storage.getPassword().orEmpty() },
+            loadBasePath = storage::getBasePath
+        )
+        var serverUrl by draft.serverUrl
+        var username by draft.username
+        var password by draft.password
+        var basePath by draft.basePath
 
         val dismissConfigDialog = {
             webDavVm.clearMessages()

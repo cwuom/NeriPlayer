@@ -87,6 +87,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -143,6 +144,7 @@ fun RecentScreen(
     val baseSongs: List<SongItem> = remember(history) {
         history.map { it.toSongItem() }
     }
+    val hasHistory = history.isNotEmpty()
 
     val context = LocalContext.current
     val mini = LocalMiniPlayerHeight.current
@@ -180,8 +182,8 @@ fun RecentScreen(
     }
 
     // 搜索
-    var showSearch by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
 
     val displayedSongs = remember(baseSongs, query, context) {
         SearchTextMatcher.filterAndRank(query, baseSongs) { song ->
@@ -207,12 +209,8 @@ fun RecentScreen(
         selectedKeys = emptySet()
     }
     fun toggleSelect(key: String) {
-        val updated = if (selectedKeys.contains(key)) {
-            selectedKeys - key
-        } else {
-            selectedKeys + key
-        }
-        if (selectionMode && updated.isEmpty()) {
+        val updated = recentSelectionAfterToggle(selectionMode, selectedKeys, key)
+        if (updated == null) {
             exitSelection()
         } else {
             selectedKeys = updated
@@ -240,151 +238,35 @@ fun RecentScreen(
             },
             topBar = {
                 if (!selectionMode) {
-                    TopAppBar(
-                        title = { Text(stringResource(CoreCommonR.string.recent_title)) },
-                        navigationIcon = {
-                            HapticIconButton(onClick = onBack) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_back)
-                                )
+                    RecentBrowseTopBar(
+                        displayedSongs = displayedSongs,
+                        hasHistory = hasHistory,
+                        onBack = onBack,
+                        onToggleSearch = {
+                            if (showSearch) {
+                                showSearch = false
+                                query = ""
+                            } else {
+                                showSearch = true
                             }
                         },
-                        actions = {
-                            HapticIconButton(onClick = {
-                                showSearch = !showSearch
-                                if (!showSearch) query = ""
-                            }) {
-                                Icon(
-                                    Icons.Filled.Search,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_search)
-                                )
-                            }
-
-                            // 全部播放
-                            HapticIconButton(
-                                onClick = {
-                                    if (displayedSongs.isNotEmpty()) onSongClick(displayedSongs, 0)
-                                },
-                                enabled = displayedSongs.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.Filled.PlayArrow,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_play_all)
-                                )
-                            }
-
-                            // 随机播放
-                            HapticIconButton(
-                                onClick = {
-                                    if (displayedSongs.isNotEmpty()) {
-                                        val idx = Random.nextInt(displayedSongs.size)
-                                        onSongClick(displayedSongs, idx)
-                                    }
-                                },
-                                enabled = displayedSongs.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_shuffle)
-                                )
-                            }
-
-                            // 清空
-                            HapticIconButton(
-                                onClick = { if (history.isNotEmpty()) showClearConfirm = true },
-                                enabled = history.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.Filled.ClearAll,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_clear)
-                                )
-                            }
-                        },
-                        windowInsets = WindowInsets.statusBars,
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            scrolledContainerColor = MaterialTheme.colorScheme.surface
-                        )
+                        onSongClick = onSongClick,
+                        onRequestClear = { showClearConfirm = true }
                     )
                 } else {
-                    val allSelected =
-                        selectedKeys.size == displayedSongs.size && displayedSongs.isNotEmpty()
-                    TopAppBar(
-                        title = {
-                            Text(
-                                pluralStringResource(
-                                    CoreCommonR.plurals.common_selected_count,
-                                    selectedKeys.size,
-                                    selectedKeys.size
-                                )
-                            )
+                    RecentSelectionTopBar(
+                        displayedSongs = displayedSongs,
+                        selectedKeys = selectedKeys,
+                        onExitSelection = { exitSelection() },
+                        onSelectedKeysChange = { selectedKeys = it },
+                        onRequestDelete = { songs ->
+                            pendingDeleteSongs = songs
+                            showDeleteConfirm = true
                         },
-                        navigationIcon = {
-                            HapticIconButton(onClick = { exitSelection() }) {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = stringResource(CoreCommonR.string.cd_exit_select)
-                                )
-                            }
-                        },
-                        actions = {
-                            // 全选/取消全选
-                            HapticTextButton(onClick = {
-                                selectedKeys = if (allSelected) {
-                                    emptySet()
-                                } else {
-                                    displayedSongs.map { it.stableKey() }.toSet()
-                                }
-                            }) {
-                                Text(
-                                    if (allSelected) {
-                                        stringResource(CoreCommonR.string.action_deselect_all)
-                                    } else {
-                                        stringResource(CoreCommonR.string.action_select_all)
-                                    }
-                                )
-                            }
-
-                            Spacer(Modifier.width(8.dp))
-
-                            HapticIconButton(
-                                enabled = selectedKeys.isNotEmpty(),
-                                onClick = {
-                                    val selectedSongs =
-                                        displayedSongs.filter { it.stableKey() in selectedKeys }
-                                    if (selectedSongs.isNotEmpty()) {
-                                        pendingDeleteSongs = selectedSongs
-                                        showDeleteConfirm = true
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    Icons.Outlined.DeleteForever,
-                                    contentDescription = stringResource(CoreCommonR.string.action_delete)
-                                )
-                            }
-
-                            Spacer(Modifier.width(8.dp))
-
-                            // 播放所选
-                            HapticTextButton(
-                                enabled = selectedKeys.isNotEmpty(),
-                                onClick = {
-                                    val list =
-                                        displayedSongs.filter { it.stableKey() in selectedKeys }
-                                    if (list.isNotEmpty()) {
-                                        onSongClick(list, 0)
-                                        exitSelection()
-                                    }
-                                }
-                            ) { Text(stringResource(CoreCommonR.string.player_play_selected)) }
-                        },
-                        windowInsets = WindowInsets.statusBars,
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            scrolledContainerColor = MaterialTheme.colorScheme.surface
-                        )
+                        onPlaySelected = { songs ->
+                            onSongClick(songs, 0)
+                            exitSelection()
+                        }
                     )
                 }
             }
@@ -592,8 +474,180 @@ fun RecentScreen(
     BackHandler(enabled = selectionMode) { exitSelection() }
 }
 
+/** Returns null when toggling clears the last selected song and selection mode should end. */
+internal fun recentSelectionAfterToggle(
+    selectionMode: Boolean,
+    selectedKeys: Set<String>,
+    key: String
+): Set<String>? {
+    val updated = if (key in selectedKeys) selectedKeys - key else selectedKeys + key
+    return updated.takeUnless { selectionMode && it.isEmpty() }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RecentRowRich(
+internal fun RecentBrowseTopBar(
+    displayedSongs: List<SongItem>,
+    hasHistory: Boolean,
+    onBack: () -> Unit,
+    onToggleSearch: () -> Unit,
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    onRequestClear: () -> Unit
+) {
+    TopAppBar(
+        title = { Text(stringResource(CoreCommonR.string.recent_title)) },
+        navigationIcon = {
+            HapticIconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(CoreCommonR.string.cd_back)
+                )
+            }
+        },
+        actions = {
+            HapticIconButton(onClick = onToggleSearch) {
+                Icon(
+                    Icons.Filled.Search,
+                    contentDescription = stringResource(CoreCommonR.string.cd_search)
+                )
+            }
+
+            // 全部播放
+            HapticIconButton(
+                onClick = {
+                    if (displayedSongs.isNotEmpty()) onSongClick(displayedSongs, 0)
+                },
+                enabled = displayedSongs.isNotEmpty()
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = stringResource(CoreCommonR.string.cd_play_all)
+                )
+            }
+
+            // 随机播放
+            HapticIconButton(
+                onClick = {
+                    if (displayedSongs.isNotEmpty()) {
+                        val idx = Random.nextInt(displayedSongs.size)
+                        onSongClick(displayedSongs, idx)
+                    }
+                },
+                enabled = displayedSongs.isNotEmpty()
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.PlaylistPlay,
+                    contentDescription = stringResource(CoreCommonR.string.cd_shuffle)
+                )
+            }
+
+            // 清空
+            HapticIconButton(
+                onClick = { if (hasHistory) onRequestClear() },
+                enabled = hasHistory
+            ) {
+                Icon(
+                    Icons.Filled.ClearAll,
+                    contentDescription = stringResource(CoreCommonR.string.cd_clear)
+                )
+            }
+        },
+        windowInsets = WindowInsets.statusBars,
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = Color.Transparent,
+            scrolledContainerColor = MaterialTheme.colorScheme.surface
+        )
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun RecentSelectionTopBar(
+    displayedSongs: List<SongItem>,
+    selectedKeys: Set<String>,
+    onExitSelection: () -> Unit,
+    onSelectedKeysChange: (Set<String>) -> Unit,
+    onRequestDelete: (List<SongItem>) -> Unit,
+    onPlaySelected: (List<SongItem>) -> Unit
+) {
+    val allSelected =
+        selectedKeys.size == displayedSongs.size && displayedSongs.isNotEmpty()
+    TopAppBar(
+        title = {
+            Text(
+                pluralStringResource(
+                    CoreCommonR.plurals.common_selected_count,
+                    selectedKeys.size,
+                    selectedKeys.size
+                )
+            )
+        },
+        navigationIcon = {
+            HapticIconButton(onClick = onExitSelection) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = stringResource(CoreCommonR.string.cd_exit_select)
+                )
+            }
+        },
+        actions = {
+            // 全选/取消全选
+            HapticTextButton(onClick = {
+                onSelectedKeysChange(
+                    if (allSelected) {
+                        emptySet()
+                    } else {
+                        displayedSongs.map { it.stableKey() }.toSet()
+                    }
+                )
+            }) {
+                Text(
+                    if (allSelected) {
+                        stringResource(CoreCommonR.string.action_deselect_all)
+                    } else {
+                        stringResource(CoreCommonR.string.action_select_all)
+                    }
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            HapticIconButton(
+                enabled = selectedKeys.isNotEmpty(),
+                onClick = {
+                    val selectedSongs =
+                        displayedSongs.filter { it.stableKey() in selectedKeys }
+                    if (selectedSongs.isNotEmpty()) onRequestDelete(selectedSongs)
+                }
+            ) {
+                Icon(
+                    Icons.Outlined.DeleteForever,
+                    contentDescription = stringResource(CoreCommonR.string.action_delete)
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            // 播放所选
+            HapticTextButton(
+                enabled = selectedKeys.isNotEmpty(),
+                onClick = {
+                    val list =
+                        displayedSongs.filter { it.stableKey() in selectedKeys }
+                    if (list.isNotEmpty()) onPlaySelected(list)
+                }
+            ) { Text(stringResource(CoreCommonR.string.player_play_selected)) }
+        },
+        windowInsets = WindowInsets.statusBars,
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = Color.Transparent,
+            scrolledContainerColor = MaterialTheme.colorScheme.surface
+        )
+    )
+}
+
+@Composable
+internal fun RecentRowRich(
     index: Int,
     song: SongItem,
     downloadPresenceVersion: Int,
@@ -607,26 +661,9 @@ private fun RecentRowRich(
     moreMenu: @Composable () -> Unit,
     offlineMode: Boolean
 ) {
-    val ctx = LocalContext.current
     val coverUrl = rememberSongDisplayCoverUrl(song)
-    val primaryTitle = remember(song) {
-        if (song.isLocalSong()) {
-            song.localFileName?.takeIf { it.isNotBlank() } ?: song.displayName()
-        } else {
-            song.displayName()
-        }
-    }
-    val secondaryText = remember(song) {
-        buildList {
-            if (song.isLocalSong()) {
-                song.displayName()
-                    .takeIf { it.isNotBlank() && it != primaryTitle }
-                    ?.let(::add)
-            }
-            song.displayArtist().takeIf { it.isNotBlank() }?.let(::add)
-            add(formatDuration(song.durationMs))
-        }.joinToString(" · ")
-    }
+    val primaryTitle = remember(song) { recentSongPrimaryTitle(song) }
+    val secondaryText = remember(song) { recentSongSecondaryText(song, primaryTitle) }
     val rowScale by animateFloatAsState(
         targetValue = if (isCurrentSong) 1.01f else 1f,
         animationSpec = spring(stiffness = 500f),
@@ -646,80 +683,137 @@ private fun RecentRowRich(
             .clip(rowShape)
             .background(rowContainerColor)
             .combinedClickable(
-                onClick = {
-                    if (selectionMode) {
-                        onToggleSelect()
-                    } else {
-                        onClick()
-                    }
-                },
+                onClick = recentRowClickAction(selectionMode, onToggleSelect, onClick),
                 onLongClick = onLongPress
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 序号 / 播放指示
-        Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
-            if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelect() }
-                )
-            } else if (isCurrentSong) {
-                PlayingIndicator(
-                    color = MaterialTheme.colorScheme.primary,
-                    animate = isPlaying
-                )
-            } else {
-                Text(
-                    text = index.toString(),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        RecentRowLeading(
+            index = index,
+            selectionMode = selectionMode,
+            selected = selected,
+            isCurrentSong = isCurrentSong,
+            isPlaying = isPlaying,
+            onToggleSelect = onToggleSelect
+        )
 
         // 封面
-        if (!coverUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = offlineCachedImageRequest(
-                    context = ctx,
-                    data = coverUrl,
-                    sizePx = 192,
-                    allowHardware = false,
-                    offlineMode = offlineMode
-                ),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(10.dp))
-            )
-        } else {
-            Spacer(Modifier.size(52.dp))
-        }
+        RecentRowCover(coverUrl = coverUrl, offlineMode = offlineMode)
 
         Spacer(Modifier.width(12.dp))
 
-        Column(Modifier.weight(1f)) {
-            val downloaded = remember(downloadPresenceVersion, song) {
-                GlobalDownloadManager.hasDownloadedSongCached(song)
-            }
-            Text(
-                primaryTitle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium
-            )
-            SongDownloadSubtitle(
-                text = secondaryText,
-                downloaded = downloaded,
-                contentDescription = stringResource(CoreCommonR.string.cd_downloaded)
-            )
-        }
+        RecentRowText(
+            song = song,
+            primaryTitle = primaryTitle,
+            secondaryText = secondaryText,
+            downloadPresenceVersion = downloadPresenceVersion,
+            modifier = Modifier.weight(1f)
+        )
 
         // 右侧更多
         moreMenu()
+    }
+}
+
+internal fun recentSongPrimaryTitle(song: SongItem): String {
+    val localFileName = song.localFileName?.takeIf { song.isLocalSong() && it.isNotBlank() }
+    return localFileName ?: song.displayName()
+}
+
+internal fun recentSongSecondaryText(song: SongItem, primaryTitle: String): String = listOfNotNull(
+    recentLocalTagTitle(song, primaryTitle),
+    song.displayArtist().takeIf { it.isNotBlank() },
+    formatDuration(song.durationMs)
+).joinToString(" · ")
+
+private fun recentLocalTagTitle(song: SongItem, primaryTitle: String): String? {
+    if (!song.isLocalSong()) return null
+    return song.displayName().takeIf { it.isNotBlank() && it != primaryTitle }
+}
+
+private fun recentRowClickAction(
+    selectionMode: Boolean,
+    onToggleSelect: () -> Unit,
+    onClick: () -> Unit
+): () -> Unit = if (selectionMode) onToggleSelect else onClick
+
+@Composable
+private fun RecentRowLeading(
+    index: Int,
+    selectionMode: Boolean,
+    selected: Boolean,
+    isCurrentSong: Boolean,
+    isPlaying: Boolean,
+    onToggleSelect: () -> Unit
+) {
+    Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
+        if (selectionMode) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = { onToggleSelect() }
+            )
+        } else if (isCurrentSong) {
+            PlayingIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                animate = isPlaying
+            )
+        } else {
+            Text(
+                text = index.toString(),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecentRowCover(coverUrl: String?, offlineMode: Boolean) {
+    if (!coverUrl.isNullOrBlank()) {
+        AsyncImage(
+            model = offlineCachedImageRequest(
+                context = LocalContext.current,
+                data = coverUrl,
+                sizePx = 192,
+                allowHardware = false,
+                offlineMode = offlineMode
+            ),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(10.dp))
+        )
+    } else {
+        Spacer(Modifier.size(52.dp))
+    }
+}
+
+@Composable
+private fun RecentRowText(
+    song: SongItem,
+    primaryTitle: String,
+    secondaryText: String,
+    downloadPresenceVersion: Int,
+    modifier: Modifier
+) {
+    Column(modifier) {
+        val downloaded = remember(downloadPresenceVersion, song) {
+            GlobalDownloadManager.hasDownloadedSongCached(song)
+        }
+        Text(
+            primaryTitle,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.titleMedium
+        )
+        SongDownloadSubtitle(
+            text = secondaryText,
+            downloaded = downloaded,
+            contentDescription = stringResource(CoreCommonR.string.cd_downloaded)
+        )
     }
 }
 

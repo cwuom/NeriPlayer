@@ -47,37 +47,48 @@ internal class LocalPlaylistFileStorage(
         ensureParentExists()
         val primaryExisted = file.exists()
         val rotatesExistingPrimary = rotateBackup && primaryExisted
-        val seedsCommittedPrimary = replaceBackupWithCommittedPrimary ||
-            (!backup.exists() && !rotatesExistingPrimary)
+        val seedsCommittedPrimary = replaceBackupWithCommittedPrimary || seedsMissingBackup(rotatesExistingPrimary)
         val pending = writeSyncedTempFile("${file.name}.", ".tmp", text)
-        val pendingBackup = try {
-            if (seedsCommittedPrimary) {
-                writeSyncedTempFile("${backup.name}.", ".tmp", text)
-            } else {
-                null
-            }
+        val pendingBackup = writePendingBackup(text, seedsCommittedPrimary, pending)
+        try {
+            publishCommit(pending, pendingBackup, rotatesExistingPrimary)
+        } catch (error: Exception) {
+            rollbackCommit(pending, pendingBackup, seededFreshBackup = !primaryExisted && seedsCommittedPrimary)
+            throw error
+        }
+    }
+
+    private fun seedsMissingBackup(rotatesExistingPrimary: Boolean): Boolean =
+        !backup.exists() && !rotatesExistingPrimary
+
+    private fun writePendingBackup(text: String, seedsCommittedPrimary: Boolean, pending: File): File? {
+        if (!seedsCommittedPrimary) return null
+        return try {
+            writeSyncedTempFile("${backup.name}.", ".tmp", text)
         } catch (error: Exception) {
             pending.delete()
             throw error
         }
-        try {
-            if (rotatesExistingPrimary) {
-                replaceBackup(file)
-            }
-            if (pendingBackup != null) {
-                moveIntoPlace(pendingBackup, backup)
-                fsyncDirectory()
-            }
-            moveIntoPlace(pending, file)
+    }
+
+    private fun publishCommit(pending: File, pendingBackup: File?, rotatesExistingPrimary: Boolean) {
+        if (rotatesExistingPrimary) {
+            replaceBackup(file)
+        }
+        if (pendingBackup != null) {
+            moveIntoPlace(pendingBackup, backup)
             fsyncDirectory()
-        } catch (error: Exception) {
-            pending.delete()
-            pendingBackup?.delete()
-            if (!primaryExisted && !file.exists() && seedsCommittedPrimary) {
-                backup.delete()
-                fsyncDirectory()
-            }
-            throw error
+        }
+        moveIntoPlace(pending, file)
+        fsyncDirectory()
+    }
+
+    private fun rollbackCommit(pending: File, pendingBackup: File?, seededFreshBackup: Boolean) {
+        pending.delete()
+        pendingBackup?.delete()
+        if (seededFreshBackup && !file.exists()) {
+            backup.delete()
+            fsyncDirectory()
         }
     }
 

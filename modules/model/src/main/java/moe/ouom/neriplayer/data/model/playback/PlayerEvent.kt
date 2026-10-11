@@ -27,4 +27,7 @@ package moe.ouom.neriplayer.data.model.playback
 sealed class PlayerEvent {
     data class ShowLoginPrompt(val message: String) : PlayerEvent()
     data class ShowError(val message: String) : PlayerEvent()
+
+    /** 不打断播放的提示，例如只拿到试听片段 */
+    data class ShowNotice(val message: String) : PlayerEvent()
 }

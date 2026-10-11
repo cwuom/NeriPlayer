@@ -13,12 +13,14 @@ import org.json.JSONObject
 import java.io.File
 
 class NeteasePlaylistSyncPolicyTest {
+    private val noPause: (Long) -> Unit = { error("unexpected backoff") }
+
     @get:Rule
     val tempFolder = TemporaryFolder()
 
     @Test
     fun `bulk netease candidate filtering preserves duplicate original rows`() {
-        val sync = NeteasePlaylistSync { null }
+        val sync = NeteasePlaylistSync(noPause) { null }
         val first = song(id = 46L, name = "first")
         val duplicate = first.copy(name = "edited duplicate")
         val path = File(tempFolder.root, "song-47.mp3").absolutePath
@@ -89,7 +91,7 @@ class NeteasePlaylistSyncPolicyTest {
         assertEquals(2, summary.supportedSongs)
         assertEquals(1, summary.skippedExisting)
         assertEquals(1, summary.skippedUnsupported)
-        assertEquals(emptyList<SongItem>(), NeteasePlaylistSync { null }.filterNeteaseLikeSyncCandidates(emptyList()))
+        assertEquals(emptyList<SongItem>(), NeteasePlaylistSync(noPause) { null }.filterNeteaseLikeSyncCandidates(emptyList()))
     }
 
     @Test

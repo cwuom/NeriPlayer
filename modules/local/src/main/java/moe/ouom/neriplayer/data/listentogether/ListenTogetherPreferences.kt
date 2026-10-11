@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.listentogether
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -31,32 +33,19 @@ object ListenTogetherPreferenceKeys {
 class ListenTogetherPreferences(private val context: Context) {
     val workerBaseUrlFlow: Flow<String> =
         context.listenTogetherDataStore.data.map { prefs ->
-            configuredListenTogetherBaseUrlOrNull(
-                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
-            )
-                .takeUnless { isDefaultListenTogetherBaseUrl(it) }
-                .orEmpty()
+            customWorkerBaseUrl(prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL])
         }
 
     val workerBaseUrlInputFlow: Flow<String> =
         context.listenTogetherDataStore.data.map { prefs ->
-            val savedInput = prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT]
-                ?.trim()
-                .orEmpty()
-            savedInput.ifBlank {
-                configuredListenTogetherBaseUrlOrNull(
-                    prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
-                )
-                    .takeUnless { isDefaultListenTogetherBaseUrl(it) }
-                    .orEmpty()
+            prefs.trimmed(ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT).ifBlank {
+                customWorkerBaseUrl(prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL])
             }
         }
 
     val userUuidFlow: Flow<String> =
         context.listenTogetherDataStore.data.map { prefs ->
-            prefs[ListenTogetherPreferenceKeys.LAST_USER_UUID]
-                ?.trim()
-                .orEmpty()
+            prefs.trimmed(ListenTogetherPreferenceKeys.LAST_USER_UUID)
         }
 
     val nicknameFlow: Flow<String> =
@@ -68,55 +57,33 @@ class ListenTogetherPreferences(private val context: Context) {
 
     val allowMemberControlFlow: Flow<Boolean> =
         context.listenTogetherDataStore.data.map {
-            it[ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL] ?: true
+            it.enabledByDefault(ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL)
         }
 
     val autoPauseOnMemberChangeFlow: Flow<Boolean> =
         context.listenTogetherDataStore.data.map {
-            it[ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE] ?: true
+            it.enabledByDefault(ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE)
         }
 
     val shareAudioLinksFlow: Flow<Boolean> =
         context.listenTogetherDataStore.data.map {
-            it[ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS] ?: true
+            it.enabledByDefault(ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS)
         }
 
     suspend fun setWorkerBaseUrl(value: String) {
         context.listenTogetherDataStore.edit { prefs ->
-            val savedInput = prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT]
-                ?.trim()
-                .orEmpty()
-            if (savedInput.isBlank()) {
-                val currentCustomServer = configuredListenTogetherBaseUrlOrNull(
-                    prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
-                )
-                    .takeUnless { isDefaultListenTogetherBaseUrl(it) }
-                    .orEmpty()
-                if (currentCustomServer.isNotBlank()) {
-                    prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT] = currentCustomServer
-                }
-            }
-            val normalized = configuredListenTogetherBaseUrlOrNull(value).orEmpty()
-            if (normalized.isBlank() || isDefaultListenTogetherBaseUrl(normalized)) {
-                prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL)
-            } else {
-                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL] = normalized
-            }
+            prefs.keepCustomServerAsInput()
+            prefs.putOrRemove(ListenTogetherPreferenceKeys.WORKER_BASE_URL, customWorkerBaseUrl(value))
         }
     }
 
     suspend fun setWorkerBaseUrlInput(value: String) {
         context.listenTogetherDataStore.edit { prefs ->
             val trimmed = value.trim()
-            val normalized = configuredListenTogetherBaseUrlOrNull(trimmed)
-            if (
-                trimmed.isBlank() ||
-                (normalized != null && isDefaultListenTogetherBaseUrl(normalized))
-            ) {
-                prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT)
-            } else {
-                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT] = trimmed
-            }
+            prefs.putOrRemove(
+                ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT,
+                trimmed.takeUnless(::namesDefaultServer).orEmpty()
+            )
         }
     }
 
@@ -145,9 +112,7 @@ class ListenTogetherPreferences(private val context: Context) {
     suspend fun getOrCreateUserUuid(): String {
         var resolvedUserUuid = ""
         context.listenTogetherDataStore.edit { prefs ->
-            resolvedUserUuid = prefs[ListenTogetherPreferenceKeys.LAST_USER_UUID]
-                ?.trim()
-                .orEmpty()
+            resolvedUserUuid = prefs.trimmed(ListenTogetherPreferenceKeys.LAST_USER_UUID)
                 .ifBlank(::buildListenTogetherUserUuid)
             prefs[ListenTogetherPreferenceKeys.LAST_USER_UUID] = resolvedUserUuid
         }
@@ -165,14 +130,7 @@ class ListenTogetherPreferences(private val context: Context) {
     suspend fun getOrCreateNickname(): String {
         var resolvedNickname = ""
         context.listenTogetherDataStore.edit { prefs ->
-            resolvedNickname = prefs[ListenTogetherPreferenceKeys.LAST_NICKNAME]
-                ?.let(::sanitizeListenTogetherNicknameOrNull)
-                .orEmpty()
-                .ifBlank {
-                    sanitizeListenTogetherNicknameOrNull(prefs[ListenTogetherPreferenceKeys.LAST_USER_ID])
-                        .orEmpty()
-                }
-                .ifBlank(::buildDefaultListenTogetherNickname)
+            resolvedNickname = prefs.storedNickname().ifBlank(::buildDefaultListenTogetherNickname)
             prefs[ListenTogetherPreferenceKeys.LAST_NICKNAME] = resolvedNickname
         }
         return resolvedNickname
@@ -197,74 +155,73 @@ class ListenTogetherPreferences(private val context: Context) {
     }
 
     suspend fun snapshot(): ListenTogetherConfigSnapshot {
-        val prefs = context.listenTogetherDataStore.data.first()
-        val workerBaseUrl = configuredListenTogetherBaseUrlOrNull(
-            prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
-        )
-            .takeUnless { isDefaultListenTogetherBaseUrl(it) }
-            .orEmpty()
-        val workerBaseUrlInput = prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT]
-            ?.trim()
-            .orEmpty()
-            .ifBlank { workerBaseUrl }
-        return ListenTogetherConfigSnapshot(
-            workerBaseUrl = workerBaseUrl,
-            workerBaseUrlInput = workerBaseUrlInput,
-            userUuid = prefs[ListenTogetherPreferenceKeys.LAST_USER_UUID]
-                ?.trim()
-                .orEmpty(),
-            nickname = sanitizeListenTogetherNicknameOrNull(
-                prefs[ListenTogetherPreferenceKeys.LAST_NICKNAME]
-            ).orEmpty(),
-            allowMemberControl = prefs[ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL] ?: true,
-            autoPauseOnMemberChange =
-                prefs[ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE] ?: true,
-            shareAudioLinks = prefs[ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS] ?: true
-        )
+        return context.listenTogetherDataStore.data.first().toConfigSnapshot()
     }
 
     suspend fun restore(snapshot: ListenTogetherConfigSnapshot) {
-        context.listenTogetherDataStore.edit { prefs ->
-            val normalizedWorkerBaseUrl = configuredListenTogetherBaseUrlOrNull(snapshot.workerBaseUrl)
-                .takeUnless { isDefaultListenTogetherBaseUrl(it) }
-                .orEmpty()
-            val normalizedInput = snapshot.workerBaseUrlInput.trim()
-
-            if (normalizedWorkerBaseUrl.isBlank()) {
-                prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL)
-            } else {
-                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL] = normalizedWorkerBaseUrl
-            }
-
-            if (
-                normalizedInput.isBlank() ||
-                normalizedInput == normalizedWorkerBaseUrl ||
-                configuredListenTogetherBaseUrlOrNull(normalizedInput)
-                    ?.let(::isDefaultListenTogetherBaseUrl) == true
-            ) {
-                prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT)
-            } else {
-                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT] = normalizedInput
-            }
-
-            val normalizedUserUuid = snapshot.userUuid.trim()
-            if (normalizedUserUuid.isBlank()) {
-                prefs.remove(ListenTogetherPreferenceKeys.LAST_USER_UUID)
-            } else {
-                prefs[ListenTogetherPreferenceKeys.LAST_USER_UUID] = normalizedUserUuid
-            }
-
-            val normalizedNickname = sanitizeListenTogetherNicknameOrNull(snapshot.nickname).orEmpty()
-            if (normalizedNickname.isBlank()) {
-                prefs.remove(ListenTogetherPreferenceKeys.LAST_NICKNAME)
-            } else {
-                prefs[ListenTogetherPreferenceKeys.LAST_NICKNAME] = normalizedNickname
-            }
-
-            prefs[ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL] = snapshot.allowMemberControl
-            prefs[ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE] =
-                snapshot.autoPauseOnMemberChange
-            prefs[ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS] = snapshot.shareAudioLinks
-        }
+        context.listenTogetherDataStore.edit { prefs -> prefs.restoreFrom(snapshot) }
     }
+}
+
+private fun customWorkerBaseUrl(value: String?): String =
+    configuredListenTogetherBaseUrlOrNull(value)
+        .takeUnless { isDefaultListenTogetherBaseUrl(it) }
+        .orEmpty()
+
+private fun namesDefaultServer(input: String): Boolean =
+    configuredListenTogetherBaseUrlOrNull(input)?.let(::isDefaultListenTogetherBaseUrl) == true
+
+private fun restorableWorkerBaseUrlInput(input: String, workerBaseUrl: String): String =
+    input.takeUnless { it == workerBaseUrl || namesDefaultServer(it) }.orEmpty()
+
+private fun Preferences.trimmed(key: Preferences.Key<String>): String = this[key]?.trim().orEmpty()
+
+private fun Preferences.enabledByDefault(key: Preferences.Key<Boolean>): Boolean = this[key] ?: true
+
+private fun Preferences.storedNickname(): String =
+    this[ListenTogetherPreferenceKeys.LAST_NICKNAME]
+        ?.let(::sanitizeListenTogetherNicknameOrNull)
+        .orEmpty()
+        .ifBlank { sanitizeListenTogetherNicknameOrNull(this[ListenTogetherPreferenceKeys.LAST_USER_ID]).orEmpty() }
+
+private fun MutablePreferences.putOrRemove(key: Preferences.Key<String>, value: String) {
+    if (value.isBlank()) remove(key) else this[key] = value
+}
+
+private fun MutablePreferences.keepCustomServerAsInput() {
+    if (trimmed(ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT).isNotBlank()) return
+    val currentCustomServer = customWorkerBaseUrl(this[ListenTogetherPreferenceKeys.WORKER_BASE_URL])
+    if (currentCustomServer.isNotBlank()) {
+        this[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT] = currentCustomServer
+    }
+}
+
+private fun Preferences.toConfigSnapshot(): ListenTogetherConfigSnapshot {
+    val workerBaseUrl = customWorkerBaseUrl(this[ListenTogetherPreferenceKeys.WORKER_BASE_URL])
+    return ListenTogetherConfigSnapshot(
+        workerBaseUrl = workerBaseUrl,
+        workerBaseUrlInput = trimmed(ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT).ifBlank { workerBaseUrl },
+        userUuid = trimmed(ListenTogetherPreferenceKeys.LAST_USER_UUID),
+        nickname = sanitizeListenTogetherNicknameOrNull(this[ListenTogetherPreferenceKeys.LAST_NICKNAME]).orEmpty(),
+        allowMemberControl = enabledByDefault(ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL),
+        autoPauseOnMemberChange = enabledByDefault(ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE),
+        shareAudioLinks = enabledByDefault(ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS)
+    )
+}
+
+private fun MutablePreferences.restoreFrom(snapshot: ListenTogetherConfigSnapshot) {
+    val workerBaseUrl = customWorkerBaseUrl(snapshot.workerBaseUrl)
+    putOrRemove(ListenTogetherPreferenceKeys.WORKER_BASE_URL, workerBaseUrl)
+    putOrRemove(
+        ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT,
+        restorableWorkerBaseUrlInput(snapshot.workerBaseUrlInput.trim(), workerBaseUrl)
+    )
+    putOrRemove(ListenTogetherPreferenceKeys.LAST_USER_UUID, snapshot.userUuid.trim())
+    putOrRemove(
+        ListenTogetherPreferenceKeys.LAST_NICKNAME,
+        sanitizeListenTogetherNicknameOrNull(snapshot.nickname).orEmpty()
+    )
+    this[ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL] = snapshot.allowMemberControl
+    this[ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE] = snapshot.autoPauseOnMemberChange
+    this[ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS] = snapshot.shareAudioLinks
 }

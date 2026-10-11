@@ -186,8 +186,21 @@ abstract class NeriUserDataDatabase : RoomDatabase() {
 
         fun create(context: Context): NeriUserDataDatabase {
             checkMainProcess(context)
+            val appContext = context.applicationContext
+            when (val state = checkVersion(appContext)) {
+                DatabaseVersionState.Missing, is DatabaseVersionState.Compatible -> Unit
+                is DatabaseVersionState.NewerThanApp -> throw DatabaseOpenException(
+                    state,
+                    "User database version ${state.found} is newer than supported version ${state.supported}; update the app to reopen preserved data"
+                )
+                is DatabaseVersionState.Unreadable -> throw DatabaseOpenException(
+                    state,
+                    "Cannot read user database version; preserving data for retry",
+                    state.cause
+                )
+            }
             return Room.databaseBuilder(
-                context.applicationContext,
+                appContext,
                 NeriUserDataDatabase::class.java,
                 DATABASE_NAME
             ).addMigrations(*allMigrations()).build()

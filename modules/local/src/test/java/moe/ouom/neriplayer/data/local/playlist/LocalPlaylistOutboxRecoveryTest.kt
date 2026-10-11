@@ -10,6 +10,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
+import moe.ouom.neriplayer.data.local.database.store.mockLocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,7 +33,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
     )))
 
     @Test fun `unknown Room outbox blocks startup and repaired same instance replays original chain`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(primary)
         val failure = IOException("outbox unavailable")
         var unavailable = true
@@ -87,7 +88,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test fun `startup checked apply failure keeps chain and same instance retries before ready`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(primary)
         var pending: LocalPlaylistSyncMutationOutbox? = committed
         `when`(room.readPendingSyncMutationOutbox()).thenAnswer { pending }
@@ -111,7 +112,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test fun `cancelled replay leaves pending ownership and original chain for retry`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(primary)
         var pending: LocalPlaylistSyncMutationOutbox? = null
         `when`(room.readPendingSyncMutationOutbox()).thenAnswer { pending }
@@ -133,7 +134,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test fun `Room commit followed by cancellation rereads real primary before trimming its tombstone`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         var actualPrimary = primary
         var pending: LocalPlaylistSyncMutationOutbox? = null
         `when`(room.readIfRoomPrimary()).thenAnswer { actualPrimary }
@@ -165,7 +166,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test fun `edit queued behind a cancelled commit cannot publish from its old ready check`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         var actualPrimary = primary
         var pending: LocalPlaylistSyncMutationOutbox? = null
         `when`(room.readIfRoomPrimary()).thenAnswer { actualPrimary }
@@ -222,7 +223,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
 
     @Test fun `Room outbox write failures never switch to unrelated legacy storage`() = runTest {
         listOf(IOException("write rejected"), CancellationException("write cancelled")).forEachIndexed { index, failure ->
-            val room = mock(LocalPlaylistRoomStore::class.java)
+            val room = mockLocalPlaylistRoomStore()
             `when`(room.readIfRoomPrimary()).thenReturn(primary)
             val storage = OutboxStorage(null)
             val repository = open("write-$index", room, storage, RetryMutationStore())
@@ -239,7 +240,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
 
     @Test fun `Room clear failures retain chain and cannot be bypassed on retry`() = runTest {
         listOf(IOException("clear rejected"), CancellationException("clear cancelled")).forEachIndexed { index, failure ->
-            val room = mock(LocalPlaylistRoomStore::class.java)
+            val room = mockLocalPlaylistRoomStore()
             `when`(room.readIfRoomPrimary()).thenReturn(primary)
             var pending: LocalPlaylistSyncMutationOutbox? = null
             `when`(room.readPendingSyncMutationOutbox()).thenAnswer { pending }
@@ -263,7 +264,7 @@ class LocalPlaylistOutboxRecoveryTest : LocalPlaylistRepositoryTestSupport() {
     }
 
     @Test fun `checked legacy domain fallback still owns and recovers its Room outbox`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(primary)
         var pending: LocalPlaylistSyncMutationOutbox? = null
         `when`(room.readPendingSyncMutationOutbox()).thenAnswer { pending }

@@ -17,7 +17,6 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -100,15 +99,6 @@ class BiliQrLoginActivity : ComponentActivity() {
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
 
         buildLayout()
-        onBackPressedDispatcher.addCallback(
-            this,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    NPLogger.d(LOG_TAG, "User exits QR login page")
-                    finish()
-                }
-            }
-        )
         startQrLogin()
     }
 

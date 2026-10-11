@@ -1626,7 +1626,7 @@ internal class SafStorageBackend(
             val uri = DocumentsContract.createDocument(
                 context.contentResolver,
                 parentUri,
-                mimeType,
+                ManagedDownloadTreeNaming.documentCreateMimeType(displayName, mimeType),
                 displayName
             )
             if (uri == null) DirectSafCreateResult.Unsupported else DirectSafCreateResult.Created(uri)

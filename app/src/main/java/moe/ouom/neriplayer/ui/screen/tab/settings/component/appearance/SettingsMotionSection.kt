@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.appearance
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import android.os.Build
+import moe.ouom.neriplayer.ui.playback.visual.isNowPlayingCoverBlurSupported
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -144,7 +145,7 @@ internal fun SettingsMotionSection(
                     bottom = if (showHeader) 8.dp else 0.dp
                 )
         ) {
-            val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            val coverBlurAvailable = isNowPlayingCoverBlurSupported()
             val advancedBlurAvailable = Build.VERSION.SDK_INT >= ADVANCED_GLASS_MIN_SDK
             val dynamicBackgroundApiAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 

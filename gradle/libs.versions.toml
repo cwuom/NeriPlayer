@@ -37,6 +37,7 @@ mockwebserver = "5.5.0"
 navigation = "2.9.8"
 lifecycle = "2.11.0"
 okhttp = "5.4.0"
+robolectric = "4.17"
 newpipeExtractor = "v0.26.4"
 paletteKtx = "1.0.0"
 reorderable = "0.9.6"
@@ -119,6 +120,7 @@ androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-ru
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
 mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 newpipe-extractor = { module = "com.github.TeamNewPipe:NewPipeExtractor", version.ref = "newpipeExtractor" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 mockwebserver = { module = "com.squareup.okhttp3:mockwebserver3", version.ref = "mockwebserver" }

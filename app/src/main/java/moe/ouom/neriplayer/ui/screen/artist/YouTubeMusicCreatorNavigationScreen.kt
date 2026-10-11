@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
-import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +11,8 @@ import androidx.compose.runtime.setValue
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
+import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
 @Composable
@@ -25,30 +28,41 @@ fun YouTubeMusicCreatorNavigationScreen(
         mutableStateOf<YouTubeMusicCreatorSection?>(null)
     }
     val stateHolder = rememberSaveableStateHolder()
-    BackHandler(enabled = selectedSection != null) {
-        selectedSection = null
-    }
+    // 分区页返回时按手势进度拖动横向转场，露出底下的创作者详情
+    val sectionTransition = rememberHostPredictiveBackTransition(
+        targetState = selectedSection,
+        backEnabled = selectedSection != null,
+        backTargetState = null,
+        onBack = { selectedSection = null },
+        label = "youtube_creator_section"
+    )
 
-    val section = selectedSection
-    if (section != null) {
-        YouTubeMusicCreatorItemsScreen(
-            section = section,
-            creatorName = creator.title,
-            onBack = { selectedSection = null },
-            onSongClick = onSongClick,
-            offlineMode = offlineMode
-        )
-    } else {
-        stateHolder.SaveableStateProvider("creator_detail") {
-            YouTubeMusicCreatorDetailScreen(
-                creator = creator,
-                onBack = onBack,
+    sectionTransition.AnimatedContent(
+        transitionSpec = {
+            isolatedAdvancedGlassHorizontalTransition(forward = targetState != null)
+                .using(SizeTransform(clip = false))
+        }
+    ) { section ->
+        if (section != null) {
+            YouTubeMusicCreatorItemsScreen(
+                section = section,
+                creatorName = creator.title,
+                onBack = { selectedSection = null },
                 onSongClick = onSongClick,
-                onPlaylistClick = onPlaylistClick,
-                onCreatorClick = onCreatorClick,
-                onSectionMoreClick = { selectedSection = it },
                 offlineMode = offlineMode
             )
+        } else {
+            stateHolder.SaveableStateProvider("creator_detail") {
+                YouTubeMusicCreatorDetailScreen(
+                    creator = creator,
+                    onBack = onBack,
+                    onSongClick = onSongClick,
+                    onPlaylistClick = onPlaylistClick,
+                    onCreatorClick = onCreatorClick,
+                    onSectionMoreClick = { selectedSection = it },
+                    offlineMode = offlineMode
+                )
+            }
         }
     }
 }

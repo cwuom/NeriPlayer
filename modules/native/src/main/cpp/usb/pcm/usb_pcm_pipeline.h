@@ -72,6 +72,8 @@ public:
         std::string* error
     );
     size_t write(const uint8_t* input, size_t inputBytes, std::string* error);
+    // 输入结束时把重采样器的尾部写入队列；队列放不下时整体不写并返回 false，可以稍后重试
+    bool drainResampler(std::string* error);
     size_t fill(uint8_t* output, size_t bytes, bool playbackEnabled);
 
     void clear();
@@ -93,6 +95,8 @@ private:
         int inputSampleBytes,
         int inputFrameBytes
     ) const;
+    [[nodiscard]] bool canWidenBigEndianIntegerFrames() const;
+    void widenIntegerFrame(const uint8_t* source, uint8_t* target, int inputSampleBytes) const;
     size_t writeResampled(
         const uint8_t* input,
         int inputFrames,
@@ -108,7 +112,8 @@ private:
         int inputFrameBytes,
         std::string* error
     );
-    size_t commitConverted(size_t consumedBytes);
+    void encodeResampledOutput(size_t frames);
+    bool commitConverted(size_t consumedBytes);
     [[nodiscard]] float inputSampleFor(
         const uint8_t* frame,
         int inputSampleBytes,

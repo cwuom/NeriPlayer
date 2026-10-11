@@ -24,23 +24,33 @@ internal class YouTubePrefetchResolveGate(permits: Int) {
         if (promotion.isCompleted) {
             return block()
         }
+        // 名额已交给 outcome 后调用方才被取消时, outcome.await() 仍会抛出取消, 只能靠这个标记归还名额
         var holdsPermit = false
-        coroutineScope {
-            val outcome = CompletableDeferred<Boolean>()
-            val acquisition = launch {
-                semaphore.acquire()
-                // 提升先到时名额已经没人要了, 必须原样还回去
-                if (!outcome.complete(true)) {
-                    semaphore.release()
+        try {
+            coroutineScope {
+                val outcome = CompletableDeferred<Boolean>()
+                val acquisition = launch {
+                    semaphore.acquire()
+                    // 提升先到时名额已经没人要了, 必须原样还回去
+                    if (outcome.complete(true)) {
+                        holdsPermit = true
+                    } else {
+                        semaphore.release()
+                    }
                 }
+                val watcher = launch {
+                    promotion.await()
+                    outcome.complete(false)
+                }
+                outcome.await()
+                acquisition.cancel()
+                watcher.cancel()
             }
-            val watcher = launch {
-                promotion.await()
-                outcome.complete(false)
+        } catch (error: Throwable) {
+            if (holdsPermit) {
+                semaphore.release()
             }
-            holdsPermit = outcome.await()
-            acquisition.cancel()
-            watcher.cancel()
+            throw error
         }
         return try {
             block()

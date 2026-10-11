@@ -116,7 +116,7 @@ class LocalPlaylistRepository private constructor(
     internal val roomStore: LocalPlaylistRoomStore? = null
 ) {
     private val neteasePlaylistSync by lazy {
-        NeteasePlaylistSync { message ->
+        NeteasePlaylistSync(pause = { Thread.sleep(it) }) { message ->
             context.getString(
                 when (message) {
                     NeteasePlaylistSyncMessage.EMPTY_SONGS -> CoreCommonR.string.local_playlist_sync_netease_empty

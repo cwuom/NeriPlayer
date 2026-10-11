@@ -59,10 +59,8 @@ internal fun LocalAudioImportManager.resolveParsedAlbumFallback(
     if (normalizedCurrentAlbum.isBlank()) {
         return parsedAlbum
     }
-    return parsedAlbum.takeIf {
-        normalizedCurrentAlbum == normalizeParsedMetadataValue(fallbackAlbum) ||
-            normalizedCurrentAlbum == normalizeParsedMetadataValue(LocalSongSupport.LOCAL_ALBUM_IDENTITY)
-    }
+    val replaceableAlbums = listOf(fallbackAlbum, LocalSongSupport.LOCAL_ALBUM_IDENTITY).map(::normalizeParsedMetadataValue)
+    return parsedAlbum.takeIf { normalizedCurrentAlbum in replaceableAlbums }
 }
 
 internal fun LocalAudioImportManager.normalizeParsedMetadataValue(value: String?): String {
@@ -712,46 +710,31 @@ internal fun LocalAudioImportManager.findNearbyDocumentCoverReference(
     nestedCoverIndex: Map<String, String>,
     rootCoverIndex: Map<String, String>,
     baseName: String
-): String? {
-    fun findSpecific(index: Map<String, String>): String? {
-        return imageExtensions.firstNotNullOfOrNull { extension ->
-            index["$baseName.$extension".lowercase()]
-        }
-    }
-
-    findSpecific(directCoverIndex)?.let { return it }
-    findSpecific(nestedCoverIndex)?.let { return it }
-    findSpecific(rootCoverIndex)?.let { return it }
-    return coverNames.firstNotNullOfOrNull { coverName ->
-        imageExtensions.firstNotNullOfOrNull { extension ->
-            directCoverIndex["$coverName.$extension".lowercase()]
-                ?: nestedCoverIndex["$coverName.$extension".lowercase()]
-                ?: rootCoverIndex["$coverName.$extension".lowercase()]
-        }
-    }
-}
+): String? = findNearbyIndexedCoverReference(listOf(directCoverIndex, nestedCoverIndex, rootCoverIndex), baseName)
 
 internal fun LocalAudioImportManager.findNearbySafCoverReference(
     directCoverIndex: Map<String, String>,
     nestedCoverIndex: Map<String, String>,
     rootCoverIndex: Map<String, String>,
     baseName: String
-): String? {
-    fun findSpecific(index: Map<String, String>): String? {
-        return imageExtensions.firstNotNullOfOrNull { extension ->
-            index["$baseName.$extension".lowercase()]
-        }
-    }
+): String? = findNearbyIndexedCoverReference(listOf(directCoverIndex, nestedCoverIndex, rootCoverIndex), baseName)
 
-    findSpecific(directCoverIndex)?.let { return it }
-    findSpecific(nestedCoverIndex)?.let { return it }
-    findSpecific(rootCoverIndex)?.let { return it }
-    return coverNames.firstNotNullOfOrNull { coverName ->
-        imageExtensions.firstNotNullOfOrNull { extension ->
-            directCoverIndex["$coverName.$extension".lowercase()]
-                ?: nestedCoverIndex["$coverName.$extension".lowercase()]
-                ?: rootCoverIndex["$coverName.$extension".lowercase()]
-        }
+private fun LocalAudioImportManager.findNearbyIndexedCoverReference(
+    indexes: List<Map<String, String>>,
+    baseName: String
+): String? {
+    return indexes.firstNotNullOfOrNull { index -> findCoverNamed(index, baseName) }
+        ?: coverNames.firstNotNullOfOrNull { coverName -> findCoverNamedInAny(indexes, coverName) }
+}
+
+private fun LocalAudioImportManager.findCoverNamed(index: Map<String, String>, name: String): String? {
+    return imageExtensions.firstNotNullOfOrNull { extension -> index["$name.$extension".lowercase()] }
+}
+
+private fun LocalAudioImportManager.findCoverNamedInAny(indexes: List<Map<String, String>>, name: String): String? {
+    return imageExtensions.firstNotNullOfOrNull { extension ->
+        val key = "$name.$extension".lowercase()
+        indexes.firstNotNullOfOrNull { index -> index[key] }
     }
 }
 
@@ -960,8 +943,14 @@ internal fun LocalAudioImportManager.stabilizeExternalUri(
         "${baseName.take(48)}_${stableKey(uri.toString()).take(12)}.$extension"
     )
 
-    if (shouldCopyExternalAudio(targetFile, resolvedCopyInfo.sizeBytes)) {
-        copyExternalAudioToTarget(context, uri, targetFile, resolvedCopyInfo.sizeBytes)
+    if (shouldCopyExternalAudio(targetFile, resolvedCopyInfo.sizeBytes, resolvedCopyInfo.sourceLastModifiedAt)) {
+        copyExternalAudioToTarget(
+            context,
+            uri,
+            targetFile,
+            resolvedCopyInfo.sizeBytes,
+            resolvedCopyInfo.sourceLastModifiedAt
+        )
     }
     resolvedCopyInfo.sourceLastModifiedAt
         ?.takeIf { it > 0L }
@@ -1151,11 +1140,22 @@ internal fun LocalAudioImportManager.isMediaStoreAuthority(authority: String?): 
         authority == "com.android.providers.media.documents"
 }
 
-fun LocalAudioImportManager.shouldCopyExternalAudio(targetFile: File, expectedBytes: Long?): Boolean {
+fun LocalAudioImportManager.shouldCopyExternalAudio(
+    targetFile: File,
+    expectedBytes: Long?,
+    sourceLastModifiedAt: Long? = null
+): Boolean {
     if (!targetFile.exists()) return true
     if (!targetFile.isFile) return true
     if (targetFile.length() <= 0L) return true
-    return expectedBytes != null && targetFile.length() != expectedBytes
+    if (expectedBytes != null && targetFile.length() != expectedBytes) return true
+    return isImportCopyBehindSource(targetFile, sourceLastModifiedAt)
+}
+
+// 导入副本的 mtime 会对齐源修改时间，同长度改写只能靠它识别；源未报告时间时仍按长度复用
+private fun isImportCopyBehindSource(targetFile: File, sourceLastModifiedAt: Long?): Boolean {
+    val sourceModifiedAt = sourceLastModifiedAt?.takeIf { it > 0L } ?: return false
+    return targetFile.lastModified() != sourceModifiedAt
 }
 
 fun LocalAudioImportManager.isExternalAudioCopySizeComplete(
@@ -1167,7 +1167,8 @@ fun LocalAudioImportManager.copyExternalAudioToTarget(
     context: Context,
     uri: Uri,
     targetFile: File,
-    expectedBytes: Long?
+    expectedBytes: Long?,
+    sourceLastModifiedAt: Long? = null
 ) {
     val partialFile = File(
         targetFile.parentFile ?: error("Import target has no parent"),
@@ -1180,7 +1181,7 @@ fun LocalAudioImportManager.copyExternalAudioToTarget(
     partialFile.delete()
     if (!targetFile.exists() && backupFile.isFile) {
         if (backupFile.renameTo(targetFile) &&
-            !shouldCopyExternalAudio(targetFile, expectedBytes)
+            !shouldCopyExternalAudio(targetFile, expectedBytes, sourceLastModifiedAt)
         ) {
             return
         }

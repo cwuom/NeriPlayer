@@ -45,6 +45,11 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 private val StatsTabletContentMaxWidth = 1200.dp
 private val StatsTabletColumnsMinWidth = 720.dp
+private val StatsTabletWindowMinWidth = 720.dp
+
+/** 按当前窗口宽度而不是设备类型选择平板布局，分屏和横屏手机同样适用 */
+internal fun usePlaybackStatsTabletLayout(windowWidth: Dp): Boolean =
+    windowWidth >= StatsTabletWindowMinWidth
 
 internal data class PlaybackStatsLayout(
     val contentWidth: Dp,
@@ -81,7 +86,7 @@ internal fun PlaybackStatsContent(
 ) {
     val rankingListState = rememberLazyListState()
     val displayedRequest = state.loadedRequest ?: request
-    val displayedSortMode = state.loadedQuery?.sort?.let { StatsSortMode.valueOf(it.name) } ?: sortMode
+    val displayedSortMode = state.loadedQuery?.let { StatsSortMode.valueOf(it.sort.name) } ?: sortMode
     BoxWithConstraints(modifier.testTag("statsContent"), contentAlignment = Alignment.TopCenter) {
         val layout = resolvePlaybackStatsLayout(maxWidth, tablet)
         val contentModifier = Modifier.widthIn(max = layout.contentWidth).fillMaxSize()
@@ -125,7 +130,7 @@ internal fun PlaybackStatsContent(
                             ) {
                                 item {
                                     Text(
-                                        stringResource(displayedSortMode.labelResId()),
+                                        stringResource(displayedSortMode.labelRes),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
@@ -194,10 +199,14 @@ private fun StatsRefreshStatus(state: StatsPageState, request: StatsPageRequest,
     }
     if (state.failed) {
         HapticTextButton(
-            onClick = { retry(request.copy(retry = request.retry + 1)) },
+            onClick = retryStatsPageAction(request, retry),
             modifier = Modifier.testTag("statsRetry")
         ) { Text(stringResource(CoreCommonR.string.stats_load_failed)) }
     }
+}
+
+private fun retryStatsPageAction(request: StatsPageRequest, retry: (StatsPageRequest) -> Unit): () -> Unit = {
+    retry(request.copy(retry = request.retry + 1))
 }
 
 @Composable
@@ -265,11 +274,4 @@ private fun LazyListScope.statsPageNavigation(
     item(key = "stats_page_navigation") {
         Box(Modifier.testTag("statsPageNavigation")) { StatsPageNavigation(state, request, change) }
     }
-}
-
-private fun StatsSortMode.labelResId(): Int = when (this) {
-    StatsSortMode.PLAY_COUNT -> CoreCommonR.string.stats_sort_play_count
-    StatsSortMode.LISTEN_TIME -> CoreCommonR.string.stats_sort_listen_time
-    StatsSortMode.RECENT -> CoreCommonR.string.stats_sort_recent
-    StatsSortMode.FIRST_PLAYED -> CoreCommonR.string.stats_sort_first_played
 }

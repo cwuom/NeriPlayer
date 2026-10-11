@@ -23,12 +23,10 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/8/11
  */
 
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
@@ -227,14 +224,6 @@ fun ExploreHostScreen(
         }
     }
 
-    PredictiveBackHandler(enabled = selected != null) { progress ->
-        try {
-            progress.collect { }
-            closeSelectedDetail()
-        } catch (_: CancellationException) {
-        }
-    }
-
     val gridStateSaver: Saver<LazyGridState, *> = LazyGridState.Saver
     val gridState = rememberSaveable(saver = gridStateSaver) {
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
@@ -260,8 +249,11 @@ fun ExploreHostScreen(
         pendingTopAppBarContentOffset = topAppBarState.contentOffset
     }
 
-    val navigationTransition = updateTransition(
+    val navigationTransition = rememberHostPredictiveBackTransition(
         targetState = selected,
+        backEnabled = selected != null,
+        backTargetState = resolveExploreSelectedDetailBackTarget(selected),
+        onBack = { closeSelectedDetail() },
         label = "explore_host_switch"
     )
 

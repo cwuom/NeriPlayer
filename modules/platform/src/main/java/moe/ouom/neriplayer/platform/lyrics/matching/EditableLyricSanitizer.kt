@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.platform.lyrics.matching
 
 import kotlin.math.abs
 import moe.ouom.neriplayer.data.model.lyrics.matching.SanitizedEditableLyrics
+import moe.ouom.neriplayer.lyrics.parser.isLyricCreditOrNoticeLine
 
 fun sanitizeMatchedEditableLyrics(
     lyrics: String,
@@ -117,6 +118,9 @@ private fun isEditableLyricCreditLine(text: String, isEdgeMetadataLine: Boolean)
     }
     if (!isEdgeMetadataLine) {
         return false
+    }
+    if (isLyricCreditOrNoticeLine(trimmed)) {
+        return true
     }
     val normalizedText = normalizeLyricMatchText(trimmed)
     return editableLyricEdgeCreditPrefixes.any { prefix ->

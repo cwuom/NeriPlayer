@@ -16,5 +16,6 @@
     <string name="bili_qr_login_hint">The QR code is created by the Bilibili API. The app watches its status and saves cookies after confirmation.</string>
     <string name="bili_loading_favorites">Loading favorites…</string>
     <string name="bili_load_failed">Load failed: %s</string>
+    <string name="bili_favorites_incomplete">Some favorites could not be loaded (Bilibili may be rate limiting). Refresh later</string>
     <string name="bili_get_parts_failed">Failed to get parts</string>
 </resources>

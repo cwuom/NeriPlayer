@@ -1,40 +1,36 @@
 package moe.ouom.neriplayer.core.startup.sync
 
 import android.content.Context
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.store.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import kotlin.coroutines.CoroutineContext
-import kotlin.time.Duration.Companion.milliseconds
 
 internal class StartupSyncScheduler(
     context: Context,
     private val ioDispatcher: CoroutineContext,
-    private val isStarted: () -> Boolean,
-    private val scheduleGitHubSync: (Context) -> Unit = { targetContext ->
+    private val scheduleGitHubSync: (Context, Long) -> Unit = { targetContext, initialDelayMs ->
         GitHubSyncWorker.scheduleDelayedSync(
             context = targetContext,
-            markMutation = false
+            markMutation = false,
+            initialDelayMs = initialDelayMs,
+            triggerByAppStartup = true
         )
     },
-    private val scheduleWebDavSync: (Context) -> Unit = { targetContext ->
+    private val scheduleWebDavSync: (Context, Long) -> Unit = { targetContext, initialDelayMs ->
         WebDavSyncWorker.scheduleDelayedSync(
             context = targetContext,
-            markMutation = false
+            markMutation = false,
+            initialDelayMs = initialDelayMs,
+            triggerByAppStartup = true
         )
     }
 ) {
     private val appContext = context.applicationContext
 
     suspend fun scheduleIfNeeded() {
-        delay(StartupSyncPlanner.STARTUP_SYNC_SCHEDULE_DELAY_MS.milliseconds)
-        if (!isStarted()) {
-            return
-        }
-
         val plan = withContext(ioDispatcher) {
             val gitHubStorage = SecureTokenStorage(appContext)
             val webDavStorage = WebDavStorage(appContext)
@@ -47,17 +43,11 @@ internal class StartupSyncScheduler(
         }
 
         if (plan.scheduleGitHub) {
-            scheduleGitHubSync(appContext)
+            scheduleGitHubSync(appContext, 0L)
         }
         if (!plan.scheduleWebDav) {
             return
         }
-        if (plan.webDavStaggerDelayMs > 0L) {
-            delay(plan.webDavStaggerDelayMs.milliseconds)
-            if (!isStarted()) {
-                return
-            }
-        }
-        scheduleWebDavSync(appContext)
+        scheduleWebDavSync(appContext, plan.webDavStaggerDelayMs)
     }
 }

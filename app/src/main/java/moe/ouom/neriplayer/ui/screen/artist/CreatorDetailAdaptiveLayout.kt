@@ -26,8 +26,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-internal fun useCreatorDetailSplitLayout(tabletDevice: Boolean, availableWidthDp: Float): Boolean =
-    tabletDevice && availableWidthDp >= 600f
+private const val CREATOR_DETAIL_TABLET_SPLIT_MIN_WIDTH_DP = 600f
+private const val CREATOR_DETAIL_ANY_DEVICE_SPLIT_MIN_WIDTH_DP = 840f
+private const val CREATOR_DETAIL_ANY_DEVICE_SPLIT_MIN_HEIGHT_DP = 480f
+
+/** 展开的折叠屏等宽窗口即使不是平板设备也使用分栏，高度紧凑的横屏手机仍保持单列 */
+internal fun useCreatorDetailSplitLayout(
+    tabletDevice: Boolean,
+    availableWidthDp: Float,
+    availableHeightDp: Float
+): Boolean = (tabletDevice && availableWidthDp >= CREATOR_DETAIL_TABLET_SPLIT_MIN_WIDTH_DP) ||
+    (availableWidthDp >= CREATOR_DETAIL_ANY_DEVICE_SPLIT_MIN_WIDTH_DP &&
+        availableHeightDp >= CREATOR_DETAIL_ANY_DEVICE_SPLIT_MIN_HEIGHT_DP)
 
 @Composable
 internal fun CreatorDetailAdaptiveLayout(
@@ -43,7 +53,7 @@ internal fun CreatorDetailAdaptiveLayout(
         ),
         contentAlignment = Alignment.TopCenter
     ) {
-        if (useCreatorDetailSplitLayout(tabletDevice, maxWidth.value)) {
+        if (useCreatorDetailSplitLayout(tabletDevice, maxWidth.value, maxHeight.value)) {
             val contentWidth = maxWidth.coerceAtMost(1280.dp)
             val gutter = if (contentWidth >= 840.dp) 24.dp else 20.dp
             val profileWidth = ((contentWidth - gutter * 3) * 0.3f).coerceIn(180.dp, 320.dp)

@@ -16,6 +16,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CancellationException
 
 internal const val ACTION_CLEAR_WEBVIEW_LOGIN_STATE =
     "moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE"
@@ -148,7 +149,7 @@ suspend fun clearWebViewLoginState(
     context: Context,
     platform: WebLoginPlatform
 ) {
-    clearWebViewLoginState(platform)
+    clearCallerProcessWebViewLoginState(platform)
     requestRemoteWebViewLoginStateClear(
         context = context,
         platforms = setOf(platform)
@@ -156,7 +157,7 @@ suspend fun clearWebViewLoginState(
 }
 
 suspend fun clearAllWebViewLoginState(context: Context) {
-    clearWebViewLoginState()
+    clearCallerProcessWebViewLoginState(platform = null)
     requestRemoteWebViewLoginStateClear(
         context = context,
         platforms = WebLoginPlatform.entries.toSet()
@@ -169,6 +170,24 @@ internal fun remoteWebViewLoginStateClearReceiverNames(
     return webViewLoginStateClearTargets
         .filter { it.platform in platforms }
         .map { it.receiverClass.name }
+}
+
+/**
+ * 退出登录和安全模式从主进程发起，没有可用的 WebView 提供方时 CookieManager 会抛出运行时异常；
+ * 本进程清理失败只记录日志，登录进程仍会各自清理并回报结果
+ */
+private suspend fun clearCallerProcessWebViewLoginState(platform: WebLoginPlatform?) {
+    try {
+        clearCurrentProcessWebViewLoginState(platform)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Exception) {
+        moe.ouom.neriplayer.common.logging.NPLogger.w(
+            "NERI-WebLoginState",
+            "Could not clear WebView login state in the calling process",
+            error
+        )
+    }
 }
 
 private suspend fun clearCurrentProcessWebViewLoginState(

@@ -145,18 +145,17 @@ private class LocalArtistSongDuplicateIndex {
 }
 
 private fun localArtistMetadataDuplicateKeys(song: SongItem): Set<String> {
-    val durationMs = song.durationMs.takeIf { it > 0L } ?: return emptySet()
-    val title = normalizeLocalArtistDuplicateText(
-        song.originalName?.takeIf { it.isNotBlank() } ?: song.displayName()
-    )
-    val artist = normalizeLocalArtistDuplicateText(
-        song.originalArtist?.takeIf { it.isNotBlank() } ?: song.displayArtist()
-    )
+    if (song.durationMs <= 0L) return emptySet()
+    val title = localArtistDuplicateText(song.originalName, song.displayName())
+    val artist = localArtistDuplicateText(song.originalArtist, song.displayArtist())
     if (title.isBlank() || artist.isBlank()) {
         return emptySet()
     }
-    return setOf("meta:$title|$artist|$durationMs")
+    return setOf("meta:$title|$artist|${song.durationMs}")
 }
+
+private fun localArtistDuplicateText(original: String?, display: String): String =
+    normalizeLocalArtistDuplicateText(original?.takeIf(String::isNotBlank) ?: display)
 
 private fun normalizeLocalArtistDuplicateText(value: String): String {
     return value
@@ -229,11 +228,10 @@ private fun shouldKeepCompactSlashArtistName(parts: List<String>): Boolean {
     return parts.all { part -> part.trim().isShortUpperAsciiArtistToken() }
 }
 
-private fun String.isShortUpperAsciiArtistToken(): Boolean {
-    val token = trim()
-    return token.length in 1..4 &&
-        token.all { char -> char in 'A'..'Z' || char in '0'..'9' }
-}
+private fun String.isShortUpperAsciiArtistToken(): Boolean =
+    SHORT_UPPER_ASCII_ARTIST_TOKEN_PATTERN.matches(trim())
+
+private val SHORT_UPPER_ASCII_ARTIST_TOKEN_PATTERN = Regex("[A-Z0-9]{1,4}")
 
 private val LOCAL_ARTIST_TEXT_SPLIT_PATTERN = Regex(
     pattern = """\s+(?:feat\.?|ft\.?|with|和|与)\s+|[\u0000;；、，]""",

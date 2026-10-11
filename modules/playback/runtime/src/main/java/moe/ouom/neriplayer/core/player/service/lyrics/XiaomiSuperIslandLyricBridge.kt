@@ -19,7 +19,7 @@ import android.util.LruCache
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.get
 import androidx.core.graphics.scale
-import coil.ImageLoader
+import coil.Coil
 import coil.request.ImageRequest
 import com.xzakota.hyper.notification.focus.FocusNotification
 import com.xzakota.hyper.notification.island.model.BigIslandArea
@@ -70,7 +70,8 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private val imageLoader by lazy { ImageLoader(appContext) }
+    // 复用应用的图片加载器，避免再维护一套独立的内存与磁盘缓存
+    private val imageLoader by lazy { Coil.imageLoader(appContext) }
     private val appIcon by lazy { Icon.createWithResource(appContext, appContext.applicationInfo.icon) }
     private val networkMutex = Mutex()
     private val artworkCache = object : LruCache<String, Bitmap>(ARTWORK_CACHE_BYTES) {

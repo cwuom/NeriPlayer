@@ -19,6 +19,43 @@ import org.mockito.Mockito.mockStatic
 
 class SyncWorkerCompatibilityTest {
     @Test
+    fun `both startup worker facades persist the startup trigger without bypassing automatic settings`() {
+        val context = mock(Context::class.java)
+        val manager = mock(WorkManager::class.java)
+        var enabled = true
+        mockStatic(Class.forName("moe.ouom.neriplayer.data.sync.work.SyncWorkManagerAccessKt")).use { workManager ->
+            workManager.`when`<WorkManager> { syncWorkManager(context) }.thenReturn(manager)
+            mockConstruction(SecureTokenStorage::class.java) { storage, _ ->
+                `when`(storage.isConfigured()).thenReturn(true)
+                `when`(storage.isAutoSyncEnabled()).thenAnswer { enabled }
+            }.use {
+                mockConstruction(WebDavStorage::class.java) { storage, _ ->
+                    `when`(storage.isConfigured()).thenReturn(true)
+                    `when`(storage.isAutoSyncEnabled()).thenAnswer { enabled }
+                }.use {
+                    GitHubSyncWorker.scheduleDelayedSync(context, initialDelayMs = 0, triggerByAppStartup = true)
+                    WebDavSyncWorker.scheduleDelayedSync(context, initialDelayMs = 10_000, triggerByAppStartup = true)
+                    enabled = false
+                    GitHubSyncWorker.scheduleDelayedSync(context, initialDelayMs = 0, triggerByAppStartup = true)
+                    WebDavSyncWorker.scheduleDelayedSync(context, initialDelayMs = 0, triggerByAppStartup = true)
+                }
+            }
+        }
+        val invocations = mockingDetails(manager).invocations.toList()
+        assertEquals(listOf("github_sync_work_startup", "webdav_sync_work_startup"),
+            invocations.map { it.getArgument<String>(0) })
+        invocations.forEachIndexed { index, invocation ->
+            assertEquals(ExistingWorkPolicy.KEEP, invocation.getArgument<ExistingWorkPolicy>(1))
+            val request = invocation.getArgument<OneTimeWorkRequest>(2)
+            assertEquals(if (index == 0) 0L else 10_000L, request.workSpec.initialDelay)
+            assertTrue(request.workSpec.input.getBoolean("trigger_by_app_startup", false))
+            assertTrue(request.tags.contains(if (index == 0) "github_sync_work" else "webdav_sync_work"))
+            assertEquals(false, request.workSpec.input.getBoolean("trigger_by_user_action", true))
+            assertEquals(false, request.workSpec.input.getBoolean("force_sync", false))
+        }
+    }
+
+    @Test
     fun `both worker facades retain automatic manual and default request contract`() {
         val context = mock(Context::class.java)
         val manager = mock(WorkManager::class.java)

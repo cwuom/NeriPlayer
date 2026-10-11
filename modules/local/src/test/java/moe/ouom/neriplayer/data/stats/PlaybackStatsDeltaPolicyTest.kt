@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.data.stats
 
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPendingDeltaEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.toEntity
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsDeltaRows
 import moe.ouom.neriplayer.data.model.stats.TrackStat
+import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -39,6 +41,22 @@ class PlaybackStatsDeltaPolicyTest {
         assertEquals(30_000L, result.track?.totalListenMs)
         assertEquals(1, result.track?.playCount)
         assertEquals(300L, result.track?.firstPlayedAt)
+    }
+
+    @Test
+    fun `the day bucket keeps accumulating only within the current clear epoch`() {
+        val day = playbackStatsDayStartAt(300)
+        val current = PlaybackStatBucketEntity(day, "track|7", 7, "song", "artist", "netease", 0, null, 180_000, 40_000, 2,
+            280, 260, null, null, null, null, null, null)
+        val delta = PlaybackStatsPendingDeltaEntity("event", 1, "{}", 30_000, 1, 300, 250, "device")
+
+        val kept = PlaybackStatsDeltaPolicy.apply(delta, track(), PlaybackStatsDeltaRows(null, current, null, null)).bucket
+        val restarted = PlaybackStatsDeltaPolicy.apply(delta, track(),
+            PlaybackStatsDeltaRows(null, current.copy(firstPlayedAt = 200), null, null)).bucket
+
+        assertEquals(listOf(70_000L, 3L, 260L, 300L), listOf(kept?.totalListenMs, kept?.playCount?.toLong(), kept?.firstPlayedAt, kept?.lastPlayedAt))
+        assertEquals(listOf(30_000L, 1L, 300L, 300L),
+            listOf(restarted?.totalListenMs, restarted?.playCount?.toLong(), restarted?.firstPlayedAt, restarted?.lastPlayedAt))
     }
 
     private fun track() = TrackStat(7, "song", "artist", "netease", 0, null, 180_000, 0, 0, 200, 100, null, null, null, null, null, null, "track|7")

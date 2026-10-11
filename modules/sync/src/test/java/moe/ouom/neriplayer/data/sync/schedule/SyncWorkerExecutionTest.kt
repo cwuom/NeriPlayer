@@ -15,6 +15,30 @@ import org.junit.Test
 
 class SyncWorkerExecutionTest {
     @Test
+    fun `startup sync runs during playback while retaining automatic eligibility`() = runTest {
+        val host = Host().apply { playback = true }
+        assertEquals(SyncWorkerOutcome.SUCCESS,
+            SyncWorkerExecution(host).execute(false, false, triggerByAppStartup = true))
+        assertEquals(listOf("automatic", "configured", "approval", "network", "sync"), host.calls)
+    }
+
+    @Test
+    fun `startup sync still respects disabled automatic sync pending approval and offline retry`() = runTest {
+        val disabled = Host().apply { automatic = false; playback = true }
+        assertEquals(SyncWorkerOutcome.SUCCESS,
+            SyncWorkerExecution(disabled).execute(false, false, triggerByAppStartup = true))
+        assertEquals(listOf("automatic"), disabled.calls)
+        val pending = Host().apply { approved = false; playback = true }
+        assertEquals(SyncWorkerOutcome.SUCCESS,
+            SyncWorkerExecution(pending).execute(false, false, triggerByAppStartup = true))
+        assertEquals(listOf("automatic", "configured", "approval"), pending.calls)
+        val offline = Host().apply { network = false; playback = true }
+        assertEquals(SyncWorkerOutcome.RETRY,
+            SyncWorkerExecution(offline).execute(false, false, triggerByAppStartup = true))
+        assertEquals(listOf("automatic", "configured", "approval", "network"), offline.calls)
+    }
+
+    @Test
     fun `disabled automatic sync does not read remote or configured state`() = runTest {
         val host = Host().apply { automatic = false }
         assertEquals(SyncWorkerOutcome.SUCCESS, SyncWorkerExecution(host).execute(false, false))
@@ -110,6 +134,26 @@ class SyncWorkerExecutionTest {
     }
 
     @Test
+    fun `startup sync waits for suspended failure handling before completing work`() = runTest {
+        val handlingStarted = CompletableDeferred<Unit>()
+        val handlingResult = CompletableDeferred<SyncWorkerOutcome>()
+        val host = Host().apply {
+            playback = true
+            result = Result.failure(IOException("remote unavailable"))
+            classifyFailure = { handlingStarted.complete(Unit); handlingResult.await() }
+        }
+        val execution = async { SyncWorkerExecution(host).execute(false, false, triggerByAppStartup = true) }
+        handlingStarted.await()
+        assertFalse(execution.isCompleted)
+        assertEquals(Triple("remote unavailable", false, false), host.failure)
+        assertEquals(listOf("automatic", "configured", "approval", "network", "sync"), host.calls)
+
+        handlingResult.complete(SyncWorkerOutcome.FAILURE)
+
+        assertEquals(SyncWorkerOutcome.FAILURE, execution.await())
+    }
+
+    @Test
     fun `cancellation is propagated without notifications or retry classification`() = runTest {
         val host = Host().apply { error = CancellationException("cancelled") }
         try {
@@ -131,6 +175,7 @@ class SyncWorkerExecutionTest {
         var result = Result.success(SyncResult(success = true, message = "synced"))
         var error: Exception? = null
         var outcome = SyncWorkerOutcome.RETRY
+        var classifyFailure: suspend () -> SyncWorkerOutcome = { outcome }
         var failure: Triple<String?, Boolean, Boolean>? = null
         override fun autoSyncEnabled(): Boolean { calls += "automatic"; return automatic }
         override fun configured(): Boolean { calls += "configured"; return configured }
@@ -141,7 +186,7 @@ class SyncWorkerExecutionTest {
         override suspend fun synchronize(): Result<SyncResult> { calls += "sync"; error?.let { throw it }; return result }
         override suspend fun handleFailure(error: Throwable?, manual: Boolean, unexpected: Boolean): SyncWorkerOutcome {
             failure = Triple(error?.message, manual, unexpected)
-            return outcome
+            return classifyFailure()
         }
     }
 }

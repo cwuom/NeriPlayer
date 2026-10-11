@@ -138,9 +138,12 @@ internal object DownloadExecutionRoomReadStore {
                         ?.takeIf(String::isNotBlank)
                     val artifactLeaseId = root?.optString("artifactLeaseId")
                         ?.takeIf(String::isNotBlank)
+                    if (root != null && DownloadExecutionRoomStore.Access.isFutureJournalPayload(root)) {
+                        return@mapNotNull null
+                    }
                     if (
                         root == null ||
-                            root.optInt("schemaVersion") != DownloadExecutionRoomStore.Access.JOURNAL_PAYLOAD_VERSION ||
+                            !DownloadExecutionRoomStore.Access.isSupportedJournalPayload(root) ||
                             root.optJSONObject("song") == null ||
                             sourceStableKey != null && sourceStableKey != header.stableKey
                     ) {

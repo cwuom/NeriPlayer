@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.navigation
 
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBarState
@@ -218,9 +217,9 @@ internal fun rememberSettingsNavigationState(
     listState: LazyListState,
     dynamicColor: Boolean,
     mobileDataFollowDefaultAudioQuality: Boolean,
-    backgroundImageUri: String?
+    backgroundImageUri: String?,
+    splitLayout: Boolean = settingsSplitLayout()
 ): SettingsNavigationState {
-    val splitLayout = settingsSplitLayout()
     val activePageState = rememberInitialSettingsPageState()
     val homeTopAppBarState = rememberTopAppBarState()
     val detailTopAppBarStates = SettingsPage.entries.associateWith { rememberTopAppBarState() }
@@ -254,16 +253,11 @@ internal fun rememberSettingsNavigationState(
         hasCustomBackground = backgroundImageUri != null
     )
 
-    LaunchedEffect(splitLayout) {
-        activePageState.value = ensureSplitSettingsPage(splitLayout, activePageState.value)
-    }
+    // 分栏时默认显示通用页只是展示兜底，不写回状态，窗口变窄后仍回到设置首页
     ObserveSettingsSearchScroll(searchQueryState, listState)
     val eligiblePendingNavigation = pendingSettingsNavigationForPage(
         navigation.activePage, pendingNavigationState.value
     )
     CompletePendingSettingsNavigation(eligiblePendingNavigation, navigation, density)
-    BackHandler(enabled = canNavigateBackFromSettingsPage(navigation.activePage, splitLayout)) {
-        navigation.navigateBack()
-    }
     return navigation
 }

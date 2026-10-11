@@ -11,7 +11,8 @@ internal class SyncSessionCommitter(
         backend: SyncBackend<TVersion>,
         resolution: SyncUploadResolution<SyncDatasetMergeResult, TVersion>,
         firstSync: Boolean,
-        mutationVersion: Long
+        mutationVersion: Long,
+        observedAt: Long
     ): Boolean {
         val applied = if (local.mutationVersion() == mutationVersion) {
             local.apply(
@@ -26,7 +27,7 @@ internal class SyncSessionCommitter(
         val completedAt = nowMs()
         if (localUnchanged) {
             backend.saveRemoteVersion(resolution.remoteVersion)
-            backend.saveSyncTime(completedAt)
+            backend.saveSyncTime(observedAt)
         } else {
             backend.scheduleFollowUp()
         }

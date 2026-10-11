@@ -18,12 +18,14 @@ internal data class BackupJsonLimits(
     val maxStatisticsRecordBytes: Long = 10L * 1024 * 1024
 ) {
     init {
-        require(maxMetadataCharacters > 0) { "Backup metadata character budget must be positive" }
-        require(maxMetadataObjects > 0) { "Backup metadata object budget must be positive" }
-        require(maxTokenCharacters > 0) { "Backup token character budget must be positive" }
-        require(maxStatisticsRecordCharacters > 0) { "Backup statistics record character budget must be positive" }
-        require(maxStatisticsRecordObjects > 0) { "Backup statistics record object budget must be positive" }
-        require(maxStatisticsRecordBytes > 0) { "Backup statistics record byte budget must be positive" }
+        listOf(
+            maxMetadataCharacters to "metadata character",
+            maxMetadataObjects to "metadata object",
+            maxTokenCharacters to "token character",
+            maxStatisticsRecordCharacters to "statistics record character",
+            maxStatisticsRecordObjects to "statistics record object",
+            maxStatisticsRecordBytes to "statistics record byte"
+        ).forEach { (budget, name) -> require(budget > 0) { "Backup $name budget must be positive" } }
     }
 }
 
@@ -159,18 +161,27 @@ private class BackupJsonBudget(private val limits: BackupJsonLimits) {
         when (character) {
             '{' -> beginObject()
             '[' -> depth++
-            '}', ']' -> {
-                if (depth == 1) metadataValue = false
-                depth--
-            }
-            ':' -> if (depth == 1) rootPosition = RootPosition.VALUE
-            ',' -> if (depth == 1) {
-                metadataValue = false
-                metadataField = false
-                statisticsField = false
-                rootPosition = RootPosition.NAME
-            }
+            '}', ']' -> endContainer()
+            ':' -> beginValue()
+            ',' -> endValue()
         }
+    }
+
+    private fun endContainer() {
+        if (depth == 1) metadataValue = false
+        depth--
+    }
+
+    private fun beginValue() {
+        if (depth == 1) rootPosition = RootPosition.VALUE
+    }
+
+    private fun endValue() {
+        if (depth != 1) return
+        metadataValue = false
+        metadataField = false
+        statisticsField = false
+        rootPosition = RootPosition.NAME
     }
 
     private fun beginObject() {
@@ -232,16 +243,18 @@ private class BackupStatisticsRecordBudget(private val limits: BackupJsonLimits)
     }
 
     private fun countBytes(character: Char) {
-        val size = when {
-            character <= '\u007f' -> 1L
-            character <= '\u07ff' -> 2L
-            previousHighSurrogate && character in '\uDC00'..'\uDFFF' -> 1L
-            else -> 3L
-        }
+        val size = utf8Size(character)
         if (bytes > limits.maxStatisticsRecordBytes - size) throw IOException("Backup statistics record byte budget exceeded")
         bytes += size
         // 高代理位先占三个字节，紧邻低代理位补一个，跨读取或写入分块也计为四个
-        previousHighSurrogate = character in '\uD800'..'\uDBFF'
+        previousHighSurrogate = character.isHighSurrogate()
+    }
+
+    private fun utf8Size(character: Char): Long = when {
+        character <= '\u007f' -> 1L
+        character <= '\u07ff' -> 2L
+        previousHighSurrogate && character.isLowSurrogate() -> 1L
+        else -> 3L
     }
 }
 

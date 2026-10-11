@@ -114,6 +114,26 @@ class LocalPlaylistRoomStoreIncrementalWriteTest {
         assertEquals(ROOM_PRIMARY_STATE, room.metadata.value(CUTOVER_STATE_METADATA_KEY))
     }
 
+    @Test
+    fun `undecodable member stays in room while the rest of the playlists load and keep writing`() = runTest {
+        val road = LocalPlaylist(id = 1, name = "Road", songs = mutableListOf(song(11, "A"), song(12, "B")), modifiedAt = 10)
+        val gym = LocalPlaylist(id = 2, name = "Gym", songs = mutableListOf(song(13, "C")), modifiedAt = 10)
+        store.replacePlaylists(listOf(road, gym))
+        val broken = dao.getMembersForPlaylist(1).single { it.memberPayloadJson.contains("\"name\":\"B\"") }
+            .copy(memberPayloadJson = "{broken")
+        dao.insertMembers(listOf(broken))
+        dao.insertTracks(dao.getTracksByIdentityKeys(listOf(broken.identityKey)).map { it.copy(durablePayloadJson = "{broken") })
+
+        val loaded = store.readIfRoomPrimary()!!
+        assertEquals(listOf(listOf("A"), listOf("C")), loaded.map { playlist -> playlist.songs.map { it.name } })
+
+        val renamed = loaded[0].copy(name = "Road trip", songs = (loaded[0].songs + song(14, "D")).toMutableList())
+        store.writeIncremental(loaded, listOf(renamed, loaded[1]), sourceDigest = "d1", now = 20)
+
+        assertEquals(listOf("A", "D"), store.readIfRoomPrimary()!![0].songs.map { it.name })
+        assertEquals(broken, dao.getMembersForPlaylist(1).single { it.identityKey == broken.identityKey })
+    }
+
     private fun song(id: Long, name: String) = SongItem(
         id = id,
         name = name,

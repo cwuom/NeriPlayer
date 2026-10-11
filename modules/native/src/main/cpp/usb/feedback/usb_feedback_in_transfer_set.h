@@ -96,6 +96,7 @@ public:
     );
 
     bool submitAll(std::string* error);
+    // 每个在途传输只取消一次，重复调用不改变在途计数；回调全部到达后才变为 Drained
     bool beginStop(std::string* error);
     bool freeDrained(std::string* error);
 
@@ -112,7 +113,9 @@ private:
         libusb_transfer* transfer = nullptr;
         std::vector<uint8_t> buffer;
         SlotUserData userData;
+        // 提交成功后只有回调被消费才离开在途；取消请求过不代表回调不会再来
         bool inFlight = false;
+        bool cancelRequested = false;
     };
 
     static void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept;

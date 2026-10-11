@@ -5,6 +5,7 @@ import kotlin.math.abs
 enum class ListenTogetherSoftSyncRecheckAction {
     NONE,
     KEEP_RATE,
+    CONVERGED,
     RESET_RATE,
     FORCE_POSITION_SYNC
 }
@@ -37,7 +38,7 @@ fun resolveListenTogetherSoftSyncRecheckAction(
         return ListenTogetherSoftSyncRecheckAction.FORCE_POSITION_SYNC
     }
     return if (driftMs < softSyncMinDriftMs) {
-        ListenTogetherSoftSyncRecheckAction.RESET_RATE
+        ListenTogetherSoftSyncRecheckAction.CONVERGED
     } else {
         ListenTogetherSoftSyncRecheckAction.KEEP_RATE
     }

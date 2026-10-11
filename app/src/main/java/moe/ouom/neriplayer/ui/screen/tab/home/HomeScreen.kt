@@ -389,6 +389,8 @@ fun HomeScreen(
     val gridMinCellSize = if (isTabletLayout) 156.dp else 120.dp
     val gridContentPadding = if (isTabletLayout) 14.dp else 8.dp
     val gridSpacing = if (isTabletLayout) 14.dp else 10.dp
+    // 大标题与卡片左边缘对齐，扣掉 TopAppBar 自带的标题内边距
+    val appBarTitleInset = (pageHorizontalPadding + gridContentPadding - TopAppBarTitleInset).coerceAtLeast(0.dp)
 
     fun toggleHomeSongFavorite(song: SongItem, isFavorite: Boolean) {
         scope.launch {
@@ -439,7 +441,7 @@ fun HomeScreen(
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
         ) {
             LargeTopAppBar(
-                title = { Text(appBarTitle) },
+                title = { Text(appBarTitle, modifier = Modifier.padding(start = appBarTitleInset)) },
                 actions = {
                     HapticIconButton(
                         enabled = !offlineMode,
@@ -1021,27 +1023,6 @@ private fun neteaseSongSectionIcon(source: NeteaseHomeSongSource): ImageVector {
         NeteaseHomeSongSource.TOP_NEW -> Icons.Outlined.Bolt
         NeteaseHomeSongSource.DAILY_RECOMMEND,
         NeteaseHomeSongSource.PRIVATE_FM -> Icons.Outlined.Explore
-    }
-}
-
-@Composable
-private fun SectionHeader(icon: ImageVector, title: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp)
-        )
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 8.dp)
-        )
     }
 }
 

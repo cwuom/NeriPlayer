@@ -173,6 +173,35 @@ class LocalArtistSummaryTest {
     }
 
     @Test
+    fun `compact slash names stay whole only for two short upper case tokens`() {
+        assertEquals(listOf("A1/B2"), splitLocalArtistNames("A1/B2", unknownArtist = "Unknown Artist"))
+        assertEquals(listOf("ac", "dc"), splitLocalArtistNames("ac/dc", unknownArtist = "Unknown Artist"))
+        assertEquals(listOf("ABCDE", "F"), splitLocalArtistNames("ABCDE/F", unknownArtist = "Unknown Artist"))
+        assertEquals(listOf("A", "B", "C"), splitLocalArtistNames("A/B/C", unknownArtist = "Unknown Artist"))
+    }
+
+    @Test
+    fun `metadata duplicates use original tags and need a duration and both names`() {
+        val remote = song(id = 40L, name = "Song", artist = "Singer", durationMs = 200_000L, channelId = "netease", audioId = "40")
+        val renamedCopy = song(
+            id = 41L, name = "Renamed", artist = "Singer", durationMs = 200_000L,
+            mediaUri = "/music/a.mp3", localFilePath = "/music/a.mp3"
+        ).copy(originalName = " SONG ")
+        val untimedRemote = remote.copy(id = 42L, audioId = "42", durationMs = 0L)
+        val untimedCopy = renamedCopy.copy(id = 43L, audioId = "43", durationMs = 0L, originalName = "Song")
+        val untitledRemote = remote.copy(id = 44L, audioId = "44", name = " ")
+        val untitledCopy = renamedCopy.copy(id = 45L, audioId = "45", name = " ", originalName = null)
+
+        fun songsOf(vararg songs: SongItem) =
+            buildLocalArtistSummaries(songs = songs.toList(), unknownArtist = "Unknown Artist").single().songs
+
+        assertEquals(listOf(remote), songsOf(remote, renamedCopy))
+        assertEquals(listOf(renamedCopy), songsOf(renamedCopy, remote))
+        assertEquals(listOf(untimedRemote, untimedCopy), songsOf(untimedRemote, untimedCopy))
+        assertEquals(listOf(untitledRemote, untitledCopy), songsOf(untitledRemote, untitledCopy))
+    }
+
+    @Test
     fun `blank artist falls back to unknown artist`() {
         assertEquals(
             listOf("Unknown Artist"),

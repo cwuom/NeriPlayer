@@ -861,14 +861,13 @@ internal fun LocalMediaSupport.pickReadableLocalTitle(
     fallbackTitle: String,
     vararg candidates: String?
 ): String? {
-    return candidates.firstNotNullOfOrNull { candidate ->
-        candidate
-            ?.trim()
-            ?.takeIf {
-                it.isNotBlank() &&
-                    it.takeMeaningfulLocalMetadata() != null &&
-                    isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle)
-            }
+    return candidates.firstNotNullOfOrNull { candidate -> readableLocalTitleOrNull(candidate, sourceUri, fallbackTitle) }
+}
+
+private fun LocalMediaSupport.readableLocalTitleOrNull(candidate: String?, sourceUri: Uri, fallbackTitle: String): String? {
+    val trimmed = candidate?.trim() ?: return null
+    return trimmed.takeIf {
+        it.takeMeaningfulLocalMetadata() != null && isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle)
     }
 }
 
@@ -895,31 +894,27 @@ internal fun LocalMediaSupport.stableKey(value: String): String {
 }
 
 internal fun LocalMediaSupport.directFilePath(uri: Uri): String? {
-    val path = when {
-        uri.scheme.equals("file", ignoreCase = true) -> uri.path
-        uri.scheme.isNullOrBlank() && !uri.path.isNullOrBlank() && uri.path!!.startsWith("/") -> uri.path
-        else -> null
-    } ?: return null
+    val path = uri.path?.takeIf { uri.isDirectFilePath(it) } ?: return null
     return path.takeIf { File(it).exists() }
 }
 
+internal fun Uri.isDirectFilePath(path: String): Boolean {
+    return scheme.equals("file", ignoreCase = true) || scheme.isNullOrBlank() && path.startsWith("/")
+}
+
+private val TEXT_BYTE_ORDER_MARKS = listOf(
+    byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) to StandardCharsets.UTF_8,
+    byteArrayOf(0xFF.toByte(), 0xFE.toByte()) to StandardCharsets.UTF_16LE,
+    byteArrayOf(0xFE.toByte(), 0xFF.toByte()) to StandardCharsets.UTF_16BE
+)
+
 internal fun LocalMediaSupport.detectBomCharset(bytes: ByteArray): Pair<Charset, Int>? {
-    return when {
-        bytes.size >= 3 &&
-            bytes[0] == 0xEF.toByte() &&
-            bytes[1] == 0xBB.toByte() &&
-            bytes[2] == 0xBF.toByte() -> StandardCharsets.UTF_8 to 3
+    val (mark, charset) = TEXT_BYTE_ORDER_MARKS.firstOrNull { (mark, _) -> bytes.startsWithBytes(mark) } ?: return null
+    return charset to mark.size
+}
 
-        bytes.size >= 2 &&
-            bytes[0] == 0xFF.toByte() &&
-            bytes[1] == 0xFE.toByte() -> StandardCharsets.UTF_16LE to 2
-
-        bytes.size >= 2 &&
-            bytes[0] == 0xFE.toByte() &&
-            bytes[1] == 0xFF.toByte() -> StandardCharsets.UTF_16BE to 2
-
-        else -> null
-    }
+private fun ByteArray.startsWithBytes(prefix: ByteArray): Boolean {
+    return size >= prefix.size && prefix.indices.all { index -> this[index] == prefix[index] }
 }
 
 internal fun LocalMediaSupport.decodeId3TextFrame(frameData: ByteArray): String? {
@@ -938,13 +933,25 @@ internal fun LocalMediaSupport.decodeId3TextFrame(frameData: ByteArray): String?
 }
 
 internal fun LocalMediaSupport.scoreDecodedText(text: String): Int {
-    val replacementPenalty = text.count { it == REPLACEMENT_CHAR } * 200
-    val nulPenalty = text.count { it == NUL_CHAR } * 200
-    val controlPenalty = text.count { it < ' ' && it != '\n' && it != '\r' && it != '\t' } * 40
     val blankPenalty = if (text.isBlank()) 200 else 0
     val lyricBonus = if (text.contains('[') && text.contains(']')) 20 else 0
-    val latinLetterDigitBonus = text.count(Char::isAsciiLetterOrDigit) * 2
-    val cjkBonus = text.count(Char::isCjkUnifiedIdeograph) * 4
-    return 1000 - replacementPenalty - nulPenalty - controlPenalty - blankPenalty +
-        lyricBonus + latinLetterDigitBonus + cjkBonus
+    return 1000 + text.sumOf(::decodedCharScore) - blankPenalty + lyricBonus
 }
+
+private fun decodedCharScore(char: Char): Int {
+    return when {
+        char == REPLACEMENT_CHAR -> -UNDECODABLE_CHAR_PENALTY
+        char == NUL_CHAR -> -(UNDECODABLE_CHAR_PENALTY + CONTROL_CHAR_PENALTY)
+        char.isUnexpectedControlChar() -> -CONTROL_CHAR_PENALTY
+        char.isAsciiLetterOrDigit() -> 2
+        char.isCjkUnifiedIdeograph() -> 4
+        else -> 0
+    }
+}
+
+private const val UNDECODABLE_CHAR_PENALTY = 200
+private const val CONTROL_CHAR_PENALTY = 40
+
+private val EXPECTED_TEXT_CONTROL_CHARS = setOf('\n', '\r', '\t')
+
+private fun Char.isUnexpectedControlChar(): Boolean = this < ' ' && this !in EXPECTED_TEXT_CONTROL_CHARS

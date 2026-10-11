@@ -110,38 +110,43 @@ internal class PlaybackStatsLegacyImporter(private val context: Context, private
     }
 
     private suspend fun readCounterMap(reader: JsonReader, daily: Boolean) {
-        val tracks = ArrayList<PlaybackStatsSnapshotCounterEntity>(256)
-        val buckets = ArrayList<PlaybackStatsSnapshotDailyCounterEntity>(256)
+        val tracks = CounterPageBuffer<PlaybackStatsSnapshotCounterEntity> { counterWriter.writeTracks(snapshotId, it) }
+        val buckets = CounterPageBuffer<PlaybackStatsSnapshotDailyCounterEntity> { counterWriter.writeDaily(snapshotId, it) }
         reader.beginObject()
         while (reader.hasNext()) {
             val key = reader.nextName()
-            val day = if (daily) key.substringBefore('|').toLongOrNull() ?: throw IOException("Invalid playback daily counter key") else 0L
-            val identity = if (daily) key.substringAfter('|', missingDelimiterValue = "") else key
-            if (identity.isBlank()) throw IOException("Invalid playback counter identity")
-            reader.beginArray()
-            while (reader.hasNext()) {
-                currentCoroutineContext().ensureActive()
-                val shard = gson.fromJson<SyncPlaybackCounterShard>(reader, SyncPlaybackCounterShard::class.java)
-                    ?: throw IOException("Null playback counter")
-                if (daily) {
-                    buckets.add(PlaybackStatsSnapshotDailyCounterEntity(snapshotId, shard.toDailyEntity(day, identity).toSnapshotData()))
-                    if (buckets.size == 256) {
-                        counterWriter.writeDaily(snapshotId, buckets)
-                        buckets.clear()
-                    }
-                } else {
-                    tracks.add(PlaybackStatsSnapshotCounterEntity(snapshotId, shard.toTrackEntity(identity).toSnapshotData()))
-                    if (tracks.size == 256) {
-                        counterWriter.writeTracks(snapshotId, tracks)
-                        tracks.clear()
-                    }
-                }
-            }
-            reader.endArray()
+            if (daily) readDailyShards(reader, key, buckets) else readTrackShards(reader, key, tracks)
         }
         reader.endObject()
-        if (tracks.isNotEmpty()) counterWriter.writeTracks(snapshotId, tracks)
-        if (buckets.isNotEmpty()) counterWriter.writeDaily(snapshotId, buckets)
+        tracks.flush()
+        buckets.flush()
+    }
+
+    private suspend fun readTrackShards(reader: JsonReader, identity: String, rows: CounterPageBuffer<PlaybackStatsSnapshotCounterEntity>) {
+        requireCounterIdentity(identity)
+        readShards(reader) { shard -> rows.add(PlaybackStatsSnapshotCounterEntity(snapshotId, shard.toTrackEntity(identity).toSnapshotData())) }
+    }
+
+    private suspend fun readDailyShards(reader: JsonReader, key: String, rows: CounterPageBuffer<PlaybackStatsSnapshotDailyCounterEntity>) {
+        val day = key.substringBefore('|').toLongOrNull() ?: throw IOException("Invalid playback daily counter key")
+        val identity = requireCounterIdentity(key.substringAfter('|', missingDelimiterValue = ""))
+        readShards(reader) { shard ->
+            rows.add(PlaybackStatsSnapshotDailyCounterEntity(snapshotId, shard.toDailyEntity(day, identity).toSnapshotData()))
+        }
+    }
+
+    private fun requireCounterIdentity(identity: String): String {
+        if (identity.isBlank()) throw IOException("Invalid playback counter identity")
+        return identity
+    }
+
+    private suspend fun readShards(reader: JsonReader, consume: suspend (SyncPlaybackCounterShard) -> Unit) {
+        reader.beginArray()
+        while (reader.hasNext()) {
+            currentCoroutineContext().ensureActive()
+            consume(gson.fromJson<SyncPlaybackCounterShard>(reader, SyncPlaybackCounterShard::class.java) ?: throw IOException("Null playback counter"))
+        }
+        reader.endArray()
     }
 
     private suspend fun buildLegacyBuckets() {
@@ -191,5 +196,21 @@ internal class PlaybackStatsLegacyImporter(private val context: Context, private
                 if (reader.peek() != JsonToken.END_DOCUMENT) throw IOException("Trailing playback legacy content")
             }
         }
+    }
+}
+
+/** Buffers counter rows and hands them to [write] a page of 256 at a time. */
+private class CounterPageBuffer<T>(private val write: suspend (List<T>) -> Unit) {
+    private val rows = ArrayList<T>(256)
+
+    suspend fun add(row: T) {
+        rows.add(row)
+        if (rows.size == 256) flush()
+    }
+
+    suspend fun flush() {
+        if (rows.isEmpty()) return
+        write(rows)
+        rows.clear()
     }
 }

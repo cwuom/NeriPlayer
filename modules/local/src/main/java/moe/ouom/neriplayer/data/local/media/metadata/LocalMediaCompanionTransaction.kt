@@ -2,12 +2,14 @@ package moe.ouom.neriplayer.data.local.media.metadata
 
 import moe.ouom.neriplayer.data.local.media.*
 import android.content.Context
+import android.net.Uri
 import android.provider.DocumentsContract
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
 import android.system.Os
 import androidx.core.net.toUri
 import java.io.File
+import java.io.FileNotFoundException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.io.FileOutputStream
@@ -36,52 +38,80 @@ data class LocalMediaCompanionRecoveryEntry(
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("reference", reference)
-        put("backupPath", backupFile?.absolutePath ?: JSONObject.NULL)
-        put("originalSha256", originalSha256 ?: JSONObject.NULL)
-        put("expectedSha256", expectedSha256 ?: JSONObject.NULL)
-        put("originalLastModifiedMs", originalLastModifiedMs ?: JSONObject.NULL)
+        put("backupPath", backupFile.pathOrJsonNull())
+        put("originalSha256", originalSha256.orJsonNull())
+        put("expectedSha256", expectedSha256.orJsonNull())
+        put("originalLastModifiedMs", originalLastModifiedMs.orJsonNull())
         put("createdByTransaction", createdByTransaction)
-        put("fileIdentity", fileIdentity ?: JSONObject.NULL)
+        put("fileIdentity", fileIdentity.orJsonNull())
         put("writeIdentityVerified", writeIdentityVerified)
         put("deferredDelete", deferredDelete)
-        put("intendedPath", intendedFile?.absolutePath ?: JSONObject.NULL)
-        put("phase", phase ?: JSONObject.NULL)
-        put("previousSha256", previousSha256 ?: JSONObject.NULL)
-        put("previousIdentity", previousIdentity ?: JSONObject.NULL)
-        put("stagedPath", stagedFile?.absolutePath ?: JSONObject.NULL)
-        put("restoreInputSha256", restoreInputSha256 ?: JSONObject.NULL)
-        put("stagedIdentity", stagedIdentity ?: JSONObject.NULL)
+        put("intendedPath", intendedFile.pathOrJsonNull())
+        put("phase", phase.orJsonNull())
+        put("previousSha256", previousSha256.orJsonNull())
+        put("previousIdentity", previousIdentity.orJsonNull())
+        put("stagedPath", stagedFile.pathOrJsonNull())
+        put("restoreInputSha256", restoreInputSha256.orJsonNull())
+        put("stagedIdentity", stagedIdentity.orJsonNull())
     }
 
     companion object {
+        private val RECOVERABLE_PHASES = setOf(null, "CREATED", "WRITE_INTENT", "ATOMIC_WRITE_INTENT", "WRITTEN", "RESTORING")
+
         fun fromJson(body: JSONObject, directory: File): LocalMediaCompanionRecoveryEntry {
-            fun text(key: String) = body.optString(key).takeIf { body.has(key) && !body.isNull(key) && it.isNotBlank() }
-            val backup = text("backupPath")?.let { path ->
-                File(path).canonicalFile.also { require(it.parentFile == directory) }
-            }
+            val backup = canonicalFileIn(body.presentText("backupPath"), directory)
             val created = body.getBoolean("createdByTransaction")
-            val original = text("originalSha256")
-            require(created || backup != null && original?.length == 64)
+            val original = body.presentText("originalSha256")
+            require(created || hasProvenOriginal(backup, original))
             val reference = body.getString("reference")
             require(LocalMediaMetadataRecoveryStore.targetIdentity(reference) != null)
-            require(text("phase") in setOf(null, "CREATED", "WRITE_INTENT", "ATOMIC_WRITE_INTENT", "WRITTEN", "RESTORING"))
-            require(text("phase") != null || text("intendedPath") == null)
+            val phase = body.presentText("phase")
+            requireConsistentPhase(phase, body.presentText("intendedPath"))
             return LocalMediaCompanionRecoveryEntry(
-                reference, backup, original, text("expectedSha256"),
-                body.optLong("originalLastModifiedMs").takeIf { it > 0L }, created,
-                text("fileIdentity"), body.optBoolean("writeIdentityVerified"),
+                reference, backup, original, body.presentText("expectedSha256"),
+                body.optPositiveLong("originalLastModifiedMs"), created,
+                body.presentText("fileIdentity"), body.optBoolean("writeIdentityVerified"),
                 body.optBoolean("deferredDelete"),
-                text("intendedPath")?.let { File(it).canonicalFile.also { file -> require(file.parentFile == directory) } },
-                text("phase"), text("previousSha256"), text("previousIdentity"),
-                text("stagedPath")?.let { File(it).canonicalFile.also { file ->
-                    val target = requireNotNull(companionFile(reference)).canonicalFile
-                    require(file.parentFile == target.parentFile && file.name.startsWith(".${target.name}.companion-"))
-                } },
-                text("restoreInputSha256"), text("stagedIdentity")
+                canonicalFileIn(body.presentText("intendedPath"), directory),
+                phase, body.presentText("previousSha256"), body.presentText("previousIdentity"),
+                canonicalStagedCompanionFile(body.presentText("stagedPath"), reference),
+                body.presentText("restoreInputSha256"), body.presentText("stagedIdentity")
             )
+        }
+
+        private fun hasProvenOriginal(backup: File?, originalSha256: String?): Boolean {
+            return backup != null && originalSha256?.length == 64
+        }
+
+        private fun requireConsistentPhase(phase: String?, intendedPath: String?) {
+            require(phase in RECOVERABLE_PHASES)
+            require(phase != null || intendedPath == null)
+        }
+
+        private fun canonicalFileIn(path: String?, directory: File): File? {
+            path ?: return null
+            return File(path).canonicalFile.also { require(it.parentFile == directory) }
+        }
+
+        private fun canonicalStagedCompanionFile(path: String?, reference: String): File? {
+            path ?: return null
+            val file = File(path).canonicalFile
+            val target = requireNotNull(companionFile(reference)).canonicalFile
+            require(file.parentFile == target.parentFile && file.name.startsWith(".${target.name}.companion-"))
+            return file
         }
     }
 }
+
+private fun JSONObject.presentText(key: String): String? {
+    return optString(key).takeIf { has(key) && !isNull(key) && it.isNotBlank() }
+}
+
+private fun JSONObject.optPositiveLong(key: String): Long? = optLong(key).takeIf { it > 0L }
+
+private fun Any?.orJsonNull(): Any = this ?: JSONObject.NULL
+
+private fun File?.pathOrJsonNull(): Any = this?.absolutePath.orJsonNull()
 
 class LocalMediaCompanionTransaction(private val context: Context, private val audioReference: String) {
     var record: LocalMetadataRecoveryRecord? = null
@@ -369,14 +399,23 @@ private fun bytePrefix(actual: ByteArray, expected: ByteArray): Boolean =
     actual.size <= expected.size && actual.indices.all { actual[it] == expected[it] }
 
 private fun writeRegularCompanion(context: Context, reference: String, bytes: ByteArray, identity: String) {
-    val descriptor = context.contentResolver.openFileDescriptor(reference.toUri(), "rwt")
-        ?: throw IOException("伴随文件不可写")
+    val descriptor = openCompanionForRewrite(context, reference.toUri()) ?: throw IOException("伴随文件不可写")
     descriptor.use { fd ->
         val stat = Os.fstat(fd.fileDescriptor)
         check(OsConstants.S_ISREG(stat.st_mode) && "${stat.st_dev}:${stat.st_ino}" == identity) { "伴随写入对象已改变" }
         Os.ftruncate(fd.fileDescriptor, 0)
         ParcelFileDescriptor.AutoCloseOutputStream(fd.dup()).use { it.write(bytes); it.flush(); Os.fsync(fd.fileDescriptor) }
     }
+}
+
+/**
+ * "rwt" 会在身份校验前截断 URI 当前映射的对象，优先用 "rw" 在校验同一描述符后再截断；
+ * 不少 DocumentsProvider 不支持 "rw"，只能退回 "rwt"，这时截断早于校验
+ */
+private fun openCompanionForRewrite(context: Context, uri: Uri): ParcelFileDescriptor? = try {
+    context.contentResolver.openFileDescriptor(uri, "rw")
+} catch (_: FileNotFoundException) {
+    context.contentResolver.openFileDescriptor(uri, "rwt")
 }
 
 internal fun finishLocalMediaCompanionDeletes(context: Context, record: LocalMetadataRecoveryRecord): Boolean {

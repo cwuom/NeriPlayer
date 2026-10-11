@@ -314,12 +314,14 @@ void choosesUnityHardwareVolumeWithinTheDeviceRange() {
     constexpr uint8_t range[] = { 1, 0, 0x00, 0xCE, 0x00, 0x00, 0x80, 0x00 };
     int16_t minimum = 1;
     int16_t maximum = 1;
-    assert(neri::usb::control::decodeUac2VolumeRange(range, sizeof(range), &minimum, &maximum));
+    uint16_t resolution = 0;
+    assert(neri::usb::control::decodeUac2VolumeRange(range, sizeof(range), &minimum, &maximum, &resolution));
     assert(minimum == -12800);
     assert(maximum == 0);
+    assert(resolution == 128);
     constexpr uint8_t empty[] = { 0, 0, 0x00, 0xCE, 0x00, 0x00, 0x80, 0x00 };
-    assert(!neri::usb::control::decodeUac2VolumeRange(empty, sizeof(empty), &minimum, &maximum));
-    assert(!neri::usb::control::decodeUac2VolumeRange(range, 4, &minimum, &maximum));
+    assert(!neri::usb::control::decodeUac2VolumeRange(empty, sizeof(empty), &minimum, &maximum, &resolution));
+    assert(!neri::usb::control::decodeUac2VolumeRange(range, 4, &minimum, &maximum, &resolution));
 
     uint8_t encoded[2] = { 0, 0 };
     neri::usb::control::encodeLittleEndianInt16(-12800, encoded);

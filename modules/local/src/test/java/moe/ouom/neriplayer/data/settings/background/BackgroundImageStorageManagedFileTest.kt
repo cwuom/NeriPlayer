@@ -2,7 +2,9 @@ package moe.ouom.neriplayer.data.settings.background
 
 import android.content.ContentResolver
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
+import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -17,8 +19,11 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.ArgumentMatchers.isNull
 import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockStatic
 import java.io.ByteArrayInputStream
@@ -92,6 +97,53 @@ class BackgroundImageStorageManagedFileTest {
         assertFalse(replaced.exists())
         assertFalse(schemeless.exists())
         assertTrue(outside.exists())
+    }
+
+    @Test
+    fun `imported file extensions come from the display name then the mime type then jpg`() = runTest {
+        val named = readableSource()
+        stubDisplayName(named, displayNameColumn = 0, displayName = "Photo.WEBP")
+        doReturn("image/png").`when`(resolver).getType(named)
+        val unnamed = readableSource()
+        stubDisplayName(unnamed, displayNameColumn = 0, displayName = "Photo")
+        doReturn("image/svg+xml").`when`(resolver).getType(unnamed)
+        val missingColumn = readableSource()
+        stubDisplayName(missingColumn, displayNameColumn = -1, displayName = "Ignored.gif")
+        doReturn("image/png").`when`(resolver).getType(missingColumn)
+        val denied = readableSource()
+        doThrow(SecurityException("denied")).`when`(resolver).query(
+            eq(denied),
+            any(Array<String>::class.java),
+            isNull<String>(),
+            isNull<Array<String>>(),
+            isNull<String>()
+        )
+
+        val extensions = listOf(named, unnamed, missingColumn, denied).map { source ->
+            withManagedUris { BackgroundImageStorage.importFromUri(context, source) }
+                .toString()
+                .substringAfterLast('.')
+        }
+
+        assertEquals(listOf("webp", "xml", "png", "jpg"), extensions)
+    }
+
+    private fun readableSource(): Uri = mock(Uri::class.java).also { source ->
+        doReturn(ByteArrayInputStream(byteArrayOf(1))).`when`(resolver).openInputStream(source)
+    }
+
+    private fun stubDisplayName(source: Uri, displayNameColumn: Int, displayName: String) {
+        val cursor = mock(Cursor::class.java)
+        doReturn(displayNameColumn).`when`(cursor).getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        doReturn(true).`when`(cursor).moveToFirst()
+        doReturn(displayName).`when`(cursor).getString(0)
+        doReturn(cursor).`when`(resolver).query(
+            eq(source),
+            any(Array<String>::class.java),
+            isNull<String>(),
+            isNull<Array<String>>(),
+            isNull<String>()
+        )
     }
 
     // Static mocks are thread-local; the storage's own IO hop then stays on this IO thread

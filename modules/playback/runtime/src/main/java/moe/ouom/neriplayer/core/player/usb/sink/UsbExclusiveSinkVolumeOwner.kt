@@ -91,7 +91,7 @@ internal class UsbExclusiveSinkVolumeOwner(
         if (observesSystemVolume) {
             if (handle != 0L) registerSystemVolumeObserver() else unregisterSystemVolumeObserver()
         }
-        syncNativeBitPerfect()
+        updateNativeBitPerfect()
         hardwareVolumeAvailable = handle != 0L && port.hasHardwareVolume(handle)
         // 打开后先同步写入硬件音量再出声，避免比特完美首包按 0 dB 播放
         applyHardwareVolume()
@@ -134,13 +134,19 @@ internal class UsbExclusiveSinkVolumeOwner(
         return effectiveVolume
     }
 
-    private fun syncNativeBitPerfect() = synchronized(bitPerfectLock) {
+    /** 会话中途切换比特完美时，DAC 硬件音量也要在 0 dB 与跟随音量键之间切换 */
+    private fun syncNativeBitPerfect() {
+        if (updateNativeBitPerfect()) applyHardwareVolume()
+    }
+
+    private fun updateNativeBitPerfect(): Boolean = synchronized(bitPerfectLock) {
         val handle = nativeHandle
-        if (handle == 0L) return
+        if (handle == 0L) return false
         val enabled = port.bitPerfect()
-        if (nativeBitPerfect == enabled) return
+        if (nativeBitPerfect == enabled) return false
         nativeBitPerfect = enabled
         port.setNativeBitPerfect(handle, enabled)
+        true
     }
 
     fun publishNativeVolume(effectiveVolume: Float) {

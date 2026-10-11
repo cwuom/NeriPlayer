@@ -80,6 +80,7 @@
     <string name="sync_after_play_desc">After each play</string>
     <string name="sync_step1_token">Step 1: Enter GitHub Token</string>
     <string name="sync_create_token">Create Token on GitHub</string>
+    <string name="sync_create_token_open_failed">Could not open a browser. Visit github.com/settings/tokens to create a token manually.</string>
     <string name="sync_step2_repo">Step 2: Select Repository</string>
     <string name="sync_verify_token">Verify Token</string>
     <string name="sync_clear_config_desc">Clear sync configuration. Local data won\'t be deleted.</string>

@@ -26,17 +26,14 @@ import android.content.Context
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.interaction.MutableInteractionSource
 
 private const val VIBRATION_EFFECT_CLICK = 0
 private const val VIBRATION_EFFECT_DOUBLE_CLICK = 1
@@ -87,9 +84,21 @@ private fun createVibrationEffect(
 
 private fun Vibrator.supportsPredefinedEffect(effect: Int): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return true
-    val support = areEffectsSupported(effect).firstOrNull()
-    return support == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ||
+    return isPredefinedEffectSupportUsable(areEffectsSupported(effect).firstOrNull())
+}
+
+@RequiresApi(Build.VERSION_CODES.R)
+internal fun isPredefinedEffectSupportUsable(support: Int?): Boolean =
+    support == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ||
         support == Vibrator.VIBRATION_EFFECT_SUPPORT_UNKNOWN
+
+private fun hapticClick(
+    context: Context,
+    effect: HapticFeedbackEffect,
+    onClick: () -> Unit
+): () -> Unit = {
+    context.performHapticFeedback(effect)
+    onClick()
 }
 
 @Composable
@@ -97,19 +106,12 @@ fun HapticIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    hapticEffect: HapticFeedbackEffect = HapticFeedbackEffect.Click,
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
     IconButton(
-        onClick = {
-            context.performHapticFeedback(hapticEffect)
-            onClick()
-        },
+        onClick = hapticClick(LocalContext.current, HapticFeedbackEffect.Click, onClick),
         modifier = modifier,
         enabled = enabled,
-        interactionSource = interactionSource,
         content = content
     )
 }
@@ -121,21 +123,14 @@ fun HapticFilledIconButton(
     enabled: Boolean = true,
     shape: Shape = IconButtonDefaults.filledShape,
     colors: IconButtonColors = IconButtonDefaults.filledIconButtonColors(),
-    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    hapticEffect: HapticFeedbackEffect = HapticFeedbackEffect.Confirm,
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
     FilledIconButton(
-        onClick = {
-            context.performHapticFeedback(hapticEffect)
-            onClick()
-        },
+        onClick = hapticClick(LocalContext.current, HapticFeedbackEffect.Confirm, onClick),
         modifier = modifier,
         enabled = enabled,
         shape = shape,
         colors = colors,
-        interactionSource = interactionSource,
         content = content
     )
 }
@@ -147,27 +142,16 @@ fun HapticButton(
     enabled: Boolean = true,
     shape: Shape = ButtonDefaults.shape,
     colors: ButtonColors = ButtonDefaults.buttonColors(),
-    elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
-    border: BorderStroke? = null,
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
-    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    hapticEffect: HapticFeedbackEffect = HapticFeedbackEffect.Confirm,
     content: @Composable RowScope.() -> Unit
 ) {
-    val context = LocalContext.current
     Button(
-        onClick = {
-            context.performHapticFeedback(hapticEffect)
-            onClick()
-        },
+        onClick = hapticClick(LocalContext.current, HapticFeedbackEffect.Confirm, onClick),
         modifier = modifier,
         enabled = enabled,
         shape = shape,
         colors = colors,
-        elevation = elevation,
-        border = border,
         contentPadding = contentPadding,
-        interactionSource = interactionSource,
         content = content
     )
 }
@@ -177,27 +161,17 @@ fun HapticTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = ButtonDefaults.shape,
     colors: ButtonColors = ButtonDefaults.textButtonColors(),
-    border: BorderStroke? = null,
     contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
-    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    hapticEffect: HapticFeedbackEffect = HapticFeedbackEffect.Click,
     content: @Composable RowScope.() -> Unit
 ) {
-    val context = LocalContext.current
     TextButton(
-        onClick = {
-            context.performHapticFeedback(hapticEffect)
-            onClick()
-        },
+        onClick = hapticClick(LocalContext.current, HapticFeedbackEffect.Click, onClick),
         modifier = modifier,
         enabled = enabled,
-        shape = shape,
+        shape = ButtonDefaults.shape,
         colors = colors,
-        border = border,
         contentPadding = contentPadding,
-        interactionSource = interactionSource,
         content = content
     )
 }
@@ -208,26 +182,15 @@ fun HapticOutlinedButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     shape: Shape = ButtonDefaults.shape,
-    colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
-    border: BorderStroke? = ButtonDefaults.outlinedButtonBorder(enabled),
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
-    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    hapticEffect: HapticFeedbackEffect = HapticFeedbackEffect.Click,
     content: @Composable RowScope.() -> Unit
 ) {
-    val context = LocalContext.current
     OutlinedButton(
-        onClick = {
-            context.performHapticFeedback(hapticEffect)
-            onClick()
-        },
+        onClick = hapticClick(LocalContext.current, HapticFeedbackEffect.Click, onClick),
         modifier = modifier,
         enabled = enabled,
         shape = shape,
-        colors = colors,
-        border = border,
         contentPadding = contentPadding,
-        interactionSource = interactionSource,
         content = content
     )
 }
@@ -236,22 +199,12 @@ fun HapticOutlinedButton(
 fun HapticFloatingActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    shape: Shape = FloatingActionButtonDefaults.shape,
-    containerColor: Color = FloatingActionButtonDefaults.containerColor,
-    elevation: FloatingActionButtonElevation = FloatingActionButtonDefaults.elevation(),
     hapticEffect: HapticFeedbackEffect = HapticFeedbackEffect.Confirm,
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
     FloatingActionButton(
-        onClick = {
-            context.performHapticFeedback(hapticEffect)
-            onClick()
-        },
+        onClick = hapticClick(LocalContext.current, hapticEffect, onClick),
         modifier = modifier,
-        shape = shape,
-        containerColor = containerColor,
-        elevation = elevation,
         content = content
     )
 }

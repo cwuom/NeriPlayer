@@ -61,6 +61,23 @@ class SyncWorkSchedulerTest {
     }
 
     @Test
+    fun `startup work is unique and is not blocked by delayed mutation work`() {
+        scheduler().scheduleDelayed(userAction = false, mark = false, delayMs = 60_000, append = false)
+        scheduler().scheduleDelayed(userAction = false, mark = false, delayMs = 0, append = false, appStartup = true)
+        val invocations = mockingDetails(manager).invocations.toList()
+        assertEquals(listOf("sync", "sync_startup"), invocations.map { it.getArgument<String>(0) })
+        val startup = invocations[1].getArgument<OneTimeWorkRequest>(2)
+        assertEquals(ExistingWorkPolicy.KEEP, invocations[1].getArgument<ExistingWorkPolicy>(1))
+        assertEquals(0L, startup.workSpec.initialDelay)
+        assertTrue(startup.workSpec.input.getBoolean("trigger_by_app_startup", false))
+        assertFalse(startup.workSpec.input.getBoolean("trigger_by_user_action", true))
+        assertFalse(startup.workSpec.input.getBoolean("force_sync", false))
+        assertTrue(startup.tags.contains("sync"))
+        assertFalse(invocations[0].getArgument<OneTimeWorkRequest>(2).workSpec.input.getBoolean("trigger_by_app_startup", true))
+        assertEquals(listOf("allowed", "manager", "allowed", "manager"), events)
+    }
+
+    @Test
     fun `periodic immediate and cancel retain persisted scheduling contract`() {
         val scheduler = scheduler()
         scheduler.schedulePeriodic()

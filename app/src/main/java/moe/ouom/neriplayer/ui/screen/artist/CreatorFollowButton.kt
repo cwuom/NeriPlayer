@@ -70,6 +70,9 @@ internal suspend fun toggleCreatorFollow(
     }
 }
 
+internal fun List<FavoritePlaylist>.containsCreator(favorite: FavoritePlaylist): Boolean =
+    any { it.id == favorite.id && it.source == favorite.source }
+
 @Composable
 internal fun CreatorFollowButton(
     favorite: FavoritePlaylist,
@@ -80,7 +83,7 @@ internal fun CreatorFollowButton(
         FavoritePlaylistRepository.getInstance(context)
     }
     val favorites by repository.favorites.collectAsStateWithLifecycle()
-    val followed = favorites.any { it.id == favorite.id && it.source == favorite.source }
+    val followed = favorites.containsCreator(favorite)
     key(favorite.source, favorite.id) {
         val scope = rememberCoroutineScope()
         var updating by remember { mutableStateOf(false) }

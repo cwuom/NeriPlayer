@@ -23,6 +23,18 @@ class LyricSyncPersistenceTest {
     }
 
     @Test
+    fun `an unknown lyric source from a newer build decodes as no source`() {
+        val restored = readLyricSyncPersistence(
+            """{"revision":2,"source":"FUTURE_PLATFORM","matchedSongId":"7","userOffsetMs":120}"""
+        )
+
+        assertEquals(
+            LyricSyncPersistence(revision = 2L, source = null, matchedSongId = "7", userOffsetMs = 120L),
+            restored
+        )
+    }
+
+    @Test
     fun `missing persistence json yields defaults while a null payload is rejected`() {
         assertEquals(LyricSyncPersistence(), readLyricSyncPersistence(null))
         assertThrows(IllegalArgumentException::class.java) { readLyricSyncPersistence("null") }

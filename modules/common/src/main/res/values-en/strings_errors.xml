@@ -19,7 +19,7 @@
     <string name="error_link_recognition">Link recognition failed: %s</string>
     <string name="error_load_playlist">Load playlist failed: %s</string>
     <string name="error_search_failed">Search failed: %s</string>
-    <string name="error_get_user_id">Cannot get user ID, please log in again</string>
+    <string name="error_get_user_id">Cannot get user ID. The cookie needs DedeUserID; import the full cookie or log in again</string>
     <string name="error_api_code">API returned error code=%d</string>
     <string name="error_missing_node">Missing %s node</string>
     <string name="exception_title">Application Error</string>
@@ -30,4 +30,5 @@
     <string name="exception_no_detail">No details</string>
     <string name="exception_logged">Detailed error logged to file.</string>
     <string name="exception_contact">If problem persists, please restart app or contact developer.</string>
+    <string name="error_no_app_for_action">No app can complete this action</string>
 </resources>

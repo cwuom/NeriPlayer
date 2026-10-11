@@ -64,6 +64,7 @@
     <string name="storage_desc_legacy_migration_files">Legacy JSON kept only for Room migration fallback; startup cleanup removes it after Room becomes primary</string>
     <string name="storage_desc_database">Room database and WAL/SHM files; platform cache pages are apportioned above, while core data is never removed by cache cleanup</string>
     <string name="storage_desc_app_data">Core playlists, favorites, settings, and auth data</string>
+    <string name="cache_clear_partial">Some caches could not be cleared</string>
     <string name="cache_clear_complete">Cache cleared</string>
     <string name="settings_storage_cache">Storage &amp; Cache</string>
     <string name="settings_storage_expand">Cache size, cleanup, and storage use</string>

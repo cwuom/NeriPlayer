@@ -17,6 +17,8 @@ constexpr int kMaxTopologyDepth = 16;
 constexpr uint32_t kUac2HostProgrammable = 0x3;
 // 可调范围太窄的音量控制交给音量键没有意义
 constexpr int kMinimumUsableVolumeRange = 20 * 256;
+// UAC 规定 RES 取 1..0x7FFF
+constexpr uint16_t kMaximumVolumeResolution = 0x7FFF;
 
 struct FeatureUnit {
     int sourceId = 0;
@@ -137,6 +139,10 @@ int16_t unityVolumeWithinRange(int16_t minimum, int16_t maximum) {
     return std::clamp<int16_t>(0, low, high);
 }
 
+uint8_t muteRestoreValue(bool originalKnown, uint8_t original) {
+    return originalKnown && original != 0 ? 1 : 0;
+}
+
 std::vector<FeatureUnitVolume> selectHardwareVolumeControls(const std::vector<FeatureUnitVolume>& volumes) {
     for (const auto& candidate : volumes) {
         if (!usableVolumeRange(candidate)) continue;
@@ -151,21 +157,43 @@ std::vector<FeatureUnitVolume> selectHardwareVolumeControls(const std::vector<Fe
     return {};
 }
 
-int16_t hardwareVolumeForFraction(float fraction, int16_t minimum, int16_t maximum) {
-    const int16_t low = std::min(minimum, maximum);
-    const int16_t top = unityVolumeWithinRange(minimum, maximum);
-    if (!(fraction > 0.0f)) return low;
-    if (fraction >= 1.0f) return top;
-    const double decibels = 40.0 * std::log10(static_cast<double>(fraction));
-    const long scaled = std::lround(decibels * 256.0);
-    return static_cast<int16_t>(std::clamp<long>(scaled, low, top));
+int16_t quantizeVolumeToResolution(int value, int16_t minimum, int16_t maximum, uint16_t resolution) {
+    const int low = std::min(minimum, maximum);
+    const int high = std::max(minimum, maximum);
+    const int clamped = std::clamp(value, low, high);
+    if (resolution <= 1 || resolution > kMaximumVolumeResolution || resolution > high - low) {
+        return static_cast<int16_t>(clamped);
+    }
+    return static_cast<int16_t>(low + (clamped - low) / resolution * resolution);
 }
 
-bool decodeUac2VolumeRange(const uint8_t* data, size_t length, int16_t* minimum, int16_t* maximum) {
-    if (data == nullptr || minimum == nullptr || maximum == nullptr || length < 8) return false;
+int16_t hardwareVolumeForFraction(float fraction, int16_t minimum, int16_t maximum, uint16_t resolution) {
+    const int16_t low = std::min(minimum, maximum);
+    const int16_t top = unityVolumeWithinRange(minimum, maximum);
+    long target = top;
+    if (!(fraction > 0.0f)) {
+        target = low;
+    } else if (fraction < 1.0f) {
+        const double decibels = 40.0 * std::log10(static_cast<double>(fraction));
+        target = std::clamp<long>(std::lround(decibels * 256.0), low, top);
+    }
+    return quantizeVolumeToResolution(static_cast<int>(target), minimum, maximum, resolution);
+}
+
+bool decodeUac2VolumeRange(
+    const uint8_t* data,
+    size_t length,
+    int16_t* minimum,
+    int16_t* maximum,
+    uint16_t* resolution
+) {
+    if (data == nullptr || minimum == nullptr || maximum == nullptr || resolution == nullptr || length < 8) {
+        return false;
+    }
     if (readLittleEndian(data, 2) == 0) return false;
     *minimum = decodeLittleEndianInt16(data + 2);
     *maximum = decodeLittleEndianInt16(data + 4);
+    *resolution = static_cast<uint16_t>(readLittleEndian(data + 6, 2));
     return true;
 }
 

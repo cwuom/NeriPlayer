@@ -11,6 +11,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.asCoroutineDispatcher
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
 
 class DownloadTransferWatchdogTest {
@@ -104,5 +112,40 @@ class DownloadTransferWatchdogTest {
         }
         assertEquals("done", result)
         permit.release()
+    }
+
+    @Test
+    fun `blocking transfer without suspension points is interrupted through the stall hook`() = runBlocking {
+        val clock = AtomicLong(0L)
+        val registry = DownloadTransferPermitRegistry(maxParallelism = 1, nowNs = { clock.get() })
+        val permit = registry.acquire("blocking")
+        permit.markNetworkIoStarted()
+        clock.set(11L)
+        val watchdog = DownloadTransferWatchdog(
+            registry = registry,
+            pollIntervalMs = 5L,
+            staleAfterNs = 10L,
+            nowNs = { clock.get() }
+        )
+        val unblock = CountDownLatch(1)
+        val interrupts = AtomicInteger()
+        val dispatcher = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
+        try {
+            val failure = withContext(dispatcher) {
+                runCatching {
+                    watchdog.run(permit, onStalled = { interrupts.incrementAndGet(); unblock.countDown() }) {
+                        // 模拟阻塞的网络读取：没有挂起点，只能被中断回调放行
+                        check(unblock.await(5, TimeUnit.SECONDS)) { "transfer was never interrupted" }
+                        throw IOException("socket closed")
+                    }
+                }.exceptionOrNull()
+            }
+            assertTrue("$failure", failure is DownloadTransferStalledException)
+            assertEquals(1, interrupts.get())
+            assertEquals(1, registry.snapshot().permitCount)
+        } finally {
+            permit.release()
+            dispatcher.close()
+        }
     }
 }

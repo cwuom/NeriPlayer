@@ -1,6 +1,7 @@
 #include "usb/feedback/usb_feedback_rate_math.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 
@@ -59,6 +60,37 @@ void verifiesExplicitNormalizationMath() {
         &normalized
     ) == FeedbackMathStatus::Ok);
     assert(normalized == UINT64_C(12) * kQ32One);
+}
+
+void convertsServiceIntervalRateToHz() {
+    using neri::usb::feedback::feedbackRateHz;
+    FeedbackRateQ32 rate = 0;
+    assert(neri::usb::feedback::makeFeedbackRateQ32(48000, 8000, &rate) ==
+        FeedbackMathStatus::Ok);
+    assert(feedbackRateHz(rate, 8000) == 48000.0);
+    assert(neri::usb::feedback::makeFeedbackRateQ32(44100, 8000, &rate) ==
+        FeedbackMathStatus::Ok);
+    assert(std::abs(feedbackRateHz(rate, 8000) - 44100.0) < 1e-6);
+    assert(neri::usb::feedback::makeFeedbackRateQ32(44100, 1000, &rate) ==
+        FeedbackMathStatus::Ok);
+    assert(std::abs(feedbackRateHz(rate, 1000) - 44100.0) < 1e-6);
+
+    // 高速 bInterval=2：反馈按输出服务间隔（2 个微帧）归一化，服务间隔为每秒 4000 个
+    FeedbackRateQ32 normalized = 0;
+    assert(neri::usb::feedback::normalizeFeedbackRateQ32(
+        UINT64_C(6) << 16U,
+        16,
+        8000,
+        8000,
+        2,
+        1,
+        &normalized
+    ) == FeedbackMathStatus::Ok);
+    assert(feedbackRateHz(normalized, 4000) == 48000.0);
+    const FeedbackRateQ32 nominal = UINT64_C(6) * kQ32One;
+    assert(std::abs(feedbackRateHz(nominal + nominal / 10000U, 8000) - 48004.8) < 1e-5);
+    assert(feedbackRateHz(0, 8000) == 0.0);
+    assert(feedbackRateHz(rate, 0) == 0.0);
 }
 
 void normalizesReducibleWideFeedbackWithoutFalseOverflow() {
@@ -158,6 +190,7 @@ void rejectsInvalidAndOverflowingMath() {
 int main() {
     verifiesRateConstructionAndPpmMath();
     verifiesExplicitNormalizationMath();
+    convertsServiceIntervalRateToHz();
     normalizesReducibleWideFeedbackWithoutFalseOverflow();
     verifiesLongDurationProjectionWithoutIteration();
     rejectsInvalidAndOverflowingMath();

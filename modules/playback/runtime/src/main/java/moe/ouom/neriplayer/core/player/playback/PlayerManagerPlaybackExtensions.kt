@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.clearUsbExclusiveInterruptedPlaybackIntent
 import moe.ouom.neriplayer.core.player.lifecycle.prepareUsbExclusiveRouteForManualPlayback
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
+import moe.ouom.neriplayer.core.player.lyrics.externalLyricBoundaryProgressIntervalMs
 import moe.ouom.neriplayer.core.player.lyrics.isExternalBluetoothLyricCadenceActive
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
@@ -43,7 +44,6 @@ import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS
 import moe.ouom.neriplayer.core.player.policy.command.resolveEffectivePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.resolveManagedPlaybackStartPlan
-import moe.ouom.neriplayer.core.player.policy.command.resolveManualResumePlaybackDecision
 import moe.ouom.neriplayer.core.player.policy.command.resolveNoFadePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.resolvePauseVolumePlan
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackContinuationStartPlan
@@ -58,6 +58,7 @@ import moe.ouom.neriplayer.core.player.policy.pending.SeekExecutionAction
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.player.policy.progress.resolveProgressIntervalWithLyricBoundary
 import moe.ouom.neriplayer.core.player.policy.progress.resolvePlaybackProgressUpdateIntervalMs
 import moe.ouom.neriplayer.core.player.policy.progress.shouldRunPlaybackProgressUpdates
 import moe.ouom.neriplayer.core.player.policy.skip.BiliSkipSegmentSource
@@ -617,6 +618,7 @@ internal fun PlayerManager.playAtIndex(
     cancelGenericUrlPrefetchUnlessReusableForSong(song, reason = "play_at_index")
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
+    resumeLongFormWhenHistoryLoads(song, allowRememberedLongFormPosition, requestToken)
     BiliSponsorBlockPlaybackController.onPlaybackRequestStarted(song, requestToken)
     BiliVideoSkipPlaybackController.onPlaybackRequestStarted(song, requestToken)
     if (isBiliTrack(song) && !isListenTogetherActive()) {
@@ -714,7 +716,7 @@ internal fun PlayerManager.playAtIndex(
                                     isListenTogetherAuthoritativeStreamConfirmedUnavailable(song)
                             )
                         ) {
-                            postPlayerEvent(PlayerEvent.ShowError(message))
+                            postPlayerEvent(PlayerEvent.ShowNotice(message))
                         }
                     }
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
@@ -1159,16 +1161,7 @@ internal fun PlayerManager.playImpl(
             )
         }
         currentPlaylist.isNotEmpty() && currentIndex != -1 -> {
-            val serverRetryPosition = song?.let { current ->
-                serverRecoveryPosition?.takeIf { it.first == AppQueueSongIdentity.stableKey(current) }?.second
-            }
-            val manualResumeDecision = resolveManualResumePlaybackDecision(
-                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled || serverRetryPosition != null,
-                restoredResumePositionMs = serverRetryPosition ?: restoredResumePositionMs,
-                persistedPlaybackPositionMs = serverRetryPosition ?: _playbackPositionMs.value,
-                isPlayerPrepared = preparedInPlayer,
-                currentMediaUrlResolvedAtMs = currentMediaUrlResolvedAtMs
-            )
+            val manualResumeDecision = resolveManualResumeWithServerRecovery(song, preparedInPlayer)
             playAtIndex(
                 currentIndex,
                 resumePositionMs = manualResumeDecision.resumePositionMs,
@@ -1725,12 +1718,15 @@ internal fun PlayerManager.startProgressUpdates() {
     }
 }
 
-private fun PlayerManager.progressUpdateIntervalMs(): Long =
-    resolvePlaybackProgressUpdateIntervalMs(
+private fun PlayerManager.progressUpdateIntervalMs(): Long = resolveProgressIntervalWithLyricBoundary(
+    baseIntervalMs = resolvePlaybackProgressUpdateIntervalMs(
         playbackProgressAdvanceReported = playbackProgressAdvanceReported,
         interactiveNowPlayingVisible = interactiveNowPlayingVisible,
         realtimeExternalLyricsActive = isExternalBluetoothLyricCadenceActive()
-    )
+    ),
+    interactiveNowPlayingVisible = interactiveNowPlayingVisible,
+    lyricBoundaryIntervalMs = { externalLyricBoundaryProgressIntervalMs(readProgressPosition()) }
+)
 
 private fun PlayerManager.runProgressUpdateTick() {
     val positionMs = readProgressPosition() ?: return

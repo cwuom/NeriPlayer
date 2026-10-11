@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.navigation.Destinations
@@ -21,6 +22,127 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainTabLayerTransitionControllerTest {
+    @Test
+    fun `cancelled history preview during a tab switch settles at the selected tab`() = runTest {
+        withController { controller ->
+            controller.makeReady()
+            completeFirstTransitionTo(controller, EXPLORE)
+            controller.request(HOME)
+            advanceUntilIdle()
+            controller.request(EXPLORE)
+            runCurrent()
+            advanceTimeBy(32L)
+            runCurrent()
+            controller.request(SETTINGS)
+
+            assertTrue(controller.beginPredictiveBack(HOME, restored = true))
+            controller.seekPredictiveBack(0.4f)
+            controller.cancelPredictiveBack()
+            advanceUntilIdle()
+
+            assertEquals(SETTINGS, controller.visibleScenes.single().route)
+        }
+    }
+
+    @Test
+    fun `predictive back can reverse a running tab switch and cancel at the selected tab`() = runTest {
+        withController { controller ->
+            controller.makeReady()
+            completeFirstTransitionTo(controller, EXPLORE)
+            controller.request(SETTINGS)
+            runCurrent()
+            advanceTimeBy(96L)
+            runCurrent()
+            val before = controller.visibleScenes.associate { it.route to controller.offsetFractionFor(it) }
+
+            assertTrue(controller.beginPredictiveBack(EXPLORE, restored = true))
+            controller.visibleScenes.forEach { scene ->
+                assertEquals(before.getValue(scene.route), controller.offsetFractionFor(scene), 0.001f)
+            }
+            controller.seekPredictiveBack(0.4f)
+            controller.cancelPredictiveBack()
+            advanceUntilIdle()
+
+            assertEquals(SETTINGS, controller.visibleScenes.single().route)
+            assertEquals(0f, controller.offsetFractionFor(controller.visibleScenes.single()), 0f)
+        }
+    }
+
+    @Test
+    fun `predictive back progress moves both tab scenes without completing navigation`() = runTest {
+        withController { controller ->
+            controller.makeReady()
+            completeFirstTransitionTo(controller, SETTINGS)
+
+            assertTrue(controller.beginPredictiveBack(HOME, restored = true))
+            controller.seekPredictiveBack(0.4f)
+            val (exiting, entering) = controller.visibleScenes
+
+            assertEquals(listOf(SETTINGS, HOME), controller.visibleScenes.map(MainTabLayerScene::route))
+            assertEquals(0.4f, controller.offsetFractionFor(exiting), 0.001f)
+            assertEquals(-0.6f, controller.offsetFractionFor(entering), 0.001f)
+            assertTrue(entering.restored)
+
+            advanceUntilIdle()
+
+            assertEquals(0.4f, controller.offsetFractionFor(controller.visibleScenes.first()), 0.001f)
+            assertEquals(2, controller.visibleScenes.size)
+        }
+    }
+
+    @Test
+    fun `cancelled predictive tab back returns to the original tab from the gesture position`() = runTest {
+        withController { controller ->
+            controller.makeReady()
+            completeFirstTransitionTo(controller, SETTINGS)
+            controller.beginPredictiveBack(HOME, restored = true)
+            controller.seekPredictiveBack(0.6f)
+
+            controller.cancelPredictiveBack()
+
+            assertEquals(0.6f, controller.offsetFractionFor(controller.visibleScenes.first()), 0.001f)
+            advanceUntilIdle()
+            assertEquals(SETTINGS, controller.visibleScenes.single().route)
+            assertEquals(0f, controller.offsetFractionFor(controller.visibleScenes.single()), 0f)
+            controller.seekPredictiveBack(0.9f)
+            assertEquals(SETTINGS, controller.visibleScenes.single().route)
+        }
+    }
+
+    @Test
+    fun `committed predictive tab back continues from the gesture position and settles on the target`() = runTest {
+        withController { controller ->
+            controller.makeReady()
+            completeFirstTransitionTo(controller, SETTINGS)
+            controller.beginPredictiveBack(HOME, restored = true)
+            controller.seekPredictiveBack(0.3f)
+
+            controller.commitPredictiveBack()
+            controller.request(HOME, restored = true)
+
+            assertEquals(0.3f, controller.offsetFractionFor(controller.visibleScenes.first()), 0.001f)
+            advanceUntilIdle()
+            assertEquals(HOME, controller.visibleScenes.single().route)
+            assertEquals(0f, controller.offsetFractionFor(controller.visibleScenes.single()), 0f)
+        }
+    }
+
+    @Test
+    fun `predictive tab progress is clamped and ignores a target outside the main tabs`() = runTest {
+        withController { controller ->
+            controller.makeReady()
+            assertFalse(controller.beginPredictiveBack(NON_TAB_ROUTE))
+            assertEquals(HOME, controller.visibleScenes.single().route)
+            completeFirstTransitionTo(controller, SETTINGS)
+            controller.beginPredictiveBack(HOME)
+
+            controller.seekPredictiveBack(-0.2f)
+            assertEquals(0f, controller.offsetFractionFor(controller.visibleScenes.first()), 0f)
+            controller.seekPredictiveBack(1.2f)
+            assertEquals(1f, controller.offsetFractionFor(controller.visibleScenes.first()), 0f)
+        }
+    }
+
     @Test
     fun `first tab change waits for the incoming scene before animating`() = runTest {
         withController { controller ->

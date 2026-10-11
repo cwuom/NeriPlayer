@@ -387,6 +387,69 @@ void verifies32BitIntegerPassThroughPreservesRawBytes() {
     assert(output == input);
 }
 
+template <size_t Bytes>
+std::array<uint8_t, Bytes> bitPerfectPassThrough(
+    int encoding,
+    int subslotBytes,
+    int bitsPerSample,
+    const std::vector<uint8_t>& input
+) {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    const neri::usb::PcmPipelineConfig config {
+        { 48000, 2, subslotBytes, bitsPerSample, 2 * subslotBytes },
+        { 48000, 2, encoding },
+        250,
+        1536,
+        12
+    };
+    assert(pipeline.configure(config, &error));
+    pipeline.setBitPerfect(true);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    std::array<uint8_t, Bytes> output {};
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+    return output;
+}
+
+void verifiesBigEndianIntegerInputStaysBitExact() {
+    constexpr int kPcm16BitBigEndian = 0x10000000;
+    constexpr int kPcm24BitBigEndian = 0x50000000;
+    constexpr int kPcm32BitBigEndian = 0x60000000;
+
+    // 32 位样本经 float 只剩 24 位有效位，0x12345679 会变成 0x12345680
+    const std::vector<uint8_t> int32BigEndian {
+        0x12, 0x34, 0x56, 0x79, 0x80, 0x00, 0x00, 0x01,
+        0x7F, 0xFF, 0xFF, 0xFF, 0x80, 0x00, 0x00, 0x00
+    };
+    assert((bitPerfectPassThrough<16>(kPcm32BitBigEndian, 4, 32, int32BigEndian) ==
+        std::array<uint8_t, 16> {
+            0x79, 0x56, 0x34, 0x12, 0x01, 0x00, 0x00, 0x80,
+            0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x00, 0x00, 0x80
+        }));
+
+    const std::vector<uint8_t> int24BigEndian { 0x12, 0x34, 0x56, 0x80, 0x00, 0x01 };
+    assert((bitPerfectPassThrough<6>(kPcm24BitBigEndian, 3, 24, int24BigEndian) ==
+        std::array<uint8_t, 6> { 0x56, 0x34, 0x12, 0x01, 0x00, 0x80 }));
+    assert((bitPerfectPassThrough<8>(kPcm24BitBigEndian, 4, 24, int24BigEndian) ==
+        std::array<uint8_t, 8> { 0x00, 0x56, 0x34, 0x12, 0x00, 0x01, 0x00, 0x80 }));
+    assert((bitPerfectPassThrough<8>(kPcm24BitBigEndian, 4, 32, int24BigEndian) ==
+        std::array<uint8_t, 8> { 0x00, 0x56, 0x34, 0x12, 0x00, 0x01, 0x00, 0x80 }));
+
+    const std::vector<uint8_t> int16BigEndian { 0x12, 0x34, 0x80, 0x01 };
+    assert((bitPerfectPassThrough<4>(kPcm16BitBigEndian, 2, 16, int16BigEndian) ==
+        std::array<uint8_t, 4> { 0x34, 0x12, 0x01, 0x80 }));
+
+    assert(neri::usb::readEncodedIntegerPcmSample(int32BigEndian.data(), kPcm32BitBigEndian) ==
+        INT32_C(0x12345679));
+    assert(neri::usb::readEncodedIntegerPcmSample(int24BigEndian.data() + 3, kPcm24BitBigEndian) ==
+        -INT32_C(0x7FFFFF));
+    assert(neri::usb::readEncodedIntegerPcmSample(int16BigEndian.data(), 2) == INT32_C(0x3412));
+    assert(neri::usb::readEncodedIntegerPcmSample(int16BigEndian.data(), 4) == 0);
+    std::array<uint8_t, 2> saturated {};
+    neri::usb::writeIntegerPcmValue(saturated.data(), 2, 16, INT64_C(0x10000));
+    assert((saturated == std::array<uint8_t, 2> { 0xFF, 0x7F }));
+}
+
 void verifiesStereoChannelPeaksPreserveChannelOrder() {
     neri::usb::PcmPipeline pipeline;
     std::string error;
@@ -742,6 +805,71 @@ void verifiesResamplerInputBoundNeverOverfillsOutput() {
     }
 }
 
+void verifiesResamplerDrainEmitsLookaheadTail() {
+    const std::vector<float> input = stereoTone(44100, 997.0, 0.5, 44100);
+    neri::usb::PcmResampler resampler;
+    assert(resampler.configure(44100, 48000, 2));
+    std::vector<float> output;
+    const size_t streamed = resampler.process(input.data(), 44100, &output);
+    const size_t tail = resampler.drain(&output);
+    // 一秒 44.1 kHz 输入要完整换算成一秒 48 kHz 输出，前瞻窗口里的尾部不能丢
+    assert(streamed + tail == 48000U);
+    assert(peakAfter(output, streamed) > 0.4);
+
+    std::vector<float> padded = input;
+    padded.resize(input.size() + static_cast<size_t>(resampler.halfTaps()) * 2U, 0.0f);
+    assert(output == resampleWhole(44100, 48000, padded));
+
+    assert(resampler.drain(&output) == 0U);
+    std::vector<float> restarted;
+    resampler.process(input.data(), 44100, &restarted);
+    assert(restarted == resampleWhole(44100, 48000, input));
+}
+
+void verifiesPipelineDrainQueuesResamplerTail() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(44100, 48000), &error));
+    std::vector<uint8_t> chunk(441U * 4U, 0);
+    for (int chunkIndex = 0; chunkIndex < 10; ++chunkIndex) {
+        assert(pipeline.write(chunk.data(), chunk.size(), &error) == chunk.size());
+    }
+    assert(pipeline.queuedFrames() == 4763);
+    assert(pipeline.drainResampler(&error));
+    // 4410 帧 44.1 kHz 输入正好是 4800 帧 48 kHz 输出
+    assert(pipeline.queuedFrames() == 4800);
+    assert(pipeline.drainResampler(&error));
+    assert(pipeline.queuedFrames() == 4800);
+
+    neri::usb::PcmPipeline passThrough;
+    assert(passThrough.configure(configFor(48000, 48000), &error));
+    assert(passThrough.write(chunk.data(), chunk.size(), &error) == chunk.size());
+    assert(passThrough.drainResampler(&error));
+    assert(passThrough.queuedFrames() == 441);
+}
+
+void verifiesPipelineDrainWaitsForRingSpace() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(44100, 48000);
+    config.ringDurationMs = 1;
+    config.transferBytes = 4;
+    config.transferCount = 1;
+    assert(pipeline.configure(config, &error));
+    const size_t capacityBytes = pipeline.snapshot().capacityBytes;
+    std::vector<uint8_t> input(4410U * 4U, 0);
+    assert(pipeline.write(input.data(), input.size(), &error) > 0U);
+    const size_t queuedBeforeDrain = pipeline.queuedFrames();
+
+    assert(!pipeline.drainResampler(&error));
+    assert(pipeline.queuedFrames() == queuedBeforeDrain);
+
+    std::vector<uint8_t> output(capacityBytes, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == queuedBeforeDrain * 4U);
+    assert(pipeline.drainResampler(&error));
+    assert(pipeline.queuedFrames() > 0U);
+}
+
 void verifiesChannelLayoutsCarryStereoWithoutDuplicatingExtraChannels() {
     const std::array<uint8_t, 4> stereoFrame { 0x00, 0x10, 0x00, 0xF0 };
     std::string error;
@@ -790,6 +918,9 @@ int main() {
     verifiesResamplerKeepsPassbandToneAccurate();
     verifiesResamplerRejectsContentAboveOutputNyquist();
     verifiesResamplerInputBoundNeverOverfillsOutput();
+    verifiesResamplerDrainEmitsLookaheadTail();
+    verifiesPipelineDrainQueuesResamplerTail();
+    verifiesPipelineDrainWaitsForRingSpace();
     verifiesBitPerfectResumeAndTransportStartKeepSamplesExact();
     verifiesBitPerfectMuteIsHardAndUnmuteIsExact();
     verifiesBitPerfectPartialUnderrunKeepsValidFrames();
@@ -809,6 +940,7 @@ int main() {
     verifiesFloatInputResampleProducesUsbSignalStats();
     verifiesFloatInputPassThroughProduces32BitUsbSignal();
     verifies32BitIntegerPassThroughPreservesRawBytes();
+    verifiesBigEndianIntegerInputStaysBitExact();
     verifiesStereoChannelPeaksPreserveChannelOrder();
     verifies32BitInputCanDrive24BitUsb32Container();
     verifiesIntegerCodecDepthsAndEndianInputs();

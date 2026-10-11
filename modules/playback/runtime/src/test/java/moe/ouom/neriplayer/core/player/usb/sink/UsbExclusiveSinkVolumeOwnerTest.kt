@@ -200,6 +200,30 @@ class UsbExclusiveSinkVolumeOwnerTest {
     }
 
     @Test
+    fun `toggling bit perfect mid session moves the DAC between unity and the volume keys`() {
+        val port = RecordingVolumePort(bitPerfect = false, hardwareVolume = true)
+        val owner = UsbExclusiveSinkVolumeOwner(contextWithoutAudioManager(), false, port)
+        try {
+            owner.setNativeHandle(7L)
+            owner.updateSystemVolumeFraction(0.3f)
+            assertEquals(7L to 1f, port.hardwareVolumes.last())
+
+            port.bitPerfect = true
+            owner.nativeWriteVolume()
+            assertEquals(7L to 0.3f, port.hardwareVolumes.last())
+
+            port.bitPerfect = false
+            owner.applyEffectiveNativeVolume()
+            assertEquals(7L to 1f, port.hardwareVolumes.last())
+            val writes = port.hardwareVolumes.size
+            owner.nativeWriteVolume()
+            assertEquals(writes, port.hardwareVolumes.size)
+        } finally {
+            owner.release()
+        }
+    }
+
+    @Test
     fun `system volume read failure falls back without aborting owner creation`() {
         val context = mock(Context::class.java)
         val manager = mock(AudioManager::class.java)

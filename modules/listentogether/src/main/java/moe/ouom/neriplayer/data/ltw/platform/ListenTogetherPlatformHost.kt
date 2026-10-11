@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherValidationError
 
 interface ListenTogetherPlatformHost {
     val applicationContext: Context
+    val networkMonitor: ListenTogetherNetworkMonitor
     fun isInitialized(): Boolean
     fun isPlaybackServiceReady(): Boolean
     fun startForegroundSync(reason: String)

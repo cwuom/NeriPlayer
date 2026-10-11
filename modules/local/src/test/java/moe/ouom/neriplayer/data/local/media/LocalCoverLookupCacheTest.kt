@@ -163,6 +163,39 @@ class LocalCoverLookupCacheTest {
         assertFalse(File(temporaryFolder.root, "local_audio_covers").exists())
     }
 
+    @Test
+    fun `invalidating a resolved song drops its file and uri lookups and resolved embedded covers`() {
+        val file = temporaryFolder.newFile("song.flac")
+        LocalMediaSupport.rememberLocalCoverLookup("${file.absolutePath}|12|3", "cover-a")
+        LocalMediaSupport.rememberLocalCoverLookup("content://provider/document/song|1|2", "cover-b")
+        LocalMediaSupport.rememberLocalCoverLookup("content://provider/document/other|1|2", "cover-c")
+        val resolvedCovers = listOf("/music/song.flac", "/music/song.flac#taglib").map { embeddedCover(it, byteArrayOf(1)) }
+        val uriCover = embeddedCover("content://provider/document/song", byteArrayOf(2))
+
+        LocalMediaSupport.invalidateLocalCoverLookupCache(
+            context,
+            sourceUri,
+            resolved(file = file, sizeBytes = null, lastModifiedMs = null, resolvedPath = "/music/song.flac")
+        )
+
+        assertEquals(setOf("content://provider/document/other|1|2"), cachedKeys())
+        assertTrue(resolvedCovers.none(File::exists))
+        assertTrue(uriCover.exists())
+    }
+
+    @Test
+    fun `invalidating an unresolved song uses its uri for lookups and embedded covers`() {
+        LocalMediaSupport.rememberLocalCoverLookup("content://provider/document/song|1|2", "cover-b")
+        LocalMediaSupport.rememberLocalCoverLookup("/music/song.flac|1|2", "cover-a")
+        val uriCovers = listOf("content://provider/document/song", "content://provider/document/song#taglib")
+            .map { embeddedCover(it, byteArrayOf(1)) }
+
+        LocalMediaSupport.invalidateLocalCoverLookupCache(context, sourceUri, null)
+
+        assertEquals(setOf("/music/song.flac|1|2"), cachedKeys())
+        assertTrue(uriCovers.none(File::exists))
+    }
+
     private fun embeddedCover(uriKey: String, bytes: ByteArray): File {
         return LocalMediaSupport.embeddedCoverFile(context, uriKey).apply {
             parentFile.mkdirs()

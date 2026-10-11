@@ -59,19 +59,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -94,8 +92,6 @@ import moe.ouom.neriplayer.data.playlist.favorite.isArtistFavoriteSource
 import moe.ouom.neriplayer.data.model.playlist.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.tab.toBiliPlaylist
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
@@ -250,79 +246,20 @@ internal fun FavoritePlaylistList(
         val cardShape = RoundedCornerShape(12.dp)
         val displayedFavorites = filterFavoritePlaylists(reorderableFavorites, favoriteSearchQuery)
         item(key = "favorite_category_tabs") {
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
+            LibrarySecondaryTabs(
+                labels = listOf(
+                    stringResource(CoreCommonR.string.library_favorite_tab_playlists),
+                    stringResource(CoreCommonR.string.library_favorite_tab_artists),
+                    stringResource(CoreCommonR.string.library_favorite_tab_hot)
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-            ) {
-                AdvancedGlassSurface(
-                    role = AdvancedGlassRole.ScreenTopTab,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                    tintColor = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    PrimaryTabRow(
-                        selectedTabIndex = selectedFavoriteCategory,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ) {
-                        Tab(
-                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_PLAYLIST,
-                            onClick = {
-                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_PLAYLIST) {
-                                    selectedFavoriteCategory = FAVORITE_CATEGORY_PLAYLIST
-                                    exitEditMode()
-                                }
-                            },
-                            text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_playlists)) },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = null
-                                )
-                            }
-                        )
-                        Tab(
-                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST,
-                            onClick = {
-                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_ARTIST) {
-                                    selectedFavoriteCategory = FAVORITE_CATEGORY_ARTIST
-                                    exitEditMode()
-                                }
-                            },
-                            text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_artists)) },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Filled.AccountCircle,
-                                    contentDescription = null
-                                )
-                            }
-                        )
-                        Tab(
-                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_HOT,
-                            onClick = {
-                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_HOT) {
-                                    selectedFavoriteCategory = FAVORITE_CATEGORY_HOT
-                                    exitEditMode()
-                                }
-                            },
-                            text = { Text(stringResource(CoreCommonR.string.library_favorite_tab_hot)) },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Bolt,
-                                    contentDescription = null
-                                )
-                            }
-                        )
+                selectedIndex = selectedFavoriteCategory,
+                onSelected = { index ->
+                    if (selectedFavoriteCategory != index) {
+                        selectedFavoriteCategory = index
+                        exitEditMode()
                     }
                 }
-            }
+            )
         }
         if (selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST) {
             item(key = "favorite_artist_platforms") {

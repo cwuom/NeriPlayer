@@ -101,29 +101,28 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
 
     private fun mergeDuplicateSong(existing: SongItem, candidate: SongItem): SongItem {
         return existing.copy(
-            name = existing.name.takeIf(String::isNotBlank) ?: candidate.name,
-            artist = existing.artist.takeIf(String::isNotBlank) ?: candidate.artist,
-            album = existing.album.takeIf(String::isNotBlank) ?: candidate.album,
-            durationMs = existing.durationMs.takeIf { it > 0L } ?: candidate.durationMs,
-            coverUrl = existing.coverUrl.takeIf { !it.isNullOrBlank() } ?: candidate.coverUrl,
-            customCoverUrl = existing.customCoverUrl
-                .takeIf { !it.isNullOrBlank() }
-                ?: candidate.customCoverUrl,
-            originalCoverUrl = existing.originalCoverUrl
-                .takeIf { !it.isNullOrBlank() }
-                ?: candidate.originalCoverUrl,
-            matchedLyric = existing.matchedLyric ?: candidate.matchedLyric,
-            matchedTranslatedLyric = existing.matchedTranslatedLyric
-                ?: candidate.matchedTranslatedLyric,
-            matchedRomanizedLyric = existing.matchedRomanizedLyric
-                ?: candidate.matchedRomanizedLyric,
-            originalLyric = existing.originalLyric ?: candidate.originalLyric,
-            originalTranslatedLyric = existing.originalTranslatedLyric
-                ?: candidate.originalTranslatedLyric,
-            originalRomanizedLyric = existing.originalRomanizedLyric
-                ?: candidate.originalRomanizedLyric
+            name = existing.name.ifBlank { candidate.name },
+            artist = existing.artist.ifBlank { candidate.artist },
+            album = existing.album.ifBlank { candidate.album },
+            durationMs = positiveOr(existing.durationMs, candidate.durationMs),
+            coverUrl = nonBlankOr(existing.coverUrl, candidate.coverUrl),
+            customCoverUrl = nonBlankOr(existing.customCoverUrl, candidate.customCoverUrl),
+            originalCoverUrl = nonBlankOr(existing.originalCoverUrl, candidate.originalCoverUrl),
+            matchedLyric = presentOr(existing.matchedLyric, candidate.matchedLyric),
+            matchedTranslatedLyric = presentOr(existing.matchedTranslatedLyric, candidate.matchedTranslatedLyric),
+            matchedRomanizedLyric = presentOr(existing.matchedRomanizedLyric, candidate.matchedRomanizedLyric),
+            originalLyric = presentOr(existing.originalLyric, candidate.originalLyric),
+            originalTranslatedLyric = presentOr(existing.originalTranslatedLyric, candidate.originalTranslatedLyric),
+            originalRomanizedLyric = presentOr(existing.originalRomanizedLyric, candidate.originalRomanizedLyric)
         )
     }
+
+    private fun positiveOr(existing: Long, candidate: Long): Long = if (existing > 0L) existing else candidate
+
+    private fun nonBlankOr(existing: String?, candidate: String?): String? =
+        if (existing.isNullOrBlank()) candidate else existing
+
+    private fun presentOr(existing: String?, candidate: String?): String? = existing ?: candidate
 
     private companion object {
         const val MAX_INITIAL_CAPACITY = 4_096

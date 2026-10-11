@@ -78,4 +78,29 @@ class PlaybackStatsRoomDiffAccessClearAdvanceTest {
         assertEquals(setOf(PlaybackStatsSnapshotDeletedBucketEntity(SNAPSHOT_ID, DAY_MS, "o")), staged.deletedBuckets)
         assertEquals(stagedSnapshot(clearedAt = 400, sealed = true, isDiff = true), staged.getSnapshot(SNAPSHOT_ID))
     }
+
+    @Test
+    fun `a newer clear lifts an unchanged primary track only when its remote days add up to more`() = runTest {
+        staged.upsertSnapshot(stagedSnapshot(clearedAt = 400, sealed = false, isDiff = true))
+        PrimaryPlaybackTables(
+            tracks = listOf(remoteRow("p", 100, 1, first = 420, last = 800, customName = "Mine"), remoteRow("q", 900, 9, first = 420, last = 800))
+        ).serve(harness.primary)
+        val source = PagedPlaybackSource.ordered(
+            listOf(remoteTrack("p", 100, 1, first = 420, last = 800), remoteTrack("q", 900, 9, first = 420, last = 800)),
+            listOf(
+                remoteBucket(DAY_MS, "p", 300, 2, first = 450, last = 500),
+                remoteBucket(DAY_MS, "q", 100, 1, first = 420, last = 800),
+                remoteBucket(2 * DAY_MS, "p", 200, 1, first = 460, last = 800)
+            ),
+            pageSize = 256
+        )
+
+        PlaybackStatsRoomDiffAccess(harness.store).build(SNAPSHOT_ID, source, context)
+
+        assertEquals(
+            listOf(remoteRow("p", 500, 3, first = 420, last = 800, customName = "Mine").toSnapshotData()),
+            staged.storedTracks(SNAPSHOT_ID)
+        )
+        assertTrue(staged.deletedTracks.isEmpty())
+    }
 }

@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.util.platform.tryStartActivity
 
 internal class SettingsAboutVersionTapOwner(
     private val tapCount: MutableIntState,
@@ -63,7 +64,9 @@ private class SettingsAboutPageActions(
     }
 
     fun onOpenGitHubRepo() {
-        context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/cwuom/NeriPlayer".toUri()))
+        if (!context.tryStartActivity(Intent(Intent.ACTION_VIEW, "https://github.com/cwuom/NeriPlayer".toUri()))) {
+            onShowMessage(resources.getString(CoreCommonR.string.error_no_app_for_action))
+        }
     }
 }
 

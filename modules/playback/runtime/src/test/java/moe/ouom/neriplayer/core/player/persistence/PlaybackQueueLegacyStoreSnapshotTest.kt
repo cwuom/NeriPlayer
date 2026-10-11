@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.persistence
 
 import com.google.gson.Gson
 import java.io.File
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.playback.PersistedPlaybackState
 import moe.ouom.neriplayer.data.model.playback.PersistedSongItem
 import moe.ouom.neriplayer.data.model.playback.PersistedState
@@ -83,6 +84,21 @@ class PlaybackQueueLegacyStoreSnapshotTest {
         playbackFile.writeText("[1, 2]")
 
         assertEquals(queue, store.read())
+    }
+
+    @Test
+    fun `an unknown lyric source from a newer build restores the song without a source`() {
+        val withSource = queue.copy(
+            playlist = queue.playlist.map { it.copy(matchedLyricSource = MusicPlatform.QQ_MUSIC, matchedSongId = "9") }
+        )
+        stateFile.writeText(gson.toJson(withSource).replace("\"QQ_MUSIC\"", "\"FUTURE_PLATFORM\""))
+
+        val restored = store.read()
+
+        assertEquals(
+            withSource.copy(playlist = withSource.playlist.map { it.copy(matchedLyricSource = null) }),
+            restored
+        )
     }
 
     @Test

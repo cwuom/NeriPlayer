@@ -58,12 +58,14 @@ class GitHubSyncManager private constructor(context: Context) {
 
     suspend fun performSync(): Result<SyncResult> = executeSync(null)
 
+    suspend fun performSync(triggerByAppStartup: Boolean): Result<SyncResult> = executeSync(null, triggerByAppStartup)
+
     suspend fun performSyncForTarget(targetId: String): Result<SyncResult> =
         verifyTargetSyncCompletion(executeSync(targetId), targetId) { target ->
             protocolUpgrade.versionFlow(target).first()
         }
 
-    private suspend fun executeSync(expectedTargetId: String?): Result<SyncResult> = protocolUpgrade.executeIfApproved {
+    private suspend fun executeSync(expectedTargetId: String?, triggerByAppStartup: Boolean = false): Result<SyncResult> = protocolUpgrade.executeIfApproved {
         withContext(Dispatchers.IO) {
             val localizedContext = LanguageManager.applyLanguage(appContext)
             SyncSession(
@@ -74,7 +76,7 @@ class GitHubSyncManager private constructor(context: Context) {
                 initialUploadMessage = localizedContext.getString(CoreCommonR.string.sync_initial_uploaded),
                 deferredMessage = localizedContext.getString(CoreCommonR.string.sync_local_changes_pending),
                 inProgressError = { GitHubSyncInProgressException(localizedContext.getString(CoreCommonR.string.github_sync_in_progress)) }
-            ).execute { createGitHubSyncBackend(appContext, storage, expectedTargetId) }
+            ).execute { createGitHubSyncBackend(appContext, storage, expectedTargetId, triggerByAppStartup) }
         }
     }
 }

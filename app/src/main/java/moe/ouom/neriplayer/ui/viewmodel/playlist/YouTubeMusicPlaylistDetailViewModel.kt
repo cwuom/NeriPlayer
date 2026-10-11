@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  */
 
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
-import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -101,18 +100,20 @@ internal fun applyYouTubeMusicPlaylistCreatorContext(
     if (resolvedCreatorName.isBlank()) {
         return tracks
     }
-    return tracks.map { track ->
-        if (track.artist.isNotBlank() || !track.customArtist.isNullOrBlank()) {
-            track
-        } else {
-            track.copy(
-                artist = resolvedCreatorName,
-                originalArtist = track.originalArtist?.ifBlank { resolvedCreatorName }
-                    ?: resolvedCreatorName
-            )
-        }
-    }
+    return tracks.map { track -> track.withCreatorArtistFallback(resolvedCreatorName) }
 }
+
+private fun SongItem.withCreatorArtistFallback(creatorName: String): SongItem {
+    if (hasDisplayArtist()) {
+        return this
+    }
+    return copy(
+        artist = creatorName,
+        originalArtist = originalArtist.orEmpty().ifBlank { creatorName }
+    )
+}
+
+private fun SongItem.hasDisplayArtist(): Boolean = artist.isNotBlank() || !customArtist.isNullOrBlank()
 
 class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(YouTubeMusicPlaylistDetailUiState())
@@ -287,9 +288,9 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
     ) {
         val localPlaylists = localPlaylistsSnapshot()
         val cachedState = withContext(Dispatchers.Default) {
-            val cachedPlaylist = cached.toPlaylist(fallback)
+            val cachedPlaylist = cached.toYouTubeMusicPlaylist(fallback)
             val cachedTracks = cached.tracks
-                .map { it.toSongItem(cachedPlaylist) }
+                .map { it.toPlaylistSongItem(cachedPlaylist) }
                 .map { overlayUserEdits(it, localPlaylists) }
             YouTubeMusicPlaylistDetailUiState(
                 loading = loading,
@@ -314,11 +315,11 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         loading: Boolean,
         prefetchSource: String
     ) {
-        val resolvedPlaylist = detail.toPlaylist(fallback = fallback)
+        val resolvedPlaylist = detail.toYouTubeMusicPlaylist(fallback = fallback)
         val localPlaylists = localPlaylistsSnapshot()
         val resolvedTracks = withContext(Dispatchers.Default) {
             detail.tracks
-                .map { it.toSongItem(resolvedPlaylist) }
+                .map { it.toPlaylistSongItem(resolvedPlaylist) }
                 .map { overlayUserEdits(it, localPlaylists) }
         }
         if (detail.fullyLoaded && detail.hasUsableTracks()) {
@@ -374,97 +375,6 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         )
     }
 
-    private fun YouTubeMusicPlaylistDetail.toPlaylist(
-        fallback: YouTubeMusicPlaylist
-    ): YouTubeMusicPlaylist {
-        return fallback.copy(
-            playlistId = playlistId.ifBlank { fallback.playlistId },
-            title = title.ifBlank { fallback.title },
-            subtitle = subtitle.ifBlank { fallback.subtitle },
-            coverUrl = coverUrl.ifBlank { fallback.coverUrl },
-            trackCount = trackCount.takeIf { it > 0 }
-                ?: tracks.size.takeIf { it > 0 }
-                ?: fallback.trackCount
-        )
-    }
-
-    private fun CachedYouTubeMusicPlaylistDetail.toPlaylist(
-        fallback: YouTubeMusicPlaylist
-    ): YouTubeMusicPlaylist {
-        return fallback.copy(
-            playlistId = playlistId.ifBlank { fallback.playlistId },
-            title = title.ifBlank { fallback.title },
-            subtitle = subtitle.ifBlank { fallback.subtitle },
-            creatorName = creatorName.orEmpty().trim().ifBlank {
-                fallback.creatorName.trim()
-            },
-            coverUrl = coverUrl.ifBlank { fallback.coverUrl },
-            trackCount = trackCount.takeIf { it > 0 }
-                ?: tracks.size.takeIf { it > 0 }
-                ?: fallback.trackCount
-        )
-    }
-
-    private fun YouTubeMusicTrack.toSongItem(playlist: YouTubeMusicPlaylist): SongItem {
-        val resolvedAlbum = albumName.ifBlank { playlist.title }
-        val resolvedArtist = resolveYouTubeMusicPlaylistTrackArtist(
-            trackArtist = artist,
-            playlistCreatorName = playlist.creatorName
-        )
-        val resolvedCoverUrl = coverUrl.ifBlank {
-            youtubeMusicThumbnailUrl(videoId)
-        }.ifBlank { playlist.coverUrl }
-        return SongItem(
-            id = stableYouTubeMusicId(videoId),
-            name = name,
-            artist = resolvedArtist,
-            album = resolvedAlbum,
-            albumId = stableYouTubeMusicId(playlist.playlistId.ifBlank { videoId }),
-            durationMs = durationMs,
-            coverUrl = resolvedCoverUrl,
-            mediaUri = buildYouTubeMusicMediaUri(
-                videoId = videoId,
-                playlistId = playlist.playlistId.ifBlank { null }
-            ),
-            originalName = name,
-            originalArtist = resolvedArtist,
-            originalCoverUrl = resolvedCoverUrl,
-            channelId = "youtubeMusic",
-            audioId = videoId,
-            playlistContextId = playlist.playlistId.ifBlank { null }
-        )
-    }
-
-    private fun CachedYouTubeMusicPlaylistTrack.toSongItem(playlist: YouTubeMusicPlaylist): SongItem {
-        val resolvedAlbum = albumName.ifBlank { playlist.title }
-        val resolvedArtist = resolveYouTubeMusicPlaylistTrackArtist(
-            trackArtist = artist,
-            playlistCreatorName = playlist.creatorName
-        )
-        val resolvedCoverUrl = coverUrl.ifBlank {
-            youtubeMusicThumbnailUrl(videoId)
-        }.ifBlank { playlist.coverUrl }
-        return SongItem(
-            id = stableYouTubeMusicId(videoId),
-            name = name,
-            artist = resolvedArtist,
-            album = resolvedAlbum,
-            albumId = stableYouTubeMusicId(playlist.playlistId.ifBlank { videoId }),
-            durationMs = durationMs,
-            coverUrl = resolvedCoverUrl,
-            mediaUri = buildYouTubeMusicMediaUri(
-                videoId = videoId,
-                playlistId = playlist.playlistId.ifBlank { null }
-            ),
-            originalName = name,
-            originalArtist = resolvedArtist,
-            originalCoverUrl = resolvedCoverUrl,
-            channelId = "youtubeMusic",
-            audioId = videoId,
-            playlistContextId = playlist.playlistId.ifBlank { null }
-        )
-    }
-
     private fun YouTubeMusicTrack.toCachedTrack(): CachedYouTubeMusicPlaylistTrack {
         return CachedYouTubeMusicPlaylistTrack(
             videoId = videoId,
@@ -487,10 +397,6 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         }
     }
 
-    private fun YouTubeMusicPlaylistDetail.hasUsableTracks(): Boolean {
-        return tracks.any { it.videoId.isNotBlank() && it.name.isNotBlank() }
-    }
-
     private suspend fun localPlaylistsSnapshot(): List<LocalPlaylist> {
         return if (localPlaylistRepo.awaitInitialized()) {
             localPlaylistRepo.playlists.value.toList()
@@ -503,39 +409,149 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         baseSong: SongItem,
         localPlaylists: List<LocalPlaylist>
     ): SongItem {
-        val currentMatch = PlayerManager.currentSongFlow.value
-            ?.takeIf { it.sameIdentityAs(baseSong) }
-        if (currentMatch != null) {
-            return mergeSongEdits(baseSong, currentMatch)
-        }
+        return overlayYouTubeMusicUserEdits(baseSong, PlayerManager.currentSongFlow.value, localPlaylists)
+    }
+}
 
-        val playlistMatch = localPlaylists
+internal fun YouTubeMusicPlaylistDetail.hasUsableTracks(): Boolean {
+    return tracks.any { it.videoId.isNotBlank() && it.name.isNotBlank() }
+}
+
+internal fun YouTubeMusicPlaylistDetail.toYouTubeMusicPlaylist(
+    fallback: YouTubeMusicPlaylist
+): YouTubeMusicPlaylist {
+    return fallback.withDetailMetadata(
+        playlistId = playlistId,
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        trackCount = resolveYouTubeMusicPlaylistTrackCount(trackCount, tracks.size, fallback.trackCount)
+    )
+}
+
+internal fun CachedYouTubeMusicPlaylistDetail.toYouTubeMusicPlaylist(
+    fallback: YouTubeMusicPlaylist
+): YouTubeMusicPlaylist {
+    return fallback.withDetailMetadata(
+        playlistId = playlistId,
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        trackCount = resolveYouTubeMusicPlaylistTrackCount(trackCount, tracks.size, fallback.trackCount)
+    ).copy(
+        creatorName = creatorName.orEmpty().trim().ifBlank { fallback.creatorName.trim() }
+    )
+}
+
+private fun YouTubeMusicPlaylist.withDetailMetadata(
+    playlistId: String,
+    title: String,
+    subtitle: String,
+    coverUrl: String,
+    trackCount: Int
+): YouTubeMusicPlaylist {
+    return copy(
+        playlistId = playlistId.ifBlank { this.playlistId },
+        title = title.ifBlank { this.title },
+        subtitle = subtitle.ifBlank { this.subtitle },
+        coverUrl = coverUrl.ifBlank { this.coverUrl },
+        trackCount = trackCount
+    )
+}
+
+private fun resolveYouTubeMusicPlaylistTrackCount(declared: Int, loaded: Int, fallback: Int): Int {
+    return when {
+        declared > 0 -> declared
+        loaded > 0 -> loaded
+        else -> fallback
+    }
+}
+
+internal fun YouTubeMusicTrack.toPlaylistSongItem(playlist: YouTubeMusicPlaylist): SongItem {
+    return buildYouTubeMusicPlaylistSong(playlist, videoId, name, artist, albumName, durationMs, coverUrl)
+}
+
+internal fun CachedYouTubeMusicPlaylistTrack.toPlaylistSongItem(playlist: YouTubeMusicPlaylist): SongItem {
+    return buildYouTubeMusicPlaylistSong(playlist, videoId, name, artist, albumName, durationMs, coverUrl)
+}
+
+private fun buildYouTubeMusicPlaylistSong(
+    playlist: YouTubeMusicPlaylist,
+    videoId: String,
+    name: String,
+    artist: String,
+    albumName: String,
+    durationMs: Long,
+    coverUrl: String
+): SongItem {
+    val resolvedArtist = resolveYouTubeMusicPlaylistTrackArtist(
+        trackArtist = artist,
+        playlistCreatorName = playlist.creatorName
+    )
+    val resolvedCoverUrl = coverUrl.ifBlank {
+        youtubeMusicThumbnailUrl(videoId)
+    }.ifBlank { playlist.coverUrl }
+    val playlistContextId = playlist.playlistId.ifBlank { null }
+    return SongItem(
+        id = stableYouTubeMusicId(videoId),
+        name = name,
+        artist = resolvedArtist,
+        album = albumName.ifBlank { playlist.title },
+        albumId = stableYouTubeMusicId(playlistContextId ?: videoId),
+        durationMs = durationMs,
+        coverUrl = resolvedCoverUrl,
+        mediaUri = buildYouTubeMusicMediaUri(videoId = videoId, playlistId = playlistContextId),
+        originalName = name,
+        originalArtist = resolvedArtist,
+        originalCoverUrl = resolvedCoverUrl,
+        channelId = "youtubeMusic",
+        audioId = videoId,
+        playlistContextId = playlistContextId
+    )
+}
+
+/** 正在播放的版本优先于本地歌单里的同一首歌, 两者都没有时保持远端数据 */
+internal fun overlayYouTubeMusicUserEdits(
+    baseSong: SongItem,
+    currentSong: SongItem?,
+    localPlaylists: List<LocalPlaylist>
+): SongItem {
+    val editedSong = currentSong?.takeIf { it.sameIdentityAs(baseSong) }
+        ?: localPlaylists
             .asSequence()
             .flatMap { it.songs.asSequence() }
             .firstOrNull { it.sameIdentityAs(baseSong) }
+        ?: return baseSong
+    return mergeYouTubeMusicSongEdits(baseSong, editedSong)
+}
 
-        return if (playlistMatch != null) {
-            mergeSongEdits(baseSong, playlistMatch)
-        } else {
-            baseSong
-        }
-    }
-
-    private fun mergeSongEdits(baseSong: SongItem, editedSong: SongItem): SongItem {
-        return baseSong.copy(
-            matchedLyric = editedSong.matchedLyric ?: baseSong.matchedLyric,
-            matchedTranslatedLyric = editedSong.matchedTranslatedLyric ?: baseSong.matchedTranslatedLyric,
-            matchedLyricSource = editedSong.matchedLyricSource ?: baseSong.matchedLyricSource,
-            matchedSongId = editedSong.matchedSongId ?: baseSong.matchedSongId,
+internal fun mergeYouTubeMusicSongEdits(baseSong: SongItem, editedSong: SongItem): SongItem {
+    return baseSong
+        .withMatchedLyricsFrom(editedSong)
+        .withOriginalMetadataFrom(editedSong)
+        .copy(
             userLyricOffsetMs = editedSong.userLyricOffsetMs,
             customCoverUrl = editedSong.customCoverUrl,
             customName = editedSong.customName,
-            customArtist = editedSong.customArtist,
-            originalName = editedSong.originalName ?: baseSong.originalName,
-            originalArtist = editedSong.originalArtist ?: baseSong.originalArtist,
-            originalCoverUrl = editedSong.originalCoverUrl ?: baseSong.originalCoverUrl,
-            originalLyric = editedSong.originalLyric ?: baseSong.originalLyric,
-            originalTranslatedLyric = editedSong.originalTranslatedLyric ?: baseSong.originalTranslatedLyric
+            customArtist = editedSong.customArtist
         )
-    }
+}
+
+private fun SongItem.withMatchedLyricsFrom(editedSong: SongItem): SongItem {
+    return copy(
+        matchedLyric = editedSong.matchedLyric ?: matchedLyric,
+        matchedTranslatedLyric = editedSong.matchedTranslatedLyric ?: matchedTranslatedLyric,
+        matchedLyricSource = editedSong.matchedLyricSource ?: matchedLyricSource,
+        matchedSongId = editedSong.matchedSongId ?: matchedSongId
+    )
+}
+
+private fun SongItem.withOriginalMetadataFrom(editedSong: SongItem): SongItem {
+    return copy(
+        originalName = editedSong.originalName ?: originalName,
+        originalArtist = editedSong.originalArtist ?: originalArtist,
+        originalCoverUrl = editedSong.originalCoverUrl ?: originalCoverUrl,
+        originalLyric = editedSong.originalLyric ?: originalLyric,
+        originalTranslatedLyric = editedSong.originalTranslatedLyric ?: originalTranslatedLyric
+    )
 }

@@ -29,7 +29,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -92,8 +91,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toDrawable
-import androidx.core.graphics.toColorInt
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -133,6 +130,7 @@ import moe.ouom.neriplayer.core.startup.shouldShowStartupLoadingIndicator
 import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
 import moe.ouom.neriplayer.core.startup.download.StartupDownloadRecoveryCoordinator
 import moe.ouom.neriplayer.core.startup.logging.StartupLogInitializer
+import moe.ouom.neriplayer.core.startup.player.PlayerPreloadedInitializer
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeRecoveryCoordinator
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -146,6 +144,7 @@ import moe.ouom.neriplayer.core.startup.theme.StartupResourceNightMode
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeSnapshotProvider
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
+import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON
 import moe.ouom.neriplayer.data.ltw.validation.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.data.ltw.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherInviteJoinBaseUrl
@@ -359,7 +358,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         applyNavigationBarVisibility()
         observeImeDismissal()
-        applyWindowBackground(
+        window.applyMainWindowBackground(
             StartupThemeResolver.resolveSnapshotUseDark(
                 snapshot = startupThemeSnapshot,
                 systemDark = StartupResourceNightMode.isDark(resources.configuration.uiMode)
@@ -785,16 +784,14 @@ class MainActivity : ComponentActivity() {
                                         LaunchedEffect(lifecycleOwner.lifecycle) {
                                             lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                                                 PlayerManager.playerEventFlow.collect { event ->
-                                                    when (event) {
-                                                        is PlayerEvent.ShowLoginPrompt -> {
-                                                            dialogMessage = event.message
+                                                    when (val presentation = playerEventPresentation(event)) {
+                                                        is PlayerEventPresentation.Dialog -> {
+                                                            dialogMessage = presentation.message
                                                             showDialog = true
                                                         }
 
-                                                        is PlayerEvent.ShowError -> {
-                                                            dialogMessage = event.message
-                                                            showDialog = true
-                                                        }
+                                                        is PlayerEventPresentation.Notice ->
+                                                            AppFeedback.show(this@MainActivity, presentation.message)
                                                     }
                                                 }
                                             }
@@ -1109,7 +1106,7 @@ class MainActivity : ComponentActivity() {
                                                 ::clearLauncherShortcutRequest,
                                             onIsDarkChanged = { isDark ->
                                                 // 主题切换时保留窗口底色与内容主题一致
-                                                applyWindowBackground(isDark)
+                                                window.applyMainWindowBackground(isDark)
                                             },
                                             onNowPlayingVisibilityChanged = { visible ->
                                                 isNowPlayingVisible = visible
@@ -1276,20 +1273,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
             ViewCompat.onApplyWindowInsets(view, insets)
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun applyWindowBackground(isDark: Boolean) {
-        val bgColor = if (isDark) "#121212".toColorInt() else Color.WHITE
-        window.setBackgroundDrawable(bgColor.toDrawable())
-        @Suppress("DEPRECATION")
-        run {
-            window.statusBarColor = Color.TRANSPARENT
-            window.navigationBarColor = Color.TRANSPARENT
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.isStatusBarContrastEnforced = false
         }
     }
 
@@ -1477,13 +1460,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun scheduleStartupSyncIfNeeded() {
-        lifecycleScope.launch {
+        val appContext = applicationContext
+        AppContainer.launchBackgroundIo {
             StartupSyncScheduler(
-                context = this@MainActivity,
-                ioDispatcher = Dispatchers.IO,
-                isStarted = {
-                    lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-                }
+                context = appContext,
+                ioDispatcher = Dispatchers.IO
             ).scheduleIfNeeded()
         }
     }
@@ -1523,6 +1504,9 @@ class MainActivity : ComponentActivity() {
 
             normalized == "controller_reconnected" ->
                 getString(CoreCommonR.string.listen_together_notice_controller_reconnected)
+
+            normalized == LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON ->
+                getString(CoreCommonR.string.listen_together_error_reconnect_exhausted)
 
             normalized.equals("controller_left", ignoreCase = true) ->
                 getString(CoreCommonR.string.listen_together_notice_controller_left)
@@ -1592,7 +1576,10 @@ class MainActivity : ComponentActivity() {
                     return@launch
                 }
                 if (result.songs.isNotEmpty()) {
-                    PlayerManager.initialize(application)
+                    PlayerPreloadedInitializer(application).initialize()
+                    if (requestToken != externalAudioRequestToken) {
+                        return@launch
+                    }
                     PlayerManager.playPlaylist(result.songs, startIndex = 0)
                     result.songs.firstOrNull()?.let { firstSong ->
                         scheduleExternalAudioMetadataHydration(requestToken, firstSong)

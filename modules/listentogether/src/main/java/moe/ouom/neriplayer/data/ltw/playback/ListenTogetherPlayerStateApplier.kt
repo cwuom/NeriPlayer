@@ -100,7 +100,7 @@ internal class ListenTogetherPlayerStateApplier(
             applySoftDriftCorrection(
                 driftMs = syncPlan.driftMs,
                 signedDriftMs = syncPlan.signedDriftMs,
-                allowSoftSync = true
+                allowSoftSync = playback.isReadyForListenTogetherSoftSync()
             )
         }
         if (syncPlan.shouldIssuePlay) {

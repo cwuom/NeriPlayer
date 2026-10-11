@@ -97,6 +97,26 @@ class PlaybackPreferenceSnapshotCacheTest {
     }
 
     @Test
+    fun `current caches without mobile data choices fall back to the legacy downgrade quality`() {
+        preferences[PLAYBACK_CACHE].edit()
+            .putBoolean("ready", true)
+            .putInt("schema_version", 5)
+            .putString("mobile_data_downgrade_quality", "medium")
+            .commit()
+
+        val medium = readPlaybackPreferenceSnapshotCached(context)!!
+
+        assertFalse(medium.mobileDataFollowDefaultAudioQuality)
+        assertEquals("higher", medium.mobileDataNeteaseAudioQuality)
+        assertEquals("medium", medium.mobileDataYouTubeAudioQuality)
+        assertEquals("medium", medium.mobileDataBiliAudioQuality)
+        assertEquals("exhigh", medium.audioQuality)
+
+        preferences[PLAYBACK_CACHE].edit().putString("mobile_data_downgrade_quality", "off").commit()
+        assertTrue(readPlaybackPreferenceSnapshotCached(context)!!.mobileDataFollowDefaultAudioQuality)
+    }
+
+    @Test
     fun `sanitized replaces blank quality and preset values with defaults`() {
         val snapshot = PlaybackPreferenceSnapshot(
             audioQuality = " ",

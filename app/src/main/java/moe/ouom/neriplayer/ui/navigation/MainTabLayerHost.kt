@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.navigation
 
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
@@ -44,6 +47,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntOffset
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -233,6 +238,17 @@ internal class MainTabLayerTransitionState internal constructor(
         )
     }
 
+    fun beginPredictiveBack(targetRoute: String): Boolean = controller.beginPredictiveBack(
+        targetRoute = targetRoute,
+        restored = !visitedRoutes.add(targetRoute)
+    )
+
+    fun seekPredictiveBack(progress: Float) = controller.seekPredictiveBack(progress)
+
+    fun cancelPredictiveBack() = controller.cancelPredictiveBack()
+
+    fun commitPredictiveBack() = controller.commitPredictiveBack()
+
     fun offsetFractionFor(scene: MainTabLayerScene): Float =
         controller.offsetFractionFor(scene)
 
@@ -280,6 +296,7 @@ internal fun MainTabLayerHost(
     transitionState: MainTabLayerTransitionState,
     modifier: Modifier = Modifier,
     onVisibleGlassOwnersChanged: (Set<MainTabGlassOwner>) -> Unit = {},
+    backHandlingEnabled: Boolean = true,
     content: @Composable (route: String) -> Unit
 ) {
     val useScaleTransition = shouldUseMainTabScaleTransition(
@@ -374,31 +391,65 @@ internal fun MainTabLayerHost(
                             LocalAdvancedGlassNavigationOwner provides scene.glassOwner,
                             LocalMainTabSceneRestored provides scene.restored
                         ) {
-                            saveableStateHolder.SaveableStateProvider(scene.route) {
-                                content(scene.route)
-                            }
-                            if (scene.restored) {
-                                LaunchedEffect(scene.restorationToken) {
-                                    withFrameNanos { }
-                                    transitionState.consumeRestoredScene(scene.restorationToken)
-                                }
-                            }
-                            if (
-                                scene.phase == MainTabLayerScenePhase.Entering &&
-                                scene.transitionToken != 0L
+                            MainTabSceneBackScope(
+                                enabled = backHandlingEnabled && scene.route == selectedRoute
                             ) {
-                                LaunchedEffect(scene.transitionToken) {
-                                    withFrameNanos { }
-                                    withFrameNanos { }
-                                    transitionState.onIncomingScenePrepared(
-                                        scene.transitionToken
-                                    )
+                                saveableStateHolder.SaveableStateProvider(scene.route) {
+                                    content(scene.route)
+                                }
+                                if (scene.restored) {
+                                    LaunchedEffect(scene.restorationToken) {
+                                        withFrameNanos { }
+                                        transitionState.consumeRestoredScene(scene.restorationToken)
+                                    }
+                                }
+                                if (
+                                    scene.phase == MainTabLayerScenePhase.Entering &&
+                                    scene.transitionToken != 0L
+                                ) {
+                                    LaunchedEffect(scene.transitionToken) {
+                                        withFrameNanos { }
+                                        withFrameNanos { }
+                                        transitionState.onIncomingScenePrepared(
+                                            scene.transitionToken
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MainTabSceneBackScope(
+    enabled: Boolean,
+    content: @Composable () -> Unit
+) {
+    val navigationOwner = LocalNavigationEventDispatcherOwner.current
+    if (navigationOwner != null) {
+        val sceneOwner = rememberNavigationEventDispatcherOwner(
+            enabled = enabled,
+            parent = navigationOwner
+        )
+        CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides sceneOwner, content = content)
+    } else {
+        val parentOwner = LocalOnBackPressedDispatcherOwner.current
+        val sceneOwner = remember(parentOwner, enabled) {
+            if (enabled) parentOwner else parentOwner?.let { parent ->
+                object : OnBackPressedDispatcherOwner {
+                    override val lifecycle = parent.lifecycle
+                    override val onBackPressedDispatcher = OnBackPressedDispatcher()
+                }
+            }
+        }
+        if (sceneOwner == null) {
+            content()
+        } else {
+            CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides sceneOwner, content = content)
         }
     }
 }
@@ -424,6 +475,8 @@ internal class MainTabLayerTransitionController(
     private var awaitingIncomingScenePreparation = false
     private var hasStartedTabAnimation = false
     private var queuedTransitionRequest: TransitionRequest? = null
+    private var predictiveBackActive = false
+    private var predictiveBackStartProgress = 0f
 
     val visibleScenes: List<MainTabLayerScene>
         get() {
@@ -467,7 +520,74 @@ internal class MainTabLayerTransitionController(
             progress = progressState
         )
 
+    fun beginPredictiveBack(targetRoute: String, restored: Boolean = false): Boolean {
+        if (!containerReady || predictiveBackActive) return false
+        val next = resolveNextTransition(targetRoute, restored) ?: return false
+        val requestGeneration = ++generation
+        transitionJob?.cancel()
+        transitionJob = null
+        fromRouteState = next.fromRoute
+        toRouteState = next.toRoute
+        directionState = next.direction
+        progressState = next.progress.coerceIn(0f, 1f)
+        predictiveBackStartProgress = progressState
+        targetSceneRestoredState = next.restored
+        targetSceneRestorationToken = requestGeneration
+        awaitingIncomingScenePreparation = false
+        runningState = true
+        predictiveBackActive = true
+        return true
+    }
+
+    fun seekPredictiveBack(progress: Float) {
+        if (!predictiveBackActive || !progress.isFinite()) return
+        progressState = predictiveBackStartProgress +
+            (1f - predictiveBackStartProgress) * progress.coerceIn(0f, 1f)
+    }
+
+    fun cancelPredictiveBack() = settlePredictiveBack(commit = false)
+
+    fun commitPredictiveBack() = settlePredictiveBack(commit = true)
+
+    private fun settlePredictiveBack(commit: Boolean) {
+        if (!predictiveBackActive) return
+        predictiveBackActive = false
+        // 取消后仍需完成手势开始前已选中的页面，提交返回时才放弃它
+        if (commit) queuedTransitionRequest = null
+        hasStartedTabAnimation = true
+        val requestGeneration = generation
+        val targetProgress = if (commit) 1f else 0f
+        val durationMillis = (
+            ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS * abs(targetProgress - progressState)
+        ).roundToInt().coerceAtLeast(1)
+        transitionJob = scope.launch {
+            try {
+                animateProgressTo(
+                    targetValue = targetProgress,
+                    requestGeneration = requestGeneration,
+                    animationSpec = advancedGlassMainTabTransitionSpec(durationMillis)
+                )
+            } finally {
+                if (requestGeneration == generation) {
+                    if (!commit) {
+                        toRouteState = fromRouteState ?: toRouteState
+                        targetSceneRestorationToken = 0L
+                    }
+                    settleAtTarget()
+                }
+            }
+        }
+    }
+
     fun request(targetRoute: String, restored: Boolean = false) {
+        if (predictiveBackActive) {
+            if (targetRoute == fromRouteState) {
+                queuedTransitionRequest = null
+                cancelPredictiveBack()
+                return
+            }
+            commitPredictiveBack()
+        }
         if (!containerReady) {
             if (pendingTransitionStart?.toRoute == targetRoute) return
             if (targetRoute == toRouteState) {
@@ -530,7 +650,7 @@ internal class MainTabLayerTransitionController(
         hasStartedTabAnimation = true
         transitionJob = scope.launch {
             try {
-                animateProgressToEnd(requestGeneration)
+                animateProgressTo(targetValue = 1f, requestGeneration = requestGeneration)
             } finally {
                 if (requestGeneration == generation) {
                     settleAtTarget()
@@ -583,6 +703,7 @@ internal class MainTabLayerTransitionController(
         generation++
         transitionJob?.cancel()
         transitionJob = null
+        predictiveBackActive = false
         runningState = false
         fromRouteState = null
         pendingTransitionStart = null
@@ -670,11 +791,15 @@ internal class MainTabLayerTransitionController(
         )?.start
     }
 
-    private suspend fun animateProgressToEnd(requestGeneration: Long) {
+    private suspend fun animateProgressTo(
+        targetValue: Float,
+        requestGeneration: Long,
+        animationSpec: FiniteAnimationSpec<Float> = mainTabAnimationSpec()
+    ) {
         animate(
             initialValue = progressState,
-            targetValue = 1f,
-            animationSpec = mainTabAnimationSpec()
+            targetValue = targetValue,
+            animationSpec = animationSpec
         ) { value, _ ->
             if (requestGeneration == generation) {
                 progressState = value

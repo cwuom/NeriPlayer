@@ -201,41 +201,39 @@ internal fun LocalAudioImportManager.firstMeaningfulMetadataValue(vararg values:
 }
 
 internal fun LocalAudioImportManager.repairQuickIdentityFromFileName(song: SongItem): SongItem {
-    val displayName = song.localFileName
-        ?.takeIf(String::isNotBlank)
-        ?: song.localFilePath
-            ?.substringAfterLast(File.separatorChar)
-            ?.takeIf(String::isNotBlank)
-        ?: song.mediaUri
-            ?.substringAfterLast('/')
-            ?.takeIf(String::isNotBlank)
-        ?: return song
+    val displayName = quickIdentityDisplayName(song) ?: return song
     val parsed = parseFileNameMetadata(displayName) ?: return song
     val fileBaseName = displayName.substringBeforeLast('.', displayName)
-    val unknownArtist = song.artist.trim().lowercase(Locale.ROOT) in quickMetadataPlaceholders
-    val unknownAlbum = song.album.trim().lowercase(Locale.ROOT) in quickMetadataPlaceholders ||
-        song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
+    val unknownArtist = isQuickMetadataPlaceholder(song.artist)
+    val unknownAlbum = isQuickMetadataPlaceholder(song.album) || song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
     val parsedArtist = normalizeQuickImportedMetadata(parsed.artist)
     val parsedAlbum = normalizeQuickImportedMetadata(parsed.album)
-    val parsedTitle = normalizeQuickImportedMetadata(parsed.title)
     return song.copy(
-        name = if (
-            !song.name.trim().equals(fileBaseName.trim(), ignoreCase = true) &&
-                isReadableQuickImportedTitle(song.name)
-        ) {
-            song.name
-        } else {
-            parsedTitle ?: song.name
-        },
-        artist = if (unknownArtist) parsedArtist ?: song.artist else song.artist,
+        name = repairedQuickTitle(song.name, fileBaseName, normalizeQuickImportedMetadata(parsed.title)),
+        artist = replaceUnknown(unknownArtist, parsedArtist, song.artist),
         album = normalizeLocalAlbumIdentity(
-            album = if (unknownAlbum) parsedAlbum ?: song.album else song.album,
+            album = replaceUnknown(unknownAlbum, parsedAlbum, song.album),
             usesFallbackAlbum = unknownAlbum && parsedAlbum == null,
             stripManagedSourcePrefix = isNeteaseManagedSourceStableKey(song.sourceStableKey)
         ),
-        originalArtist = if (unknownArtist) parsedArtist ?: song.originalArtist else song.originalArtist
+        originalArtist = replaceUnknown(unknownArtist, parsedArtist, song.originalArtist)
     )
 }
+
+private fun quickIdentityDisplayName(song: SongItem): String? {
+    return listOfNotNull(
+        song.localFileName,
+        song.localFilePath?.substringAfterLast(File.separatorChar),
+        song.mediaUri?.substringAfterLast('/')
+    ).firstOrNull(String::isNotBlank)
+}
+
+private fun LocalAudioImportManager.repairedQuickTitle(name: String, fileBaseName: String, parsedTitle: String?): String {
+    val keepsName = !name.trim().equals(fileBaseName.trim(), ignoreCase = true) && isReadableQuickImportedTitle(name)
+    return if (keepsName) name else parsedTitle ?: name
+}
+
+private fun <T> replaceUnknown(unknown: Boolean, parsed: T?, current: T): T = if (unknown) parsed ?: current else current
 
 internal fun LocalAudioImportManager.isReadableScannedTitle(title: String?): Boolean {
     val trimmed = title?.trim().orEmpty()
@@ -271,63 +269,65 @@ internal fun LocalAudioImportManager.parseFileNameMetadata(displayName: String):
         .trim()
         .takeIf { it.isNotEmpty() }
         ?: return null
-    val parsed = LocalMediaHostAccess.downloads.candidateFileNameTemplates(
-        LocalMediaHostAccess.downloads.currentDownloadFileNameTemplate()
-    ).asSequence()
-        .mapNotNull { template -> LocalMediaHostAccess.downloads.parseBaseName(baseName, template) }
-        .firstOrNull { parsed ->
-            !parsed.title.isNullOrBlank() ||
-                !parsed.artist.isNullOrBlank() ||
-                !parsed.album.isNullOrBlank()
-        }
-    return parsed ?: parseCommonManagedDownloadFileName(baseName)
+    return parseWithDownloadFileNameTemplates(baseName) ?: parseCommonManagedDownloadFileName(baseName)
+}
+
+private fun parseWithDownloadFileNameTemplates(baseName: String): ParsedManagedDownloadFileName? {
+    val downloads = LocalMediaHostAccess.downloads
+    return downloads.candidateFileNameTemplates(downloads.currentDownloadFileNameTemplate())
+        .asSequence()
+        .mapNotNull { template -> downloads.parseBaseName(baseName, template) }
+        .firstOrNull(::hasParsedIdentity)
+}
+
+private fun hasParsedIdentity(parsed: ParsedManagedDownloadFileName): Boolean {
+    return listOf(parsed.title, parsed.artist, parsed.album).any { !it.isNullOrBlank() }
 }
 
 internal fun LocalAudioImportManager.parseCommonManagedDownloadFileName(
     baseName: String
 ): ParsedManagedDownloadFileName? {
-    val fields = baseName.split(" - ").map(String::trim)
-    if (fields.size < 3 || fields.any(String::isBlank)) return null
-    val first = fields.first().lowercase(Locale.ROOT)
-    val last = fields.last().lowercase(Locale.ROOT)
-    val isKnownSource = first in managedDownloadSourceNames ||
-        last in managedDownloadSourceNames
-    val hasManagedAlbum = fields.any {
-        it.equals("neriplayer-download", ignoreCase = true) ||
-            it.startsWith("netease", ignoreCase = true)
-    }
-    if (!isKnownSource && !hasManagedAlbum) return null
-    if (first in managedDownloadSourceNames) {
-        return ParsedManagedDownloadFileName(
+    val fields = managedFileNameFields(baseName) ?: return null
+    val sourceFirst = isManagedDownloadSourceName(fields.first())
+    val sourceLast = isManagedDownloadSourceName(fields.last())
+    return when {
+        sourceFirst -> ParsedManagedDownloadFileName(
             source = fields.first(),
-            artist = fields.getOrNull(1),
+            artist = fields[1],
             title = fields.drop(2).joinToString(" - ")
         )
+        sourceLast -> parseSourceLastFileName(fields)
+        else -> parseManagedAlbumFileName(fields)
     }
-    if (last in managedDownloadSourceNames && fields.size >= 4) {
-        return ParsedManagedDownloadFileName(
-            title = fields.dropLast(3).joinToString(" - "),
-            artist = fields[fields.lastIndex - 2],
-            album = fields[fields.lastIndex - 1],
-            source = fields.last()
-        )
-    }
-    if (last in managedDownloadSourceNames && fields.size == 3) {
-        return ParsedManagedDownloadFileName(
-            title = fields[0],
-            artist = fields[1],
-            source = fields[2]
-        )
-    }
-    if (fields.size == 3 && fields[2].equals("neriplayer-download", ignoreCase = true)) {
-        return ParsedManagedDownloadFileName(
-            title = fields[0],
-            artist = fields[1],
-            album = fields[2]
-        )
-    }
-    return null
 }
+
+private fun managedFileNameFields(baseName: String): List<String>? {
+    val fields = baseName.split(" - ").map(String::trim)
+    return fields.takeIf { it.size >= 3 && it.none(String::isBlank) }
+}
+
+private fun LocalAudioImportManager.isManagedDownloadSourceName(field: String): Boolean {
+    return field.lowercase(Locale.ROOT) in managedDownloadSourceNames
+}
+
+private fun parseSourceLastFileName(fields: List<String>): ParsedManagedDownloadFileName {
+    if (fields.size == 3) {
+        return ParsedManagedDownloadFileName(title = fields[0], artist = fields[1], source = fields[2])
+    }
+    return ParsedManagedDownloadFileName(
+        title = fields.dropLast(3).joinToString(" - "),
+        artist = fields[fields.lastIndex - 2],
+        album = fields[fields.lastIndex - 1],
+        source = fields.last()
+    )
+}
+
+private fun parseManagedAlbumFileName(fields: List<String>): ParsedManagedDownloadFileName? {
+    if (fields.size != 3 || !fields[2].equals(MANAGED_DOWNLOAD_ALBUM, ignoreCase = true)) return null
+    return ParsedManagedDownloadFileName(title = fields[0], artist = fields[1], album = fields[2])
+}
+
+private const val MANAGED_DOWNLOAD_ALBUM = "neriplayer-download"
 
 internal fun LocalAudioImportManager.resolveParsedTitleFallback(
     currentTitle: String?,
@@ -340,23 +340,18 @@ internal fun LocalAudioImportManager.resolveParsedTitleFallback(
     if (normalizedCurrentTitle.isBlank()) {
         return parsedTitle
     }
+    val replaceableTitles = replaceableParsedTitles(listOf(fileTitle, fallbackTitle) + joinedParsedTitles(parsed))
+    return parsedTitle.takeIf { normalizedCurrentTitle in replaceableTitles }
+}
 
-    val fallbackCandidates = linkedSetOf(fileTitle, fallbackTitle).apply {
-        listOfNotNull(parsed.artist, parsed.title)
-            .takeIf { it.size >= 2 }
-            ?.joinToString(" - ")
-            ?.let(::add)
-        listOfNotNull(parsed.source, parsed.artist, parsed.title)
-            .takeIf { it.size >= 2 }
-            ?.joinToString(" - ")
-            ?.let(::add)
+private fun joinedParsedTitles(parsed: ParsedManagedDownloadFileName): List<String> {
+    return listOf(
+        listOfNotNull(parsed.artist, parsed.title),
+        listOfNotNull(parsed.source, parsed.artist, parsed.title),
         listOfNotNull(parsed.album, parsed.title)
-            .takeIf { it.size >= 2 }
-            ?.joinToString(" - ")
-            ?.let(::add)
-    }.map(::normalizeParsedMetadataValue)
-        .filter(String::isNotBlank)
-        .toSet()
+    ).filter { parts -> parts.size >= 2 }.map { parts -> parts.joinToString(" - ") }
+}
 
-    return parsedTitle.takeIf { normalizedCurrentTitle in fallbackCandidates }
+private fun LocalAudioImportManager.replaceableParsedTitles(titles: List<String>): Set<String> {
+    return titles.map(::normalizeParsedMetadataValue).filter(String::isNotBlank).toSet()
 }

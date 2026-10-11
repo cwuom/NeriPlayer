@@ -16,13 +16,27 @@ constexpr int kEncodingPcm16BitBigEndian = 0x10000000;
 constexpr int kEncodingPcm24BitBigEndian = 0x50000000;
 constexpr int kEncodingPcm32BitBigEndian = 0x60000000;
 
-bool isBigEndianEncoding(int encoding) {
+void encodeIntegerPcmValue(uint8_t* output, int subslotBytes, int validBits, int64_t value) {
+    const uint64_t validMask = validBits == 32
+        ? UINT64_C(0xFFFFFFFF)
+        : (UINT64_C(1) << validBits) - 1U;
+    uint64_t encoded = static_cast<uint64_t>(value) & validMask;
+    const int storageBits = std::min(32, subslotBytes * 8);
+    if (validBits < storageBits) {
+        encoded <<= (storageBits - validBits);
+    }
+    for (int index = 0; index < subslotBytes; ++index) {
+        output[index] = static_cast<uint8_t>((encoded >> (index * 8)) & 0xFFU);
+    }
+}
+
+} // namespace
+
+bool isBigEndianIntegerPcmEncoding(int encoding) {
     return encoding == kEncodingPcm16BitBigEndian ||
         encoding == kEncodingPcm24BitBigEndian ||
         encoding == kEncodingPcm32BitBigEndian;
 }
-
-} // namespace
 
 int bytesPerSampleForEncoding(int encoding) {
     switch (encoding) {
@@ -65,21 +79,19 @@ int integerPcmBitsForEncoding(int encoding) {
     }
 }
 
-float readEncodedPcmSample(const uint8_t* input, int encoding) {
+int32_t readEncodedIntegerPcmSample(const uint8_t* input, int encoding) {
     if (input == nullptr) {
-        return 0.0f;
+        return 0;
     }
-    const bool bigEndian = isBigEndianEncoding(encoding);
+    const bool bigEndian = isBigEndianIntegerPcmEncoding(encoding);
     switch (encoding) {
-        case kEncodingPcm8Bit:
-            return static_cast<float>(static_cast<int>(input[0]) - 128) / 128.0f;
         case kEncodingPcm16Bit:
         case kEncodingPcm16BitBigEndian: {
             const uint16_t raw = bigEndian
                 ? (static_cast<uint16_t>(input[0]) << 8U) | input[1]
                 : static_cast<uint16_t>(input[0]) |
                     (static_cast<uint16_t>(input[1]) << 8U);
-            return static_cast<float>(static_cast<int16_t>(raw)) / 32768.0f;
+            return static_cast<int16_t>(raw);
         }
         case kEncodingPcm24Bit:
         case kEncodingPcm24BitBigEndian: {
@@ -92,7 +104,7 @@ float readEncodedPcmSample(const uint8_t* input, int encoding) {
             if ((raw & UINT32_C(0x800000)) != 0U) {
                 raw |= UINT32_C(0xFF000000);
             }
-            return static_cast<float>(static_cast<int32_t>(raw)) / 8388608.0f;
+            return static_cast<int32_t>(raw);
         }
         case kEncodingPcm32Bit:
         case kEncodingPcm32BitBigEndian: {
@@ -104,10 +116,31 @@ float readEncodedPcmSample(const uint8_t* input, int encoding) {
                     (static_cast<uint32_t>(input[1]) << 8U) |
                     (static_cast<uint32_t>(input[2]) << 16U) |
                     (static_cast<uint32_t>(input[3]) << 24U);
-            return static_cast<float>(
-                static_cast<double>(static_cast<int32_t>(raw)) / 2147483648.0
-            );
+            return static_cast<int32_t>(raw);
         }
+        default:
+            return 0;
+    }
+}
+
+float readEncodedPcmSample(const uint8_t* input, int encoding) {
+    if (input == nullptr) {
+        return 0.0f;
+    }
+    switch (encoding) {
+        case kEncodingPcm8Bit:
+            return static_cast<float>(static_cast<int>(input[0]) - 128) / 128.0f;
+        case kEncodingPcm16Bit:
+        case kEncodingPcm16BitBigEndian:
+            return static_cast<float>(readEncodedIntegerPcmSample(input, encoding)) / 32768.0f;
+        case kEncodingPcm24Bit:
+        case kEncodingPcm24BitBigEndian:
+            return static_cast<float>(readEncodedIntegerPcmSample(input, encoding)) / 8388608.0f;
+        case kEncodingPcm32Bit:
+        case kEncodingPcm32BitBigEndian:
+            return static_cast<float>(
+                static_cast<double>(readEncodedIntegerPcmSample(input, encoding)) / 2147483648.0
+            );
         case kEncodingPcmFloat: {
             const uint32_t raw = static_cast<uint32_t>(input[0]) |
                 (static_cast<uint32_t>(input[1]) << 8U) |
@@ -168,22 +201,24 @@ void writeIntegerPcmSample(
     const int validBits = std::clamp(bitsPerSample, 1, std::min(32, subslotBytes * 8));
     const float clipped = std::isfinite(sample) ? std::clamp(sample, -1.0f, 1.0f) : 0.0f;
     const int64_t scale = int64_t { 1 } << (validBits - 1);
-    const int64_t positiveScale = scale - 1;
     const auto rounded = static_cast<int64_t>(
         std::llround(static_cast<double>(clipped) * static_cast<double>(scale))
     );
-    const int64_t value = std::clamp(rounded, -scale, positiveScale);
-    const uint64_t validMask = validBits == 32
-        ? UINT64_C(0xFFFFFFFF)
-        : (UINT64_C(1) << validBits) - 1U;
-    uint64_t encoded = static_cast<uint64_t>(value) & validMask;
-    const int storageBits = std::min(32, subslotBytes * 8);
-    if (validBits < storageBits) {
-        encoded <<= (storageBits - validBits);
+    writeIntegerPcmValue(output, subslotBytes, bitsPerSample, rounded);
+}
+
+void writeIntegerPcmValue(
+    uint8_t* output,
+    int subslotBytes,
+    int bitsPerSample,
+    int64_t value
+) {
+    if (output == nullptr || subslotBytes <= 0) {
+        return;
     }
-    for (int index = 0; index < subslotBytes; ++index) {
-        output[index] = static_cast<uint8_t>((encoded >> (index * 8)) & 0xFFU);
-    }
+    const int validBits = std::clamp(bitsPerSample, 1, std::min(32, subslotBytes * 8));
+    const int64_t scale = int64_t { 1 } << (validBits - 1);
+    encodeIntegerPcmValue(output, subslotBytes, validBits, std::clamp(value, -scale, scale - 1));
 }
 
 } // namespace neri::usb

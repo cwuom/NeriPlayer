@@ -1473,11 +1473,12 @@ internal suspend fun GlobalDownloadManager.recoverPendingResumableDownloadsLocke
                     song.stableKey() in directSettlementResult.failedSongKeys
                 }
             ).distinctBy(SongItem::stableKey)
+        val antiJoinedResumableKeys = antiJoinedResumableSongs.mapTo(HashSet(), SongItem::stableKey)
         val finalizedRecoveryKeys = resumableSongs
             .asSequence()
             .map(SongItem::stableKey)
             .filterNot { key -> key in directSettlementResult.failedSongKeys }
-            .filterNot { key -> antiJoinedResumableSongs.any { it.stableKey() == key } }
+            .filterNot { key -> key in antiJoinedResumableKeys }
             .toSet()
         if (finalizedRecoveryKeys.isNotEmpty()) {
             if (!isDownloadAdmissionTicketCurrent(context, admissionTicket)) {

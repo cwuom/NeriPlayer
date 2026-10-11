@@ -301,7 +301,7 @@ private fun SafeModeHeader() {
 }
 
 @Composable
-private fun CrashLogPreviewCard(
+internal fun CrashLogPreviewCard(
     report: CrashReportStore.PendingCrashReport?,
     onCopy: () -> Unit,
     onExport: () -> Unit
@@ -379,7 +379,7 @@ private fun CrashLogPreviewCard(
 }
 
 @Composable
-private fun RecoveryActionCard(
+internal fun RecoveryActionCard(
     busy: Boolean,
     onResetLogin: () -> Unit,
     onResetSettings: () -> Unit,
@@ -442,7 +442,7 @@ private fun RecoveryActionCard(
     }
 }
 
-private fun copyLogToClipboard(
+internal fun copyLogToClipboard(
     clipboardManager: ClipboardManager?,
     content: String
 ): ClipboardCopyResult? {

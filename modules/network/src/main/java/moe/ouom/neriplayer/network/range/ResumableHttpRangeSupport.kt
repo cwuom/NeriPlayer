@@ -38,31 +38,25 @@ object ResumableHttpRangeSupport {
         preferredChunkSize: Long = DEFAULT_CHUNK_SIZE_BYTES
     ): List<Long> {
         val normalizedPreferredChunkSize = preferredChunkSize.coerceAtLeast(MIN_CHUNK_SIZE_BYTES)
-        val maxChunk = when {
-            requestLength in 1 until normalizedPreferredChunkSize -> requestLength
-            else -> normalizedPreferredChunkSize
-        }
-        if (maxChunk <= 0L) {
-            return listOf(normalizedPreferredChunkSize)
-        }
-
-        val candidates = linkedSetOf<Long>()
-        var chunkSize = maxChunk
-        while (chunkSize >= MIN_CHUNK_SIZE_BYTES) {
-            candidates += chunkSize
-            if (chunkSize == MIN_CHUNK_SIZE_BYTES) {
-                break
-            }
-            chunkSize = (chunkSize / 2L).coerceAtLeast(MIN_CHUNK_SIZE_BYTES)
-        }
+        val candidates = halvedChunkLengths(firstChunkLength(requestLength, normalizedPreferredChunkSize))
         if (requestLength in 1 until MIN_CHUNK_SIZE_BYTES) {
             candidates += requestLength
         }
+        return candidates.sortedDescending()
+    }
+
+    private fun firstChunkLength(requestLength: Long, preferredChunkSize: Long): Long =
+        if (requestLength in 1 until preferredChunkSize) requestLength else preferredChunkSize
+
+    private fun halvedChunkLengths(firstChunkLength: Long): MutableSet<Long> {
+        val candidates = linkedSetOf<Long>()
+        var chunkSize = firstChunkLength
+        while (chunkSize > MIN_CHUNK_SIZE_BYTES) {
+            candidates += chunkSize
+            chunkSize = (chunkSize / 2L).coerceAtLeast(MIN_CHUNK_SIZE_BYTES)
+        }
         candidates += MIN_CHUNK_SIZE_BYTES
         return candidates
-            .filter { it > 0L }
-            .distinct()
-            .sortedDescending()
     }
 
     fun shouldRetryChunkError(error: IOException): Boolean {
@@ -103,23 +97,9 @@ object ResumableHttpRangeSupport {
     fun resolveTotalContentLength(
         url: String,
         headers: Map<String, List<String>>
-    ): Long? {
-        val fromContentRange = firstHeaderValue(headers, "Content-Range")
-            ?.let(::parseContentRangeTotal)
-            ?.takeIf { it > 0L }
-        if (fromContentRange != null) {
-            return fromContentRange
-        }
-
-        val fromQuery = resolveQueryContentLength(url)
-        if (fromQuery != null) {
-            return fromQuery
-        }
-
-        return firstHeaderValue(headers, "Content-Length")
-            ?.toLongOrNull()
-            ?.takeIf { it > 0L }
-    }
+    ): Long? = positiveHeaderValue(headers, "Content-Range", ::parseContentRangeTotal)
+        ?: resolveQueryContentLength(url)
+        ?: positiveHeaderValue(headers, "Content-Length", String::toLongOrNull)
 
     fun resolveTotalContentLength(
         uri: Uri,
@@ -136,22 +116,18 @@ object ResumableHttpRangeSupport {
         if (delegateOpenLength > 0L) {
             return delegateOpenLength
         }
+        return positiveHeaderValue(headers, "Content-Range", ::parseContentRangeLength)
+            ?: positiveHeaderValue(headers, "Content-Length", String::toLongOrNull)
+            ?: requestedLength
+    }
 
-        val fromRange = firstHeaderValue(headers, "Content-Range")
-            ?.let(::parseContentRangeLength)
-            ?.takeIf { it > 0L }
-        if (fromRange != null) {
-            return fromRange
-        }
-
-        val fromLength = firstHeaderValue(headers, "Content-Length")
-            ?.toLongOrNull()
-            ?.takeIf { it > 0L }
-        if (fromLength != null) {
-            return fromLength
-        }
-
-        return requestedLength
+    private fun positiveHeaderValue(
+        headers: Map<String, List<String>>,
+        name: String,
+        parse: (String) -> Long?
+    ): Long? {
+        val value = firstHeaderValue(headers, name) ?: return null
+        return parse(value)?.takeIf { it > 0L }
     }
 
     fun buildChunkedRequest(request: Request, start: Long, length: Long): Request {

@@ -64,6 +64,7 @@
     <string name="storage_desc_legacy_migration_files">仅供 Room 迁移失败回退使用的旧 JSON；Room 成为主存储后会由启动清理器移除</string>
     <string name="storage_desc_database">Room 主数据库及 WAL/SHM 文件；平台缓存页已在上方分摊展示，核心数据不会通过清缓存删除</string>
     <string name="storage_desc_app_data">歌单、收藏、设置和认证等核心数据</string>
+    <string name="cache_clear_partial">部分缓存未能清理</string>
     <string name="cache_clear_complete">清理完成</string>
     <string name="settings_storage_cache">存储与缓存</string>
     <string name="settings_storage_expand">缓存大小、清理与存储用量</string>

@@ -12,10 +12,10 @@ internal fun resolvePlaybackControlLayoutPreferences(
 ): PlaybackControlLayoutPreferences {
     return PlaybackControlLayoutPreferences(
         nowPlayingPlacement = NowPlayingControlPlacement.entries
-            .getOrElse(nowPlayingPlacementValue ?: -1) { defaults.nowPlayingPlacement },
-        nowPlayingSize = PlaybackControlSize.entries
-            .getOrElse(nowPlayingSizeValue ?: -1) { defaults.nowPlayingSize },
-        lyricsSize = PlaybackControlSize.entries
-            .getOrElse(lyricsSizeValue ?: -1) { defaults.lyricsSize }
+            .entryAtOr(nowPlayingPlacementValue, defaults.nowPlayingPlacement),
+        nowPlayingSize = PlaybackControlSize.entries.entryAtOr(nowPlayingSizeValue, defaults.nowPlayingSize),
+        lyricsSize = PlaybackControlSize.entries.entryAtOr(lyricsSizeValue, defaults.lyricsSize)
     )
 }
+
+private fun <T> List<T>.entryAtOr(ordinal: Int?, fallback: T): T = ordinal?.let(::getOrNull) ?: fallback

@@ -31,5 +31,9 @@ data class NeteaseLikeSyncResult(
     val added: Int,
     val failed: Int,
     val message: String? = null,
-    val targetPlaylistId: Long? = null
+    val targetPlaylistId: Long? = null,
+    /** 被网易云明确拒绝添加的歌曲, 已计入 [failed] */
+    val rejectedSongIds: List<Long> = emptyList(),
+    /** 网易云返回的拒绝原因 */
+    val rejectionMessage: String? = null
 )

@@ -133,6 +133,10 @@ add_neri_usb_host_test(
     pcm/usb_pcm_pipeline_test.cpp
 )
 add_neri_usb_host_test(
+    usb_feature_unit_test
+    control/usb_feature_unit_test.cpp
+)
+add_neri_usb_host_test(
     usb_uac1_format_test
     uac1/usb_uac1_format_test.cpp
 )

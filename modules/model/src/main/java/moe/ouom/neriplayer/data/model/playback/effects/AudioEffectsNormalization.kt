@@ -13,6 +13,7 @@ const val AUDIO_EFFECTS_PREAMP_MIN_DB = -12f
 const val AUDIO_EFFECTS_PREAMP_MAX_DB = 6f
 
 private const val NEUTRAL_EPSILON = 0.001f
+private val NeutralSoundDefaults = AudioEffectsSound()
 
 private fun Float.finiteIn(min: Float, max: Float, fallback: Float): Float =
     if (isFinite()) coerceIn(min, max) else fallback
@@ -121,8 +122,15 @@ private fun AudioEffectsSound.allProcessingNeutral(): Boolean {
         !mono && !swapChannels && crossfeed.isZero()
     val spaceNeutral = surround.isZero() && reverb.isZero()
     return equalizerNeutral && parametricNeutral && toneNeutral && colorNeutral &&
-        stereoNeutral && spaceNeutral && !compressorEnabled
+        stereoNeutral && spaceNeutral && !compressorEnabled && limiterNeutral()
 }
+
+/** 默认限幅器只是防破音保护，原声不需要；用户调过的限幅器本身就是想要的处理 */
+private fun AudioEffectsSound.limiterNeutral(): Boolean =
+    !limiterEnabled || (
+        (limiterCeilingDb - NeutralSoundDefaults.limiterCeilingDb).isZero() &&
+            (limiterReleaseMs - NeutralSoundDefaults.limiterReleaseMs).isZero()
+        )
 
 fun AudioEffectsSettings.profileFor(route: AudioOutputRoute): AudioEffectsProfile =
     if (perOutputEnabled) outputProfiles[route.storageValue] ?: main else main

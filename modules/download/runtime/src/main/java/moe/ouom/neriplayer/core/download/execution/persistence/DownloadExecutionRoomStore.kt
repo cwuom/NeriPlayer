@@ -1070,13 +1070,38 @@ internal object DownloadExecutionRoomStore {
     internal fun requestFromEntity(
         entity: DownloadOperationEntity
     ): DownloadExecutionRequest? {
-        val root = runCatching { JSONObject(entity.sourceHintJson) }
+        val root = parseJournalRoot(entity) ?: return null
+        return requestFromJournalRoot(entity, root)
+    }
+
+    private fun parseJournalRoot(entity: DownloadOperationEntity): JSONObject? {
+        return runCatching { JSONObject(entity.sourceHintJson) }
             .onFailure { error ->
                 logDecodeFailure(entity, "invalid_json", error)
             }
-            .getOrNull() ?: return null
-        if (root.optInt("schemaVersion") != JOURNAL_PAYLOAD_VERSION) {
-            logDecodeFailure(entity, "schema_version=${root.optInt("schemaVersion")}")
+            .getOrNull()
+    }
+
+    /** 缺少 schemaVersion 的载荷按 1 读取 */
+    internal fun journalPayloadSchemaVersion(root: JSONObject): Int {
+        return root.optInt("schemaVersion", 0).takeIf { it != 0 } ?: 1
+    }
+
+    internal fun isSupportedJournalPayload(root: JSONObject): Boolean {
+        return journalPayloadSchemaVersion(root) in 1..JOURNAL_PAYLOAD_VERSION
+    }
+
+    /** 更新版本写入的载荷当前进程无法解码，但升级后仍要能恢复，不能判为损坏 */
+    internal fun isFutureJournalPayload(root: JSONObject): Boolean {
+        return journalPayloadSchemaVersion(root) > JOURNAL_PAYLOAD_VERSION
+    }
+
+    private fun requestFromJournalRoot(
+        entity: DownloadOperationEntity,
+        root: JSONObject
+    ): DownloadExecutionRequest? {
+        if (!isSupportedJournalPayload(root)) {
+            logDecodeFailure(entity, "schema_version=${journalPayloadSchemaVersion(root)}")
             return null
         }
         val songJson = root.optJSONObject("song") ?: run {
@@ -1148,6 +1173,10 @@ internal object DownloadExecutionRoomStore {
         return request
     }
 
+    /**
+     * [payloadWasRead] 为 false 时载荷缺失或来自更新版本，调用方只能跳过该行，
+     * 不能把它当作损坏载荷作废
+     */
     internal data class HeaderRequestRead(
         val request: DownloadExecutionRequest?,
         val payloadWasRead: Boolean
@@ -1160,8 +1189,18 @@ internal object DownloadExecutionRoomStore {
     ): HeaderRequestRead {
         val sourceHintJson = readSourceHintJson(dao, header)
             ?: return HeaderRequestRead(request = null, payloadWasRead = false)
+        val entity = header.toEntity(sourceHintJson)
+        val root = parseJournalRoot(entity)
+            ?: return HeaderRequestRead(request = null, payloadWasRead = true)
+        if (isFutureJournalPayload(root)) {
+            logDecodeFailure(
+                entity,
+                "newer_schema_version=${journalPayloadSchemaVersion(root)} kept_for_upgrade"
+            )
+            return HeaderRequestRead(request = null, payloadWasRead = false)
+        }
         return HeaderRequestRead(
-            request = requestFromEntity(header.toEntity(sourceHintJson)),
+            request = requestFromJournalRoot(entity, root),
             payloadWasRead = true
         )
     }
@@ -1553,8 +1592,6 @@ internal object DownloadExecutionRoomStore {
      * 保留 payload 解码和状态常量的单一所有权，避免 facade 拆分后出现两套规则
      */
     internal object Access {
-        internal val JOURNAL_PAYLOAD_VERSION: Int
-            get() = DownloadExecutionRoomStore.JOURNAL_PAYLOAD_VERSION
         internal val ACTIVE_OPERATION_STATES: List<String>
             get() = DownloadExecutionRoomStore.ACTIVE_OPERATION_STATES
         internal val OPERATION_QUERY_PAGE_SIZE: Int
@@ -1582,6 +1619,14 @@ internal object DownloadExecutionRoomStore {
 
         internal fun requestToJson(request: DownloadExecutionRequest): JSONObject {
             return DownloadExecutionRoomStore.requestToJson(request)
+        }
+
+        internal fun isSupportedJournalPayload(root: JSONObject): Boolean {
+            return DownloadExecutionRoomStore.isSupportedJournalPayload(root)
+        }
+
+        internal fun isFutureJournalPayload(root: JSONObject): Boolean {
+            return DownloadExecutionRoomStore.isFutureJournalPayload(root)
         }
 
         internal fun nextPayloadUpdatedAt(

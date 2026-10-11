@@ -17,7 +17,9 @@ enum class NeteasePlaylistSyncMessage {
     ALL_SYNCED
 }
 
+/** [pause] 阻塞当前线程指定毫秒数, 用于网易云限流时退避 */
 class NeteasePlaylistSync(
+    private val pause: (Long) -> Unit,
     private val message: (NeteasePlaylistSyncMessage) -> String?
 ) {
     fun filterNeteaseLikeSyncCandidates(songs: List<SongItem>): List<SongItem> {
@@ -260,7 +262,8 @@ class NeteasePlaylistSync(
 
             val addResult = addNeteasePlaylistSongIdsInBatches(
                 songIds = candidates.map(NeteaseResolvedCandidate::neteaseId),
-                batchSize = NETEASE_PLAYLIST_ADD_BATCH_SIZE
+                batchSize = NETEASE_PLAYLIST_ADD_BATCH_SIZE,
+                pause = pause
             ) { ids ->
                 addNeteasePlaylistSongIdsBatch(client, targetPlaylistId, ids)
             }
@@ -280,7 +283,8 @@ class NeteasePlaylistSync(
                 targetPlaylistId = targetPlaylistId,
                 added = reconciled.addedIds.size,
                 failed = failedSongResolution.unresolvedFailedIds.size,
-                skippedUnsupported = plan.skippedUnsupported + failedSongResolution.skippedUnsupported
+                skippedUnsupported = plan.skippedUnsupported + failedSongResolution.skippedUnsupported,
+                rejections = reconciled.rejections.filterKeys { it in failedSongResolution.unresolvedFailedIds }
             )
         }
     }

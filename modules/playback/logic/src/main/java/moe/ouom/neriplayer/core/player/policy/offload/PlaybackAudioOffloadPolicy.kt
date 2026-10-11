@@ -14,6 +14,7 @@ enum class PcmAudioRequirement {
     HIGH_RESOLUTION,
     AUDIO_REACTIVE,
     LISTEN_TOGETHER_RATE,
+    OFFLOAD_STALL_FALLBACK,
 }
 
 fun pcmAudioRequirements(
@@ -27,11 +28,14 @@ fun pcmAudioRequirements(
     audioReactiveActive: Boolean,
     audioSource: PlaybackAudioSource?,
     listenTogetherPlaybackRate: Float,
+    offloadStallFallbackActive: Boolean,
 ): Set<PcmAudioRequirement> = buildSet {
     addSourceRequirements(audioSource, usbExclusivePlaybackEnabled)
     addPlaybackParameterRequirements(playbackSpeed, playbackPitch)
     addSoundEffectRequirements(audioEffectsActive, volumeBalance, volumeNormalizationEnabled)
     addOutputRequirements(highResolutionOutputEnabled, audioReactiveActive, listenTogetherPlaybackRate)
+    // 部分设备的 offload sink 会吞下压缩流却不出声, 本次会话内保持 PCM 管线
+    if (offloadStallFallbackActive) add(PcmAudioRequirement.OFFLOAD_STALL_FALLBACK)
 }
 
 fun shouldUpdateAudioOffloadForReactiveChange(

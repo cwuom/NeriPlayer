@@ -56,6 +56,14 @@ class AppPlaybackNavigationPresentationTest {
     }
 
     @Test
+    fun `a back gesture on the player reveals navigation on phones and tablets`() {
+        for (width in listOf(360, 800)) {
+            assertFalse(shouldSuppressPlaybackNavigation(true, true, width, backGestureRevealing = true))
+            assertFalse(shouldSuppressPlaybackNavigation(false, true, width, backGestureRevealing = true))
+        }
+    }
+
+    @Test
     fun `settings side effects run only for the selected tab without the player`() {
         assertTrue(isAppSettingsVisible(Destinations.Settings.route, playbackOpen = false))
         assertFalse(isAppSettingsVisible(Destinations.Settings.route, playbackOpen = true))

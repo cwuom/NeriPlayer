@@ -34,22 +34,38 @@ import moe.ouom.neriplayer.data.stats.hotPlaybackStatsQuery
 internal fun rememberPlaybackStatsQuery(
     period: PlaybackStatsPeriod,
     sort: PlaybackStatsSort,
-    nowMillis: Long = System.currentTimeMillis(),
+    nowMillis: Long,
     timeZone: TimeZone = TimeZone.getDefault()
 ): PlaybackStatsQuery {
-    val dayKey = statsQueryDay(nowMillis, timeZone).key.takeUnless { period == PlaybackStatsPeriod.ALL }
-    return remember(period, sort, dayKey) { PlaybackStatsQuery(period, sort, nowMillis = nowMillis) }
+    val identity = StatsQueryIdentity(period, sort, statsQueryDayKeyOrNull(period, nowMillis, timeZone))
+    return remember(identity) { PlaybackStatsQuery(period, sort, nowMillis = nowMillis) }
 }
 
 @Composable
 internal fun rememberHotPlaybackStatsQuery(
     period: PlaybackStatsPeriod,
-    nowMillis: Long = System.currentTimeMillis(),
+    nowMillis: Long,
     timeZone: TimeZone = TimeZone.getDefault()
 ): PlaybackStatsQuery {
-    val dayKey = statsQueryDay(nowMillis, timeZone).key.takeUnless { period == PlaybackStatsPeriod.ALL }
-    return remember(period, dayKey) { hotPlaybackStatsQuery(period, nowMillis) }
+    val identity = StatsQueryIdentity(
+        period,
+        PlaybackStatsSort.PLAY_COUNT,
+        statsQueryDayKeyOrNull(period, nowMillis, timeZone)
+    )
+    return remember(identity) { hotPlaybackStatsQuery(period, nowMillis) }
 }
+
+private data class StatsQueryIdentity(
+    val period: PlaybackStatsPeriod,
+    val sort: PlaybackStatsSort,
+    val dayKey: StatsQueryDayKey?
+)
+
+private fun statsQueryDayKeyOrNull(
+    period: PlaybackStatsPeriod,
+    nowMillis: Long,
+    timeZone: TimeZone
+): StatsQueryDayKey? = statsQueryDay(nowMillis, timeZone).key.takeUnless { period == PlaybackStatsPeriod.ALL }
 
 internal data class StatsQueryDayKey(val startMillis: Long, val endMillis: Long, val timeZoneId: String)
 internal data class StatsQueryDay(val nowMillis: Long, val key: StatsQueryDayKey)
@@ -85,15 +101,25 @@ internal fun rememberStatsQueryDay(
 ): State<StatsQueryDay> {
     val initial = remember(clock) { statsQueryDay(clock.nowMillis(), clock.timeZone()) }
     return produceState(initial, clock, resumed, timeChanges) {
-        resumed.collectLatest { active ->
-            if (active) {
-                timeChanges.onStart { emit(Unit) }.collectLatest {
-                    while (currentCoroutineContext().isActive) {
-                        val day = statsQueryDay(clock.nowMillis(), clock.timeZone())
-                        if (day.key != value.key) value = day
-                        // 用本地午夜计算下一次检查，系统改时会取消并重新安排
-                        delay((day.key.endMillis - clock.nowMillis()).coerceAtLeast(1L))
-                    }
+        followStatsQueryDay(clock, resumed, timeChanges, current = { value }) { day -> value = day }
+    }
+}
+
+private suspend fun followStatsQueryDay(
+    clock: StatsQueryClock,
+    resumed: StateFlow<Boolean>,
+    timeChanges: Flow<Unit>,
+    current: () -> StatsQueryDay,
+    publish: (StatsQueryDay) -> Unit
+) {
+    resumed.collectLatest { active ->
+        if (active) {
+            timeChanges.onStart { emit(Unit) }.collectLatest {
+                while (currentCoroutineContext().isActive) {
+                    val day = statsQueryDay(clock.nowMillis(), clock.timeZone())
+                    if (day.key != current().key) publish(day)
+                    // 用本地午夜计算下一次检查，系统改时会取消并重新安排
+                    delay((day.key.endMillis - clock.nowMillis()).coerceAtLeast(1L))
                 }
             }
         }

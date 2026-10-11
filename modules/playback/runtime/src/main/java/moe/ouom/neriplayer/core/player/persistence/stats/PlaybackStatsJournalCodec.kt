@@ -98,20 +98,28 @@ internal object PlaybackStatsJournalCodec {
             val snapshot = PlaybackStatsSnapshot(
                 song = readSong(value.getAsJsonObject("song")),
                 listenedMs = value.number("listenedMs"), playCountIncrement = count.toInt(),
-                scheduleSync = value.get("scheduleSync").takeIf { it?.isJsonPrimitive == true && it.asJsonPrimitive.isBoolean }
-                    ?.asBoolean ?: throw IOException("Invalid playback journal sync flag"),
+                scheduleSync = value.scheduleSyncFlag(),
                 localPlaylistId = value.optionalNumber("localPlaylistId"),
                 eventId = value.text("eventId"), playedAt = value.number("playedAt"),
                 observedClearedAt = value.number("observedClearedAt")
             )
-            if (snapshot.eventId.isBlank() || snapshot.eventId.length > 512 || snapshot.listenedMs < 0) {
-                throw IOException("Invalid playback journal event")
-            }
+            if (!snapshot.hasValidEvent()) throw IOException("Invalid playback journal event")
             return snapshot
         } catch (error: RuntimeException) {
             throw IOException("Malformed playback journal payload", error)
         }
     }
+
+    private fun JsonObject.scheduleSyncFlag(): Boolean {
+        val value = get("scheduleSync")
+        if (value == null || !value.isJsonPrimitive || !value.asJsonPrimitive.isBoolean) {
+            throw IOException("Invalid playback journal sync flag")
+        }
+        return value.asBoolean
+    }
+
+    private fun PlaybackStatsSnapshot.hasValidEvent(): Boolean =
+        eventId.isNotBlank() && eventId.length <= 512 && listenedMs >= 0
 
     private fun songPayload(song: SongItem) = JsonObject().apply {
         addProperty("id", song.id)

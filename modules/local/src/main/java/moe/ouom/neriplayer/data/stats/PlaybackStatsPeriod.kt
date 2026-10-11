@@ -106,27 +106,33 @@ private fun PlaybackStatsPeriod.hotPlaylistMinimumListenMs(): Long = when (this)
 }
 
 private fun TrackStat.mergeWith(bucket: PlaybackStatBucket): TrackStat {
-    val latest = bucket.takeIf { it.lastPlayedAt >= lastPlayedAt }
-    return copy(
-        id = latest?.id ?: id,
-        name = latest?.name ?: name,
-        artist = latest?.artist ?: artist,
-        album = latest?.album ?: album,
-        albumId = latest?.albumId ?: albumId,
-        coverUrl = latest?.coverUrl ?: coverUrl,
-        durationMs = latest?.durationMs?.takeIf { it > 0L } ?: durationMs,
+    val summed = copy(
         totalListenMs = totalListenMs + bucket.totalListenMs,
         playCount = playCount + bucket.playCount,
         lastPlayedAt = maxOf(lastPlayedAt, bucket.lastPlayedAt),
-        firstPlayedAt = minPositive(firstPlayedAt, bucket.firstPlayedAt),
-        mediaUri = latest?.mediaUri ?: mediaUri,
-        localFilePath = latest?.localFilePath ?: localFilePath,
-        localFileName = latest?.localFileName ?: localFileName,
-        customName = latest?.customName ?: customName,
-        customArtist = latest?.customArtist ?: customArtist,
-        customCoverUrl = latest?.customCoverUrl ?: customCoverUrl
+        firstPlayedAt = minPositive(firstPlayedAt, bucket.firstPlayedAt)
     )
+    return if (bucket.lastPlayedAt >= lastPlayedAt) summed.withMetadataFrom(bucket) else summed
 }
+
+/** The latest bucket names the track; its missing optional fields keep the values already known. */
+private fun TrackStat.withMetadataFrom(latest: PlaybackStatBucket): TrackStat = copy(
+    id = latest.id,
+    name = latest.name,
+    artist = latest.artist,
+    album = latest.album,
+    albumId = latest.albumId,
+    coverUrl = preferred(latest.coverUrl, coverUrl),
+    durationMs = if (latest.durationMs > 0L) latest.durationMs else durationMs,
+    mediaUri = preferred(latest.mediaUri, mediaUri),
+    localFilePath = preferred(latest.localFilePath, localFilePath),
+    localFileName = preferred(latest.localFileName, localFileName),
+    customName = preferred(latest.customName, customName),
+    customArtist = preferred(latest.customArtist, customArtist),
+    customCoverUrl = preferred(latest.customCoverUrl, customCoverUrl)
+)
+
+private fun preferred(value: String?, fallback: String?): String? = value ?: fallback
 
 private fun PlaybackStatBucket.toTrackStat(): TrackStat {
     return TrackStat(

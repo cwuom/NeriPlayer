@@ -2,12 +2,8 @@ package moe.ouom.neriplayer.network.security
 
 import java.util.Locale
 
-private fun normalizeHostValidationValue(host: String?): String {
-    return host
-        ?.trim()
-        ?.trim('.')
-        ?.lowercase(Locale.US)
-        .orEmpty()
+private fun normalizeHostValidationValue(host: String): String {
+    return host.trim().trim('.').lowercase(Locale.US)
 }
 
 fun String.matchesRootDomain(rootDomain: String): Boolean {

@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPreviewAuthority
+import moe.ouom.neriplayer.data.local.database.store.mockLocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import org.junit.Assert.assertEquals
@@ -26,7 +27,7 @@ import org.mockito.Mockito.`when`
 class LocalPlaylistRepositoryPersistenceTest : LocalPlaylistRepositoryTestSupport() {
     @Test
     fun `unreadable Room primary refuses initialization without reading stale legacy or allowing writes`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary temporarily unavailable") }
         val staleText = Gson().toJson(listOf(playlist(1, "stale JSON")))
         val storage = CountingStorage(primary = staleText, backup = staleText)
@@ -59,7 +60,7 @@ class LocalPlaylistRepositoryPersistenceTest : LocalPlaylistRepositoryTestSuppor
 
     @Test
     fun `unreadable Room after JSON cleanup cannot manufacture and persist system playlists`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenAnswer { throw IOException("primary temporarily unavailable") }
         val storage = CountingStorage(primary = null, backup = null)
         var normalizationCalls = 0
@@ -86,7 +87,7 @@ class LocalPlaylistRepositoryPersistenceTest : LocalPlaylistRepositoryTestSuppor
 
     @Test
     fun `repaired Room read retries original authority and later local mutation survives repository reconstruction`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         var unavailable = true
         var primary = listOf(playlist(2, "primary"), playlist(3, "other primary"))
         val originalPrimary = primary
@@ -133,7 +134,7 @@ class LocalPlaylistRepositoryPersistenceTest : LocalPlaylistRepositoryTestSuppor
 
     @Test
     fun `fast preview missing Room primary playlist cannot resurrect stale legacy playlist`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         `when`(room.readIfRoomPrimary()).thenReturn(emptyList())
         `when`(room.readFastPlaylistAuthority(2)).thenReturn(LocalPlaylistPreviewAuthority.RoomPrimary(null))
         val staleText = Gson().toJson(listOf(playlist(2, "deleted playlist")))
@@ -155,7 +156,7 @@ class LocalPlaylistRepositoryPersistenceTest : LocalPlaylistRepositoryTestSuppor
 
     @Test
     fun `fast preview primary I O failure cannot present stale legacy as current playlist`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         val primary = listOf(playlist(2, "actual primary"))
         `when`(room.readIfRoomPrimary()).thenReturn(primary)
         `when`(room.readFastPlaylistAuthority(2)).thenAnswer { throw IOException("preview unavailable") }
@@ -178,7 +179,7 @@ class LocalPlaylistRepositoryPersistenceTest : LocalPlaylistRepositoryTestSuppor
 
     @Test
     fun `fast preview cancellation propagates without reading stale legacy`() = runTest {
-        val room = mock(LocalPlaylistRoomStore::class.java)
+        val room = mockLocalPlaylistRoomStore()
         val primary = listOf(playlist(2, "actual primary"))
         `when`(room.readIfRoomPrimary()).thenReturn(primary)
         val cancellation = CancellationException("preview cancelled")

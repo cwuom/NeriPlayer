@@ -118,4 +118,5 @@
     <string name="settings_account_sign_in_hint">Sign in to use platform features</string>
     <string name="settings_account_sign_in_again">Sign in again</string>
     <string name="settings_account_avatar">%1$s account avatar</string>
+    <string name="web_login_webview_unavailable">System WebView is unavailable, so web sign-in cannot open. Enable or update Android System WebView in system settings and try again</string>
 </resources>

@@ -97,6 +97,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+import moe.ouom.neriplayer.ui.feedback.startActivityOrShowUnavailable
 
 @Composable
 internal fun MoreOptionsMainContent(
@@ -502,7 +503,7 @@ private fun ShareSongAction(
                 type = "text/plain"
             }
             val shareIntent = Intent.createChooser(sendIntent, null)
-            onDismissSheet { context.startActivity(shareIntent) }
+            onDismissSheet { context.startActivityOrShowUnavailable(shareIntent) }
         }
     )
 }

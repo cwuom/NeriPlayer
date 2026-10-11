@@ -4,10 +4,14 @@ import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.model.sync.SyncWorkerOutcome
 
 class SyncWorkerExecution(private val host: SyncWorkerHost) {
-    suspend fun execute(forceSync: Boolean, triggerByUserAction: Boolean): SyncWorkerOutcome {
+    suspend fun execute(
+        forceSync: Boolean,
+        triggerByUserAction: Boolean,
+        triggerByAppStartup: Boolean = false
+    ): SyncWorkerOutcome {
         val manual = forceSync || triggerByUserAction
         return try {
-            perform(manual)
+            perform(manual, triggerByAppStartup)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -15,9 +19,9 @@ class SyncWorkerExecution(private val host: SyncWorkerHost) {
         }
     }
 
-    private suspend fun perform(manual: Boolean): SyncWorkerOutcome {
+    private suspend fun perform(manual: Boolean, triggerByAppStartup: Boolean): SyncWorkerOutcome {
         if (!eligible(manual)) return SyncWorkerOutcome.SUCCESS
-        if (!manual && host.playbackActive()) {
+        if (!manual && !triggerByAppStartup && host.playbackActive()) {
             host.deferForPlayback()
             return SyncWorkerOutcome.SUCCESS
         }

@@ -68,6 +68,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -141,6 +143,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
+import moe.ouom.neriplayer.util.platform.tryLaunch
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -197,6 +200,23 @@ internal fun playlistNameFieldValue(text: String, maxLength: Int): TextFieldValu
         text = limited,
         selection = TextRange(limited.length)
     )
+}
+
+@Stable
+internal class PlaylistRenameUiState(
+    val visible: MutableState<Boolean>,
+    val text: MutableState<TextFieldValue>,
+    val error: MutableState<String?>
+)
+
+@Composable
+internal fun rememberPlaylistRenameUiState(name: String, maxLength: Int): PlaylistRenameUiState {
+    val visible = rememberSaveable { mutableStateOf(false) }
+    val text = rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(playlistNameFieldValue(name, maxLength))
+    }
+    val error = rememberSaveable { mutableStateOf<String?>(null) }
+    return remember(visible, text, error) { PlaylistRenameUiState(visible, text, error) }
 }
 
 internal fun areDisplayedSongKeysSelected(
@@ -499,8 +519,9 @@ fun LocalPlaylistDetailScreen(
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
             var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
-            var showSearch by remember { mutableStateOf(false) }
-            var searchQuery by remember { mutableStateOf("") }
+            val searchUiState = rememberPlaylistSearchUiState()
+            var showSearch by searchUiState.visible
+            var searchQuery by searchUiState.query
             var headerSearchFocused by remember { mutableStateOf(false) }
             var dockedSearchFocused by remember { mutableStateOf(false) }
             val searchInputState = rememberPlaylistSearchInputState(
@@ -727,6 +748,16 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
+            fun launchFolderScanPicker() {
+                if (!folderScanLauncher.tryLaunch(null)) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(
+                            composeResources.getString(CoreCommonR.string.local_playlist_scan_folder_unavailable)
+                        )
+                    }
+                }
+            }
+
             if (showLocalScanModeDialog) {
                 AlertDialog(
                     onDismissRequest = { showLocalScanModeDialog = false },
@@ -734,7 +765,7 @@ fun LocalPlaylistDetailScreen(
                         HapticTextButton(
                             onClick = {
                                 showLocalScanModeDialog = false
-                                folderScanLauncher.launch(null)
+                                launchFolderScanPicker()
                             }
                         ) { Text(stringResource(CoreCommonR.string.local_playlist_scan_folder)) }
                     },
@@ -869,6 +900,15 @@ fun LocalPlaylistDetailScreen(
                         result.failed
                     )
                 }
+                val rejectedMessage = result.rejectionMessage
+                    ?.takeIf { result.rejectedSongIds.isNotEmpty() }
+                    ?.let { reason ->
+                        composeResources.getString(
+                            CoreCommonR.string.local_playlist_sync_netease_rejected,
+                            result.rejectedSongIds.size,
+                            reason
+                        )
+                    }
                 val unsupportedMessage = if (unsupportedCount > 0) {
                     context.resources.getQuantityString(
                         CoreCommonR.plurals.local_playlist_sync_netease_unsupported,
@@ -884,7 +924,7 @@ fun LocalPlaylistDetailScreen(
                         it
                     )
                 }
-                val message = listOfNotNull(targetMessage, syncMessage, unsupportedMessage)
+                val message = listOfNotNull(targetMessage, syncMessage, rejectedMessage, unsupportedMessage)
                     .joinToString(" ")
                 scope.launch {
                     snackbarHostState.showNeriSnackbar(message)
@@ -943,12 +983,11 @@ fun LocalPlaylistDetailScreen(
             val hasCustomBackground = backgroundImageUri != null
 
             // 重命名
-            var showRename by remember { mutableStateOf(false) }
             val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
-            var renameText by remember {
-                mutableStateOf(playlistNameFieldValue(playlist.name, maxNameLength))
-            }
-            var renameError by remember { mutableStateOf<String?>(null) }
+            val renameUiState = rememberPlaylistRenameUiState(playlist.name, maxNameLength)
+            var showRename by renameUiState.visible
+            var renameText by renameUiState.text
+            var renameError by renameUiState.error
             fun normalizedRenameName(input: String): String = input.trim().take(maxNameLength)
             fun isSameRenameName(input: String): Boolean {
                 return normalizedRenameName(input).equals(

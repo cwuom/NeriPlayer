@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
+import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.core.player.runtime.service.MediaSessionPlaybackStateThrottler
 import moe.ouom.neriplayer.core.player.runtime.service.buildMediaSessionControlFingerprint
 import moe.ouom.neriplayer.core.player.service.notification.ServiceWidgetInputs
@@ -124,6 +125,10 @@ internal class PlaybackServicePresentationOwner(
     private val playbackStateThrottler = MediaSessionPlaybackStateThrottler()
     private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
+    // 会话拒收过位图的封面, 同一封面后续只发布 URI, 避免每行歌词都重复失败的 Binder 事务
+    private var rejectedArtworkCoverSource: String? = null
+    private var metadataFailureLogged = false
+    private var lyricNotificationRepostPending = false
     private var lastWidgetState: PlaybackWidgetState? = null
     private var favoriteSongKeys: Set<String> = emptySet()
     private var bluetoothMode = BluetoothMetadataMode.SongAndLyrics
@@ -272,7 +277,44 @@ internal class PlaybackServicePresentationOwner(
         port.publishWidgetProgress(state)
     }
 
-    fun updateMetadata() {
+    /**
+     * 原生 SystemUI 只在通知重新发布时读取会话元数据, 歌词行变化后需要重发通知才能刷新;
+     * 熄屏时只记下待刷新, 亮屏后补发一次。Flyme 状态栏歌词已按行重建通知, 不重复发布。
+     */
+    fun refreshLyricMetadata(
+        screenInteractive: Boolean,
+        foregroundStarted: Boolean,
+        lyricState: StatusBarLyricNotificationState,
+        floatingLyricsEnabled: Boolean,
+    ) {
+        if (!updateMetadata() || lyricState.enabled) return
+        if (!screenInteractive) {
+            lyricNotificationRepostPending = true
+            return
+        }
+        repostNotificationForLyrics(foregroundStarted, lyricState, floatingLyricsEnabled)
+    }
+
+    fun onScreenInteractive(
+        foregroundStarted: Boolean,
+        lyricState: StatusBarLyricNotificationState,
+        floatingLyricsEnabled: Boolean,
+    ) {
+        if (!lyricNotificationRepostPending) return
+        repostNotificationForLyrics(foregroundStarted, lyricState, floatingLyricsEnabled)
+    }
+
+    private fun repostNotificationForLyrics(
+        foregroundStarted: Boolean,
+        lyricState: StatusBarLyricNotificationState,
+        floatingLyricsEnabled: Boolean,
+    ) {
+        lyricNotificationRepostPending = false
+        updateNotification(true, foregroundStarted, lyricState, floatingLyricsEnabled)
+    }
+
+    /** @return 是否向媒体会话发布了新的元数据快照 */
+    fun updateMetadata(): Boolean {
         val playback = source.playback()
         val song = playback.song
         val artworkSnapshot = artwork.observe(song)
@@ -290,9 +332,30 @@ internal class PlaybackServicePresentationOwner(
             carArtwork.observe(song, artworkSnapshot),
             serviceMetadataMediaId(song, playback.queue, playback.queueIndex),
         )
-        if (snapshot == lastMetadataSnapshot) return
+        if (snapshot == lastMetadataSnapshot) return false
         lastMetadataSnapshot = snapshot
-        port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot))
+        publishMetadata(snapshot, artworkSnapshot)
+        return true
+    }
+
+    private fun publishMetadata(snapshot: PlaybackMetadataSnapshot, artworkSnapshot: PlaybackArtworkSnapshot) {
+        if (snapshot.coverSource == null || snapshot.coverSource != rejectedArtworkCoverSource) {
+            val failure = runCatching { port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot)) }
+                .exceptionOrNull() ?: return
+            rejectedArtworkCoverSource = snapshot.coverSource
+            logMetadataFailureOnce("media session rejected artwork metadata, retry without bitmaps", failure)
+        }
+        runCatching { port.setMetadata(serviceMediaMetadata(snapshot, artworkSnapshot, includeBitmaps = false)) }
+            .onFailure { failure ->
+                lastMetadataSnapshot = null
+                logMetadataFailureOnce("media session rejected metadata without bitmaps", failure)
+            }
+    }
+
+    private fun logMetadataFailureOnce(message: String, failure: Throwable) {
+        if (metadataFailureLogged) return
+        metadataFailureLogged = true
+        NPLogger.w("NERI-APS", message, failure)
     }
 
     fun updatePlaybackState(force: Boolean, floatingLyricsEnabled: Boolean) {

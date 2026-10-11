@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.model.config.YouTubeAuthConfigSnapshot
 
 import android.content.Context
 import android.net.Uri
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.documentfile.provider.DocumentFile
@@ -119,78 +120,7 @@ class ConfigFileManager(
             val decoded = AppConfigBackupCodec.decodeForImport(raw)
             val payload = decoded.payload
             val sections = decoded.sections
-            SyncCoordinator.withExclusive {
-                if (sections.gitHubSync || sections.webDavSync) {
-                    // 先登记导入前的地址，不能把新配置误认成旧安装已有的同步目标
-                    syncUpgradeRepository.initializeStartupTargets(
-                        SyncProtocolUpgradeRepository.configuredTargetIds(context)
-                    )
-                    currentCoroutineContext().ensureActive()
-                }
-                val warnings = mutableListOf<String>()
-
-                val sanitizedSettings = if (sections.settings) {
-                    ConfigSettingsSanitizer(context).sanitize(payload.settings, warnings)
-                } else {
-                    TypedPreferenceSnapshot()
-                }
-                if (sections.settings) {
-                    restoreSettings(sanitizedSettings)
-                }
-                if (sections.listenTogether) {
-                    listenTogetherRepository.restore(payload.listenTogether)
-                }
-
-                val currentLanguage = LanguageManager.getCurrentLanguage(context)
-                val importedLanguage = if (sections.language) {
-                    payload.language.toLanguageOrNull()
-                } else {
-                    null
-                }
-                if (importedLanguage != null) {
-                    LanguageManager.setLanguage(context, importedLanguage)
-                }
-
-                val restoredAuthCount = restoreAuth(payload, sections, warnings)
-                val gitHubStorage = SecureTokenStorage(context)
-                val webDavStorage = WebDavStorage(context)
-                val syncPreferences = SyncPreferences(context)
-                val hasLegacyPlayHistoryMode = sections.gitHubSync &&
-                    payload.gitHubSync.playHistoryUpdateMode.isNotBlank()
-                if (sections.syncPreferences || hasLegacyPlayHistoryMode) {
-                    syncPreferences.restore(
-                        snapshot = payload.syncPreferences,
-                        legacyModeName = payload.gitHubSync.playHistoryUpdateMode
-                    )
-                }
-                if (sections.gitHubSync) {
-                    gitHubStorage.restore(payload.gitHubSync)
-                }
-                if (sections.webDavSync) {
-                    webDavStorage.restore(payload.webDavSync)
-                }
-                if (sections.hasSyncSection) {
-                    gitHubStorage.markSyncMutation()
-                }
-                if (sections.gitHubSync || sections.webDavSync) {
-                    reconcileSyncWorkers(gitHubStorage, webDavStorage)
-                }
-
-                Result.success(
-                    AppConfigImportResult(
-                        restoredSettingsCount = sanitizedSettings.entryCount(),
-                        restoredListenTogetherCount = if (sections.listenTogether) {
-                            payload.listenTogether.entryCount()
-                        } else {
-                            0
-                        },
-                        restoredAuthCount = restoredAuthCount,
-                        restoredSyncCount = payload.syncSectionCount(sections),
-                        warnings = warnings,
-                        requiresActivityRecreate = importedLanguage != null && importedLanguage != currentLanguage
-                    )
-                )
-            }
+            SyncCoordinator.withExclusive { applyImport(payload, sections) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -201,34 +131,98 @@ class ConfigFileManager(
 
     fun generateBackupFileName(): String = AppConfigBackupCodec.generateFileName()
 
-    private suspend fun restoreSettings(snapshot: TypedPreferenceSnapshot) {
-        context.dataStore.edit { prefs ->
-            SETTINGS_BOOLEAN_KEYS.forEach { key ->
-                snapshot.booleans[key.name]?.let { prefs[key] = it } ?: prefs.remove(key)
-            }
-            SETTINGS_FLOAT_KEYS.forEach { key ->
-                snapshot.floats[key.name]?.let { prefs[key] = it } ?: prefs.remove(key)
-            }
-            SETTINGS_INT_KEYS.forEach { key ->
-                snapshot.ints[key.name]?.let { prefs[key] = it } ?: prefs.remove(key)
-            }
-            SETTINGS_LONG_KEYS.forEach { key ->
-                snapshot.longs[key.name]?.let { prefs[key] = it } ?: prefs.remove(key)
-            }
-            SETTINGS_STRING_KEYS.forEach { key ->
-                snapshot.strings[key.name]?.let { prefs[key] = it } ?: prefs.remove(key)
-            }
+    private suspend fun applyImport(
+        payload: AppConfigBackup,
+        sections: AppConfigBackupSections
+    ): Result<AppConfigImportResult> {
+        if (sections.touchesSyncTargets) {
+            registerStartupSyncTargets()
         }
+        val warnings = mutableListOf<String>()
+        val sanitizedSettings = restoreSettingsSection(payload, sections, warnings)
+        if (sections.listenTogether) {
+            listenTogetherRepository.restore(payload.listenTogether)
+        }
+        val languageChanged = restoreLanguageSection(payload, sections)
+        val restoredAuthCount = restoreAuth(payload, sections, warnings)
+        restoreSyncSections(payload, sections)
 
-        val restoredPrefs = context.dataStore.data.first()
-        persistThemePreferenceSnapshot(
-            context,
-            ThemePreferenceSnapshot(
-                dynamicColor = restoredPrefs[SettingsKeys.DYNAMIC_COLOR] ?: true,
-                forceDark = restoredPrefs[SettingsKeys.FORCE_DARK] ?: false,
-                followSystemDark = restoredPrefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
+        return Result.success(
+            AppConfigImportResult(
+                restoredSettingsCount = sanitizedSettings.entryCount(),
+                restoredListenTogetherCount = payload.listenTogetherEntryCount(sections),
+                restoredAuthCount = restoredAuthCount,
+                restoredSyncCount = payload.syncSectionCount(sections),
+                warnings = warnings,
+                requiresActivityRecreate = languageChanged
             )
         )
+    }
+
+    private suspend fun registerStartupSyncTargets() {
+        // 先登记导入前的地址，不能把新配置误认成旧安装已有的同步目标
+        syncUpgradeRepository.initializeStartupTargets(
+            SyncProtocolUpgradeRepository.configuredTargetIds(context)
+        )
+        currentCoroutineContext().ensureActive()
+    }
+
+    private suspend fun restoreSettingsSection(
+        payload: AppConfigBackup,
+        sections: AppConfigBackupSections,
+        warnings: MutableList<String>
+    ): TypedPreferenceSnapshot {
+        if (!sections.settings) return TypedPreferenceSnapshot()
+        val sanitizedSettings = ConfigSettingsSanitizer(context).sanitize(payload.settings, warnings)
+        restoreSettings(sanitizedSettings)
+        return sanitizedSettings
+    }
+
+    private fun restoreLanguageSection(payload: AppConfigBackup, sections: AppConfigBackupSections): Boolean {
+        val currentLanguage = LanguageManager.getCurrentLanguage(context)
+        val importedLanguage = payload.language.takeIf { sections.language }?.toLanguageOrNull() ?: return false
+        LanguageManager.setLanguage(context, importedLanguage)
+        return importedLanguage != currentLanguage
+    }
+
+    private suspend fun restoreSyncSections(payload: AppConfigBackup, sections: AppConfigBackupSections) {
+        val gitHubStorage = SecureTokenStorage(context)
+        val webDavStorage = WebDavStorage(context)
+        restoreSyncPreferences(payload, sections, SyncPreferences(context))
+        if (sections.gitHubSync) {
+            gitHubStorage.restore(payload.gitHubSync)
+        }
+        if (sections.webDavSync) {
+            webDavStorage.restore(payload.webDavSync)
+        }
+        if (sections.hasSyncSection) {
+            gitHubStorage.markSyncMutation()
+        }
+        if (sections.touchesSyncTargets) {
+            reconcileSyncWorkers(gitHubStorage, webDavStorage)
+        }
+    }
+
+    private suspend fun restoreSyncPreferences(
+        payload: AppConfigBackup,
+        sections: AppConfigBackupSections,
+        syncPreferences: SyncPreferences
+    ) {
+        val hasLegacyPlayHistoryMode = sections.gitHubSync &&
+            payload.gitHubSync.playHistoryUpdateMode.isNotBlank()
+        if (sections.syncPreferences || hasLegacyPlayHistoryMode) {
+            syncPreferences.restore(
+                snapshot = payload.syncPreferences,
+                legacyModeName = payload.gitHubSync.playHistoryUpdateMode
+            )
+        }
+    }
+
+    private suspend fun restoreSettings(snapshot: TypedPreferenceSnapshot) {
+        context.dataStore.edit { prefs -> prefs.replaceSettingsWith(snapshot) }
+
+        val restoredPrefs = context.dataStore.data.first()
+        persistThemePreferenceSnapshot(context, restoredPrefs.toThemePreferenceSnapshot())
         persistBootstrapSettingsSnapshot(context, restoredPrefs.toBootstrapSettingsSnapshot())
         persistPlaybackPreferenceSnapshot(context, restoredPrefs.toPlaybackPreferenceSnapshot())
     }
@@ -237,47 +231,43 @@ class ConfigFileManager(
         payload: AppConfigBackup,
         sections: AppConfigBackupSections,
         warnings: MutableList<String>
-    ): Int {
-        var restoredCount = 0
+    ): Int = listOf(
+        sections.neteaseAuth && restoreNeteaseAuth(payload.neteaseAuth, warnings),
+        sections.biliAuth && restoreBiliAuth(payload.biliAuth),
+        sections.youTubeAuth && restoreYouTubeAuth(payload.youTubeAuth)
+    ).count { it }
 
-        if (sections.neteaseAuth) {
-            if (payload.neteaseAuth.hasData()) {
-                val saved = neteaseRepository.saveCookies(
-                    cookies = payload.neteaseAuth.cookies,
-                    savedAt = payload.neteaseAuth.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
-                )
-                if (!saved) {
-                    warnings += context.getString(CoreCommonR.string.config_import_warning_netease_cookie)
-                } else {
-                    restoredCount++
-                }
-            } else {
-                neteaseRepository.clear()
-            }
+    private fun restoreNeteaseAuth(snapshot: SavedCookieConfigSnapshot, warnings: MutableList<String>): Boolean {
+        if (!snapshot.hasData()) {
+            neteaseRepository.clear()
+            return false
         }
-
-        if (sections.biliAuth) {
-            if (payload.biliAuth.hasData()) {
-                biliRepository.saveCookies(
-                    cookies = payload.biliAuth.cookies,
-                    savedAt = payload.biliAuth.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
-                )
-                restoredCount++
-            } else {
-                biliRepository.clear()
-            }
+        val saved = neteaseRepository.saveCookies(
+            cookies = snapshot.cookies,
+            savedAt = importedSavedAt(snapshot.savedAt)
+        )
+        if (!saved) {
+            warnings += context.getString(CoreCommonR.string.config_import_warning_netease_cookie)
         }
+        return saved
+    }
 
-        if (sections.youTubeAuth) {
-            if (payload.youTubeAuth.hasData()) {
-                youTubeRepository.saveAuth(payload.youTubeAuth.toAuthBundle())
-                restoredCount++
-            } else {
-                youTubeRepository.clear()
-            }
+    private fun restoreBiliAuth(snapshot: SavedCookieConfigSnapshot): Boolean {
+        if (!snapshot.hasData()) {
+            biliRepository.clear()
+            return false
         }
+        biliRepository.saveCookies(cookies = snapshot.cookies, savedAt = importedSavedAt(snapshot.savedAt))
+        return true
+    }
 
-        return restoredCount
+    private fun restoreYouTubeAuth(snapshot: YouTubeAuthConfigSnapshot): Boolean {
+        if (!snapshot.hasData()) {
+            youTubeRepository.clear()
+            return false
+        }
+        youTubeRepository.saveAuth(snapshot.toAuthBundle())
+        return true
     }
 
     private fun reconcileSyncWorkers(
@@ -299,26 +289,52 @@ class ConfigFileManager(
 
 }
 
-private fun Preferences.toTypedPreferenceSnapshot(): TypedPreferenceSnapshot {
+internal fun Preferences.toTypedPreferenceSnapshot(): TypedPreferenceSnapshot {
     val values = asMap()
     return TypedPreferenceSnapshot(
-        booleans = SETTINGS_BOOLEAN_KEYS.mapNotNull { key ->
-            (values[key] as? Boolean)?.let { key.name to it }
-        }.toMap(linkedMapOf()),
-        floats = SETTINGS_FLOAT_KEYS.mapNotNull { key ->
-            (values[key] as? Float)?.let { key.name to it }
-        }.toMap(linkedMapOf()),
-        ints = SETTINGS_INT_KEYS.mapNotNull { key ->
-            (values[key] as? Int)?.let { key.name to it }
-        }.toMap(linkedMapOf()),
-        longs = SETTINGS_LONG_KEYS.mapNotNull { key ->
-            (values[key] as? Long)?.let { key.name to it }
-        }.toMap(linkedMapOf()),
-        strings = SETTINGS_STRING_KEYS.mapNotNull { key ->
-            (values[key] as? String)?.let { key.name to it }
-        }.toMap(linkedMapOf())
+        booleans = values.typedEntries(SETTINGS_BOOLEAN_KEYS, Boolean::class.javaObjectType),
+        floats = values.typedEntries(SETTINGS_FLOAT_KEYS, Float::class.javaObjectType),
+        ints = values.typedEntries(SETTINGS_INT_KEYS, Int::class.javaObjectType),
+        longs = values.typedEntries(SETTINGS_LONG_KEYS, Long::class.javaObjectType),
+        strings = values.typedEntries(SETTINGS_STRING_KEYS, String::class.java)
     )
 }
+
+private fun <T : Any> Map<Preferences.Key<*>, Any>.typedEntries(
+    keys: List<Preferences.Key<T>>,
+    type: Class<T>
+): LinkedHashMap<String, T> = keys.mapNotNull { key ->
+    this[key]?.takeIf(type::isInstance)?.let { key.name to type.cast(it) }
+}.toMap(linkedMapOf())
+
+internal fun MutablePreferences.replaceSettingsWith(snapshot: TypedPreferenceSnapshot) {
+    replaceAll(SETTINGS_BOOLEAN_KEYS, snapshot.booleans)
+    replaceAll(SETTINGS_FLOAT_KEYS, snapshot.floats)
+    replaceAll(SETTINGS_INT_KEYS, snapshot.ints)
+    replaceAll(SETTINGS_LONG_KEYS, snapshot.longs)
+    replaceAll(SETTINGS_STRING_KEYS, snapshot.strings)
+}
+
+private fun <T : Any> MutablePreferences.replaceAll(keys: List<Preferences.Key<T>>, values: Map<String, T>) {
+    keys.forEach { key ->
+        val value = values[key.name]
+        if (value != null) this[key] = value else remove(key)
+    }
+}
+
+internal fun Preferences.toThemePreferenceSnapshot() = ThemePreferenceSnapshot(
+    dynamicColor = this[SettingsKeys.DYNAMIC_COLOR] ?: true,
+    forceDark = this[SettingsKeys.FORCE_DARK] ?: false,
+    followSystemDark = this[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
+)
+
+private val AppConfigBackupSections.touchesSyncTargets: Boolean
+    get() = gitHubSync || webDavSync
+
+private fun AppConfigBackup.listenTogetherEntryCount(sections: AppConfigBackupSections): Int =
+    if (sections.listenTogether) listenTogether.entryCount() else 0
+
+private fun importedSavedAt(savedAt: Long): Long = savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
 
 private fun AppConfigBackup.syncSectionCount(sections: AppConfigBackupSections): Int {
     return listOf(

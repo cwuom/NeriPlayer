@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -31,35 +32,49 @@ internal class PlaybackStatsWalReadCapture private constructor(private val reade
 
     override suspend fun export(context: Context, tracks: suspend (List<SyncTrackStat>) -> Unit,
         buckets: suspend (List<SyncPlaybackStatBucket>) -> Unit, projection: SyncPlaybackStatProjection?) = withContext(dispatcher) {
-        check(!released.get()) { "Playback read capture is closed" }
+        checkOpen()
         val boundProjection = projection ?: SyncPlaybackStatMapper.bind(context)
+        exportTracks(boundProjection, tracks)
+        exportBuckets(boundProjection, buckets)
+        currentCoroutineContext().ensureActive()
+        checkUnchanged()
+    }
+
+    private fun checkOpen() = check(!released.get()) { "Playback read capture is closed" }
+
+    private fun checkUnchanged() {
+        if (readState(reader) != state) throw IOException("Playback read capture changed while exporting")
+    }
+
+    private suspend fun exportTracks(projection: SyncPlaybackStatProjection, emit: suspend (List<SyncTrackStat>) -> Unit) {
         var identity: String? = null
         while (true) {
             currentCoroutineContext().ensureActive()
             val page = trackPage(identity)
-            if (page.isEmpty()) break
+            if (page.isEmpty()) return
             val counters = trackCounters(page.map { it.identityKey })
-            tracks(page.mapNotNull { stat ->
-                if (boundProjection.shouldSync(stat)) SyncPlaybackStatMapper.fromTrackStat(stat, counters[stat.identityKey].orEmpty()) else null
+            emit(page.mapNotNull { stat ->
+                if (projection.shouldSync(stat)) SyncPlaybackStatMapper.fromTrackStat(stat, counters[stat.identityKey].orEmpty()) else null
             })
             identity = page.last().identityKey
         }
+    }
+
+    private suspend fun exportBuckets(projection: SyncPlaybackStatProjection, emit: suspend (List<SyncPlaybackStatBucket>) -> Unit) {
         var day: Long? = null
-        identity = null
+        var identity: String? = null
         while (true) {
             currentCoroutineContext().ensureActive()
             val page = bucketPage(day, identity)
-            if (page.isEmpty()) break
+            if (page.isEmpty()) return
             val counters = dailyCounters(page)
-            buckets(page.mapNotNull { bucket ->
-                if (boundProjection.shouldSync(bucket)) SyncPlaybackStatMapper.fromPlaybackStatBucket(bucket,
+            emit(page.mapNotNull { bucket ->
+                if (projection.shouldSync(bucket)) SyncPlaybackStatMapper.fromPlaybackStatBucket(bucket,
                     counters[bucket.dayStartAt to bucket.identityKey].orEmpty()) else null
             })
             day = page.last().dayStartAt
             identity = page.last().identityKey
         }
-        currentCoroutineContext().ensureActive()
-        if (readState(reader) != state) throw IOException("Playback read capture changed while exporting")
     }
 
     override suspend fun release() {
@@ -111,12 +126,14 @@ internal class PlaybackStatsWalReadCapture private constructor(private val reade
     companion object {
         suspend fun openIfSupported(store: PlaybackStatsRoomStore): PlaybackStatsWalReadCapture? {
             if (Build.VERSION.SDK_INT < 35) return null
-            val primary = store.database.openHelper.readableDatabase
-            val file = File(primary.path ?: return null)
-            if (!file.isFile) return null
-            val wal = primary.query("PRAGMA journal_mode").use { it.moveToFirst() && it.getString(0).equals("wal", ignoreCase = true) }
-            if (!wal) return null
+            val file = walPrimaryFile(store.database.openHelper.readableDatabase) ?: return null
             return openWalFile(file)
+        }
+
+        private fun walPrimaryFile(primary: SupportSQLiteDatabase): File? {
+            val file = File(primary.path ?: return null)
+            if (!file.isFile || !primary.query("PRAGMA journal_mode").use(::isWalJournal)) return null
+            return file
         }
 
         @RequiresApi(35)
@@ -124,48 +141,48 @@ internal class PlaybackStatsWalReadCapture private constructor(private val reade
             val dispatcher = Executors.newSingleThreadExecutor { action ->
                 Thread(action, "PlaybackStatsReadCapture").apply { isDaemon = true }
             }.asCoroutineDispatcher()
-            var reader: SQLiteDatabase? = null
-            var began = false
-            var captured: PlaybackStatsWalReadCapture? = null
-            var handedOff = false
-            var failure: Throwable? = null
-            try {
-                withContext(dispatcher) {
-                    val params = SQLiteDatabase.OpenParams.Builder().setOpenFlags(SQLiteDatabase.OPEN_READONLY)
-                        .setErrorHandler { throw SQLiteDatabaseCorruptException("Playback read capture must preserve the primary database") }.build()
-                    val database = SQLiteDatabase.openDatabase(file, params)
-                    reader = database
-                    check(database.isReadOnly) { "Playback capture requires a read-only handle" }
-                    val wal = database.rawQuery("PRAGMA journal_mode", null).use { it.moveToFirst() && it.getString(0).equals("wal", ignoreCase = true) }
-                    if (wal) {
-                        database.beginTransactionReadOnly()
-                        began = true
-                        captured = PlaybackStatsWalReadCapture(database, dispatcher, readState(database))
-                    }
-                }
-                if (captured != null) handedOff = true
-                return captured
+            val pending = PendingReader()
+            val captured = try {
+                withContext(dispatcher) { pending.capture(file, dispatcher) }
             } catch (error: Throwable) {
-                failure = error
+                try { closeFailedOpen(pending, dispatcher) } catch (cleanup: Throwable) { error.addSuppressed(cleanup) }
                 throw error
-            } finally {
-                if (!handedOff) {
-                    try { closeFailedOpen(reader, began, dispatcher) }
-                    catch (cleanup: Throwable) {
-                        val original = failure
-                        if (original == null) throw cleanup else original.addSuppressed(cleanup)
-                    }
-                }
+            }
+            if (captured == null) closeFailedOpen(pending, dispatcher)
+            return captured
+        }
+
+        private suspend fun closeFailedOpen(pending: PendingReader, dispatcher: ExecutorCoroutineDispatcher) {
+            try {
+                withContext(NonCancellable + dispatcher) { pending.close() }
+            } finally { dispatcher.close() }
+        }
+
+        /** Read-only handle that is closed again unless it is handed to a capture. */
+        private class PendingReader {
+            private var reader: SQLiteDatabase? = null
+            private var began = false
+
+            @RequiresApi(35)
+            fun capture(file: File, dispatcher: ExecutorCoroutineDispatcher): PlaybackStatsWalReadCapture? {
+                val params = SQLiteDatabase.OpenParams.Builder().setOpenFlags(SQLiteDatabase.OPEN_READONLY)
+                    .setErrorHandler { throw SQLiteDatabaseCorruptException("Playback read capture must preserve the primary database") }.build()
+                val database = SQLiteDatabase.openDatabase(file, params)
+                reader = database
+                check(database.isReadOnly) { "Playback capture requires a read-only handle" }
+                if (!database.rawQuery("PRAGMA journal_mode", null).use(::isWalJournal)) return null
+                database.beginTransactionReadOnly()
+                began = true
+                return PlaybackStatsWalReadCapture(database, dispatcher, readState(database))
+            }
+
+            fun close() {
+                val database = reader ?: return
+                try { if (began) database.endTransaction() } finally { database.close() }
             }
         }
 
-        private suspend fun closeFailedOpen(reader: SQLiteDatabase?, began: Boolean, dispatcher: ExecutorCoroutineDispatcher) {
-            try {
-                withContext(NonCancellable + dispatcher) {
-                    try { if (began) reader?.endTransaction() } finally { reader?.close() }
-                }
-            } finally { dispatcher.close() }
-        }
+        private fun isWalJournal(cursor: Cursor): Boolean = cursor.moveToFirst() && cursor.getString(0).equals("wal", ignoreCase = true)
 
         private fun readState(database: SQLiteDatabase): PlaybackStatsRoomState {
             val keys = listOf(PlaybackStatsRoomStore.CUTOVER_STATE_METADATA_KEY, PlaybackStatsRoomStore.REVISION_METADATA_KEY,

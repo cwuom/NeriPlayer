@@ -36,6 +36,19 @@ class ListenTogetherHeartbeatOwnerTest {
     }
 
     @Test
+    fun `listener session never schedules heartbeat ticks`() = runTest {
+        val port = FakePort()
+        port.controller = false
+        val owner = ListenTogetherHeartbeatOwner(this, port) { testScheduler.currentTime + 1_000L }
+        owner.start()
+        advanceTimeBy(120_000L)
+        runCurrent()
+        assertEquals(1, port.sessionReads)
+        assertTrue(port.sent.isEmpty())
+        owner.stop()
+    }
+
+    @Test
     fun `non-controller or unshareable track does not send heartbeat`() = runTest {
         val port = FakePort()
         val owner = ListenTogetherHeartbeatOwner(this, port) { testScheduler.currentTime + 1_000L }
@@ -48,6 +61,7 @@ class ListenTogetherHeartbeatOwnerTest {
 
         port.controller = true
         port.shareable = false
+        owner.start()
         advanceTimeBy(30_000L)
         runCurrent()
         assertTrue(port.sent.isEmpty())
@@ -63,10 +77,14 @@ class ListenTogetherHeartbeatOwnerTest {
         var controller = true
         var shareable = true
         val sent = mutableListOf<ListenTogetherEvent>()
+        var sessionReads = 0
         private val state = ListenTogetherSessionState(
             roomId = "room", connectionState = ListenTogetherConnectionState.CONNECTED
         )
-        override fun session(): ListenTogetherSessionState = state
+        override fun session(): ListenTogetherSessionState {
+            sessionReads++
+            return state
+        }
         override fun isController(session: ListenTogetherSessionState): Boolean = controller
         override fun currentTrackShareable(): Boolean = shareable
         override fun playbackStateName(): String = "playing"

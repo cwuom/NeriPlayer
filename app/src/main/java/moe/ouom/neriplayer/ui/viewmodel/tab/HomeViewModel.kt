@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
 import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -67,7 +68,7 @@ private const val HOME_INITIAL_LOAD_DEFER_MS = 250L
 private const val HOME_SECTION_LOAD_PARALLELISM = 6
 private const val HOME_SECTION_LOAD_PARALLELISM_PER_GROUP = 2
 
-private fun shouldFallbackRecommend(code: Int): Boolean = code == 301 || code == 50000005
+internal fun shouldFallbackRecommend(code: Int): Boolean = code == 301 || code == 50000005
 
 internal fun homeSongFetchAttemptCount(source: NeteaseHomeSongSource): Int {
     return if (source == NeteaseHomeSongSource.PRIVATE_FM) {
@@ -765,7 +766,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             return@launch
                         }
                         NPLogger.e(TAG, "refreshYtMusicHome failed", result.throwable)
-                        val error = buildHomeErrorMessage(result.throwable)
+                        val error = buildHomeErrorMessage(result.throwable, localizedAppContext())
                         _uiState.update { state ->
                             state.copy(
                                 ytMusicPlaylists = state.ytMusicPlaylists.copy(
@@ -817,56 +818,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private suspend fun <T> fetchWithRetry(
-        name: String,
-        maxAttempts: Int = HOME_MAX_FAILURE_BEFORE_WARNING,
-        fetch: suspend () -> List<T>
-    ): RetryLoadResult<T> {
-        require(maxAttempts > 0) { "maxAttempts must be positive" }
-        var lastError: Throwable? = null
-        repeat(maxAttempts) { attempt ->
-            try {
-                val items = fetch()
-                if (attempt > 0) {
-                    NPLogger.d(
-                        TAG,
-                        "$name recovered on attempt ${attempt + 1}: count=${items.size}"
-                    )
-                }
-                return RetryLoadResult.Success(items)
-            } catch (e: Throwable) {
-                if (e is CancellationException) throw e
-                lastError = e
-                NPLogger.w(
-                    TAG,
-                    "$name attempt ${attempt + 1}/$maxAttempts failed: ${e.message}"
-                )
-            }
-        }
-        return RetryLoadResult.Failure(lastError ?: IllegalStateException("Unknown error"))
-    }
-
-    private fun buildHomeErrorMessage(error: Throwable): String {
-        val localizedContext = localizedAppContext()
-        return when (error) {
-            is IOException -> localizedContext.getString(
-                CoreCommonR.string.home_error_network,
-                error.message ?: error.javaClass.simpleName
-            )
-            is ApiCodeException -> {
-                if (error.code == 50000005) {
-                    localizedContext.getString(CoreCommonR.string.home_login_required)
-                } else {
-                    localizedContext.getString(CoreCommonR.string.error_api_code, error.code)
-                }
-            }
-            else -> localizedContext.getString(
-                CoreCommonR.string.home_error_unknown,
-                error.message ?: error.javaClass.simpleName
-            )
-        }
-    }
-
     private suspend fun parseRecommendOnWorker(raw: String): List<PlaylistSummary> =
         withContext(Dispatchers.Default) {
             parseNeteaseHomePlaylists(raw, limit = HOME_NETEASE_PLAYLIST_LIMIT)
@@ -903,7 +854,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 NPLogger.e(TAG, "$name failed: source=$source", result.throwable)
                 HomeNeteaseSongSectionState(
                     source = source,
-                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable))
+                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable, localizedAppContext()))
                 )
             }
         }
@@ -951,7 +902,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 NPLogger.e(TAG, "refreshRecommend failed: source=$source", result.throwable)
                 HomeNeteasePlaylistSectionState(
                     source = source,
-                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable))
+                    section = HomeSectionState(error = buildHomeErrorMessage(result.throwable, localizedAppContext()))
                 )
             }
         }
@@ -1116,9 +1067,56 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
         return hasSavedAuthMaterial()
     }
+}
 
-    private sealed interface RetryLoadResult<out T> {
-        data class Success<T>(val items: List<T>) : RetryLoadResult<T>
-        data class Failure(val throwable: Throwable) : RetryLoadResult<Nothing>
+internal sealed interface RetryLoadResult<out T> {
+    data class Success<T>(val items: List<T>) : RetryLoadResult<T>
+    data class Failure(val throwable: Throwable) : RetryLoadResult<Nothing>
+}
+
+internal suspend fun <T> fetchWithRetry(
+    name: String,
+    maxAttempts: Int = HOME_MAX_FAILURE_BEFORE_WARNING,
+    fetch: suspend () -> List<T>
+): RetryLoadResult<T> {
+    require(maxAttempts > 0) { "maxAttempts must be positive" }
+    var lastError: Throwable? = null
+    repeat(maxAttempts) { attempt ->
+        try {
+            val items = fetch()
+            if (attempt > 0) {
+                NPLogger.d(
+                    TAG,
+                    "$name recovered on attempt ${attempt + 1}: count=${items.size}"
+                )
+            }
+            return RetryLoadResult.Success(items)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            lastError = e
+            NPLogger.w(
+                TAG,
+                "$name attempt ${attempt + 1}/$maxAttempts failed: ${e.message}"
+            )
+        }
+    }
+    return RetryLoadResult.Failure(lastError ?: IllegalStateException("Unknown error"))
+}
+
+internal fun buildHomeErrorMessage(error: Throwable, context: Context): String {
+    return when {
+        error is IOException -> context.getString(
+            CoreCommonR.string.home_error_network,
+            error.messageOrTypeName()
+        )
+        error is ApiCodeException && error.code == 50000005 ->
+            context.getString(CoreCommonR.string.home_login_required)
+        error is ApiCodeException -> context.getString(CoreCommonR.string.error_api_code, error.code)
+        else -> context.getString(
+            CoreCommonR.string.home_error_unknown,
+            error.messageOrTypeName()
+        )
     }
 }
+
+private fun Throwable.messageOrTypeName(): String = message ?: javaClass.simpleName

@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.sync.mapping.toSongItem
 
 import com.google.gson.Gson
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.entity.LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -61,25 +62,53 @@ internal class LocalPlaylistRoomMapper(
 ) {
     fun toWriteSet(previous: List<LocalPlaylist>, next: List<LocalPlaylist>): LocalPlaylistRoomWriteSet {
         val changes = LocalPlaylistRoomWriteSet()
-        val previousById = previous.associateBy(LocalPlaylist::id)
-        val previousPositions = previous.withIndex().associate { it.value.id to it.index }
+        val previousPlaylists = PreviousPlaylists(previous)
+        appendRemovedPlaylists(previous, next, changes)
+        val changedPlaylists = previousPlaylists.changedIn(next)
+        changedPlaylists.forEach { (position, playlist) ->
+            appendPlaylistChanges(previousPlaylists, playlist, position, changes)
+        }
+        changes.domainChanged = changedPlaylists.isNotEmpty() || changes.removedPlaylistIds.isNotEmpty()
+        appendFirstTrackCandidates(changedPlaylists.map { it.value }, changes)
+        return changes
+    }
+
+    private class PreviousPlaylists(previous: List<LocalPlaylist>) {
+        private val byId = previous.associateBy(LocalPlaylist::id)
+        private val positions = previous.withIndex().associate { it.value.id to it.index }
+
+        operator fun get(id: Long): LocalPlaylist? = byId[id]
+
+        fun positionOf(id: Long): Int = positions.getValue(id)
+
+        fun changedIn(next: List<LocalPlaylist>): List<IndexedValue<LocalPlaylist>> =
+            next.withIndex().filter { (position, playlist) ->
+                byId[playlist.id] != playlist || positions[playlist.id] != position
+            }
+    }
+
+    private fun appendRemovedPlaylists(
+        previous: List<LocalPlaylist>,
+        next: List<LocalPlaylist>,
+        changes: LocalPlaylistRoomWriteSet
+    ) {
         val nextIds = next.mapTo(hashSetOf(), LocalPlaylist::id)
         previous.filter { it.id !in nextIds }.forEach { playlist ->
             changes.removedPlaylistIds += playlist.id
             playlist.songs.forEach { changes.orphanCandidates += it.stableKey() }
         }
-        val changedPlaylists = next.withIndex().filter { (position, playlist) ->
-            previousById[playlist.id] != playlist || previousPositions[playlist.id] != position
-        }
-        changedPlaylists.forEach { (position, playlist) ->
-            val old = previousById[playlist.id]
-            val header = playlist.toEntity(position)
-            if (old?.toEntity(previousPositions.getValue(playlist.id)) != header) changes.playlists += header
-            appendMemberChanges(playlist.id, old?.songs.orEmpty(), playlist.songs, changes)
-        }
-        changes.domainChanged = changedPlaylists.isNotEmpty() || changes.removedPlaylistIds.isNotEmpty()
-        appendFirstTrackCandidates(changedPlaylists.map { it.value }, changes)
-        return changes
+    }
+
+    private fun appendPlaylistChanges(
+        previousPlaylists: PreviousPlaylists,
+        playlist: LocalPlaylist,
+        position: Int,
+        changes: LocalPlaylistRoomWriteSet
+    ) {
+        val old = previousPlaylists[playlist.id]
+        val header = playlist.toEntity(position)
+        if (old?.toEntity(previousPlaylists.positionOf(playlist.id)) != header) changes.playlists += header
+        appendMemberChanges(playlist.id, old?.songs.orEmpty(), playlist.songs, changes)
     }
 
     private fun appendMemberChanges(
@@ -237,12 +266,9 @@ internal class LocalPlaylistRoomMapper(
                             .thenBy { it.orderTieBreak }
                             .thenBy { it.identityKey }
                     )
-                    .map { member ->
-                        val track = requireNotNull(tracksByIdentity[member.identityKey]) {
-                            "Missing track row for ${member.identityKey}"
-                        }
-                        member.toSongItem(
-                            track = track,
+                    .mapNotNull { member ->
+                        member.toSongItemOrNull(
+                            track = tracksByIdentity[member.identityKey],
                             tokens = tokensByMember[
                                 PlaylistMemberKey(member.playlistId, member.identityKey)
                             ].orEmpty()
@@ -341,14 +367,15 @@ internal class LocalPlaylistRoomMapper(
         )
     }
 
-    private fun PlaylistMemberEntity.toSongItem(
-        track: TrackEntity,
+    // An undecodable member is left untouched in Room so a fixed or newer app can still read it.
+    private fun PlaylistMemberEntity.toSongItemOrNull(
+        track: TrackEntity?,
         tokens: List<PlaylistMemberTokenEntity>
-    ): SongItem {
-        val payload = requireNotNull(
-            decodeSong(memberPayloadJson) ?: decodeSong(track.durablePayloadJson)
-        ) {
-            "Song payload is missing for ${track.identityKey}"
+    ): SongItem? {
+        val payload = decodeSong(memberPayloadJson) ?: track?.let { decodeSong(it.durablePayloadJson) }
+        if (payload == null) {
+            NPLogger.w(TAG, "Skipping undecodable member $identityKey of playlist $playlistId")
+            return null
         }
         return payload.copy(
             addedAt = addedAt,
@@ -428,4 +455,8 @@ internal class LocalPlaylistRoomMapper(
         val playlistId: Long,
         val identityKey: String
     )
+
+    private companion object {
+        const val TAG = "LocalPlaylistRoomMapper"
+    }
 }

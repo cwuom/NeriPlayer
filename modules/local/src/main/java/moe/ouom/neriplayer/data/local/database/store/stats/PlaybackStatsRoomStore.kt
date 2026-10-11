@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.dao.stats.PlaybackStatsSnapshotDao
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatDailyCounterShardEntity
@@ -440,13 +441,25 @@ internal class PlaybackStatsRoomStore(
 
     suspend fun commitDiffSnapshot(id: String, expectedRevision: Long): Boolean = database.withTransaction {
         val staged = database.playbackStatsSnapshotDao()
-        val snapshot = checkNotNull(staged.getSnapshot(id)) { "Playback diff no longer exists" }
-        check(snapshot.isDiff && snapshot.sealed) { "Playback diff is incomplete" }
+        val snapshot = requireSealedDiff(staged, id)
         val current = checkNotNull(readPrimaryState()) { "Playback statistics are unavailable" }
         if (current.revision != expectedRevision || staged.pendingDeltaCount() != 0L) return@withTransaction false
-        if (snapshot.clearedAt == current.clearedAt && snapshot.counterEpochStartedAt == current.counterEpochStartedAt && !staged.hasDiffRows(id)) {
-            return@withTransaction true
-        }
+        if (!snapshot.movesBarrierOf(current) && !staged.hasDiffRows(id)) return@withTransaction true
+        publishDiff(staged, id)
+        markRoomPrimary(snapshot.clearedAt, snapshot.counterEpochStartedAt, System.currentTimeMillis())
+        true
+    }
+
+    private suspend fun requireSealedDiff(staged: PlaybackStatsSnapshotDao, id: String): PlaybackStatsSnapshotEntity {
+        val snapshot = checkNotNull(staged.getSnapshot(id)) { "Playback diff no longer exists" }
+        check(snapshot.isDiff && snapshot.sealed) { "Playback diff is incomplete" }
+        return snapshot
+    }
+
+    private fun PlaybackStatsSnapshotEntity.movesBarrierOf(state: PlaybackStatsRoomState): Boolean =
+        clearedAt != state.clearedAt || counterEpochStartedAt != state.counterEpochStartedAt
+
+    private suspend fun publishDiff(staged: PlaybackStatsSnapshotDao, id: String) {
         staged.applyBucketTombstones(id)
         staged.applyTrackTombstones(id)
         staged.deleteReplacedDailyCounters(id)
@@ -457,8 +470,6 @@ internal class PlaybackStatsRoomStore(
         staged.insertDiffBuckets(id)
         staged.publishCounter(id)
         staged.publishDailyCounter(id)
-        markRoomPrimary(snapshot.clearedAt, snapshot.counterEpochStartedAt, System.currentTimeMillis())
-        true
     }
 
     suspend fun releaseSnapshot(id: String) = database.withTransaction {
@@ -475,26 +486,25 @@ internal class PlaybackStatsRoomStore(
     suspend fun enqueueDelta(eventId: String, trackJson: String, listenedMs: Long, playCountIncrement: Int?, playedAt: Long,
         deviceId: String, observedClearedAt: Long? = null, observeCurrentClear: Boolean = false): Boolean = database.withTransaction {
         require(observedClearedAt == null || observedClearedAt >= 0)
-        val payloadHash = MessageDigest.getInstance("SHA-256").digest((trackJson + "|" + listenedMs + "|" + playCountIncrement + "|" + playedAt + "|" + observedClearedAt).toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
-        val receipt = database.playbackStatsSnapshotDao().receipt(eventId)
-        if (receipt != null) {
-            if (receipt.payloadHash != payloadHash) throw IOException("Playback event identity reused with different content")
-            return@withTransaction false
-        }
+        val payloadHash = playbackDeltaPayloadHash(trackJson, listenedMs, playCountIncrement, playedAt, observedClearedAt)
+        if (isRecordedEvent(eventId, payloadHash)) return@withTransaction false
         val state = checkNotNull(readPrimaryState()) { "Playback statistics are unavailable" }
         val sequence = readLong(JOURNAL_SEQUENCE_METADATA_KEY)
         check(sequence < Long.MAX_VALUE) { "Playback journal sequence exhausted" }
-        // 新事件以已观察代次判断先后；没有代次的旧导入仍按原始时间保守处理
-        val eventEpoch = observedClearedAt ?: state.clearedAt.takeIf { observeCurrentClear }
-        val accepted = if (eventEpoch == null) playedAt >= state.clearedAt else eventEpoch >= state.clearedAt
+        val admission = admitPlaybackDelta(state.clearedAt, playedAt, observedClearedAt, observeCurrentClear)
         val delta = PlaybackStatsPendingDeltaEntity(eventId, sequence + 1, trackJson, listenedMs, playCountIncrement,
-            playedAt, maxOf(state.clearedAt, eventEpoch ?: 0), deviceId)
+            playedAt, admission.epochStartedAt, deviceId)
         database.playbackStatsSnapshotDao().insertReceipt(PlaybackStatsEventReceiptEntity(eventId, playedAt, payloadHash))
-        if (accepted) database.playbackStatsSnapshotDao().insertPendingDelta(delta)
+        if (admission.accepted) database.playbackStatsSnapshotDao().insertPendingDelta(delta)
         database.syncMetadataDao().upsertMigrationMetadata(metadata(JOURNAL_SEQUENCE_METADATA_KEY, delta.sequence.toString(), playedAt))
         pruneEventReceipts()
         true
+    }
+
+    private suspend fun isRecordedEvent(eventId: String, payloadHash: String): Boolean {
+        val receipt = database.playbackStatsSnapshotDao().receipt(eventId) ?: return false
+        if (receipt.payloadHash != payloadHash) throw IOException("Playback event identity reused with different content")
+        return true
     }
 
     private suspend fun pruneEventReceipts() {
@@ -561,12 +571,23 @@ internal class PlaybackStatsRoomStore(
         return database.withTransaction {
             val sql = PlaybackStatsSqlQuery(query, database.playbackStatsDao().hasBuckets())
             val rows = database.playbackStatsDao().queryStats(sql.page(after, limit + 1, before)).map(PlaybackStatEntity::toDomain)
-            val page = if (before) rows.take(limit).asReversed() else rows.take(limit)
-            val hasEarlier = if (before) rows.size > limit else after != null
-            val hasLater = if (before) after != null else rows.size > limit
-            PlaybackStatsPage(page, if (hasLater) page.lastOrNull()?.let(sql::cursor) else null, if (hasEarlier) page.firstOrNull()?.let(sql::cursor) else null)
+            if (before) sql.pageBefore(rows, after, limit) else sql.pageAfter(rows, after, limit)
         }
     }
+
+    /** [rows] holds one extra row past [limit] when another page exists in the read direction. */
+    private fun PlaybackStatsSqlQuery.pageAfter(rows: List<TrackStat>, after: PlaybackStatsCursor?, limit: Int): PlaybackStatsPage {
+        val page = rows.take(limit)
+        return PlaybackStatsPage(page, cursorIf(rows.size > limit, page.lastOrNull()), cursorIf(after != null, page.firstOrNull()))
+    }
+
+    private fun PlaybackStatsSqlQuery.pageBefore(rows: List<TrackStat>, before: PlaybackStatsCursor?, limit: Int): PlaybackStatsPage {
+        val page = rows.take(limit).asReversed()
+        return PlaybackStatsPage(page, cursorIf(before != null, page.lastOrNull()), cursorIf(rows.size > limit, page.firstOrNull()))
+    }
+
+    private fun PlaybackStatsSqlQuery.cursorIf(present: Boolean, stat: TrackStat?): PlaybackStatsCursor? =
+        if (present) stat?.let(::cursor) else null
 
     companion object {
         // 播放器按顺序重试最早未确认事件，后续事件不能越过它；持久待处理增量另外保留全部回执
@@ -584,6 +605,19 @@ internal class PlaybackStatsRoomStore(
 }
 
 private const val PLAYBACK_STATS_WRITE_BATCH_SIZE = 500
+
+internal data class PlaybackDeltaAdmission(val accepted: Boolean, val epochStartedAt: Long)
+
+internal fun admitPlaybackDelta(clearedAt: Long, playedAt: Long, observedClearedAt: Long?, observeCurrentClear: Boolean): PlaybackDeltaAdmission {
+    // 新事件以已观察代次判断先后；没有代次的旧导入仍按原始时间保守处理
+    val eventEpoch = observedClearedAt ?: clearedAt.takeIf { observeCurrentClear }
+    return PlaybackDeltaAdmission((eventEpoch ?: playedAt) >= clearedAt, maxOf(clearedAt, eventEpoch ?: 0))
+}
+
+private fun playbackDeltaPayloadHash(trackJson: String, listenedMs: Long, playCountIncrement: Int?, playedAt: Long, observedClearedAt: Long?): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest((trackJson + "|" + listenedMs + "|" + playCountIncrement + "|" + playedAt + "|" + observedClearedAt).toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
 private suspend fun <T> Sequence<T>.writeBatches(write: suspend (List<T>) -> Unit) {
     // 按数据库行分批，单曲的日桶或因果分片也不能一次展开到内存

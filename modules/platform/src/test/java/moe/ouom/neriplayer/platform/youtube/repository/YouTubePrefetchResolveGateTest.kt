@@ -3,8 +3,12 @@ package moe.ouom.neriplayer.platform.youtube.repository
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -94,6 +98,26 @@ class YouTubePrefetchResolveGateTest {
         assertEquals(listOf("holder", "waiter"), order.toList())
         assertEquals(1, gate.availablePermitsForTest())
     }
+
+    @Test
+    fun `cancelling the caller after the permit is granted but before hand off returns the permit`() =
+        runTest(StandardTestDispatcher()) {
+            val gate = YouTubePrefetchResolveGate(permits = 1)
+            var bodyRan = false
+            val caller = launch {
+                gate.withPrefetchSlot(CompletableDeferred()) { bodyRan = true }
+            }
+            // 任务按入队顺序执行: caller 挂起等待交接后, yield 让取消排到名额获取之后、caller 恢复之前
+            launch {
+                yield()
+                caller.cancel()
+            }
+            advanceUntilIdle()
+
+            assertTrue(caller.isCancelled)
+            assertFalse(bodyRan)
+            assertEquals(1, gate.availablePermitsForTest())
+        }
 
     @Test
     fun `permit is handed back when the body throws`() = runTest {

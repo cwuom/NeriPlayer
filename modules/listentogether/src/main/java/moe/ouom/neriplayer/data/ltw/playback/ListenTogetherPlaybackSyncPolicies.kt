@@ -1,6 +1,14 @@
 package moe.ouom.neriplayer.data.ltw.playback
 
+import androidx.media3.common.Player
 import moe.ouom.neriplayer.data.ltw.control.passivePositionUpdateTypes
+
+// USB exclusive output pins the engine speed to 1 and leaves the native path for any other sync rate
+internal fun ListenTogetherPlaybackHost.isReadyForListenTogetherSoftSync(): Boolean =
+    isPlayingFlow.value &&
+        playerPlaybackStateFlow.value == Player.STATE_READY &&
+        !isPendingMediaLoadActive() &&
+        !isUsbExclusiveOutputEnabled()
 
 fun resolveListenTogetherSoftSyncPlaybackRate(
     driftMs: Long,

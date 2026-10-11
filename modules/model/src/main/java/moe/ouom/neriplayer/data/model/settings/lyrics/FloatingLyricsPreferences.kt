@@ -10,6 +10,9 @@ const val FLOATING_LYRICS_ORIENTATION_LANDSCAPE = "landscape"
 const val FLOATING_LYRICS_RENDER_STYLE_SHADOW = "shadow"
 const val FLOATING_LYRICS_RENDER_STYLE_OUTLINE = "outline"
 const val FLOATING_LYRICS_TRANSLATION_STYLE_SCALE = 0.72f
+const val FLOATING_LYRICS_PREVIEW_ALPHA_SCALE = 0.55f
+const val FLOATING_LYRICS_LONG_LINE_SCROLL = "scroll"
+const val FLOATING_LYRICS_LONG_LINE_WRAP = "wrap"
 
 const val MIN_FLOATING_LYRICS_FONT_SIZE_SP = 8f
 const val MAX_FLOATING_LYRICS_FONT_SIZE_SP = 32f
@@ -22,6 +25,7 @@ const val MAX_FLOATING_LYRICS_ALPHA = 1f
 
 const val MIN_FLOATING_LYRICS_MAX_WIDTH_DP = 80f
 const val MAX_FLOATING_LYRICS_MAX_WIDTH_DP = 420f
+const val MAX_FLOATING_LYRICS_LANDSCAPE_WIDTH_DP = 1200f
 
 private const val DEFAULT_FLOATING_LYRICS_TEXT_COLOR = "FFFFFF"
 private const val DEFAULT_FLOATING_LYRICS_OUTLINE_COLOR = "121212"
@@ -56,7 +60,10 @@ data class FloatingLyricsPreferences(
     val landscapePositionY: Float = positionY,
     val alignment: String = FLOATING_LYRICS_ALIGNMENT_CENTER,
     val showTranslation: Boolean = true,
-    val revealAnimationEnabled: Boolean = true
+    val revealAnimationEnabled: Boolean = true,
+    val sentenceCount: Int = 1,
+    val longLineMode: String = FLOATING_LYRICS_LONG_LINE_SCROLL,
+    val landscapeMaxWidthDp: Float = maxWidthDp
 ) {
     fun normalized(): FloatingLyricsPreferences {
         return copy(
@@ -71,6 +78,9 @@ data class FloatingLyricsPreferences(
             translationOutlineWidthDp = normalizeFloatingLyricsOutlineWidthDp(translationOutlineWidthDp),
             translationAlpha = normalizeFloatingLyricsAlpha(translationAlpha),
             maxWidthDp = normalizeFloatingLyricsMaxWidthDp(maxWidthDp),
+            landscapeMaxWidthDp = normalizeFloatingLyricsLandscapeWidthDp(landscapeMaxWidthDp),
+            sentenceCount = normalizeFloatingLyricsSentenceCount(sentenceCount),
+            longLineMode = normalizeFloatingLyricsLongLineMode(longLineMode),
             positionX = normalizeFloatingLyricsPosition(positionX),
             positionY = normalizeFloatingLyricsPosition(positionY),
             landscapePositionX = normalizeFloatingLyricsPosition(landscapePositionX),
@@ -126,7 +136,11 @@ fun resolveFloatingLyricsLyricAlpha(value: Float?): Float {
 }
 
 fun normalizeFloatingLyricsMaxWidthDp(value: Float): Float =
-    value.coerceIn(MIN_FLOATING_LYRICS_MAX_WIDTH_DP, MAX_FLOATING_LYRICS_MAX_WIDTH_DP)
+    if (value.isFinite()) {
+        value.coerceIn(MIN_FLOATING_LYRICS_MAX_WIDTH_DP, MAX_FLOATING_LYRICS_MAX_WIDTH_DP)
+    } else {
+        DEFAULT_FLOATING_LYRICS_MAX_WIDTH_DP
+    }
 
 fun normalizeFloatingLyricsPosition(value: Float): Float =
     value.coerceIn(0f, 1f)
@@ -140,6 +154,25 @@ fun resolveFloatingLyricsPositionY(
     preferences: FloatingLyricsPreferences,
     isLandscape: Boolean
 ): Float = if (isLandscape) preferences.landscapePositionY else preferences.positionY
+
+fun normalizeFloatingLyricsSentenceCount(value: Int): Int = value.coerceIn(1, 3)
+
+fun normalizeFloatingLyricsLongLineMode(value: String?): String =
+    if (value?.trim()?.lowercase(Locale.ROOT) == FLOATING_LYRICS_LONG_LINE_WRAP) {
+        FLOATING_LYRICS_LONG_LINE_WRAP
+    } else {
+        FLOATING_LYRICS_LONG_LINE_SCROLL
+    }
+
+fun normalizeFloatingLyricsLandscapeWidthDp(value: Float): Float =
+    if (value.isFinite()) {
+        value.coerceIn(MIN_FLOATING_LYRICS_MAX_WIDTH_DP, MAX_FLOATING_LYRICS_LANDSCAPE_WIDTH_DP)
+    } else {
+        DEFAULT_FLOATING_LYRICS_MAX_WIDTH_DP
+    }
+
+fun resolveFloatingLyricsWidthDp(preferences: FloatingLyricsPreferences, isLandscape: Boolean): Float =
+    if (isLandscape) preferences.landscapeMaxWidthDp else preferences.maxWidthDp
 
 fun normalizeFloatingLyricsAlignment(value: String?): String {
     return when (value?.trim()?.lowercase(Locale.ROOT)) {

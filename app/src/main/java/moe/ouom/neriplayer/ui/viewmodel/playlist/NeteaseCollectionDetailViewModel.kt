@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.parseNeteasePlaylistDetailSummaryOrNull
 import moe.ouom.neriplayer.ui.viewmodel.tab.toPlaylistSummary
 import moe.ouom.neriplayer.common.logging.NPLogger
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
@@ -79,6 +80,10 @@ private fun normalizeNeteaseCollectionCoverUrl(url: String?): String? {
     return normalized.replaceFirst(Regex("^http://"), "https://")
 }
 
+private fun positiveOr(value: Long, fallback: Long): Long = if (value > 0L) value else fallback
+
+private fun positiveOr(value: Int, fallback: Int): Int = if (value > 0) value else fallback
+
 internal fun refreshNeteasePlaylistCachedHeader(
     cached: CachedNeteasePlaylistDetail,
     fresh: NeteaseCollectionHeader?
@@ -90,8 +95,8 @@ internal fun refreshNeteasePlaylistCachedHeader(
             id = previous.id,
             name = fresh.name.ifBlank { previous.name },
             coverUrl = fresh.coverUrl.ifBlank { previous.coverUrl },
-            playCount = fresh.playCount.takeIf { it > 0L } ?: previous.playCount,
-            trackCount = fresh.trackCount.takeIf { it > 0 } ?: previous.trackCount
+            playCount = positiveOr(fresh.playCount, previous.playCount),
+            trackCount = positiveOr(fresh.trackCount, previous.trackCount)
         )
     )
 }
@@ -205,8 +210,137 @@ internal fun CachedNeteasePlaylistHeader.toNeteaseCollectionHeader(
         coverUrl = coverUrl.ifBlank {
             normalizeNeteaseCollectionCoverUrl(fallback.picUrl) ?: ""
         },
-        playCount = playCount.takeIf { it > 0L } ?: fallback.playCount,
-        trackCount = trackCount.takeIf { it > 0 } ?: fallback.trackCount
+        playCount = positiveOr(playCount, fallback.playCount),
+        trackCount = positiveOr(trackCount, fallback.trackCount)
+    )
+}
+
+internal class NeteaseCollectionResponseErrors(
+    val apiCode: (Int) -> String,
+    val missingNode: (String) -> String
+)
+
+internal data class ParsedNeteaseCollectionDetail(
+    val header: NeteaseCollectionHeader,
+    val tracks: List<SongItem>,
+    val trackIds: List<Long> = emptyList()
+)
+
+internal fun ParsedNeteaseCollectionDetail.expectedTrackCount(): Int {
+    return positiveOr(header.trackCount, positiveOr(trackIds.size, tracks.size))
+}
+
+internal fun parseNeteasePlaylistDetailResponse(
+    raw: String,
+    errors: NeteaseCollectionResponseErrors
+): ParsedNeteaseCollectionDetail {
+    val root = requireNeteaseOkRoot(raw, errors)
+    val pl = root.optJSONObject("playlist") ?: error(errors.missingNode("playlist"))
+    val header = NeteaseCollectionHeader(
+        id = pl.optLong("id"),
+        name = pl.optString("name"),
+        coverUrl = pl.optString("coverImgUrl", "").replaceFirst(Regex("^http://"), "https://"),
+        playCount = pl.optLong("playCount", 0L),
+        trackCount = pl.optInt("trackCount", 0),
+        isAlbum = false
+    )
+    return ParsedNeteaseCollectionDetail(
+        header = header,
+        tracks = parseNeteaseCollectionTracks(pl.optJSONArray("tracks")),
+        trackIds = parseNeteaseTrackIds(pl.optJSONArray("trackIds"))
+    )
+}
+
+internal fun parseNeteaseAlbumDetailResponse(
+    raw: String,
+    coverFallback: String?,
+    errors: NeteaseCollectionResponseErrors
+): ParsedNeteaseCollectionDetail {
+    val root = requireNeteaseOkRoot(raw, errors)
+    val al = root.optJSONObject("album") ?: error(errors.missingNode("album"))
+    val cover = resolveNeteaseCollectionCoverUrl(
+        primary = al.optString("picUrl", ""),
+        fallback = coverFallback
+    )
+    val header = NeteaseCollectionHeader(
+        id = al.optLong("id"),
+        name = al.optString("name"),
+        coverUrl = cover,
+        playCount = 0L,
+        trackCount = al.optInt("size", 0),
+        isAlbum = true
+    )
+    return ParsedNeteaseCollectionDetail(
+        header = header,
+        tracks = parseNeteaseCollectionTracks(root.optJSONArray("songs"), coverFallback = cover)
+    )
+}
+
+internal fun parseNeteaseSongDetailResponse(
+    raw: String,
+    errors: NeteaseCollectionResponseErrors
+): List<SongItem> {
+    val root = requireNeteaseOkRoot(raw, errors)
+    return parseNeteaseCollectionTracks(root.optJSONArray("songs"))
+}
+
+private fun requireNeteaseOkRoot(raw: String, errors: NeteaseCollectionResponseErrors): JSONObject {
+    val root = JSONObject(raw)
+    val code = root.optInt("code", -1)
+    require(code == 200) { errors.apiCode(code) }
+    return root
+}
+
+private fun parseNeteaseCollectionTracks(
+    tracks: JSONArray?,
+    coverFallback: String? = null
+): List<SongItem> {
+    if (tracks == null) return emptyList()
+    val list = mutableListOf<SongItem>()
+    for (i in 0 until tracks.length()) {
+        val t = tracks.optJSONObject(i) ?: continue
+        parseNeteaseCollectionSong(t, coverFallback)?.let { list.add(it) }
+    }
+    return list
+}
+
+private fun parseNeteaseTrackIds(trackIds: JSONArray?): List<Long> {
+    if (trackIds == null) return emptyList()
+    val ids = mutableListOf<Long>()
+    for (i in 0 until trackIds.length()) {
+        val id = trackIds.optJSONObject(i)?.optLong("id", 0L) ?: 0L
+        if (id != 0L) ids.add(id)
+    }
+    return ids
+}
+
+private fun parseNeteaseCollectionSong(
+    t: JSONObject,
+    coverFallback: String?
+): SongItem? {
+    val id = t.optLong("id", 0L)
+    val name = t.optString("name", "")
+    if (id == 0L || name.isBlank()) return null
+
+    val artistItems = parseNeteaseArtistSummaries(t.optJSONArray("ar"))
+    val al = t.optJSONObject("al") ?: t.optJSONObject("album") ?: JSONObject()
+    val cover = resolveNeteaseCollectionCoverUrl(
+        primary = al.optString("picUrl", ""),
+        fallback = coverFallback
+    ).takeIf { it.isNotBlank() }
+
+    return SongItem(
+        id = id,
+        name = name,
+        artist = artistItems.joinToString(" / ") { it.name },
+        album = "Netease${al.optString("name", "")}",
+        albumId = al.optLong("id", 0L),
+        durationMs = t.optLong("dt", 0L),
+        coverUrl = cover,
+        originalCoverUrl = cover,
+        channelId = "netease",
+        audioId = id.toString(),
+        neteaseArtists = artistItems
     )
 }
 
@@ -241,6 +375,10 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     private val client = AppContainer.neteaseClient
     private val cookieRepo = AppContainer.neteaseCookieRepo
     private val playlistCacheRepo = AppContainer.neteasePlaylistCacheRepo
+    private val responseErrors = NeteaseCollectionResponseErrors(
+        apiCode = { code -> getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) },
+        missingNode = { node -> getApplication<Application>().getString(CoreCommonR.string.error_missing_node, node) }
+    )
 
     private val _uiState = MutableStateFlow(NeteaseCollectionDetailUiState())
     val uiState: StateFlow<NeteaseCollectionDetailUiState> = _uiState
@@ -363,7 +501,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
             }
             NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
 
-            val parsed = parseDetailFromPlaylist(raw)
+            val parsed = parseNeteasePlaylistDetailResponse(raw, responseErrors)
             val displayHeader = resolveNeteasePlaylistDisplayHeader(
                 playlist = playlist,
                 detailHeader = parsed.header,
@@ -593,7 +731,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
 
     private fun shouldReuseCachedPlaylist(
         cached: CachedNeteasePlaylistDetail,
-        parsed: ParsedDetail
+        parsed: ParsedNeteaseCollectionDetail
     ): Boolean {
         return shouldReuseNeteasePlaylistCache(
             cached = cached,
@@ -603,7 +741,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         )
     }
 
-    private suspend fun resolvePlaylistTracks(parsed: ParsedDetail): List<SongItem> {
+    private suspend fun resolvePlaylistTracks(parsed: ParsedNeteaseCollectionDetail): List<SongItem> {
         return if (
             parsed.trackIds.isNotEmpty() &&
             parsed.trackIds.size > parsed.tracks.size
@@ -614,13 +752,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         }
     }
 
-    private fun ParsedDetail.expectedTrackCount(): Int {
-        return header.trackCount.takeIf { it > 0 }
-            ?: trackIds.size.takeIf { it > 0 }
-            ?: tracks.size
-    }
-
-    private fun ParsedDetail.recentTrackSignature(): String {
+    private fun ParsedNeteaseCollectionDetail.recentTrackSignature(): String {
         val ids = trackIds.ifEmpty { tracks.map { it.id } }
         return buildString {
             append(expectedTrackCount())
@@ -634,7 +766,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         }
     }
 
-    private fun ParsedDetail.toCache(
+    private fun ParsedNeteaseCollectionDetail.toCache(
         tracks: List<SongItem>,
         displayHeader: NeteaseCollectionHeader = header,
         radarCacheContext: String,
@@ -731,9 +863,10 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
                 if (!isCurrentCollectionLoad(albumId, loadGeneration)) return@launch
                 NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
 
-                val (header, tracks) = parseDetailFromAlbum(
+                val (header, tracks) = parseNeteaseAlbumDetailResponse(
                     raw = raw,
-                    coverFallback = album.picUrl
+                    coverFallback = album.picUrl,
+                    errors = responseErrors
                 )
                 if (!isCurrentCollectionLoad(albumId, loadGeneration)) return@launch
 
@@ -809,115 +942,6 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
     private fun toHttps(url: String?): String? =
         url?.replaceFirst(Regex("^http://"), "https://")
 
-    private fun parseDetailFromPlaylist(raw: String): ParsedDetail {
-        val root = JSONObject(raw)
-        val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
-
-        val pl = root.optJSONObject("playlist") ?: error(getApplication<Application>().getString(CoreCommonR.string.error_missing_node, "playlist"))
-
-        val header = NeteaseCollectionHeader(
-            id = pl.optLong("id"),
-            name = pl.optString("name"),
-            coverUrl = toHttps(pl.optString("coverImgUrl", "")) ?: "",
-            playCount = pl.optLong("playCount", 0L),
-            trackCount = pl.optInt("trackCount", 0),
-            isAlbum = false
-        )
-
-        val list = mutableListOf<SongItem>()
-        val tracksArr = pl.optJSONArray("tracks")
-        if (tracksArr != null) {
-            for (i in 0 until tracksArr.length()) {
-                val t = tracksArr.optJSONObject(i) ?: continue
-                parseSongItem(t)?.let { list.add(it) }
-            }
-        }
-        val trackIds = mutableListOf<Long>()
-        val trackIdsArr = pl.optJSONArray("trackIds")
-        if (trackIdsArr != null) {
-            for (i in 0 until trackIdsArr.length()) {
-                val id = trackIdsArr.optJSONObject(i)?.optLong("id", 0L) ?: 0L
-                if (id != 0L) trackIds.add(id)
-            }
-        }
-        return ParsedDetail(header, list, trackIds)
-    }
-
-    private fun parseDetailFromAlbum(
-        raw: String,
-        coverFallback: String? = null
-    ): ParsedDetail {
-        val root = JSONObject(raw)
-        val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
-
-        val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(CoreCommonR.string.error_missing_node, "album"))
-        val cover = resolveNeteaseCollectionCoverUrl(
-            primary = al.optString("picUrl", ""),
-            fallback = coverFallback
-        )
-
-        val header = NeteaseCollectionHeader(
-            id = al.optLong("id"),
-            name = al.optString("name"),
-            coverUrl = cover,
-            playCount = 0L,
-            trackCount = al.optInt("size", 0),
-            isAlbum = true
-        )
-
-        val list = mutableListOf<SongItem>()
-        val tracksArr = root.optJSONArray("songs")
-        if (tracksArr != null) {
-            for (i in 0 until tracksArr.length()) {
-                val t = tracksArr.optJSONObject(i) ?: continue
-                parseSongItem(t, coverFallback = cover)?.let { list.add(it) }
-            }
-        }
-        return ParsedDetail(header, list)
-    }
-    
-    private data class ParsedDetail(
-        val header: NeteaseCollectionHeader,
-        val tracks: List<SongItem>,
-        val trackIds: List<Long> = emptyList()
-    )
-
-    private fun parseSongItem(
-        t: JSONObject,
-        coverFallback: String? = null
-    ): SongItem? {
-        val id = t.optLong("id", 0L)
-        val name = t.optString("name", "")
-        if (id == 0L || name.isBlank()) return null
-
-        val artistItems = parseNeteaseArtistSummaries(t.optJSONArray("ar"))
-        val artist = artistItems.joinToString(" / ") { it.name }
-        val al = t.optJSONObject("al") ?: t.optJSONObject("album")
-        val albumName = al?.optString("name", "") ?: ""
-        val albumId = al?.optLong("id", 0L) ?: 0L
-        val cover = resolveNeteaseCollectionCoverUrl(
-            primary = al?.optString("picUrl", ""),
-            fallback = coverFallback
-        )
-        val duration = t.optLong("dt", 0L)
-
-        return SongItem(
-            id = id,
-            name = name,
-            artist = artist,
-            album = "Netease$albumName",
-            albumId = albumId,
-            durationMs = duration,
-            coverUrl = cover.takeIf { it.isNotBlank() },
-            originalCoverUrl = cover.takeIf { it.isNotBlank() },
-            channelId = "netease",
-            audioId = id.toString(),
-            neteaseArtists = artistItems
-        )
-    }
-
     private suspend fun fetchFullPlaylistTracks(
         trackIds: List<Long>,
         existing: List<SongItem>
@@ -939,24 +963,11 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         deferred.awaitAll()
             .sortedBy { it.first }
             .forEach { (_, raw) ->
-                parseSongDetail(raw).forEach { song ->
+                parseNeteaseSongDetailResponse(raw, responseErrors).forEach { song ->
                     fetchedMap[song.id] = song
                 }
             }
         val merged = existingMap + fetchedMap
         trackIds.mapNotNull { merged[it] }
-    }
-
-    private fun parseSongDetail(raw: String): List<SongItem> {
-        val root = JSONObject(raw)
-        val code = root.optInt("code", -1)
-        require(code == 200) { getApplication<Application>().getString(CoreCommonR.string.error_api_code, code) }
-        val songs = root.optJSONArray("songs") ?: return emptyList()
-        val out = mutableListOf<SongItem>()
-        for (i in 0 until songs.length()) {
-            val t = songs.optJSONObject(i) ?: continue
-            parseSongItem(t)?.let { out.add(it) }
-        }
-        return out
     }
 }

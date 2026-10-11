@@ -31,6 +31,7 @@ internal class FakeListenTogetherPlaybackHost : ListenTogetherPlaybackHost {
     var pendingMediaLoad = false
     var transportActive = false
     var transportFailure: Throwable? = null
+    var usbExclusiveOutput = false
     var usableDirectStream = false
     var streamUrls = emptyList<String>()
     val calls = mutableListOf<String>()
@@ -91,6 +92,7 @@ internal class FakeListenTogetherPlaybackHost : ListenTogetherPlaybackHost {
         transportFailure?.let { throw it }
         return transportActive
     }
+    override fun isUsbExclusiveOutputEnabled() = usbExclusiveOutput
     override fun currentSong() = currentSongFlow.value
     override fun stableKey(song: SongItem) = with(TestSongMapper) { song.toListenTogetherTrackOrNull()?.stableKey }
     override fun playbackPositionMs() = playbackPositionFlow.value

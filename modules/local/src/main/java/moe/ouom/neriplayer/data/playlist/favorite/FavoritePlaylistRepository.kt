@@ -211,38 +211,33 @@ class FavoritePlaylistRepository internal constructor(
         favorites: List<FavoritePlaylist>
     ): Boolean {
         return persistenceMutex.withLock {
-            if (roomStorageEnabled) {
-                val roomSucceeded = runCatching {
-                    roomStore.writeIncremental(
-                        previous = persistedSnapshots,
-                        next = favorites
-                    )
-                }.onFailure { error ->
-                    if (error is CancellationException) throw error
-                    roomStorageEnabled = false
-                    NPLogger.e(TAG, "写入 Room 收藏歌单失败，回退到 JSON", error)
-                }.isSuccess
-                if (roomSucceeded) {
-                    persistedSnapshots = favorites
-                    return@withLock true
-                }
-            }
-
-            val legacySucceeded = runCatching {
-                roomStore.commitLegacyFallback { saveToDisk(favorites) }
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                NPLogger.e(TAG, "保存收藏歌单 JSON 回退快照失败", error)
-            }.getOrDefault(false)
-            if (legacySucceeded) persistedSnapshots = favorites
-            legacySucceeded
+            val persisted = roomStorageEnabled && writeRoomFavorites(favorites) || writeLegacyFavorites(favorites)
+            if (persisted) persistedSnapshots = favorites
+            persisted
         }
     }
 
+    private suspend fun writeRoomFavorites(favorites: List<FavoritePlaylist>): Boolean {
+        return runCatching {
+            roomStore.writeIncremental(previous = persistedSnapshots, next = favorites)
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            roomStorageEnabled = false
+            NPLogger.e(TAG, "写入 Room 收藏歌单失败，回退到 JSON", error)
+        }.isSuccess
+    }
+
+    private suspend fun writeLegacyFavorites(favorites: List<FavoritePlaylist>): Boolean {
+        return runCatching {
+            roomStore.commitLegacyFallback { saveToDisk(favorites) }
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            NPLogger.e(TAG, "保存收藏歌单 JSON 回退快照失败", error)
+        }.getOrDefault(false)
+    }
+
     private fun FavoritePlaylist.normalizeSortOrder(): FavoritePlaylist {
-        val resolvedSortOrder = sortOrder.takeIf { it > 0L }
-            ?: addedTime.takeIf { it > 0L }
-            ?: modifiedAt.takeIf { it > 0L }
+        val resolvedSortOrder = listOf(sortOrder, addedTime, modifiedAt).firstOrNull { it > 0L }
             ?: System.currentTimeMillis()
         return if (resolvedSortOrder == sortOrder) this else copy(sortOrder = resolvedSortOrder)
     }

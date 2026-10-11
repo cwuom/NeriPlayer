@@ -107,6 +107,30 @@ class SystemPlaylistSongDeduperTest {
         assertEquals(uniqueSongs, distinct)
     }
 
+    @Test
+    fun `duplicates fill blank or missing metadata from later copies without overwriting it`() {
+        val sparse = remoteSong(id = 1L, name = " ").copy(
+            artist = "", album = "", durationMs = 0L, coverUrl = " ", customCoverUrl = null, originalCoverUrl = ""
+        )
+        val rich = remoteSong(id = 1L, name = "rich").copy(
+            artist = "Singer", album = "Album", durationMs = 2_000L, coverUrl = "https://img.example/c.jpg",
+            customCoverUrl = "https://img.example/custom.jpg", originalCoverUrl = "https://img.example/o.jpg",
+            matchedLyric = "lyric", matchedTranslatedLyric = "translated", matchedRomanizedLyric = "romanized",
+            originalLyric = "original", originalTranslatedLyric = "original translated",
+            originalRomanizedLyric = "original romanized"
+        )
+        val metadataOnly = rich.copy(
+            id = 1L, name = "other", artist = "Other", album = "Other", durationMs = 1L, coverUrl = "x",
+            customCoverUrl = "y", originalCoverUrl = "z", matchedLyric = "a", matchedTranslatedLyric = "b",
+            matchedRomanizedLyric = "c", originalLyric = "d", originalTranslatedLyric = "e", originalRomanizedLyric = "f"
+        )
+
+        val filled = listOf(sparse, rich).distinctSystemSongs().single()
+
+        assertEquals(rich, filled)
+        assertEquals(listOf(rich), listOf(rich, metadataOnly).distinctSystemSongs())
+    }
+
     private fun remoteSong(
         id: Long,
         name: String

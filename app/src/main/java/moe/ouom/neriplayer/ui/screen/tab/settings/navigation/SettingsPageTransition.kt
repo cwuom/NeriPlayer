@@ -5,9 +5,7 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -37,6 +36,8 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassSceneOpacity
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.host.rememberHostPredictiveBackTransition
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
 
 internal const val SETTINGS_PAGE_ENTER_DURATION_MS = 300
 // 旧页稍慢退场，让新页接上时画面和模糊遮罩保持连续
@@ -79,16 +80,31 @@ internal fun SettingsPageTransitionHost(
     activePage: SettingsPage?,
     isolateAdvancedGlassTransitions: Boolean,
     modifier: Modifier = Modifier,
+    backEnabled: Boolean = false,
+    onBack: () -> Unit = {},
     content: @Composable (SettingsPage?) -> Unit
 ) {
-    val transitionState = remember { MutableTransitionState(activePage) }
+    var displayedPage by remember { mutableStateOf(activePage) }
     var settledPage by remember { mutableStateOf(activePage) }
+    val currentActivePage by rememberUpdatedState(activePage)
+    // 返回手势按进度拖动缩放淡入的转场；拖到上一级后松手要立刻切换显示页，否则转场会先回弹
+    val pageTransition = rememberHostPredictiveBackTransition(
+        targetState = displayedPage,
+        backEnabled = backEnabled && displayedPage == activePage,
+        backTargetState = activePage?.backTargetPage(),
+        onBack = { seekedToBackTarget ->
+            val backTarget = currentActivePage?.backTargetPage()
+            onBack()
+            if (seekedToBackTarget) displayedPage = backTarget
+        },
+        label = "settings_page_switch"
+    )
+    val transitionIdle = !pageTransition.isRunning &&
+        pageTransition.currentState == pageTransition.targetState
     // 连点时只保留最新请求，先完成当前交接，避免中断后旧场景被提前移除
-    if (transitionState.isIdle && settledPage == transitionState.currentState) {
-        transitionState.targetState = activePage
+    if (transitionIdle && settledPage == pageTransition.currentState && displayedPage != activePage) {
+        displayedPage = activePage
     }
-    val displayedPage = transitionState.targetState
-    val pageTransition = rememberTransition(transitionState, label = "settings_page_switch")
     pageTransition.AnimatedContent(
         modifier = modifier.fillMaxSize().clipToBounds(),
         contentAlignment = Alignment.Center,
@@ -132,8 +148,8 @@ internal fun SettingsPageTransitionHost(
     }
     // 完成动画后先提交旧场景清理，避免切回上一页时复用尚未退出的场景
     SideEffect {
-        if (transitionState.isIdle) {
-            settledPage = transitionState.currentState
+        if (transitionIdle) {
+            settledPage = pageTransition.currentState
         }
     }
 }
@@ -142,12 +158,20 @@ internal fun SettingsPageTransitionHost(
 internal fun PhoneSettingsPageTransitionHost(
     activePage: SettingsPage?,
     isolateAdvancedGlassTransitions: Boolean,
+    backEnabled: Boolean,
+    onBack: () -> Unit,
     content: @Composable (SettingsPage?) -> Unit
 ) {
-    AnimatedContent(
+    // 返回手势按进度拖动同一个横向转场，松手后返回上一级，取消时回弹
+    val pageTransition = rememberHostPredictiveBackTransition(
         targetState = activePage,
+        backEnabled = backEnabled,
+        backTargetState = activePage?.backTargetPage(),
+        onBack = { onBack() },
+        label = "settings_page_switch"
+    )
+    pageTransition.AnimatedContent(
         modifier = Modifier.fillMaxSize(),
-        label = "settings_page_switch",
         transitionSpec = {
             isolatedAdvancedGlassHorizontalTransition(
                 forward = isForwardSettingsPageTransition(initialState, targetState)

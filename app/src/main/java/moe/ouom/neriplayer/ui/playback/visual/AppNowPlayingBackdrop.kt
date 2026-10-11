@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.playback.visual
 
-import android.os.Build
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.NonRestartableComposable
@@ -42,7 +41,7 @@ private fun NowPlayingBackdropContent(
     effectOwner: NowPlayingBlurEffectOwner
 ) {
     val blurState = effectOwner.blurState
-    val blurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val blurAvailable = isNowPlayingCoverBlurSupported()
     val frame = nowPlayingBackdropFrame(
         request.cover, request.background, blurState, blurAvailable
     )

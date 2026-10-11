@@ -107,7 +107,6 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.search.playlistSearchValues
-import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import kotlin.time.Duration.Companion.milliseconds
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
@@ -690,7 +689,7 @@ internal fun LocalArtistDetailContent(
 }
 
 @Composable
-private fun LocalArtistDetailHeader(
+internal fun LocalArtistDetailHeader(
     title: String,
     coverUrl: String?,
     songCount: Int,
@@ -780,7 +779,7 @@ private fun LocalArtistDetailHeader(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun LocalArtistSongRow(
+internal fun LocalArtistSongRow(
     index: Int,
     song: SongItem,
     selectionMode: Boolean,
@@ -807,10 +806,7 @@ private fun LocalArtistSongRow(
             .clip(RoundedCornerShape(12.dp))
             .background(rowContainerColor)
             .combinedClickable(
-                onClick = {
-                    context.performHapticFeedback()
-                    onClick()
-                },
+                onClick = hapticRowAction(context, onClick),
                 onLongClick = onLongClick
             )
             .padding(horizontal = 8.dp, vertical = 8.dp),

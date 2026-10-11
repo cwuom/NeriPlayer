@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.local.database.store.expectFailure
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -24,6 +25,7 @@ import org.mockito.MockedStatic
 import org.mockito.Mockito.CALLS_REAL_METHODS
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
 import org.mockito.Mockito.mockStatic
@@ -31,6 +33,8 @@ import org.mockito.Mockito.never
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileDescriptor
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -64,7 +68,7 @@ class LocalMediaCompanionWriteVerificationTest {
         doReturn(temporaryFolder.newFolder("no-backup")).`when`(context).noBackupFilesDir
         doReturn(resolver).`when`(context).contentResolver
         doReturn(readDescriptor).`when`(resolver).openFileDescriptor(documentUri, "r")
-        doReturn(writeDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rwt")
+        doReturn(writeDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rw")
         music = temporaryFolder.newFolder("music")
     }
 
@@ -120,8 +124,20 @@ class LocalMediaCompanionWriteVerificationTest {
     }
 
     @Test
+    fun `providers without direct rw access still receive the companion through rwt`() {
+        doThrow(FileNotFoundException("no rw")).`when`(resolver).openFileDescriptor(documentUri, "rw")
+        doReturn(writeDescriptor).`when`(resolver).openFileDescriptor(documentUri, "rwt")
+        val transaction = transaction()
+
+        val written = withDescriptors { transaction.write(DOCUMENT, "updated lyric".toByteArray()) }
+
+        assertTrue(written)
+        assertEquals("updated lyric", String(document))
+    }
+
+    @Test
     fun `providers that refuse write access fail before truncating the document`() {
-        doReturn(null).`when`(resolver).openFileDescriptor(documentUri, "rwt")
+        doReturn(null).`when`(resolver).openFileDescriptor(documentUri, "rw")
         val transaction = transaction()
 
         val error = withDescriptors { os ->
@@ -138,7 +154,7 @@ class LocalMediaCompanionWriteVerificationTest {
         doAnswer {
             regularFiles = false
             writeDescriptor
-        }.`when`(resolver).openFileDescriptor(documentUri, "rwt")
+        }.`when`(resolver).openFileDescriptor(documentUri, "rw")
         val transaction = transaction()
 
         val error = withDescriptors { os ->
@@ -147,6 +163,35 @@ class LocalMediaCompanionWriteVerificationTest {
         }
 
         assertEquals("伴随写入对象已改变", error.message)
+        assertEquals("original lyric", String(document))
+    }
+
+    @Test
+    fun `documents remapped to another regular file are verified before that file can be truncated`() {
+        var remapped = "another user's lyric".toByteArray()
+        val remappedHandle = FileDescriptor()
+        val remappedDescriptor = mock(ParcelFileDescriptor::class.java).also { descriptor ->
+            doReturn(descriptor).`when`(descriptor).dup()
+            doReturn(remappedHandle).`when`(descriptor).fileDescriptor
+            sinks[descriptor] = { bytes -> remapped = bytes }
+        }
+        // provider 已把稳定 URI 指向另一个普通文件，与真实 provider 一样，带 t 的模式在打开时就截断该文件
+        listOf("w", "wt", "rw", "rwt").forEach { mode ->
+            doAnswer {
+                if ('t' in mode) remapped = ByteArray(0)
+                remappedDescriptor
+            }.`when`(resolver).openFileDescriptor(documentUri, mode)
+        }
+        val transaction = transaction()
+
+        val error = withDescriptors { os ->
+            os.`when`<StructStat> { Os.fstat(remappedHandle) }.thenReturn(statWithInode(2L))
+            expectFailure<IllegalStateException> { transaction.write(DOCUMENT, "updated lyric".toByteArray()) }
+                .also { os.verify({ Os.ftruncate(any(), anyLong()) }, never()) }
+        }
+
+        assertEquals("伴随写入对象已改变", error.message)
+        assertEquals("another user's lyric", String(remapped))
         assertEquals("original lyric", String(document))
     }
 
@@ -196,6 +241,10 @@ class LocalMediaCompanionWriteVerificationTest {
             doReturn(descriptor).`when`(descriptor).dup()
             sources[descriptor] = source
         }
+
+    private fun statWithInode(inode: Long): StructStat = mock(StructStat::class.java).also { remappedStat ->
+        StructStat::class.java.getField("st_ino").apply { isAccessible = true }.setLong(remappedStat, inode)
+    }
 
     private fun serve(stream: InputStream, bytes: ByteArray) {
         val source = ByteArrayInputStream(bytes)

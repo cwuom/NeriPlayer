@@ -12,6 +12,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
+import moe.ouom.neriplayer.core.player.service.lyrics.LiveLyricNotificationBridge
+import moe.ouom.neriplayer.data.local.media.displayName
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.mock
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 
 class ExternalLyricSurfaceGateTest {
 
@@ -120,6 +125,25 @@ class ExternalLyricSurfaceGateTest {
         assertFalse(manager.liveUpdateLyricEnabled)
         assertNull(manager.xiaomiSuperIslandLyricBridge)
         assertNull(manager.liveLyricNotificationBridge)
+    }
+
+    @Test
+    fun `live lyric surfaces apply the lyric offset in the same direction as other surfaces`() {
+        val bridge = mock(LiveLyricNotificationBridge::class.java)
+        val previousPlaying = manager._isPlayingFlow.value
+        manager.liveLyricNotificationBridge = bridge
+        manager.liveUpdateLyricEnabled = true
+        manager._isPlayingFlow.value = true
+        val first = LyricEntry(text = "first", startTimeMs = 0L, endTimeMs = 10_000L)
+        val second = LyricEntry(text = "second", startTimeMs = 10_000L, endTimeMs = 20_000L)
+        manager.externalBluetoothLyrics = listOf(first, second)
+        try {
+            manager.publishLiveLyricSurfaces(song, positionMs = 8_500L, lyricOffsetMs = 2_000L)
+
+            verify(bridge).sendLyric(songTitle = song.displayName(), line = second, secondaryLyric = null)
+        } finally {
+            manager._isPlayingFlow.value = previousPlaying
+        }
     }
 
     private class SurfaceFlag(val get: () -> Boolean, val set: (Boolean) -> Unit)

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.config
 
 import moe.ouom.neriplayer.data.model.config.AppConfigBackup
+import moe.ouom.neriplayer.data.model.config.CONFIG_FORMAT_VERSION
+import moe.ouom.neriplayer.data.model.config.CONFIG_KIND
 import moe.ouom.neriplayer.data.model.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.LanguageConfigSnapshot
 import moe.ouom.neriplayer.data.model.config.ListenTogetherConfigSnapshot
@@ -151,6 +153,43 @@ class AppConfigBackupCodecTest {
         assertFalse(decoded.sections.listenTogether)
         assertFalse(decoded.sections.neteaseAuth)
         assertEquals(false, decoded.payload.settings.booleans["dynamic_color"])
+    }
+
+    @Test
+    fun `decode for import requires the config kind and a supported numeric format`() {
+        fun failure(json: String) =
+            assertThrows(IllegalArgumentException::class.java) { AppConfigBackupCodec.decodeForImport(json) }.message
+        val settings = "\"settings\":{}"
+
+        assertEquals("Not a NeriPlayer config backup", failure("[]"))
+        assertEquals("Not a NeriPlayer config backup", failure("""{"kind":"other","formatVersion":1,$settings}"""))
+        assertEquals("Not a NeriPlayer config backup", failure("""{"kind":"$CONFIG_KIND",$settings}"""))
+        assertEquals("Not a NeriPlayer config backup", failure("""{"kind":"$CONFIG_KIND","formatVersion":"x",$settings}"""))
+        assertEquals("Unsupported config backup format: 0", failure("""{"kind":"$CONFIG_KIND","formatVersion":0,$settings}"""))
+        assertEquals(
+            "Unsupported config backup format: ${CONFIG_FORMAT_VERSION + 1}",
+            failure("""{"kind":"$CONFIG_KIND","formatVersion":${CONFIG_FORMAT_VERSION + 1},$settings}""")
+        )
+    }
+
+    @Test
+    fun `any single section makes a backup restorable`() {
+        val none = AppConfigBackupSections(false, false, false, false, false, false, false, false, false)
+        val single = listOf<(AppConfigBackupSections) -> AppConfigBackupSections>(
+            { it.copy(settings = true) },
+            { it.copy(listenTogether = true) },
+            { it.copy(language = true) },
+            { it.copy(neteaseAuth = true) },
+            { it.copy(biliAuth = true) },
+            { it.copy(youTubeAuth = true) },
+            { it.copy(gitHubSync = true) },
+            { it.copy(webDavSync = true) },
+            { it.copy(syncPreferences = true) }
+        ).map { it(none) }
+
+        assertFalse(none.hasAnySection())
+        assertEquals(List(9) { true }, single.map { it.hasAnySection() })
+        assertEquals(List(6) { false } + List(3) { true }, single.map { it.hasSyncSection })
     }
 
     @Test

@@ -39,4 +39,5 @@ interface ListenTogetherPlaybackHost : ListenTogetherLinkPlaybackPort {
     fun currentListenTogetherShareableStreamUrls(): List<String>
     fun isPendingMediaLoadActive(): Boolean
     fun isTransportActive(): Boolean
+    fun isUsbExclusiveOutputEnabled(): Boolean
 }

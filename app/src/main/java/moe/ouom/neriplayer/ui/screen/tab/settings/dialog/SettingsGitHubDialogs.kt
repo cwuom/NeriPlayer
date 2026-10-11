@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
  * Updated: 2026/3/23
  */
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,9 +38,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -48,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -57,6 +62,40 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.sync.upgrade.syncProtocolStartupConfigurationGate
+import moe.ouom.neriplayer.util.platform.tryStartActivity
+
+internal const val GITHUB_TOKEN_CREATION_URL =
+    "https://github.com/settings/tokens/new?scopes=repo&description=NeriPlayer%20Backup"
+
+internal fun openGitHubTokenCreationPage(context: Context) {
+    val intent = Intent(Intent.ACTION_VIEW, GITHUB_TOKEN_CREATION_URL.toUri())
+    if (!context.tryStartActivity(intent)) {
+        AppFeedback.showToast(
+            context = context,
+            message = context.getString(CoreCommonR.string.sync_create_token_open_failed)
+        )
+    }
+}
+
+@Stable
+internal class GitHubConfigDraft(
+    val token: MutableState<String>,
+    val newRepoName: MutableState<String>,
+    val useExistingRepo: MutableState<Boolean>,
+    val existingRepoName: MutableState<String>
+)
+
+/** The token is deliberately kept out of saved instance state. */
+@Composable
+internal fun rememberGitHubConfigDraft(): GitHubConfigDraft {
+    val token = remember { mutableStateOf("") }
+    val newRepoName = rememberSaveable { mutableStateOf("neriplayer-backup") }
+    val useExistingRepo = rememberSaveable { mutableStateOf(false) }
+    val existingRepoName = rememberSaveable { mutableStateOf("") }
+    return remember(token, newRepoName, useExistingRepo, existingRepoName) {
+        GitHubConfigDraft(token, newRepoName, useExistingRepo, existingRepoName)
+    }
+}
 
 @Composable
 internal fun SettingsGitHubDialogs(
@@ -82,12 +121,11 @@ internal fun SettingsGitHubDialogs(
 
     if (showGitHubConfigDialog) {
         val githubState by githubVm.uiState.collectAsStateWithLifecycleCompat()
-        var githubToken by remember(showGitHubConfigDialog) { mutableStateOf("") }
-        var githubRepoName by remember(showGitHubConfigDialog) {
-            mutableStateOf("neriplayer-backup")
-        }
-        var useExistingRepo by remember(showGitHubConfigDialog) { mutableStateOf(false) }
-        var existingRepoName by remember(showGitHubConfigDialog) { mutableStateOf("") }
+        val draft = rememberGitHubConfigDraft()
+        var githubToken by draft.token
+        var githubRepoName by draft.newRepoName
+        var useExistingRepo by draft.useExistingRepo
+        var existingRepoName by draft.existingRepoName
 
         val dismissConfigDialog = {
             githubVm.clearMessages()
@@ -136,13 +174,7 @@ internal fun SettingsGitHubDialogs(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     MiuixSettingsTextButton(
-                        onClick = {
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                "https://github.com/settings/tokens/new?scopes=repo&description=NeriPlayer%20Backup".toUri()
-                            )
-                            context.startActivity(intent)
-                        }
+                        onClick = { openGitHubTokenCreationPage(context) }
                     ) {
                         Text(stringResource(CoreCommonR.string.sync_create_token))
                     }

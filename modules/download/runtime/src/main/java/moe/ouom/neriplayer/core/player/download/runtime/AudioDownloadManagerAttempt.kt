@@ -627,7 +627,10 @@ internal suspend fun AudioDownloadManager.transferAndCommitDownloadAttempt(
         operationId = effectiveOperationId,
         attemptId = attemptId
     ) { permit, markNetworkFinished, transferOwnerToken ->
-        val downloadedPayload = transferWatchdog.run(permit) {
+        val downloadedPayload = transferWatchdog.run(
+            permit,
+            onStalled = { snapshotActiveCalls(songKey).forEach { call -> call.cancel() } }
+        ) {
             downloadPayloadForTransport(
                 transportKind = prepared.transportKind,
                 resolved = prepared.resolved,

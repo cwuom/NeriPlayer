@@ -30,6 +30,7 @@ import android.os.ParcelFileDescriptor
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.download.storage.metadata.MAX_COVER_PIXELS
 import moe.ouom.neriplayer.core.download.storage.metadata.MAX_SOURCE_COVER_BYTES
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -67,6 +68,9 @@ internal const val DOCUMENT_NAVIGATION_CACHE_LIMIT = 512
 internal const val LOCAL_LYRICS_PERF_LOG_LIMIT = 96
 internal const val MAX_MEDIASTORE_DURATION_QUERY_IDS = 400
 internal const val MAX_EDITABLE_COVER_BYTES = MAX_SOURCE_COVER_BYTES
+
+/** 16 MiB 的压缩封面可能解出上亿像素，解码前按这个像素预算降采样，避免一次性分配数百 MB */
+internal const val MAX_EDITABLE_COVER_DECODE_PIXELS = MAX_COVER_PIXELS
 internal const val MAX_EMBEDDED_COVER_CACHE_BYTES = 1024 * 1024
 internal const val MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX = 512
 internal const val FRONT_COVER_PICTURE_TYPE = "Front Cover"
@@ -379,39 +383,31 @@ internal fun validateCoverReference(
     uri: Uri
 ): CoverReferenceValidation {
     val normalized = uri.toString().trim()
-    if (normalized.isEmpty()) return CoverReferenceValidation.INVALID
-    if (isMediaStoreCoverReference(normalized)) return CoverReferenceValidation.INVALID
-    if (
-        normalized.startsWith("http://", ignoreCase = true) ||
-        normalized.startsWith("https://", ignoreCase = true)
-    ) {
-        return CoverReferenceValidation.USABLE
-    }
     return when {
-        uri.scheme.equals("file", ignoreCase = true) -> {
-            if (uri.path?.let(::File)?.let(::isUsableCoverFile) == true) {
-                CoverReferenceValidation.USABLE
-            } else {
-                CoverReferenceValidation.INVALID
-            }
-        }
-        uri.scheme.equals("content", ignoreCase = true) -> {
-            validateContentCoverReference(context, uri)
-        }
-        uri.scheme.isNullOrBlank() -> {
-            if (
-                uri.path?.takeIf { it.startsWith("/") }
-                    ?.let(::File)
-                    ?.let(::isUsableCoverFile) == true
-            ) {
-                CoverReferenceValidation.USABLE
-            } else {
-                CoverReferenceValidation.INVALID
-            }
-        }
-        else -> CoverReferenceValidation.USABLE
+        normalized.isEmpty() || isMediaStoreCoverReference(normalized) -> CoverReferenceValidation.INVALID
+        isRemoteCoverReference(normalized) -> CoverReferenceValidation.USABLE
+        else -> validateLocalCoverReference(context, uri)
     }
 }
+
+private fun isRemoteCoverReference(reference: String): Boolean =
+    reference.startsWith("http://", ignoreCase = true) || reference.startsWith("https://", ignoreCase = true)
+
+private fun validateLocalCoverReference(context: Context, uri: Uri): CoverReferenceValidation = when {
+    uri.scheme.equals("file", ignoreCase = true) -> validateCoverFilePath(uri.path)
+    uri.scheme.equals("content", ignoreCase = true) -> validateContentCoverReference(context, uri)
+    uri.scheme.isNullOrBlank() -> validateCoverFilePath(absolutePathOrNull(uri.path))
+    else -> CoverReferenceValidation.USABLE
+}
+
+private fun absolutePathOrNull(path: String?): String? = path?.takeIf { it.startsWith("/") }
+
+private fun validateCoverFilePath(path: String?): CoverReferenceValidation =
+    if (path?.let(::File)?.let(::isUsableCoverFile) == true) {
+        CoverReferenceValidation.USABLE
+    } else {
+        CoverReferenceValidation.INVALID
+    }
 
 internal fun validateContentCoverReference(
     context: Context,
@@ -489,15 +485,13 @@ fun preferredLocalMediaReference(
     localFilePath: String?,
     mediaUri: String?
 ): String? {
-    val normalizedLocalPath = localFilePath?.takeIf { it.isNotBlank() }
-    val normalizedMediaUri = mediaUri?.takeIf { it.isNotBlank() }
-    return when {
-        normalizedMediaUri.isContentLocalMediaReference() -> normalizedMediaUri
-        normalizedLocalPath.isContentLocalMediaReference() -> normalizedLocalPath
-        normalizedLocalPath != null -> normalizedLocalPath
-        else -> normalizedMediaUri
-    }
+    val normalizedMediaUri = nonBlankReferenceOrNull(mediaUri)
+    return normalizedMediaUri.takeIf { it.isContentLocalMediaReference() }
+        ?: nonBlankReferenceOrNull(localFilePath)
+        ?: normalizedMediaUri
 }
+
+private fun nonBlankReferenceOrNull(reference: String?): String? = reference?.takeIf { it.isNotBlank() }
 
 fun SongItem.localMediaUri(): Uri? {
     return localMediaUriCandidates().firstOrNull()

@@ -40,7 +40,6 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.ViewCompat
@@ -78,6 +77,10 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     }
 
     private lateinit var webView: WebView
+    private val webBackNavigation = WebLoginBackNavigation(
+        canGoBack = { this::webView.isInitialized && webView.canGoBack() },
+        goBack = { webView.goBack() }
+    )
     private lateinit var toolbar: MaterialToolbar
     private var foregroundWebLoginToken: AutoCloseable? = null
     private var hasReturned = false
@@ -87,6 +90,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -172,18 +176,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             insets
         }
 
-        onBackPressedDispatcher.addCallback(
-            this,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    if (this@NeteaseWebLoginActivity::webView.isInitialized && webView.canGoBack()) {
-                        webView.goBack()
-                    } else {
-                        finish()
-                    }
-                }
-            }
-        )
+        onBackPressedDispatcher.addCallback(this, webBackNavigation.callback)
 
         lifecycleScope.launch {
             // 登录页位于独立进程，打开时先清掉上一次的浏览器会话
@@ -290,6 +283,11 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     }
 
     private inner class InnerClient : WebViewClient() {
+        override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+            super.doUpdateVisitedHistory(view, url, isReload)
+            webBackNavigation.refresh()
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val currentRequest = request ?: return false
             val uri = currentRequest.url

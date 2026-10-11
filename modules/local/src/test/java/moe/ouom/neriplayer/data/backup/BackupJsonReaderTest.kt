@@ -21,6 +21,22 @@ import org.junit.rules.TemporaryFolder
 class BackupJsonReaderTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun nonPositiveBudgetsAreRejectedByName() {
+        val failures = listOf(
+            { BackupJsonLimits(maxMetadataCharacters = 0) },
+            { BackupJsonLimits(maxMetadataObjects = -1) },
+            { BackupJsonLimits(maxTokenCharacters = 0) },
+            { BackupJsonLimits(maxStatisticsRecordCharacters = 0) },
+            { BackupJsonLimits(maxStatisticsRecordObjects = 0) },
+            { BackupJsonLimits(maxStatisticsRecordBytes = 0) }
+        ).map { create -> runCatching(create).exceptionOrNull()?.let { it::class to it.message } }
+        val expected = listOf(
+            "metadata character", "metadata object", "token character",
+            "statistics record character", "statistics record object", "statistics record byte"
+        ).map { IllegalArgumentException::class to "Backup $it budget must be positive" }
+        assertEquals(expected, failures)
+    }
+
     @Test fun multibyteStatisticsRecordIsRejectedBeforeEncodingOrFullConsumption() = runBlocking {
         val directory = temporary.newFolder()
         var stagedPrefix = false

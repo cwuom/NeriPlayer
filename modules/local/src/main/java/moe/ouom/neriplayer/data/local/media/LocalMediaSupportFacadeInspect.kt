@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.LocalLyricsCacheEntry
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.QuickLocalMetadataSelection
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.MediaStore
@@ -453,32 +454,24 @@ internal fun LocalMediaSupport.invalidateSongAssetCachesImpl(song: SongItem) {
         song.localFilePath.orEmpty()
     ).filter(String::isNotBlank)
     if (keyParts.isEmpty()) return
-    val localParentPath = song.localFilePath
-        ?.takeIf(String::isNotBlank)
-        ?.let(::File)
-        ?.parentFile
-        ?.absolutePath
-    synchronized(localLyricsLookupCache) {
-        localLyricsLookupCache.keys.removeAll { key -> keyParts.any(key::contains) }
+    val localParentPath = localParentPathOf(song)
+    val mentionsSong = { key: String -> keyParts.any(key::contains) }
+    removeCacheKeys(localLyricsLookupCache, mentionsSong)
+    removeCacheKeys(localCoverLookupCache, mentionsSong)
+    removeCacheKeys(nearbyCoverLookupCache, mentionsSong)
+    removeCacheKeys(directoryCoverLookupCache) { key ->
+        mentionsSong(key) || localParentPath != null && key.startsWith("$localParentPath|")
     }
-    synchronized(localCoverLookupCache) {
-        localCoverLookupCache.keys.removeAll { key -> keyParts.any(key::contains) }
-    }
-    synchronized(nearbyCoverLookupCache) {
-        nearbyCoverLookupCache.keys.removeAll { key -> keyParts.any(key::contains) }
-    }
-    synchronized(directoryCoverLookupCache) {
-        directoryCoverLookupCache.keys.removeAll { key ->
-            keyParts.any(key::contains) ||
-                localParentPath?.let { key.startsWith("$it|") } == true
-        }
-    }
-    synchronized(directoryFileIndexCache) {
-        directoryFileIndexCache.keys.removeAll { key ->
-            keyParts.any(key::contains) ||
-                localParentPath?.let { key == it } == true
-        }
-    }
+    removeCacheKeys(directoryFileIndexCache) { key -> mentionsSong(key) || key == localParentPath }
+}
+
+private fun localParentPathOf(song: SongItem): String? {
+    val path = song.localFilePath?.takeIf(String::isNotBlank) ?: return null
+    return File(path).parentFile?.absolutePath
+}
+
+private fun removeCacheKeys(cache: MutableMap<String, *>, predicate: (String) -> Boolean) {
+    synchronized(cache) { cache.keys.removeAll(predicate) }
 }
 
 internal fun LocalMediaSupport.clearCoverLookupCacheImpl() {
@@ -573,47 +566,14 @@ internal fun LocalMediaSupport.resolveMediaStoreDurationsFastImpl(
     context: Context,
     sources: List<Uri>
 ): Map<String, Long> {
-    val sourcesByCollection = (
-        sources.asSequence()
-            .filter(::isMediaStoreUri)
-            .mapNotNull { source ->
-                val id = source.lastPathSegment
-                    ?.toLongOrNull()
-                    ?.takeIf { it > 0L }
-                    ?: return@mapNotNull null
-                val collectionUri = source.mediaStoreAudioCollectionUri()
-                    ?: return@mapNotNull null
-                collectionUri to (id to source.toString())
-            }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, entries) -> entries.toMap() }
-    )
+    val sourcesByCollection = groupMediaStoreSourcesByCollection(sources)
     if (sourcesByCollection.isEmpty()) return emptyMap()
 
     val result = HashMap<String, Long>(sourcesByCollection.values.sumOf { it.size })
     sourcesByCollection.forEach { (audioUri, sourceById) ->
         sourceById.keys.chunked(MAX_MEDIASTORE_DURATION_QUERY_IDS).forEach { ids ->
             runCatching {
-                val placeholders = ids.joinToString(",") { "?" }
-                context.contentResolver.query(
-                    audioUri,
-                    arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DURATION),
-                    "${MediaStore.Audio.Media._ID} IN ($placeholders)",
-                    ids.map(Long::toString).toTypedArray(),
-                    null
-                )?.use { cursor ->
-                    val idIndex = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
-                    val durationIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
-                    if (idIndex < 0 || durationIndex < 0) return@use
-                    while (cursor.moveToNext()) {
-                        val durationMs = cursor.getLong(durationIndex)
-                            .takeIf { it > 0L }
-                            ?: continue
-                        sourceById[cursor.getLong(idIndex)]?.let { source ->
-                            result[source] = durationMs
-                        }
-                    }
-                }
+                collectMediaStoreDurations(context, audioUri, ids, sourceById, result)
             }.onFailure { error ->
                 NPLogger.d(
                     TAG,
@@ -624,4 +584,50 @@ internal fun LocalMediaSupport.resolveMediaStoreDurationsFastImpl(
         }
     }
     return result
+}
+
+private fun LocalMediaSupport.groupMediaStoreSourcesByCollection(sources: List<Uri>): Map<Uri, Map<Long, String>> {
+    return sources.asSequence()
+        .filter(::isMediaStoreUri)
+        .mapNotNull { source -> mediaStoreDurationSource(source) }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, entries) -> entries.toMap() }
+}
+
+private fun LocalMediaSupport.mediaStoreDurationSource(source: Uri): Pair<Uri, Pair<Long, String>>? {
+    val id = source.lastPathSegment?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+    val collectionUri = source.mediaStoreAudioCollectionUri() ?: return null
+    return collectionUri to (id to source.toString())
+}
+
+private fun collectMediaStoreDurations(
+    context: Context,
+    audioUri: Uri,
+    ids: List<Long>,
+    sourceById: Map<Long, String>,
+    result: MutableMap<String, Long>
+) {
+    val placeholders = ids.joinToString(",") { "?" }
+    context.contentResolver.query(
+        audioUri,
+        arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DURATION),
+        "${MediaStore.Audio.Media._ID} IN ($placeholders)",
+        ids.map(Long::toString).toTypedArray(),
+        null
+    )?.use { cursor -> readPositiveMediaStoreDurations(cursor, sourceById, result) }
+}
+
+private fun readPositiveMediaStoreDurations(
+    cursor: Cursor,
+    sourceById: Map<Long, String>,
+    result: MutableMap<String, Long>
+) {
+    val idIndex = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+    val durationIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+    if (idIndex < 0 || durationIndex < 0) return
+    while (cursor.moveToNext()) {
+        val durationMs = cursor.getLong(durationIndex)
+        if (durationMs <= 0L) continue
+        sourceById[cursor.getLong(idIndex)]?.let { source -> result[source] = durationMs }
+    }
 }

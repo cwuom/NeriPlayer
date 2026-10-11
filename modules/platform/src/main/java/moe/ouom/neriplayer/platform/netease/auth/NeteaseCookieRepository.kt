@@ -47,13 +47,15 @@ import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.common.logging.NPLogger
 import org.json.JSONObject
+import java.io.File
 
 private const val NETEASE_AUTH_PREFS = "netease_auth_secure_prefs"
 private const val KEY_NETEASE_AUTH_BUNDLE = "netease_auth_bundle"
 private const val NETEASE_COOKIE_FALLBACK_OS = "pc"
 private const val NETEASE_COOKIE_FALLBACK_APPVER = "8.10.35"
 
-private val Context.cookieDataStore by preferencesDataStore("auth_store")
+private const val LEGACY_COOKIE_STORE_NAME = "auth_store"
+private val Context.cookieDataStore by preferencesDataStore(LEGACY_COOKIE_STORE_NAME)
 
 object CookieKeys {
     val NETEASE_COOKIE_JSON = stringPreferencesKey("netease_cookie_json")
@@ -261,7 +263,14 @@ class NeteaseCookieRepository(private val context: Context) {
         return migrateLegacyCookies() ?: NeteaseAuthBundle()
     }
 
+    // preferencesDataStore 的文件固定在 files/datastore/<name>.preferences_pb，
+    // 从没写过旧存储的安装不必在启动时阻塞主线程打开 DataStore
+    private fun hasLegacyCookieStore(): Boolean = runCatching {
+        File(context.filesDir, "datastore/$LEGACY_COOKIE_STORE_NAME.preferences_pb").exists()
+    }.getOrDefault(true)
+
     private fun loadLegacyCookies(): Map<String, String> {
+        if (!hasLegacyCookieStore()) return emptyMap()
         return runCatching {
             val prefs = runBlocking { context.cookieDataStore.data.first() }
             val json = prefs[CookieKeys.NETEASE_COOKIE_JSON] ?: "{}"

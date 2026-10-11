@@ -70,7 +70,11 @@ internal fun serviceMetadataSnapshot(
 internal fun serviceMediaMetadata(
     snapshot: PlaybackMetadataSnapshot,
     artwork: PlaybackArtworkSnapshot,
+    includeBitmaps: Boolean = true,
 ): MediaMetadata {
+    // ALBUM_ART 已被系统 UI、车机和蓝牙作为 ART 的回退, 同一张大图只写一次以控制 Binder 负载
+    val mediaBitmap = artwork.mediaBitmap.takeIf { includeBitmaps && artwork.mediaReady }
+    val iconBitmap = artwork.notificationBitmap.takeIf { includeBitmaps && artwork.notificationReady }
     val builder = MediaMetadata.Builder()
         .putString(MediaMetadata.METADATA_KEY_TITLE, snapshot.title)
         .putString(MediaMetadata.METADATA_KEY_ARTIST, snapshot.artist)
@@ -80,9 +84,8 @@ internal fun serviceMediaMetadata(
         .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, snapshot.mediaId)
         .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, snapshot.trackNumber)
         .putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, snapshot.numTracks)
-        .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork.mediaBitmap.takeIf { artwork.mediaReady })
-        .putBitmap(MediaMetadata.METADATA_KEY_ART, artwork.mediaBitmap.takeIf { artwork.mediaReady })
-        .putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, artwork.notificationBitmap.takeIf { artwork.notificationReady })
+        .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, mediaBitmap)
+        .putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, iconBitmap)
     addOptionalAlbum(builder, snapshot.album)
     addOptionalDescription(builder, snapshot.displayDescription)
     addArtworkUri(builder, snapshot.artworkUri)
