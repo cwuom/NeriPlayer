@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.lyrics
 
+import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContent
 import android.app.Activity
 import android.app.Application
 import android.content.Context
@@ -27,12 +28,56 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadow.api.Shadow
+import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSettings
 import org.robolectric.shadows.ShadowWindowManagerImpl
 import java.time.Duration
 
 @RunWith(AndroidJUnit4::class)
 class FloatingLyricsOverlayManagerTest {
+    @Test
+    @Config(sdk = [29, 36])
+    fun `sentence count changes immediately and previews clear at song end`() {
+        val preferences = FloatingLyricsPreferences(enabled = true, sentenceCount = 3, revealAnimationEnabled = false)
+        FloatingLyricsOverlayManager.updatePreferences(preferences)
+        FloatingLyricsOverlayManager.updateContent(
+            FloatingLyricsContent(
+                lyric = "current", translation = "译文", nextLyric = "next", secondNextLyric = "last"
+            )
+        )
+        idle()
+        val root = overlayRoot()
+        assertEquals(listOf(View.VISIBLE, View.VISIBLE, View.VISIBLE, View.VISIBLE),
+            (0 until root.childCount).map { root.getChildAt(it).visibility })
+        FloatingLyricsOverlayManager.updatePreferences(preferences.copy(sentenceCount = 1))
+        assertEquals(listOf(View.VISIBLE, View.VISIBLE, View.GONE, View.GONE),
+            (0 until root.childCount).map { root.getChildAt(it).visibility })
+        FloatingLyricsOverlayManager.updatePreferences(preferences.copy(sentenceCount = 2))
+        assertEquals(View.VISIBLE, root.getChildAt(2).visibility)
+        assertEquals(View.GONE, root.getChildAt(3).visibility)
+        FloatingLyricsOverlayManager.updateContent(
+            FloatingLyricsContent(lyric = "last")
+        )
+        idle()
+        assertEquals(View.GONE, root.getChildAt(1).visibility)
+        assertEquals(View.GONE, root.getChildAt(2).visibility)
+        FloatingLyricsOverlayManager.updateContent(null, null)
+        idle()
+        assertTrue(overlayViews().isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [29, 36])
+    fun `requested width is bounded by the current screen`() {
+        FloatingLyricsOverlayManager.updatePreferences(FloatingLyricsPreferences(
+            enabled = true, maxWidthDp = 420f, landscapeMaxWidthDp = 1200f,
+            longLineMode = "wrap", sentenceCount = 3
+        ))
+        FloatingLyricsOverlayManager.updateContent("current", null)
+        idle()
+        val screenWidth = app.resources.displayMetrics.widthPixels
+        assertTrue(overlayParams().width in 1..screenWidth)
+    }
     private val app: Application = ApplicationProvider.getApplicationContext()
     private val windowShadow: ShadowWindowManagerImpl
         get() = Shadow.extract(app.getSystemService(Context.WINDOW_SERVICE))
@@ -65,7 +110,7 @@ class FloatingLyricsOverlayManagerTest {
         idle()
 
         val root = overlayRoot()
-        assertEquals(2, root.childCount)
+        assertEquals(4, root.childCount)
         assertEquals(View.GONE, root.getChildAt(1).visibility)
         assertEquals(1, overlayViews().size)
     }

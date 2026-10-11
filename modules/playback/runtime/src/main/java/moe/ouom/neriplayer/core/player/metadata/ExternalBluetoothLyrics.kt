@@ -166,7 +166,7 @@ private fun songAndLyricsMetadata(
     )
 }
 
-private fun findCurrentExternalBluetoothLyricIndex(
+internal fun findCurrentExternalBluetoothLyricIndex(
     lyrics: List<LyricEntry>,
     currentTimeMs: Long
 ): Int {

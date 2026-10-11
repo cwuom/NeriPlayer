@@ -194,7 +194,7 @@
     <string name="settings_floating_lyrics_lyric_alpha">Lyric opacity</string>
     <string name="settings_floating_lyrics_translation_alpha">Translation opacity</string>
     <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>
-    <string name="settings_floating_lyrics_max_width">Max width</string>
+    <string name="settings_floating_lyrics_max_width">Portrait max width</string>
     <string name="settings_floating_lyrics_max_width_value">%1$.1f dp</string>
     <string name="settings_floating_lyrics_position_x">Horizontal position</string>
     <string name="settings_floating_lyrics_position_y">Vertical position</string>
@@ -217,4 +217,16 @@
     <string name="settings_bluetooth_mode_song_and_lyrics">Song title and lyrics, keep artist</string>
     <string name="car_action_shuffle">Toggle shuffle</string>
     <string name="car_action_repeat">Change repeat mode</string>
+    <string name="settings_floating_lyrics_sentence_count">Lyric sentences</string>
+    <string name="settings_floating_lyrics_sentence_count_desc">Highlight the current sentence and dim upcoming sentences. Translation follows only the current sentence.</string>
+    <string name="settings_floating_lyrics_sentence_one">One</string>
+    <string name="settings_floating_lyrics_sentence_two">Two</string>
+    <string name="settings_floating_lyrics_sentence_three">Three</string>
+    <string name="settings_floating_lyrics_long_line_mode">Long sentences</string>
+    <string name="settings_floating_lyrics_long_line_mode_desc">Choose horizontal scrolling or wrapping. Each sentence wraps to at most three lines, with an ellipsis for overflow.</string>
+    <string name="settings_floating_lyrics_long_line_scroll">Scroll</string>
+    <string name="settings_floating_lyrics_long_line_wrap">Wrap</string>
+    <string name="settings_floating_lyrics_landscape_max_width">Landscape max width</string>
+    <string name="settings_floating_lyrics_preview_next">The next sentence appears here in advance</string>
+    <string name="settings_floating_lyrics_preview_second_next">Preview the following sentence here too</string>
 </resources>

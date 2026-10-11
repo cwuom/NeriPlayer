@@ -24,6 +24,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
+import androidx.core.view.isVisible
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
@@ -31,6 +32,10 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_TRANSLATIO
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsColorHex
 import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionX
 import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionY
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsWidthDp
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_LONG_LINE_WRAP
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_PREVIEW_ALPHA_SCALE
+import moe.ouom.neriplayer.core.player.lyrics.floating.FloatingLyricsContent
 import kotlin.math.roundToInt
 
 @SuppressLint("StaticFieldLeak")
@@ -43,13 +48,13 @@ object FloatingLyricsOverlayManager {
     private var rootView: LinearLayout? = null
     private var lyricTextView: AnimatedOutlinedLyricTextView? = null
     private var translationTextView: AnimatedOutlinedLyricTextView? = null
+    private var nextLyricTextView: AnimatedOutlinedLyricTextView? = null
+    private var secondNextLyricTextView: AnimatedOutlinedLyricTextView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var preferences = FloatingLyricsPreferences()
     private var appliedStylePreferences: FloatingLyricsPreferences? = null
-    private var lyricLine: String? = null
-    private var translationLine: String? = null
-    private var pendingLyricLine: String? = null
-    private var pendingTranslationLine: String? = null
+    private var displayedContent = FloatingLyricsContent()
+    private var pendingContent = FloatingLyricsContent()
     private var playbackActive = false
     private var longPressDragController: FloatingLyricsLongPressDragController? = null
     private var longPressDragInProgress = false
@@ -57,15 +62,17 @@ object FloatingLyricsOverlayManager {
     private var contentUpdateScheduled = false
     private val contentUpdateRunnable = Runnable {
         contentUpdateScheduled = false
-        lyricLine = pendingLyricLine
-        translationLine = pendingTranslationLine
+        displayedContent = pendingContent
         syncOverlay()
     }
     private var layoutUpdateScheduled = false
     private val layoutUpdateRunnable = Runnable {
         layoutUpdateScheduled = false
         if (!longPressDragInProgress) {
-            layoutParams?.let(::applyStoredPosition)
+            layoutParams?.let { params ->
+                params.width = resolveOverlayWidthPx()
+                applyStoredPosition(params)
+            }
         }
         updateLayout()
     }
@@ -132,15 +139,21 @@ object FloatingLyricsOverlayManager {
             updateOverlayStyle()
             if (needsInitialText) {
                 updateOverlayText()
+            } else {
+                updatePreviewRows()
             }
             scheduleLayoutUpdate()
         }
     }
 
     fun updateContent(line: String?, translation: String?) {
+        updateContent(FloatingLyricsContent(lyric = line, translation = translation))
+    }
+
+    internal fun updateContent(content: FloatingLyricsContent) {
         runOnMain {
-            pendingLyricLine = line?.trim()?.takeIf { it.isNotEmpty() }
-            pendingTranslationLine = translation?.trim()?.takeIf { it.isNotEmpty() }
+            if (pendingContent == content) return@runOnMain
+            pendingContent = content
             scheduleContentUpdate()
         }
     }
@@ -153,6 +166,8 @@ object FloatingLyricsOverlayManager {
             playbackActive = isPlaying
             lyricTextView?.setPlaybackActive(isPlaying)
             translationTextView?.setPlaybackActive(isPlaying)
+            nextLyricTextView?.let { it.setPlaybackActive(isPlaying && it.isVisible) }
+            secondNextLyricTextView?.let { it.setPlaybackActive(isPlaying && it.isVisible) }
         }
     }
 
@@ -176,6 +191,8 @@ object FloatingLyricsOverlayManager {
             startedActivityCount = 0
             playbackActive = false
             positionChangeListener = null
+            displayedContent = FloatingLyricsContent()
+            pendingContent = FloatingLyricsContent()
         }
     }
 
@@ -210,7 +227,7 @@ object FloatingLyricsOverlayManager {
 
     private fun shouldShowOverlay(): Boolean {
         val app = application ?: return false
-        if (!preferences.enabled || lyricLine.isNullOrBlank()) {
+        if (!preferences.enabled || displayedContent.lyric.isNullOrBlank()) {
             return false
         }
         if (!hasOverlayPermission(app)) {
@@ -230,6 +247,8 @@ object FloatingLyricsOverlayManager {
         val manager = windowManager ?: return
         val title = AnimatedOutlinedLyricTextView(app)
         val translation = AnimatedOutlinedLyricTextView(app)
+        val next = AnimatedOutlinedLyricTextView(app).apply { isVisible = false }
+        val secondNext = AnimatedOutlinedLyricTextView(app).apply { isVisible = false }
         val root = LinearLayout(app).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
@@ -238,12 +257,21 @@ object FloatingLyricsOverlayManager {
             setPadding(0, 0, 0, 0)
             addView(title, matchWidthLayoutParams())
             addView(translation, matchWidthLayoutParams())
+            addView(next, matchWidthLayoutParams())
+            addView(secondNext, matchWidthLayoutParams())
+            addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                    scheduleLayoutUpdate()
+                }
+            }
         }
         root.alpha = 1f
         title.alpha = 1f
         translation.alpha = 1f
         lyricTextView = title
         translationTextView = translation
+        nextLyricTextView = next
+        secondNextLyricTextView = secondNext
         title.setPlaybackActive(playbackActive)
         translation.setPlaybackActive(playbackActive)
         rootView = root
@@ -255,7 +283,7 @@ object FloatingLyricsOverlayManager {
 
     private fun buildLayoutParams(): WindowManager.LayoutParams {
         return WindowManager.LayoutParams(
-            dp(preferences.maxWidthDp).roundToInt(),
+            resolveOverlayWidthPx(),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             resolveWindowFlags(),
@@ -269,7 +297,9 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun updateOverlayText() {
-        val text = resolveFloatingLyricsOverlayText(preferences, lyricLine, translationLine)
+        val text = resolveFloatingLyricsOverlayText(
+            preferences, displayedContent.lyric?.trim(), displayedContent.translation?.trim()
+        )
         lyricTextView?.setLyricText(
             nextText = text.lyric,
             revealDurationMs = text.revealDurationMs,
@@ -283,6 +313,21 @@ object FloatingLyricsOverlayManager {
                 revealAnimationEnabled = text.revealAnimationEnabled
             )
         }
+        updatePreviewRows()
+    }
+
+    private fun updatePreviewRows() {
+        updatePreviewText(nextLyricTextView, displayedContent.nextLyric, preferences.sentenceCount >= 2)
+        updatePreviewText(secondNextLyricTextView, displayedContent.secondNextLyric, preferences.sentenceCount >= 3)
+        updateOverlayMinimumHeight()
+    }
+
+    private fun updatePreviewText(view: AnimatedOutlinedLyricTextView?, line: String?, enabled: Boolean) {
+        view ?: return
+        val visible = enabled && !line.isNullOrBlank()
+        view.isVisible = visible
+        view.setPlaybackActive(playbackActive && visible)
+        view.setLyricText(if (visible) line.orEmpty() else "", revealAnimationEnabled = false)
     }
 
     private fun scheduleContentUpdate() {
@@ -298,7 +343,6 @@ object FloatingLyricsOverlayManager {
         if (appliedStylePreferences == preferences) {
             return
         }
-        val maxWidthChanged = appliedStylePreferences?.maxWidthDp != preferences.maxWidthDp
         val textColor = "#${normalizeFloatingLyricsColorHex(preferences.textColorHex)}".toColorInt()
         val outlineColor = (
             "#${normalizeFloatingLyricsColorHex(preferences.outlineColorHex)}"
@@ -312,11 +356,12 @@ object FloatingLyricsOverlayManager {
         root.alpha = 1f
         layoutParams?.alpha = 1f
         layoutParams?.apply {
-            width = dp(preferences.maxWidthDp).roundToInt()
+            width = resolveOverlayWidthPx()
             flags = resolveWindowFlags()
         }
         configureLongPressDrag(root)
         lyricTextView?.apply {
+            setWrapLongLines(preferences.longLineMode == FLOATING_LYRICS_LONG_LINE_WRAP)
             setRevealAnimationEnabled(preferences.revealAnimationEnabled)
             setAlignmentFactor(alignmentFactor)
             setLyricStyle(
@@ -332,6 +377,7 @@ object FloatingLyricsOverlayManager {
             )
         }
         translationTextView?.apply {
+            setWrapLongLines(preferences.longLineMode == FLOATING_LYRICS_LONG_LINE_WRAP)
             setRevealAnimationEnabled(preferences.revealAnimationEnabled)
             setAlignmentFactor(alignmentFactor)
             setLyricStyle(
@@ -349,19 +395,45 @@ object FloatingLyricsOverlayManager {
                 bold = false
             )
         }
+        configurePreviewStyle(nextLyricTextView, textColor, outlineColor, alignmentFactor)
+        configurePreviewStyle(secondNextLyricTextView, textColor, outlineColor, alignmentFactor)
         updateOverlayMinimumHeight()
         scheduleLayoutUpdate()
-        if (maxWidthChanged) {
-            lyricTextView?.refreshScrollAfterLayout()
-            translationTextView?.refreshScrollAfterLayout()
-        }
         appliedStylePreferences = preferences
     }
 
     private fun updateOverlayMinimumHeight() {
         val lyricHeight = lyricTextView?.preferredMeasuredHeightPx() ?: 0
-        val translationHeight = translationTextView?.preferredMeasuredHeightPx() ?: 0
-        rootView?.minimumHeight = lyricHeight + translationHeight
+        val translationHeight = translationTextView?.takeIf { it.isVisible }
+            ?.preferredMeasuredHeightPx() ?: 0
+        val nextHeight = nextLyricTextView?.takeIf { it.isVisible }
+            ?.preferredMeasuredHeightPx() ?: 0
+        val secondNextHeight = secondNextLyricTextView?.takeIf { it.isVisible }
+            ?.preferredMeasuredHeightPx() ?: 0
+        rootView?.minimumHeight = lyricHeight + translationHeight + nextHeight + secondNextHeight
+    }
+
+    private fun configurePreviewStyle(
+        view: AnimatedOutlinedLyricTextView?, textColor: Int, outlineColor: Int, alignmentFactor: Float
+    ) {
+        view ?: return
+        val alpha = preferences.lyricAlpha * FLOATING_LYRICS_PREVIEW_ALPHA_SCALE
+        view.setWrapLongLines(preferences.longLineMode == FLOATING_LYRICS_LONG_LINE_WRAP)
+        view.setAlignmentFactor(alignmentFactor)
+        view.setLyricStyle(
+            textColor = withAlpha(textColor, alpha),
+            effectColor = withAlpha(outlineColor, resolveFloatingLyricsEffectAlpha(alpha)),
+            textSizePx = sp(preferences.fontSizeSp),
+            effectWidthPx = dp(preferences.outlineWidthDp),
+            renderStyle = preferences.renderStyle,
+            bold = false
+        )
+    }
+
+    private fun resolveOverlayWidthPx(): Int {
+        val screen = resolveScreenSize()
+        val requested = resolveFloatingLyricsWidthDp(preferences, isFloatingLyricsLandscape(screen.x, screen.y))
+        return dp(requested).roundToInt().coerceIn(1, screen.x)
     }
 
     private fun scheduleLayoutUpdate() {
@@ -496,6 +568,8 @@ object FloatingLyricsOverlayManager {
         longPressDragInProgress = false
         lyricTextView = null
         translationTextView = null
+        nextLyricTextView = null
+        secondNextLyricTextView = null
         layoutParams = null
         appliedStylePreferences = null
         mainHandler.removeCallbacks(layoutUpdateRunnable)

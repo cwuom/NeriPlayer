@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -21,6 +20,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +46,9 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_LONG_LINE_WRAP
+import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_PREVIEW_ALPHA_SCALE
+import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsWidthDp
 import moe.ouom.neriplayer.data.model.settings.lyrics.MIN_FLOATING_LYRICS_MAX_WIDTH_DP
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsColorHex
 import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionX
@@ -64,6 +70,8 @@ internal fun FloatingLyricsPreview(
         ("#${normalizeFloatingLyricsColorHex(preferences.outlineColorHex)}").toColorInt()
     )
     val density = LocalDensity.current
+    val wrapLines = preferences.longLineMode == FLOATING_LYRICS_LONG_LINE_WRAP
+    var previewHeightPx by remember { mutableIntStateOf(0) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -87,7 +95,7 @@ internal fun FloatingLyricsPreview(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(132.dp)
+                .height(if (preferences.sentenceCount > 1 || wrapLines) 260.dp else 132.dp)
                 .clip(FloatingLyricsStageShape)
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.30f))
         ) {
@@ -96,7 +104,7 @@ internal fun FloatingLyricsPreview(
             } else {
                 MIN_FLOATING_LYRICS_MAX_WIDTH_DP.dp
             }
-            val preferredWidth = preferences.maxWidthDp.dp
+            val preferredWidth = resolveFloatingLyricsWidthDp(preferences, isLandscape).dp
             val targetWidth = when {
                 preferredWidth < minWidth -> minWidth
                 preferredWidth > maxWidth -> maxWidth
@@ -112,10 +120,12 @@ internal fun FloatingLyricsPreview(
                 preferences.fontSizeSp * FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
             ).coerceAtLeast(6f)
             val lineBlockHeight = with(density) {
-                (preferences.fontSizeSp + 4f).sp.toDp() +
-                    (translationFontSizeSp + 4f).sp.toDp()
+                (preferences.fontSizeSp + 4f).sp.toDp() * preferences.sentenceCount +
+                    if (preferences.showTranslation) (translationFontSizeSp + 4f).sp.toDp() else 0.dp
             } + 2.dp
-            val verticalTravel = (maxHeight - lineBlockHeight - 12.dp).coerceAtLeast(0.dp)
+            val measuredBlockHeight = with(density) { previewHeightPx.toDp() }
+                .takeIf { previewHeightPx > 0 } ?: (lineBlockHeight + 12.dp)
+            val verticalTravel = (maxHeight - measuredBlockHeight).coerceAtLeast(0.dp)
             val offsetX by animateDpAsState(
                 targetValue = horizontalTravel * resolveFloatingLyricsPositionX(preferences, isLandscape),
                 animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
@@ -134,6 +144,7 @@ internal fun FloatingLyricsPreview(
                         }
                     }
                     .width(animatedWidth)
+                    .onSizeChanged { previewHeightPx = it.height }
                     .border(
                         width = 1.dp,
                         color = effectColor.copy(alpha = 0.32f),
@@ -143,8 +154,7 @@ internal fun FloatingLyricsPreview(
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = lineBlockHeight),
+                        .fillMaxWidth(),
                     verticalArrangement = if (preferences.showTranslation) {
                         Arrangement.spacedBy(2.dp)
                     } else {
@@ -161,6 +171,7 @@ internal fun FloatingLyricsPreview(
                         effectWidthDp = preferences.outlineWidthDp,
                         usesOutline = preferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE,
                         textAlign = preferences.toTextAlign(),
+                        maxLines = if (wrapLines) 3 else 1,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (preferences.showTranslation) {
@@ -176,6 +187,25 @@ internal fun FloatingLyricsPreview(
                             effectWidthDp = preferences.translationOutlineWidthDp,
                             usesOutline = preferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE,
                             textAlign = preferences.toTextAlign(),
+                            maxLines = if (wrapLines) 3 else 1,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    for (index in 1 until preferences.sentenceCount) {
+                        val previewAlpha = preferences.lyricAlpha * FLOATING_LYRICS_PREVIEW_ALPHA_SCALE
+                        FloatingPreviewText(
+                            text = stringResource(if (index == 1) {
+                                CoreCommonR.string.settings_floating_lyrics_preview_next
+                            } else {
+                                CoreCommonR.string.settings_floating_lyrics_preview_second_next
+                            }),
+                            textColor = textColor.copy(alpha = previewAlpha),
+                            effectColor = effectColor.copy(alpha = resolveFloatingLyricsEffectAlpha(previewAlpha)),
+                            fontSizeSp = preferences.fontSizeSp,
+                            effectWidthDp = preferences.outlineWidthDp,
+                            usesOutline = preferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE,
+                            textAlign = preferences.toTextAlign(),
+                            maxLines = if (wrapLines) 3 else 1,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -194,6 +224,7 @@ private fun FloatingPreviewText(
     effectWidthDp: Float,
     usesOutline: Boolean,
     textAlign: TextAlign,
+    maxLines: Int = 1,
     modifier: Modifier = Modifier
 ) {
     val effectWidthPx = with(LocalDensity.current) { effectWidthDp.dp.toPx() }
@@ -206,8 +237,8 @@ private fun FloatingPreviewText(
                 fontSize = fontSizeSp.sp,
                 lineHeight = (fontSizeSp + 4f).sp,
                 textAlign = textAlign,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
+                maxLines = maxLines,
+                overflow = if (maxLines > 1) TextOverflow.Ellipsis else TextOverflow.Clip,
                 style = MaterialTheme.typography.bodyLarge.copy(
                     drawStyle = Stroke(width = effectWidthPx)
                 )
@@ -220,8 +251,8 @@ private fun FloatingPreviewText(
             fontSize = fontSizeSp.sp,
             lineHeight = (fontSizeSp + 4f).sp,
             textAlign = textAlign,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
+            maxLines = maxLines,
+            overflow = if (maxLines > 1) TextOverflow.Ellipsis else TextOverflow.Clip,
             style = if (usesOutline) {
                 MaterialTheme.typography.bodyLarge
             } else {
