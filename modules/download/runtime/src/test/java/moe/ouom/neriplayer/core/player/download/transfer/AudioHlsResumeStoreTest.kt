@@ -96,6 +96,51 @@ class AudioHlsResumeStoreTest {
     }
 
     @Test
+    fun `legacy checkpoint without operation id resumes and is claimed for a new operation`() {
+        val destFile = File(tempFolder.newFolder("staging"), "npdl_song.m4a.download")
+        val playlist = "a".repeat(64)
+        val prefix = "b".repeat(64)
+        val writer = AudioHlsResumeStore()
+        writer.remember(destFile, playlist, 2, 64L, prefix, "", null)
+        val reader = AudioHlsResumeStore()
+
+        assertEquals(
+            AudioDownloadManager.HlsResumeState(playlist, 2, 64L, prefix, "operation-new", null),
+            reader.resolve(destFile, playlist, "operation-new")
+        )
+        // 认领后其他 operation 不能再命中同一检查点
+        assertNull(reader.resolve(destFile, playlist, "operation-other"))
+        // 认领结果已落盘, 新 store 读取后仍归属第一个 operation
+        assertEquals(
+            AudioDownloadManager.HlsResumeState(playlist, 2, 64L, prefix, "operation-new", null),
+            AudioHlsResumeStore().resolve(destFile, playlist, "operation-new")
+        )
+        assertNull(reader.resolve(destFile, "c".repeat(64), "operation-new"))
+    }
+
+    @Test
+    fun `failed claim persistence does not publish the owner`() {
+        val checkpointDir = tempFolder.newFolder("checkpoints")
+        val blocker = tempFolder.newFile("blocker")
+        var failWrites = false
+        val store = AudioHlsResumeStore(checkpointFileFor = { working ->
+            if (failWrites) File(blocker, working.name) else File(checkpointDir, working.name + ".hls.json")
+        })
+        val destFile = File(tempFolder.root, "npdl_song.m4a.download")
+        val playlist = "a".repeat(64)
+
+        store.remember(destFile, playlist, 1, 10L, "b".repeat(64), "", null)
+        failWrites = true
+        assertNull(store.resolve(destFile, playlist, "operation-new"))
+
+        failWrites = false
+        assertEquals(
+            AudioDownloadManager.HlsResumeState(playlist, 1, 10L, "b".repeat(64), "operation-new", null),
+            store.resolve(destFile, playlist, "operation-new")
+        )
+    }
+
+    @Test
     fun `failed first checkpoint write leaves no resumable state`() {
         val blocker = tempFolder.newFile("blocker")
         val store = AudioHlsResumeStore(checkpointFileFor = { File(blocker, it.name + ".hls.json") })
