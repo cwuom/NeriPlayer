@@ -15,6 +15,8 @@ import java.security.MessageDigest
 import moe.ouom.neriplayer.data.sync.archive.budget.SyncArchiveManifestWireGuard
 
 internal object SyncArchiveCodec {
+    // 高频同步优先控制压缩耗时，旧块仍按原始内容哈希复用
+    const val COMPRESSION_LEVEL = 6
     private val magic = "NPSYNC03".toByteArray(Charsets.US_ASCII)
     private const val DIGEST_BYTES = 32
     private const val HEADER_BYTES = 8 + 4 + DIGEST_BYTES
@@ -53,7 +55,7 @@ internal object SyncArchiveCodec {
     fun compress(bytes: ByteArray): ByteArray {
         requireRawSize(bytes.size)
         return ZstdCompressCtx().use { context ->
-            context.setLevel(19).setWindowLog(20).setChecksum(true).compress(bytes)
+            context.setLevel(COMPRESSION_LEVEL).setWindowLog(20).setChecksum(true).compress(bytes)
         }.also { requireWireSize(it.size) }
     }
 

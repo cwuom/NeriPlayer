@@ -28,6 +28,8 @@ class GitHubArchiveGarbageCollectionHttpTest {
     private val orphanV3 = "neriplayer-sync-v3-${"a".repeat(64)}.zst"
     private val orphanV4 = "neriplayer-sync-v4-${"b".repeat(64)}.zst"
     private val retained = "neriplayer-sync-v4-${"c".repeat(64)}.zst"
+    private val originalHead = "1".repeat(40)
+    private val movedHead = "2".repeat(40)
 
     @Test
     fun `publication removes only unreferenced owned blobs while old head and unrelated files remain readable`() = runBlocking {
@@ -35,7 +37,7 @@ class GitHubArchiveGarbageCollectionHttpTest {
             val content = "new data".toByteArray()
             val added = "neriplayer-sync-v4-${GitHubSyncCheckpoint.contentKey(content)}.zst"
             val head = fixture.transport.updateFilesContent("owner", "repo", sequenceOf(added to content, manifest to byteArrayOf(7)),
-                GitHubSyncHead("main", "head"), "sync", setOf(retained, added)).getOrThrow()
+                GitHubSyncHead("main", originalHead), "sync", setOf(retained, added)).getOrThrow()
             val current = fixture.trees.getValue(fixture.commits.getValue(head))
             assertFalse(orphanV3 in current)
             assertFalse(orphanV4 in current)
@@ -46,11 +48,24 @@ class GitHubArchiveGarbageCollectionHttpTest {
             assertTrue(orphanV4 in fixture.trees.getValue("base"))
             val listingRequest = fixture.requests.single { it.url.encodedPath.endsWith("/git/trees/base") }
             assertEquals(null, listingRequest.url.queryParameter("recursive"))
-            val publication = JSONObject(fixture.requests.last().body!!.utf8()).getJSONObject("variables").getJSONObject("input")
-                .getJSONArray("refUpdates").getJSONObject(0)
-            assertEquals("head", publication.getString("beforeOid"))
-            assertFalse(publication.getBoolean("force"))
-            assertEquals(1, fixture.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/git/commits") })
+            val publication = JSONObject(fixture.requests.single { it.url.encodedPath == "/graphql" }.body!!.utf8())
+                .getJSONObject("variables").getJSONObject("input")
+            assertEquals(originalHead, publication.getString("expectedHeadOid"))
+            assertEquals("main", publication.getJSONObject("branch").getString("branchName"))
+            assertEquals("owner/repo", publication.getJSONObject("branch").getString("repositoryNameWithOwner"))
+            val changes = publication.getJSONObject("fileChanges")
+            val additions = changes.getJSONArray("additions")
+            assertEquals(2, additions.length())
+            assertEquals(setOf(added, manifest), (0 until additions.length()).map { additions.getJSONObject(it).getString("path") }.toSet())
+            for (index in 0 until additions.length()) {
+                val addition = additions.getJSONObject(index)
+                assertEquals(if (addition.getString("path") == added) "bmV3IGRhdGE=" else "Bw==", addition.getString("contents"))
+            }
+            val deletions = changes.getJSONArray("deletions")
+            assertEquals(2, deletions.length())
+            assertEquals(setOf(orphanV3, orphanV4), (0 until deletions.length()).map { deletions.getJSONObject(it).getString("path") }.toSet())
+            assertEquals(3, fixture.commits.size)
+            assertTrue(fixture.requests.none { it.method == "POST" && it.url.encodedPath != "/graphql" })
         }
     }
 
@@ -59,10 +74,11 @@ class GitHubArchiveGarbageCollectionHttpTest {
         Fixture().use { fixture ->
             fixture.advanceBeforePublication = true
             val result = fixture.transport.updateFilesContent("owner", "repo", sequenceOf(manifest to byteArrayOf(7)),
-                GitHubSyncHead("main", "head"), "sync", setOf(retained))
+                GitHubSyncHead("main", originalHead), "sync", setOf(retained))
             assertTrue(result.exceptionOrNull() is GitHubContentConflictException)
-            assertEquals("other-head", fixture.head)
+            assertEquals(movedHead, fixture.head)
             assertEquals(fixture.trees.getValue("base"), fixture.trees.getValue(fixture.commits.getValue(fixture.head)))
+            assertEquals(2, fixture.commits.size)
             assertTrue(fixture.requests.none { it.method == "PATCH" })
         }
     }
@@ -72,7 +88,7 @@ class GitHubArchiveGarbageCollectionHttpTest {
         Fixture().use { fixture ->
             repeat(1_005) { index -> fixture.trees.getValue("base")["neriplayer-sync-v3-${index.toString(16).padStart(64, '0')}.zst"] = "e".repeat(40) }
             val result = fixture.transport.updateFilesContent("owner", "repo", sequenceOf(manifest to byteArrayOf(7)),
-                GitHubSyncHead("main", "head"), "sync", setOf(retained)).getOrThrow()
+                GitHubSyncHead("main", originalHead), "sync", setOf(retained)).getOrThrow()
             val current = fixture.trees.getValue(fixture.commits.getValue(result))
             assertEquals(setOf(retained, manifest, "notes.txt", "folder/$orphanV3", "neriplayer-sync-v4-${"d".repeat(64)}.zst"), current.keys)
             val trees = fixture.requests.filter { it.method == "POST" && it.url.encodedPath.endsWith("/git/trees") }
@@ -84,12 +100,64 @@ class GitHubArchiveGarbageCollectionHttpTest {
     }
 
     @Test
+    fun `too many compact file changes fall back to one atomic REST commit with cleanup`() = runBlocking {
+        Fixture().use { fixture ->
+            val files = (0 until 65).map { index ->
+                val bytes = "new object $index".toByteArray()
+                "neriplayer-sync-v4-${GitHubSyncCheckpoint.contentKey(bytes)}.zst" to bytes
+            }
+            val retainedPaths = files.map { it.first }.toSet() + retained
+            val result = fixture.transport.updateFilesContent("owner", "repo", (files + (manifest to byteArrayOf(7))).asSequence(),
+                GitHubSyncHead("main", originalHead), "sync", retainedPaths).getOrThrow()
+
+            val current = fixture.trees.getValue(fixture.commits.getValue(result))
+            assertEquals((fixture.trees.getValue("base").keys - setOf(orphanV3, orphanV4)) + retainedPaths, current.keys)
+            assertTrue(orphanV3 in fixture.trees.getValue("base"))
+            assertTrue(orphanV4 in fixture.trees.getValue("base"))
+            assertClassicPublication(fixture)
+            assertEquals(1, fixture.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/git/trees") })
+            assertEquals(66, fixture.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/git/blobs") })
+        }
+    }
+
+    @Test
+    fun `compact JSON byte budget falls back to one atomic REST commit with cleanup`() = runBlocking {
+        Fixture().use { fixture ->
+            val files = listOf(ByteArray(1_572_863) { 7 }, ByteArray(1_572_863) { 9 }).map { bytes ->
+                "neriplayer-sync-v4-${GitHubSyncCheckpoint.contentKey(bytes)}.zst" to bytes
+            }
+            val retainedPaths = files.map { it.first }.toSet() + retained
+            val result = fixture.transport.updateFilesContent("owner", "repo", (files + (manifest to byteArrayOf(7))).asSequence(),
+                GitHubSyncHead("main", originalHead), "sync", retainedPaths).getOrThrow()
+
+            val current = fixture.trees.getValue(fixture.commits.getValue(result))
+            assertEquals((fixture.trees.getValue("base").keys - setOf(orphanV3, orphanV4)) + retainedPaths, current.keys)
+            assertTrue(orphanV3 in fixture.trees.getValue("base"))
+            assertTrue(orphanV4 in fixture.trees.getValue("base"))
+            assertClassicPublication(fixture)
+            assertEquals(1, fixture.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/git/trees") })
+            assertEquals(3, fixture.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/git/blobs") })
+        }
+    }
+
+    private fun assertClassicPublication(fixture: Fixture) {
+        val input = JSONObject(fixture.requests.single { it.url.encodedPath == "/graphql" }.body!!.utf8())
+            .getJSONObject("variables").getJSONObject("input")
+        val update = input.getJSONArray("refUpdates").getJSONObject(0)
+        assertEquals(originalHead, update.getString("beforeOid"))
+        assertFalse(update.getBoolean("force"))
+        assertEquals(fixture.head, update.getString("afterOid"))
+        assertEquals(1, fixture.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/git/commits") })
+        assertTrue(fixture.requests.none { it.method == "PATCH" })
+    }
+
+    @Test
     fun `cancellation while reading the old tree prevents staging or publishing any deletion`() = runBlocking {
         Fixture().use { fixture ->
             fixture.blockListing = true
             val job = async(Dispatchers.Default) {
                 fixture.transport.updateFilesContent("owner", "repo", sequenceOf(manifest to byteArrayOf(7)),
-                    GitHubSyncHead("main", "head"), "sync", setOf(retained))
+                    GitHubSyncHead("main", originalHead), "sync", setOf(retained))
             }
             try {
                 assertTrue(fixture.listingEntered.await(10, TimeUnit.SECONDS))
@@ -97,7 +165,7 @@ class GitHubArchiveGarbageCollectionHttpTest {
                 fixture.listingRelease.countDown()
                 job.join()
                 assertTrue(job.isCancelled)
-                assertEquals("head", fixture.head)
+                assertEquals(originalHead, fixture.head)
                 assertTrue(fixture.requests.all { it.method == "GET" })
                 assertTrue(fixture.calls.single { it.request().url.encodedPath.endsWith("/git/trees/base") }.isCanceled())
             } finally {
@@ -114,8 +182,8 @@ class GitHubArchiveGarbageCollectionHttpTest {
             Fixture().use { fixture ->
                 fixture.invalidListing = invalid
                 assertTrue(fixture.transport.updateFilesContent("owner", "repo", sequenceOf(manifest to byteArrayOf(7)),
-                    GitHubSyncHead("main", "head"), "sync", setOf(retained)).isFailure)
-                assertEquals("head", fixture.head)
+                    GitHubSyncHead("main", originalHead), "sync", setOf(retained)).isFailure)
+                assertEquals(originalHead, fixture.head)
                 assertTrue(fixture.requests.all { it.method == "GET" })
             }
         }
@@ -126,8 +194,8 @@ class GitHubArchiveGarbageCollectionHttpTest {
         for (paths in listOf(setOf("notes.txt"), setOf("folder/$retained"), setOf("neriplayer-sync-v4-${"f".repeat(64)}.zst"))) {
             Fixture().use { fixture ->
                 assertTrue(fixture.transport.updateFilesContent("owner", "repo", sequenceOf(manifest to byteArrayOf(7)),
-                    GitHubSyncHead("main", "head"), "sync", paths).isFailure)
-                assertEquals("head", fixture.head)
+                    GitHubSyncHead("main", originalHead), "sync", paths).isFailure)
+                assertEquals(originalHead, fixture.head)
                 assertTrue(fixture.requests.none { it.url.encodedPath.endsWith("/git/commits") && it.method == "POST" || it.url.encodedPath == "/graphql" })
             }
         }
@@ -140,21 +208,21 @@ class GitHubArchiveGarbageCollectionHttpTest {
         for (files in listOf(sequenceOf(objectPath to bytes), sequenceOf(objectPath to bytes, manifest to byteArrayOf(7)))) {
             Fixture().use { fixture ->
                 assertTrue(fixture.transport.updateFilesContent("owner", "repo", files,
-                    GitHubSyncHead("main", "head"), "sync", setOf(retained)).isFailure)
-                assertEquals("head", fixture.head)
+                    GitHubSyncHead("main", originalHead), "sync", setOf(retained)).isFailure)
+                assertEquals(originalHead, fixture.head)
                 assertTrue(fixture.requests.none { it.url.encodedPath == "/graphql" })
             }
         }
         Fixture().use { fixture ->
             assertTrue(fixture.transport.updateFilesContent("owner", "repo", sequenceOf(objectPath to bytes),
-                GitHubSyncHead("main", "head"), "sync", setOf(retained, objectPath)).isFailure)
-            assertEquals("head", fixture.head)
+                GitHubSyncHead("main", originalHead), "sync", setOf(retained, objectPath)).isFailure)
+            assertEquals(originalHead, fixture.head)
             assertTrue(fixture.requests.none { it.url.encodedPath == "/graphql" })
         }
         Fixture().use { fixture ->
             assertTrue(fixture.transport.updateFilesContent("owner", "repo", emptySequence(),
-                GitHubSyncHead("main", "head"), "sync", emptySet()).isFailure)
-            assertEquals("head", fixture.head)
+                GitHubSyncHead("main", originalHead), "sync", emptySet()).isFailure)
+            assertEquals(originalHead, fixture.head)
         }
     }
 
@@ -168,8 +236,8 @@ class GitHubArchiveGarbageCollectionHttpTest {
         val trees = mutableMapOf("base" to linkedMapOf(orphanV3 to "e".repeat(40), orphanV4 to "f".repeat(40), retained to "c".repeat(40),
             manifest to "old-manifest", "notes.txt" to "notes", "folder/$orphanV3" to "nested",
             "neriplayer-sync-v4-${"d".repeat(64)}.zst" to "symlink"))
-        val commits = mutableMapOf("head" to "base", "other-head" to "base")
-        var head = "head"
+        val commits = mutableMapOf(originalHead to "base", movedHead to "base")
+        var head = originalHead
         var advanceBeforePublication = false
         var invalidListing: String? = null
         var blockListing = false
@@ -185,7 +253,7 @@ class GitHubArchiveGarbageCollectionHttpTest {
                     val path = request.url.encodedPath
                     return when {
                         path == "/repos/owner/repo" -> json("""{"node_id":"repository-node"}""")
-                        path == "/repos/owner/repo/git/commits/head" -> json("""{"tree":{"sha":"base"}}""")
+                        path == "/repos/owner/repo/git/commits/$originalHead" -> json("""{"tree":{"sha":"base"}}""")
                         path == "/repos/owner/repo/git/trees/base" -> listing()
                         path.endsWith("/git/blobs") -> {
                             val bytes = Base64.getDecoder().decode(JSONObject(request.body!!.utf8()).getString("content"))
@@ -194,7 +262,7 @@ class GitHubArchiveGarbageCollectionHttpTest {
                         path.endsWith("/git/trees") && request.method == "POST" -> createTree(request)
                         path.endsWith("/git/commits") && request.method == "POST" -> {
                             val value = JSONObject(request.body!!.utf8())
-                            assertEquals("head", value.getJSONArray("parents").getString(0))
+                            assertEquals(originalHead, value.getJSONArray("parents").getString(0))
                             val commit = "commit-${++sequence}"
                             commits[commit] = value.getString("tree")
                             json(JSONObject().put("sha", commit).toString(), 201)
@@ -240,12 +308,46 @@ class GitHubArchiveGarbageCollectionHttpTest {
         }
 
         private fun publish(request: RecordedRequest): MockResponse {
-            if (advanceBeforePublication) head = "other-head"
-            val update = JSONObject(request.body!!.utf8()).getJSONObject("variables").getJSONObject("input")
-                .getJSONArray("refUpdates").getJSONObject(0)
+            if (advanceBeforePublication) head = movedHead
+            val body = JSONObject(request.body!!.utf8())
+            val input = body.getJSONObject("variables").getJSONObject("input")
+            if (body.getString("query").contains("createCommitOnBranch")) return createArchiveCommit(input)
+            val update = input.getJSONArray("refUpdates").getJSONObject(0)
             if (update.getString("beforeOid") != head) return json("""{"errors":[{"type":"STALE_DATA","message":"ref moved"}]}""")
             head = update.getString("afterOid")
             return json(JSONObject().put("data", JSONObject().put("updateRefs", JSONObject().put("clientMutationId", head))).toString())
+        }
+
+        private fun createArchiveCommit(input: JSONObject): MockResponse {
+            val expected = input.getString("expectedHeadOid")
+            if (expected != head) return json("""{"errors":[{"type":"STALE_DATA","message":"ref moved"}]}""")
+            val branch = input.getJSONObject("branch")
+            assertEquals("main", branch.getString("branchName"))
+            assertEquals("owner/repo", branch.getString("repositoryNameWithOwner"))
+            val next = LinkedHashMap(trees.getValue(commits.getValue(expected)))
+            val changes = input.getJSONObject("fileChanges")
+            val additions = changes.getJSONArray("additions")
+            for (index in 0 until additions.length()) {
+                val addition = additions.getJSONObject(index)
+                val encoded = addition.getString("contents")
+                val content = Base64.getDecoder().decode(encoded)
+                assertEquals(Base64.getEncoder().encodeToString(content), encoded)
+                next[addition.getString("path")] = GitHubSyncCheckpoint.gitBlobSha(content)
+            }
+            val deletions = changes.getJSONArray("deletions")
+            for (index in 0 until deletions.length()) next.remove(deletions.getJSONObject(index).getString("path"))
+            val commit = (++sequence).toString(16).padStart(40, '0')
+            val tree = "tree-${++sequence}"
+            trees[tree] = next
+            commits[commit] = tree
+            head = commit
+            val value = JSONObject().put("clientMutationId", input.getString("clientMutationId"))
+                .put("commit", JSONObject().put("oid", commit)
+                    .put("parents", JSONObject().put("nodes", JSONArray().put(JSONObject().put("oid", expected)))))
+                .put("ref", JSONObject().put("name", "main").put("prefix", "refs/heads/")
+                    .put("repository", JSONObject().put("nameWithOwner", "owner/repo"))
+                    .put("target", JSONObject().put("oid", commit)))
+            return json(JSONObject().put("data", JSONObject().put("createCommitOnBranch", value)).toString())
         }
 
         private fun json(body: String, code: Int = 200) = MockResponse(code = code, body = body)

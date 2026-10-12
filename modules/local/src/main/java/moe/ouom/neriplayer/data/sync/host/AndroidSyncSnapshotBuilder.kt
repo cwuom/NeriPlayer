@@ -30,10 +30,11 @@ internal class AndroidSyncSnapshotBuilder(
     private val biliVideoSkipRepo: BiliVideoSkipRepository
 ) {
     fun build(localizedContext: Context, playbackStatsClearedAt: Long): SyncData {
+        val deviceId = getDeviceId()
         val syncPlaylists = buildPlaylistSyncSnapshots(playlistRepo.playlists.value, storage.getDeletedPlaylistTimestamps(), localizedContext)
         val syncFavoritePlaylists = favoritePlaylists(localizedContext)
 
-        val syncRecentPlays = buildRecentPlaySyncSnapshots(playHistoryRepo.syncSnapshot(), ::getDeviceId, localizedContext)
+        val syncRecentPlays = buildRecentPlaySyncSnapshots(playHistoryRepo.syncSnapshot(), { deviceId }, localizedContext)
         val syncRecentPlayDeletions = recentPlayDeletions()
         val syncPlaylistSongDeletions = playlistSongDeletions()
         val (syncPlaylistUsageStats, syncPlaylistUsageDeletions) = playlistUsageRepo.syncStatsAndDeletions()
@@ -41,7 +42,7 @@ internal class AndroidSyncSnapshotBuilder(
         val syncBiliVideoSkipRules = videoSkipRules()
 
         val data = SyncData(
-            deviceId = getDeviceId(),
+            deviceId = deviceId,
             deviceName = getDeviceName(),
             lastModified = System.currentTimeMillis(),
             playlists = syncPlaylists,

@@ -4,6 +4,9 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinuePlaylist
 import moe.ouom.neriplayer.ui.screen.tab.home.buildHomeSongInfo
 import moe.ouom.neriplayer.ui.screen.tab.home.homeLocalFilesCoverCandidates
 import moe.ouom.neriplayer.ui.screen.tab.home.resolveHomeContinueCardWidthDp
@@ -21,6 +24,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HomeScreenMappingTest {
+
+    @Test
+    fun `legacy local files continue card resolves its canonical playlist cover`() {
+        val canonical = LocalPlaylist(LocalFilesPlaylist.SYSTEM_ID, "本地文件")
+        val legacy = UsageEntry(-12, "Local Files", null, 1, "local", 100, 2)
+
+        assertEquals(canonical, resolveHomeContinuePlaylist(legacy, mapOf(canonical.id to canonical)))
+        assertEquals(null, resolveHomeContinuePlaylist(legacy.copy(id = 12), mapOf(canonical.id to canonical)))
+        assertEquals(null, resolveHomeContinuePlaylist(legacy.copy(source = "netease"), mapOf(canonical.id to canonical)))
+    }
 
     @Test
     fun `persisted local continue cover is revalidated against playlist sources`() {

@@ -1,11 +1,26 @@
 package moe.ouom.neriplayer.ui.screen.host
 
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class HomeHostRuntimeStateTest {
+
+    @Test
+    fun `legacy local system continue cards open canonical playlists without changing other ids`() {
+        val localFiles = UsageEntry(-12, "Local Files", null, 1, "local", 100, 2)
+        val favorites = localFiles.copy(id = -11, name = "我喜欢的音乐")
+
+        assertEquals(HomeSelectedItem.Local(LocalFilesPlaylist.SYSTEM_ID), recentSelectedItem(localFiles))
+        assertEquals(HomeSelectedItem.Local(FavoritesPlaylist.SYSTEM_ID), recentSelectedItem(favorites))
+        assertEquals(HomeSelectedItem.Local(12), recentSelectedItem(localFiles.copy(id = 12)))
+        assertEquals(HomeSelectedItem.Local(-13), recentSelectedItem(localFiles.copy(id = -13, name = "custom playlist")))
+        assertEquals(-12L, (recentSelectedItem(localFiles.copy(source = "netease")) as HomeSelectedItem.Netease).playlist.id)
+    }
 
     @Test
     fun newRuntimeStateStartsHomeAtTop() {

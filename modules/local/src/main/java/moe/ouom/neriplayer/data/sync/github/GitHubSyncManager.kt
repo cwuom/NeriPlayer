@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
  */
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -42,6 +43,7 @@ import java.io.File
 import moe.ouom.neriplayer.data.sync.host.SyncProtocolUpgradeRepository
 import moe.ouom.neriplayer.data.sync.host.verifyTargetSyncCompletion
 import moe.ouom.neriplayer.common.locale.LanguageManager
+import moe.ouom.neriplayer.common.logging.NPLogger
 
 class GitHubSyncManager private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -67,16 +69,36 @@ class GitHubSyncManager private constructor(context: Context) {
 
     private suspend fun executeSync(expectedTargetId: String?, triggerByAppStartup: Boolean = false): Result<SyncResult> = protocolUpgrade.executeIfApproved {
         withContext(Dispatchers.IO) {
-            val localizedContext = LanguageManager.applyLanguage(appContext)
-            SyncSession(
-                local = local,
-                datasetStore = FileSyncPlaybackDatasetStore(File(appContext.cacheDir, "sync-v3/playback-staging")),
-                merger = SyncDataMerger(AndroidSyncMergeHost(localizedContext, CoreCommonR.string.github_sync_success_detail)),
-                noChangeMessage = localizedContext.getString(CoreCommonR.string.github_sync_no_change),
-                initialUploadMessage = localizedContext.getString(CoreCommonR.string.sync_initial_uploaded),
-                deferredMessage = localizedContext.getString(CoreCommonR.string.sync_local_changes_pending),
-                inProgressError = { GitHubSyncInProgressException(localizedContext.getString(CoreCommonR.string.github_sync_in_progress)) }
-            ).execute { createGitHubSyncBackend(appContext, storage, expectedTargetId, triggerByAppStartup) }
+            val started = System.nanoTime()
+            var outcome = "failed"
+            try {
+                executeInitializedSync(expectedTargetId, triggerByAppStartup).also { result ->
+                    outcome = syncOutcome(result)
+                }
+            } catch (cancelled: CancellationException) {
+                outcome = "cancelled"
+                throw cancelled
+            } finally {
+                NPLogger.i("GitHubSyncManager", "GitHub sync total: ${(System.nanoTime() - started) / 1_000_000L} ms, startup=$triggerByAppStartup, outcome=$outcome")
+            }
         }
+    }
+
+    internal fun syncOutcome(result: Result<SyncResult>): String = result.fold(
+        onSuccess = { if (it.success) "success" else "deferred" },
+        onFailure = { "failed:${it.javaClass.simpleName}" }
+    )
+
+    private suspend fun executeInitializedSync(expectedTargetId: String?, triggerByAppStartup: Boolean): Result<SyncResult> {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        return SyncSession(
+            local = local,
+            datasetStore = FileSyncPlaybackDatasetStore(File(appContext.cacheDir, "sync-v3/playback-staging")),
+            merger = SyncDataMerger(AndroidSyncMergeHost(localizedContext, CoreCommonR.string.github_sync_success_detail)),
+            noChangeMessage = localizedContext.getString(CoreCommonR.string.github_sync_no_change),
+            initialUploadMessage = localizedContext.getString(CoreCommonR.string.sync_initial_uploaded),
+            deferredMessage = localizedContext.getString(CoreCommonR.string.sync_local_changes_pending),
+            inProgressError = { GitHubSyncInProgressException(localizedContext.getString(CoreCommonR.string.github_sync_in_progress)) }
+        ).execute { createGitHubSyncBackend(appContext, storage, expectedTargetId, triggerByAppStartup) }
     }
 }

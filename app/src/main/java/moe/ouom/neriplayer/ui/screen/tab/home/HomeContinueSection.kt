@@ -51,6 +51,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
+import moe.ouom.neriplayer.data.playlist.usage.resolveLocalPlaylistUsageId
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
@@ -212,7 +213,7 @@ private fun ContinuePageSlot(model: ContinuePageModel, slot: Int) {
     ContinueSlot(
         ContinueCardModel(
             entry = entry,
-            localPlaylist = resolveHomeContinuePlaylist(entry, model.localPlaylistLookup),
+            localPlaylist = resolveHomeContinuePlaylist(entry, model.localPlaylistLookup, LocalContext.current),
             localFilesCoverCandidates = model.localFilesCoverCandidates,
             offlineMode = model.offlineMode,
             modifier = Modifier.width(model.cardWidth),
@@ -234,11 +235,13 @@ private fun ContinueSlot(model: ContinueCardModel) {
     )
 }
 
-private fun resolveHomeContinuePlaylist(
+internal fun resolveHomeContinuePlaylist(
     entry: UsageEntry,
-    lookup: Map<Long, LocalPlaylist>
+    lookup: Map<Long, LocalPlaylist>,
+    context: Context? = null
 ): LocalPlaylist? {
-    return if (entry.source == PlaylistUsageRepository.SOURCE_LOCAL) lookup[entry.id] else null
+    if (entry.source != PlaylistUsageRepository.SOURCE_LOCAL) return null
+    return lookup[entry.id] ?: lookup[resolveLocalPlaylistUsageId(entry, context)]
 }
 
 private fun removeHomeContinueEntry(entry: UsageEntry) {

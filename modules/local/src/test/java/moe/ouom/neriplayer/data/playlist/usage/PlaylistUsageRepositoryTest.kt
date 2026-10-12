@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.LocaleList
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.artist.buildLocalArtistSummaries
@@ -20,6 +21,8 @@ import moe.ouom.neriplayer.data.local.media.source.LocalMediaDownloadAccess
 import moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
 import moe.ouom.neriplayer.data.local.database.store.mockPlaylistUsageRoomStore
@@ -55,15 +58,34 @@ import java.util.Locale
 
 class PlaylistUsageRepositoryTest {
     private val ownedScopes = mutableListOf<CoroutineScope>()
+    private val cachedAppContextField = LanguageManager::class.java.getDeclaredField("cachedAppContext")
+        .also { it.isAccessible = true }
+    private val cachedAppLocaleField = LanguageManager::class.java.getDeclaredField("cachedAppLocale")
+        .also { it.isAccessible = true }
+    private var originalCachedAppContext: Context? = null
+    private var originalCachedAppLocale: Locale? = null
+    private lateinit var originalLocale: Locale
 
     @After
     fun cancelOwnedRepositories() {
-        ownedScopes.forEach { it.cancel() }
-        ownedScopes.clear()
+        try {
+            ownedScopes.forEach { it.cancel() }
+            ownedScopes.clear()
+        } finally {
+            cachedAppContextField.set(LanguageManager, originalCachedAppContext)
+            cachedAppLocaleField.set(LanguageManager, originalCachedAppLocale)
+            Locale.setDefault(originalLocale)
+        }
     }
 
     @Before
     fun bindEmptyMediaLibrary() {
+        // 每个用例的应用 Context 都是独立 mock，语言缓存不能跨用例复用
+        originalCachedAppContext = cachedAppContextField.get(LanguageManager) as Context?
+        originalCachedAppLocale = cachedAppLocaleField.get(LanguageManager) as Locale?
+        originalLocale = Locale.getDefault()
+        cachedAppContextField.set(LanguageManager, null)
+        cachedAppLocaleField.set(LanguageManager, null)
         LocalMediaHostAccess.bind(
             downloads = mock(LocalMediaDownloadAccess::class.java) { invocation ->
                 throw AssertionError("Unexpected download query in usage fixture: ${invocation.method.name}")
@@ -479,6 +501,114 @@ class PlaylistUsageRepositoryTest {
         val localFiles = lookup.getValue(LocalFilesPlaylist.SYSTEM_ID)
         assertEquals(1, localFiles.songs.size)
         assertEquals(coverUrl, localFiles.displayCoverUrl())
+    }
+
+    @Test
+    fun `canonical local playlists retain legacy system usage identity and durable counters`() = runTest {
+        val aliases = listOf(
+            Triple(-12L, "本地文件", LocalFilesPlaylist.SYSTEM_ID),
+            Triple(-12L, "Local Files", LocalFilesPlaylist.SYSTEM_ID),
+            Triple(-11L, "我喜欢的音乐", FavoritesPlaylist.SYSTEM_ID),
+            Triple(-11L, "My Favorite Music", FavoritesPlaylist.SYSTEM_ID)
+        )
+        for ((legacyId, legacyName, canonicalId) in aliases) {
+            val context = mockLocalizedContext()
+            val stored = UsageEntry(
+                id = legacyId, name = legacyName, picUrl = null, trackCount = 3,
+                source = PlaylistUsageRepository.SOURCE_LOCAL, lastOpened = 100, openCount = 7,
+                counterBaseOpenCount = 5,
+                counterShards = listOf(SyncPlaybackCounterShard(
+                    deviceId = "stored-device",
+                    epochStartedAt = 0,
+                    playCount = 2,
+                    firstPlayedAt = 80,
+                    lastPlayedAt = 100
+                )),
+                observedDeletionTokens = listOf(SyncCausalToken("removed-device", 2))
+            )
+            var durable = listOf(stored)
+            val room = mockPlaylistUsageRoomStore()
+            `when`(room.readIfRoomPrimary()).thenAnswer { durable }
+            doAnswer {
+                assertEquals(durable, it.getArgument<List<UsageEntry>>(0))
+                durable = it.getArgument<List<UsageEntry>>(1).toList()
+                Unit
+            }.`when`(room).writeIncremental(anyList(), anyList(), anyLong())
+            val repository = createRepository(context, room)
+            repository.syncLocalEntries(
+                playlists = listOf(LocalPlaylist(canonicalId, legacyName, mutableListOf(localSong(null)))),
+                resolveLocalMetadataFallback = false
+            )
+
+            assertEquals("legacy usage must not be mistaken for a deleted playlist", 1, repository.frequentPlaylistsFlow.value.size)
+            val retained = repository.frequentPlaylistsFlow.value.single()
+            assertEquals(legacyId, retained.id)
+            assertEquals(stored.usageKey(), retained.usageKey())
+            assertEquals(stored.openCount, retained.openCount)
+            assertEquals(stored.lastOpened, retained.lastOpened)
+            assertEquals(stored.counterShards, retained.counterShards)
+            assertEquals(stored.observedDeletionTokens, retained.observedDeletionTokens)
+            assertEquals(1, retained.trackCount)
+            assertTrue(repository.awaitInitialized())
+            assertEquals(listOf(retained), durable)
+            assertEquals(durable, createRepository(context, room).frequentPlaylistsFlow.value)
+        }
+    }
+
+    @Test
+    fun `legacy and canonical usage coexist without merging or incrementing either counter`() {
+        val context = mockLocalizedContext()
+        val repository = createRepository(context)
+        repository.recordOpen(-12, "本地文件", null, 3, source = PlaylistUsageRepository.SOURCE_LOCAL, now = 100)
+        repository.recordOpen(LocalFilesPlaylist.SYSTEM_ID, "本地文件", null, 3, source = PlaylistUsageRepository.SOURCE_LOCAL, now = 200)
+        val before = repository.frequentPlaylistsFlow.value.associateBy { it.id }
+
+        repository.syncLocalEntries(
+            playlists = listOf(LocalPlaylist(LocalFilesPlaylist.SYSTEM_ID, "本地文件", mutableListOf(localSong(null)))),
+            resolveLocalMetadataFallback = false
+        )
+
+        val after = repository.frequentPlaylistsFlow.value.associateBy { it.id }
+        assertEquals(before.keys, after.keys)
+        before.forEach { (id, original) ->
+            assertEquals(original.openCount, after.getValue(id).openCount)
+            assertEquals(original.counterShards, after.getValue(id).counterShards)
+            assertEquals(original.lastOpened, after.getValue(id).lastOpened)
+        }
+    }
+
+    @Test
+    fun `system usage aliases never match positive custom ids unrelated negative names or remote sources`() {
+        val context = mockLocalizedContext()
+        val repository = createRepository(context)
+        repository.recordOpen(12, "本地文件", null, 3, source = PlaylistUsageRepository.SOURCE_LOCAL, now = 100)
+        repository.recordOpen(-13, "custom playlist", null, 3, source = PlaylistUsageRepository.SOURCE_LOCAL, now = 200)
+        repository.recordOpen(-12, "本地文件", null, 3, source = "netease", now = 300)
+        val remote = repository.frequentPlaylistsFlow.value.single { it.source == "netease" }
+
+        repository.syncLocalEntries(
+            playlists = listOf(LocalPlaylist(LocalFilesPlaylist.SYSTEM_ID, "本地文件", mutableListOf(localSong(null)))),
+            resolveLocalMetadataFallback = false
+        )
+
+        assertEquals(listOf(remote), repository.frequentPlaylistsFlow.value)
+    }
+
+    @Test
+    fun `removing retained legacy system usage keeps its original tombstone and does not recreate canonical usage`() = runTest {
+        val context = mockLocalizedContext()
+        val repository = createRepository(context)
+        repository.recordOpen(-12, "Local Files", null, 3, source = PlaylistUsageRepository.SOURCE_LOCAL, now = 100)
+        val canonical = listOf(LocalPlaylist(LocalFilesPlaylist.SYSTEM_ID, "本地文件", mutableListOf(localSong(null))))
+        repository.syncLocalEntries(canonical, resolveLocalMetadataFallback = false)
+        assertEquals(-12L, repository.frequentPlaylistsFlow.value.single().id)
+
+        repository.removeEntry(-12, PlaylistUsageRepository.SOURCE_LOCAL)
+        repository.syncLocalEntries(canonical, resolveLocalMetadataFallback = false)
+
+        assertTrue(repository.awaitInitialized())
+        assertTrue(repository.frequentPlaylistsFlow.value.isEmpty())
+        assertEquals(listOf("local:-12"), repository.syncStatsAndDeletions().second.map { it.playlistKey })
     }
 
     @Test

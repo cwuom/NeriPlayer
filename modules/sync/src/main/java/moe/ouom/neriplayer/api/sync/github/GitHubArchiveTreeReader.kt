@@ -28,7 +28,14 @@ internal object GitHubArchiveTreeReader {
         call: Call,
         expectedTreeSha: String,
         checkActive: () -> Unit = {}
-    ): Set<String> {
+    ): Set<String> = readOwnedObjectIds(body, call, expectedTreeSha, checkActive).keys
+
+    fun readOwnedObjectIds(
+        body: ResponseBody,
+        call: Call,
+        expectedTreeSha: String,
+        checkActive: () -> Unit = {}
+    ): Map<String, String> {
         try {
             checkActive()
             if (body.contentLength() > MAX_RESPONSE_BYTES) throw IOException("GitHub archive tree response is too large")
@@ -53,7 +60,7 @@ internal object GitHubArchiveTreeReader {
         }
     }
 
-    private fun readListing(reader: JsonReader, expectedSha: String, checkActive: () -> Unit): Set<String> {
+    private fun readListing(reader: JsonReader, expectedSha: String, checkActive: () -> Unit): Map<String, String> {
         val fields = HashSet<String>()
         val listing = Listing()
         reader.beginObject()
@@ -66,28 +73,28 @@ internal object GitHubArchiveTreeReader {
             }
         }
         reader.endObject()
-        val paths = listing.complete(expectedSha)
+        val objects = listing.complete(expectedSha)
         if (reader.peek() != JsonToken.END_DOCUMENT) throw IOException("Trailing GitHub archive tree content")
         checkActive()
-        return paths
+        return objects
     }
 
     private class Listing {
         private var sha: String? = null
-        private var paths: Set<String>? = null
+        private var objects: Map<String, String>? = null
         private var truncated: Boolean? = null
 
         fun readField(reader: JsonReader, name: String, checkActive: () -> Unit) {
             when (name) {
                 "sha" -> sha = readString(reader)
-                "tree" -> paths = readEntries(reader, checkActive)
+                "tree" -> objects = readEntries(reader, checkActive)
                 else -> truncated = readTruncated(reader)
             }
         }
 
-        fun complete(expectedSha: String): Set<String> {
+        fun complete(expectedSha: String): Map<String, String> {
             if (sha != expectedSha || truncated != false) throw IOException("GitHub archive tree listing is incomplete")
-            return paths ?: throw IOException("GitHub archive tree listing has no entries")
+            return objects ?: throw IOException("GitHub archive tree listing has no entries")
         }
     }
 
@@ -96,9 +103,9 @@ internal object GitHubArchiveTreeReader {
         return reader.nextBoolean()
     }
 
-    private fun readEntries(reader: JsonReader, checkActive: () -> Unit): Set<String> {
+    private fun readEntries(reader: JsonReader, checkActive: () -> Unit): Map<String, String> {
         val seen = HashSet<String>()
-        val owned = LinkedHashSet<String>()
+        val owned = LinkedHashMap<String, String>()
         reader.beginArray()
         while (reader.hasNext()) {
             checkActive()
@@ -107,8 +114,9 @@ internal object GitHubArchiveTreeReader {
             val path = entry.getValue("path")
             if (!seen.add(path)) throw IOException("Duplicate GitHub archive tree path")
             if (entry.getValue("type") == "blob" && entry.getValue("mode") == "100644" && isOwnedObjectPath(path)) {
-                if (!objectId.matches(entry.getValue("sha"))) throw IOException("Invalid GitHub archive object ID")
-                owned += path
+                val sha = entry.getValue("sha")
+                if (!objectId.matches(sha)) throw IOException("Invalid GitHub archive object ID")
+                owned[path] = sha
             }
         }
         reader.endArray()

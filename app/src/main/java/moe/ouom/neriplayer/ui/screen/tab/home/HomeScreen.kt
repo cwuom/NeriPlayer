@@ -128,6 +128,7 @@ import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.playlist.usage.buildLocalPlaylistUsageLookup
+import moe.ouom.neriplayer.data.playlist.usage.resolveLocalPlaylistUsageId
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
@@ -282,7 +283,7 @@ fun HomeScreen(
             entry.source == PlaylistUsageRepository.SOURCE_LOCAL &&
                     shouldValidateHomeContinueCoverReference(entry.picUrl)
         }
-        .mapTo(linkedSetOf()) { entry -> entry.id }
+        .mapTo(linkedSetOf()) { entry -> resolveLocalPlaylistUsageId(entry, appContext) }
     val localPlaylistUsageLookup by produceState(
         initialValue = emptyMap(),
         key1 = localPlaylistSnapshotVersion,

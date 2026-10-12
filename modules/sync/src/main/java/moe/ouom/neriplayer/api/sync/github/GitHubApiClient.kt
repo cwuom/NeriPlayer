@@ -196,8 +196,17 @@ class GitHubApiClient(
     suspend fun getRepositoryHead(owner: String, repo: String): Result<GitHubSyncHead> =
         syncTransport().getRepositoryHead(owner, repo)
 
+    suspend fun getArchiveHead(owner: String, repo: String): Result<GitHubArchiveHead> =
+        syncTransport().getArchiveHead(owner, repo)
+
+    suspend fun getArchiveProof(owner: String, repo: String, snapshot: GitHubArchiveHead): Result<GitHubArchiveProof> =
+        syncTransport().getArchiveProof(owner, repo, snapshot)
+
     suspend fun getFileContentAtRef(owner: String, repo: String, path: String, ref: String): Result<ByteArray> =
         syncTransport().getFileContentAtRef(owner, repo, path, ref)
+
+    suspend fun getArchiveObjectIds(owner: String, repo: String, ref: String): Result<Map<String, String>> =
+        syncTransport().getArchiveObjectIds(owner, repo, ref)
 
     suspend fun updateFilesContent(
         owner: String,
@@ -205,8 +214,9 @@ class GitHubApiClient(
         files: Sequence<Pair<String, ByteArray>>,
         expectedHead: GitHubSyncHead,
         message: String = "Update sync archive",
-        retainedArchivePaths: Set<String>? = null
-    ): Result<String> = syncTransport().updateFilesContent(owner, repo, files, expectedHead, message, retainedArchivePaths)
+        retainedArchivePaths: Set<String>? = null,
+        archiveProof: GitHubArchiveProof? = null
+    ): Result<String> = syncTransport().updateFilesContent(owner, repo, files, expectedHead, message, retainedArchivePaths, archiveProof)
 
     /** 上传同步正文为仓库中的实际二进制或 JSON 文件 */
     suspend fun updateFileContent(

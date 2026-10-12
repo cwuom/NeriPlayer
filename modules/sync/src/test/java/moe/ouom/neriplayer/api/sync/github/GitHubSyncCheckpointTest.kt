@@ -10,6 +10,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -73,6 +75,71 @@ class GitHubSyncCheckpointTest {
         assertTrue(runCatching { checkpoint.ensureReady() }.exceptionOrNull() is GitHubRateLimitException)
         now = later.retryAtMillis + 1L
         checkpoint.ensureReady()
+    }
+
+    @Test
+    fun `four simultaneous limit responses share one cooldown round`() {
+        val root = temporary.newFolder()
+        val now = 1_000_000L
+        val ready = CountDownLatch(4)
+        val release = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(4)
+        try {
+            val futures = listOf(1_120_000L, 1_300_000L, 1_180_000L, 1_600_000L).map { retryAt ->
+                pool.submit(Callable {
+                    ready.countDown()
+                    assertTrue(release.await(10, TimeUnit.SECONDS))
+                    GitHubSyncCheckpoint(root, "namespace") { now }
+                        .recordRateLimit(GitHubRateLimitException(429, retryAt, false, "limited"))
+                })
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS))
+            release.countDown()
+            val limits = futures.map { it.get(10, TimeUnit.SECONDS) }
+            assertTrue("one batch must not exhaust automatic retries", limits.all { it.automaticRetryAllowed })
+            val persisted = runCatching { checkpoint(root).ensureReady() }.exceptionOrNull() as GitHubRateLimitException
+            assertEquals(1_600_000L, persisted.retryAtMillis)
+            assertTrue(persisted.automaticRetryAllowed)
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+            assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `responses during cooldown extend its deadline without increasing backoff`() {
+        var now = 1_000_000L
+        val checkpoint = GitHubSyncCheckpoint(temporary.newFolder(), "namespace") { now }
+        val first = checkpoint.recordRateLimit(GitHubRateLimitException(429, 1_060_000L, false, "limited"))
+        assertEquals(1_060_000L, first.retryAtMillis)
+        val longer = checkpoint.recordRateLimit(GitHubRateLimitException(403, 1_090_000L, false, "limited"))
+        assertEquals(1_090_000L, longer.retryAtMillis)
+        now = 1_080_000L
+        val shorter = checkpoint.recordRateLimit(GitHubRateLimitException(429, 1_085_000L, false, "limited"))
+        assertEquals(1_090_000L, shorter.retryAtMillis)
+        assertTrue(shorter.automaticRetryAllowed)
+        val persisted = runCatching { checkpoint.ensureReady() }.exceptionOrNull() as GitHubRateLimitException
+        assertEquals(1_090_000L, persisted.retryAtMillis)
+    }
+
+    @Test
+    fun `new rounds after cooldown expires eventually stop automatic retries`() {
+        val root = temporary.newFolder()
+        var now = 1_000_000L
+        val checkpoint = GitHubSyncCheckpoint(root, "namespace") { now }
+        for (automatic in listOf(true, true, true, false)) {
+            val retryAt = now + 600_000L
+            repeat(4) {
+                val limited = checkpoint.recordRateLimit(GitHubRateLimitException(429, retryAt, false, "limited"))
+                assertEquals(retryAt, limited.retryAtMillis)
+                assertEquals(automatic, limited.automaticRetryAllowed)
+            }
+            val persisted = runCatching { checkpoint.ensureReady() }.exceptionOrNull() as GitHubRateLimitException
+            assertEquals(automatic, persisted.automaticRetryAllowed)
+            now = retryAt
+            checkpoint.ensureReady()
+        }
     }
 
     @Test

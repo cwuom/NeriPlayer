@@ -160,7 +160,9 @@ object SyncSongLyricMergePolicy {
         val latest = normalized.maxWithOrNull(
             compareBy<SyncSong> { it.lyricSyncRevision }
                 .thenBy { it.lyricSyncEdited == false }
-                .thenBy(::lyricPayloadKey)
+                .thenComparator { left, right ->
+                    if (sameLyricState(left, right)) 0 else lyricPayloadKey(left).compareTo(lyricPayloadKey(right))
+                }
         ) ?: return normalize(selected)
         val result = normalize(selected)
         if (latest.lyricSyncRevision <= 0L) return result

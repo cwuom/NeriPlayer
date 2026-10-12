@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/1/17
  */
 
+import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -55,6 +56,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
+import moe.ouom.neriplayer.data.playlist.usage.resolveLocalPlaylistUsageId
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
@@ -461,7 +463,7 @@ fun HomeHostScreen(
                                             updateLastOpened = false
                                         )
                                     }
-                                    openRecent(entry, ::openHomeSelectedItem)
+                                    openRecent(entry, context, ::openHomeSelectedItem)
                                 },
                                 onSongClick = onSongClick
                             )
@@ -579,13 +581,20 @@ private val homeSelectedItemRestorers: Map<String, (Map<String, Any?>) -> HomeSe
 /** 根据 UsageEntry 分发到不同平台详情 */
 private fun openRecent(
     entry: UsageEntry,
+    context: Context,
     onSelected: (HomeSelectedItem) -> Unit
 ) {
-    recentSelectedItem(entry)?.let(onSelected)
+    recentSelectedItem(entry, context)?.let(onSelected)
 }
 
-internal fun recentSelectedItem(entry: UsageEntry): HomeSelectedItem? =
-    recentSelectedItemFactories[entry.source.lowercase()]?.invoke(entry)
+internal fun recentSelectedItem(entry: UsageEntry, context: Context? = null): HomeSelectedItem? {
+    val resolved = if (entry.source == PlaylistUsageRepository.SOURCE_LOCAL) {
+        entry.copy(id = resolveLocalPlaylistUsageId(entry, context))
+    } else {
+        entry
+    }
+    return recentSelectedItemFactories[entry.source.lowercase()]?.invoke(resolved)
+}
 
 private val recentSelectedItemFactories: Map<String, (UsageEntry) -> HomeSelectedItem?> = mapOf(
     "netease" to ::recentNeteaseItem,

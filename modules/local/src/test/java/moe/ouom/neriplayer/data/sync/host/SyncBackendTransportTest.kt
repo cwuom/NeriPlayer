@@ -5,6 +5,7 @@ import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.api.sync.github.GitHubApiClient
 import moe.ouom.neriplayer.api.sync.github.GitHubContentConflictException
+import moe.ouom.neriplayer.api.sync.github.GitHubFileNotFoundException
 import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.webdav.WebDavApiClient
 import moe.ouom.neriplayer.api.sync.webdav.WebDavAuthException
@@ -14,6 +15,8 @@ import moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenExceptio
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import moe.ouom.neriplayer.data.model.sync.CURRENT_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.model.playlist.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.sync.transport.WebDavConcurrencyToken
 import moe.ouom.neriplayer.data.sync.codec.SyncDataSerializer
 import moe.ouom.neriplayer.data.sync.archive.SyncArchiveRepository
@@ -35,6 +38,10 @@ import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDataset
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncDatasetRemoteSnapshot
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeChallenge
 import moe.ouom.neriplayer.data.sync.runtime.SyncProtocolUpgradeRequiredException
+import moe.ouom.neriplayer.data.sync.runtime.SyncLocalDataStore
+import moe.ouom.neriplayer.data.sync.runtime.SyncSession
+import moe.ouom.neriplayer.data.sync.merge.engine.SyncDataMerger
+import moe.ouom.neriplayer.data.sync.merge.host.SyncMergeHost
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.*
@@ -42,11 +49,19 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.util.Base64
 import java.security.MessageDigest
+import java.util.concurrent.CopyOnWriteArrayList
+import java.io.File
+import kotlinx.coroutines.runBlocking
 
 class SyncBackendTransportTest {
     @get:Rule val temporary = TemporaryFolder()
     private val ownedDatasets = ArrayList<SyncDataset>()
-    @After fun releaseDatasets() { ownedDatasets.forEach { it.close() } }
+    private val ownedClients = ArrayList<OkHttpClient>()
+    @After fun releaseResources() {
+        try { ownedDatasets.forEach { it.close() } } finally {
+            ownedClients.forEach { it.connectionPool.evictAll(); it.dispatcher.executorService.shutdownNow() }
+        }
+    }
     private suspend fun staged(data: SyncData): SyncDataset =
         FileSyncPlaybackDatasetStore(temporary.newFolder()).fromLegacy(data).also(ownedDatasets::add)
     private fun <T> SyncDatasetRemoteSnapshot<T>.tracked(): SyncDatasetRemoteSnapshot<T> =
@@ -54,6 +69,8 @@ class SyncBackendTransportTest {
     private val payload = SyncData(deviceId = "device", lastModified = 10,
         playlists = listOf(SyncPlaylist(id = 1, name = "playlist", songs = listOf(SyncSong(id = 2, name = "song")))))
     private val content = SyncDataSerializer.serialize(payload, false)
+    private val githubHead = "1".repeat(40)
+    private val githubCommit = "2".repeat(40)
 
     @Test
     fun `GitHub conflict refetch to an empty target cannot republish a stale legacy source`() = runTest {
@@ -104,7 +121,7 @@ class SyncBackendTransportTest {
         fixture.files["backup.json"] = content
         fixture.authorizeMigration = { assertArrayEquals(content, it); throw required }
         assertSame(required, fixture.backend.fetch().exceptionOrNull())
-        assertSame(required, fixture.backend.refetch(GitHubSyncBackend.Version("head", "backup.json")).exceptionOrNull())
+        assertSame(required, fixture.backend.refetch(GitHubSyncBackend.Version(githubHead, "backup.json")).exceptionOrNull())
         assertTrue(fixture.writes.isEmpty())
         assertEquals(0, fixture.currentObservations)
         fixture.authorizeMigration = {}
@@ -156,8 +173,8 @@ class SyncBackendTransportTest {
         assertEquals(payload, fallback.dataset?.data)
         assertTrue(fallback.requiresMigrationUpload)
         assertEquals(SyncArchiveRepository.MANIFEST_FILE_NAME, fallback.version.fileName)
-        assertEquals("head", fallback.version.sha)
-        assertTrue(fixture.reads.all { it.url.queryParameter("ref") == "head" })
+        assertEquals(githubHead, fallback.version.sha)
+        assertTrue(fixture.reads.all { it.url.queryParameter("ref") == githubHead })
         fixture.files["backup.json"] = byteArrayOf(1, 2, 3)
         assertTrue(fixture.backend.fetch().isFailure)
         fixture.files["backup.json"] = content
@@ -181,15 +198,25 @@ class SyncBackendTransportTest {
         assertFalse(fixture.backend.remoteChanged(GitHubSyncBackend.Version("old", "backup.json")))
         assertTrue(fixture.backend.remoteChanged(GitHubSyncBackend.Version("new", "backup.json")))
         val version = fixture.backend.upload(staged(payload), GitHubSyncBackend.Version(null, "backup.json")).getOrThrow()
-        assertEquals("commit", version.sha)
+        assertEquals(githubCommit, version.sha)
         assertEquals(SyncArchiveRepository.MANIFEST_FILE_NAME, version.fileName)
+        val publication = fixture.writes.single()
+        assertEquals("/graphql", publication.url.encodedPath)
+        val publicationBody = Buffer().use { publication.body!!.writeTo(it); JSONObject(it.readUtf8()) }
+        assertTrue(publicationBody.getString("query").contains("createCommitOnBranch"))
+        val input = publicationBody.getJSONObject("variables").getJSONObject("input")
+        assertEquals(githubHead, input.getString("expectedHeadOid"))
+        val additions = input.getJSONObject("fileChanges").getJSONArray("additions")
+        assertEquals(version.knownPaths + SyncArchiveRepository.MANIFEST_FILE_NAME,
+            (0 until additions.length()).map { additions.getJSONObject(it).getString("path") }.toSet())
+        assertEquals(version.knownPaths.size + 1, additions.length())
         fixture.backend.saveRemoteVersion(version)
         fixture.backend.saveRemoteVersion(version.copy(sha = null))
         fixture.backend.saveSyncTime(42)
         fixture.backend.scheduleFollowUp()
         fixture.backend.onFailure(TokenExpiredException("expired"))
         fixture.backend.onFailure(IOException("offline"))
-        verify(fixture.storage).saveLastRemoteSha("commit")
+        verify(fixture.storage).saveLastRemoteSha(githubCommit)
         verify(fixture.storage).saveLastSyncTime(42)
         verify(fixture.storage).clearToken()
         assertEquals(1, fixture.followUps)
@@ -201,24 +228,32 @@ class SyncBackendTransportTest {
     }
 
     @Test
-    fun `GitHub reuses immutable uploads and verifies the complete remote archive on every read`() = runTest {
+    fun `GitHub reuses immutable uploads and verifies cached objects against the fixed remote tree`() = runTest {
         val fixture = GitHubFixture()
         val empty = fixture.backend.fetch().getOrThrow().tracked()
-        assertEquals("head", empty.version.sha)
+        assertEquals(githubHead, empty.version.sha)
         val uploaded = fixture.backend.upload(staged(payload), empty.version).getOrThrow()
         assertTrue(uploaded.knownPaths.isNotEmpty())
+        val previousObjects = uploaded.knownPaths.associateWith { fixture.files.getValue(it).copyOf() }
         fixture.writes.clear()
 
-        fixture.backend.upload(staged(payload), uploaded).getOrThrow()
+        val repeated = fixture.backend.upload(staged(payload), uploaded).getOrThrow()
 
-        assertEquals(1, fixture.writes.count { it.url.encodedPath.endsWith("/git/blobs") })
-        assertEquals(1, fixture.writes.count { it.url.encodedPath.endsWith("/git/commits") })
+        val publication = fixture.writes.single()
+        assertEquals("/graphql", publication.url.encodedPath)
+        val publicationBody = Buffer().use { publication.body!!.writeTo(it); JSONObject(it.readUtf8()) }
+        val input = publicationBody.getJSONObject("variables").getJSONObject("input")
+        assertEquals(githubCommit, input.getString("expectedHeadOid"))
+        val additions = input.getJSONObject("fileChanges").getJSONArray("additions")
+        assertEquals(1, additions.length())
+        assertEquals(SyncArchiveRepository.MANIFEST_FILE_NAME, additions.getJSONObject(0).getString("path"))
+        previousObjects.forEach { (path, bytes) -> assertArrayEquals(bytes, fixture.files.getValue(path)) }
         fixture.reads.clear()
         assertEquals(payload, fixture.backend.fetch().getOrThrow().tracked().dataset?.data)
-        assertEquals(uploaded.knownPaths + SyncArchiveRepository.MANIFEST_FILE_NAME,
+        assertEquals(setOf(SyncArchiveRepository.MANIFEST_FILE_NAME),
             fixture.reads.map { it.url.pathSegments.last() }.toSet())
-        assertEquals(uploaded.knownPaths.size + 1, fixture.reads.size)
-        assertTrue(fixture.reads.all { it.url.queryParameter("ref") == "commit" })
+        assertEquals(1, fixture.reads.size)
+        assertTrue(fixture.reads.all { it.url.queryParameter("ref") == repeated.sha })
     }
 
     @Test
@@ -246,20 +281,21 @@ class SyncBackendTransportTest {
         fixture.headBody = "{}"
         assertTrue(fixture.backend.fetch().isFailure)
         assertTrue(fixture.reads.isEmpty())
-        fixture.headBody = """{"object":{"sha":"current-head"}}"""
+        fixture.headBody = """{"object":{"sha":"${"3".repeat(40)}"}}"""
+        val expectedHead = "4".repeat(40)
 
-        val result = fixture.backend.upload(staged(payload), GitHubSyncBackend.Version("expected-head", "backup.json"))
+        val result = fixture.backend.upload(staged(payload), GitHubSyncBackend.Version(expectedHead, "backup.json"))
         assertTrue(result.exceptionOrNull() is GitHubContentConflictException)
 
-        val commit = fixture.writes.single { it.url.encodedPath.endsWith("/git/commits") }
-        val body = Buffer().use { commit.body!!.writeTo(it); JSONObject(it.readUtf8()) }
-        assertEquals("expected-head", body.getJSONArray("parents").getString(0))
-        val publication = fixture.writes.single { it.url.encodedPath == "/graphql" }
+        val publication = fixture.writes.single()
+        assertEquals("/graphql", publication.url.encodedPath)
         val publicationBody = Buffer().use { publication.body!!.writeTo(it); JSONObject(it.readUtf8()) }
-        val update = publicationBody.getJSONObject("variables").getJSONObject("input").getJSONArray("refUpdates").getJSONObject(0)
-        assertEquals("expected-head", update.getString("beforeOid"))
-        assertFalse(update.getBoolean("force"))
+        val input = publicationBody.getJSONObject("variables").getJSONObject("input")
+        assertEquals(expectedHead, input.getString("expectedHeadOid"))
+        assertEquals("main", input.getJSONObject("branch").getString("branchName"))
+        assertEquals("owner/repo", input.getJSONObject("branch").getString("repositoryNameWithOwner"))
         assertTrue(fixture.writes.none { it.method == "PATCH" })
+        assertTrue(fixture.files.isEmpty())
     }
 
     @Test
@@ -267,7 +303,7 @@ class SyncBackendTransportTest {
         val fixture = GitHubFixture()
         val version = fixture.backend.upload(staged(payload), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
         val committedFiles = fixture.files.toMap()
-        fixture.headBody = """{"object":{"sha":"ancestor-head"}}"""
+        fixture.headBody = """{"object":{"sha":"$githubHead"}}"""
         fixture.writes.clear()
 
         val result = fixture.backend.upload(staged(payload.copy(lastModified = 20)), version)
@@ -422,12 +458,149 @@ class SyncBackendTransportTest {
             fixture.reads.clear()
             fixture.writes.clear()
 
-            assertTrue(fixture.backend.fetch().isFailure)
+            val result = fixture.backend.fetch()
+            assertTrue(result.isFailure)
 
-            assertTrue(fixture.reads.any { it.url.pathSegments.last() == path })
+            if (remove) {
+                assertTrue(result.exceptionOrNull() is GitHubFileNotFoundException)
+                assertTrue(fixture.reads.none { it.url.pathSegments.last() == path })
+            } else {
+                assertTrue(fixture.reads.any { it.url.pathSegments.last() == path })
+            }
             assertTrue(fixture.reads.none { it.url.pathSegments.last() in setOf("backup.json", "backup.bin") })
             assertTrue(fixture.writes.isEmpty())
         }
+    }
+
+    @Test
+    fun `GitHub fixed tree proof cannot approve mismatched object responses`() = runTest {
+        val fixture = GitHubFixture()
+        val version = fixture.backend.upload(staged(payload), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
+        val path = version.knownPaths.first()
+        fixture.objectIdOverrides[path] = "f".repeat(40)
+        fixture.reads.clear()
+
+        val result = fixture.backend.fetch()
+
+        assertTrue(result.exceptionOrNull() is IOException)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("differs from its fixed commit tree"))
+        assertTrue(fixture.reads.any { it.url.pathSegments.last() == path })
+        assertTrue(fixture.reads.none { it.url.pathSegments.last() in setOf("backup.json", "backup.bin") })
+    }
+
+    @Test
+    fun `GitHub repairs a corrupt cached object while reusing the rest`() = runTest {
+        val fixture = GitHubFixture()
+        val version = fixture.backend.upload(staged(payload), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
+        val path = version.knownPaths.first()
+        val cached = File(fixture.cacheDirectory, path)
+        val corrupted = cached.readBytes().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+        cached.writeBytes(corrupted)
+        fixture.reads.clear()
+
+        assertEquals(payload, fixture.backend.fetch().getOrThrow().tracked().dataset?.data)
+
+        assertEquals(setOf(SyncArchiveRepository.MANIFEST_FILE_NAME, path), fixture.reads.map { it.url.pathSegments.last() }.toSet())
+        assertEquals(2, fixture.reads.size)
+        assertArrayEquals(fixture.files.getValue(path), cached.readBytes())
+    }
+
+    @Test
+    fun `GitHub rechecks the tree at a new head and in a different repository`() = runTest {
+        val fixture = GitHubFixture()
+        val version = fixture.backend.upload(staged(payload), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
+        fixture.headBody = """{"object":{"sha":"${"7".repeat(40)}"}}"""
+        fixture.requests.clear()
+
+        assertEquals(payload, fixture.backend.fetch().getOrThrow().tracked().dataset?.data)
+        assertEquals(1, fixture.requests.count { it.url.encodedPath.contains("/contents/") })
+        assertTrue(fixture.requests.any { it.url.encodedPath.endsWith("/branches/main") })
+        assertTrue(fixture.requests.any { it.url.encodedPath.endsWith("/git/trees/${"5".repeat(40)}") })
+        assertEquals("7".repeat(40), fixture.requests.single { it.url.encodedPath.contains("/contents/") }.url.queryParameter("ref"))
+
+        val other = GitHubFixture(fixture.cacheDirectory, "other")
+        other.files[SyncArchiveRepository.MANIFEST_FILE_NAME] = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)
+        assertTrue(other.backend.fetch().exceptionOrNull() is GitHubFileNotFoundException)
+        assertEquals(1, other.reads.size)
+        assertTrue(other.requests.all { it.url.pathSegments.take(3) == listOf("repos", "owner", "other") })
+        assertTrue(version.knownPaths.all { File(fixture.cacheDirectory, it).exists() })
+    }
+
+    @Test
+    fun `GitHub publication reuses the read proof while removing all obsolete owned objects`() = runTest {
+        val fixture = GitHubFixture()
+        fixture.backend.upload(staged(payload), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
+        val obsolete = "neriplayer-sync-v4-${"9".repeat(64)}.zst"
+        fixture.files[obsolete] = "unreferenced object".toByteArray()
+        val remote = fixture.backend.fetch().getOrThrow().tracked()
+        assertFalse(obsolete in remote.version.knownPaths)
+        fixture.requests.clear()
+
+        fixture.backend.upload(staged(payload), remote.version).getOrThrow()
+
+        assertEquals(1, fixture.requests.size)
+        assertEquals("/graphql", fixture.requests.single().url.encodedPath)
+        assertFalse(fixture.files.containsKey(obsolete))
+        assertTrue(remote.version.knownPaths.all(fixture.files::containsKey))
+    }
+
+    @Test
+    fun `complete warm GitHub sessions use bounded requests with simulated network latency`() = runBlocking {
+        val fixture = GitHubFixture()
+        fixture.persistMetadata()
+        val clean = payload.copy(playlists = listOf(payload.playlists.single().copy(
+            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION,
+            songs = List(1000) { index -> SyncSong(id = index + 2L, name = "song-$index",
+                syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION) }
+        )))
+        val merger = SyncDataMerger(mock(SyncMergeHost::class.java) { call ->
+            when (call.method.name) {
+                "getMergeSuccessMessage" -> "merged"
+                "getInitialUploadMessage" -> "uploaded"
+                "localRenameMessage", "remoteRenameMessage" -> "renamed ${call.arguments[0]}"
+                else -> null
+            }
+        }) { 10L }
+        val initial = merger.merge(clean, clean, 0L).mergedData
+        val version = fixture.backend.upload(staged(initial), fixture.backend.fetch().getOrThrow().tracked().version).getOrThrow()
+        fixture.backend.saveRemoteVersion(version)
+        fixture.backend.saveSyncTime(10L)
+        var data = initial
+        var applied: SyncData? = null
+        val local = object : SyncLocalDataStore {
+            override suspend fun awaitInitialized() = true
+            override fun mutationVersion() = 1L
+            override suspend fun snapshot() = fixture.archive.playbackDatasets.fromLegacy(data)
+            override suspend fun apply(dataset: SyncDataset, remoteChanged: Boolean, expectedMutationVersion: Long): Boolean {
+                assertEquals(1L, expectedMutationVersion)
+                applied = dataset.data
+                return true
+            }
+        }
+        val session = SyncSession(local, merger, fixture.archive.playbackDatasets,
+            "unchanged", "uploaded", { IOException("busy") }, nowMs = { 20L }, deferredMessage = "pending")
+        fixture.requestDelayMs = 400L
+        fixture.requests.clear()
+        val unchangedStart = System.nanoTime()
+        val unchanged = session.execute { fixture.backend }.getOrThrow()
+        val unchangedMs = (System.nanoTime() - unchangedStart) / 1_000_000L
+        assertTrue(unchanged.success)
+        assertEquals(initial.playlists, requireNotNull(applied).playlists)
+        assertEquals(4, fixture.requests.size)
+        assertEquals(1, fixture.requests.count { it.url.encodedPath.contains("/contents/") })
+        assertTrue(fixture.requests.all { it.method == "GET" })
+
+        data = initial.copy(playlists = listOf(initial.playlists.single().copy(name = "renamed", modifiedAt = 30L)))
+        fixture.requests.clear()
+        val changedStart = System.nanoTime()
+        val changed = session.execute { fixture.backend }.getOrThrow()
+        val changedMs = (System.nanoTime() - changedStart) / 1_000_000L
+        assertTrue(changed.success)
+        assertEquals("renamed", requireNotNull(applied).playlists.single().name)
+        assertEquals(5, fixture.requests.size)
+        assertEquals(1, fixture.requests.count { it.method == "POST" })
+        assertEquals(1, fixture.requests.count { it.url.encodedPath == "/graphql" })
+        println("GitHub complete session: 1000 songs, ${version.knownPaths.size} objects, 400ms/request, unchanged=${unchangedMs}ms (4 requests), one edit=${changedMs}ms (5 requests)")
     }
 
     @Test
@@ -486,21 +659,27 @@ class SyncBackendTransportTest {
         assertFalse(fixture.backend.isConflict(null))
     }
 
-    private inner class GitHubFixture {
+    private inner class GitHubFixture(val cacheDirectory: File = temporary.newFolder(), private val repoName: String = "repo") {
         val storage = mock(SecureTokenStorage::class.java)
         val files = mutableMapOf<String, ByteArray>()
-        val reads = mutableListOf<Request>()
-        val writes = mutableListOf<Request>()
+        val reads = CopyOnWriteArrayList<Request>()
+        val writes = CopyOnWriteArrayList<Request>()
+        val requests = CopyOnWriteArrayList<Request>()
+        val objectIdOverrides = mutableMapOf<String, String>()
+        var requestDelayMs = 0L
         val fileFailures = mutableMapOf<String, Int>()
-        var headBody = """{"object":{"sha":"head"}}"""
+        var headBody = """{"object":{"sha":"$githubHead"}}"""
         private val blobs = mutableMapOf<String, ByteArray>()
         private val pending = mutableMapOf<String, ByteArray?>()
+        private var commitNumber = 1
         var failure = 0
         var followUps = 0
         var authorizeMigration: suspend (ByteArray) -> Unit = {}
         var currentObservations = 0
         private val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
+            requests += request
+            if (requestDelayMs > 0) Thread.sleep(requestDelayMs)
             val path = request.url.encodedPath
             when {
                 failure != 0 -> response(request, failure, "{}".toByteArray())
@@ -511,18 +690,25 @@ class SyncBackendTransportTest {
                     response(request, fileFailures[name] ?: if (bytes == null) 404 else 200, bytes ?: byteArrayOf())
                 }
                 path.endsWith("/git/ref/heads/main") -> response(request, 200, headBody.toByteArray())
-                path.contains("/git/commits/") -> response(request, 200, """{"tree":{"sha":"tree"}}""".toByteArray())
-                path.endsWith("/git/trees/tree") && request.method == "GET" -> {
+                path.endsWith("/branches/main") -> {
+                    val head = JSONObject(headBody).getJSONObject("object").getString("sha")
+                    response(request, 200, """{"name":"main","commit":{"sha":"$head","commit":{"tree":{"sha":"${"5".repeat(40)}"}}}}""".toByteArray())
+                }
+                path.contains("/git/commits/") -> response(request, 200, """{"tree":{"sha":"${"5".repeat(40)}"}}""".toByteArray())
+                path.endsWith("/git/trees/${"5".repeat(40)}") && request.method == "GET" -> {
                     val entries = JSONArray()
                     files.forEach { (name, bytes) -> entries.put(JSONObject().put("path", name)
-                        .put("mode", "100644").put("type", "blob").put("sha", blobSha(bytes))) }
-                    val listing = JSONObject().put("sha", "tree").put("tree", entries).put("truncated", false)
+                        .put("mode", "100644").put("type", "blob").put("sha", objectIdOverrides[name] ?: blobSha(bytes))) }
+                    val listing = JSONObject().put("sha", "5".repeat(40)).put("tree", entries).put("truncated", false)
                     response(request, 200, listing.toString().toByteArray())
                 }
                 path == "/graphql" -> {
                     writes += request
                     val body = Buffer().use { request.body!!.writeTo(it); JSONObject(it.readUtf8()) }
                     val input = body.getJSONObject("variables").getJSONObject("input")
+                    if (body.getString("query").contains("createCommitOnBranch")) {
+                        return@addInterceptor publishBatch(request, input)
+                    }
                     val update = input.getJSONArray("refUpdates").getJSONObject(0)
                     check(input.getString("repositoryId") == "repository-node")
                     check(update.getString("name") == "refs/heads/main")
@@ -556,13 +742,55 @@ class SyncBackendTransportTest {
                                 pending[entry.getString("path")] = if (entry.isNull("sha")) null else blobs.getValue(entry.getString("sha"))
                             }
                         }
-                        "commit"
+                        if (path.endsWith("/git/commits")) nextCommit() else githubCommit
                     }
                     response(request, 201, """{"sha":"$sha"}""".toByteArray())
                 }
                 else -> response(request, 200, """{"default_branch":"main","node_id":"repository-node"}""".toByteArray())
             }
         }.build()
+
+        init { ownedClients += client }
+
+        private fun publishBatch(request: Request, input: JSONObject): Response {
+            val branch = input.getJSONObject("branch")
+            check(branch.getString("branchName") == "main")
+            check(branch.getString("repositoryNameWithOwner") == "owner/$repoName")
+            val expected = input.getString("expectedHeadOid")
+            if (expected != JSONObject(headBody).getJSONObject("object").getString("sha")) {
+                return response(request, 200,
+                    """{"data":{"createCommitOnBranch":null},"errors":[{"type":"STALE_DATA","message":"Reference has changed"}]}""".toByteArray())
+            }
+            val next = LinkedHashMap(files)
+            val changes = input.getJSONObject("fileChanges")
+            val additions = changes.getJSONArray("additions")
+            for (index in 0 until additions.length()) {
+                val addition = additions.getJSONObject(index)
+                val encoded = addition.getString("contents")
+                val bytes = Base64.getDecoder().decode(encoded)
+                check(Base64.getEncoder().encodeToString(bytes) == encoded)
+                next[addition.getString("path")] = bytes
+            }
+            val deletions = changes.getJSONArray("deletions")
+            for (index in 0 until deletions.length()) next.remove(deletions.getJSONObject(index).getString("path"))
+            val commit = nextCommit()
+            files.clear()
+            files.putAll(next)
+            headBody = """{"object":{"sha":"$commit"}}"""
+            val result = JSONObject().put("clientMutationId", input.getString("clientMutationId"))
+                .put("commit", JSONObject().put("oid", commit)
+                    .put("parents", JSONObject().put("nodes", JSONArray().put(JSONObject().put("oid", expected)))))
+                .put("ref", JSONObject().put("name", "main").put("prefix", "refs/heads/")
+                    .put("repository", JSONObject().put("nameWithOwner", "owner/$repoName"))
+                    .put("target", JSONObject().put("oid", commit)))
+            val body = JSONObject().put("data", JSONObject().put("createCommitOnBranch", result))
+            return response(request, 200, body.toString().toByteArray())
+        }
+
+        private fun nextCommit(): String {
+            val number = ++commitNumber
+            return if (number == 2) githubCommit else number.toString(16).padStart(40, '0')
+        }
 
         private fun publishPending() {
             pending.forEach { (path, bytes) -> if (bytes == null) files.remove(path) else files[path] = bytes }
@@ -573,9 +801,19 @@ class SyncBackendTransportTest {
             update("blob ${bytes.size}\u0000".toByteArray(Charsets.US_ASCII))
             digest(bytes).joinToString("") { "%02x".format(it) }
         }
+        fun persistMetadata() {
+            var sha: String? = null
+            var syncTime = 0L
+            `when`(storage.getLastRemoteSha()).thenAnswer { sha }
+            `when`(storage.getLastSyncTime()).thenAnswer { syncTime }
+            doAnswer { sha = it.getArgument(0); null }.`when`(storage).saveLastRemoteSha(anyString())
+            doAnswer { syncTime = it.getArgument(0); null }.`when`(storage).saveLastSyncTime(anyLong())
+        }
+
+        val archive = SyncArchiveRepository(cacheDirectory)
         val backend = GitHubSyncBackend(storage, GitHubApiClient("test-token", client, "expired", "https://sync.test"),
-            "owner", "repo", SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
-            SyncArchiveRepository(temporary.newFolder()),
+            "owner", repoName, SyncRemoteSnapshotDecoder { it }, { IOException("invalid") }, { followUps++ },
+            archive,
             authorizeLegacyMigration = { authorizeMigration(it) },
             currentProtocolObserved = { currentObservations++ }, metadataGuard = { write -> write(); true })
     }

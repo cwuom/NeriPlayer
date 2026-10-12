@@ -20,10 +20,15 @@ internal class GitHubSyncCheckpoint(
     }
 
     fun recordRateLimit(error: GitHubRateLimitException): GitHubRateLimitException = synchronized(lock) {
+        val now = nowMillis()
         val previous = readRateState()
-        val attempts = ((previous?.attempts ?: 0) + 1).coerceAtMost(GitHubRateLimitPolicy.MAX_AUTOMATIC_RETRIES + 1)
+        // 并发请求共享同一轮冷却，后续响应只延长期限
+        val activeCooldown = previous?.takeIf { it.retryAt > now }
+        val attempts = activeCooldown?.attempts?.coerceAtLeast(1)
+            ?: ((previous?.attempts ?: 0) + 1).coerceAtMost(GitHubRateLimitPolicy.MAX_AUTOMATIC_RETRIES + 1)
         val backoff = GitHubRateLimitPolicy.MIN_RETRY_DELAY_MS * (1L shl (attempts - 1))
-        val retryAt = maxOf(error.retryAtMillis, previous?.retryAt ?: 0L, GitHubRateLimitPolicy.addDelay(nowMillis(), backoff))
+        val minimumRetryAt = activeCooldown?.retryAt ?: GitHubRateLimitPolicy.addDelay(now, backoff)
+        val retryAt = maxOf(error.retryAtMillis, minimumRetryAt)
         val state = RateState(error.statusCode, retryAt, attempts)
         writeAtomically(File(directory, RATE_FILE), state.encode())
         rateException(state)

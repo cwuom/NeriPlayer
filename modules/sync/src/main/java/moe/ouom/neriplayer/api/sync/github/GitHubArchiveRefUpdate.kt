@@ -50,12 +50,17 @@ internal object GitHubArchiveRefUpdate {
     }
 
     fun validateResponse(body: String, commitSha: String) {
-        val response = parseObject(body)
-        response.get("errors")?.let(::rejectErrors)
+        val response = readResponse(body)
         val data = requiredObject(response.get("data"), "data")
         val updated = requiredObject(data.get("updateRefs"), "updateRefs")
         val acknowledged = requiredString(updated.get("clientMutationId"), "mutation acknowledgement")
         if (acknowledged != commitSha) throw IOException("GitHub atomic sync mutation acknowledgement does not match")
+    }
+
+    fun readResponse(body: String): JsonObject {
+        val response = parseObject(body)
+        response.get("errors")?.let(::rejectErrors)
+        return response
     }
 
     private fun rejectErrors(value: JsonElement) {
