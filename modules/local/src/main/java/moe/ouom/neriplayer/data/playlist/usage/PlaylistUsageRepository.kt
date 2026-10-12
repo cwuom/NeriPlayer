@@ -30,6 +30,7 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
@@ -38,7 +39,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -98,6 +98,7 @@ private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
 }
 
 private const val LOCAL_USAGE_COVER_CANDIDATE_LIMIT = 24
+private const val INITIAL_USAGE_READ_RETRY_DELAY_MS = 1_000L
 
 internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
     return list
@@ -208,9 +209,14 @@ class PlaylistUsageRepository internal constructor(
     private var initialLoadRetry: Job? = null
     private val mutationsAwaitingInitialLoad = ArrayList<() -> Unit>()
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
-    // 空值只有在可信读取完成后才有意义，订阅本身不触发保存或占用同步代次
+    // 存活订阅推动失败读取的恢复，可信读取前不能公开空值，也不占用保存代次
     val loadedFrequentPlaylistsFlow: Flow<List<UsageEntry>> = flow {
-        initialReadReady.first { it }
+        initialLoad.join()
+        while (!initialReadReady.value) {
+            currentCoroutineContext().ensureActive()
+            synchronized(mutationLock) { requestInitialLoadRetryLocked() }?.join()
+            if (!initialReadReady.value) delay(INITIAL_USAGE_READ_RETRY_DELAY_MS)
+        }
         emitAll(_flow)
     }
     // 首次访问常在主线程，读取放到后台；加载期间到达的界面操作排队，完成后按原顺序重放
@@ -329,10 +335,14 @@ class PlaylistUsageRepository internal constructor(
      */
     private fun ensureInitializedForUiLocked(): Boolean {
         if (initialized) return baselineTrusted || writingTrustedSnapshot
-        if (initialLoadRetry?.isActive != true) {
-            initialLoadRetry = scope.launch { retryInitialLoad() }
-        }
+        requestInitialLoadRetryLocked()
         return false
+    }
+
+    private fun requestInitialLoadRetryLocked(): Job? {
+        if (initialized) return null
+        return initialLoadRetry?.takeIf { it.isActive }
+            ?: scope.launch { retryInitialLoad() }.also { initialLoadRetry = it }
     }
 
     private suspend fun retryInitialLoad() {

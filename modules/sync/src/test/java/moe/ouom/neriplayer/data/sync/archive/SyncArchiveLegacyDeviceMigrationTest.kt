@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.sync.archive
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CancellationException
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
@@ -54,7 +55,7 @@ class SyncArchiveLegacyDeviceMigrationTest {
             first.read(published.first) { Result.success(published.second.getValue(it)) }.getOrThrow()
             assertEquals(listOf(legacy), recovery.data.single().lyricOverrides)
             val reopened = SyncArchiveRepository(temporary.newFolder(), recovery)
-            val requested = mutableSetOf<String>()
+            val requested = ConcurrentHashMap.newKeySet<String>()
             reopened.read(published.first) { path ->
                 requested += path
                 Result.success(published.second.getValue(path))

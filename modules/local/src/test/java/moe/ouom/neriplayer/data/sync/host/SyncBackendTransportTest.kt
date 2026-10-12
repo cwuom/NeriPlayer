@@ -821,7 +821,7 @@ class SyncBackendTransportTest {
     private inner class WebDavFixture {
         val webDavStorage = mock(WebDavStorage::class.java)
         val files = mutableMapOf<String, ByteArray>()
-        val reads = mutableListOf<Request>()
+        val reads = CopyOnWriteArrayList<Request>()
         var readCode = 200
         var directoryCode = 207
         var writeCode = 201
