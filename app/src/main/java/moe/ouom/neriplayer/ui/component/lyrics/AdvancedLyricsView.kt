@@ -414,7 +414,7 @@ private fun SyncedLyrics.attachTranslations(
 
     val baseLyricEntries = lines.map { line ->
         LyricEntry(
-            text = "",
+            text = line.plainText(),
             startTimeMs = line.start.toLong(),
             endTimeMs = line.end.toLong()
         )

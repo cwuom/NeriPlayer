@@ -330,4 +330,101 @@ class LyricTranslationMatcherTest {
         assertNull(matched[1])
         assertEquals("第二句的翻译", matched[2]?.text)
     }
+
+    @Test
+    fun `shared lyric group keeps a loose translation when both translations fit`() {
+        val lines = listOf(
+            LyricEntry("第一句", 0L, 1_000L),
+            LyricEntry("第二句", 4_000L, 4_000L),
+            LyricEntry("第三句", 4_000L, 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry("第二句译", 2_200L, 3_000L),
+            LyricEntry("第三句译", 4_000L, 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("第二句译", matched[1]?.text)
+        assertEquals("第三句译", matched[2]?.text)
+    }
+
+    @Test
+    fun `shared lyric group keeps a loose translation before an exact placeholder`() {
+        val lines = listOf(
+            LyricEntry("第一句", 0L, 1_000L),
+            LyricEntry("第二句", 4_000L, 4_000L),
+            LyricEntry("第三句", 4_000L, 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry("第二句译", 2_200L, 3_000L),
+            LyricEntry("//", 4_000L, 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("第二句译", matched[1]?.text)
+        assertNull(matched[2])
+    }
+
+    @Test
+    fun `metadata placeholder does not consume the real lyric translation slot`() {
+        val lines = listOf(
+            LyricEntry("OP：唯迹文化", 4_000L, 4_000L),
+            LyricEntry("正文", 4_000L, 5_000L),
+            LyricEntry("下一句", 8_000L, 9_000L)
+        )
+        val translations = listOf(
+            LyricEntry("//", 4_000L, 4_000L),
+            LyricEntry("正文译", 4_000L, 5_000L),
+            LyricEntry("下一句译", 8_000L, 9_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("正文译", matched[1]?.text)
+        assertEquals("下一句译", matched[2]?.text)
+    }
+
+    @Test
+    fun `multiple metadata placeholders preserve shared lyric translation order`() {
+        val lines = listOf(
+            LyricEntry("作词：甲", 4_000L, 4_000L),
+            LyricEntry("OP：唯迹文化", 4_000L, 4_000L),
+            LyricEntry("正文", 4_000L, 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry("//", 4_000L, 4_000L),
+            LyricEntry("／／", 4_000L, 4_000L),
+            LyricEntry("正文译", 4_000L, 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertNull(matched[1])
+        assertEquals("正文译", matched[2]?.text)
+    }
+
+    @Test
+    fun `metadata group refreshes exact preference after consuming an overlapping candidate`() {
+        val lines = listOf(
+            LyricEntry("OP：唯迹文化", 4_000L, 4_000L),
+            LyricEntry("正文", 4_000L, 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry("宽松候选一", 2_200L, 3_000L),
+            LyricEntry("提前但重叠的候选", 2_300L, 5_000L),
+            LyricEntry("宽松候选二", 2_400L, 3_000L),
+            LyricEntry("正文译", 4_000L, 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("正文译", matched[1]?.text)
+    }
 }
