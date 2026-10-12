@@ -465,8 +465,9 @@
   清单不存在时才读取旧 `backup.json`、`backup-raw.bin` GZIP 与 `backup.bin` Base64；
   8/12/16 MiB 安全限制仅适用于旧格式读取。V3 仅供读取迁移，未知未来版本须明确拒绝；
   所有同步设备须支持 V4，传统数据或 V3 迁移须先确认升级。
-- GitHub 通过 Git Data API 的 blob/tree/commit 写入仓库，以 GraphQL `updateRefs`
-  的 `beforeOid` 和 `force=false` 原子发布清单。blob 请求的 Base64 只是传输封装，
+- GitHub 小归档通过 GraphQL `createCommitOnBranch` 和 `expectedHeadOid` 同时发布对象、
+  清单和清理；较大归档通过 Git Data API 的 blob/tree/commit 写入仓库，以 GraphQL
+  `updateRefs` 的 `beforeOid` 和 `force=false` 原子发布。上传请求的 Base64 只是传输封装，
   仓库正文仍为原始二进制；读取固定分支头并使用 raw 内容。
 - WebDAV 使用 `If-None-Match: *` 创建不可变对象和首次清单；后续清单必须使用强 ETag
   的 `If-Match`。缺少强条件时停止发布，不能回退无条件写入。
@@ -613,7 +614,7 @@
    重新放回 GitHub provider 包。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录、播放统计和独立歌词修改记录。
    V4 使用 Protobuf 记录流、ZSTD 内容分块与根清单，发布点保留 `neriplayer-sync-v3.manifest` 文件名。
-   V3 仅供读取迁移；仅清单不存在时读取旧 JSON、原始 GZIP 与 Base64。GitHub Git Data API 的 blob 请求使用 Base64 传输封装，
+   V3 仅供读取迁移；仅清单不存在时读取旧 JSON、原始 GZIP 与 Base64。GitHub 二进制上传请求使用 Base64 传输封装，
    仓库内仍保存原始正文。歌词迁移完整保留旧数据，不再提供有损选择，详见 `modules/sync/LYRIC_SYNC.md`。
 3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
    序列化、合并和落回本地歌单时必须保留旧数据迁移。
@@ -629,7 +630,9 @@
    执行冲突重试、本地 mutation version 校验和落库确认，后端提供传输与远端版本接口。
 7. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
    周期同步、validated network 检查和失败重试行为。GitHub 清单发布必须按固定远端
-   分支头做 `beforeOid` 原子非强制更新，冲突时失败；WebDAV 后续清单写入必须使用
+   分支头进行批量提交的 `expectedHeadOid` 校验，或分阶段发布的 `beforeOid` 与
+   `force=false` 原子更新，冲突时失败。快速路径预算见 `modules/sync/README.md`，
+   已发送批量提交后的错误不得切换到另一条写入流程。WebDAV 后续清单写入必须使用
    强 ETag 的 `If-Match`，不支持安全条件写入时停止发布。
 8. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。

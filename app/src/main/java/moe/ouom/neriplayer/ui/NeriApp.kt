@@ -54,7 +54,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -123,7 +122,6 @@ import moe.ouom.neriplayer.data.identity.playbackVisualKey
 import moe.ouom.neriplayer.data.identity.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
-import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
@@ -150,6 +148,8 @@ import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.rememberHomeHostRuntimeState
 import moe.ouom.neriplayer.ui.screen.tab.home.shouldShowHomeContinueSection
+import moe.ouom.neriplayer.ui.screen.tab.home.rememberHomeUsageSnapshot
+import moe.ouom.neriplayer.ui.screen.tab.home.HomeContinueDiagnostics
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -275,11 +275,6 @@ internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
         ?.removePrefix("local_playlist_detail/")
         ?.toLongOrNull()
 }
-
-private data class HomeUsageSnapshot(
-    val entries: List<UsageEntry> = emptyList(),
-    val isLoaded: Boolean = false
-)
 
 @Composable
 fun NeriApp(
@@ -452,17 +447,10 @@ private fun NeriAppContent(
     val preemptAudioFocus by repo.preemptAudioFocusFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.preemptAudioFocus
     )
-    val homeUsageSnapshot by produceState(
-        initialValue = HomeUsageSnapshot(),
-        key1 = context
-    ) {
-        val usageFlow = withContext(Dispatchers.IO) {
-            AppContainer.playlistUsageRepo.frequentPlaylistsFlow
-        }
-        usageFlow.collect { entries ->
-            value = HomeUsageSnapshot(entries = entries, isLoaded = true)
-        }
+    val homeUsageSnapshot by rememberHomeUsageSnapshot(context) {
+        AppContainer.playlistUsageRepo
     }
+    HomeContinueDiagnostics(showHomeContinueCard, homeUsageSnapshot)
     val showHomeTab =
         shouldShowHomeContinueSection(
             showContinueCard = showHomeContinueCard,

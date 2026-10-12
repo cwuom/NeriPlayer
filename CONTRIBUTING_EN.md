@@ -542,9 +542,10 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   read only when the manifest is absent. The 8/12/16 MiB safety limits apply only to
   legacy reads. V3 archives are read only for migration, and unsupported future versions must be rejected.
   Every syncing device must support V4; traditional and V3 migration require confirmation.
-- GitHub writes through Git Data API blob/tree/commit calls and atomically publishes
-  the manifest through GraphQL `updateRefs` with `beforeOid` and `force=false`.
-  Base64 in blob requests is only the transport envelope; repository bodies remain
+- Small GitHub archives publish objects, the manifest, and cleanup through GraphQL
+  `createCommitOnBranch` with `expectedHeadOid`. Larger archives use Git Data API
+  blob/tree/commit calls and GraphQL `updateRefs` with `beforeOid` and `force=false`.
+  Base64 in upload requests is only the transport envelope; repository bodies remain
   raw binary, and raw content reads are pinned to a fixed branch head.
 - WebDAV creates immutable objects and the initial manifest with `If-None-Match: *`.
   Later manifest writes require `If-Match` with a strong ETag. Stop publication when
@@ -725,7 +726,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    playback stats, and independent lyric overrides. V4 uses a Protobuf record stream,
    ZSTD content chunks, and a root manifest, keeping the `neriplayer-sync-v3.manifest` filename.
    V3 archives are read only for migration. Legacy JSON, raw GZIP, and Base64 are read
-   only when the manifest is absent. GitHub Git Data API blob requests use Base64 only
+   only when the manifest is absent. GitHub binary upload requests use Base64 only
    as a transport envelope; repository bodies remain raw binary. Migration preserves all legacy lyrics without a lossy option;
    see `modules/sync/LYRIC_SYNC.md`.
 3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
@@ -747,8 +748,11 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    and persistence confirmation; backends provide transport and remote-version interfaces.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`. GitHub must publish the
-   manifest against a fixed branch head with an atomic `beforeOid` non-force update,
-   failing on conflicts. Later WebDAV manifest writes require `If-Match` with a strong
+   manifest against a fixed branch head with `expectedHeadOid` for batch commits or
+   `beforeOid` and `force=false` for staged publication, failing on conflicts.
+   Keep the fast-path budgets documented in `modules/sync/README.md`; errors after
+   sending a batch commit must not switch to another write flow.
+   Later WebDAV manifest writes require `If-Match` with a strong
    ETag; stop publication when safe conditional writes are unavailable.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.

@@ -4,6 +4,7 @@ import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
+import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -26,22 +27,36 @@ class WebDavArchiveLease internal constructor(
     private var expiresAt: Long,
     private val checkActive: () -> Unit
 ) : Closeable {
+    private val stateLock = Any()
     private var closed = false
 
     internal fun <T> execute(builder: Request.Builder, parse: (Response, () -> Unit) -> T): T {
+        val call = prepareCall(builder)
+        return call.execute().use { response -> parseResponse(response, call::cancel, parse) }
+    }
+
+    internal suspend fun <T> executeCancellable(builder: Request.Builder, parse: (Response, () -> Unit) -> T): T =
+        executeWebDavArchiveRead(prepareCall(builder)) { response, cancel -> parseResponse(response, cancel, parse) }
+
+    private fun prepareCall(builder: Request.Builder): Call {
         checkActive()
-        refreshIfNeeded()
         val request = builder.header("If", "<${root}> (<$token>)")
             .header("Cache-Control", "no-cache").header("Pragma", "no-cache").build()
         val call = client.newCall(request)
-        call.timeout().timeout(requestBudgetMs(), TimeUnit.MILLISECONDS)
-        return call.execute().use { response ->
-            requireValidResponse(response)
-            val value = parse(response, call::cancel)
-            checkActive()
-            requireLive()
-            value
+        val budget = synchronized(stateLock) {
+            refreshIfNeeded()
+            requestBudgetMs()
         }
+        call.timeout().timeout(budget, TimeUnit.MILLISECONDS)
+        return call
+    }
+
+    private fun <T> parseResponse(response: Response, cancel: () -> Unit, parse: (Response, () -> Unit) -> T): T {
+        requireValidResponse(response)
+        val value = parse(response, cancel)
+        checkActive()
+        requireLive()
+        return value
     }
 
     private fun requestBudgetMs(): Long {
@@ -59,7 +74,9 @@ class WebDavArchiveLease internal constructor(
     }
 
     private fun requireLive() {
-        if (closed || now() >= expiresAt) throw WebDavArchiveLeaseLostException("WebDAV archive lease expired")
+        synchronized(stateLock) {
+            if (closed || now() >= expiresAt) throw WebDavArchiveLeaseLostException("WebDAV archive lease expired")
+        }
     }
 
     private fun refreshIfNeeded() {
@@ -81,8 +98,10 @@ class WebDavArchiveLease internal constructor(
     }
 
     override fun close() {
-        if (closed) return
-        closed = true
+        synchronized(stateLock) {
+            if (closed) return
+            closed = true
+        }
         unlock(root, token, client, authorization)
     }
 

@@ -178,7 +178,7 @@ internal class WebDavSyncBackend(
         return reconcilePublication(completed, releaseFailure)
     }
 
-    private fun requireUnchangedManifest(version: Version, lease: WebDavArchiveLease) {
+    private suspend fun requireUnchangedManifest(version: Version, lease: WebDavArchiveLease) {
         // rclone 不检查 PUT 的 ETag 条件，重新持锁后必须确认合并所用的版本
         val current = readFile(manifestUrl, lease).getOrElse { error ->
             if (error is WebDavFileNotFoundException) {
@@ -353,8 +353,7 @@ internal class WebDavSyncBackend(
         }
     }
 
-    private fun readFile(url: String, lease: WebDavArchiveLease?) = if (lease == null) apiClient.getFileContentStrict(url)
-        else apiClient.getFileContentLocked(url, lease)
+    private suspend fun readFile(url: String, lease: WebDavArchiveLease?) = apiClient.getArchiveFileContent(url, lease)
 
     private fun writeFile(url: String, bytes: ByteArray, lease: WebDavArchiveLease?, token: WebDavConcurrencyToken? = null, createOnly: Boolean = false) =
         if (lease == null) apiClient.updateFileContent(url, bytes, expectedVersion = token, createOnly = createOnly)
@@ -368,7 +367,7 @@ internal class WebDavSyncBackend(
         return strongETag.matches(etag)
     }
 
-    private fun uploadImmutableObject(path: String, content: ByteArray, lease: WebDavArchiveLease?): Result<Unit> {
+    private suspend fun uploadImmutableObject(path: String, content: ByteArray, lease: WebDavArchiveLease?): Result<Unit> {
         val url = WebDavApiClient.buildSiblingFileUrl(remoteUrl, path)
         val written = writeFile(url, content, lease, createOnly = true)
         return written.fold(
@@ -382,7 +381,7 @@ internal class WebDavSyncBackend(
     private fun isExistingObjectConflict(error: Throwable): Boolean =
         error is WebDavContentConflictException && error.statusCode == 412
 
-    private fun verifyExistingObject(url: String, content: ByteArray, lease: WebDavArchiveLease?): Result<Unit> {
+    private suspend fun verifyExistingObject(url: String, content: ByteArray, lease: WebDavArchiveLease?): Result<Unit> {
         // 相同内容可能已由另一台设备上传，确认字节一致后复用
         return readFile(url, lease).mapCatching { existing ->
             require(existing.fingerprint == WebDavApiClient.calculateFingerprint(content)) {

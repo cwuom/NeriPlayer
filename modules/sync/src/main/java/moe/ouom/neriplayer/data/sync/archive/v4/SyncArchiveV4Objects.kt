@@ -7,8 +7,14 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
@@ -127,7 +133,8 @@ internal class SyncArchiveV4TreeWriter(
 internal class SyncArchiveV4TreeReader(
     private val cache: SyncArchiveV4Objects,
     private val fetch: suspend (String) -> Result<ByteArray>,
-    private val verifyRemote: Boolean
+    private val verifyRemote: Boolean,
+    private val cachedRemoteVerifier: ((String, ByteArray) -> Boolean)? = null
 ) {
     val paths = LinkedHashSet<String>()
     private var visits = 0L
@@ -140,6 +147,7 @@ internal class SyncArchiveV4TreeReader(
         stream.root?.let { walk(it, 0, stream.chunks, leaves) }
         require(leaves.size.toLong() == stream.chunks) { "Sync v4 chunk count mismatch" }
         require(remainingBytes == 0L) { "Sync v4 stream byte count mismatch" }
+        readLeaves(leaves)
         return leaves
     }
 
@@ -152,7 +160,6 @@ internal class SyncArchiveV4TreeReader(
             visitIndex(ref, readVerifiedObject(ref), depth, expected, leaves)
         } else {
             validateLeaf(ref, expected, leaves.size)
-            readVerifiedObject(ref)
             leaves += ref
         }
     }
@@ -165,11 +172,58 @@ internal class SyncArchiveV4TreeReader(
     }
 
     private suspend fun readVerifiedObject(ref: SyncArchiveV4Ref): ByteArray {
-        SyncArchiveV4Format.validateRef(ref)
-        val cached = if (verifyRemote && ref.path !in paths) null else cache.cachedCompressed(ref)
-        val compressed = cached ?: fetch(ref.path).getOrThrow().also { cache.save(ref, it) }
+        val compressed = readObject(ref, ref.path in paths)
         paths += ref.path
         return compressed
+    }
+
+    private suspend fun readLeaves(leaves: List<SyncArchiveV4Ref>) {
+        // 先校验整棵树的预算，分批下载只保留有限数量的请求和解压缓冲
+        for (batch in leaves.asSequence().chunked(MAX_PARALLEL_DOWNLOADS)) {
+            paths += readLeafBatch(batch)
+        }
+    }
+
+    private suspend fun readLeafBatch(batch: List<SyncArchiveV4Ref>): List<String> {
+        val failure = AtomicReference<Throwable?>()
+        try {
+            return coroutineScope {
+                batch.distinct().map { ref ->
+                    val previouslyVerified = ref.path in paths
+                    async(Dispatchers.IO) {
+                        try {
+                            readObject(ref, previouslyVerified)
+                            ref.path
+                        } catch (error: Throwable) {
+                            if (currentCoroutineContext().isActive) failure.compareAndSet(null, error)
+                            throw error
+                        }
+                    }
+                }.awaitAll()
+            }
+        } catch (error: Throwable) {
+            // 保留传输异常本身及其失败分类，避免协程栈恢复复制原异常
+            throw failure.get() ?: error
+        }
+    }
+
+    private suspend fun readObject(ref: SyncArchiveV4Ref, previouslyVerified: Boolean): ByteArray {
+        currentCoroutineContext().ensureActive()
+        SyncArchiveV4Format.validateRef(ref)
+        val requiresProof = verifyRemote && !previouslyVerified
+        val cached = readCached(ref, requiresProof)
+        currentCoroutineContext().ensureActive()
+        return cached ?: fetch(ref.path).getOrThrow().also {
+            currentCoroutineContext().ensureActive()
+            cache.save(ref, it)
+        }
+    }
+
+    private fun readCached(ref: SyncArchiveV4Ref, requiresProof: Boolean): ByteArray? {
+        if (!requiresProof) return cache.cachedCompressed(ref)
+        val verifier = cachedRemoteVerifier ?: return null
+        val cached = cache.cachedCompressed(ref) ?: return null
+        return if (verifier(ref.path, cached)) cached else null
     }
 
     private suspend fun visitIndex(ref: SyncArchiveV4Ref, compressed: ByteArray, depth: Int,
@@ -177,6 +231,10 @@ internal class SyncArchiveV4TreeReader(
         val index = ProtoBuf.decodeFromByteArray<SyncArchiveV4Index>(SyncArchiveV4Format.decode(ref, compressed))
         require(index.children.size in 1..SyncArchiveLimits.INDEX_FANOUT) { "Invalid sync v4 index fanout" }
         index.children.forEach { walk(it, depth + 1, expected, leaves) }
+    }
+
+    private companion object {
+        const val MAX_PARALLEL_DOWNLOADS = 4
     }
 }
 

@@ -143,7 +143,7 @@ internal object SyncArchiveV4Format {
 
     fun compress(raw: ByteArray): ByteArray {
         require(raw.size in 1..MAX_RAW_BYTES) { "Sync v4 object exceeds raw budget" }
-        return ZstdCompressCtx().use { it.setLevel(19).setWindowLog(WINDOW_LOG).setChecksum(true).compress(raw) }
+        return ZstdCompressCtx().use { it.setLevel(SyncArchiveCodec.COMPRESSION_LEVEL).setWindowLog(WINDOW_LOG).setChecksum(true).compress(raw) }
     }
 
     fun decode(ref: SyncArchiveV4Ref, compressed: ByteArray): ByteArray {

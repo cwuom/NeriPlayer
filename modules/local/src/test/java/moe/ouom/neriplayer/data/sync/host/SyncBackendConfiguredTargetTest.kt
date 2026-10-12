@@ -43,9 +43,9 @@ class SyncBackendConfiguredTargetTest {
         for (expectedTarget in listOf(target, null)) {
             val context = localizedContext()
             val api = mock(WebDavApiClient::class.java)
-            `when`(api.getFileContentStrict(manifestUrl))
+            `when`(api.getArchiveFileContent(manifestUrl, null))
                 .thenReturn(Result.failure(WebDavFileNotFoundException("No manifest")))
-            `when`(api.getFileContentStrict(remoteUrl))
+            `when`(api.getArchiveFileContent(remoteUrl, null))
                 .thenReturn(Result.failure(WebDavFileNotFoundException("No legacy backup")))
             mockConstruction(WebDavStorage::class.java) { storage, _ ->
                 `when`(storage.captureSyncMetadataGuard()).thenReturn { write -> write(); true }
@@ -67,8 +67,8 @@ class SyncBackendConfiguredTargetTest {
                             assertNull(snapshot.dataset)
                             assertTrue(snapshot.version.createOnly)
                             assertTrue(backend.isFirstSync)
-                            verify(api).getFileContentStrict(manifestUrl)
-                            verify(api).getFileContentStrict(remoteUrl)
+                            verify(api).getArchiveFileContent(manifestUrl, null)
+                            verify(api).getArchiveFileContent(remoteUrl, null)
                             verify(upgrades.constructed().single()).markCurrent(target)
                             verify(storages.constructed().single()).getPassword()
                             clients.verify {

@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.sync.archive.v4.SyncArchiveV4Format
 
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.data.model.sync.SyncData
 import moe.ouom.neriplayer.data.model.sync.SyncPlaylist
 import moe.ouom.neriplayer.data.model.sync.SyncSong
@@ -47,7 +48,7 @@ class SyncArchivePreservedLegacyLyricsTest {
             SyncArchiveRepository(temporary.newFolder(), recovery).read(published.first) {
                 Result.success(published.second.getValue(it))
             }.getOrThrow()
-            val downloaded = mutableSetOf<String>()
+            val downloaded = ConcurrentHashMap.newKeySet<String>()
             SyncArchiveRepository(temporary.newFolder(), recovery).readDataset(published.first,
                 FileSyncPlaybackDatasetStore(temporary.newFolder()), { it }, { it }) { path ->
                 downloaded += path
@@ -70,7 +71,7 @@ class SyncArchivePreservedLegacyLyricsTest {
             } else requireNotNull(SyncArchiveV4Format.readManifest(published.first).legacy.root).path
             val missing = IOException("remote source object deleted")
             val staging = temporary.newFolder()
-            val requested = mutableSetOf<String>()
+            val requested = ConcurrentHashMap.newKeySet<String>()
             val result = reader.readDataset(published.first, FileSyncPlaybackDatasetStore(staging), { it }, { it },
                 verifyRemoteObjects = true) { path ->
                 requested += path
@@ -122,7 +123,7 @@ class SyncArchivePreservedLegacyLyricsTest {
             recovery.readFailure = failure
             val staging = temporary.newFolder()
             val reader = SyncArchiveRepository(temporary.newFolder(), recovery)
-            val downloaded = mutableSetOf<String>()
+            val downloaded = ConcurrentHashMap.newKeySet<String>()
             val result = reader.readDataset(published.first, FileSyncPlaybackDatasetStore(staging), { it }, { it }) { path ->
                 downloaded += path
                 Result.success(published.second.getValue(path))

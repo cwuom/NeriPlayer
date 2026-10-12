@@ -154,12 +154,17 @@ class SyncArchiveRepository private constructor(
         read(content, verifyRemoteObjects = false, fetch = fetch)
 
     suspend fun read(content: ByteArray, verifyRemoteObjects: Boolean,
+        fetch: suspend (String) -> Result<ByteArray>): Result<SyncData> =
+        read(content, verifyRemoteObjects, cachedRemoteVerifier = null, fetch = fetch)
+
+    suspend fun read(content: ByteArray, verifyRemoteObjects: Boolean,
+        cachedRemoteVerifier: ((path: String, compressed: ByteArray) -> Boolean)? = null,
         fetch: suspend (String) -> Result<ByteArray>): Result<SyncData> {
         val rollbackPaths = lastReferencedPaths
         lastReferencedPaths = emptySet()
         return try {
             val budget = SyncArchiveMetadataBudget(metadataLimits)
-            load(content, verifyRemoteObjects, fetch).use { loaded ->
+            load(content, verifyRemoteObjects, fetch, cachedRemoteVerifier).use { loaded ->
                 val context = coroutineContext
                 val data = loaded.main().use {
                     SyncArchiveRecords.read(loaded.manifest.header, it, loaded.manifest.recordCount,
@@ -196,12 +201,23 @@ class SyncArchiveRepository private constructor(
         sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?,
         verifyRemoteObjects: Boolean,
         fetch: suspend (String) -> Result<ByteArray>
+    ): Result<SyncDataset> = readDataset(content, store, sanitizeTrack, sanitizeBucket,
+        verifyRemoteObjects, cachedRemoteVerifier = null, fetch = fetch)
+
+    suspend fun readDataset(
+        content: ByteArray,
+        store: SyncPlaybackDatasetStore,
+        sanitizeTrack: (SyncTrackStat) -> SyncTrackStat?,
+        sanitizeBucket: (SyncPlaybackStatBucket) -> SyncPlaybackStatBucket?,
+        verifyRemoteObjects: Boolean,
+        cachedRemoteVerifier: ((path: String, compressed: ByteArray) -> Boolean)? = null,
+        fetch: suspend (String) -> Result<ByteArray>
     ): Result<SyncDataset> {
         val rollbackPaths = lastReferencedPaths
         lastReferencedPaths = emptySet()
         return try {
             val budget = SyncArchiveMetadataBudget(metadataLimits)
-            load(content, verifyRemoteObjects, fetch).use { loaded ->
+            load(content, verifyRemoteObjects, fetch, cachedRemoteVerifier).use { loaded ->
                 val dataset = decodeDataset(loaded, store, sanitizeTrack, sanitizeBucket, budget)
                 try {
                     val data = restorePreservedLyrics(dataset.data, recoverLegacyLyrics(loaded, budget))
@@ -224,16 +240,19 @@ class SyncArchiveRepository private constructor(
     }
 
     private suspend fun load(content: ByteArray, verifyRemote: Boolean,
-        fetch: suspend (String) -> Result<ByteArray>): SyncArchiveV4Bridge.Loaded {
+        fetch: suspend (String) -> Result<ByteArray>,
+        cachedRemoteVerifier: ((String, ByteArray) -> Boolean)? = null): SyncArchiveV4Bridge.Loaded {
         val context = coroutineContext
         if (SyncArchiveV4Format.isManifest(content)) {
-            return bridge.load(content, verifyRemote, fetch) { context.ensureActive() }
+            return bridge.load(content, verifyRemote, fetch, cachedRemoteVerifier) { context.ensureActive() }
         }
         val manifest = SyncArchiveCodec.readManifest(content)
-        val main = resolve(manifest, verifyRemote, fetch)
+        val main = resolve(manifest, verifyRemote, fetch, cachedRemoteVerifier)
         val workspace = bridge.newWorkspace()
         try {
-            val legacy = manifest.legacyLyrics?.let { materializeLegacy(it, workspace.directory, verifyRemote, fetch) }
+            val legacy = manifest.legacyLyrics?.let {
+                materializeLegacy(it, workspace.directory, verifyRemote, fetch, cachedRemoteVerifier)
+            }
             return SyncArchiveV4Bridge.Loaded(manifest, main.paths + legacy?.second.orEmpty(),
                 { SyncArchiveInputStream(main.data, cache) }, legacy?.first, workspace)
         } catch (failure: Throwable) {
@@ -251,8 +270,9 @@ class SyncArchiveRepository private constructor(
     }
 
     private suspend fun materializeLegacy(source: SyncLegacyLyricSource, workspace: File, verifyRemote: Boolean,
-        fetch: suspend (String) -> Result<ByteArray>): Pair<File, Set<String>> {
-        val refs = resolve(source.manifest(), verifyRemote, fetch)
+        fetch: suspend (String) -> Result<ByteArray>,
+        cachedRemoteVerifier: ((String, ByteArray) -> Boolean)?): Pair<File, Set<String>> {
+        val refs = resolve(source.manifest(), verifyRemote, fetch, cachedRemoteVerifier)
         val file = File(workspace, "legacy.records")
         SyncArchiveInputStream(refs.data, cache).use { input ->
             file.outputStream().use { output ->
@@ -349,8 +369,10 @@ class SyncArchiveRepository private constructor(
     }
 
     private suspend fun resolve(manifest: SyncArchiveManifest, verifyRemote: Boolean,
-        fetch: suspend (String) -> Result<ByteArray>): Resolved {
-        val resolver = SyncArchiveTreeReader(cache, fetch, manifest.chunkCount, manifest.rawDataBytes, verifyRemote)
+        fetch: suspend (String) -> Result<ByteArray>,
+        cachedRemoteVerifier: ((String, ByteArray) -> Boolean)?): Resolved {
+        val resolver = SyncArchiveTreeReader(cache, fetch, manifest.chunkCount, manifest.rawDataBytes,
+            verifyRemote, cachedRemoteVerifier)
         manifest.root?.let { resolver.walk(it, 0) }
         require(resolver.data.size.toLong() == manifest.chunkCount) { "Sync chunk count mismatch" }
         require(resolver.data.sumOf { it.rawBytes.toLong() } == manifest.rawDataBytes) { "Sync raw byte count mismatch" }
@@ -377,7 +399,8 @@ private class SyncArchiveTreeReader(
     private val fetch: suspend (String) -> Result<ByteArray>,
     private val expectedChunks: Long,
     private var remainingBytes: Long,
-    private val verifyRemote: Boolean
+    private val verifyRemote: Boolean,
+    private val cachedRemoteVerifier: ((String, ByteArray) -> Boolean)?
 ) {
     val data = ArrayList<SyncArchiveRef>()
     val paths = LinkedHashSet<String>()
@@ -397,10 +420,19 @@ private class SyncArchiveTreeReader(
     }
 
     private suspend fun readObject(ref: SyncArchiveRef): ByteArray {
-        val cached = if (verifyRemote && ref.path !in paths) null else cache.cachedCompressed(ref)
+        val requiresProof = verifyRemote && ref.path !in paths
+        val cached = readCached(ref, requiresProof)
+        coroutineContext.ensureActive()
         val content = cached ?: fetch(ref.path).getOrThrow().also { cache.save(ref, it) }
         paths.add(ref.path)
         return content
+    }
+
+    private fun readCached(ref: SyncArchiveRef, requiresProof: Boolean): ByteArray? {
+        if (!requiresProof) return cache.cachedCompressed(ref)
+        val verifier = cachedRemoteVerifier ?: return null
+        val cached = cache.cachedCompressed(ref) ?: return null
+        return if (verifier(ref.path, cached)) cached else null
     }
 
     private fun validateTraversal(depth: Int) {

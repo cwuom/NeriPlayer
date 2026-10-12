@@ -85,9 +85,10 @@ internal class SyncArchiveV4Bridge(private val directory: File, private val orig
         }, { paths -> originalCache.trim(paths + legacyProtection) })
     }
 
-    suspend fun load(content: ByteArray, verifyRemote: Boolean, fetch: suspend (String) -> Result<ByteArray>, checkActive: () -> Unit): Loaded {
+    suspend fun load(content: ByteArray, verifyRemote: Boolean, fetch: suspend (String) -> Result<ByteArray>,
+        cachedRemoteVerifier: ((String, ByteArray) -> Boolean)? = null, checkActive: () -> Unit): Loaded {
         val manifest = SyncArchiveV4Format.readManifest(content)
-        val reader = SyncArchiveV4TreeReader(objects, fetch, verifyRemote)
+        val reader = SyncArchiveV4TreeReader(objects, fetch, verifyRemote, cachedRemoteVerifier)
         val main = reader.read(manifest.main)
         val legacy = reader.read(manifest.legacy)
         val pool = reader.read(manifest.pool)

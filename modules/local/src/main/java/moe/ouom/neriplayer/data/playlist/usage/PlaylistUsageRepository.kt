@@ -30,12 +30,16 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -94,6 +98,7 @@ private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
 }
 
 private const val LOCAL_USAGE_COVER_CANDIDATE_LIMIT = 24
+private const val INITIAL_USAGE_READ_RETRY_DELAY_MS = 1_000L
 
 internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
     return list
@@ -189,6 +194,7 @@ class PlaylistUsageRepository internal constructor(
     private var initialized = false
     private var initialLoadFailure: Exception? = null
     private val _flow = MutableStateFlow(emptyList<UsageEntry>())
+    private val initialReadReady = MutableStateFlow(false)
     @Volatile
     private var persistedEntries = emptyList<UsageEntry>()
     @Volatile
@@ -203,11 +209,23 @@ class PlaylistUsageRepository internal constructor(
     private var initialLoadRetry: Job? = null
     private val mutationsAwaitingInitialLoad = ArrayList<() -> Unit>()
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
+    // 存活订阅推动失败读取的恢复，可信读取前不能公开空值，也不占用保存代次
+    val loadedFrequentPlaylistsFlow: Flow<List<UsageEntry>> = flow {
+        initialLoad.join()
+        while (!initialReadReady.value) {
+            currentCoroutineContext().ensureActive()
+            synchronized(mutationLock) { requestInitialLoadRetryLocked() }?.join()
+            if (!initialReadReady.value) delay(INITIAL_USAGE_READ_RETRY_DELAY_MS)
+        }
+        emitAll(_flow)
+    }
     // 首次访问常在主线程，读取放到后台；加载期间到达的界面操作排队，完成后按原顺序重放
     private val initialLoad: Job = scope.launch {
         var loaded: List<UsageEntry>? = null
         try {
-            loaded = tryLoadEntries()
+            val read = tryLoadEntries()
+            currentCoroutineContext().ensureActive()
+            loaded = read
         } finally {
             finishInitialLoad(loaded)
         }
@@ -218,7 +236,11 @@ class PlaylistUsageRepository internal constructor(
     private fun finishInitialLoad(loaded: List<UsageEntry>?) = synchronized(mutationLock) {
         initialLoadInFlight = false
         // 主存恢复成功前保留早到操作，失败时重放会让这些操作被拒绝并丢失
-        if (loaded == null || initialized) return@synchronized
+        if (loaded == null) {
+            NPLogger.d("PlaylistUsageRepo", "Usage load incomplete: loaded=false")
+            return@synchronized
+        }
+        if (initialized) return@synchronized
         _flow.value = loaded
         persistedEntries = loaded
         baselineTrusted = true
@@ -226,7 +248,13 @@ class PlaylistUsageRepository internal constructor(
         initialized = true
         val queued = mutationsAwaitingInitialLoad.toList()
         mutationsAwaitingInitialLoad.clear()
-        queued.forEach { mutation -> mutation() }
+        try {
+            queued.forEach { mutation -> mutation() }
+        } finally {
+            // 排队操作失败仍须公开已经可信读取的数据，异常继续交给原调用方处理
+            initialReadReady.value = true
+            NPLogger.d("PlaylistUsageRepo", "Usage ready: count=${_flow.value.size} queuedOperations=${queued.size}")
+        }
     }
 
     private fun deferUntilInitialLoadLocked(mutation: () -> Unit): Boolean {
@@ -242,7 +270,9 @@ class PlaylistUsageRepository internal constructor(
             val roomEntries = activeRoomStore.readIfRoomPrimary()
             if (roomEntries != null) {
                 LegacyJsonCleanupRequests.schedule(appContext, "playlist-usage-room-load")
-                return normalizeUsageEntries(roomEntries)
+                val normalized = normalizeUsageEntries(roomEntries)
+                NPLogger.d("PlaylistUsageRepo", "Usage read: authority=room rawCount=${roomEntries.size} normalizedCount=${normalized.size}")
+                return normalized
             }
         }
 
@@ -266,11 +296,16 @@ class PlaylistUsageRepository internal constructor(
     }
 
     private fun loadLegacyEntries(): List<UsageEntry> {
-        if (!file.exists()) return emptyList()
+        if (!file.exists()) {
+            NPLogger.d("PlaylistUsageRepo", "Usage read: authority=legacy missing=true rawCount=0 normalizedCount=0")
+            return emptyList()
+        }
         val entries = gson.fromJson<List<UsageEntry>>(
             file.readText(), object : TypeToken<List<UsageEntry>>() {}.type
         ) ?: throw IOException("Playlist usage JSON has no valid list")
-        return normalizeUsageEntries(entries)
+        val normalized = normalizeUsageEntries(entries)
+        NPLogger.d("PlaylistUsageRepo", "Usage read: authority=legacy rawCount=${entries.size} normalizedCount=${normalized.size}")
+        return normalized
     }
 
     private suspend fun tryLoadEntries(): List<UsageEntry>? = try {
@@ -300,10 +335,14 @@ class PlaylistUsageRepository internal constructor(
      */
     private fun ensureInitializedForUiLocked(): Boolean {
         if (initialized) return baselineTrusted || writingTrustedSnapshot
-        if (initialLoadRetry?.isActive != true) {
-            initialLoadRetry = scope.launch { retryInitialLoad() }
-        }
+        requestInitialLoadRetryLocked()
         return false
+    }
+
+    private fun requestInitialLoadRetryLocked(): Job? {
+        if (initialized) return null
+        return initialLoadRetry?.takeIf { it.isActive }
+            ?: scope.launch { retryInitialLoad() }.also { initialLoadRetry = it }
     }
 
     private suspend fun retryInitialLoad() {
@@ -365,19 +404,18 @@ class PlaylistUsageRepository internal constructor(
 
     suspend fun awaitInitialized(): Boolean = withContext(Dispatchers.IO) {
         initialLoad.join()
-        val context = currentCoroutineContext()
-        val generation = synchronized(mutationLock) {
-            if (!ensureInitializedLocked(context, forPersistence = true)) return@withContext false
-            // 占用新的保存代次，等待中的旧 UI 保存不能在本轮确认之后迟到覆盖
-            persistenceGeneration += 1L
-            persistenceGeneration
-        }
-        flushPendingWrites(generation)
+        flushPendingWrites(currentCoroutineContext())
     }
 
-    private suspend fun flushPendingWrites(generation: Long): Boolean = try {
+    private suspend fun flushPendingWrites(context: CoroutineContext): Boolean = try {
         withPersistenceLock {
-            if (!isLatestGeneration(generation) || !recoverBaselineLocked()) return@withPersistenceLock false
+            val generation = synchronized(mutationLock) {
+                if (!ensureInitializedLocked(context, forPersistence = true)) return@withPersistenceLock false
+                // 排队期间允许首页刷新元数据，取得保存锁后再确认最新快照的代次
+                persistenceGeneration += 1L
+                persistenceGeneration
+            }
+            if (!recoverBaselineLocked()) return@withPersistenceLock false
             val snapshot = synchronized(mutationLock) {
                 if (generation != persistenceGeneration) return@withPersistenceLock false
                 val visible = visibleEntriesLocked(_flow.value)
@@ -778,6 +816,9 @@ class PlaylistUsageRepository internal constructor(
             }
 
             val localizedContext = LanguageManager.applyLanguage(appContext)
+            current.asSequence()
+                .filter { entry -> entry.source == SOURCE_LOCAL }
+                .mapTo(localEntryIds) { entry -> resolveLocalPlaylistUsageId(entry, localizedContext) }
             val localPlaylistLookup = buildLocalPlaylistUsageLookup(
                 playlists = playlists,
                 context = localizedContext,
@@ -787,7 +828,8 @@ class PlaylistUsageRepository internal constructor(
             val updated = current.mapNotNull { entry ->
                 if (entry.source != SOURCE_LOCAL) return@mapNotNull entry
 
-                val playlist = localPlaylistLookup[entry.id] ?: run {
+                val playlist = (localPlaylistLookup[entry.id]
+                    ?: localPlaylistLookup[resolveLocalPlaylistUsageId(entry, localizedContext)]) ?: run {
                     changed = true
                     return@mapNotNull null
                 }
@@ -1279,4 +1321,15 @@ fun buildLocalPlaylistUsageLookup(
         }
 
     return lookup
+}
+
+fun resolveLocalPlaylistUsageId(entry: UsageEntry, context: Context? = null): Long {
+    // 只解析本地查找目标，使用记录的 ID 和删除标记保留原来的 key
+    if (entry.source != PlaylistUsageRepository.SOURCE_LOCAL || entry.id >= 0L) return entry.id
+    if (entry.id == FavoritesPlaylist.SYSTEM_ID || entry.id == LocalFilesPlaylist.SYSTEM_ID) return entry.id
+    return when {
+        FavoritesPlaylist.matches(entry.name, context) -> FavoritesPlaylist.SYSTEM_ID
+        LocalFilesPlaylist.matches(entry.name, context) -> LocalFilesPlaylist.SYSTEM_ID
+        else -> entry.id
+    }
 }

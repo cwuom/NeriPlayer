@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.api.sync.http.SyncResponseBodyReader
 import moe.ouom.neriplayer.api.sync.http.SyncFileTransferLimits
 import moe.ouom.neriplayer.api.sync.http.syncTransportResult
+import moe.ouom.neriplayer.api.sync.http.suspendSyncTransportResult
 import okhttp3.Credentials
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -146,53 +147,58 @@ class WebDavApiClient(
 
     private fun getFileContent(remoteUrl: String, lease: WebDavArchiveLease?): Result<WebDavRemoteFileSnapshot> {
         return syncTransportResult {
-            val request = Request.Builder()
-                .url(remoteUrl)
-                .header("Authorization", authorizationHeader)
-                .get()
-
-            execute(request, lease) { response, cancel ->
-                when {
-                    response.isSuccessful -> {
-                        val body = try {
-                            SyncResponseBodyReader.read(response.body, SyncFileTransferLimits.responseBudget(request.build().url.encodedPath), cancel)
-                        } catch (error: IOException) {
-                            // 先切断连接，避免关闭响应时为复用连接继续读取超限正文
-                            cancel()
-                            throw error
-                        }
-                        WebDavRemoteFileSnapshot(
-                            content = body,
-                            fingerprint = calculateFingerprint(body),
-                            version = WebDavConditionalHeaders.extract(response)
-                        )
-                    }
-
-                    response.code == 401 -> {
-                        throw WebDavAuthException(
-                            authFailureMessage
-                        )
-                    }
-                    response.code == 403 -> throw WebDavAccessDeniedException(accessDeniedMessage)
-
-                    response.code == 404 -> {
-                        response.close()
-                        directoryProbe.requireExists(remoteUrl, lease)
-                        throw WebDavFileNotFoundException("Remote backup file not found: $remoteUrl")
-                    }
-
-                    else -> {
-                        val errorBody = SyncResponseBodyReader.read(response.body,
-                            SyncFileTransferLimits.responseBudget(request.build().url.encodedPath), cancel).toString(Charsets.UTF_8)
-                        throw WebDavApiException(
-                            response.code,
-                            "Failed to get file: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}"
-                        )
-                    }
-                }
+            val request = fileReadRequest(remoteUrl)
+            try {
+                execute(request, lease) { response, cancel -> parseFileContent(response, remoteUrl, cancel) }
+            } catch (missing: WebDavFileNotFoundException) {
+                directoryProbe.requireExists(remoteUrl, lease)
+                throw missing
             }
         }.onFailure {
             NPLogger.e(TAG, "Get WebDAV file content failed", it)
+        }
+    }
+
+    suspend fun getArchiveFileContent(remoteUrl: String, lease: WebDavArchiveLease? = null): Result<WebDavRemoteFileSnapshot> =
+        suspendSyncTransportResult {
+            val request = fileReadRequest(remoteUrl)
+            val parse: (Response, () -> Unit) -> WebDavRemoteFileSnapshot = { response, cancel ->
+                parseFileContent(response, remoteUrl, cancel)
+            }
+            try {
+                if (lease != null) lease.executeCancellable(request, parse)
+                else executeWebDavArchiveRead(client.newCall(request.build()), parse)
+            } catch (missing: WebDavFileNotFoundException) {
+                directoryProbe.requireExistsCancellable(remoteUrl, lease)
+                throw missing
+            }
+        }.onFailure { NPLogger.e(TAG, "Get WebDAV archive file content failed", it) }
+
+    private fun fileReadRequest(remoteUrl: String): Request.Builder = Request.Builder()
+        .url(remoteUrl).header("Authorization", authorizationHeader).get()
+
+    private fun parseFileContent(response: Response, remoteUrl: String, cancel: () -> Unit): WebDavRemoteFileSnapshot {
+        val budget = SyncFileTransferLimits.responseBudget(remoteUrl.toHttpUrl().encodedPath)
+        return when {
+            response.isSuccessful -> {
+                val body = try {
+                    SyncResponseBodyReader.read(response.body, budget, cancel)
+                } catch (error: IOException) {
+                    // 先切断连接，避免关闭响应时为复用连接继续读取超限正文
+                    cancel()
+                    throw error
+                }
+                WebDavRemoteFileSnapshot(content = body, fingerprint = calculateFingerprint(body),
+                    version = WebDavConditionalHeaders.extract(response))
+            }
+            response.code == 401 -> throw WebDavAuthException(authFailureMessage)
+            response.code == 403 -> throw WebDavAccessDeniedException(accessDeniedMessage)
+            response.code == 404 -> throw WebDavFileNotFoundException("Remote backup file not found: $remoteUrl")
+            else -> {
+                val errorBody = SyncResponseBodyReader.read(response.body, budget, cancel).toString(Charsets.UTF_8)
+                throw WebDavApiException(response.code,
+                    "Failed to get file: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}")
+            }
         }
     }
 

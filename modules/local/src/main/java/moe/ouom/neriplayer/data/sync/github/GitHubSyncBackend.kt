@@ -7,6 +7,8 @@ import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 
 
 import moe.ouom.neriplayer.api.sync.github.GitHubApiClient
+import moe.ouom.neriplayer.api.sync.github.GitHubArchiveHead
+import moe.ouom.neriplayer.api.sync.github.GitHubArchiveProof
 import moe.ouom.neriplayer.api.sync.github.TokenExpiredException
 import moe.ouom.neriplayer.api.sync.github.GitHubFileNotFoundException
 import moe.ouom.neriplayer.api.sync.github.GitHubContentConflictException
@@ -74,19 +76,24 @@ internal class GitHubSyncBackend(
         val sha: String?,
         val fileName: String,
         val branch: String? = null,
-        val knownPaths: Set<String> = emptySet()
+        val knownPaths: Set<String> = emptySet(),
+        val archiveProof: GitHubArchiveProof? = null
     )
 
     private suspend fun fetchRemoteSnapshot(): Result<SyncDatasetRemoteSnapshot<Version>> {
-        val head = apiClient.getRepositoryHead(owner, repo).getOrElse { return Result.failure(it) }
+        val started = System.nanoTime()
+        val snapshot = apiClient.getArchiveHead(owner, repo).getOrElse { return Result.failure(it) }
+        val head = snapshot.head
         val manifest = apiClient.getFileContentAtRef(owner, repo, SyncArchiveRepository.MANIFEST_FILE_NAME, head.sha)
             .getOrElse { error ->
-                return if (error is GitHubFileNotFoundException) fetchLegacySnapshot(head) else Result.failure(error)
+                return if (error is GitHubFileNotFoundException) fetchLegacySnapshot(snapshot) else Result.failure(error)
             }
-        return decodeArchive(manifest, head)
+        NPLogger.i(TAG, "GitHub head and manifest read: ${(System.nanoTime() - started) / 1_000_000L} ms")
+        return decodeArchive(manifest, snapshot)
     }
 
-    private suspend fun fetchLegacySnapshot(head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
+    private suspend fun fetchLegacySnapshot(snapshot: GitHubArchiveHead): Result<SyncDatasetRemoteSnapshot<Version>> {
+        val head = snapshot.head
         val fetched = SyncFallbackFileReader.read(
             preferredFileName = preferredFileName,
             fallbackFileNames = SyncDataSerializer.getReadFallbackFileNames(useDataSaver),
@@ -97,13 +104,14 @@ internal class GitHubSyncBackend(
             archive.captureLegacyLyrics(SyncData())
             return observeCurrentSyncProtocol(SyncDatasetRemoteSnapshot(null, Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch)), observe = currentProtocolObserved)
         }
-        return decodeLegacyContent(fetched.content, head)
+        return decodeLegacyContent(fetched.content, snapshot)
     }
 
-    private suspend fun decodeLegacyContent(content: ByteArray, head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
+    private suspend fun decodeLegacyContent(content: ByteArray, snapshot: GitHubArchiveHead): Result<SyncDatasetRemoteSnapshot<Version>> {
         if (SyncArchiveRepository.isManifest(content)) {
-            return decodeArchive(content, head).map { it.copy(requiresMigrationUpload = true) }
+            return decodeArchive(content, snapshot).map { it.copy(requiresMigrationUpload = true) }
         }
+        val head = snapshot.head
         val context = currentCoroutineContext()
         // 损坏正文直接失败，文件名回退只用于远端文件不存在的情况
         return decoder.decodeForMigration(content, invalidBackup, authorizeLegacyMigration, archive::captureLegacyLyrics,
@@ -116,21 +124,34 @@ internal class GitHubSyncBackend(
         }.onFailure { NPLogger.e(TAG, "Failed to parse remote data, aborting sync without stale fallback", it) }
     }
 
-    private suspend fun decodeArchive(content: ByteArray, head: GitHubSyncHead): Result<SyncDatasetRemoteSnapshot<Version>> {
+    private suspend fun decodeArchive(content: ByteArray, snapshot: GitHubArchiveHead): Result<SyncDatasetRemoteSnapshot<Version>> {
         val protocol = runCatching { SyncArchiveRepository.protocolVersion(content) }.getOrElse { return Result.failure(it) }
         if (protocol < 4) {
             try { authorizeLegacyMigration(content) } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { return Result.failure(error) }
         }
-        val dataset = archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize, verifyRemoteObjects = true) { path -> apiClient.getFileContentAtRef(owner, repo, path, head.sha) }
-            .getOrElse { return Result.failure(it) }
+        val loaded = readArchiveDataset(content, snapshot).getOrElse { return Result.failure(it) }
+        val head = snapshot.head
         return observeCurrentSyncProtocol(
             SyncDatasetRemoteSnapshot(
-                dataset = sanitizeDataset(dataset),
-                version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, archive.lastReferencedPaths),
+                dataset = sanitizeDataset(loaded.dataset),
+                version = Version(head.sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, archive.lastReferencedPaths, loaded.proof),
                 requiresMigrationUpload = protocol < 4
             ), protocol, currentProtocolObserved
         )
+    }
+
+    private data class ArchiveRead(val dataset: SyncDataset, val proof: GitHubArchiveProof)
+
+    private suspend fun readArchiveDataset(content: ByteArray, snapshot: GitHubArchiveHead): Result<ArchiveRead> {
+        val readStarted = System.nanoTime()
+        val proof = apiClient.getArchiveProof(owner, repo, snapshot).getOrElse { return Result.failure(it) }
+        val objects = GitHubArchiveObjectReader(apiClient, owner, repo, snapshot.head.sha, proof.objectIds, currentCoroutineContext())
+        return archive.readDataset(content, datasetStore, decoder::sanitize, decoder::sanitize,
+            verifyRemoteObjects = true, cachedRemoteVerifier = objects::verifyCached, fetch = objects::fetch).also { result ->
+            NPLogger.i(TAG, "GitHub archive read: ${(System.nanoTime() - readStarted) / 1_000_000L} ms, " +
+                "cached=${objects.cachedObjects.get()}, downloaded=${objects.downloadedObjects.get()}, success=${result.isSuccess}")
+        }.map { ArchiveRead(it, proof) }
     }
 
     private fun sanitizeDataset(dataset: SyncDataset): SyncDataset = try {
@@ -145,12 +166,17 @@ internal class GitHubSyncBackend(
         version: Version
     ): Result<Version> {
         val head = resolveUploadHead(version).getOrElse { return Result.failure(it) }
+        val prepareStarted = System.nanoTime()
         return archive.prepareCancellable(data).use { prepared ->
+            NPLogger.i(TAG, "GitHub archive prepare: ${(System.nanoTime() - prepareStarted) / 1_000_000L} ms")
             val files = prepared.objects(version.knownPaths)
                 .map { it.path to it.content } + sequenceOf(SyncArchiveRepository.MANIFEST_FILE_NAME to prepared.content)
-            apiClient.updateFilesContent(owner, repo, files, head, retainedArchivePaths = prepared.paths).mapCatching { sha ->
+            val publishStarted = System.nanoTime()
+            apiClient.updateFilesContent(owner, repo, files, head, retainedArchivePaths = prepared.paths, archiveProof = version.archiveProof).mapCatching { sha ->
                 currentProtocolObserved(4)
                 Version(sha, SyncArchiveRepository.MANIFEST_FILE_NAME, head.branch, prepared.paths)
+            }.also { result ->
+                NPLogger.i(TAG, "GitHub archive publish: ${(System.nanoTime() - publishStarted) / 1_000_000L} ms, success=${result.isSuccess}")
             }
         }
     }

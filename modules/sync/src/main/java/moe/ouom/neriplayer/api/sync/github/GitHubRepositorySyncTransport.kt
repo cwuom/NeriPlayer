@@ -23,6 +23,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.io.File
 import java.util.Base64
+import java.util.UUID
 import kotlin.coroutines.coroutineContext
 
 /** 直接读写仓库中的同步文件 */
@@ -44,17 +45,48 @@ internal class GitHubRepositorySyncTransport(
             }
         }
 
+    suspend fun getArchiveHead(owner: String, repo: String): Result<GitHubArchiveHead> =
+        withContext(Dispatchers.IO) {
+            suspendSyncTransportResult {
+                val repository = readArchiveMetadata("repos/$owner/$repo", "repository")
+                val branch = parseObject(repository, "repository").requiredArchiveString("default_branch", "GitHub repository has no default branch")
+                if (branch.isBlank()) throw IOException("GitHub repository has no default branch")
+                val path = "repos/$owner/$repo/branches/"
+                val url = endpoint(path).toHttpUrl().newBuilder().addPathSegment(branch).build()
+                val body = readArchiveMetadataUrl(url.toString(), "branch")
+                readArchiveHead(body, apiBase, owner, repo, branch)
+            }
+        }
+
+    suspend fun getArchiveProof(owner: String, repo: String, snapshot: GitHubArchiveHead): Result<GitHubArchiveProof> =
+        withContext(Dispatchers.IO) {
+            suspendSyncTransportResult {
+                if (!snapshot.matches(apiBase, owner, repo)) throw IOException("GitHub archive head belongs to a different target")
+                GitHubArchiveProof(snapshot, readArchiveObjectIds(owner, repo, snapshot.treeSha))
+            }
+        }
+
     suspend fun getFileContentAtRef(
         owner: String,
         repo: String,
         path: String,
         ref: String
     ): Result<ByteArray> = withContext(Dispatchers.IO) {
-        syncTransportResult {
-            getRawFileAtRef(owner, repo, path, ref)
+        suspendSyncTransportResult {
+            val call = rawFileCallAtRef(owner, repo, path, ref)
+            executeGitHubCall(call) { response -> readRawFileResponse(response, path, call) }
                 ?: throw GitHubFileNotFoundException("Remote backup file not found: $path")
         }
     }
+
+    suspend fun getArchiveObjectIds(owner: String, repo: String, ref: String): Result<Map<String, String>> =
+        withContext(Dispatchers.IO) {
+            suspendSyncTransportResult {
+                if (!GIT_OBJECT_ID.matches(ref)) throw IOException("GitHub archive proof requires a fixed commit ID")
+                val treeSha = readArchiveCommitTree(owner, repo, ref)
+                readArchiveObjectIds(owner, repo, treeSha)
+            }
+        }
 
     suspend fun updateFilesContent(
         owner: String,
@@ -62,12 +94,23 @@ internal class GitHubRepositorySyncTransport(
         files: Sequence<Pair<String, ByteArray>>,
         expectedHead: GitHubSyncHead,
         message: String,
-        retainedArchivePaths: Set<String>? = null
+        retainedArchivePaths: Set<String>? = null,
+        archiveProof: GitHubArchiveProof? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         suspendSyncTransportResult {
             validateRetainedPaths(retainedArchivePaths)
+            val plan = prepareArchiveUpload(files, retainedArchivePaths)
+            val base = approvedArchiveBase(owner, repo, expectedHead, archiveProof)
+                ?: plan.batch?.let { readArchiveBase(owner, repo, expectedHead.sha, retainedArchivePaths) }
+            val mutationId = UUID.randomUUID().toString()
+            val requestBody = prepareBatchRequest(owner, repo, expectedHead, message, plan.batch, retainedArchivePaths, base, mutationId)
+            if (requestBody != null) {
+                val sha = publishArchiveBatch(owner, repo, expectedHead, requestBody, mutationId)
+                runCatching { checkpoint(owner, repo)?.published() }
+                return@suspendSyncTransportResult sha
+            }
             val publication = ArchivePublication(owner, repo, expectedHead)
-            val treeSha = stageArchiveTree(owner, repo, files, expectedHead.sha, retainedArchivePaths)
+            val treeSha = stageArchiveTree(owner, repo, plan.files, expectedHead.sha, retainedArchivePaths, base)
             coroutineContext.ensureActive()
             val commitSha = createSyncFileCommit(owner, repo, treeSha, expectedHead.sha, message)
             coroutineContext.ensureActive()
@@ -81,18 +124,115 @@ internal class GitHubRepositorySyncTransport(
         paths?.forEach { require(GitHubArchiveTreeReader.isOwnedObjectPath(it)) { "Invalid retained sync object path" } }
     }
 
+    private data class ArchiveUploadPlan(val files: Sequence<Pair<String, ByteArray>>, val batch: List<Pair<String, ByteArray>>?)
+    private data class ArchiveBase(val treeSha: String, val paths: Set<String>)
+
+    private fun approvedArchiveBase(owner: String, repo: String, head: GitHubSyncHead, proof: GitHubArchiveProof?): ArchiveBase? =
+        proof?.takeIf { it.matches(apiBase, owner, repo, head) }?.let { ArchiveBase(it.treeSha, it.objectIds.keys) }
+
+    private suspend fun prepareArchiveUpload(files: Sequence<Pair<String, ByteArray>>, retained: Set<String>?): ArchiveUploadPlan {
+        if (retained == null) return ArchiveUploadPlan(files, null)
+        val iterator = files.iterator()
+        val buffered = ArrayList<Pair<String, ByteArray>>()
+        var bytes = 0L
+        while (iterator.hasNext()) {
+            coroutineContext.ensureActive()
+            val file = iterator.next()
+            buffered += file
+            bytes += file.second.size
+            if (buffered.size > GitHubArchiveCommit.MAX_FILES || bytes > GitHubArchiveCommit.MAX_CONTENT_BYTES) {
+                // 仅重放已经读取的项，归档对象流可能只能消费一次
+                return ArchiveUploadPlan(buffered.asSequence() + iterator.asSequence(), null)
+            }
+        }
+        return ArchiveUploadPlan(buffered.asSequence(), buffered)
+    }
+
+    private suspend fun readArchiveBase(owner: String, repo: String, expectedHead: String, retained: Set<String>?): ArchiveBase {
+        val tree = getCommitTree(owner, repo, expectedHead)
+        val paths = if (retained == null) emptySet() else readArchiveTreePaths(owner, repo, tree)
+        return ArchiveBase(tree, paths)
+    }
+
+    private fun prepareBatchRequest(
+        owner: String,
+        repo: String,
+        head: GitHubSyncHead,
+        message: String,
+        files: List<Pair<String, ByteArray>>?,
+        retained: Set<String>?,
+        base: ArchiveBase?,
+        mutationId: String
+    ): String? {
+        if (files == null || base == null) return null
+        val closure = ArchiveClosure(retained, base.paths)
+        for ((path, content) in files) {
+            GitHubArchiveUploadValidation.validate(path, content)
+            closure.uploaded(path)
+        }
+        return GitHubArchiveCommit.requestBody(owner, repo, head, message, files, closure.obsoletePaths(), mutationId)
+    }
+
+    private suspend fun publishArchiveBatch(owner: String, repo: String, head: GitHubSyncHead, body: String, mutationId: String): String {
+        coroutineContext.ensureActive()
+        val repositoryCheckpoint = checkpoint(owner, repo)
+        repositoryCheckpoint?.ensureReady()
+        val url = GitHubArchiveRefUpdate.endpoint(apiBase)
+        val request = authenticatedRequest(url.toString()).header("Accept", "application/json")
+            .post(body.toRequestBody(JSON_MEDIA_TYPE)).build()
+        try {
+            return executeGraphQlMutation(client.newCall(request)) { response ->
+                readBatchPublication(response, request, owner, repo, head, mutationId, repositoryCheckpoint)
+            }
+        } catch (error: GitHubGraphQlException) {
+            classifyReferenceFailure(owner, repo, head, error)
+        }
+    }
+
+    private fun readBatchPublication(
+        response: Response,
+        request: Request,
+        owner: String,
+        repo: String,
+        head: GitHubSyncHead,
+        mutationId: String,
+        repositoryCheckpoint: GitHubSyncCheckpoint?
+    ): String {
+        if (response.request.url != request.url || response.request.method != "POST") {
+            throw IOException("GitHub batch sync publication response came from an unexpected endpoint")
+        }
+        if (!response.isSuccessful) throwForResponse(response, "publish sync archive", rateCheckpoint = repositoryCheckpoint,
+            maxResponseBytes = GitHubArchiveRefUpdate.MAX_RESPONSE_BYTES)
+        val body = SyncResponseBodyReader.read(response.body, GitHubArchiveRefUpdate.MAX_RESPONSE_BYTES).toString(Charsets.UTF_8)
+        try {
+            return GitHubArchiveCommit.validateResponse(body, mutationId, owner, repo, head)
+        } catch (error: GitHubGraphQlException) {
+            throw graphQlFailure(response, error, repositoryCheckpoint)
+        }
+    }
+
+    private suspend fun classifyReferenceFailure(owner: String, repo: String, head: GitHubSyncHead, error: GitHubGraphQlException): Nothing {
+        coroutineContext.ensureActive()
+        if (error.staleReference) throw GitHubContentConflictException(409, error.message.orEmpty())
+        // 重读只用于识别不同服务器的冲突错误，不替代提交时的版本条件
+        if (getBranchHead(owner, repo, head.branch) != head.sha) {
+            throw GitHubContentConflictException(409, "GitHub sync branch changed before atomic publication")
+        }
+        throw error
+    }
+
     private suspend fun stageArchiveTree(
         owner: String,
         repo: String,
         files: Sequence<Pair<String, ByteArray>>,
         expectedHead: String,
-        retainedPaths: Set<String>?
+        retainedPaths: Set<String>?,
+        base: ArchiveBase? = null
     ): String {
         coroutineContext.ensureActive()
-        val baseTree = getCommitTree(owner, repo, expectedHead)
-        val existingPaths = if (retainedPaths == null) emptySet() else readArchiveTreePaths(owner, repo, baseTree)
-        val closure = ArchiveClosure(retainedPaths, existingPaths)
-        val staging = ArchiveTreeStaging(owner, repo, baseTree)
+        val archiveBase = base ?: readArchiveBase(owner, repo, expectedHead, retainedPaths)
+        val closure = ArchiveClosure(retainedPaths, archiveBase.paths)
+        val staging = ArchiveTreeStaging(owner, repo, archiveBase.treeSha)
         for ((path, content) in files) {
             coroutineContext.ensureActive()
             closure.uploaded(path)
@@ -144,7 +284,7 @@ internal class GitHubRepositorySyncTransport(
             try {
                 executeGraphQlMutation(client.newCall(request)) { response -> validatePublication(response, commitSha) }
             } catch (error: GitHubGraphQlException) {
-                classifyReferenceFailure(error)
+                classifyReferenceFailure(owner, repo, expectedHead, error)
             }
         }
 
@@ -162,15 +302,6 @@ internal class GitHubRepositorySyncTransport(
             }
         }
 
-        private suspend fun classifyReferenceFailure(error: GitHubGraphQlException): Nothing {
-            coroutineContext.ensureActive()
-            if (error.staleReference) throw GitHubContentConflictException(409, error.message.orEmpty())
-            // 不同服务器的 GraphQL 错误类型可能不同，重读只用于判断冲突，不替代原子发布
-            if (getBranchHead(owner, repo, expectedHead.branch) != expectedHead.sha) {
-                throw GitHubContentConflictException(409, "GitHub sync branch changed before atomic publication")
-            }
-            throw error
-        }
     }
 
     private inner class ArchiveTreeStaging(
@@ -342,6 +473,11 @@ internal class GitHubRepositorySyncTransport(
         path: String,
         ref: String
     ): ByteArray? {
+        val call = rawFileCallAtRef(owner, repo, path, ref)
+        return call.execute().use { response -> readRawFileResponse(response, path, call) }
+    }
+
+    private fun rawFileCallAtRef(owner: String, repo: String, path: String, ref: String): Call {
         val url = endpoint("repos/$owner/$repo/contents/$path")
             .toHttpUrl()
             .newBuilder()
@@ -351,21 +487,20 @@ internal class GitHubRepositorySyncTransport(
             .header("Accept", GITHUB_RAW_MEDIA_TYPE)
             .get()
             .build()
-        val call = client.newCall(request)
-        return call.execute().use { response ->
-            when {
-                response.code == 404 -> null
-                response.isSuccessful -> try {
-                    SyncResponseBodyReader.read(response.body, SyncFileTransferLimits.responseBudget(path))
-                } catch (error: IOException) {
-                    // 先切断连接，避免关闭响应时为复用连接继续读取超限正文
-                    call.cancel()
-                    throw error
-                }
-                else -> throwForResponse(response, "read sync file",
-                    maxResponseBytes = SyncFileTransferLimits.responseBudget(path), call = call)
-            }
+        return client.newCall(request)
+    }
+
+    private fun readRawFileResponse(response: Response, path: String, call: Call): ByteArray? = when {
+        response.code == 404 -> null
+        response.isSuccessful -> try {
+            SyncResponseBodyReader.read(response.body, SyncFileTransferLimits.responseBudget(path))
+        } catch (error: IOException) {
+            // 先切断连接，避免关闭响应时为复用连接继续读取超限正文
+            call.cancel()
+            throw error
         }
+        else -> throwForResponse(response, "read sync file",
+            maxResponseBytes = SyncFileTransferLimits.responseBudget(path), call = call)
     }
 
     private fun commitSyncFile(
@@ -412,12 +547,90 @@ internal class GitHubRepositorySyncTransport(
         }
     }
 
+    private suspend fun readArchiveCommitTree(owner: String, repo: String, ref: String): String {
+        val request = authenticatedRequest(endpoint("repos/$owner/$repo/git/commits/$ref"))
+            .header("Accept", GITHUB_JSON_MEDIA_TYPE).get().build()
+        val call = client.newCall(request)
+        return executeGitHubCall(call) { response ->
+            validateArchiveReadResponse(response, request, call, "sync commit")
+            val body = SyncResponseBodyReader.read(response.body, cancelOnReadFailure = call::cancel).toString(Charsets.UTF_8)
+            try {
+                readArchiveTreeSha(body)
+            } catch (error: IOException) {
+                call.cancel()
+                throw error
+            }
+        }
+    }
+
+    private suspend fun readArchiveMetadata(path: String, subject: String): String =
+        readArchiveMetadataUrl(endpoint(path), subject)
+
+    private suspend fun readArchiveMetadataUrl(url: String, subject: String): String {
+        val request = authenticatedRequest(url).header("Accept", GITHUB_JSON_MEDIA_TYPE).get().build()
+        val call = client.newCall(request)
+        return executeGitHubCall(call) { response ->
+            validateArchiveReadResponse(response, request, call, subject)
+            SyncResponseBodyReader.read(response.body, cancelOnReadFailure = call::cancel).toString(Charsets.UTF_8)
+        }
+    }
+
+    private fun readArchiveHead(body: String, apiBase: String, owner: String, repo: String, branch: String): GitHubArchiveHead {
+        val response = parseObject(body, "branch")
+        if (response.requiredArchiveString("name", "GitHub branch has no name") != branch) throw IOException("GitHub branch name mismatch")
+        val commit = response.requiredArchiveObject("commit", "GitHub branch has no commit")
+        val sha = readArchiveId(commit)
+        val tree = commit.requiredArchiveObject("commit", "GitHub branch has no commit details")
+            .requiredArchiveObject("tree", "GitHub branch has no tree")
+        return GitHubArchiveHead(apiBase, owner, repo, GitHubSyncHead(branch, sha), readArchiveId(tree))
+    }
+
+    private fun readArchiveId(value: JsonObject): String {
+        val sha = value.requiredArchiveString("sha", "GitHub archive metadata has no object ID")
+        if (!GIT_OBJECT_ID.matches(sha)) throw IOException("Invalid GitHub archive metadata ID")
+        return sha
+    }
+
+    private fun readArchiveTreeSha(body: String): String {
+        val tree = parseObject(body, "sync commit").requiredArchiveObject("tree", "GitHub sync commit has no tree")
+        val sha = tree.requiredArchiveString("sha", "GitHub sync commit has no tree SHA")
+        if (!GIT_OBJECT_ID.matches(sha)) throw IOException("Invalid GitHub archive tree ID")
+        return sha
+    }
+
+    private fun JsonObject.requiredArchiveObject(name: String, errorMessage: String): JsonObject {
+        val value = get(name)
+        if (value == null || !value.isJsonObject) throw IOException(errorMessage)
+        return value.asJsonObject
+    }
+
+    private fun JsonObject.requiredArchiveString(name: String, errorMessage: String): String {
+        val value = get(name) ?: throw IOException(errorMessage)
+        if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString) throw IOException(errorMessage)
+        return value.asString
+    }
+
+    private suspend fun readArchiveObjectIds(owner: String, repo: String, treeSha: String): Map<String, String> {
+        val request = authenticatedRequest(endpoint("repos/$owner/$repo/git/trees/$treeSha"))
+            .header("Accept", GITHUB_JSON_MEDIA_TYPE).get().build()
+        val context = coroutineContext
+        val call = client.newCall(request)
+        return executeGitHubCall(call) { response ->
+            validateArchiveTreeResponse(response, request, call)
+            GitHubArchiveTreeReader.readOwnedObjectIds(response.body, call, treeSha) { context.ensureActive() }
+        }
+    }
+
     private fun validateArchiveTreeResponse(response: Response, request: Request, call: Call) {
+        validateArchiveReadResponse(response, request, call, "archive tree")
+    }
+
+    private fun validateArchiveReadResponse(response: Response, request: Request, call: Call, subject: String) {
         if (response.request.url != request.url || response.request.method != "GET") {
             call.cancel()
-            throw IOException("GitHub archive tree response came from an unexpected endpoint")
+            throw IOException("GitHub $subject response came from an unexpected endpoint")
         }
-        if (!response.isSuccessful) throwForResponse(response, "read archive tree", call = call)
+        if (!response.isSuccessful) throwForResponse(response, "read $subject", call = call)
     }
 
     private fun createBinaryBlob(owner: String, repo: String, content: ByteArray): String {
@@ -622,5 +835,6 @@ internal class GitHubRepositorySyncTransport(
         const val MAX_TREE_ENTRIES = 1000
         private const val ARCHIVE_MANIFEST_PATH = "neriplayer-sync-v3.manifest"
         const val MAX_ERROR_MESSAGE_LENGTH = 240
+        val GIT_OBJECT_ID = Regex("[0-9a-f]{40}")
     }
 }
