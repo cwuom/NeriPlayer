@@ -201,13 +201,15 @@ internal fun resolveAudioRouteMuteRestoreVolume(
 
 internal fun PlayerManager.suppressPlaybackForAudioRouteLoss(reason: String) {
     if (!isPlayerInitialized()) return
-    val requiresExplicitRestore = shouldMuteListenTogetherListenerForAudioRouteLoss()
-    cancelVolumeFade(resetToFull = false)
     runPlayerActionOnMainThread {
         if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
+        val requiresExplicitRestore = shouldMuteListenTogetherListenerForAudioRouteLoss()
+        val interruptedStart = volumeFadeJob?.isActive == true || isPendingMediaLoadActive()
+        cancelVolumeFade(resetToFull = false)
         val currentVolume = runCatching { player.volume.coerceIn(0f, 1f) }.getOrDefault(1f)
         val restoreVolume = resolveAudioRouteMuteRestoreVolume(
-            currentVolume = currentVolume,
+            // 淡入被取消后不会再走向满音量，恢复时不能保留临时的零音量或中间值
+            currentVolume = if (interruptedStart) 1f else currentVolume,
             existingRestoreVolume = audioRouteMuteRestoreVolume
         )
         if (restoreVolume == null) {
@@ -402,7 +404,7 @@ internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
             if (!isPlayerInitialized()) {
                 return@withContext
             }
-            player.volume = (startVolume * (1f - fraction)).coerceAtLeast(0f)
+            player.volume = volumeWhileAudioRouteMuted((startVolume * (1f - fraction)).coerceAtLeast(0f))
         }
         delay(stepDelay.milliseconds)
     }
@@ -859,20 +861,11 @@ internal fun PlayerManager.playAtIndex(
                     )
                     return@launch
                 }
-                clearPlaybackDemandCacheKey(reason = "play_at_index_requires_login")
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "Requires login to play: id=${song.id}, source=${song.album}"
-                )
-                postPlayerEvent(
-                    PlayerEvent.ShowLoginPrompt(
-                        getLocalizedString(CoreCommonR.string.player_playback_login_required)
-                    )
-                )
                 withContext(Dispatchers.Main) {
-                    nextImpl(
-                        commandSource = commandSource,
-                        bypassLoudVolumeWarning = true
+                    playbackFailureRecoveryOwner.onResolutionFailure(
+                        requestToken = requestToken,
+                        failure = PlaybackResolutionFailure.LOGIN_REQUIRED,
+                        commandSource = commandSource
                     )
                 }
             }
@@ -892,15 +885,10 @@ internal fun PlayerManager.playAtIndex(
                     )
                     return@launch
                 }
-                clearPlaybackDemandCacheKey(reason = "play_at_index_failure")
-                NPLogger.e(
-                    "NERI-PlayerManager",
-                    "获取播放地址失败，跳过当前歌曲: id=${song.id}, source=${song.album}"
-                )
-                consecutivePlayFailures++
                 withContext(Dispatchers.Main) {
-                    advanceAfterPlaybackFailure(
-                        source = "resolve_song_url_failure",
+                    playbackFailureRecoveryOwner.onResolutionFailure(
+                        requestToken = requestToken,
+                        failure = PlaybackResolutionFailure.URL_UNAVAILABLE,
                         commandSource = commandSource
                     )
                 }

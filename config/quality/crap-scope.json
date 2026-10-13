@@ -243,6 +243,7 @@
     "moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRouteOwner.kt",
     "moe/ouom/neriplayer/core/player/audio/route/AudioDeviceRoutePolicy.kt",
     "moe/ouom/neriplayer/core/player/audio/route/PlayerManagerAudioDeviceRoutePort.kt",
+    "moe/ouom/neriplayer/core/player/playback/PlaybackFailureRecoveryOwner.kt",
     "moe/ouom/neriplayer/core/player/policy/command/LocalRoomControlRestriction.kt",
     "moe/ouom/neriplayer/data/ltw/session/socket/ListenTogetherRoomSocketEventOwner.kt",
     "moe/ouom/neriplayer/data/ltw/session/control/ListenTogetherSocketControlResultOwner.kt",

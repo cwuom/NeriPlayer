@@ -34,7 +34,9 @@ class AudioDeviceRoutePolicyTest {
         assertTrue(pausesForImmediateOutputDisconnect(playing, wired, null))
         assertFalse(pausesForImmediateOutputDisconnect(playing, null, speaker))
         assertFalse(pausesForImmediateOutputDisconnect(playing, speaker, null))
-        assertFalse(pausesForImmediateOutputDisconnect(playing.copy(isPlaying = false), wired, speaker))
+        assertFalse(pausesForImmediateOutputDisconnect(
+            playing.copy(isPlaying = false, playWhenReady = false, resumeRequested = false), wired, speaker
+        ))
         assertFalse(pausesForImmediateOutputDisconnect(playing.copy(usbExclusiveEnabled = true), usb, speaker))
         assertFalse(pausesForImmediateOutputDisconnect(playing, wired, usb))
     }
@@ -61,10 +63,24 @@ class AudioDeviceRoutePolicyTest {
         assertTrue(pausesForBluetoothDisconnect(playing, bluetooth, speaker))
         assertTrue(pausesForBluetoothDisconnect(playing, bluetooth, null))
         assertFalse(pausesForBluetoothDisconnect(playing.copy(stopOnBluetoothDisconnect = false), bluetooth, speaker))
-        assertFalse(pausesForBluetoothDisconnect(playing.copy(isPlaying = false), bluetooth, speaker))
+        assertFalse(pausesForBluetoothDisconnect(
+            playing.copy(isPlaying = false, playWhenReady = false, resumeRequested = false), bluetooth, speaker
+        ))
         assertFalse(pausesForBluetoothDisconnect(playing, null, speaker))
         assertFalse(pausesForBluetoothDisconnect(playing, speaker, null))
         assertFalse(pausesForBluetoothDisconnect(playing, bluetooth, bluetooth))
+    }
+
+    @Test
+    fun `disconnect protection remains active while buffering or resolving the next track`() {
+        val speaker = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        val buffering = playing.copy(isPlaying = false, resumeRequested = false)
+        val resolving = playing.copy(isPlaying = false, playWhenReady = false)
+
+        for (state in listOf(buffering, resolving)) {
+            assertTrue(pausesForImmediateOutputDisconnect(state, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, speaker))
+            assertTrue(pausesForBluetoothDisconnect(state, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, speaker))
+        }
     }
 
     @Test
