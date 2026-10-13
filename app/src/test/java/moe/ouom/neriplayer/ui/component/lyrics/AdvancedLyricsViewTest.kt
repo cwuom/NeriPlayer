@@ -368,6 +368,31 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `buildAdvancedSyncedLyrics preserves metadata identity for exact translation preference`() {
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = """
+                [00:00.000]第一句[00:01.000]
+                [00:04.000]OP：唯迹文化
+                [00:04.000]正文[00:05.000]
+                [00:08.000]下一句[00:09.000]
+            """.trimIndent(),
+            rawTranslatedLyrics = """
+                [00:02.200]迟到一[00:03.000]
+                [00:02.300]迟到二[00:03.100]
+                [00:04.000]正文译[00:05.000]
+                [00:08.000]下一句译[00:09.000]
+            """.trimIndent(),
+            lyrics = emptyList(),
+            translatedLyrics = emptyList()
+        )
+
+        assertEquals(4, result.lines.size)
+        assertEquals(null, (result.lines[1] as SyncedLine).translation)
+        assertEquals("正文译", (result.lines[2] as SyncedLine).translation)
+        assertEquals("下一句译", (result.lines[3] as SyncedLine).translation)
+    }
+
+    @Test
     fun `buildAdvancedSyncedLyrics shows no translation when translated lyric is metadata only`() {
         // Bug B: 翻译内容只有制作信息时不应显示任何翻译
         val lyrics = listOf(

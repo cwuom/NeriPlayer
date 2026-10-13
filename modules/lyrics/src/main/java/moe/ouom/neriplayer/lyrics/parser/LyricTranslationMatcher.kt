@@ -46,12 +46,24 @@ fun matchTranslationsToLineIndices(
         val groupSize = groupEndExclusive - lineIndex
         val representativeLine = lines[groupEndExclusive - 1]
         val nextLine = lines.getOrNull(groupEndExclusive)
+        // 精确匹配优先级按正文槽位判断, 制作信息不增加正文容量
+        var realLineCount = 0
+        for (index in lineIndex until groupEndExclusive) {
+            if (!isLyricCreditMetadataLine(lines[index].text)) {
+                realLineCount++
+            }
+        }
+        val preferExactTranslation = (if (realLineCount > 0) realLineCount else groupSize) == 1
+        // 制作信息对应的空翻译也需要消费槽位, 保留原始组容量以维持向下对齐
+        val translationCapacity = groupSize
+        var searchedForExactMatch = false
+        var exactMatchAheadIndex: Int? = null
 
-        // 收集应归属这一组的翻译, 最多 groupSize 条, 并保持时间顺序
-        val groupTranslations = ArrayList<LyricEntry?>(groupSize)
+        // 收集应归属这一组的翻译, 最多 translationCapacity 条, 并保持时间顺序
+        val groupTranslations = ArrayList<LyricEntry?>(translationCapacity)
         while (
             translationIndex < effectiveTranslations.size &&
-            groupTranslations.size < groupSize
+            groupTranslations.size < translationCapacity
         ) {
             val decision = decideTranslationForLine(
                 line = representativeLine,
@@ -60,25 +72,51 @@ fun matchTranslationsToLineIndices(
                 toleranceMs = toleranceMs
             )
             when (decision) {
-                TranslationLineDecision.SKIP_STALE -> translationIndex++
-                TranslationLineDecision.MATCH -> {
+                TranslationLineDecision.SkipStale -> translationIndex++
+                is TranslationLineDecision.Match -> {
                     val translation = effectiveTranslations[translationIndex]
-                    groupTranslations.add(
-                        translation.takeUnless {
-                            isUntranslatedPlaceholderText(it.text)
+                    if (preferExactTranslation && !decision.exact && !searchedForExactMatch) {
+                        // 每段宽松候选只扫描一次, 避免重复扫描同一段翻译
+                        exactMatchAheadIndex = findExactTranslationMatchAhead(
+                            translations = effectiveTranslations,
+                            startIndex = translationIndex + 1,
+                            line = representativeLine,
+                            nextLine = nextLine,
+                            toleranceMs = toleranceMs
+                        )
+                        searchedForExactMatch = true
+                    }
+                    if (
+                        preferExactTranslation && !decision.exact &&
+                        exactMatchAheadIndex?.let { it > translationIndex } == true
+                    ) {
+                        // 后面还有精确匹配时丢弃迟到的宽松翻译, 避免挤掉原配翻译
+                        translationIndex++
+                    } else {
+                        groupTranslations.add(
+                            translation.takeUnless {
+                                isUntranslatedPlaceholderText(it.text)
+                            }
+                        )
+                        if (translationIndex == exactMatchAheadIndex) {
+                            searchedForExactMatch = false
+                            exactMatchAheadIndex = null
                         }
-                    )
-                    translationIndex++
+                        translationIndex++
+                    }
                 }
-                TranslationLineDecision.STOP -> break
+                TranslationLineDecision.Stop -> break
             }
         }
 
         // 向下对齐: 翻译分配给组内靠后的行, 靠前的元数据行不参与, 避免整体错位一行
         val matchedCount = groupTranslations.size
         for (offset in 0 until matchedCount) {
-            groupTranslations[offset]?.let { translation ->
-                matchesByIndex[groupEndExclusive - matchedCount + offset] = translation
+            val targetIndex = groupEndExclusive - matchedCount + offset
+            if (!isLyricCreditMetadataLine(lines[targetIndex].text)) {
+                groupTranslations[offset]?.let { translation ->
+                    matchesByIndex[targetIndex] = translation
+                }
             }
         }
 
@@ -95,15 +133,15 @@ fun isUntranslatedPlaceholderText(text: String): Boolean {
     return normalized.length >= 2 && normalized.all { it == '/' }
 }
 
-private enum class TranslationLineDecision {
+private sealed interface TranslationLineDecision {
     /** 翻译远早于当前行且无重叠, 跳过这条翻译继续比较 */
-    SKIP_STALE,
+    data object SkipStale : TranslationLineDecision
 
-    /** 翻译归属当前行 */
-    MATCH,
+    /** 翻译归属当前行; exact 表示由重叠或严格容差命中, 而非宽松兜底 */
+    data class Match(val exact: Boolean) : TranslationLineDecision
 
     /** 翻译应留给后续行 */
-    STOP
+    data object Stop : TranslationLineDecision
 }
 
 private fun decideTranslationForLine(
@@ -144,25 +182,50 @@ private fun decideTranslationForLine(
         currentDistanceMs > TranslationClosestMatchToleranceMs &&
         currentOverlapMs <= 0L
     if (shouldSkipStaleTranslation) {
-        return TranslationLineDecision.SKIP_STALE
+        return TranslationLineDecision.SkipStale
     }
 
     // 先看真实播放区间, 避免翻译提前一两秒时被误判为上一句
-    val shouldMatchByOverlap = currentOverlapMs > 0L &&
-        currentOverlapMs >= nextOverlapMs
-
+    val exactMatch = currentOverlapMs > 0L && currentOverlapMs >= nextOverlapMs
     // 严格匹配: 在容差内且离当前行最近
+    val strictMatch = currentDistanceMs <= toleranceMs && currentDistanceMs <= nextDistanceMs
     // 宽松匹配: 翻译在当前行之前但在宽松容差内, 且离当前行比下一行近
-    val shouldMatchCurrentLine =
-        shouldMatchByOverlap ||
-        (currentDistanceMs <= toleranceMs && currentDistanceMs <= nextDistanceMs) ||
-        (currentDistanceMs <= TranslationClosestMatchToleranceMs && currentDistanceMs <= nextDistanceMs)
+    val looseMatch = translation.startTimeMs < line.startTimeMs &&
+        currentDistanceMs <= TranslationClosestMatchToleranceMs &&
+        currentDistanceMs <= nextDistanceMs
 
-    return if (shouldMatchCurrentLine) {
-        TranslationLineDecision.MATCH
+    return if (exactMatch || strictMatch) {
+        TranslationLineDecision.Match(exact = true)
+    } else if (looseMatch) {
+        TranslationLineDecision.Match(exact = false)
     } else {
-        TranslationLineDecision.STOP
+        TranslationLineDecision.Stop
     }
+}
+
+private fun findExactTranslationMatchAhead(
+    translations: List<LyricEntry>,
+    startIndex: Int,
+    line: LyricEntry,
+    nextLine: LyricEntry?,
+    toleranceMs: Long
+): Int? {
+    val lineEndMs = normalizeExclusiveEndTime(line.startTimeMs, line.endTimeMs)
+    for (index in startIndex until translations.size) {
+        val translation = translations[index]
+        // 输入按起始时间排序, 超过当前行结束时间和严格容差后不会再有精确匹配
+        if (
+            translation.startTimeMs >= lineEndMs &&
+            calculateStartDistanceToLineMs(translation.startTimeMs, line.startTimeMs, line.endTimeMs) > toleranceMs
+        ) {
+            break
+        }
+        val decision = decideTranslationForLine(line, nextLine, translation, toleranceMs)
+        if (decision is TranslationLineDecision.Match && decision.exact) {
+            return index
+        }
+    }
+    return null
 }
 
 private val LyricCreditMetadataRegex = Regex("""^\s*([\p{L}·]{1,12})\s*[:：]\s*\S""")
