@@ -560,6 +560,7 @@ private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
         StorageUsageItemKind.BiliFavoriteCache -> Icons.Outlined.Favorite
         StorageUsageItemKind.BiliArchiveCache -> Icons.Outlined.VideoLibrary
         StorageUsageItemKind.YouTubePlaylistCache -> Icons.Outlined.PlayArrow
+        StorageUsageItemKind.ServerBrowseCache -> Icons.Outlined.LibraryMusic
         StorageUsageItemKind.OtherCache -> Icons.Outlined.Layers
         StorageUsageItemKind.DownloadedMusic -> Icons.Outlined.DownloadDone
         StorageUsageItemKind.DownloadedLyrics -> Icons.Outlined.Subtitles

@@ -149,6 +149,9 @@ class PlatformPlaylistCacheRoomStoreTest {
         val tracks = mutableListOf<PlatformPlaylistCacheTrackEntity>()
         val artists = mutableListOf<PlatformPlaylistCacheTrackArtistEntity>()
 
+        override suspend fun listCaches(platform: String) = caches.values
+            .filter { it.platform == platform }
+            .sortedWith(compareByDescending<PlatformPlaylistCacheEntity> { it.savedAtMs }.thenBy { it.cacheKey })
         override suspend fun getCache(platform: String, cacheKey: String) = caches[platform to cacheKey]
         override suspend fun getTracks(platform: String, cacheKey: String) =
             tracks.filter { it.platform == platform && it.cacheKey == cacheKey }.sortedBy { it.position }

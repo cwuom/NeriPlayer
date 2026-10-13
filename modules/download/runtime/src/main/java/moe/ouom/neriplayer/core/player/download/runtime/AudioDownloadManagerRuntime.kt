@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player.download.runtime
 
+import moe.ouom.neriplayer.data.model.server.isServerSong
+
 import moe.ouom.neriplayer.core.download.host.DownloadHosts
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -552,6 +554,7 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
     beginSongDownloadOperation(songKey, effectiveOperationId, attemptId)
     clearPartialSidecarReferences(songKey, operationId = effectiveOperationId)
     try {
+        check(!song.isServerSong()) { "音乐服务器歌曲暂不支持下载" }
         ensureSongDownloadNotCancelled(
             songKey = songKey,
             stage = "prepare",

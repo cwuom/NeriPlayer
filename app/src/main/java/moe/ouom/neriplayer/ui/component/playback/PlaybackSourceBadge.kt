@@ -47,7 +47,8 @@ enum class PlaybackSourceType {
     NETEASE,
     BILIBILI,
     YOUTUBE_MUSIC,
-    LOCAL
+    LOCAL,
+    SUBSONIC
 }
 
 @Composable
@@ -108,6 +109,12 @@ fun PlaybackSourceBadge(
                 )
             }
 
+            PlaybackSourceType.SUBSONIC -> {
+                Icon(imageVector = Icons.Outlined.LibraryMusic,
+                    contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(CoreCommonR.string.server_source),
+                    style = MaterialTheme.typography.labelSmall)
+            }
             PlaybackSourceType.LOCAL -> {
                 Icon(
                     imageVector = Icons.Outlined.LibraryMusic,

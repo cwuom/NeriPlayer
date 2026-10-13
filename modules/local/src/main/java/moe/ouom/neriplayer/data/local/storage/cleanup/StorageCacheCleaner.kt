@@ -65,5 +65,6 @@ private fun selectedExtraCaches(options: StorageCacheClearOptions): List<Storage
     StorageCacheKind.NeteasePlaylist to options.neteasePlaylistCache,
     StorageCacheKind.BiliFavorite to options.biliFavoriteCache,
     StorageCacheKind.BiliArchive to options.biliArchiveCache,
-    StorageCacheKind.YouTubePlaylist to options.youtubePlaylistCache
+    StorageCacheKind.YouTubePlaylist to options.youtubePlaylistCache,
+    StorageCacheKind.ServerBrowse to options.serverBrowseCache
 ).filter { it.second }.map { it.first }

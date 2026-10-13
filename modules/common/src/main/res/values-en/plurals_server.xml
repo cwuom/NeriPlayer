@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="server_add_playlist_confirm_message">
+        <item quantity="one">Add the selected track to “%2$s”?</item>
+        <item quantity="other">Add the selected %1$d tracks to “%2$s”?</item>
+    </plurals>
+</resources>

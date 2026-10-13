@@ -12,11 +12,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.server.isServerSong
+import moe.ouom.neriplayer.platform.subsonic.api.subsonicErrorMessageRes
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
@@ -102,6 +108,9 @@ internal class NowPlayingLyricsLoadOwner(
         private set
     var secondaryResolved by mutableStateOf(false)
         private set
+    var errorMessage by mutableStateOf<String?>(null)
+        private set
+    private var lastRequest: NowPlayingLyricsLoadRequest? = null
 
     private var requestGeneration = 0L
     private var requestJob: Job? = null
@@ -109,6 +118,9 @@ internal class NowPlayingLyricsLoadOwner(
 
     fun reload(request: NowPlayingLyricsLoadRequest) {
         if (disposed) return
+        lastRequest = request
+        errorMessage = null
+        secondaryResolved = false
         requestGeneration++
         val generation = requestGeneration
         requestJob?.cancel()
@@ -119,10 +131,29 @@ internal class NowPlayingLyricsLoadOwner(
         NPLogger.d("NowPlayingLyrics", "歌词加载开始: key=${request.song?.stableKey().orEmpty()}")
         val fast = stages.readFast(request)
         publish(generation, request.song, fast.state, "fast")
-        val background = stages.readBackground(request, fast)
-        publish(generation, request.song, background, "background")
-        markSecondaryResolved(generation)
+        try {
+            val background = stages.readBackground(request, fast)
+            publish(generation, request.song, background, "background")
+            markSecondaryResolved(generation)
+        } catch (error: Exception) {
+            handleBackgroundFailure(generation, request, error)
+        }
     }
+
+    private suspend fun handleBackgroundFailure(
+        generation: Long, request: NowPlayingLyricsLoadRequest, error: Exception
+    ) {
+        if (error is CancellationException && error !is TimeoutCancellationException) throw error
+        currentCoroutineContext().ensureActive()
+        if (request.song?.isServerSong() != true) throw error
+        if (isCurrent(generation)) {
+            // Keep the successful fast frame/user overrides while exposing a retryable failure.
+            errorMessage = request.context.getString(subsonicErrorMessageRes(error))
+            markSecondaryResolved(generation)
+        }
+    }
+
+    fun retry() { lastRequest?.let(::reload) }
 
     private fun markSecondaryResolved(generation: Long) {
         if (isCurrent(generation)) secondaryResolved = true

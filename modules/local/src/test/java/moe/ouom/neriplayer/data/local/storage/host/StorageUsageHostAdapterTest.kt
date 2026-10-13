@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.model.storage.ManagedDownloadLibraryUsage
 import moe.ouom.neriplayer.data.model.storage.StorageCacheKind
 import moe.ouom.neriplayer.data.model.storage.StorageDownloadIndexStats
 import moe.ouom.neriplayer.data.model.storage.StoragePlatformCacheStats
+import moe.ouom.neriplayer.data.model.storage.StorageUsageItemKind
 import moe.ouom.neriplayer.data.local.storage.scan.StorageUsageScanner
 import moe.ouom.neriplayer.data.local.storage.source.StorageLocations
 import moe.ouom.neriplayer.data.local.storage.source.StorageUsageSource
@@ -50,7 +51,11 @@ class StorageUsageHostAdapterTest {
         val summary = StorageUsagePresenter(resources).present(snapshot)
 
         assertEquals(3, summary.sections.size)
-        assertEquals(21, summary.sections.sumOf { it.items.size })
+        assertEquals(22, summary.sections.sumOf { it.items.size })
+        val serverCache = summary.sections.flatMap { it.items }
+            .single { it.kind == StorageUsageItemKind.ServerBrowseCache }
+        assertEquals(StorageCacheKind.ServerBrowse, serverCache.cacheKind)
+        assertEquals(0L, serverCache.sizeBytes)
         assertEquals(20L, summary.cleanableSizeBytes)
         assertEquals(20L, summary.totalSizeBytes)
         assertEquals(1, summary.totalFileCount)
