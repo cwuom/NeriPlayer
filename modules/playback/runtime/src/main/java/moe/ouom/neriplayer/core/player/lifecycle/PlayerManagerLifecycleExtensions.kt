@@ -82,7 +82,7 @@ import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
 import moe.ouom.neriplayer.core.player.persistence.stats.AppPlaybackStatsPendingWrites
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsOwner
-import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
+import moe.ouom.neriplayer.core.player.playback.playbackFailureRecoveryOwner
 import moe.ouom.neriplayer.core.player.playback.clearAudioRouteMuteSuppression
 import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
@@ -99,7 +99,6 @@ import moe.ouom.neriplayer.core.player.audio.wake.PlaybackTransitionWakeLock
 import moe.ouom.neriplayer.core.player.prefetch.prefetchNextGenericTrackUrl
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
-import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.shouldAdvanceAfterStuckTrackEnd
 import moe.ouom.neriplayer.core.player.url.shouldAttemptUrlRefresh
 import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheAfterPlaybackFailure
@@ -809,21 +808,21 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
             if (isOfflineCache) {
                 pause()
             } else {
+                val failedRequestToken = playbackRequestToken
+                val failedCommandSource = activePlaybackCommandSource
+                val cacheKey = if (shouldInvalidateCacheAfterPlaybackFailure(
+                        shouldInvalidateCache = shouldInvalidateCache,
+                        isOfflineCache = isOfflineCache
+                    )
+                ) {
+                    currentPlaybackCacheKeyForRecovery()
+                } else null
                 mainScope.launch {
-                    if (shouldInvalidateCacheAfterPlaybackFailure(
-                            shouldInvalidateCache = shouldInvalidateCache,
-                            isOfflineCache = isOfflineCache
-                        )
-                    ) {
-                        currentPlaybackCacheKeyForRecovery()?.let { cacheKey ->
-                            invalidateCachedResourceForPlaybackRecovery(
-                                cacheKey = cacheKey,
-                                reason = "unrecoverable_playback_${error.errorCodeName}"
-                            )
-                        }
-                    }
-                    advanceAfterPlaybackFailure(
-                        source = "playback_error_${error.errorCodeName}"
+                    playbackFailureRecoveryOwner.onPlayerFailure(
+                        requestToken = failedRequestToken,
+                        reason = "playback_error_${error.errorCodeName}",
+                        commandSource = failedCommandSource,
+                        cacheKeyToInvalidate = cacheKey
                     )
                 }
             }

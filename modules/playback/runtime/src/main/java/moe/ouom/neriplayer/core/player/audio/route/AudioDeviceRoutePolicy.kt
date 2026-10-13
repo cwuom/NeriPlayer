@@ -15,7 +15,7 @@ internal fun pausesForImmediateOutputDisconnect(
 ): Boolean {
     if (previousType == null || !isWiredOutputType(previousType)) return false
     if (state.usbExclusiveEnabled && isUsbOutputType(previousType)) return false
-    if (!state.isPlaying) return false
+    if (!state.playbackActiveForNoisyRoute()) return false
     return nextType == null || nextType == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
 }
 
@@ -61,7 +61,7 @@ internal fun pausesForBluetoothDisconnect(
     previousType: Int?,
     nextType: Int?
 ): Boolean {
-    if (!state.stopOnBluetoothDisconnect || !state.isPlaying) return false
+    if (!state.stopOnBluetoothDisconnect || !state.playbackActiveForNoisyRoute()) return false
     if (previousType == null || !requiresDisconnectConfirmation(previousType)) return false
     return nextType == null || nextType == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
 }

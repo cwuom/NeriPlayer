@@ -846,24 +846,45 @@ private fun isRecoverableCachedMediaFormatError(error: PlaybackException): Boole
 }
 
 private fun PlayerManager.resumePlaybackFallback(
+    gate: RefreshSideEffectGate,
     seekPositionMs: Long?,
     resumePlaybackAfterRefresh: Boolean
 ) {
     mainScope.launch {
         val resolvedSeekPositionMs = seekPositionMs?.coerceAtLeast(0L)
         if (resolvedSeekPositionMs != null) {
-            player.seekTo(resolvedSeekPositionMs)
-            _playbackPositionMs.value = resolvedSeekPositionMs
+            if (!gate.runMutation {
+                    player.seekTo(resolvedSeekPositionMs)
+                    _playbackPositionMs.value = resolvedSeekPositionMs
+                }
+            ) return@launch
         }
-        player.playWhenReady = resumePlaybackAfterRefresh
-        if (resumePlaybackAfterRefresh) {
-            applyAudioFocusPolicyOnMainThread()
-            player.play()
-            startProgressUpdates()
-            schedulePlaybackStartupWatchdog(reason = "refresh_fallback")
-        } else {
-            player.pause()
+        gate.runMutation {
+            player.playWhenReady = resumePlaybackAfterRefresh
+            if (resumePlaybackAfterRefresh) {
+                applyAudioFocusPolicyOnMainThread()
+                player.play()
+                startProgressUpdates()
+                schedulePlaybackStartupWatchdog(reason = "refresh_fallback")
+            } else {
+                player.pause()
+            }
         }
+    }
+}
+
+private fun PlayerManager.refreshCooldownSideEffectGate(
+    semantics: RefreshRequestSemantics,
+    song: SongItem
+): RefreshSideEffectGate {
+    val resumeRequested = resumePlaybackRequested
+    // 冷却回退没有在途刷新句柄，也必须在主线程执行前确认用户没有改动播放状态
+    return RefreshSideEffectGate {
+        _currentSongFlow.value?.sameIdentityAs(song) == true &&
+            playbackRequestToken == semantics.requestGeneration &&
+            playbackPositionGeneration == semantics.positionGeneration &&
+            resumePlaybackRequested == resumeRequested &&
+            urlRefreshController.currentSemantics() == null
     }
 }
 
@@ -933,20 +954,26 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
             "NERI-PlayerManager",
             "refreshCurrentSongUrl throttled by cooldown: key=$cacheKey, reason=$reason, delta=${now - lastUrlRefreshAtMs}ms"
         )
+        val gate = refreshCooldownSideEffectGate(semantics, song)
         if (allowFallback) {
             resumePlaybackFallback(
+                gate = gate,
                 seekPositionMs = fallbackSeekPositionMs,
                 resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
             )
         } else {
-            clearPendingSeekPosition()
-            consecutivePlayFailures++
-            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.player_playback_network_error)))
-            if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
-                mainScope.launch { stopPlaybackPreservingQueue(clearMediaUrl = true) }
-            } else {
-                mainScope.launch {
-                    advanceAfterPlaybackFailure(source = "refresh_cooldown")
+            mainScope.launch {
+                gate.runMutation {
+                    clearPendingSeekPosition()
+                    consecutivePlayFailures++
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.player_playback_network_error)))
+                    if (!resumePlaybackAfterRefresh || !resumePlaybackRequested ||
+                        consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES
+                    ) {
+                        stopPlaybackPreservingQueue(clearMediaUrl = true)
+                    } else {
+                        advanceAfterPlaybackFailure(source = "refresh_cooldown")
+                    }
                 }
             }
         }

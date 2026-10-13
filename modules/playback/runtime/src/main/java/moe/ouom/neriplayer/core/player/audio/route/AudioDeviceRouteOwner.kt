@@ -162,7 +162,7 @@ internal class AudioDeviceRouteOwner(
     }
 
     private fun handleSystemNoisyRoute(state: AudioDeviceRouteSnapshot, device: AudioDevice?): Boolean {
-        if (!state.isPlaying) {
+        if (!state.playbackActiveForNoisyRoute()) {
             NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): ignored because playback is already paused")
             return false
         }
@@ -179,7 +179,6 @@ internal class AudioDeviceRouteOwner(
 
     private fun handleBluetoothNoisyRoute(state: AudioDeviceRouteSnapshot, device: AudioDevice): Boolean {
         if (!shouldPauseForBluetoothDisconnect(state, device, null)) return false
-        port.suppressPlayback("bluetooth_disconnect_pending")
         schedulePauseForBluetoothDisconnect(device, "becoming_noisy")
         return true
     }
@@ -359,13 +358,14 @@ internal class AudioDeviceRouteOwner(
     private fun schedulePauseForBluetoothDisconnect(previous: AudioDevice?, reason: String) {
         if (previous == null || !requiresDisconnectConfirmation(previous.type)) return
         cancelBluetoothDisconnectPause()
+        port.suppressPlayback("bluetooth_disconnect_pending")
         bluetoothDisconnectPauseJob = scope.launch {
             val sampledRoutesAreBluetooth = mutableListOf<Boolean>()
             repeat(BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT) { sampleIndex ->
                 delay((if (sampleIndex == 0) BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
                     else BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS).milliseconds)
                 val state = port.snapshot()
-                if (!state.stopOnBluetoothDisconnect || !state.isPlaying) {
+                if (!state.stopOnBluetoothDisconnect || !state.playbackActiveForNoisyRoute()) {
                     port.restorePlayback("bluetooth_disconnect_canceled:$reason")
                     bluetoothDisconnectPauseJob = null
                     return@launch
@@ -382,7 +382,7 @@ internal class AudioDeviceRouteOwner(
             val state = port.snapshot()
             if (!shouldConfirmBluetoothDisconnect(
                     stopOnBluetoothDisconnectEnabled = state.stopOnBluetoothDisconnect,
-                    playbackActive = state.isPlaying,
+                    playbackActive = state.playbackActiveForNoisyRoute(),
                     previousRouteWasBluetooth = requiresDisconnectConfirmation(previous.type),
                     sampledRoutesAreBluetooth = sampledRoutesAreBluetooth
                 )) {

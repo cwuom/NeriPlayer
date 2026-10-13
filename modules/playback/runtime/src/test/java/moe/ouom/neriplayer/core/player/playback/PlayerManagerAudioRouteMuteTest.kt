@@ -1,8 +1,15 @@
 package moe.ouom.neriplayer.core.player.playback
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.testing.FakeExoPlayer
 import moe.ouom.neriplayer.core.player.testing.PlayerTestEnvironment
@@ -32,6 +39,9 @@ class PlayerManagerAudioRouteMuteTest {
         manager._audioRouteMuteSuppressedFlow.value = false
         manager._isPlayingFlow.value = false
         manager.progressJob = null
+        manager.volumeFadeJob?.cancel()
+        manager.volumeFadeJob = null
+        manager.pendingMediaLoadActive = false
         manager.mainScope = previousMainScope
         PlayerTestEnvironment.reset()
     }
@@ -65,6 +75,72 @@ class PlayerManagerAudioRouteMuteTest {
 
             assertFalse(manager._audioRouteMuteSuppressedFlow.value)
             assertNull(manager.audioRouteMuteRestoreVolume)
+        }
+    }
+
+    @Test
+    fun `route loss before the first fade step preserves an audible restore target`() = runTest {
+        manager.mainScope = backgroundScope
+        fake.volume = 0f
+        fake.playWhenReady = true
+        val fade = Job()
+        manager.volumeFadeJob = fade
+        fake.installInto(manager) {
+            manager.suppressPlaybackForAudioRouteLoss("fade_start")
+
+            assertTrue(fade.isCancelled)
+            assertTrue(manager._audioRouteMuteSuppressedFlow.value)
+            assertEquals(0f, fake.volume, 0f)
+            manager.restorePlaybackAfterTransientAudioRouteLoss("route_back")
+            assertEquals(1f, fake.volume, 0f)
+        }
+    }
+
+    @Test
+    fun `route loss during fade restores the target instead of a partial step`() = runTest {
+        manager.mainScope = backgroundScope
+        fake.volume = 0.05f
+        fake.playWhenReady = true
+        manager.volumeFadeJob = Job()
+        fake.installInto(manager) {
+            manager.suppressPlaybackForAudioRouteLoss("fade_in_progress")
+            manager.restorePlaybackAfterTransientAudioRouteLoss("route_back")
+            assertEquals(1f, fake.volume, 0f)
+        }
+    }
+
+    @Test
+    fun `route loss while preparing a silent track retains suppression until restoration`() = runTest {
+        manager.mainScope = backgroundScope
+        manager.pendingMediaLoadActive = true
+        fake.volume = 0f
+        fake.installInto(manager) {
+            manager.suppressPlaybackForAudioRouteLoss("preparing")
+            assertTrue(manager._audioRouteMuteSuppressedFlow.value)
+            manager.restoreAudioRouteMuteImpl()
+            assertEquals(1f, fake.volume, 0f)
+        }
+    }
+
+    @Test
+    fun `route loss stays muted while a pending fade out completes`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        manager.mainScope = backgroundScope
+        manager._isPlayingFlow.value = true
+        try {
+            fake.installInto(manager) {
+                val fade = launch {
+                    manager.fadeOutCurrentPlaybackIfNeeded(enabled = true, fadeOutDurationMs = 200L)
+                }
+                runCurrent()
+                manager.suppressPlaybackForAudioRouteLoss("fade_out")
+                advanceTimeBy(100L)
+                runCurrent()
+                assertEquals(0f, fake.volume, 0f)
+                fade.cancel()
+            }
+        } finally {
+            Dispatchers.resetMain()
         }
     }
 

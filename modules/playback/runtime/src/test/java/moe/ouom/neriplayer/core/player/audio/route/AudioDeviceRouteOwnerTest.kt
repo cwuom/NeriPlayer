@@ -64,6 +64,48 @@ class AudioDeviceRouteOwnerTest {
     }
 
     @Test
+    fun `Bluetooth device removal mutes output immediately before confirming the disconnect`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(isPlaying = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+        port.device = speaker
+
+        requireNotNull(port.registeredCallback).onAudioDevicesRemoved(
+            arrayOf(audioInfo(bluetooth.type, true))
+        )
+
+        assertTrue(port.events.contains("suppress:bluetooth_disconnect_pending"))
+        assertFalse(port.events.any { it.startsWith("pause:") })
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertTrue(port.events.contains("pause:bluetooth_disconnect_confirmed:device_changed_to_${speaker.type}"))
+        assertFalse(port.events.any { it.startsWith("restore:") })
+    }
+
+    @Test
+    fun `Bluetooth reattachment restores the callback mute and cancels pending confirmation`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(isPlaying = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+        val callback = requireNotNull(port.registeredCallback)
+        val headset = audioInfo(bluetooth.type, true)
+        port.device = speaker
+        callback.onAudioDevicesRemoved(arrayOf(headset))
+        assertTrue(port.events.contains("suppress:bluetooth_disconnect_pending"))
+
+        port.device = bluetooth
+        callback.onAudioDevicesAdded(arrayOf(headset))
+
+        assertTrue(port.events.contains("restore:device_changed_to_${bluetooth.type}"))
+        advanceTimeBy(10_000L)
+        runCurrent()
+        assertFalse(port.events.any { it.startsWith("pause:") })
+    }
+
+    @Test
     fun `release cancels pending Bluetooth confirmation`() = runTest {
         val port = RecordingPort(bluetooth)
         port.state = port.state.copy(isPlaying = true, stopOnBluetoothDisconnect = true)
@@ -125,6 +167,96 @@ class AudioDeviceRouteOwnerTest {
         owner.onDeviceChange(usbTopologyChanged = false, outputDeviceRemoved = true)
 
         assertTrue(port.events.contains("pause:immediate_output_disconnect"))
+    }
+
+    @Test
+    fun `wired disconnect stops a pending next track before it can reach the speaker`() = runTest {
+        val port = RecordingPort(wired)
+        port.state = port.state.copy(resumeRequested = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+        port.device = speaker
+
+        owner.onDeviceChange(usbTopologyChanged = false, outputDeviceRemoved = true)
+
+        assertTrue(port.events.contains("suppress:immediate_output_disconnect"))
+        assertTrue(port.events.contains("pause:immediate_output_disconnect"))
+    }
+
+    @Test
+    fun `noisy broadcast stops buffering system playback`() = runTest {
+        val port = RecordingPort(wired)
+        port.state = port.state.copy(playWhenReady = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+
+        assertTrue(owner.onAudioBecomingNoisy())
+        assertTrue(port.events.contains("pause:becoming_noisy_immediate"))
+    }
+
+    @Test
+    fun `Bluetooth disconnect confirmation continues across buffering`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(isPlaying = true, playWhenReady = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+        port.device = speaker
+        assertTrue(owner.onAudioBecomingNoisy())
+        port.state = port.state.copy(isPlaying = false)
+
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertTrue(port.events.contains("pause:bluetooth_disconnect_confirmed:becoming_noisy"))
+        assertFalse(port.events.any { it.startsWith("restore:") })
+    }
+
+    @Test
+    fun `Bluetooth disconnect confirms while a next track is still resolving`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(resumeRequested = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+        port.device = speaker
+
+        owner.onDeviceChange(usbTopologyChanged = false, outputDeviceRemoved = true)
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertTrue(port.events.contains("pause:bluetooth_disconnect_confirmed:device_changed_to_${speaker.type}"))
+    }
+
+    @Test
+    fun `transient Bluetooth loss while buffering restores output without pausing`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(playWhenReady = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+        assertTrue(owner.onAudioBecomingNoisy())
+
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertTrue(port.events.contains("restore:bluetooth_disconnect_transient:becoming_noisy"))
+        assertFalse(port.events.any { it.startsWith("pause:") })
+    }
+
+    @Test
+    fun `idle system playback ignores disconnect broadcasts and device changes`() = runTest {
+        for (device in listOf(wired, bluetooth)) {
+            val port = RecordingPort(device)
+            port.state = port.state.copy(stopOnBluetoothDisconnect = true)
+            val owner = AudioDeviceRouteOwner(backgroundScope, port)
+            owner.register()
+            port.device = speaker
+
+            assertFalse(owner.onAudioBecomingNoisy())
+            owner.onDeviceChange(usbTopologyChanged = false, outputDeviceRemoved = true)
+            advanceTimeBy(10_000L)
+            runCurrent()
+
+            assertFalse(port.events.any { it.startsWith("pause:") || it.startsWith("suppress:") })
+        }
     }
 
     @Test
