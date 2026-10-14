@@ -546,14 +546,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value.biliMusicRank
         if (current.type == type && current.songs.isNotEmpty()) return
 
-        val cached = if (offlineMode) null else BiliMusicHomeRepository.cachedRank(type)
+        // 脱机时同样先读缓存，且不置 loading：随后的 loadBiliMusicRank 会走仅缓存分支，
+        // 若在这里把 loading 置为 true 会短暂闪一下加载态。
+        val cached = BiliMusicHomeRepository.cachedRank(type)
         _uiState.update { state ->
             state.copy(
                 biliMusicRank = HomeBiliMusicRankState(
                     type = type,
                     period = cached?.period,
                     songs = cached?.songs.orEmpty(),
-                    loading = cached == null,
+                    loading = cached == null && !offlineMode,
                     error = null
                 )
             )
