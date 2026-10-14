@@ -515,14 +515,15 @@
     });
   }
 
-  /* ---------- 09 平板：标签切换截图 ---------- */
+  /* ---------- 09 平板 / 10 桌面：标签切换截图 ---------- */
   function initTablet() {
-    var stage = $('#tabStage');
-    if (!stage) return;
+    $$('.tabstage:not([data-sim])').forEach(initTabStage);
+  }
+  function initTabStage(stage) {
     var tabs = $$('[role="tab"]', stage);
     var shots = $$('.tabshot', stage);
     var legends = $$('.tablegend', stage);
-    var panel = $('#tabScreen', stage);
+    var panel = $('[role="tabpanel"]', stage);
     var cur = 0;
     var prevTimer = 0;
     var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -595,7 +596,7 @@
     stage.addEventListener('pointerleave', function () { hover = false; sync(); });
     document.addEventListener('visibilitychange', sync);
     if ('IntersectionObserver' in window) {
-      new IntersectionObserver(function (en) { seen = en[0].isIntersecting; sync(); }, { threshold: 0.45 }).observe($('.tabdev', stage));
+      new IntersectionObserver(function (en) { seen = en[0].isIntersecting; sync(); }, { threshold: 0.45 }).observe($('[data-tilt]', stage) || panel);
     } else { seen = true; sync(); }
   }
 

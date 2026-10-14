@@ -65,11 +65,17 @@ node tools/build-brand.mjs
 
 # 字体子集：先收集页面上实际用到的字符，再按字符子集化为 woff2
 #   需要 puppeteer-core 与本机 Chrome；原始字体放在 tools/fonts-src/（不入库）：
-#   Fraunces、Fraunces-Italic、Caveat、Geist、GeistMono、NotoSerifSC（可变字重）、LXGWWenKai
+#   Fraunces、Fraunces-Italic、Caveat、Geist、GeistMono、NotoSerifSC（可变字重）、LXGWWenKai，
+#   以及手机仿真用的 Android 系统字体 Roboto-Regular.ttf、NotoSansCJK-Regular.ttc、DroidSansMono.ttf
+#   （从模拟器 adb pull /system/fonts/<文件名> 取出）
 node tools/serve.mjs &
 node tools/collect-glyphs.mjs
 pip install fonttools brotli
 python tools/subset-fonts.py
+
+# 直接双击 index.html（file://）预览时的兜底：把桌面版仿真片段和示例曲包成 .js
+#   改了 assets/desktop/sim-*.html 或 assets/audio/startrail.mp3 之后重新跑
+node tools/file-fallback.mjs
 
 # 分享图与 PNG 图标（同样需要 puppeteer-core）
 node tools/make-images.mjs

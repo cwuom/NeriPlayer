@@ -4,11 +4,15 @@
 依赖：pip install fonttools brotli
 原始字体（不入库）：Fraunces / Fraunces-Italic / Caveat / Geist / GeistMono（Google Fonts），
 NotoSerifSC（思源宋体可变字重）与 LXGWWenKai（霞鹜文楷），放进 tools/fonts-src/。
+手机仿真用的是 Android 自带字体：Roboto-Regular.ttf、NotoSansCJK-Regular.ttc、DroidSansMono.ttf，
+可以从模拟器 `adb pull /system/fonts/<文件名>` 取出。
 """
+import io
 import json
 import os
 from fontTools import subset
 from fontTools.ttLib import TTFont
+from fontTools.varLib import instancer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "tools", "fonts-src")
@@ -38,13 +42,25 @@ JOBS = [
     ("LXGWWenKai.ttf", "np-hand.woff2", codepoints("hand", True) | {0x3001, 0x3002, 0xFF0C, 0xFF01, 0xFF1F, 0xFF1A}),
     ("Geist.ttf", "geist.woff2", codepoints("sans", False)),
     ("GeistMono.ttf", "geist-mono.woff2", codepoints("mono", False) | codepoints("sans", False)),
+    # (文件, 输出, 字符, TTC 序号, 固定的可变轴)
+    ("Roboto-Regular.ttf", "roboto.woff2", codepoints("phone", False), None, {"wdth": 100, "ital": 0}),
+    ("NotoSansCJK-Regular.ttc", "np-phone-cjk.woff2", codepoints("phone", True) | {0x3001, 0x3002, 0xFF0C, 0xFF01, 0xFF1F, 0xFF1A, 0x300C, 0x300D, 0xFF08, 0xFF09}, 2, None),
+    ("DroidSansMono.ttf", "droid-mono.woff2", LATIN, None, None),
 ]
 
 
 def run():
     os.makedirs(OUT, exist_ok=True)
-    for src, dst, cps in JOBS:
-        font = TTFont(os.path.join(SRC, src))
+    for job in JOBS:
+        src, dst, cps = job[:3]
+        number = job[3] if len(job) > 3 else None
+        pin = job[4] if len(job) > 4 else None
+        font = TTFont(os.path.join(SRC, src), fontNumber=number if number is not None else -1)
+        if pin:
+            buf = io.BytesIO()
+            instancer.instantiateVariableFont(font, pin).save(buf)
+            buf.seek(0)
+            font = TTFont(buf)
         cmap = font.getBestCmap()
         keep = sorted(c for c in cps if c in cmap)
         opts = subset.Options()

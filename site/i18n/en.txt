@@ -30,9 +30,9 @@ NeriPlayer — back to top
 # 主导航
 Main navigation
 
-@553b5fd082  html  nav.nav__links
-# <a href="#play" data-go=""><b>01</b>播放</a> <a href="#lyrics" data-go=""><b>02</b>歌词</a> <a href="#sources" data-go=""><b>03</b>多源</a> <a href="#hifi" data-go=""><b>04</b>音质</a> <a href="#together" data-go=""><b>05</b>一起听</a> <a href="#sync" data-go=""><b>07</b>隐私</a> <a href="#download" data-go=""><b>12</b>下载</a>
-<a href="#play" data-go><b>01</b>Play</a> <a href="#lyrics" data-go><b>02</b>Lyrics</a> <a href="#sources" data-go><b>03</b>Sources</a> <a href="#hifi" data-go><b>04</b>Hi-Fi</a> <a href="#together" data-go><b>05</b>Together</a> <a href="#sync" data-go><b>07</b>Privacy</a> <a href="#download" data-go><b>12</b>Download</a>
+@2769c64b7f  html  nav.nav__links
+# <a href="#play" data-go=""><b>01</b>播放</a> <a href="#lyrics" data-go=""><b>02</b>歌词</a> <a href="#sources" data-go=""><b>03</b>多源</a> <a href="#hifi" data-go=""><b>04</b>音质</a> <a href="#dsp" data-go=""><b>05</b>音效</a> <a href="#sync" data-go=""><b>08</b>隐私</a> <a href="#desktop" data-go=""><b>11</b>桌面</a> <a href="#download" data-go=""><b>14</b>下载</a>
+<a href="#play" data-go><b>01</b>Play</a> <a href="#lyrics" data-go><b>02</b>Lyrics</a> <a href="#sources" data-go><b>03</b>Sources</a> <a href="#hifi" data-go><b>04</b>Hi-Fi</a> <a href="#dsp" data-go><b>05</b>Sound</a> <a href="#sync" data-go><b>08</b>Privacy</a> <a href="#desktop" data-go><b>11</b>Desktop</a> <a href="#download" data-go><b>14</b>Download</a>
 
 @70f2be332a  attr  a.nav__gh[aria-label]
 # 在 GitHub 上查看 NeriPlayer
@@ -74,37 +74,45 @@ Route map
 # <a href="#hifi" data-go=""><i>04</i><span>音质</span></a>
 <a href="#hifi" data-go><i>04</i><span>Hi-Fi</span></a>
 
-@b8673e4a49  html  li
-# <a href="#together" data-go=""><i>05</i><span>一起听</span></a>
-<a href="#together" data-go><i>05</i><span>Together</span></a>
+@95099d380c  html  li
+# <a href="#dsp" data-go=""><i>05</i><span>音效</span></a>
+<a href="#dsp" data-go><i>05</i><span>Sound</span></a>
 
-@e2362da92c  html  li
-# <a href="#local" data-go=""><i>06</i><span>本地</span></a>
-<a href="#local" data-go><i>06</i><span>Local</span></a>
+@a2b572cc82  html  li
+# <a href="#together" data-go=""><i>06</i><span>一起听</span></a>
+<a href="#together" data-go><i>06</i><span>Together</span></a>
 
-@af1d846e93  html  li
-# <a href="#sync" data-go=""><i>07</i><span>同步</span></a>
-<a href="#sync" data-go><i>07</i><span>Sync</span></a>
+@1cc53c5035  html  li
+# <a href="#local" data-go=""><i>07</i><span>本地</span></a>
+<a href="#local" data-go><i>07</i><span>Local</span></a>
 
-@39e51f5e6e  html  li
-# <a href="#persona" data-go=""><i>08</i><span>个性</span></a>
-<a href="#persona" data-go><i>08</i><span>Style</span></a>
+@6ed37e885d  html  li
+# <a href="#sync" data-go=""><i>08</i><span>同步</span></a>
+<a href="#sync" data-go><i>08</i><span>Sync</span></a>
 
-@048b2365aa  html  li
-# <a href="#tablet" data-go=""><i>09</i><span>平板</span></a>
-<a href="#tablet" data-go><i>09</i><span>Tablet</span></a>
+@2e804f352b  html  li
+# <a href="#persona" data-go=""><i>09</i><span>个性</span></a>
+<a href="#persona" data-go><i>09</i><span>Style</span></a>
 
-@fe7bef6012  html  li
-# <a href="#details" data-go=""><i>10</i><span>细节</span></a>
-<a href="#details" data-go><i>10</i><span>Details</span></a>
+@e8bf274f9a  html  li
+# <a href="#tablet" data-go=""><i>10</i><span>平板</span></a>
+<a href="#tablet" data-go><i>10</i><span>Tablet</span></a>
 
-@679053d7cd  html  li
-# <a href="#stack" data-go=""><i>11</i><span>构造</span></a>
-<a href="#stack" data-go><i>11</i><span>Inside</span></a>
+@85b8e3cf43  html  li
+# <a href="#desktop" data-go=""><i>11</i><span>桌面</span></a>
+<a href="#desktop" data-go><i>11</i><span>Desktop</span></a>
 
-@fe817698dd  html  li
-# <a href="#download" data-go=""><i>12</i><span>下载</span></a>
-<a href="#download" data-go><i>12</i><span>Download</span></a>
+@b7c45234fd  html  li
+# <a href="#details" data-go=""><i>12</i><span>细节</span></a>
+<a href="#details" data-go><i>12</i><span>Details</span></a>
+
+@ccb97cea5a  html  li
+# <a href="#stack" data-go=""><i>13</i><span>构造</span></a>
+<a href="#stack" data-go><i>13</i><span>Inside</span></a>
+
+@c2980aa9f9  html  li
+# <a href="#download" data-go=""><i>14</i><span>下载</span></a>
+<a href="#download" data-go><i>14</i><span>Download</span></a>
 
 @a28c1d9e68  html  p.eyebrow
 # <b>NP</b>目录 · Contents
@@ -130,37 +138,45 @@ Route map
 # <a href="#hifi" data-go=""><i>04</i>音质<small>Hi-Fi</small></a>
 <a href="#hifi" data-go><i>04</i>Hi-Fi<small>音质</small></a>
 
-@f1c9085670  html  li
-# <a href="#together" data-go=""><i>05</i>一起听<small>Together</small></a>
-<a href="#together" data-go><i>05</i>Listen Together<small>一起听</small></a>
+@5a9b92ba23  html  li
+# <a href="#dsp" data-go=""><i>05</i>音效<small>Native DSP</small></a>
+<a href="#dsp" data-go><i>05</i>Native DSP<small>音效</small></a>
 
-@50c76676ff  html  li
-# <a href="#local" data-go=""><i>06</i>本地与离线<small>Local</small></a>
-<a href="#local" data-go><i>06</i>Local &amp; Offline<small>本地</small></a>
+@68a48cbddc  html  li
+# <a href="#together" data-go=""><i>06</i>一起听<small>Together</small></a>
+<a href="#together" data-go><i>06</i>Listen Together<small>一起听</small></a>
 
-@11742769e3  html  li
-# <a href="#sync" data-go=""><i>07</i>同步与隐私<small>Sync</small></a>
-<a href="#sync" data-go><i>07</i>Sync &amp; Privacy<small>同步</small></a>
+@d0eb043633  html  li
+# <a href="#local" data-go=""><i>07</i>本地与离线<small>Local</small></a>
+<a href="#local" data-go><i>07</i>Local &amp; offline<small>本地与离线</small></a>
 
-@afca541228  html  li
-# <a href="#persona" data-go=""><i>08</i>个性<small>Personalize</small></a>
-<a href="#persona" data-go><i>08</i>Personalize<small>个性</small></a>
+@67145c0f42  html  li
+# <a href="#sync" data-go=""><i>08</i>同步与隐私<small>Sync</small></a>
+<a href="#sync" data-go><i>08</i>Sync &amp; privacy<small>同步与隐私</small></a>
 
-@010a425511  html  li
-# <a href="#tablet" data-go=""><i>09</i>平板<small>Tablet</small></a>
-<a href="#tablet" data-go><i>09</i>Tablet<small>平板</small></a>
+@38244e9bbc  html  li
+# <a href="#persona" data-go=""><i>09</i>个性<small>Personalize</small></a>
+<a href="#persona" data-go><i>09</i>Personalize<small>个性</small></a>
 
-@14b7c43f14  html  li
-# <a href="#details" data-go=""><i>10</i>细节<small>Details</small></a>
-<a href="#details" data-go><i>10</i>Details<small>细节</small></a>
+@a455138e42  html  li
+# <a href="#tablet" data-go=""><i>10</i>平板<small>Tablet</small></a>
+<a href="#tablet" data-go><i>10</i>Tablet<small>平板</small></a>
 
-@865cde9ba8  html  li
-# <a href="#stack" data-go=""><i>11</i>构造<small>Inside</small></a>
-<a href="#stack" data-go><i>11</i>Inside<small>构造</small></a>
+@9f34df6cab  html  li
+# <a href="#desktop" data-go=""><i>11</i>桌面端<small>Desktop</small></a>
+<a href="#desktop" data-go><i>11</i>Desktop<small>桌面端</small></a>
 
-@b52e7cbe6a  html  li
-# <a href="#download" data-go=""><i>12</i>下载<small>Download</small></a>
-<a href="#download" data-go><i>12</i>Download<small>下载</small></a>
+@38a0c828d8  html  li
+# <a href="#details" data-go=""><i>12</i>细节<small>Details</small></a>
+<a href="#details" data-go><i>12</i>Details<small>细节</small></a>
+
+@a3dc289d83  html  li
+# <a href="#stack" data-go=""><i>13</i>构造<small>Inside</small></a>
+<a href="#stack" data-go><i>13</i>Inside<small>构造</small></a>
+
+@a087b37e39  html  li
+# <a href="#download" data-go=""><i>14</i>下载<small>Download</small></a>
+<a href="#download" data-go><i>14</i>Download<small>下载</small></a>
 
 @77d645edfe  html  li
 # <a href="#faq" data-go=""><i>i</i>常见问题<small>FAQ</small></a>
@@ -178,13 +194,17 @@ Route map
 # NeriPlayer（音理音理！）把网易云音乐、哔哩哔哩、YouTube Music 与本地音频装进同一个播放器，再配上逐字歌词、GLSL 流体背景、USB 独占与只属于你自己的同步。
 NeriPlayer brings NetEase Cloud Music, Bilibili, YouTube Music and your local audio into one player — then adds word-by-word lyrics, a GLSL fluid background, USB exclusive output and sync that belongs to you alone.
 
-@69cef4426a  html  p.small
-# 基于 Jetpack Compose + Media3，支持 Android 9 及以上。免费开源，GPL-3.0。
-Built on Jetpack Compose + Media3, for Android 9 and up. Free and open source under GPL-3.0.
+@d3cb3e4d93  html  p.small
+# Android 版基于 Jetpack Compose + Media3，支持 Android 9 及以上；桌面版基于 Tauri 2，支持 Windows、macOS 与 Linux。免费开源，GPL-3.0。
+The Android app is built on Jetpack Compose + Media3 for Android 9 and later; the desktop app is built on Tauri 2 for Windows, macOS and Linux. Free and open source, GPL-3.0.
 
-@a5d444fdef  html  div.hero__cta
-# <a class="btn btn--ink" href="#download" data-go="">下载 APK{{0}}</a> <a class="btn btn--line" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">{{1}}GitHub<span class="btn__meta">{{2}}<span data-gh="stars">3.7k</span></span></a>
-<a class="btn btn--ink" href="#download" data-go>Download APK{{0}}</a> <a class="btn btn--line" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">{{1}}GitHub<span class="btn__meta">{{2}}<span data-gh="stars">3.7k</span></span></a>
+@56daaec7c3  html  div.hero__cta
+# <a class="btn btn--ink hero__dl" href="#download" data-go="" data-cta="" data-plat-go="android">{{0}}<span class="hero__dl-t"><span data-cta-label="">下载 APK</span><small data-cta-meta="">Android 9+ · 免费</small></span>{{1}}</a> <a class="btn btn--line" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">{{2}}GitHub<span class="btn__meta">{{3}}<span data-gh="stars">3.7k</span></span></a>
+<a class="btn btn--ink hero__dl" href="#download" data-go data-cta data-plat-go="android">{{0}}<span class="hero__dl-t"><span data-cta-label>Download the APK</span><small data-cta-meta>Android 9+ · free</small></span>{{1}}</a> <a class="btn btn--line" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">{{2}}GitHub<span class="btn__meta">{{3}}<span data-gh="stars">3.7k</span></span></a>
+
+@df7a0e5ec5  html  p.hero__alt
+# <span data-cta-alt="">电脑上也能用：</span><a href="#download" data-go="" data-plat-go="desktop" data-cta-alt-link="">Windows · macOS · Linux 桌面版 ↘</a>
+<span data-cta-alt>Also on your computer: </span><a href="#download" data-go data-plat-go="desktop" data-cta-alt-link>Windows · macOS · Linux desktop app ↘</a>
 
 @acd00f4703  html  p.signals
 # <span class="signals__label">Signals</span> <span><i style="--c:var(--red)"></i>多源播放</span> <span><i style="--c:var(--blue)"></i>本地优先</span> <span><i style="--c:var(--amber)"></i>自建同步</span>
@@ -294,18 +314,6 @@ Under the controls sits a strip of synced lyrics: the current line lights up wor
 # <b>02</b>向左一滑，就进入完整歌词页
 <b>02</b>Swipe left for the full lyrics page
 
-@5ee122c135  html  h3.sheet__title
-# <span class="sheet__num">04</span>音效与倍速
-<span class="sheet__num">04</span>Audio effects &amp; speed
-
-@38eb4d5717  html  p.body
-# 点右上角「更多」，再选「音效与倍速」：速度与音调分开调节，响度增强按 dB 步进，均衡器绑定当前播放会话，内置 23 种系统预设，也能逐个拖动 60 Hz 到 14 kHz 的手动频段。播放设置里还有按歌曲实时分析的响度均衡、声道平衡、32-bit 高解析输出、淡入淡出与交叉淡入淡出。
-Tap “More” in the top-right corner, then “Audio Effects &amp; Speed”: speed and pitch are set independently, loudness enhancement steps in dB, and the equalizer binds to the current playback session with 23 built-in system presets — or drag the manual bands from 60 Hz to 14 kHz one by one. Playback settings add per-track real-time loudness normalization, channel balance, 32-bit hi-res output, fades and crossfades.
-
-@9a94fc78c4  html  p.hand
-# 先按播放，再点手机里的预设或倍速，声音会真的跟着变 ↗
-Press play first, then try a preset or a speed — you'll actually hear it change ↗
-
 @36f7cfcef5  attr  table.tblock[aria-label]
 # 图纸信息
 Drawing info
@@ -322,9 +330,9 @@ Drawing info
 # <span>平台</span><b>Android</b>
 <span>Platform</span><b>Android</b>
 
-@c4ed84652c  html  td
-# <span>页码</span><b>01 / 12</b>
-<span>Page</span><b>01 / 12</b>
+@ee025b56d7  html  td
+# <span>页码</span><b>01 / 14</b>
+<span>Page</span><b>01 / 14</b>
 
 @1e26dd840e  html  td
 # <span>状态</span><b>Android 9+ · 流体背景与高级模糊需 Android 13+</b>
@@ -410,38 +418,6 @@ Lyrics
 # 加入歌单
 Add to playlist
 
-@b5fbd39982  html  p.ms-title
-# 音效与倍速
-Audio Effects &amp; Speed
-
-@85bfc1a470  html  p.ms-sub
-# 速度与音调可分开调节，均衡器会绑定当前播放会话
-Speed and pitch are independent, and the equalizer follows the current playback session.
-
-@d33b507c20  html  div.ms-row
-# <b>播放速度</b><span class="ms-val" data-ms-val="">1.00x</span>
-<b>Playback Speed</b><span class="ms-val" data-ms-val>1.00x</span>
-
-@a860036030  html  div.ms-row
-# <b>音调</b><span class="ms-val" data-ms-val="">1.00x</span>
-<b>Pitch</b><span class="ms-val" data-ms-val>1.00x</span>
-
-@e492673222  html  div.ms-row
-# <b>响度增强<small>当前设备可能不支持响度增强</small></b><span class="ms-val" data-ms-val="">+0.0 dB</span>
-<b>Loudness Enhancer<small>This device may not support loudness enhancement.</small></b><span class="ms-val" data-ms-val>+0.0 dB</span>
-
-@89d85c1a5c  html  div.ms-row
-# <b>均衡器<small>预设</small></b><span class="m3switch is-on" aria-hidden="true"><i></i></span>
-<b>Equalizer<small>Presets</small></b><span class="m3switch is-on" aria-hidden="true"><i></i></span>
-
-@2044e9e95f  html  p.ms-hint
-# 速度、音调和均衡器预设
-Speed, pitch, and equalizer presets
-
-@ed1f3424fe  html  p.ms-hint
-# 手动频段
-Manual Bands
-
 @be3923cb7d  html  p.ann
 # 封面取色<br>→ 流体背景
 Cover colors<br>→ fluid background
@@ -465,14 +441,6 @@ Current line,<br>word by word
 @26de5dd0ff  html  p.ann
 # Dock 工具栏
 Dock toolbar
-
-@eae6564a45  html  p.ann
-# 速度与音调<br>分开调
-Speed &amp; pitch,<br>set apart
-
-@9b81cbb246  html  p.ann
-# 23 种预设<br>+ 手动频段
-23 presets<br>+ manual bands
 
 @021d195f57  html  figcaption.fig__cap
 # Fig. 01 — 播放页 · 每个按钮都能点
@@ -581,6 +549,10 @@ Lyrics
 @594941b28a  attr  img[alt]
 # 音效与倍速截图
 Audio effects &amp; speed screenshot
+
+@b5fbd39982  html  figcaption
+# 音效与倍速
+Audio Effects &amp; Speed
 
 @723c2fa80c  attr  img[alt]
 # 均衡器截图
@@ -1006,9 +978,209 @@ Fig. 04 — the signal chain from decoder to DAC
 # <b>08</b><span><strong>边界写清楚</strong>隐式反馈或无法验证的拓扑会拒绝 Native 候选，走兼容回退</span>
 <b>08</b><span><strong>Honest boundaries</strong>Implicit feedback or unverifiable topologies reject the native candidate and take the compatible fallback</span>
 
-@96eca07626  html  p.eyebrow
-# <b>05</b><span class="eyebrow__rule"></span>一起听 · Listen Together
-<b>05</b><span class="eyebrow__rule"></span>Listen Together · 一起听
+@918c77d3f2  html  p.eyebrow
+# <b>05</b><span class="eyebrow__rule"></span>音效 · Native DSP
+<b>05</b><span class="eyebrow__rule"></span>Native DSP · 音效
+
+@4c0233a658  html  h2.h2#dsp-title
+# 想要什么听感，<span class="ul">自己拧出来{{0}}</span>。
+Whatever sound you’re after, <span class="ul">dial it in yourself{{0}}</span>.
+
+@7541824e40  html  p.lead
+# 系统 <code>Equalizer</code> 与 <code>LoudnessEnhancer</code> 已经退场，换成自研的原生 DSP：float 精度、放在 Media3 输出之前、零延迟。手机在「设置 → 音效与倍速」，桌面版在同名设置页，两端用同一套 29 种预设与参数。右边这台手机照着 App 源码与真机截图逐项重绘，先按播放，再随便拧一拧。
+The system <code>Equalizer</code> and <code>LoudnessEnhancer</code> are gone, replaced by an in-house native DSP: float precision, placed before Media3’s output, zero added latency. On the phone it lives in Settings → Audio Effects &amp; Speed, on desktop in the settings page of the same name, and both share the same 29 presets and parameters. The phone on the right is redrawn item by item from the app’s source and real screenshots. Press play, then turn whatever you like.
+
+@ac39e8ec78  html  dt
+# 按风格、音色、场景与设备分好类，选完还能接着微调
+Sorted by genre, tone, scene and device, and you can keep fine-tuning after you pick one
+
+@633f49e2c2  html  dd
+# 29<small>种内置音效</small>
+29<small>built-in presets</small>
+
+@894eca6ea8  html  dt
+# 可拖动的十段图示均衡，外加最多十段参数均衡与 AutoEQ 导入
+A draggable 10-band graphic EQ, plus up to 10 parametric bands and AutoEQ import
+
+@60566a087f  html  dd
+# 10<small>+ 10 段均衡</small>
+10<small>+ 10 EQ bands</small>
+
+@9757a77f02  html  dt
+# 音效关闭或全部为中性时整条链路旁路，不额外耗电
+When effects are off or fully neutral, the whole chain is bypassed and costs no extra power
+
+@8a08148626  html  dd
+# &lt;0.1<small>% 单核占用</small>
+&lt;0.1<small>% of one core</small>
+
+@6ba0f755da  html  h3.sheet__title
+# <span class="sheet__num">05</span>八个分区，各管一段
+<span class="sheet__num">05</span>Eight sections, each with its own job
+
+@4175e700df  html  p.body
+# 顶上是总开关与运行状态：当前输出设备、处理负载与防破音保护。下面八个分区各有自己的开关，关掉只是让这一段按原声走，数值都还在；改过的分区标签旁会亮起一个小圆点。点下面的分区，手机里会跟着翻过去。
+At the top are the master switch and live status: the current output device, processing load and the clipping guard. Below are eight sections, each with its own switch. Turning one off only lets that part play as original, and your values stay put; a small dot lights up next to any section you have changed. Tap a section below and the phone flips to it.
+
+@5ba3450e7c  attr  div.dsp__index[aria-label]
+# 音效分区
+Sound sections
+
+@f1f65739c1  html  button
+# <b>01</b><strong>音效</strong><span>29 种预设分成风格、音色、场景、设备四类，还能保存「我的音效」、用分享码导入别人的</span>
+<b>01</b><strong>Presets</strong><span>29 presets in four groups (genre, tone, scene and device). Save your own under “Mine” or import someone else’s with a share code</span>
+
+@f6c661a2a7  html  button
+# <b>02</b><strong>均衡器</strong><span>十段曲线直接拖圆点，下方按 0.5 dB 微调；耳机校正可以粘贴 AutoEq 的参数均衡</span>
+<b>02</b><strong>EQ</strong><span>Drag the dots on the 10-band curve, or nudge in 0.5 dB steps below; headphone correction takes AutoEq parametric EQ as pasted text</span>
+
+@a8e8ba2f0e  html  button
+# <b>03</b><strong>音色</strong><span>低音与高音及其范围、虚拟低音，温暖度、清晰度、人声突出与伴奏模式</span>
+<b>03</b><strong>Tone</strong><span>Bass and treble with their ranges, virtual bass, warmth, clarity, vocal focus and karaoke mode</span>
+
+@8d2bea76a3  html  button
+# <b>04</b><strong>空间</strong><span>立体声宽度、3D 环绕、耳机交叉馈送、混响、低频居中、单声道与左右互换</span>
+<b>04</b><strong>Space</strong><span>Stereo width, 3D surround, headphone crossfeed, reverb with room size, brightness and delay, centered bass, mono and channel swap</span>
+
+@bc6c3cd510  html  button
+# <b>05</b><strong>动态</strong><span>动态压缩与额外音量，防破音限幅器的峰值上限和恢复时间</span>
+<b>05</b><strong>Dynamics</strong><span>Dynamic compression with optional pro parameters, extra volume, and the limiter’s peak ceiling and recovery time</span>
+
+@4d4db1c156  html  button
+# <b>06</b><strong>扬声器</strong><span>只在手机外放时生效：按手机 / 平板 / 大音箱补低音、提响度、扩声场、护低频</span>
+<b>06</b><strong>Speaker</strong><span>Only on the built-in speaker: tuned for phone, tablet or large speaker, it adds bass, loudness and width and protects the low end</span>
+
+@3993c32c53  html  button
+# <b>07</b><strong>倍速</strong><span>0.25× 到 3× 的倍速与 ±12 个半音的音调，也能像唱片一样让音调跟着变速</span>
+<b>07</b><strong>Speed</strong><span>Speed from 0.25× to 3× and pitch within ±12 semitones, or let pitch follow speed like a turntable</span>
+
+@a839b3aed7  html  button
+# <b>08</b><strong>高级</strong><span>省电 / 均衡 / 高音质三档处理模式，按设备分别保存，USB 独占默认保持比特完美</span>
+<b>08</b><strong>Advanced</strong><span>Power saver, balanced and high quality processing modes, a separate sound per device, and bit-perfect USB exclusive by default</span>
+
+@23fd7954e8  html  p.hand
+# 拖曲线上的圆点、换个预设，声音会真的跟着变 ↗
+Drag a dot on the curve or switch presets, and the sound really changes ↗
+
+@4776b76bae  html  nav.hm-nav
+# <span data-rpl="">{{0}}</span> <span data-rpl="">{{1}}</span> <span data-rpl="">{{2}}</span> <span class="is-on" data-rpl="">{{3}}设置</span>
+<span data-rpl>{{0}}</span> <span data-rpl>{{1}}</span> <span data-rpl>{{2}}</span> <span class="is-on" data-rpl>{{3}}Settings</span>
+
+@f77dd65951  html  figcaption.fig__cap
+# Fig. 05 — 设置 · 音效与倍速 · 每个开关都能拧
+Fig. 05 — Settings · Audio Effects &amp; Speed · every switch works
+
+@f6ddd1f871  html  p.dscope__title
+# <b>效果监视器</b><span class="mono" data-scope-src="">模型频谱 · 按播放后换成实时分析</span>
+<b>Effect monitor</b><span class="mono" data-scope-src>Modeled spectrum · switches to live analysis once you press play</span>
+
+@407aa454cb  html  button.dscope__ab
+# {{0}}<span>按住听原声</span>
+{{0}}<span>Hold to hear the original</span>
+
+@7c300d0b57  html  li.k-dry
+# 原声
+Original
+
+@9a5ff08345  html  li.k-wet
+# 处理后
+Processed
+
+@a608dde9d1  html  li.k-curve
+# 理论频响
+Theoretical response
+
+@3bbcf5156c  html  p.mono
+# <b>声场</b><span data-scope-width="">100%</span>
+<b>Stereo field</b><span data-scope-width>100%</span>
+
+@e808a6831b  html  p.mono
+# <b>输出</b><span data-scope-gr="">GR 0.0 dB</span>
+<b>Output</b><span data-scope-gr>GR 0.0 dB</span>
+
+@c24fa4969a  html  li
+# <span>前级<small>Preamp</small></span>
+<span>Preamp<small>前级</small></span>
+
+@4a21eef909  html  li
+# <span>均衡<small>Graphic · PEQ</small></span>
+<span>EQ<small>Graphic · PEQ</small></span>
+
+@6aa264edbc  html  li
+# <span>音调<small>Bass · Treble</small></span>
+<span>Tone<small>Bass · Treble</small></span>
+
+@45d00c6b4c  html  li
+# <span>虚拟低音<small>Virtual bass</small></span>
+<span>Virtual bass<small>Harmonics</small></span>
+
+@a7d133d9cc  html  li
+# <span>音色<small>Warmth · Clarity</small></span>
+<span>Character<small>Warmth · Clarity</small></span>
+
+@b07807cb9e  html  li
+# <span>立体声<small>Width · Crossfeed</small></span>
+<span>Stereo<small>Width · Crossfeed</small></span>
+
+@a2bb9fbbfe  html  li
+# <span>环绕<small>Surround</small></span>
+<span>Surround<small>3D</small></span>
+
+@f43ec586f6  html  li
+# <span>混响<small>Reverb</small></span>
+<span>Reverb<small>Room · Delay</small></span>
+
+@8b15183dc1  html  li
+# <span>扬声器<small>Speaker</small></span>
+<span>Speaker<small>Built-in only</small></span>
+
+@8b484b88d1  html  li
+# <span>压缩<small>Compressor</small></span>
+<span>Compressor<small>Dynamics</small></span>
+
+@21c84e844b  html  li
+# <span>输出<small>Gain · Limiter</small></span>
+<span>Output<small>Gain · Limiter</small></span>
+
+@043fd28b5f  html  p.dchain__state
+# 正在处理 · 亮着的环节正在生效
+Processing · lit stages are active
+
+@ae4e34c6e7  html  figcaption.fig__cap
+# Fig. 05b — 原生 DSP 的处理顺序与实时效果，跟着上面的手机一起变
+Fig. 05b — the native DSP processing order and its live effect, following the phone above
+
+@384daa190d  html  li
+# <b>01</b><span><strong>中性即旁路</strong>音效关闭、或所有调节都等于原声时整条链路跳过，系统可以继续走硬件低功耗播放</span>
+<b>01</b><span><strong>Neutral means bypass</strong>When effects are off, or every setting matches the original sound, the whole chain is skipped and the system can keep using low-power hardware playback</span>
+
+@bd51a97255  html  li
+# <b>02</b><span><strong>三档处理模式</strong>省电用简化的混响与压缩、不加抖动；高音质让参数变化更细腻，16 位输出加降噪整形抖动</span>
+<b>02</b><span><strong>Three processing modes</strong>Power saver uses lighter reverb and compression with no dither; high quality makes parameter changes finer and adds noise-shaped dither on 16-bit output</span>
+
+@c6069475b4  html  li
+# <b>03</b><span><strong>按设备记忆</strong>扬声器、有线耳机、蓝牙与 USB 各存一套，插拔或切换输出时自动换上</span>
+<b>03</b><span><strong>Remembered per device</strong>The speaker, wired headphones, Bluetooth and USB each keep their own sound, switched in automatically when you plug in or change outputs</span>
+
+@e48626182e  html  li
+# <b>04</b><span><strong>比特完美优先</strong>USB 独占默认旁路音效；开启「比特完美输出」时无论如何都不处理</span>
+<b>04</b><span><strong>Bit-perfect first</strong>USB exclusive bypasses effects by default; with “Bit-perfect output” on, nothing is processed at all</span>
+
+@e29b79bd46  html  li
+# <b>05</b><span><strong>预设能分享</strong>调好的声音可以存成「我的音效」，复制分享码发给别人一键导入</span>
+<b>05</b><span><strong>Shareable presets</strong>Save a sound you like under “Mine”, copy its share code and anyone can import it in one tap</span>
+
+@30cdd36fc3  html  li
+# <b>06</b><span><strong>两端一致</strong>桌面版同样是原生 DSP，29 种预设、十段均衡、参数均衡与 AutoEQ / Equalizer APO 导入都在</span>
+<b>06</b><span><strong>Same on both</strong>The desktop app runs the same native DSP, with all 29 presets, the 10-band EQ, parametric EQ and AutoEQ / Equalizer APO import</span>
+
+@89262d1a54  html  button.hand
+# 去桌面版仿真里看看同一套音效 ↘
+See the same effects in the desktop simulation ↘
+
+@17dbd22e2d  html  p.eyebrow
+# <b>06</b><span class="eyebrow__rule"></span>一起听 · Listen Together
+<b>06</b><span class="eyebrow__rule"></span>Listen Together · 一起听
 
 @ab0c025b83  html  h2.h2#together-title
 # 隔着很远，<span class="ul">听同一首歌{{0}}</span>。
@@ -1062,13 +1234,13 @@ Listen Together sync demo
 # 房间 NR7K2Q · 实时同步<i></i>
 Room NR7K2Q · live sync<i></i>
 
-@344b1647fe  html  figcaption.fig__cap
-# Fig. 05 — 三个人，一个房间
-Fig. 05 — three people, one room
+@eee0f97612  html  figcaption.fig__cap
+# Fig. 06 — 三个人，一个房间
+Fig. 06 — three people, one room
 
-@24db0c50e5  html  p.eyebrow
-# <b>06</b><span class="eyebrow__rule"></span>本地与离线 · Local
-<b>06</b><span class="eyebrow__rule"></span>Local &amp; Offline · 本地与离线
+@5329fdd446  html  p.eyebrow
+# <b>07</b><span class="eyebrow__rule"></span>本地与离线 · Local
+<b>07</b><span class="eyebrow__rule"></span>Local &amp; offline · 本地与离线
 
 @6e8af486e2  html  h2.h2#local-title
 # 连接断开，<span class="ul">歌还在继续{{0}}</span>。
@@ -1210,9 +1382,9 @@ Cache hits 14%
 # 区分播放 / 下载流量、Wi‑Fi / 移动 / 漫游与缓存命中；在高风险网络下下载会主动提示。
 Separates playback / download traffic, Wi‑Fi / mobile / roaming and cache hits, and warns before downloading on risky networks.
 
-@47324e98b1  html  p.eyebrow
-# <b>07</b><span class="eyebrow__rule"></span>同步与隐私 · Sync &amp; Privacy
-<b>07</b><span class="eyebrow__rule"></span>Sync &amp; Privacy · 同步与隐私
+@f725cb19ce  html  p.eyebrow
+# <b>08</b><span class="eyebrow__rule"></span>同步与隐私 · Sync &amp; Privacy
+<b>08</b><span class="eyebrow__rule"></span>Sync &amp; Privacy · 同步与隐私
 
 @8909de41d0  html  h2.h2#sync-title
 # 你的数据，<span class="ul">只交给你自己{{0}}</span>。
@@ -1242,9 +1414,9 @@ NeriPlayer has no central server. Metadata such as playlists, favorites, recent 
 # 歌单 · 收藏 · 最近播放 · 播放统计 · 删除记录
 Playlists · favorites · recent plays · play stats · deletions
 
-@da9a10f235  html  figcaption.fig__cap
-# Fig. 07 — 不经过任何中转服务器
-Fig. 07 — no relay server in between
+@52ca871369  html  figcaption.fig__cap
+# Fig. 08 — 不经过任何中转服务器
+Fig. 08 — no relay server in between
 
 @ddf92c368e  html  li
 # <b>01</b><span><strong>延迟 5 秒 · 每小时一次</strong>本地变更后延迟同步，另有周期同步；由 WorkManager 调度，只在已验证的网络下执行</span>
@@ -1354,9 +1526,9 @@ Listening time
 # 周 / 月 / 年分别采用近 7 / 30 / 365 天窗口；热点周榜只收录累计收听不少于 10 分钟的歌曲，月榜门槛为 30 分钟。GitHub 仓库与 WebDAV 远端文件都不是端到端加密，请自行妥善保管。
 Week / month / year use rolling 7 / 30 / 365-day windows; the weekly hot list only counts songs with at least 10 minutes of total listening, and the monthly list needs 30. Neither the GitHub repository nor the WebDAV files are end-to-end encrypted, so keep them safe.
 
-@fe13a80eb7  html  p.eyebrow
-# <b>08</b><span class="eyebrow__rule"></span>个性 · Personalize
-<b>08</b><span class="eyebrow__rule"></span>Personalize · 个性
+@8beb9de7bd  html  p.eyebrow
+# <b>09</b><span class="eyebrow__rule"></span>个性 · Personalize
+<b>09</b><span class="eyebrow__rule"></span>Personalize · 个性
 
 @0c11dea903  html  h2.h2#persona-title
 # 不只是<span class="ul">换个主题色{{0}}</span>。
@@ -1538,13 +1710,13 @@ Refresh
 # <span class="is-on" data-rpl="">{{0}}首页</span> <span data-rpl="">{{1}}</span> <span data-rpl="">{{2}}</span> <span data-rpl="">{{3}}</span>
 <span class="is-on" data-rpl>{{0}}Home</span> <span data-rpl>{{1}}</span> <span data-rpl>{{2}}</span> <span data-rpl>{{3}}</span>
 
-@7709f6c967  html  figcaption.fig__cap
-# Fig. 08 — 首页，按真机布局重绘
-Fig. 08 — Home, redrawn from the real layout
+@6805d6c89d  html  figcaption.fig__cap
+# Fig. 09 — 首页，按真机布局重绘
+Fig. 09 — the home screen, redrawn from the real layout
 
-@b13cf36fe4  html  p.eyebrow
-# <b>09</b><span class="eyebrow__rule"></span>平板 · Tablet
-<b>09</b><span class="eyebrow__rule"></span>Tablet · 平板
+@5c0a8c3a7c  html  p.eyebrow
+# <b>10</b><span class="eyebrow__rule"></span>平板 · Tablet
+<b>10</b><span class="eyebrow__rule"></span>Tablet · 平板
 
 @a00cc152b0  html  h2.h2#tablet-title
 # 屏幕大了，<span class="ul">就换一种摆法{{0}}</span>。
@@ -1606,9 +1778,9 @@ Tablet playlist in landscape: header, Manually Added / Downloaded tabs and a ful
 # 平板横屏设置：左栏分组列表与搜索，右栏直接显示「通用」详情
 Tablet settings in landscape: grouped list and search on the left, “General” details on the right
 
-@04c3547fe5  html  figcaption.fig__cap
-# Fig. 09 — Pixel Tablet 模拟器 · Android 16 · 2560 × 1600 横屏
-Fig. 09 — Pixel Tablet emulator · Android 16 · 2560 × 1600 landscape
+@6fade7417d  html  figcaption.fig__cap
+# Fig. 10 — Pixel Tablet 模拟器 · Android 16 · 2560 × 1600 横屏
+Fig. 10 — Pixel Tablet emulator · Android 16 · 2560 × 1600 landscape
 
 @5ba6c447c8  html  p.tabstage__note
 # 真机截图，<br>不是效果图 ↙
@@ -1682,9 +1854,465 @@ Real screenshots,<br>not mockups ↙
 # 手机仍锁定竖屏，只有播放页可以横过来；平板竖屏的播放页另有一套布局。
 Phones stay locked to portrait, and only Now Playing can rotate; tablets held upright get a Now Playing layout of their own.
 
-@826d72c7ea  html  p.eyebrow
-# <b>10</b><span class="eyebrow__rule"></span>细节 · Details
-<b>10</b><span class="eyebrow__rule"></span>Details · 细节
+@09d8be1776  html  p.eyebrow
+# <b>11</b><span class="eyebrow__rule"></span>桌面 · Desktop
+<b>11</b><span class="eyebrow__rule"></span>Desktop · 桌面
+
+@32d33dfd86  html  h2.h2#desktop-title
+# 搬到电脑上，<span class="ul">还是那个音理{{0}}</span>。
+On your computer, <span class="ul">still the same Neri{{0}}</span>.
+
+@b18c9b93f1  html  p.lead
+# NeriPlayer Desktop 是 Android 版的桌面移植，基于 Tauri 2 + Vue 3 + Rust，面向 Windows、macOS 与 Linux。歌单、收藏、最近播放和统计用同一套格式同步，一起听也能和手机进同一个房间。窗口里是桌面版的真实界面，放的还是那几首示例曲。
+NeriPlayer Desktop brings the Android app to the desktop. It is built on Tauri 2 + Vue 3 + Rust for Windows, macOS and Linux. Playlists, favorites, recent plays and stats sync in the same format, and Listen Together joins the same room as your phone. The window below is the desktop app’s real interface, playing the same demo tracks.
+
+@dbca8329ba  html  dt
+# Windows、macOS（Apple Silicon 与 Intel）与 Linux
+Windows, macOS (Apple Silicon and Intel) and Linux
+
+@0c0279f008  html  dd
+# 3<small>个系统</small>
+3<small>systems</small>
+
+@45db234c9a  html  dt
+# 简体中文、繁体中文、English 与日本語
+Simplified Chinese, Traditional Chinese, English and Japanese
+
+@d6e66e98c2  html  dd
+# 4<small>种语言</small>
+4<small>languages</small>
+
+@7cef9b21a2  html  dt
+# 当前为预览版，可以体验与反馈，尚未进入稳定阶段
+Currently a preview: ready to try and give feedback on, not yet stable
+
+@9a210a02da  html  dd
+# <small>状态</small>Preview
+<small>Status</small>Preview
+
+@ac4c8b9669  attr  div.tabstage__tabs[aria-label]
+# 桌面界面
+Desktop screens
+
+@578900c602  html  button#deskT2
+# <i>C</i>音乐库<s></s>
+<i>C</i>Library<s></s>
+
+@a269a4b169  html  button#deskT3
+# <i>D</i>音效与倍速<s></s>
+<i>D</i>Audio effects &amp; speed<s></s>
+
+@efd616e5fe  html  button#deskT4
+# <i>E</i>快捷键<s></s>
+<i>E</i>Shortcuts<s></s>
+
+@ebf15d3562  attr  div.seg[aria-label]
+# 窗口样式
+Window style
+
+@cf34f0db74  attr  img.dwin__ph[alt]
+# 桌面版首页：左侧导航栏、顶部搜索、继续播放歌单卡片与分三栏的私人雷达，底部是播放栏
+Desktop home: the sidebar on the left, search at the top, “Continue playing” playlist cards and a three-column personal radar, with the player bar at the bottom
+
+@ad321de695  attr  div.dsim#deskSim[aria-label]
+# 桌面版界面仿真：可以切换页面、播放《星轨》、打开播放页和调音效
+Desktop interface simulation: switch pages, play “星轨”, open Now Playing and tune the sound
+
+@1beea76de3  html  figcaption.fig__cap
+# Fig. 11a — NeriPlayer Desktop · 1280 × 800 · 每个按钮都能点
+Fig. 11a — NeriPlayer Desktop · 1280 × 800 · every button works
+
+@1218b4ee06  html  p.tabstage__note
+# 桌面版的真实界面，<br>直接上手点一点 ↙
+The desktop app’s real interface,<br>go ahead and click around ↙
+
+@c35b5c8715  html  li
+# <b>01</b>侧边导航：首页、探索、音乐库与设置
+<b>01</b>Sidebar: Home, Explore, Library and Settings
+
+@6da1c7ef61  html  li
+# <b>02</b>顶部搜索，回车直接进探索页
+<b>02</b>Search at the top; press Enter to jump to Explore
+
+@8f3233ec02  html  li
+# <b>03</b>「继续播放」按打开时间与次数排出最近的歌单
+<b>03</b>“Continue playing” ranks recent playlists by when and how often you open them
+
+@dbd0abdb02  html  li
+# <b>04</b>底部播放栏：进度贴边，歌词、音量、一起听与队列都在右侧
+<b>04</b>Player bar: progress hugs the edge, with lyrics, volume, Listen Together and the queue on the right
+
+@7b0b1de88f  html  li
+# <b>01</b>封面带来源角标，背景从封面取色铺成流体
+<b>01</b>The cover carries a source badge, and its colors spread into the fluid background
+
+@9775b2c04a  html  li
+# <b>02</b>AMLL 逐字歌词：当前行点亮，前后行带景深模糊
+<b>02</b>AMLL word-by-word lyrics: the current line lights up, neighbors blur with depth
+
+@2db8a312d6  html  li
+# <b>03</b>波浪进度条，下方显示实际码率与格式
+<b>03</b>A wavy progress bar, with the real bitrate and format below
+
+@b0501a48af  html  li
+# <b>04</b>收藏、队列、睡眠定时、音量、音效与加入歌单
+<b>04</b>Favorite, queue, sleep timer, volume, effects and add to playlist
+
+@c97a025017  html  li
+# <b>01</b>本地、收藏、下载与各平台歌单分类切换
+<b>01</b>Switch between local, favorites, downloads and each platform’s playlists
+
+@7cc6bcf64c  html  li
+# <b>02</b>歌单、歌手与本地文件，本地曲库支持多个文件夹
+<b>02</b>Playlists, artists and local files; the local library takes multiple folders
+
+@685005114a  html  li
+# <b>03</b>歌单可拖拽排序、多选，右键还有更多操作
+<b>03</b>Drag playlists to reorder, multi-select, and right-click for more
+
+@1db618fa7f  html  li
+# <b>04</b>播放统计、最近播放与多选入口
+<b>04</b>Play stats, recent plays and multi-select
+
+@f29d9f3874  html  li
+# <b>01</b>设置左右两栏，顶上可以搜索任意一项
+<b>01</b>Two-column settings, with search for any option at the top
+
+@0effdc14d6  html  li
+# <b>02</b>理论频响曲线随均衡器、前级与音调实时更新
+<b>02</b>The theoretical frequency response follows the EQ, preamp and tone live
+
+@dc9b05554f  html  li
+# <b>03</b>每个参数都能拖滑块，也能直接输入数值
+<b>03</b>Every parameter has a slider, or type the value in directly
+
+@fd2b1d00c4  html  li
+# <b>04</b>分区可折叠，单独「恢复此分区」
+<b>04</b>Sections collapse, each with its own “Reset this section”
+
+@cca66fc446  html  li
+# <b>01</b>全局快捷键默认关闭，开启后失焦或收进托盘也能用
+<b>01</b>Global shortcuts are off by default; once on, they work even unfocused or in the tray
+
+@34e08018eb  html  li
+# <b>02</b>应用内：Space 播放，方向键快进与音量
+<b>02</b>In the app: Space plays, arrow keys seek and set volume
+
+@1c92f741ae  html  li
+# <b>03</b>全局：Ctrl / Cmd + Alt 组合，冲突时会提示
+<b>03</b>Global: Ctrl / Cmd + Alt combos, with a warning on conflicts
+
+@c7f8411b5a  html  li
+# <b>04</b>点按键框录制新组合，Esc 取消，Backspace 清除
+<b>04</b>Click a key box to record a new combo; Esc cancels, Backspace clears
+
+@1768b6482a  html  p.small
+# 窗口里是从桌面版前端导出的真实界面结构与样式，再接上网页里的播放器；曲目与封面是 NeriPlayer PV 的示例曲，没有登录任何账号。深浅色跟随这一页，系统可以在右上角切换。
+The window shows the real interface structure and styles exported from the desktop app’s front end, wired to the player on this page. The tracks and covers are the NeriPlayer PV demo songs, and no account is signed in. Light and dark follow this page; switch the system at the top right.
+
+@98024bb02a  html  li
+# <b>01</b><span><strong>本地曲库</strong>多个音乐文件夹，原生文件监视与增量扫描；标题、歌手、专辑可以写回音频文件</span>
+<b>01</b><span><strong>Local library</strong>Multiple music folders, native file watching and incremental scans; titles, artists and albums can be written back to the audio files</span>
+
+@2852f40659  html  li
+# <b>02</b><span><strong>下载</strong>并发 1–8，下载后检查可解码内容与时长；歌词、封面与来源信息随文件保存，重启自动续上队列</span>
+<b>02</b><span><strong>Downloads</strong>1–8 at once, with decodability and duration checks after download; lyrics, covers and source info are saved with the file, and the queue resumes after a restart</span>
+
+@69768f2e5e  html  li
+# <b>03</b><span><strong>原生 DSP</strong>10 段均衡、最多 10 段参数均衡、AutoEQ / Equalizer APO 导入、29 种预设，按输出设备记忆</span>
+<b>03</b><span><strong>Native DSP</strong>10-band EQ, up to 10 parametric bands, AutoEQ / Equalizer APO import and 29 presets, remembered per output device</span>
+
+@c0ee726ace  html  li
+# <b>04</b><span><strong>解码与输出</strong>Rust 的 cpal 输出、Symphonia 解码，随包 FFmpeg 再扩展 Opus、ALAC、APE、WavPack 与 DSD</span>
+<b>04</b><span><strong>Decoding &amp; output</strong>Rust cpal output and Symphonia decoding, with a bundled FFmpeg adding Opus, ALAC, APE, WavPack and DSD</span>
+
+@b6dcd05e9d  html  li
+# <b>05</b><span><strong>歌词</strong>AMLL 逐字渲染、翻译与罗马字；QQ 音乐、网易云、酷狗、LRCLIB、AMLL TTML 多源匹配，可逐源偏移</span>
+<b>05</b><span><strong>Lyrics</strong>AMLL word-by-word rendering, translations and romanization; matched across QQ Music, NetEase, Kugou, LRCLIB and AMLL TTML, with a per-source offset</span>
+
+@c391ced9fe  html  li
+# <b>06</b><span><strong>系统集成</strong>托盘、关闭到托盘、Windows SMTC、Linux MPRIS、macOS Now Playing 与菜单栏歌词</span>
+<b>06</b><span><strong>System integration</strong>Tray, close to tray, Windows SMTC, Linux MPRIS, macOS Now Playing and menu bar lyrics</span>
+
+@da42dbd84c  html  li
+# <b>07</b><span><strong>和手机互通</strong>与 Android 对齐的 V4 ProtoBuf + Zstd 同步格式与合并规则，一起听也是同一个协议</span>
+<b>07</b><span><strong>Works with your phone</strong>The same V4 ProtoBuf + Zstd sync format and merge rules as Android, and Listen Together speaks the same protocol</span>
+
+@0343a2b7f2  html  li
+# <b>08</b><span><strong>界面</strong>四种界面语言、深浅色、封面取色、自定义背景与随音频律动的流体背景</span>
+<b>08</b><span><strong>Interface</strong>Four interface languages, light and dark, cover colors, custom backgrounds and a fluid background that moves with the music</span>
+
+@08d1e0a65c  html  h3.sheet__title
+# <span class="sheet__num">11</span>歌词浮在桌面最上层
+<span class="sheet__num">11</span>Lyrics floating above everything
+
+@dd3e9457d5  html  p.body
+# 独立的桌面歌词窗口逐字点亮，可选单行、双行交替或三行滚动，第二行放翻译或下一句；配色、字体、描边、阴影与透明度都能调，锁定后点击穿透，悬停时仍留着解锁按钮。关掉主窗口也能留在托盘继续播放，媒体键与系统媒体会话照常可用。
+A separate desktop lyrics window lights up word by word, in one line, two alternating lines or three scrolling lines, with the second line showing the translation or the next line. Colors, font, outline, shadow and opacity are all adjustable; once locked, clicks pass through while an unlock button stays on hover. Close the main window and it keeps playing from the tray, with media keys and the system media session still working.
+
+@5ef29a57bc  html  p.dctl__label
+# 配色
+Colors
+
+@2f0d2cef0e  attr  div.dctl__themes[aria-label]
+# 桌面歌词配色
+Desktop lyrics colors
+
+@b0961e172b  html  p.dctl__label
+# 布局
+Layout
+
+@35b77af7d4  attr  div.seg[aria-label]
+# 桌面歌词布局
+Desktop lyrics layout
+
+@83cc65b13f  html  button.is-on
+# 单行
+One line
+
+@d786b90a7c  html  button
+# 双行交替
+Two, alternating
+
+@34cbb0f500  html  button
+# 三行
+Three lines
+
+@37954d2c91  html  p.dctl__label
+# 第二行
+Second line
+
+@b0437e149e  attr  div.seg[aria-label]
+# 桌面歌词第二行
+Desktop lyrics second line
+
+@23141370a4  html  button.is-on
+# 翻译
+Translation
+
+@2774dcd202  html  button
+# 下一句
+Next line
+
+@5c23be05d4  html  button
+# 不显示
+Hidden
+
+@e43ac6009f  html  span
+# 锁定并点击穿透
+Lock and click through
+
+@443f86eecc  html  p.hand
+# 拖一拖歌词条，再点右下角托盘里的音理 ↘
+Drag the lyrics bar, then click Neri in the tray at the bottom right ↘
+
+@1407c5c2ae  attr  div.desk__os[aria-label]
+# 桌面系统
+Desktop system
+
+@baca945c17  attr  button.desk__close[aria-label]
+# 关闭主窗口（留在托盘）
+Close the main window (stays in the tray)
+
+@a3ab3015ba  html  span.mb-mac
+# {{0}}<b>NeriPlayer</b><span>文件</span><span>编辑</span><span>播放</span><span>窗口</span>
+{{0}}<b>NeriPlayer</b><span>File</span><span>Edit</span><span>Playback</span><span>Window</span>
+
+@379e02a4cd  html  span.mb-gnome
+# <b>活动</b>
+<b>Activities</b>
+
+@ed19e35ed1  attr  button.mb-neri[aria-label]
+# NeriPlayer 托盘菜单
+NeriPlayer tray menu
+
+@586e8200ea  attr  button[aria-label]
+# 锁定歌词
+Lock lyrics
+
+@98fb6e512a  attr  button[aria-label]
+# 关闭桌面歌词
+Close desktop lyrics
+
+@0820532da0  attr  button.dlyr__unlock[aria-label]
+# 解锁歌词
+Unlock lyrics
+
+@613555f87c  html  div.flyout__id
+# <small>{{0}}NeriPlayer</small><b>星轨</b><span>Neri Line</span>
+<small>{{0}}NeriPlayer</small><b>星轨</b><span>Neri Line</span>
+
+@671df996df  attr  div.tpop[aria-label]
+# 托盘菜单
+Tray menu
+
+@f00d305002  html  button.tpop__hero
+# <span class="tpop__bg" aria-hidden="true">{{0}}</span> <span class="tpop__cover">{{1}}<i class="tpop__eq" aria-hidden="true"><i></i><i></i><i></i></i></span> <span class="tpop__meta"><b>星轨</b><span>Neri Line</span></span> {{2}}
+<span class="tpop__bg" aria-hidden="true">{{0}}</span> <span class="tpop__cover">{{1}}<i class="tpop__eq" aria-hidden="true"><i></i><i></i><i></i></i></span> <span class="tpop__meta"><b>星轨</b><span>Neri Line</span></span> {{2}}
+
+@23c9635e15  html  button.tpop__item
+# {{0}}<span>显示主界面</span>
+{{0}}<span>Show main window</span>
+
+@a93580e431  html  button.tpop__item
+# {{0}}<span>桌面歌词</span><i class="tpop__sw" aria-hidden="true"><i></i></i>
+{{0}}<span>Desktop lyrics</span><i class="tpop__sw" aria-hidden="true"><i></i></i>
+
+@8c17111251  html  button.tpop__item
+# {{0}}<span>退出 NeriPlayer</span>
+{{0}}<span>Quit NeriPlayer</span>
+
+@d4e67ef6e8  html  figcaption.fig__cap
+# Fig. 11b — 桌面歌词、托盘与系统媒体会话 · 可以拖动、点按
+Fig. 11b — desktop lyrics, tray and system media session · drag and click
+
+@0cd9a9e613  attr  div.dkeys#deskKeys[aria-label]
+# 快捷键演示：聚焦这里后按键盘
+Shortcut demo: focus here, then use your keyboard
+
+@d161a45750  html  p.dkeys__head
+# {{0}}<b>应用内快捷键</b><span class="dkeys__hint" data-keys-hint="">点这里，然后按键盘试试</span>
+{{0}}<b>In-app shortcuts</b><span class="dkeys__hint" data-keys-hint>Click here, then try your keyboard</span>
+
+@27a600ac80  html  li
+# <kbd>Space</kbd><span>播放 / 暂停</span>
+<kbd>Space</kbd><span>Play / pause</span>
+
+@e89a3bc08b  html  li
+# <kbd>←</kbd><kbd>→</kbd><span>快退 / 快进 5 秒</span>
+<kbd>←</kbd><kbd>→</kbd><span>Back / forward 5 s</span>
+
+@e472ca2cbe  html  li
+# <kbd>Shift</kbd><kbd>←</kbd><kbd>→</kbd><span>快退 / 快进 30 秒</span>
+<kbd>Shift</kbd><kbd>←</kbd><kbd>→</kbd><span>Back / forward 30 s</span>
+
+@930983802a  html  li
+# <kbd>↑</kbd><kbd>↓</kbd><span>音量加 / 减</span>
+<kbd>↑</kbd><kbd>↓</kbd><span>Volume up / down</span>
+
+@42a4a36029  html  li
+# <kbd>M</kbd><span>静音</span>
+<kbd>M</kbd><span>Mute</span>
+
+@3caccd2ec5  html  li
+# <kbd>L</kbd><span>喜欢</span>
+<kbd>L</kbd><span>Like</span>
+
+@78d8521108  html  li
+# <kbd>D</kbd><span>桌面歌词</span>
+<kbd>D</kbd><span>Desktop lyrics</span>
+
+@a3a8a7fae7  html  h3.sheet__title
+# <span class="sheet__num">11b</span>三个系统，各自接上原生能力
+<span class="sheet__num">11b</span>Three systems, each wired to its native features
+
+@df9e2e8635  html  p.body
+# 同一份 Tauri 2 + Rust 内核，在每个系统上接进它自己的媒体会话、托盘和音频输出。下表是发布工作流的分发目标与源码里的平台实现；托盘、歌词与媒体键的具体呈现仍受系统与桌面环境影响。
+One Tauri 2 + Rust core, hooked into each system’s own media session, tray and audio output. The table lists the release workflow’s targets and the platform code in the source; how the tray, lyrics and media keys look still depends on the system and desktop environment.
+
+@ef6b904995  html  p.dplat__you
+# <span>你正在用</span><b data-plat-you-name="">Windows</b>
+<span>You’re on</span><b data-plat-you-name>Windows</b>
+
+@4ed0dd35f3  html  th
+# <span class="sr-only">能力</span>
+<span class="sr-only">Feature</span>
+
+@798c2afcf2  html  th
+# 系统媒体会话
+Media session
+
+@73beb46ef4  html  td
+# SMTC：锁屏、音量浮层与蓝牙耳机按键
+SMTC: lock screen, volume flyout and headset buttons
+
+@3b200c7c76  html  td
+# Now Playing：控制中心与媒体键
+Now Playing: Control Center and media keys
+
+@252c29fcb8  html  td
+# MPRIS：GNOME / KDE 的媒体控件
+MPRIS: GNOME / KDE media controls
+
+@67aff3f8d5  html  th
+# 托盘与后台
+Tray &amp; background
+
+@6c45391380  html  td
+# 通知区域图标，关闭到托盘继续播放
+Notification area icon; close to tray and keep playing
+
+@be761d07db  html  td
+# 菜单栏图标，关闭窗口不退出
+Menu bar icon; closing the window doesn’t quit
+
+@2d9afe091a  html  td
+# 状态区图标（取决于桌面环境）
+Status area icon (depends on the desktop environment)
+
+@6f21a81090  html  td
+# 桌面歌词，锁定后点击穿透
+Desktop lyrics with click-through when locked
+
+@cf04027c34  html  td
+# 桌面歌词 + <b>菜单栏歌词</b>
+Desktop lyrics + <b>menu bar lyrics</b>
+
+@a2c39c2d5f  html  th
+# 全局快捷键
+Global shortcuts
+
+@3ff2753754  html  td
+# <kbd>Ctrl</kbd> + <kbd>Alt</kbd> 组合
+<kbd>Ctrl</kbd> + <kbd>Alt</kbd> combos
+
+@55df0d4cfa  html  td
+# <kbd>{{0}}Cmd</kbd> + <kbd>{{1}}Option</kbd> 组合
+<kbd>{{0}}Cmd</kbd> + <kbd>{{1}}Option</kbd> combos
+
+@509a71c60f  html  th
+# 音频输出
+Audio output
+
+@4f4d1ab15f  html  th
+# 安装包
+Packages
+
+@5bb105c3f2  html  td
+# <code>.exe</code>（NSIS）· <code>.msi</code>
+<code>.exe</code> (NSIS) · <code>.msi</code>
+
+@08fd44cf00  html  th
+# 系统要求
+Requires
+
+@312bd4b1f5  html  td
+# x64 · WebView2 运行时
+x64 · WebView2 runtime
+
+@730d612a7d  html  th
+# 第一次打开
+First launch
+
+@e0b0aed4aa  html  td
+# 未做代码签名，SmartScreen 里选「仍要运行」
+Not code-signed yet; choose “Run anyway” in SmartScreen
+
+@e0534ced96  html  td
+# ad-hoc 签名，在「隐私与安全性」里「仍要打开」
+Ad-hoc signed; choose “Open Anyway” in Privacy &amp; Security
+
+@8f12f51f79  html  td
+# AppImage 解压后赋予执行权限
+Extract the AppImage and make it executable
+
+@c85c0c9d2b  html  p.small
+# 桌面版不做应用内自动更新，新版本到 Releases 手动下载。USB 独占、SAF 与状态栏歌词属于 Android 版，桌面端用托盘、桌面歌词、媒体会话与快捷键补上。
+The desktop app has no in-app updater; grab new versions from Releases. USB exclusive, SAF and status bar lyrics are Android features; on desktop the tray, desktop lyrics, media session and shortcuts fill those roles.
+
+@7a13ee547e  html  p.eyebrow
+# <b>12</b><span class="eyebrow__rule"></span>细节 · Details
+<b>12</b><span class="eyebrow__rule"></span>Details · 细节
 
 @3b103de727  html  h2.h2#details-title
 # 每天都会用到的<span class="ul">小细节{{0}}</span>。
@@ -1840,9 +2468,9 @@ Developer mode
 # 真机上同样是在设置页连点版本号 7 次：底栏会出现 Debug 页，内含各平台探针与日志查看器。
 It works the same on a real device: tap the version 7 times in Settings and a Debug tab appears in the nav bar, with per-platform probes and a log viewer.
 
-@1e15dd5845  html  p.eyebrow
-# <b>11</b><span class="eyebrow__rule"></span>构造 · Inside
-<b>11</b><span class="eyebrow__rule"></span>Inside · 构造
+@18f57b0eb5  html  p.eyebrow
+# <b>13</b><span class="eyebrow__rule"></span>构造 · Inside
+<b>13</b><span class="eyebrow__rule"></span>Inside · 构造
 
 @4e4a806578  html  h2.h2#stack-title
 # 十四个模块，<span class="ul">各管一段路{{0}}</span>。
@@ -1852,9 +2480,9 @@ Fourteen modules, <span class="ul">each minding its stretch{{0}}</span>.
 # 自有 Android 库按业务域拆分，依赖方向写在门禁里：<code>:model</code> 不依赖实现，<code>:common</code> 不依赖业务，所有库禁止依赖 app 或形成循环。彩色圆点对应它们服务的功能章节。
 The in-house Android libraries are split by domain, with dependency direction enforced in CI: <code>:model</code> depends on no implementation, <code>:common</code> on no business logic, and no library may depend on the app or form a cycle. The colored dots match the feature sections they serve.
 
-@3181d7b333  html  div.xref
-# <span class="mono">Cross-reference</span> <span><i style="--c:var(--violet)"></i>01 播放</span> <span><i style="--c:var(--pink)"></i>02 歌词</span> <span><i style="--c:var(--red)"></i>03 多源</span> <span><i style="--c:var(--amber)"></i>04 音质</span> <span><i style="--c:var(--blue)"></i>05 一起听</span> <span><i style="--c:var(--green)"></i>06 本地</span> <span><i style="--c:var(--teal)"></i>07 同步</span>
-<span class="mono">Cross-reference</span> <span><i style="--c:var(--violet)"></i>01 Play</span> <span><i style="--c:var(--pink)"></i>02 Lyrics</span> <span><i style="--c:var(--red)"></i>03 Sources</span> <span><i style="--c:var(--amber)"></i>04 Hi-Fi</span> <span><i style="--c:var(--blue)"></i>05 Together</span> <span><i style="--c:var(--green)"></i>06 Local</span> <span><i style="--c:var(--teal)"></i>07 Sync</span>
+@52e08401d7  html  div.xref
+# <span class="mono">Cross-reference</span> <span><i style="--c:var(--violet)"></i>01 播放</span> <span><i style="--c:var(--pink)"></i>02 歌词</span> <span><i style="--c:var(--red)"></i>03 多源</span> <span><i style="--c:var(--amber)"></i>04 音质</span> <span><i style="--c:var(--blue)"></i>06 一起听</span> <span><i style="--c:var(--green)"></i>07 本地</span> <span><i style="--c:var(--teal)"></i>08 同步</span>
+<span class="mono">Cross-reference</span> <span><i style="--c:var(--violet)"></i>01 Play</span> <span><i style="--c:var(--pink)"></i>02 Lyrics</span> <span><i style="--c:var(--red)"></i>03 Sources</span> <span><i style="--c:var(--amber)"></i>04 Hi-Fi</span> <span><i style="--c:var(--blue)"></i>06 Together</span> <span><i style="--c:var(--green)"></i>07 Local</span> <span><i style="--c:var(--teal)"></i>08 Sync</span>
 
 @65487da073  html  h3.stack__h
 # {{0}}模块
@@ -1960,17 +2588,29 @@ The in-house Android libraries are split by domain, with dependency direction en
 # <b>GitHub Actions</b><span>CI、多 ABI 发布、sanitizer 门禁</span><em style="--c:var(--red)"></em>
 <b>GitHub Actions</b><span>CI, multi-ABI releases, sanitizer gates</span><em style="--c:var(--red)"></em>
 
-@3016a27ec2  html  p.eyebrow
-# <b>12</b><span class="eyebrow__rule"></span>下载 · Download
-<b>12</b><span class="eyebrow__rule"></span>Download · 下载
+@f9756eeb71  html  p.eyebrow
+# <b>14</b><span class="eyebrow__rule"></span>下载 · Download
+<b>14</b><span class="eyebrow__rule"></span>Download · 下载
 
 @c49578925b  html  h2.h2#download-title
 # 装上它，<span class="ul">马上就能听{{0}}</span>。
 Install it and <span class="ul">start listening{{0}}</span>.
 
-@0236f73ac6  html  p.lead
-# 选一个和设备匹配的架构（ABI），点一下就能下载。版本号、文件大小和 SHA-256 校验值都实时读取自 GitHub Releases，免费，也没有任何广告。
-Pick the architecture (ABI) that matches your device and download in one tap. Version, file size and SHA-256 checksum are read live from GitHub Releases. It's free, with no ads of any kind.
+@48dc2548ac  html  p.lead
+# 先选手机还是电脑，再挑一个和设备匹配的安装包，点一下就能下载。版本号、文件大小和 SHA-256 校验值都实时读取自 GitHub Releases，免费，也没有任何广告。
+Pick phone or computer first, then the package that matches your device, and one click downloads it. The version, file size and SHA-256 checksum are read live from GitHub Releases. It’s free, with no ads of any kind.
+
+@73163d0477  attr  div.dlswitch[aria-label]
+# 选择平台
+Choose a platform
+
+@608a82d9e1  html  button.is-on#platA
+# {{0}}<span><b>Android</b><small>手机 · 平板 · APK</small></span>
+{{0}}<span><b>Android</b><small>Phone · tablet · APK</small></span>
+
+@012f516d0a  html  button#platD
+# {{0}}<span><b>桌面端</b><small>Windows · macOS · Linux</small></span>
+{{0}}<span><b>Desktop</b><small>Windows · macOS · Linux</small></span>
 
 @a993e8bb9a  html  div.cutline
 # {{0}}<span class="hand">沿虚线剪下</span>
@@ -1999,10 +2639,6 @@ Latest
 @0f0d2b53a6  html  dt
 # 发布于
 Released
-
-@08fd44cf00  html  dt
-# 系统要求
-Requires
 
 @b70c2d28a1  html  dt
 # 价格
@@ -2117,6 +2753,108 @@ Latest train
 @5969f3cc2c  html  li.changes__empty
 # 正在向 GitHub 查询最新版本……
 Checking GitHub for the latest version…
+
+@6687fe7689  html  div.ticket__top
+# <span class="ticket__line">{{0}}NeriPlayer · Desktop 预览版</span> <span class="ticket__kind">免费下载 <i>PREVIEW</i></span>
+<span class="ticket__line">{{0}}NeriPlayer · Desktop preview</span> <span class="ticket__kind">Free download <i>PREVIEW</i></span>
+
+@ea0474f6d9  html  div.ticket__stop
+# <small>装到</small><b data-dos-to="">你的 Windows</b><i data-dos-en="">YOUR PC</i>
+<small>To</small><b data-dos-to>Your PC</b><i data-dos-en>你的电脑</i>
+
+@0c3915aad5  html  dd
+# 最新预览版
+Latest preview
+
+@1a1f6dff78  html  span.ticket__oslabel
+# 系统
+SYSTEM
+
+@02b6184b5c  attr  div.seg[aria-label]
+# 选择系统
+Choose a system
+
+@80ced56948  html  legend
+# 选择安装包
+Choose a package
+
+@bcd3551b8d  html  span
+# <b>安装程序 .exe</b><small>x64 · Windows 10 / 11 · 推荐</small>
+<b>Installer .exe</b><small>x64 · Windows 10 / 11 · recommended</small>
+
+@6530b9d9c3  html  span
+# <b>安装包 .msi</b><small>x64 · 适合批量部署</small>
+<b>Package .msi</b><small>x64 · for managed deployment</small>
+
+@564fcc7282  html  span
+# <b>Apple Silicon</b><small>M1 及以后 · .dmg · 推荐</small>
+<b>Apple Silicon</b><small>M1 and later · .dmg · recommended</small>
+
+@c68614e2f8  html  span
+# <b>AppImage</b><small>x64 · 免安装，多数发行版通用</small>
+<b>AppImage</b><small>x64 · no install, runs on most distros</small>
+
+@a6ab066875  html  div.ticket__actions
+# <a class="btn btn--ink" id="dlBtnD" href="https://github.com/cwuom/NeriPlayer-Desktop/releases/latest" rel="noopener">{{0}}<span id="dlBtnDLabel">下载 .exe 安装程序</span><small id="dlSizeD">GitHub Releases</small></a> <a class="ticket__more" href="https://github.com/cwuom/NeriPlayer-Desktop/releases" target="_blank" rel="noopener">全部版本与更新日志{{1}}</a>
+<a class="btn btn--ink" id="dlBtnD" href="https://github.com/cwuom/NeriPlayer-Desktop/releases/latest" rel="noopener">{{0}}<span id="dlBtnDLabel">Download the .exe installer</span><small id="dlSizeD">GitHub Releases</small></a> <a class="ticket__more" href="https://github.com/cwuom/NeriPlayer-Desktop/releases" target="_blank" rel="noopener">All versions &amp; changelog{{1}}</a>
+
+@0dba374aaf  html  div.ticket__stub
+# <span class="ticket__no">第 <b data-gh="dcount">—</b> 版</span> <span class="ticket__barcode" aria-hidden="true"></span> <span class="stamp stamp--red ticket__stamp ticket__stamp--sm" aria-hidden="true">预览</span> <span class="ticket__valid">累计下载<b data-gh="ddownloads">—</b></span>
+<span class="ticket__no">Release <b data-gh="dcount">—</b></span> <span class="ticket__barcode" aria-hidden="true"></span> <span class="stamp stamp--red ticket__stamp ticket__stamp--sm" aria-hidden="true">PREVIEW</span> <span class="ticket__valid">Downloads<b data-gh="ddownloads">—</b></span>
+
+@6331ed54de  html  h3
+# 预览版 Release<em class="hand">推荐</em>
+Preview release<em class="hand">recommended</em>
+
+@d3f98eb5f5  html  p.body
+# 完成一批功能后发布，提供 Windows、macOS 与 Linux 的安装包，附 <code>SHA256SUMS.txt</code>、macOS 安装说明以及随包 FFmpeg 的源码与构建脚本。反馈问题时请附上「设置 → 关于」里的构建版本。
+Published after each batch of features, with packages for Windows, macOS and Linux, plus <code>SHA256SUMS.txt</code>, macOS install notes and the source and build scripts for the bundled FFmpeg. When reporting an issue, include the build version from Settings → About.
+
+@c956ec9406  html  p.body
+# 想体验还没发布的改动，可以到 Artifacts 工作流挑一次成功的构建，下载对应平台的产物；需要登录 GitHub，先解压外层压缩包再安装。
+To try changes that haven’t shipped yet, pick a successful run of the Artifacts workflow and download the build for your platform. You need to be signed in to GitHub; unzip the outer archive before installing.
+
+@b1252c5426  html  p.links
+# <a class="link" href="https://github.com/cwuom/NeriPlayer-Desktop/actions/workflows/artifacts.yml" target="_blank" rel="noopener">Artifacts 工作流 ↗</a><a class="link" href="https://t.me/ouom_pub" target="_blank" rel="noopener">Telegram @ouom_pub ↗</a>
+<a class="link" href="https://github.com/cwuom/NeriPlayer-Desktop/actions/workflows/artifacts.yml" target="_blank" rel="noopener">Artifacts workflow ↗</a><a class="link" href="https://t.me/ouom_pub" target="_blank" rel="noopener">Telegram @ouom_pub ↗</a>
+
+@9df00ed344  html  pre.mono#buildCmdD
+# <code><span class="t-dim"># 克隆仓库与歌词子模块</span>
+# git clone --recursive https://github.com/cwuom/NeriPlayer-Desktop.git
+# cd NeriPlayer-Desktop
+# pnpm install --frozen-lockfile
+# <span class="t-dim"># 启动 Vite 与 Tauri 开发窗口</span>
+# pnpm tauri dev</code>
+<code><span class="t-dim"># Clone the repo with the lyrics submodule</span>
+git clone --recursive https://github.com/cwuom/NeriPlayer-Desktop.git
+cd NeriPlayer-Desktop
+pnpm install --frozen-lockfile
+<span class="t-dim"># Start Vite and the Tauri dev window</span>
+pnpm tauri dev</code>
+
+@5658ebd92e  html  p.small
+# 还需要 <a href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener">Tauri 平台依赖</a>，以及编译 FFmpeg C++ 垫片的工具链。
+You also need the <a href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener">Tauri prerequisites</a> and a toolchain to compile the FFmpeg C++ shim.
+
+@2bd022853a  html  td
+# 安装包暂未代码签名，SmartScreen 拦下时选「更多信息 → 仍要运行」；缺 WebView2 就先装运行时
+The installer isn’t code-signed yet. If SmartScreen blocks it, choose “More info → Run anyway”; install the WebView2 runtime first if it’s missing
+
+@576a7d26a9  html  td
+# ad-hoc 签名、未经公证：拖进「应用程序」打开一次，再到「系统设置 → 隐私与安全性」选「仍要打开」
+Ad-hoc signed and not notarized: drag it into Applications, open it once, then choose “Open Anyway” in System Settings → Privacy &amp; Security
+
+@840154e1af  html  td
+# AppImage 解压后赋予执行权限；deb / rpm 用发行版的包管理器安装
+Make the AppImage executable after extracting; install deb / rpm with your distribution’s package manager
+
+@879f717ff8  html  h3.h4
+# 和手机一起用
+Using it with your phone
+
+@35ac2543d0  html  p.body
+# 在两端的「备份与同步」里连上同一个 GitHub 仓库或 WebDAV 目录就行。第一次遇到旧格式会提示升级，先把其他设备更新到最新再确认；音频文件不会被同步。
+Connect both to the same GitHub repository or WebDAV folder in Backup &amp; Sync. The first time an old format is found you’ll be asked to upgrade; update your other devices to the latest version before confirming. Audio files are never synced.
 
 @c9a8df1ac9  html  p.eyebrow
 # <b>i</b><span class="eyebrow__rule"></span>常见问题 · FAQ

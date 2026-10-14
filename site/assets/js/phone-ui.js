@@ -26,7 +26,6 @@
   var coverBase = 'assets/img/covers/';
   var favCount = 0;
   var sleep = { mode: null, end: 0 };
-  var fxHinted = false;
 
   function el(tag, cls, html) {
     var e = document.createElement(tag);
@@ -95,6 +94,7 @@
     }
     s._t = setTimeout(function () { s.classList.remove('is-on'); }, 2800);
   }
+  NP.phoneSnack = snack;
 
   /* ---------- 面板层：底部面板与对话框共用一层遮罩 ---------- */
   function Layers(ph) {
@@ -124,6 +124,7 @@
       layer.el.classList.add('is-open');
       self.ph.classList.add('is-sheet');
       self.ph.classList.toggle('is-dialog', !!layer.dialog);
+      self.ph.classList.toggle('is-page', !!layer.page);
       if (layer.onShow) layer.onShow();
     }, prev ? 160 : 0);
   };
@@ -134,7 +135,7 @@
     this.manual = false;
     if (byUser) this.dismissed = l;
     l.el.classList.remove('is-open');
-    this.ph.classList.remove('is-sheet', 'is-dialog');
+    this.ph.classList.remove('is-sheet', 'is-dialog', 'is-page');
     if (l.onHide) l.onHide();
   };
 
@@ -186,114 +187,6 @@
     grab.addEventListener('pointercancel', end);
   }
 
-  /* ---------- 音效与倍速（多台手机共享同一份状态） ---------- */
-  var SPEC = {
-    speed: { min: 0.1, max: 4, step: 0.05, fmt: function (v) { return v.toFixed(2) + 'x'; }, get: function () { return P.speed; }, set: function (v) { P.setSpeed(v); } },
-    pitch: { min: 0.25, max: 2, step: 0.05, fmt: function (v) { return v.toFixed(2) + 'x'; }, get: function () { return P.pitch; }, set: function (v) { P.setPitch(v); } },
-    loud: { min: 0, max: 15, step: 0.5, fmt: function (v) { return '+' + v.toFixed(1) + ' dB'; }, get: function () { return NP.sound.state.loud; }, set: function (v) { NP.sound.state.loud = v; NP.sound.apply(); } },
-  };
-  var fxInst = [];
-  function fxHint(ph) {
-    if (fxHinted || NP.sound.live()) return;
-    fxHinted = true;
-    snack(ph, L('按下播放键出声，就能听到效果', 'Press play to hear the change'));
-  }
-  function setFx(key, v, ph) {
-    var spec = SPEC[key];
-    v = M.clamp(Math.round(v / spec.step) * spec.step, spec.min, spec.max);
-    spec.set(v);
-    paintFx();
-    fxHint(ph);
-  }
-  function applyPreset(i, ph) {
-    var st = NP.sound.state;
-    st.levels = NP.sound.presets[i][1].slice();
-    st.preset = i;
-    NP.sound.apply();
-    paintFx();
-    if (ph) fxHint(ph);
-  }
-  function paintFx() {
-    var st = NP.sound.state;
-    fxInst.forEach(function (inst) {
-      Object.keys(inst.cards).forEach(function (key) {
-        var c = inst.cards[key];
-        var v = SPEC[key].get();
-        c.xs.style.setProperty('--v', ((v - SPEC[key].min) / (SPEC[key].max - SPEC[key].min)).toFixed(4));
-        c.val.textContent = SPEC[key].fmt(v);
-        c.chips.forEach(function (b) { b.classList.toggle('is-on', Math.abs(parseFloat(b.getAttribute('data-v')) - v) < 1e-3); });
-      });
-      inst.presetEls.forEach(function (b, k) { b.classList.toggle('is-on', k === st.preset); });
-      inst.bandEls.forEach(function (b, i) {
-        var db = st.levels[i];
-        b.xs.style.setProperty('--v', ((db + 15) / 30).toFixed(4));
-        b.val.textContent = (db < 0 ? '-' : '+') + Math.abs(db).toFixed(1) + ' dB';
-      });
-      if (inst.sw) {
-        inst.sw.classList.toggle('is-on', st.eqOn);
-        inst.sw.setAttribute('aria-checked', st.eqOn ? 'true' : 'false');
-        inst.eqCard.classList.toggle('is-off', !st.eqOn);
-      }
-    });
-  }
-  function initFx(ph, sheet) {
-    var drag = NP.sound.dragSlider;
-    var inst = { cards: {}, presetEls: [], bandEls: [], sw: null, eqCard: null };
-    $$('[data-ms]', sheet).forEach(function (card) {
-      var key = card.getAttribute('data-ms');
-      if (!SPEC[key]) return;
-      var c = { val: $('[data-ms-val]', card), xs: $('[data-xs]', card), chips: $$('[data-ms-chips] button', card) };
-      inst.cards[key] = c;
-      c.chips.forEach(function (b) { b.addEventListener('click', function () { setFx(key, parseFloat(b.getAttribute('data-v')), ph); }); });
-      drag(c.xs, function (p) { setFx(key, SPEC[key].min + p * (SPEC[key].max - SPEC[key].min), ph); });
-    });
-    var eqCard = $('[data-ms="eq"]', sheet);
-    var chipsBox = $('[data-eq-chips]', sheet);
-    var bandsBox = $('[data-eq-bands]', sheet);
-    if (eqCard && chipsBox && bandsBox) {
-      inst.eqCard = eqCard;
-      inst.presetEls = NP.sound.presets.map(function (p, i) {
-        var b = el('button');
-        b.type = 'button';
-        b.textContent = p[0];
-        b.addEventListener('click', function () { applyPreset(i, ph); });
-        chipsBox.appendChild(b);
-        return b;
-      });
-      inst.bandEls = NP.sound.bands.map(function (label, i) {
-        var wrap = el('div', 'ms-band', '<p class="ms-band__row"><span>' + label + '</span><span data-v></span></p><div class="xslider xslider--steps"><i class="xs-on"></i><i class="xs-thumb"></i><i class="xs-off"></i></div>');
-        bandsBox.appendChild(wrap);
-        var xs = $('.xslider', wrap);
-        drag(xs, function (p) {
-          var st = NP.sound.state;
-          st.levels[i] = Math.round((p * 30 - 15) * 10) / 10;
-          st.preset = -1;
-          NP.sound.apply();
-          paintFx();
-          fxHint(ph);
-        });
-        return { xs: xs, val: $('[data-v]', wrap) };
-      });
-      var sw = $('.m3switch', eqCard);
-      if (sw) {
-        inst.sw = sw;
-        sw.setAttribute('role', 'switch');
-        sw.setAttribute('aria-hidden', 'false');
-        sw.setAttribute('aria-label', L('均衡器', 'Equalizer'));
-        sw.tabIndex = 0;
-        var flip = function () {
-          NP.sound.state.eqOn = !NP.sound.state.eqOn;
-          NP.sound.apply();
-          paintFx();
-          fxHint(ph);
-        };
-        sw.addEventListener('click', flip);
-        sw.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
-      }
-    }
-    fxInst.push(inst);
-  }
-
   /* ---------- 一台手机的播放页 ---------- */
   function PlayerUI(ph, phone) {
     var self = this;
@@ -303,9 +196,7 @@
     this.layers = new Layers(ph);
     var lay = this.layers;
 
-    var fxEl = $('[data-ph-msheet="fx"]', ph);
-    this.fx = fxEl ? { el: fxEl, onShow: function () { var sc = $('[data-ph-sheet-scroll]', fxEl); if (sc && !self.keepFxScroll) sc.scrollTop = 0; } } : null;
-    if (fxEl) { initFx(ph, fxEl); dragToDismiss(fxEl, lay); }
+    this.fx = null;
 
     this.buildMore();
     this.buildQueue();
@@ -407,7 +298,6 @@
     var items = [
       ['i-info', L('获取歌曲信息', 'Get Song Info'), null, 'na'],
       ['i-edit', L('编辑歌曲信息', 'Edit Song Info'), null, 'na'],
-      ['i-tune', L('音效与倍速', 'Audio Effects & Speed'), L('速度、音调和均衡器预设', 'Speed, pitch, and equalizer presets'), 'fx'],
       ['i-info', L('歌曲信息详情', 'Song Details'), null, 'na'],
       ['i-timer', L('调整歌词行为', 'Adjust Lyrics Behavior'), null, 'na'],
       ['i-fontsize', L('歌词字体大小', 'Lyrics Font Size'), L('歌词 100% · 翻译 100%', 'Lyrics 100% · Translation 100%'), 'na'],
@@ -425,7 +315,6 @@
       b.addEventListener('click', function () {
         var it = items[+b.getAttribute('data-i')];
         var act = it[3];
-        if (act === 'fx' && self.fx) { self.layers.show(self.fx, true); return; }
         if (act === 'share') {
           var text = L('分享 Neri Line 的单曲《星轨》', 'Neri Line – “星轨”') + ' · NeriPlayer ' + location.href.split('#')[0];
           var done = function () { snack(ph, L('分享文案已复制', 'Share text copied')); };
@@ -687,11 +576,9 @@
       var gesture = $('.ph__gesture', play);
       play.insertBefore(lp.cloneNode(true), $('.sheet-scrim', play) || gesture);
       lyr.insertBefore(cp.cloneNode(true), lp);
-      var fx = $('[data-ph-msheet="fx"]', play);
       var scrim = $('[data-ph-scrim]', play);
       var lg = $('.ph__gesture', lyr);
       if (scrim) lyr.insertBefore(scrim.cloneNode(true), lg);
-      if (fx) lyr.insertBefore(fx.cloneNode(true), lg);
       play.setAttribute('data-home', 'cover');
       lyr.setAttribute('data-home', 'lyrics');
       lyr.classList.add('is-lyrics');
@@ -705,8 +592,7 @@
         if (!ph || !ph.hasAttribute('data-home')) return;
         uis.push(new PlayerUI(ph, p));
       });
-      applyPreset(17);
-      paintFx();
+      NP.sound.usePreset('acg');
       initPlacement(uis);
       initMini();
       NP.addFrame(function () { tickSleep(uis); }, 7);
@@ -721,10 +607,18 @@
           },
           close: function () { if (play.layers.open === play.fx && !play.layers.manual) play.layers.hide(); },
           isOpen: function () { return !!play.layers.open; },
-          scrollTo: function (y) { var sc = $('[data-ph-sheet-scroll]', play.fx.el); if (sc) sc.scrollTo({ top: y, behavior: NP.env.reduced ? 'auto' : 'smooth' }); },
+          scrollTo: function (y) { var sc = $('[data-fx-scroll]', play.fx.el); if (sc) sc.scrollTo({ top: y, behavior: NP.env.reduced ? 'auto' : 'smooth' }); },
         };
         Object.defineProperty(api, 'manual', { get: function () { return play.layers.manual; }, set: function () {} });
         NP.phones.sheet = api;
+        $$('[data-open-fx]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            if (play.ph.classList.contains('is-lyrics')) play.setPage(false);
+            play.layers.show(play.fx, true);
+            var r = play.ph.getBoundingClientRect();
+            if (r.top < 60 || r.bottom > innerHeight) NP.scrollTo(NP.absTop(play.ph) - Math.max(80, (innerHeight - r.height) / 2));
+          });
+        });
       }
     },
   };

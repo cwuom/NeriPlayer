@@ -127,11 +127,34 @@
   /* ---------- 启动 ---------- */
   function relayout() { nav.measure(); }
 
+  /* 还没加载完的图片先透明，解码后淡入，不会“啪”一下冒出来 */
+  function fadeImages() {
+    if (NP.env.reduced) return;
+    $$('img').forEach(function (img) {
+      if (img.complete && img.naturalWidth) return;
+      if (img.classList.contains('theme-ghost')) return;
+      var own = getComputedStyle(img).transitionDuration.split(',').some(function (d) { return parseFloat(d) > 0; });
+      img.classList.add('img-wait');
+      if (!own) img.classList.add('img-fade');
+      var done = function () {
+        img.removeEventListener('load', done);
+        img.removeEventListener('error', done);
+        requestAnimationFrame(function () { img.classList.remove('img-wait'); });
+      };
+      img.addEventListener('load', function () { if (img.decode) img.decode().then(done, done); else done(); });
+      img.addEventListener('error', done);
+    });
+  }
+
   function boot() {
+    fadeImages();
     NP.measure(true);
     NP.motion.initTheme();
     NP.phones.init();
     NP.demos.init();
+    if (NP.dsp) NP.dsp.init();
+    if (NP.desktop) NP.desktop.init();
+    if (window.ResizeObserver && NP.desktopSim && NP.desktopSim.sim) new ResizeObserver(function () { NP.desktopSim.sim.layout(); }).observe($('#deskScreen'));
     nav.init();
     menu.init();
     NP.smoothScroll.init();
