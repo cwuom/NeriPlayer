@@ -9,8 +9,11 @@ import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsProfile
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSound
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSoundSection
+import moe.ouom.neriplayer.data.model.playback.effects.AudioOutputRoute
 import moe.ouom.neriplayer.data.model.playback.effects.SpeakerOptimizerSettings
 import moe.ouom.neriplayer.data.model.playback.effects.isSectionEnabled
+import moe.ouom.neriplayer.data.model.playback.effects.profileFor
+import moe.ouom.neriplayer.data.model.playback.effects.updateProfileFor
 import moe.ouom.neriplayer.data.model.playback.effects.withSectionDefaults
 import moe.ouom.neriplayer.data.model.playback.effects.withSectionEnabled
 import kotlin.math.abs
@@ -67,6 +70,17 @@ internal fun AudioEffectsProfile.withSectionEnabled(section: AudioEffectsSoundSe
     copy(enabled = this.enabled || enabled, sound = sound.withSectionEnabled(section, enabled))
 
 internal fun SpeakerOptimizerSettings.resetTuning(): SpeakerOptimizerSettings = SpeakerOptimizerSettings(enabled = enabled)
+
+/** 外放优化同样受音效总开关约束，打开时顺带打开扬声器输出的总开关，否则用户听不到效果 */
+internal fun AudioEffectsSettings.withSpeakerOptimizerEnabled(enabled: Boolean): AudioEffectsSettings {
+    val updated = copy(speaker = speaker.copy(enabled = enabled))
+    if (!enabled) return updated
+    return updated.updateProfileFor(AudioOutputRoute.SPEAKER) { it.copy(enabled = true) }
+}
+
+/** 外放优化开着但总开关关闭时不会生效，分区开关需要如实提示 */
+internal fun AudioEffectsSettings.isSpeakerOptimizerBlockedByMaster(): Boolean =
+    speaker.enabled && !profileFor(AudioOutputRoute.SPEAKER).enabled
 
 internal fun AudioEffectsSection.isEnabled(profile: AudioEffectsProfile, settings: AudioEffectsSettings): Boolean {
     soundSection?.let { return profile.sound.isSectionEnabled(it) }

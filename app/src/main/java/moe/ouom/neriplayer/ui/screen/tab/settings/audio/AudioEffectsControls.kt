@@ -84,7 +84,7 @@ internal class AudioEffectsEditor(private val route: AudioOutputRoute) {
             return
         }
         when (section) {
-            AudioEffectsSection.SPEAKER -> speaker { it.copy(enabled = enabled) }
+            AudioEffectsSection.SPEAKER -> settings { it.withSpeakerOptimizerEnabled(enabled) }
             AudioEffectsSection.SPEED -> {
                 val change = current.toggleSpeedSection(enabled, soundState)
                 settings { it.toggleSpeedSection(enabled, soundState).settings }
