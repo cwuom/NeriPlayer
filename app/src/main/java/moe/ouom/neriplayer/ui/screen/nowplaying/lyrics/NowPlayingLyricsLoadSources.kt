@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
@@ -13,6 +14,8 @@ import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 
 internal interface NowPlayingLyricsSources {
+    val cacheGeneration: Long get() = 0L
+
     fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
         preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? = null
 
@@ -30,6 +33,8 @@ internal interface NowPlayingLyricsSources {
 }
 
 internal object PlatformNowPlayingLyricsSources : NowPlayingLyricsSources {
+    override val cacheGeneration: Long get() = PlayerLyricsProvider.currentLyricsCacheGeneration()
+
     override fun cachedPreferred(song: SongItem, source: LyricSourcePreference,
         preferWordTimedLyrics: Boolean): PreferredLyricSourceResult? =
         PlayerManager.getCachedPreferredLyricSourceResult(song, source, preferWordTimedLyrics)

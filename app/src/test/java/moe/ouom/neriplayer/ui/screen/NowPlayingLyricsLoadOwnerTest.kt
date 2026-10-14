@@ -46,6 +46,45 @@ class NowPlayingLyricsLoadOwnerTest {
     private val song = SongItem(41L, "Current", "Artist", "Album", 1L, 60_000L, null)
 
     @Test
+    fun `reopening production lyrics restores all tracks before loading and avoids repeated source reads`() = runTest {
+        var originalReads = 0
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun onlineOriginal(song: SongItem): List<LyricEntry> {
+                originalReads++
+                return listOf(LyricEntry("original", 1000, 2000))
+            }
+            override suspend fun onlineTranslated(song: SongItem) = listOf(LyricEntry("translation", 1000, 2000))
+            override suspend fun onlineRomanized(song: SongItem) = listOf(LyricEntry("phonetic", 1000, 2000))
+        }
+        val stages = NowPlayingLyricsLoadStages(sources, StandardTestDispatcher(testScheduler))
+        val versions = NowPlayingLyricsRefreshVersions(0, 0, 0)
+        val first = LyricsCompositionFixture(this)
+        try {
+            val owner = first.compose(request(song), versions, stages)
+            runCurrent()
+            assertEquals("original", owner.state.lyrics.single().text)
+            assertTrue(owner.secondaryResolved)
+        } finally {
+            first.close()
+        }
+
+        val reopened = LyricsCompositionFixture(this)
+        try {
+            val owner = reopened.compose(request(song), versions, stages)
+            assertEquals(listOf("original"), owner.state.lyrics.map { it.text })
+            assertEquals(listOf("translation"), owner.state.translatedLyrics.map { it.text })
+            assertEquals(listOf("phonetic"), owner.state.phoneticLyrics.map { it.text })
+            assertEquals(listOf("original"), owner.state.plainLyrics.map { it.text })
+            assertEquals(listOf("translation"), owner.state.plainTranslatedLyrics.map { it.text })
+            assertTrue(owner.secondaryResolved)
+            runCurrent()
+            assertEquals(1, originalReads)
+        } finally {
+            reopened.close()
+        }
+    }
+
+    @Test
     fun `same revision confirmed clear replaces rendered state and rejects late old network publication`() = runTest {
         val oldBackground = CompletableDeferred<LoadedLyricsState>()
         val stages = object : NowPlayingLyricsStages {
@@ -180,7 +219,7 @@ class NowPlayingLyricsLoadOwnerTest {
             assertEquals(1, cacheReads)
 
             val newContext = Mockito.mock(Context::class.java)
-            val changed = input.copy(context = newContext, currentMediaUrl = "https://second")
+            val changed = input.copy(context = newContext, currentMediaUrl = null)
             assertSame(owner, fixture.compose(changed, versions, stages))
             runCurrent()
             assertEquals(changed.copy(cachedPreferredLyrics = cached), received.last())
