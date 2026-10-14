@@ -1100,7 +1100,7 @@ Current sync targets:
   Base64 request envelopes have bounded sizes.
 - GitHub reads at a fixed branch head and publishes the complete manifest with one commit
   and an atomic GraphQL `beforeOid` ref update. WebDAV uploads immutable objects before conditionally publishing the manifest with
-  a strong ETag; subsequent writes fail if the server cannot provide that guarantee.
+  a strong ETag; servers that refuse LOCK and lack strong ETags, such as Nutstore, verify the manifest fingerprint before and after publication.
 - Legacy JSON, raw GZIP, and Base64 snapshots are read only when the manifest is absent.
   The old 8/12/16 MiB limits apply to legacy reads, and Data Saver only affects legacy read
   priority. A corrupt manifest fails explicitly. V3 archives are read only for migration;
@@ -1132,8 +1132,8 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 - `WorkManager` handles delayed sync, periodic sync, network checks, and retries.
 - WebDAV URL, username, and password are stored in local encrypted storage.
 - WebDAV stores the V4 manifest and content objects beside the configured file, keeping the `neriplayer-sync-v3.manifest` filename.
-  Subsequent manifest writes require a strong ETag; servers without safe conditional
-  writes fail explicitly to prevent overwriting another device's changes.
+  Subsequent manifest writes prefer a strong ETag condition; without one, the manifest fingerprint is
+  verified before and after publication, and another device's write triggers a fresh merge instead of an overwrite.
 - The remote WebDAV file is not an end-to-end encrypted backup.
 
 ---
