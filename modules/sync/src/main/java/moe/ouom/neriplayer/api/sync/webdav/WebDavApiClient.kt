@@ -174,8 +174,9 @@ class WebDavApiClient(
             }
         }.onFailure { NPLogger.e(TAG, "Get WebDAV archive file content failed", it) }
 
+    // 压缩响应会让 nginx 等服务器把强 ETag 降为 W/ 弱 ETag，读取归档时要求原始字节
     private fun fileReadRequest(remoteUrl: String): Request.Builder = Request.Builder()
-        .url(remoteUrl).header("Authorization", authorizationHeader).get()
+        .url(remoteUrl).header("Authorization", authorizationHeader).header("Accept-Encoding", "identity").get()
 
     private fun parseFileContent(response: Response, remoteUrl: String, cancel: () -> Unit): WebDavRemoteFileSnapshot {
         val budget = SyncFileTransferLimits.responseBudget(remoteUrl.toHttpUrl().encodedPath)

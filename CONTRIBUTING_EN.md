@@ -548,8 +548,8 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
   Base64 in upload requests is only the transport envelope; repository bodies remain
   raw binary, and raw content reads are pinned to a fixed branch head.
 - WebDAV creates immutable objects and the initial manifest with `If-None-Match: *`.
-  Later manifest writes require `If-Match` with a strong ETag. Stop publication when
-  a strong condition is unavailable; do not fall back to unconditional writes.
+  Every publication rereads the manifest fingerprint first and adds `If-Match` when a strong ETag
+  exists. Without one, publish only after a matching fingerprint and reread to confirm; never skip the check.
 - Playback and traffic statistics use delayed batch writes. Playback stats flush at
   important player/activity lifecycle points, while traffic accumulators flush when
   a request or download attempt ends; playback totals and daily buckets are retained

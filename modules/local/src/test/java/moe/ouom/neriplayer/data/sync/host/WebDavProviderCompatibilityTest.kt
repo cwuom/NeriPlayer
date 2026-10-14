@@ -41,7 +41,11 @@ import org.mockito.Mockito.mock
 
 // 真实服务只接受 loopback 地址，每次测试独占新目录，避免触碰已有同步数据
 @RunWith(Parameterized::class)
-class WebDavProviderCompatibilityTest(private val providerName: String, private val baseUrl: String) {
+class WebDavProviderCompatibilityTest(
+    private val providerName: String,
+    private val baseUrl: String,
+    private val supportsLock: Boolean
+) {
     @get:Rule val temporary = TemporaryFolder()
 
     @Before
@@ -96,7 +100,7 @@ class WebDavProviderCompatibilityTest(private val providerName: String, private 
                 val snapshot = reader.backend.fetch().getOrThrow()
                 requireNotNull(snapshot.dataset).use { assertDataset(changed, it) }
             }
-            assertTrue("$providerName retains finite lease support after reopening", fixture.lockSupported)
+            assertEquals("$providerName retains its lease capability after reopening", supportsLock, fixture.lockSupported)
         }
     }
 
@@ -124,7 +128,7 @@ class WebDavProviderCompatibilityTest(private val providerName: String, private 
                 requireNotNull(upgraded.dataset).use { assertDataset(expected, it) }
             }
             assertEquals(1, fixture.migrationAuthorizations)
-            assertTrue("$providerName releases the migration lease before subsequent syncs", fixture.lockSupported)
+            assertEquals("$providerName keeps its lease capability across migration", supportsLock, fixture.lockSupported)
         }
     }
 
@@ -232,11 +236,19 @@ class WebDavProviderCompatibilityTest(private val providerName: String, private 
     companion object {
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
-        fun providers(): Collection<Array<String>> {
-            val urls = System.getenv("NERIPLAYER_WEBDAV_COMPAT_URLS").orEmpty().split(',').map(String::trim).filter(String::isNotEmpty)
-            return if (urls.isEmpty()) listOf(arrayOf("not configured", ""))
-            else urls.mapIndexed { index, url -> arrayOf("provider-${index + 1}", url) }
+        fun providers(): Collection<Array<Any>> {
+            // 拒绝 LOCK 的服务（例如坚果云）放在 NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS，验证无锁条件同步
+            val locked = urls("NERIPLAYER_WEBDAV_COMPAT_URLS").map { it to true }
+            val unlocked = urls("NERIPLAYER_WEBDAV_COMPAT_UNLOCKED_URLS").map { it to false }
+            val providers = locked + unlocked
+            return if (providers.isEmpty()) listOf(arrayOf("not configured", "", true))
+            else providers.mapIndexed { index, (url, supportsLock) ->
+                arrayOf("provider-${index + 1}${if (supportsLock) "" else "-unlocked"}", url, supportsLock)
+            }
         }
+
+        private fun urls(name: String): List<String> =
+            System.getenv(name).orEmpty().split(',').map(String::trim).filter(String::isNotEmpty)
 
         // 固定 V3 fixture 包含歌单、歌词和两种统计，ZSTD 使用协议允许的 windowLog 20
         private const val V3_OBJECT_PATH = "neriplayer-sync-v3-b97d55528d3d908171d4f4beafefe87ca849c1ec92332bf726a6c51ed40b6b42.zst"

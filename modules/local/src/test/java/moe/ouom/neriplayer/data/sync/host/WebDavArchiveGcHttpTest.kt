@@ -133,18 +133,61 @@ class WebDavArchiveGcHttpTest {
     }
 
     @Test
-    fun `a fingerprint without a finite lease cannot replace strong ETag concurrency protection`() = runTest {
+    fun `unlocked servers without strong ETags publish through verified fingerprints`() = runTest {
+        for (etag in listOf(null, "W/\"weak\"", "unquoted-etag")) {
+            val fixture = Fixture()
+            fixture.lockStatus = 403
+            fixture.ignoreWriteConditions = true
+            fixture.manifestWriteETag = { null }
+            fixture.manifestReadETag = { etag }
+            fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+                val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+                val second = fixture.backend.upload(data, first).getOrThrow()
+                assertTrue(first.lastKnownFingerprint != second.lastKnownFingerprint)
+                val manifestWrites = fixture.requests.filter {
+                    it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME
+                }
+                assertTrue(manifestWrites.drop(1).all { it.header("If-Match") == null && it.header("If-Unmodified-Since") == null })
+                val current = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME).copyOf()
+                fixture.requests.clear()
+                val stale = fixture.backend.upload(data, first)
+                assertTrue(stale.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+                assertTrue(current.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
+                assertTrue(fixture.requests.none { it.method == "PUT" })
+            }
+            assertFalse(fixture.supported)
+            assertTrue(fixture.requests.none { it.method == "DELETE" })
+        }
+    }
+
+    @Test
+    fun `an unlocked publication overwritten by another writer reports a conflict`() = runTest {
         val fixture = Fixture()
-        fixture.lockStatus = 405
-        fixture.manifestWriteETag = { null }
+        fixture.lockStatus = 403
+        fixture.ignoreWriteConditions = true
         fixture.manifestReadETag = { null }
         fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
             val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
-            fixture.requests.clear()
-            val unsafe = fixture.backend.upload(data, first)
-            assertTrue(unsafe.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavMissingConcurrencyTokenException)
-            assertTrue(fixture.requests.none { it.method == "PUT" })
+            val competing = byteArrayOf(1, 2, 3)
+            fixture.afterWrite = { name -> if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) fixture.files[name] = competing }
+            val lost = fixture.backend.upload(data, first)
+            assertTrue(lost.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+            assertTrue(competing.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
         }
+    }
+
+    @Test
+    fun `archive reads request identity encoding so compression cannot weaken ETags`() = runTest {
+        val fixture = Fixture()
+        fixture.lockStatus = 403
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            fixture.backend.fetch().getOrThrow().dataset!!.close()
+            fixture.backend.upload(data, first).getOrThrow()
+        }
+        val reads = fixture.requests.filter { it.method == "GET" }
+        assertTrue(reads.isNotEmpty())
+        assertTrue(reads.all { it.header("Accept-Encoding") == "identity" })
     }
 
     @Test
@@ -240,7 +283,9 @@ class WebDavArchiveGcHttpTest {
         }
         fixture.backend.fetch().getOrThrow().dataset!!.use { assertEquals(payload, it.data) }
         assertTrue(fixture.requests.all { it.url.query == "route=fixture" })
-        assertTrue(fixture.requests.none { it.method in setOf("LOCK", "UNLOCK", "PROPFIND", "DELETE") })
+        assertTrue(fixture.requests.none {
+            it.method in setOf("LOCK", "UNLOCK", "DELETE") || it.method == "PROPFIND" && it.header("Depth") != "0"
+        })
         assertTrue(fixture.files.containsKey(orphan))
         assertFalse(fixture.supported)
         val manifestWrites = fixture.requests.filter { it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME }
@@ -1081,6 +1126,7 @@ class WebDavArchiveGcHttpTest {
         var manifestWriteStatus: Int? = null
         var badListing = false
         var beforeRequest: (Request) -> Unit = {}
+        var afterWrite: (String) -> Unit = {}
         private val storage = mock(WebDavStorage::class.java) { call ->
             if (call.method.name in setOf("archiveLockSupported", "archiveGcState", "rememberArchiveLock", "saveArchiveGcState")) {
                 maintenanceScopes += call.arguments[0] as String
@@ -1151,6 +1197,7 @@ class WebDavArchiveGcHttpTest {
             if (!ignoreWriteConditions && request.header("If-Match") != null && request.header("If-Match") != previous?.let(::etag)) return response(request, 412)
             val bytes = Buffer().use { request.body!!.writeTo(it); it.readByteArray() }
             files[name] = bytes
+            afterWrite(name)
             val writtenETag = if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestWriteETag(etag(bytes)) else etag(bytes)
             val written = response(request, 201).newBuilder()
             if (writtenETag != null) written.header("ETag", writtenETag)
