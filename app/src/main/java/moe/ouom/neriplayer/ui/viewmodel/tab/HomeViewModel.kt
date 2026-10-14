@@ -525,6 +525,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadBiliMusicHot(force = force)
     }
 
+    /**
+     * 首页刷新入口使用的合并加载：某个模块已经在加载时不再强制重启它。
+     *
+     * 国际化启动时，设置收集器会走 [refreshYtMusicHome]，而独立的 250ms 引导仍会走
+     * [refreshNeteaseHome]，两条路径都会触达这里；若无条件 `force = true`，后一条会取消并
+     * 重启前一条刚发起的榜单 / 热门请求，重复拉取列表并可能重复逐条补全官方 MV。
+     */
+    private fun loadBiliMusicHomeCoalesced() {
+        if (biliMusicRankJob?.isActive != true) {
+            loadBiliMusicRank(force = true)
+        }
+        if (biliMusicHotJob?.isActive != true) {
+            loadBiliMusicHot(force = true)
+        }
+    }
+
     /** 切换版权榜类型：先清掉上一个榜的数据，避免串期显示 */
     fun selectBiliMusicRankType(type: BiliMusicRankType) {
         val current = _uiState.value.biliMusicRank
@@ -673,7 +689,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         refreshRecommend()
         loadHomeRecommendations(force = true)
         refreshRadarPlaylists()
-        loadBiliMusicHome(force = true)
+        loadBiliMusicHomeCoalesced()
     }
 
     /** 拉首页推荐歌单 */
@@ -867,7 +883,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** 拉取一次 YouTube Music 首页快照并同时更新歌单和推荐栏 */
     fun refreshYtMusicHome() {
         requestYtMusicHomeRefresh(queueIfLoading = true)
-        loadBiliMusicHome(force = true)
+        loadBiliMusicHomeCoalesced()
     }
 
     /** 兼容旧调用，复用正在加载的首页快照 */

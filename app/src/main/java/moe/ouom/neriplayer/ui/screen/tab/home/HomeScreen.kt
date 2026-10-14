@@ -435,8 +435,20 @@ fun HomeScreen(
         }
     }
 
+    // B 站音乐模块不随网易云卡片开关隐藏，但仍受脱机模式限制（与 section 内部的渲染条件保持一致），
+    // 因此只要它在线且有内容、正在加载或报错，首页就不算「所有卡片已隐藏」。
+    val hasVisibleBiliMusicSections = showOnlineFeeds && (
+            ui.biliMusicRank.songs.isNotEmpty() ||
+                    ui.biliMusicRank.loading ||
+                    !ui.biliMusicRank.error.isNullOrBlank() ||
+                    ui.biliMusicHot.items.isNotEmpty() ||
+                    ui.biliMusicHot.loading ||
+                    !ui.biliMusicHot.error.isNullOrBlank()
+            )
+
     val hasVisibleSections =
-            showContinue || (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard || isInternational))
+            showContinue || hasVisibleBiliMusicSections ||
+                    (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard || isInternational))
 
     Box(Modifier.fillMaxSize()) {
         Column(

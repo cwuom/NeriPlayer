@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.ui.screen.tab.home
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -73,6 +73,12 @@ import moe.ouom.neriplayer.util.platform.tryStartActivity
  *
  * 与首页共用同一个 [HomeViewModel]（同一 ViewModelStoreOwner），因此榜单类型、期数与曲目状态保持一致，
  * 不在这里重复发起请求，除非用户主动刷新或切换榜单类型。
+ *
+ * 详情页打开时首页不再组合，[HomeScreen] 的 `setOfflineMode` 不会执行，所以这里必须把 [offlineMode]
+ * 同步给共享 ViewModel，刷新、切榜等入口才会走仅缓存分支而不是继续发网络请求。
+ *
+ * 返回手势由 [moe.ouom.neriplayer.ui.screen.host.HomeHostScreen] 的预测性返回转场统一接管，
+ * 此处不注册 [BackHandler]，只保留 toolbar 导航用的 [onBack]。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +98,9 @@ internal fun BiliMusicRankDetailScreen(
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val state = ui.biliMusicRank
-    BackHandler(onBack = onBack)
+    LaunchedEffect(offlineMode) {
+        vm.setOfflineMode(offlineMode)
+    }
 
     Scaffold(
         topBar = {
@@ -107,7 +115,10 @@ internal fun BiliMusicRankDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { vm.loadBiliMusicRank(force = true) }) {
+                    IconButton(
+                        enabled = !offlineMode,
+                        onClick = { vm.loadBiliMusicRank(force = true) }
+                    ) {
                         Icon(
                             imageVector = Icons.Filled.Refresh,
                             contentDescription = stringResource(CoreCommonR.string.recommend_refresh)
@@ -161,7 +172,11 @@ internal fun BiliMusicRankDetailScreen(
 
             PullToRefreshBox(
                 isRefreshing = state.loading,
-                onRefresh = { vm.loadBiliMusicRank(force = true) },
+                onRefresh = {
+                    if (!offlineMode) {
+                        vm.loadBiliMusicRank(force = true)
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             ) {
                 val playableVideos = remember(state.songs) {
@@ -225,7 +240,12 @@ internal fun BiliMusicRankDetailScreen(
     }
 }
 
-/** 「Bilibili 音乐热门」查看全部页面（音乐分区视频榜） */
+/**
+ * 「Bilibili 音乐热门」查看全部页面（音乐分区视频榜）。
+ *
+ * 与 [BiliMusicRankDetailScreen] 一样共用首页的 [HomeViewModel]，因此同样需要把 [offlineMode]
+ * 同步给 ViewModel，并且不注册根级 [BackHandler]，让宿主的预测性返回转场继续生效。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BiliMusicHotDetailScreen(
@@ -244,7 +264,9 @@ internal fun BiliMusicHotDetailScreen(
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val state = ui.biliMusicHot
-    BackHandler(onBack = onBack)
+    LaunchedEffect(offlineMode) {
+        vm.setOfflineMode(offlineMode)
+    }
 
     Scaffold(
         topBar = {
@@ -259,7 +281,10 @@ internal fun BiliMusicHotDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { vm.loadBiliMusicHot(force = true) }) {
+                    IconButton(
+                        enabled = !offlineMode,
+                        onClick = { vm.loadBiliMusicHot(force = true) }
+                    ) {
                         Icon(
                             imageVector = Icons.Filled.Refresh,
                             contentDescription = stringResource(CoreCommonR.string.recommend_refresh)
@@ -271,7 +296,11 @@ internal fun BiliMusicHotDetailScreen(
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.loading,
-            onRefresh = { vm.loadBiliMusicHot(force = true) },
+            onRefresh = {
+                if (!offlineMode) {
+                    vm.loadBiliMusicHot(force = true)
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -330,6 +359,7 @@ internal fun BiliMusicHotDetailScreen(
     }
 }
 
+/** 详情页顶部的榜单类型切换（热门榜 / 原创榜），切换后由 ViewModel 重新加载对应期数 */
 @Composable
 private fun BiliMusicRankTypeRow(
     selected: BiliMusicRankType,
@@ -359,6 +389,9 @@ private fun BiliMusicRankTypeRow(
     }
 }
 
+/**
+ * 榜单详情行：名次、100x60 缩略图、标题、歌手、播放来源与时长，右侧可跳转原视频页。
+ */
 @Composable
 private fun BiliMusicRankDetailRow(
     song: BiliMusicRankSong,
@@ -440,6 +473,11 @@ private fun BiliMusicRankDetailRow(
     }
 }
 
+/**
+ * 音乐热门详情行：与榜单详情行同构，第三行改为分区名、播放量与时长。
+ *
+ * @param rank 展示用名次（调用方传 index + 1）
+ */
 @Composable
 private fun BiliMusicHotDetailRow(
     rank: Int,
@@ -523,6 +561,7 @@ private fun BiliMusicHotDetailRow(
     }
 }
 
+/** 详情页的居中提示（加载中 / 无内容） */
 @Composable
 private fun BiliMusicDetailHint(text: String) {
     Box(
@@ -539,6 +578,7 @@ private fun BiliMusicDetailHint(text: String) {
     }
 }
 
+/** 详情页加载失败提示：错误详情 + 重试按钮 */
 @Composable
 private fun BiliMusicDetailError(
     detail: String,

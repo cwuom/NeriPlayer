@@ -123,7 +123,12 @@ internal fun LazyGridScope.addBiliMusicRankSection(
     }
 }
 
-/** 首页「Bilibili 音乐热门」区块（音乐分区视频榜） */
+/**
+ * 首页「Bilibili 音乐热门」区块（音乐分区视频榜）。
+ *
+ * 与榜单区块同构：同样只做展示与回调，数据由 [moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel] 提供，
+ * 因此两个区块的卡片尺寸、缩略图裁剪方案与排版层级完全一致。
+ */
 internal fun LazyGridScope.addBiliMusicHotSection(
     registerKey: (String) -> String,
     state: HomeSectionState<BiliMusicHotVideo>,
@@ -177,6 +182,9 @@ internal fun LazyGridScope.addBiliMusicHotSection(
     }
 }
 
+/**
+ * 两个 B 站音乐区块共用的标题行：图标 + 标题 + 「查看全部」，榜单区块额外挂一个榜单类型选择器。
+ */
 @Composable
 private fun BiliMusicSectionHeader(
     icon: ImageVector,
@@ -217,6 +225,9 @@ private fun BiliMusicSectionHeader(
     }
 }
 
+/**
+ * 榜单类型切换（热门榜 / 原创榜）：切换后由 ViewModel 清空旧榜数据并按新类型重新加载，避免串期。
+ */
 @Composable
 private fun BiliMusicRankTypeSelector(
     selected: BiliMusicRankType,
@@ -237,6 +248,9 @@ private fun BiliMusicRankTypeSelector(
     }
 }
 
+/**
+ * 榜单横向卡片列表，点击卡片按其在可播放条目中的真实下标起播，保证顺序与榜单一致。
+ */
 @Composable
 private fun BiliMusicRankStrip(
     state: HomeBiliMusicRankState,
@@ -273,6 +287,11 @@ private fun BiliMusicRankStrip(
     Spacer(modifier = Modifier.height(2.dp))
 }
 
+/**
+ * 榜单曲目卡片：16:9 封面（左上名次、右下时长）、两行标题、歌手与播放来源标注。
+ *
+ * 不可播放的曲目（既无官方 MV 也无有效投稿）保持可见但点击无效。
+ */
 @Composable
 private fun BiliMusicRankSongCard(
     song: BiliMusicRankSong,
@@ -376,6 +395,9 @@ internal fun BiliMusicRankSong.playbackSourceLabel(): String =
             )
     }
 
+/**
+ * 音乐热门横向卡片列表：点击时按 aid + bvid 在可播放条目中定位真实下标，避免索引错位。
+ */
 @Composable
 private fun BiliMusicHotStrip(
     videos: List<BiliMusicHotVideo>,
@@ -410,6 +432,11 @@ private fun BiliMusicHotStrip(
     Spacer(modifier = Modifier.height(2.dp))
 }
 
+/**
+ * 音乐热门视频卡片：与榜单卡片保持同一尺寸与排版，第三行展示分区名与播放量。
+ *
+ * @param index 在榜单中的位置（从 0 开始），仅用于展示名次角标
+ */
 @Composable
 private fun BiliMusicHotVideoCard(
     video: BiliMusicHotVideo,
@@ -502,6 +529,7 @@ private fun BiliMusicHotVideoCard(
     }
 }
 
+/** 区块加载中占位，高度与卡片区接近，避免加载完成时页面跳动 */
 @Composable
 private fun BiliMusicSectionLoading(text: String) {
     Box(
@@ -521,6 +549,7 @@ private fun BiliMusicSectionLoading(text: String) {
     }
 }
 
+/** 区块加载失败提示：错误详情 + 重试按钮，重试由调用方强制重新加载该模块 */
 @Composable
 private fun BiliMusicSectionError(
     detail: String,
@@ -545,6 +574,7 @@ private fun BiliMusicSectionError(
     }
 }
 
+/** 榜单类型对应的筛选芯片文案 */
 private val BiliMusicRankType.labelRes: Int
     get() = when (this) {
         BiliMusicRankType.HOT -> CoreCommonR.string.home_bili_music_rank_hot

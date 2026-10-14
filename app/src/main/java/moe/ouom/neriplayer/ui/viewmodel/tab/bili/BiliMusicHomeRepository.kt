@@ -28,6 +28,7 @@ object BiliMusicHomeRepository {
 
     private const val CACHE_TTL_MS = 10 * 60 * 1000L
 
+    /** 热门视频榜的缓存快照，与榜单缓存分开存放，便于各自独立失效 */
     private data class HotSnapshot(
         val videos: List<BiliMusicHotVideo>,
         val fetchedAtMs: Long
@@ -40,7 +41,11 @@ object BiliMusicHomeRepository {
 
     private val client get() = AppContainer.biliClient
 
-    /** 命中且未过期时返回缓存，否则返回 null */
+    /**
+     * 命中且未过期时返回榜单缓存，否则返回 null（由调用方决定是否发起请求）。
+     *
+     * @param nowMs 便于测试注入的当前时间，默认取系统时间
+     */
     fun cachedRank(
         type: BiliMusicRankType,
         nowMs: Long = System.currentTimeMillis()
@@ -49,6 +54,11 @@ object BiliMusicHomeRepository {
         return if (nowMs - snapshot.fetchedAtMs <= CACHE_TTL_MS) snapshot else null
     }
 
+    /**
+     * 命中且未过期时返回热门视频缓存，否则返回 null。
+     *
+     * @param nowMs 便于测试注入的当前时间，默认取系统时间
+     */
     fun cachedHot(nowMs: Long = System.currentTimeMillis()): List<BiliMusicHotVideo>? {
         val snapshot = hotCache ?: return null
         return if (nowMs - snapshot.fetchedAtMs <= CACHE_TTL_MS) snapshot.videos else null
@@ -78,7 +88,12 @@ object BiliMusicHomeRepository {
         return snapshot
     }
 
-    /** 拉取音乐分区热门视频榜 */
+    /**
+     * 拉取音乐分区热门视频榜。
+     *
+     * 数据源为移动端分区榜（Web 端 `ranking/v2?rid=3` 已停止更新），
+     * 接口只返回 avid，bvid 由 [moe.ouom.neriplayer.platform.bilibili.api.client.BiliVideoIdCodec] 本地换算。
+     */
     suspend fun loadHot(force: Boolean): List<BiliMusicHotVideo> {
         if (!force) {
             cachedHot()?.let { return it }

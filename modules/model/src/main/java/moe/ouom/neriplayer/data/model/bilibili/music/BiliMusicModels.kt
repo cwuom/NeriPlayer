@@ -13,6 +13,7 @@ enum class BiliMusicRankType(val listType: Int, val cacheKey: String) {
     ORIGINAL(2, "original");
 
     companion object {
+        /** 按接口 list_type 反查榜单类型，未知取值回退到热门榜 */
         fun fromListType(listType: Int): BiliMusicRankType =
             values().firstOrNull { it.listType == listType } ?: HOT
     }
@@ -121,6 +122,7 @@ data class BiliMusicHotVideo(
     val pubdateSec: Long,
     val tname: String
 ) {
+    /** 拿到完整视频身份（aid + bvid）时才允许入队播放 */
     val isPlayable: Boolean
         get() = aid > 0L && bvid.isNotBlank()
 }
@@ -131,6 +133,8 @@ data class BiliMusicHotVideo(
  * 播放源优先官方 MV（[BiliMusicRankSong.hasOfficialMv]），否则使用榜单授权投稿；两者都不可用时返回 null。
  * 上传者与封面都与实际播放的那支视频保持一致（[BiliMusicRankSong.playbackUploader] / [BiliMusicRankSong.videoCover]），
  * 因此播放页顶部显示的就是真实音源方，不会再出现「原唱名 + 别人视频」的错配。
+ *
+ * @return 可播放的 [BiliVideoItem]；既无官方 MV 也无有效投稿时返回 null
  */
 fun BiliMusicRankSong.toPlayableBiliVideoItem(): BiliVideoItem? {
     if (hasOfficialMv) {
@@ -156,7 +160,11 @@ fun BiliMusicRankSong.toPlayableBiliVideoItem(): BiliVideoItem? {
     )
 }
 
-/** 转成现有的 B 站播放条目，无法播放时返回 null（调用方需过滤） */
+/**
+ * 转成现有的 B 站播放条目，无法播放时返回 null（调用方需过滤）。
+ *
+ * @return 可播放的 [BiliVideoItem]；[BiliMusicHotVideo.isPlayable] 为 false 时返回 null
+ */
 fun BiliMusicHotVideo.toPlayableBiliVideoItem(): BiliVideoItem? {
     if (!isPlayable) return null
     return BiliVideoItem(
@@ -170,10 +178,10 @@ fun BiliMusicHotVideo.toPlayableBiliVideoItem(): BiliVideoItem? {
     )
 }
 
-/** 按榜单顺序提取可播放条目，顺序与榜单一致 */
+/** 按榜单顺序提取可播放条目，顺序与榜单一致（不可播放的曲目被跳过） */
 fun List<BiliMusicRankSong>.toPlayableRankVideoItems(): List<BiliVideoItem> =
     mapNotNull { it.toPlayableBiliVideoItem() }
 
-/** 按榜单顺序提取可播放条目，顺序与榜单一致 */
+/** 按榜单顺序提取可播放条目，顺序与榜单一致（不可播放的条目被跳过） */
 fun List<BiliMusicHotVideo>.toPlayableHotVideoItems(): List<BiliVideoItem> =
     mapNotNull { it.toPlayableBiliVideoItem() }
