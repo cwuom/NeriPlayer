@@ -363,7 +363,7 @@ object PlayerLyricsProvider {
         }
     }
 
-    private fun currentLyricsCacheGeneration(): Long {
+    fun currentLyricsCacheGeneration(): Long {
         return withLyricsCacheReadLock { lyricsCacheGeneration.get() }
     }
 

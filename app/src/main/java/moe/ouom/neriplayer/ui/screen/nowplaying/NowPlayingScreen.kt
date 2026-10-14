@@ -449,7 +449,7 @@ fun NowPlayingScreen(
         initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
     )
     val preferWordTimedLyrics by settingsRepo.preferWordTimedLyricsFlow
-        .collectAsStateWithLifecycle(initialValue = true)
+        .collectAsStateWithLifecycle(initialValue = PlayerManager.preferWordTimedLyrics)
     val defaultLyricSource by settingsRepo.defaultLyricSourceFlow
         .collectAsStateWithLifecycle(initialValue = PlayerManager.defaultLyricSource)
     val lyricsPreferenceRevision by PlayerManager.lyricsPreferenceRevisionFlow

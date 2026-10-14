@@ -33,6 +33,7 @@ private data class NowPlayingInitialLyricsKey(
     val source: LyricSourcePreference,
     val preferWordTimedLyrics: Boolean,
     val preferenceRevision: Long,
+    val cacheGeneration: Long,
     val providedCache: PreferredLyricSourceResult?
 )
 
@@ -43,14 +44,17 @@ internal fun rememberNowPlayingInitialLyrics(
     stages: NowPlayingLyricsStages
 ): NowPlayingInitialLyricsResult {
     val cacheKey = NowPlayingInitialLyricsKey(request.song, request.defaultLyricSource,
-        request.preferWordTimedLyrics, preferenceRevision, request.cachedPreferredLyrics)
+        request.preferWordTimedLyrics, preferenceRevision, stages.cacheGeneration, request.cachedPreferredLyrics)
     return remember(cacheKey, stages) { stages.readInitial(request) }
 }
 
 internal class NowPlayingLyricsLoadStages(
     private val sources: NowPlayingLyricsSources,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    override val snapshotCache: NowPlayingLyricsSnapshotCache = NowPlayingLyricsSnapshotCache()
 ) : NowPlayingLyricsStages {
+    override val cacheGeneration: Long get() = sources.cacheGeneration
+
     override fun readInitial(request: NowPlayingLyricsLoadRequest): NowPlayingInitialLyricsResult {
         val cached = request.cachedPreferredLyrics ?: request.song?.let { song ->
             sources.cachedPreferred(song, request.defaultLyricSource, request.preferWordTimedLyrics)

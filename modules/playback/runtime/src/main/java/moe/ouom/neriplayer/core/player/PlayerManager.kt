@@ -433,7 +433,8 @@ object PlayerManager {
     @Volatile
     internal var amllLyricsEnabled = false
     @Volatile
-    internal var preferWordTimedLyrics = true
+    var preferWordTimedLyrics = true
+        internal set
     @Volatile
     var defaultLyricSource = LyricSourcePreference.Automatic
     internal var statusBarLyricsEnable = false

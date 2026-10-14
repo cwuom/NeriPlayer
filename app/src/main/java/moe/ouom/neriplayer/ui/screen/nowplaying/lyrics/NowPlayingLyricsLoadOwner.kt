@@ -82,6 +82,9 @@ internal fun nowPlayingLyricsReloadKey(song: SongItem?): NowPlayingLyricsReloadK
 }
 
 internal interface NowPlayingLyricsStages {
+    val snapshotCache: NowPlayingLyricsSnapshotCache? get() = null
+    val cacheGeneration: Long get() = 0L
+
     fun readInitial(request: NowPlayingLyricsLoadRequest): NowPlayingInitialLyricsResult =
         NowPlayingInitialLyricsResult(request.cachedPreferredLyrics,
             buildNowPlayingInitialLyricsState(request.song, request.cachedPreferredLyrics))
@@ -96,28 +99,51 @@ internal interface NowPlayingLyricsStages {
 internal class NowPlayingLyricsLoadOwner(
     initialState: LoadedLyricsState,
     private val scope: CoroutineScope,
-    private val stages: NowPlayingLyricsStages
+    private val stages: NowPlayingLyricsStages,
+    initialSecondaryResolved: Boolean = false
 ) {
     var state by mutableStateOf(initialState)
         private set
-    var secondaryResolved by mutableStateOf(false)
+    var secondaryResolved by mutableStateOf(initialSecondaryResolved)
         private set
 
     private var requestGeneration = 0L
     private var requestJob: Job? = null
     private var disposed = false
+    private var snapshotKey: NowPlayingLyricsSnapshotKey? = null
 
-    fun reload(request: NowPlayingLyricsLoadRequest) {
+    fun reload(request: NowPlayingLyricsLoadRequest, key: NowPlayingLyricsSnapshotKey? = null) {
         if (disposed) return
         requestGeneration++
         val generation = requestGeneration
         requestJob?.cancel()
-        requestJob = scope.launch { load(generation, request) }
+        val cacheGeneration = stages.cacheGeneration
+        snapshotKey = key?.copy(cacheGeneration = cacheGeneration)
+        val currentRequest = refreshInvalidatedInitialCache(request, key, cacheGeneration)
+        val cached = stages.snapshotCache?.reusable(snapshotKey)
+        if (cached != null) {
+            state = cached.state
+            secondaryResolved = cached.secondaryResolved
+            requestJob = null
+            return
+        }
+        requestJob = scope.launch { load(generation, currentRequest) }
+    }
+
+    private fun refreshInvalidatedInitialCache(
+        request: NowPlayingLyricsLoadRequest,
+        key: NowPlayingLyricsSnapshotKey?,
+        cacheGeneration: Long
+    ): NowPlayingLyricsLoadRequest {
+        if (key == null || key.cacheGeneration == cacheGeneration) return request
+        val refreshed = stages.readInitial(request.copy(cachedPreferredLyrics = null))
+        return request.copy(cachedPreferredLyrics = refreshed.cachedPreferredLyrics)
     }
 
     private suspend fun load(generation: Long, request: NowPlayingLyricsLoadRequest) {
         NPLogger.d("NowPlayingLyrics", "歌词加载开始: key=${request.song?.stableKey().orEmpty()}")
         val fast = stages.readFast(request)
+        if (!isCurrent(generation)) return
         publish(generation, request.song, fast.state, "fast")
         val background = stages.readBackground(request, fast)
         publish(generation, request.song, background, "background")
@@ -134,18 +160,29 @@ internal class NowPlayingLyricsLoadOwner(
         loaded: LoadedLyricsState,
         stage: String
     ) {
-        if (!isCurrent(generation)) return
+        if (!isCurrent(generation) || keepsRestoredSnapshot(stage)) return
         val resolved = overlayConfirmedUserLyrics(song, loaded)
         val hasLyrics = resolved.hasDisplayableContent()
         if (song.hasConfirmedLyricOverride() || shouldReplaceLyricsAfterRefresh(song != null, hasLyrics)) state = resolved
+        rememberSnapshot(resolved, stage)
         logPublishedLyrics(song, stage, hasLyrics)
+    }
+
+    // 后台核查完成前保留已恢复的完整分轨，快读不能让翻译或音译暂时消失
+    private fun keepsRestoredSnapshot(stage: String): Boolean =
+        stage == "fast" && stages.snapshotCache?.find(snapshotKey)?.secondaryResolved == true
+
+    private fun rememberSnapshot(resolved: LoadedLyricsState, stage: String) {
+        val key = snapshotKey ?: return
+        stages.snapshotCache?.publish(key, resolved, secondaryResolved = stage == "background")
     }
 
     private fun logPublishedLyrics(song: SongItem?, stage: String, hasLyrics: Boolean) {
         NPLogger.d("NowPlayingLyrics", "歌词结果发布: stage=$stage, key=${song?.stableKey().orEmpty()}, hasLyrics=$hasLyrics")
     }
 
-    private fun isCurrent(generation: Long): Boolean = !disposed && requestGeneration == generation
+    private fun isCurrent(generation: Long): Boolean = !disposed && requestGeneration == generation &&
+        (snapshotKey == null || snapshotKey?.cacheGeneration == stages.cacheGeneration)
 
     fun dispose() {
         disposed = true
@@ -161,10 +198,11 @@ internal fun rememberNowPlayingLyricsOwner(
     defaultLyricSource: LyricSourcePreference,
     initial: LoadedLyricsState,
     scope: CoroutineScope,
-    stages: NowPlayingLyricsStages
+    stages: NowPlayingLyricsStages,
+    initialSecondaryResolved: Boolean = false
 ): NowPlayingLyricsLoadOwner {
     val owner = remember(song?.stableKey(), defaultLyricSource, song?.lyricSyncRevision, song?.lyricSyncEdited, stages) {
-        NowPlayingLyricsLoadOwner(initial, scope, stages)
+        NowPlayingLyricsLoadOwner(initial, scope, stages, initialSecondaryResolved)
     }
     DisposableEffect(owner) { onDispose(owner::dispose) }
     return owner
@@ -178,14 +216,18 @@ internal fun rememberNowPlayingLyricsLoadOwner(
 ): NowPlayingLyricsLoadOwner {
     val scope = rememberCoroutineScope()
     val initial = rememberNowPlayingInitialLyrics(request, versions.lyricsPreferenceRevision, stages)
-    val owner = rememberNowPlayingLyricsOwner(request.song, request.defaultLyricSource, initial.state, scope, stages)
+    val cacheGeneration = stages.cacheGeneration
+    val snapshotKey = nowPlayingLyricsSnapshotKey(request, versions, cacheGeneration)
+    val cached = stages.snapshotCache?.find(snapshotKey)
+    val owner = rememberNowPlayingLyricsOwner(request.song, request.defaultLyricSource,
+        cached?.state ?: initial.state, scope, stages, cached?.secondaryResolved == true)
     val reloadKey = NowPlayingLyricsReloadTrigger(
         nowPlayingLyricsReloadKey(request.song),
         resolveNowPlayingLyricsMediaReloadKey(request.song, request.currentMediaUrl),
         request.preferWordTimedLyrics, request.defaultLyricSource, versions
     )
-    LaunchedEffect(owner, reloadKey, stages) {
-        owner.reload(request.copy(cachedPreferredLyrics = initial.cachedPreferredLyrics))
+    LaunchedEffect(owner, reloadKey, stages, cacheGeneration) {
+        owner.reload(request.copy(cachedPreferredLyrics = initial.cachedPreferredLyrics), snapshotKey)
     }
     return owner
 }
