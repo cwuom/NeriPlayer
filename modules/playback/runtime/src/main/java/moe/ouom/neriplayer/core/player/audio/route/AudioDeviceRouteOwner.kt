@@ -12,8 +12,8 @@ import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
 import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
 import moe.ouom.neriplayer.data.model.playback.AudioDevice
-import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRMATION_MAX_SAMPLES
 import moe.ouom.neriplayer.core.player.policy.audio.bluetoothDisconnectSampleDelayMs
+import moe.ouom.neriplayer.core.player.policy.audio.isBluetoothDisconnectTransient
 import moe.ouom.neriplayer.core.player.policy.audio.shouldConfirmBluetoothDisconnect
 import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveNoisyRouteToNativePath
 import moe.ouom.neriplayer.core.player.policy.usb.shouldStopUsbExclusivePlaybackForNoisyRoute
@@ -373,8 +373,8 @@ internal class AudioDeviceRouteOwner(
     /** 返回恢复输出的原因；确认断开时返回 null */
     private suspend fun sampleBluetoothDisconnect(previous: AudioDevice, reason: String): String? {
         val sampledRoutesAreBluetooth = mutableListOf<Boolean>()
-        repeat(BLUETOOTH_DISCONNECT_CONFIRMATION_MAX_SAMPLES) { sampleIndex ->
-            delay(bluetoothDisconnectSampleDelayMs(sampleIndex).milliseconds)
+        while (!isBluetoothDisconnectTransient(sampledRoutesAreBluetooth)) {
+            delay(bluetoothDisconnectSampleDelayMs(sampledRoutesAreBluetooth.size).milliseconds)
             val state = port.snapshot()
             if (!state.stopOnBluetoothDisconnect || !state.playbackActiveForNoisyRoute()) {
                 return "bluetooth_disconnect_canceled:$reason"

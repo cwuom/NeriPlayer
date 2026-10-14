@@ -14,6 +14,14 @@ fun bluetoothDisconnectSampleDelayMs(sampleIndex: Int): Long =
     if (sampleIndex == 0) BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
     else BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS
 
+/**
+ * 窗口用完且仍在蓝牙才算瞬时断连；已离开蓝牙时继续采样直到确认，
+ * 否则窗口末尾刚切到扬声器的断开会在外放上恢复音量
+ */
+fun isBluetoothDisconnectTransient(sampledRoutesAreBluetooth: List<Boolean>): Boolean =
+    sampledRoutesAreBluetooth.size >= BLUETOOTH_DISCONNECT_CONFIRMATION_MAX_SAMPLES &&
+        sampledRoutesAreBluetooth.last()
+
 fun shouldConfirmBluetoothDisconnect(
     stopOnBluetoothDisconnectEnabled: Boolean,
     playbackActive: Boolean,

@@ -356,6 +356,23 @@ class AudioDeviceRouteOwnerTest {
     }
 
     @Test
+    fun `noisy reroute without a device callback still pauses instead of restoring on the speaker`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(isPlaying = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+
+        assertTrue(owner.onAudioBecomingNoisy())
+        advanceTimeBy(1_000L)
+        port.device = speaker
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertTrue(port.events.contains("pause:bluetooth_disconnect_confirmed:becoming_noisy"))
+        assertFalse(port.events.any { it.startsWith("restore:") })
+    }
+
+    @Test
     fun `confirmed Bluetooth disconnect does not wait for the full noisy window`() = runTest {
         val port = RecordingPort(bluetooth)
         port.state = port.state.copy(isPlaying = true, stopOnBluetoothDisconnect = true)

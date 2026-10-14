@@ -50,6 +50,30 @@ class BluetoothDisconnectConfirmationPolicyTest {
     }
 
     @Test
+    fun `window ends as transient only while the route is still Bluetooth`() {
+        val reroutedAtWindowEnd = listOf(true, true, true, false, false)
+        assertFalse(isBluetoothDisconnectTransient(reroutedAtWindowEnd))
+        assertFalse(
+            shouldConfirmBluetoothDisconnect(
+                stopOnBluetoothDisconnectEnabled = true,
+                playbackActive = true,
+                previousRouteWasBluetooth = true,
+                sampledRoutesAreBluetooth = reroutedAtWindowEnd
+            )
+        )
+        assertTrue(
+            shouldConfirmBluetoothDisconnect(
+                stopOnBluetoothDisconnectEnabled = true,
+                playbackActive = true,
+                previousRouteWasBluetooth = true,
+                sampledRoutesAreBluetooth = reroutedAtWindowEnd + false
+            )
+        )
+        assertTrue(isBluetoothDisconnectTransient(listOf(false, false, true, true, true)))
+        assertFalse(isBluetoothDisconnectTransient(listOf(true, true, true, true)))
+    }
+
+    @Test
     fun `inactive or disabled playback never confirms disconnect`() {
         assertFalse(
             shouldConfirmBluetoothDisconnect(
