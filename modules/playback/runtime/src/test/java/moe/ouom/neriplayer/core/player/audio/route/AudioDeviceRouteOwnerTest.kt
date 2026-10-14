@@ -335,6 +335,42 @@ class AudioDeviceRouteOwnerTest {
     }
 
     @Test
+    fun `Bluetooth noisy event stays muted until Android moves media to the speaker`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(isPlaying = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+
+        assertTrue(owner.onAudioBecomingNoisy())
+        advanceTimeBy(1_100L)
+        runCurrent()
+        assertFalse(port.events.any { it.startsWith("restore:") })
+
+        port.device = speaker
+        requireNotNull(port.registeredCallback).onAudioDevicesRemoved(arrayOf(audioInfo(bluetooth.type, true)))
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertTrue(port.events.contains("pause:bluetooth_disconnect_confirmed:device_changed_to_${speaker.type}"))
+        assertFalse(port.events.any { it.startsWith("restore:") })
+    }
+
+    @Test
+    fun `confirmed Bluetooth disconnect does not wait for the full noisy window`() = runTest {
+        val port = RecordingPort(bluetooth)
+        port.state = port.state.copy(isPlaying = true, stopOnBluetoothDisconnect = true)
+        val owner = AudioDeviceRouteOwner(backgroundScope, port)
+        owner.register()
+        port.device = speaker
+
+        owner.onDeviceChange(usbTopologyChanged = false, outputDeviceRemoved = true)
+        advanceTimeBy(901L)
+        runCurrent()
+
+        assertTrue(port.events.contains("pause:bluetooth_disconnect_confirmed:device_changed_to_${speaker.type}"))
+    }
+
+    @Test
     fun `registered device callback filters input devices and observes USB and headset outputs`() = runTest {
         val port = RecordingPort(speaker)
         val owner = AudioDeviceRouteOwner(backgroundScope, port)

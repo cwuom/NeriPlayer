@@ -1021,6 +1021,10 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
             }
         }
 
+        override fun onIsLoadingChanged(isLoading: Boolean) {
+            playbackTransportOwner.onMediaLoadingChanged(isLoading)
+        }
+
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
             maybeBackfillCurrentSongDurationFromPlayer()
             if (timeline.isEmpty) {

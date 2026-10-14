@@ -12,9 +12,8 @@ import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
 import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
 import moe.ouom.neriplayer.data.model.playback.AudioDevice
-import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT
-import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
-import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS
+import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRMATION_MAX_SAMPLES
+import moe.ouom.neriplayer.core.player.policy.audio.bluetoothDisconnectSampleDelayMs
 import moe.ouom.neriplayer.core.player.policy.audio.shouldConfirmBluetoothDisconnect
 import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveNoisyRouteToNativePath
 import moe.ouom.neriplayer.core.player.policy.usb.shouldStopUsbExclusivePlaybackForNoisyRoute
@@ -360,40 +359,42 @@ internal class AudioDeviceRouteOwner(
         cancelBluetoothDisconnectPause()
         port.suppressPlayback("bluetooth_disconnect_pending")
         bluetoothDisconnectPauseJob = scope.launch {
-            val sampledRoutesAreBluetooth = mutableListOf<Boolean>()
-            repeat(BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT) { sampleIndex ->
-                delay((if (sampleIndex == 0) BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
-                    else BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS).milliseconds)
-                val state = port.snapshot()
-                if (!state.stopOnBluetoothDisconnect || !state.playbackActiveForNoisyRoute()) {
-                    port.restorePlayback("bluetooth_disconnect_canceled:$reason")
-                    bluetoothDisconnectPauseJob = null
-                    return@launch
-                }
-                val confirmed = port.readCurrentDevice()
-                publish(confirmed)
-                if (!isBluetoothOutputType(confirmed.type) && confirmed.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                    port.restorePlayback("bluetooth_disconnect_rerouted:${confirmed.type}")
-                    bluetoothDisconnectPauseJob = null
-                    return@launch
-                }
-                sampledRoutesAreBluetooth += isBluetoothOutputType(confirmed.type)
+            val restoreReason = sampleBluetoothDisconnect(previous, reason)
+            bluetoothDisconnectPauseJob = null
+            if (restoreReason != null) {
+                port.restorePlayback(restoreReason)
+                return@launch
             }
+            port.suppressPlayback("bluetooth_disconnect_confirmed:$reason")
+            port.pausePlayback("bluetooth_disconnect_confirmed:$reason")
+        }
+    }
+
+    /** 返回恢复输出的原因；确认断开时返回 null */
+    private suspend fun sampleBluetoothDisconnect(previous: AudioDevice, reason: String): String? {
+        val sampledRoutesAreBluetooth = mutableListOf<Boolean>()
+        repeat(BLUETOOTH_DISCONNECT_CONFIRMATION_MAX_SAMPLES) { sampleIndex ->
+            delay(bluetoothDisconnectSampleDelayMs(sampleIndex).milliseconds)
             val state = port.snapshot()
-            if (!shouldConfirmBluetoothDisconnect(
+            if (!state.stopOnBluetoothDisconnect || !state.playbackActiveForNoisyRoute()) {
+                return "bluetooth_disconnect_canceled:$reason"
+            }
+            val confirmed = port.readCurrentDevice()
+            publish(confirmed)
+            if (!isBluetoothOutputType(confirmed.type) && confirmed.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                return "bluetooth_disconnect_rerouted:${confirmed.type}"
+            }
+            sampledRoutesAreBluetooth += isBluetoothOutputType(confirmed.type)
+            if (shouldConfirmBluetoothDisconnect(
                     stopOnBluetoothDisconnectEnabled = state.stopOnBluetoothDisconnect,
                     playbackActive = state.playbackActiveForNoisyRoute(),
                     previousRouteWasBluetooth = requiresDisconnectConfirmation(previous.type),
                     sampledRoutesAreBluetooth = sampledRoutesAreBluetooth
                 )) {
-                port.restorePlayback("bluetooth_disconnect_transient:$reason")
-                bluetoothDisconnectPauseJob = null
-                return@launch
+                return null
             }
-            port.suppressPlayback("bluetooth_disconnect_confirmed:$reason")
-            port.pausePlayback("bluetooth_disconnect_confirmed:$reason")
-            bluetoothDisconnectPauseJob = null
         }
+        return "bluetooth_disconnect_transient:$reason"
     }
 
     private companion object {

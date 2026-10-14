@@ -17,3 +17,7 @@ fun resolvePlaybackWakeMode(url: String?): Int {
         else -> C.WAKE_MODE_LOCAL
     }
 }
+
+/** Wi-Fi 锁只在实际下载时需要；缓冲达到上限后保留 CPU 唤醒，让网卡在两轮批量加载之间省电 */
+fun resolveLoadingAwareWakeMode(mediaWakeMode: Int, loading: Boolean): Int =
+    if (mediaWakeMode == C.WAKE_MODE_NETWORK && !loading) C.WAKE_MODE_LOCAL else mediaWakeMode
