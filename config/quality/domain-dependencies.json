@@ -3184,6 +3184,7 @@
       "moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchModelsKt",
       "moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest",
       "moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource",
+      "moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricTimelineFit",
       "moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch",
       "moe.ouom.neriplayer.data.model.lyrics.matching.SanitizedEditableLyrics",
       "moe.ouom.neriplayer.data.model.music.MusicPlatform",

@@ -137,6 +137,8 @@ import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.component.download.shouldShowDownloadedSongDeleteProgress
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionMoreMenu
+import moe.ouom.neriplayer.ui.screen.playlist.curation.LocalCurationEntryAction
+import moe.ouom.neriplayer.ui.screen.playlist.curation.LocalCurationSheet
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertDialog
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertPreview
 import moe.ouom.neriplayer.ui.screen.playlist.insert.isPlaylistInsertPreviewCurrent
@@ -186,6 +188,8 @@ internal fun LocalPlaylistDetailModernContent(
         var deletingSongCount by remember(playlistId) { mutableIntStateOf(0) }
         var showInsertDialog by remember(playlistId) { mutableStateOf(false) }
         var insertInProgress by remember(playlistId) { mutableStateOf(false) }
+        var curationSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
+        val curatableTabSongs = remember(tabSongs) { tabSongs.filter { it.isLocalSong() } }
         LaunchedEffect(selectionMode, canReorderCurrentSongs) {
             if (!selectionMode || !canReorderCurrentSongs) showInsertDialog = false
         }
@@ -477,6 +481,11 @@ internal fun LocalPlaylistDetailModernContent(
                                         )
                                     }
                                 }
+                                if (curatableTabSongs.isNotEmpty()) {
+                                    LocalCurationEntryAction(
+                                        onClick = { curationSongs = curatableTabSongs }
+                                    )
+                                }
                                 if (isFavorites) {
                                     HapticIconButton(
                                         onClick = { requestNeteaseSync() },
@@ -609,6 +618,15 @@ internal fun LocalPlaylistDetailModernContent(
                                             !blockSync && !insertInProgress,
                                     onInsert = if (canReorderCurrentSongs) {
                                         { showInsertDialog = true }
+                                    } else {
+                                        null
+                                    },
+                                    canCurateLocalAssets = selectedSongsForAction.any { it.isLocalSong() },
+                                    onCurateLocalAssets = if (curatableTabSongs.isNotEmpty()) {
+                                        {
+                                            curationSongs = selectedSongsForAction.filter { it.isLocalSong() }
+                                            exitSelectionMode()
+                                        }
                                     } else {
                                         null
                                     }
@@ -1397,6 +1415,13 @@ internal fun LocalPlaylistDetailModernContent(
                                 showDeleteMultiConfirm = false
                             }) { Text(stringResource(CoreCommonR.string.action_cancel)) }
                         }
+                    )
+                }
+
+                curationSongs?.let { songs ->
+                    LocalCurationSheet(
+                        songs = songs,
+                        onDismissRequest = { curationSongs = null }
                     )
                 }
 

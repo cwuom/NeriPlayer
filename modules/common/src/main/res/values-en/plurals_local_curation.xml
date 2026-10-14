@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Local Lyrics & Artwork Curation -->
+    <plurals name="local_curation_song_count">
+        <item quantity="one">%d local song</item>
+        <item quantity="other">%d local songs</item>
+    </plurals>
+    <plurals name="local_curation_selected_count">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="local_curation_apply_count">
+        <item quantity="one">Write %d song</item>
+        <item quantity="other">Write %d songs</item>
+    </plurals>
+    <plurals name="local_curation_confirm_title">
+        <item quantity="one">Write %d song?</item>
+        <item quantity="other">Write %d songs?</item>
+    </plurals>
+    <plurals name="local_curation_written_count">
+        <item quantity="one">%d song written</item>
+        <item quantity="other">%d songs written</item>
+    </plurals>
+    <plurals name="local_curation_folder_access_needed">
+        <item quantity="one">The folder of %d song is not granted yet; Android blocks reading artwork images there directly</item>
+        <item quantity="other">The folders of %d songs are not granted yet; Android blocks reading artwork images there directly</item>
+    </plurals>
+    <plurals name="local_curation_failed_count">
+        <item quantity="one">%d failed</item>
+        <item quantity="other">%d failed</item>
+    </plurals>
+</resources>

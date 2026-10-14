@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.platform.lyrics.repository
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import moe.ouom.neriplayer.data.model.lyrics.amll.AmllTtmlSearchResult
 import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouSongSearchResult
 import moe.ouom.neriplayer.platform.search.api.NativeLyricSearchApi
@@ -19,6 +21,7 @@ import moe.ouom.neriplayer.platform.lyrics.matching.editableLyricMatchDomesticSe
 import moe.ouom.neriplayer.platform.lyrics.matching.editableLyricMatchResultComparator
 import moe.ouom.neriplayer.platform.lyrics.matching.editableLyricMatchSearchQueries
 import moe.ouom.neriplayer.platform.lyrics.matching.editableLyricMatchSourcePriority
+import moe.ouom.neriplayer.platform.lyrics.matching.evaluateLyricMatchSupplementalSignals
 import moe.ouom.neriplayer.platform.lyrics.matching.hasCollapsedTimedLyricTimeline
 import moe.ouom.neriplayer.platform.lyrics.matching.hasLyricMatchSignal
 import moe.ouom.neriplayer.platform.lyrics.matching.isExternalLyricDurationCompatible
@@ -74,21 +77,23 @@ class EditableLyricsMatcher(
             return emptyList()
         }
 
-        val candidates = buildList {
-            for (source in matchSourceOrder) {
-                if (source !in normalizedRequest.sources) continue
-                addAll(
-                    when (source) {
-                        EditableLyricMatchSource.KUGOU -> searchKugou(normalizedRequest)
-                        EditableLyricMatchSource.CLOUD_MUSIC -> searchCloudMusic(normalizedRequest)
-                        EditableLyricMatchSource.QQ_MUSIC -> searchQqMusic(normalizedRequest)
-                        EditableLyricMatchSource.AMLL_TTML -> searchAmllTtml(normalizedRequest)
-                        EditableLyricMatchSource.LRCLIB -> searchLrcLib(normalizedRequest)
-                        EditableLyricMatchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(normalizedRequest)
+        // 各来源相互独立，并发请求；结果仍按 matchSourceOrder 拼接，保证排序与串行时一致。
+        // 来源抛出的取消先包成 Result，全部结束后原样重抛，避免 await 的栈恢复替换异常实例
+        val sourceResults = coroutineScope {
+            matchSourceOrder
+                .filter { it in normalizedRequest.sources }
+                .map { source ->
+                    async {
+                        try {
+                            Result.success(searchSource(source, normalizedRequest))
+                        } catch (cancellation: CancellationException) {
+                            Result.failure(cancellation)
+                        }
                     }
-                )
-            }
+                }
+                .map { it.await() }
         }
+        val candidates = sourceResults.flatMap { it.getOrThrow() }
         val sanitizedCandidates = candidates.map(::sanitizeEditableLyricMatchCandidate)
         val rankedMatches = rankEditableLyricMatches(normalizedRequest, sanitizedCandidates)
         val rankedKeys = rankedMatches.mapTo(HashSet()) { it.candidate.matchIdentityKey() }
@@ -100,6 +105,7 @@ class EditableLyricsMatcher(
             }
             .filterNot { it.matchIdentityKey() in rankedKeys }
             .map { candidate ->
+                val supplementalSignals = evaluateLyricMatchSupplementalSignals(normalizedRequest, candidate)
                 RankedEditableLyricMatch(
                     candidate = candidate,
                     score = scoreLyricMatchTitle(normalizedRequest.trackName, candidate.title) +
@@ -109,6 +115,7 @@ class EditableLyricsMatcher(
                             candidate.durationMs
                         ) +
                         scoreLyricMatchKeyword(normalizedRequest.keyword, candidate) +
+                        supplementalSignals.score +
                         candidate.sourceScore.coerceIn(0, 20),
                     durationDeltaMs = normalizedRequest.durationMs.takeIf { it > 0L }?.let { expected ->
                         candidate.durationMs.takeIf { it > 0L }?.let { actual ->
@@ -116,7 +123,8 @@ class EditableLyricsMatcher(
                         }
                     },
                     confidence = EditableLyricMatchConfidence.LOW,
-                    hasWordTiming = hasEditableLyricWordTiming(candidate.lyrics)
+                    hasWordTiming = hasEditableLyricWordTiming(candidate.lyrics),
+                    timelineFit = supplementalSignals.timelineFit
                 )
             }
         return (rankedMatches + lowConfidenceMatches)
@@ -264,7 +272,9 @@ class EditableLyricsMatcher(
                                 lyrics = lyric,
                                 translatedLyrics = details.translatedLyric,
                                 format = resolveLyricFormat(lyric),
-                                sourceScore = if (searchInfo.source == MusicPlatform.CLOUD_MUSIC) 4 else 3
+                                sourceScore = if (searchInfo.source == MusicPlatform.CLOUD_MUSIC) 4 else 3,
+                                coverUrl = details.coverUrl?.takeIf { it.isNotBlank() }
+                                    ?: searchInfo.coverUrl?.takeIf { it.isNotBlank() }
                             )
                         )
                     }
@@ -382,7 +392,8 @@ class EditableLyricsMatcher(
                                 durationMs = result.durationMs,
                                 lyrics = editableLyric,
                                 format = resolveLyricFormat(editableLyric),
-                                sourceScore = sourceScoreForYouTubeResult(result)
+                                sourceScore = sourceScoreForYouTubeResult(result),
+                                coverUrl = result.coverUrl.takeIf { it.isNotBlank() }
                             )
                         )
                     }

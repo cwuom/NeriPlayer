@@ -83,6 +83,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,16 +93,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -128,7 +133,9 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
+import moe.ouom.neriplayer.ui.screen.playlist.shouldRequestPlaylistSearchFocus
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -184,6 +191,11 @@ fun RecentScreen(
     // 搜索
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    val searchFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsStateWithLifecycle(
+        initialValue = false
+    )
 
     val displayedSongs = remember(baseSongs, query, context) {
         SearchTextMatcher.filterAndRank(query, baseSongs) { song ->
@@ -215,6 +227,16 @@ fun RecentScreen(
         } else {
             selectedKeys = updated
         }
+    }
+
+    LaunchedEffect(showSearch, selectionMode, autoShowKeyboard) {
+        if (!shouldRequestPlaylistSearchFocus(showSearch, selectionMode, autoShowKeyboard)) {
+            return@LaunchedEffect
+        }
+        // 等搜索框随展开动画进入组合后再请求焦点
+        delay(120.milliseconds)
+        searchFocusRequester.requestFocus()
+        keyboardController?.show()
     }
 
     // 当前播放态
@@ -292,7 +314,8 @@ fun RecentScreen(
                         onValueChange = { query = it },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .focusRequester(searchFocusRequester),
                         placeholder = { Text(stringResource(CoreCommonR.string.search_recent)) },
                         singleLine = true
                     )

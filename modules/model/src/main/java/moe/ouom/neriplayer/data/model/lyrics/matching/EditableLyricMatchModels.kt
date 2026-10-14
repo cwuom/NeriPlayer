@@ -42,7 +42,9 @@ data class EditableLyricMatchCandidate(
     val lyrics: String,
     val translatedLyrics: String? = null,
     val format: EditableLyricFormat = EditableLyricFormat.LRC,
-    val sourceScore: Int = 0
+    val sourceScore: Int = 0,
+    /** 同一曲目在来源平台上的封面，用于让批量补全的封面与歌词来自同一身份 */
+    val coverUrl: String? = null
 )
 
 data class RankedEditableLyricMatch(
@@ -56,8 +58,16 @@ data class RankedEditableLyricMatch(
      * 独立于 [EditableLyricMatchRequest.preferWordTimed]: 即使调用方不偏好逐词,
      * 这里也必须如实反映歌词内容, 否则 UI 无法稳定地标记"逐词"。
      */
-    val hasWordTiming: Boolean = false
+    val hasWordTiming: Boolean = false,
+    val timelineFit: EditableLyricTimelineFit = EditableLyricTimelineFit.UNKNOWN
 )
+
+/** 带时间轴歌词的最后一行与歌曲时长的关系；纯文本、TTML 或缺少时长时为 [UNKNOWN] */
+enum class EditableLyricTimelineFit {
+    UNKNOWN,
+    FITS,
+    OVERFLOWS
+}
 
 enum class EditableLyricMatchConfidence(val rank: Int) {
     LOW(0),

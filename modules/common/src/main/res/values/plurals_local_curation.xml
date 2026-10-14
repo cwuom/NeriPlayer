@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Local Lyrics & Artwork Curation -->
+    <plurals name="local_curation_song_count">
+        <item quantity="one">%d 首本地歌曲</item>
+        <item quantity="other">%d 首本地歌曲</item>
+    </plurals>
+    <plurals name="local_curation_selected_count">
+        <item quantity="one">已选 %d 首</item>
+        <item quantity="other">已选 %d 首</item>
+    </plurals>
+    <plurals name="local_curation_apply_count">
+        <item quantity="one">写入 %d 首</item>
+        <item quantity="other">写入 %d 首</item>
+    </plurals>
+    <plurals name="local_curation_confirm_title">
+        <item quantity="one">写入 %d 首歌曲？</item>
+        <item quantity="other">写入 %d 首歌曲？</item>
+    </plurals>
+    <plurals name="local_curation_written_count">
+        <item quantity="one">已写入 %d 首</item>
+        <item quantity="other">已写入 %d 首</item>
+    </plurals>
+    <plurals name="local_curation_folder_access_needed">
+        <item quantity="one">%d 首歌曲的文件夹尚未授权，系统不允许直接读取其中的封面图片</item>
+        <item quantity="other">%d 首歌曲的文件夹尚未授权，系统不允许直接读取其中的封面图片</item>
+    </plurals>
+    <plurals name="local_curation_failed_count">
+        <item quantity="one">%d 首失败</item>
+        <item quantity="other">%d 首失败</item>
+    </plurals>
+</resources>

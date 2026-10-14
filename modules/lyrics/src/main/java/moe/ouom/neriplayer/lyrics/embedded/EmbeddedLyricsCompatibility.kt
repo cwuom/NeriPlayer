@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.lyrics.embedded
 
 import kotlin.math.abs
+import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
+import moe.ouom.neriplayer.lyrics.parser.isNeteaseYrc
+import moe.ouom.neriplayer.lyrics.parser.isTtmlLyrics
+import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.toEditableLyricsText
 
 // 显式 Unicode 数字让 JVM 与 android 使用相同匹配语义
 private val lrcTimestampRegex = Regex(
@@ -12,6 +17,7 @@ const val NERI_ROMANIZED_LYRICS_METADATA_KEY = "NERI_LYRICS_ROMANIZED"
 const val STANDARD_TRANSLATED_LYRICS_METADATA_KEY = "LYRICS:TRANSLATION"
 private const val LYRIC_TRANSLATION_TIMESTAMP_TOLERANCE_MS = 1_500L
 private val lrcMetadataLineRegex = Regex("""^\s*\[[^]]+:[^]]*]""")
+private val enhancedLrcWordTimestampRegex = Regex("""<\p{Nd}{1,3}:\p{Nd}{2}(?:\.\p{Nd}{1,3})?>""")
 
 val translatedLyricsMetadataKeys = listOf(
     STANDARD_TRANSLATED_LYRICS_METADATA_KEY,
@@ -38,8 +44,8 @@ fun mergeLyricsForExternalPlayers(
     lyrics: String?,
     translatedLyrics: String?
 ): String? {
-    val original = lyrics.orEmpty().trim()
-    val translation = translatedLyrics.orEmpty().trim()
+    val original = lyrics?.let(::toLineTimedLyricsForExternalPlayers).orEmpty().trim()
+    val translation = translatedLyrics?.let(::toLineTimedLyricsForExternalPlayers).orEmpty().trim()
     if (original.isEmpty()) return translation.takeIf(String::isNotEmpty)
     if (translation.isEmpty()) return original
 
@@ -67,6 +73,18 @@ fun mergeLyricsForExternalPlayers(
             }
     }
     return (merged.asSequence() + remainingTranslations.asSequence().map { it.raw }).joinToString("\n")
+}
+
+/**
+ * 车机、蓝牙与第三方播放器只认逐行 LRC，逐字 YRC、TTML 与增强 LRC 在标准字段里会显示成乱码；
+ * 这里降级为逐行时间轴，完整格式仍由 [NERI_ORIGINAL_LYRICS_METADATA_KEY] 保留
+ */
+fun toLineTimedLyricsForExternalPlayers(lyrics: String): String {
+    val needsDowngrade = isTtmlLyrics(lyrics) || isNeteaseYrc(lyrics) ||
+        enhancedLrcWordTimestampRegex.containsMatchIn(lyrics)
+    if (!needsDowngrade) return lyrics
+    val entries = parseNeteaseLyricsAuto(lyrics).flattenWordTimedEntries()
+    return entries.toEditableLyricsText().ifBlank { lyrics }
 }
 
 private fun normalizeTranslationTimestamps(

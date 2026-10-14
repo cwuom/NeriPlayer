@@ -367,10 +367,32 @@ object CustomSongCoverStorage {
         if (!remoteCoverImageValidator(bytes)) {
             return null
         }
-
-        val contentHash = sha256(bytes)
-        val extension = request.url.pathSegments.last().substringAfterLast('.', "")
         // 网络封面先保存为应用内输入, 最终本体由音频旁的 Covers 侧载承载
+        return persistCoverBytes(
+            context = context,
+            bytes = bytes,
+            extension = request.url.pathSegments.last().substringAfterLast('.', "")
+        )
+    }
+
+    /**
+     * 保存已经压缩好的待嵌入封面；按内容寻址，同专辑多首歌共用一份文件
+     */
+    suspend fun persistPreparedCover(
+        context: Context,
+        bytes: ByteArray,
+        extension: String = "jpg"
+    ): String? = withContext(Dispatchers.IO) {
+        if (!remoteCoverImageValidator(bytes)) return@withContext null
+        persistCoverBytes(context, bytes, extension)
+    }
+
+    private fun persistCoverBytes(
+        context: Context,
+        bytes: ByteArray,
+        extension: String
+    ): String? {
+        val contentHash = sha256(bytes)
         val directory = File(context.filesDir, DIRECTORY_NAME)
         if (!directory.exists() && !directory.mkdirs()) return null
         val target = File(directory, remoteCoverFileName(contentHash, extension))

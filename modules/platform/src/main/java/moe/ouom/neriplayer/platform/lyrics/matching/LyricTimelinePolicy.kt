@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.platform.lyrics.matching
 
 private const val MIN_LINES_FOR_COLLAPSED_TIMELINE = 3
 
-private val lrcTimestampRegex = Regex(
+internal val lrcTimestampRegex = Regex(
     """\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]"""
 )
 
@@ -56,7 +56,7 @@ private fun List<List<Long>>.hasCollapsedTimeline(): Boolean {
         .count() < 2
 }
 
-private fun parseLrcTimestampMs(match: MatchResult): Long? {
+internal fun parseLrcTimestampMs(match: MatchResult): Long? {
     val minutes = match.groupValues[1].toLongOrNull() ?: return null
     val seconds = match.groupValues[2].toLongOrNull() ?: return null
     if (seconds !in 0L..59L) return null
