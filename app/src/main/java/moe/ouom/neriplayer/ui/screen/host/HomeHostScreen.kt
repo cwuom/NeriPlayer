@@ -59,6 +59,8 @@ import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.playlist.usage.resolveLocalPlaylistUsageId
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.home.BiliMusicHotDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.home.BiliMusicRankDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
@@ -112,6 +114,13 @@ internal sealed class HomeSelectedItem {
     }
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem() {
         override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "ytmusic", "playlist" to playlist.toSaveMap())
+    }
+    // Bilibili 音乐模块的详情页复用首页同一个 HomeViewModel，因此这里不需要携带额外参数
+    object BiliMusicRank : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicRank")
+    }
+    object BiliMusicHot : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicHot")
     }
 }
 
@@ -465,7 +474,23 @@ fun HomeHostScreen(
                                     }
                                     openRecent(entry, context, ::openHomeSelectedItem)
                                 },
-                                onSongClick = onSongClick
+                                onSongClick = onSongClick,
+                                onBiliMusicRankMore = {
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    openHomeSelectedItem(HomeSelectedItem.BiliMusicRank)
+                                },
+                                onBiliMusicHotMore = {
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    openHomeSelectedItem(HomeSelectedItem.BiliMusicHot)
+                                },
+                                onBiliMusicRankPlay = { videos, index ->
+                                    onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                },
+                                onBiliMusicHotPlay = { videos, index ->
+                                    onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                }
                             )
                         }
                     } else {
@@ -556,6 +581,26 @@ fun HomeHostScreen(
                                     offlineMode = offlineMode
                                 )
                             }
+
+                            HomeSelectedItem.BiliMusicRank -> {
+                                BiliMusicRankDetailScreen(
+                                    onBack = { selected = null },
+                                    onPlay = { videos, index ->
+                                        onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            HomeSelectedItem.BiliMusicHot -> {
+                                BiliMusicHotDetailScreen(
+                                    onBack = { selected = null },
+                                    onPlay = { videos, index ->
+                                        onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
                         }
                     }
                 }
@@ -575,7 +620,9 @@ private val homeSelectedItemRestorers: Map<String, (Map<String, Any?>) -> HomeSe
     "neteaseAlbum" to { saved -> restoreAlbumSummary(saved.savedMap("album"))?.let(HomeSelectedItem::NeteaseAlbumList) },
     "netease" to { saved -> restorePlaylistSummary(saved.savedMap("playlist"))?.let(HomeSelectedItem::Netease) },
     "bili" to { saved -> restoreBiliPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::Bili) },
-    "ytmusic" to { saved -> restoreYouTubeMusicPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::YouTubeMusic) }
+    "ytmusic" to { saved -> restoreYouTubeMusicPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::YouTubeMusic) },
+    "biliMusicRank" to { _ -> HomeSelectedItem.BiliMusicRank },
+    "biliMusicHot" to { _ -> HomeSelectedItem.BiliMusicHot }
 )
 
 /** 根据 UsageEntry 分发到不同平台详情 */

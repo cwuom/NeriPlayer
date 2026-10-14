@@ -136,6 +136,7 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteasePlaylistSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteaseSongSectionState
@@ -228,7 +229,11 @@ fun HomeScreen(
     topAppBarState: TopAppBarState,
     onScrollAnchorIndexesChanged: (Map<String, Int>) -> Unit = {},
     onOpenRecent: (UsageEntry) -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onBiliMusicRankMore: () -> Unit = {},
+    onBiliMusicHotMore: () -> Unit = {},
+    onBiliMusicRankPlay: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
+    onBiliMusicHotPlay: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
@@ -506,6 +511,30 @@ fun HomeScreen(
                     nextGridItemIndex += 1
                     return key
                 }
+                // Bilibili 音乐模块：版权音乐榜（热门榜/原创榜）与音乐分区热门视频
+                // 网易云模式：排在「私人雷达 / 雷达歌单」之后、「热力飙升 / 我的推荐」之前；
+                // 国际化模式：排在「猜你喜欢 / 每日发现」之后、「更多推荐」之前。
+                // 均只受脱机模式影响，不随网易云卡片开关隐藏。
+                val addBiliMusicSections: LazyGridScope.() -> Unit = {
+                    addBiliMusicRankSection(
+                        registerKey = ::registerGridItemKey,
+                        state = ui.biliMusicRank,
+                        onTypeSelected = vm::selectBiliMusicRankType,
+                        onMoreClick = onBiliMusicRankMore,
+                        onPlay = onBiliMusicRankPlay,
+                        onRetry = { vm.loadBiliMusicRank(force = true) },
+                        offlineMode = offlineMode
+                    )
+                    addBiliMusicHotSection(
+                        registerKey = ::registerGridItemKey,
+                        state = ui.biliMusicHot,
+                        onMoreClick = onBiliMusicHotMore,
+                        onPlay = onBiliMusicHotPlay,
+                        onRetry = { vm.loadBiliMusicHot(force = true) },
+                        offlineMode = offlineMode
+                    )
+                }
+
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(gridMinCellSize),
@@ -580,6 +609,10 @@ fun HomeScreen(
                                     offlineMode = offlineMode
                                 )
                             }
+
+                            // Bilibili 音乐模块：国际化模式下排在「猜你喜欢 / 每日发现」之后、
+                            // 「更多推荐」之前，与网易云模式的相对位置保持一致。
+                            addBiliMusicSections()
 
                             if (showRecommendedCard) {
                                 item(
@@ -830,6 +863,11 @@ fun HomeScreen(
                                     }
                             }
 
+                            // Bilibili 音乐模块：版权音乐榜（热门榜/原创榜）与音乐分区热门视频。
+                            // 排在「私人雷达 / 雷达歌单」之后、「热力飙升 / 我的推荐」之前，
+                            // 使 B 站榜单与网易云榜单相邻，且不拆散网易云的雷达组合。
+                            addBiliMusicSections()
+
                             if (showNeteaseTrending) {
                                 ui.trendingSongSections.forEach { sectionState ->
                                     val sectionKey = homeNeteaseSongSectionKey(
@@ -869,6 +907,7 @@ fun HomeScreen(
                                     )
                                 }
                             }
+
                         }
                     }
                 }

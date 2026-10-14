@@ -47,8 +47,13 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.platform.netease.api.client.mergeNeteaseSessionCookies
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicHotVideo
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankPeriod
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankSong
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.viewmodel.tab.bili.BiliMusicHomeRepository
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.model.SongItem
@@ -185,6 +190,15 @@ data class HomeSectionState<T>(
     val error: String? = null
 )
 
+/** 首页 B 站版权音乐榜模块状态（榜单类型、期数与曲目始终同源） */
+data class HomeBiliMusicRankState(
+    val type: BiliMusicRankType = BiliMusicRankType.HOT,
+    val period: BiliMusicRankPeriod? = null,
+    val songs: List<BiliMusicRankSong> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null
+)
+
 data class HomeNeteaseSongSectionState(
     val source: NeteaseHomeSongSource,
     val section: HomeSectionState<SongItem> = HomeSectionState()
@@ -202,6 +216,8 @@ data class HomeUiState(
     val radarPlaylists: HomeSectionState<PlaylistSummary> = HomeSectionState(),
     val ytMusicPlaylists: HomeSectionState<YouTubeMusicPlaylist> = HomeSectionState(),
     val ytMusicHomeShelves: HomeSectionState<YouTubeMusicHomeShelf> = HomeSectionState(),
+    val biliMusicRank: HomeBiliMusicRankState = HomeBiliMusicRankState(),
+    val biliMusicHot: HomeSectionState<BiliMusicHotVideo> = HomeSectionState(),
     val hasLogin: Boolean = false,
     val internationalizationEnabled: Boolean = false
 )
@@ -232,6 +248,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var lastYouTubeAuthFingerprint: String? = null
     private var lastNeteaseRadarCacheContext = neteaseRadarCacheContext(repo.getCookiesOnce())
     private var radarPlaylistLoadGeneration: Long = 0L
+    private var biliMusicRankJob: Job? = null
+    private var biliMusicHotJob: Job? = null
+    private var biliMusicRankGeneration: Long = 0L
+    private var biliMusicHotGeneration: Long = 0L
     private var offlineMode = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
@@ -447,6 +467,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 homeRecommendationsBootstrapped = true
                 refreshNeteaseHome()
             }
+            // 国际版首页不触发网易云推荐，B 站音乐模块独立加载
+            loadBiliMusicHome(force = false)
         }
     }
 
@@ -465,7 +487,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 radarSongSections = clearSongSectionLoading(state.radarSongSections),
                 radarPlaylists = state.radarPlaylists.copy(loading = false, error = null),
                 ytMusicPlaylists = state.ytMusicPlaylists.copy(loading = false, error = null),
-                ytMusicHomeShelves = state.ytMusicHomeShelves.copy(loading = false, error = null)
+                ytMusicHomeShelves = state.ytMusicHomeShelves.copy(loading = false, error = null),
+                biliMusicRank = state.biliMusicRank.copy(loading = false, error = null),
+                biliMusicHot = state.biliMusicHot.copy(loading = false, error = null)
             )
         }
     }
@@ -476,6 +500,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         radarSongsJob?.cancel()
         radarPlaylistsJob?.cancel()
         cancelYouTubeHomeJobs()
+        cancelBiliMusicJobs()
     }
 
     private fun cancelYouTubeHomeJobs() {
@@ -485,12 +510,170 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         ytMusicHomeRefreshPending = false
     }
 
+    private fun cancelBiliMusicJobs() {
+        biliMusicRankGeneration += 1L
+        biliMusicHotGeneration += 1L
+        biliMusicRankJob?.cancel()
+        biliMusicRankJob = null
+        biliMusicHotJob?.cancel()
+        biliMusicHotJob = null
+    }
+
+    /** 首页 B 站音乐两个模块的入口（互不阻塞） */
+    fun loadBiliMusicHome(force: Boolean = false) {
+        loadBiliMusicRank(force = force)
+        loadBiliMusicHot(force = force)
+    }
+
+    /** 切换版权榜类型：先清掉上一个榜的数据，避免串期显示 */
+    fun selectBiliMusicRankType(type: BiliMusicRankType) {
+        val current = _uiState.value.biliMusicRank
+        if (current.type == type && current.songs.isNotEmpty()) return
+
+        val cached = if (offlineMode) null else BiliMusicHomeRepository.cachedRank(type)
+        _uiState.update { state ->
+            state.copy(
+                biliMusicRank = HomeBiliMusicRankState(
+                    type = type,
+                    period = cached?.period,
+                    songs = cached?.songs.orEmpty(),
+                    loading = cached == null,
+                    error = null
+                )
+            )
+        }
+        loadBiliMusicRank(force = true)
+    }
+
+    fun loadBiliMusicRank(force: Boolean = false) {
+        val current = _uiState.value.biliMusicRank
+        if (!force && (current.songs.isNotEmpty() || current.loading)) return
+
+        if (offlineMode) {
+            val cached = BiliMusicHomeRepository.cachedRank(current.type)
+            _uiState.update { state ->
+                if (state.biliMusicRank.type != current.type) {
+                    state
+                } else {
+                    state.copy(
+                        biliMusicRank = state.biliMusicRank.copy(
+                            period = cached?.period ?: state.biliMusicRank.period,
+                            songs = cached?.songs ?: state.biliMusicRank.songs,
+                            loading = false,
+                            error = null
+                        )
+                    )
+                }
+            }
+            return
+        }
+
+        val type = current.type
+        val generation = ++biliMusicRankGeneration
+        biliMusicRankJob?.cancel()
+        _uiState.update { state ->
+            if (state.biliMusicRank.type != type) {
+                state
+            } else {
+                state.copy(biliMusicRank = state.biliMusicRank.copy(loading = true, error = null))
+            }
+        }
+        biliMusicRankJob = viewModelScope.launch {
+            val result = runCatching { BiliMusicHomeRepository.loadRank(type, force) }
+            if (generation != biliMusicRankGeneration) return@launch
+            result.fold(
+                onSuccess = { snapshot ->
+                    _uiState.update { state ->
+                        if (state.biliMusicRank.type != type) {
+                            state
+                        } else {
+                            state.copy(
+                                biliMusicRank = state.biliMusicRank.copy(
+                                    period = snapshot.period,
+                                    songs = snapshot.songs,
+                                    loading = false,
+                                    error = null
+                                )
+                            )
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    val message = buildHomeErrorMessage(error, localizedAppContext())
+                    _uiState.update { state ->
+                        if (state.biliMusicRank.type != type) {
+                            state
+                        } else {
+                            state.copy(
+                                biliMusicRank = state.biliMusicRank.copy(
+                                    loading = false,
+                                    error = message
+                                )
+                            )
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    fun loadBiliMusicHot(force: Boolean = false) {
+        val current = _uiState.value.biliMusicHot
+        if (!force && (current.items.isNotEmpty() || current.loading)) return
+
+        if (offlineMode) {
+            val cached = BiliMusicHomeRepository.cachedHot()
+            _uiState.update { state ->
+                state.copy(
+                    biliMusicHot = state.biliMusicHot.copy(
+                        items = cached ?: state.biliMusicHot.items,
+                        loading = false,
+                        error = null
+                    )
+                )
+            }
+            return
+        }
+
+        val generation = ++biliMusicHotGeneration
+        biliMusicHotJob?.cancel()
+        _uiState.update { state ->
+            state.copy(biliMusicHot = state.biliMusicHot.copy(loading = true, error = null))
+        }
+        biliMusicHotJob = viewModelScope.launch {
+            val result = runCatching { BiliMusicHomeRepository.loadHot(force) }
+            if (generation != biliMusicHotGeneration) return@launch
+            result.fold(
+                onSuccess = { videos ->
+                    _uiState.update { state ->
+                        state.copy(
+                            biliMusicHot = state.biliMusicHot.copy(
+                                items = videos,
+                                loading = false,
+                                error = null
+                            )
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    val message = buildHomeErrorMessage(error, localizedAppContext())
+                    _uiState.update { state ->
+                        state.copy(
+                            biliMusicHot = state.biliMusicHot.copy(loading = false, error = message)
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     fun refreshNeteaseHome() {
         if (offlineMode) return
 
         refreshRecommend()
         loadHomeRecommendations(force = true)
         refreshRadarPlaylists()
+        loadBiliMusicHome(force = true)
     }
 
     /** 拉首页推荐歌单 */
@@ -684,6 +867,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** 拉取一次 YouTube Music 首页快照并同时更新歌单和推荐栏 */
     fun refreshYtMusicHome() {
         requestYtMusicHomeRefresh(queueIfLoading = true)
+        loadBiliMusicHome(force = true)
     }
 
     /** 兼容旧调用，复用正在加载的首页快照 */
