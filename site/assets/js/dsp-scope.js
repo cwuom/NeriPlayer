@@ -95,13 +95,15 @@
       if (S.clarity) fs.push(bq('high_shelf', Math.min(20000, S.clarityFreq * 2), S.clarity * 5, 0.707));
       if (S.vocal) fs.push(bq('peak', 2400, S.vocal * 5, 0.9));
     }
-    var lo = D.local;
     if (S.on && S.sec.speaker) {
-      var fc = lo.spkProt > 1 ? lo.spkProt : 180;
-      fs.push(bq('high_pass', fc, 0, 0.707));
-      fs.push(bq('peak', fc * 1.6, lo.spkBass * 6, 1));
-      fs.push(bq('high_shelf', 4000, lo.spkClarity * 3, 0.707));
-      flat += lo.spkLoud * 4;
+      /* 线性部分照 SpeakerStage：四阶巴特沃斯高通 + 2.8 kHz 峰值 + 8 kHz 高架；谐波与分频压缩是非线性的，按听感近似成低频补偿与整体抬升 */
+      var fc = NP.sound.spkProtHz();
+      var hf = M.clamp(Math.max(fc, 60) * 1.4, 70, 260);
+      fs.push(bq('high_pass', fc, 0, 0.5412));
+      fs.push(bq('high_pass', fc, 0, 1.3066));
+      if (S.spkBass) fs.push(bq('peak', hf * 2.2, S.spkBass * 5, 0.9));
+      if (S.spkClarity) { fs.push(bq('peak', 2800, 4 * S.spkClarity, 0.8)); fs.push(bq('high_shelf', 8000, 3 * S.spkClarity, 0.707)); }
+      flat += S.spkLoud * 3.5;
     }
     if (on('dynamics')) flat += S.outGain;
     return FREQ.map(function (hz) {
@@ -152,6 +154,7 @@
     NP.addFrame(function (dt) { self.frame(dt); }, 9);
     this.bindHover();
     this.bindAB();
+    this.bindSpk();
     NP.dspChain = function () { self.chain(); self.recurve(); };
     this.recurve(true);
     this.chain();
@@ -198,7 +201,49 @@
     if (rt.peakDb > 0.5 && st.lim) { rt.limDb = Math.round(rt.peakDb * 10) / 10; rt.limUntil = now + 4000; }
     else if (now > rt.limUntil) rt.limDb = 0;
     rt.peakDb = 0;
+    this.tip();
     if (this.page) this.page.paint();
+  };
+
+  /* 外放试听：网页的输出再过一遍小喇叭模型；扬声器分区开着却没开试听时，提示一下怎么听出区别 */
+  var SPK_NAME = { phone: L('手机', 'phone'), tablet: L('平板', 'tablet'), large: L('大音箱', 'large speaker') };
+  Scope.prototype.bindSpk = function () {
+    var self = this;
+    var b = $('[data-scope-spk]', this.fig);
+    this.spkBtn = b;
+    this.tipEl = $('[data-scope-tip]', this.fig);
+    if (!b) return;
+    b.addEventListener('click', function () {
+      var on = !NP.sound.preview();
+      NP.sound.setPreview(on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on && !P.audible) P.play();
+      self.chain();
+      self.tip();
+    });
+  };
+  Scope.prototype.tip = function () {
+    var el = this.tipEl;
+    if (!el) return;
+    var S = this.S;
+    var on = NP.sound.preview();
+    var tab = this.D.local.tab;
+    var size = SPK_NAME[S.spkSize] || SPK_NAME.phone;
+    var t = '';
+    if (on) {
+      t = S.on && S.sec.speaker
+        ? L('正在模拟' + size + '扬声器，外放优化已开启：低音补偿把喇叭发不出的低频换成谐波，响度让整体更饱满。关掉「启用外放优化」对比一下', 'Simulating a ' + size + ' speaker with speaker optimization on: bass enhancement turns lows the driver cannot play into harmonics, loudness fills the sound out. Toggle “Enable speaker optimization” to compare.')
+        : L('正在模拟' + size + '扬声器：低频早早滚降、声像收窄，听起来又薄又小。去「扬声器」分区打开外放优化，听听差别', 'Simulating a ' + size + ' speaker: the lows roll off early and the image narrows, so it sounds thin. Turn on speaker optimization in the Speaker tab to hear the difference.');
+    } else if (tab === 'speaker') {
+      t = L('戴着耳机或用电脑音箱？外放优化是给手机小喇叭设计的，点上面的「模拟手机外放」才听得出它的作用', 'On headphones or desktop speakers? Speaker optimization is built for tiny phone drivers — press “Simulate phone speaker” above to hear what it does.');
+    }
+    if (t === this._tip) return;
+    this._tip = t;
+    if (!t) { el.hidden = true; return; }
+    var first = el.hidden;
+    el.hidden = false;
+    if (first && !reduced) { el.classList.add('is-in'); void el.offsetWidth; el.classList.remove('is-in'); }
+    if (first) el.textContent = t; else NP.swapText(el, t);
   };
 
   Scope.prototype.recurve = function (snap) {
@@ -219,6 +264,7 @@
     if (this.stateEl && this.stateEl.textContent !== t) NP.swapText(this.stateEl, t);
     var live = !!NP.sound.taps();
     var src = live ? L('实时分析 · 处理前后各取一路', 'Live analysis · tapped before and after the chain') : L('模型频谱 · 按播放后换成实时分析', 'Modeled spectrum · switches to live analysis once you press play');
+    if (NP.sound.preview()) src += L(' · 试听的小喇叭不计入', ' · the simulated speaker is not included');
     if (this.srcEl && this.srcEl.textContent !== src) NP.swapText(this.srcEl, src);
   };
 
@@ -560,6 +606,7 @@
     NP.sound.apply();
     this.recurve();
     this.chain();
+    this.tip();
     if (this.page) this.page.paint();
   };
 

@@ -326,7 +326,7 @@
       <p class="hand hero__note">今晚也一起听歌吗？</p>
       <svg class="hero__arrow draw" viewBox="0 0 120 70" aria-hidden="true"><path d="M6 12 C 40 4, 78 18, 96 54" pathLength="1"/><path d="M84 46 L 97 56 L 101 40" pathLength="1"/></svg>
       <div class="crayon" aria-hidden="true">
-        <svg class="crayon__art" viewBox="164 131 695 546">
+        <svg class="crayon__art" viewBox="0 0 695 546">
           <g filter="url(#crayon)">
             <use href="#np-p-head" class="cr cr--head"/>
             <use href="#np-p-arc" class="cr cr--arc"/>
@@ -858,6 +858,7 @@
               </div>
             </div>
             <figcaption class="fig__cap">Fig. 05 — 设置 · 音效与倍速 · 每个开关都能拧</figcaption>
+            <p class="sim-draft"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span><b>预览仿真，不是最终版本</b>界面与音效以实际运行的版本为准。</span></p>
           </figure>
         </div>
       </div>
@@ -865,8 +866,12 @@
       <figure class="dscope" id="dspChain" data-reveal>
         <div class="dscope__head">
           <p class="dscope__title"><b>效果监视器</b><span class="mono" data-scope-src>模型频谱 · 按播放后换成实时分析</span></p>
-          <button type="button" class="dscope__ab" data-scope-ab aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-headphones"/></svg><span>按住听原声</span></button>
+          <div class="dscope__btns">
+            <button type="button" class="dscope__ab dscope__spk" data-scope-spk aria-pressed="false" title="网页里的试听：把输出过一遍小喇叭的频响，戴耳机也能听出外放的样子；App 本身不会这样处理"><svg class="i" aria-hidden="true"><use href="#i-speaker"/></svg><span>模拟手机外放</span></button>
+            <button type="button" class="dscope__ab" data-scope-ab aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-headphones"/></svg><span>按住听原声</span></button>
+          </div>
         </div>
+        <p class="dscope__tip mono" data-scope-tip hidden></p>
         <div class="dscope__mon">
           <div class="dscope__spec">
             <canvas data-scope-spec aria-hidden="true"></canvas>
@@ -1337,8 +1342,9 @@
         <button type="button" role="tab" id="deskT0" aria-selected="true" aria-controls="deskScreen" class="is-on" data-tab="0"><i>A</i>首页<s></s></button>
         <button type="button" role="tab" id="deskT1" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="1"><i>B</i>播放页<s></s></button>
         <button type="button" role="tab" id="deskT2" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="2"><i>C</i>音乐库<s></s></button>
-        <button type="button" role="tab" id="deskT3" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="3"><i>D</i>音效与倍速<s></s></button>
-        <button type="button" role="tab" id="deskT4" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="4"><i>E</i>快捷键<s></s></button>
+        <button type="button" role="tab" id="deskT3" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="3"><i>D</i>歌单<s></s></button>
+        <button type="button" role="tab" id="deskT4" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="4"><i>E</i>音效与倍速<s></s></button>
+        <button type="button" role="tab" id="deskT5" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="5"><i>F</i>设置<s></s></button>
         <div class="seg dstage__os" role="radiogroup" aria-label="窗口样式">
           <button type="button" role="radio" aria-checked="true" class="is-on" data-sim-os="win"><svg class="i" aria-hidden="true"><use href="#i-win"/></svg>Windows</button>
           <button type="button" role="radio" aria-checked="false" data-sim-os="mac"><svg class="i" aria-hidden="true"><use href="#i-apple"/></svg>macOS</button>
@@ -1351,39 +1357,10 @@
           <div class="dwin__screen" id="deskScreen" role="tabpanel" aria-labelledby="deskT0">
             <img class="dwin__ph" src="assets/img/desktop/home-light-zh.jpg" alt="桌面版首页：左侧导航栏、顶部搜索、继续播放歌单卡片与分三栏的私人雷达，底部是播放栏" width="1600" height="1000" loading="lazy" data-themed>
             <div class="dsim" id="deskSim" role="application" aria-label="桌面版界面仿真：可以切换页面、播放《星轨》、打开播放页和调音效"></div>
-            <div class="dpins is-on" data-pins="0" aria-hidden="true">
-              <span class="tabpin" style="--x:3%;--y:17%"><b>1</b></span>
-              <span class="tabpin" style="--x:52.8%;--y:9.5%"><b>2</b></span>
-              <span class="tabpin" style="--x:45.5%;--y:32%"><b>3</b></span>
-              <span class="tabpin" style="--x:92%;--y:95.5%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="1" aria-hidden="true">
-              <span class="tabpin" style="--x:22.5%;--y:34%"><b>1</b></span>
-              <span class="tabpin" style="--x:62.5%;--y:36%"><b>2</b></span>
-              <span class="tabpin" style="--x:38.5%;--y:65.5%"><b>3</b></span>
-              <span class="tabpin" style="--x:22.5%;--y:87%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="2" aria-hidden="true">
-              <span class="tabpin" style="--x:35%;--y:16.6%"><b>1</b></span>
-              <span class="tabpin" style="--x:20%;--y:30%"><b>2</b></span>
-              <span class="tabpin" style="--x:19.5%;--y:52%"><b>3</b></span>
-              <span class="tabpin" style="--x:89.4%;--y:9.4%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="3" aria-hidden="true">
-              <span class="tabpin" style="--x:21%;--y:62%"><b>1</b></span>
-              <span class="tabpin" style="--x:66.4%;--y:30%"><b>2</b></span>
-              <span class="tabpin" style="--x:66%;--y:56%"><b>3</b></span>
-              <span class="tabpin" style="--x:90.8%;--y:46%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="4" aria-hidden="true">
-              <span class="tabpin" style="--x:92%;--y:25%"><b>1</b></span>
-              <span class="tabpin" style="--x:61.7%;--y:42.4%"><b>2</b></span>
-              <span class="tabpin" style="--x:80.5%;--y:47.6%"><b>3</b></span>
-              <span class="tabpin" style="--x:49.8%;--y:32.6%"><b>4</b></span>
-            </div>
           </div>
         </div>
         <figcaption class="fig__cap">Fig. 11a — NeriPlayer Desktop · 1280 × 800 · 每个按钮都能点</figcaption>
+        <p class="sim-draft"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span><b>预览仿真，不是最终版本</b>界面与功能以实际运行的版本为准。</span></p>
         <p class="tabstage__note hand" aria-hidden="true">桌面版的真实界面，<br>直接上手点一点 ↙</p>
       </figure>
 
@@ -1407,18 +1384,24 @@
           <li><b>04</b>播放统计、最近播放与多选入口</li>
         </ol>
         <ol class="tablegend notes notes--tight" data-legend="3">
-          <li><b>01</b>设置左右两栏，顶上可以搜索任意一项</li>
-          <li><b>02</b>理论频响曲线随均衡器、前级与音调实时更新</li>
-          <li><b>03</b>每个参数都能拖滑块，也能直接输入数值</li>
-          <li><b>04</b>分区可折叠，单独「恢复此分区」</li>
+          <li><b>01</b>封面、名称、曲目数与总时长，网易云歌单还带简介与播放量</li>
+          <li><b>02</b>全部播放、随机与多选，顶部可以在歌单里搜歌</li>
+          <li><b>03</b>曲目行：序号、封面、歌手 · 专辑与时长，点《星轨》就能听</li>
+          <li><b>04</b>首页、音乐库里的歌单卡片都能点进来，左上角返回来处</li>
         </ol>
         <ol class="tablegend notes notes--tight" data-legend="4">
-          <li><b>01</b>全局快捷键默认关闭，开启后失焦或收进托盘也能用</li>
-          <li><b>02</b>应用内：Space 播放，方向键快进与音量</li>
-          <li><b>03</b>全局：Ctrl / Cmd + Alt 组合，冲突时会提示</li>
-          <li><b>04</b>点按键框录制新组合，Esc 取消，Backspace 清除</li>
+          <li><b>01</b>先挑预设，再用「听感调节」的低音、人声、明亮度、温暖感、空间感微调</li>
+          <li><b>02</b>理论频响随均衡器、前级、音调与响度补偿实时更新</li>
+          <li><b>03</b>扬声器优化、动态保护、倍速与唱片效果各成一个分区，可单独恢复</li>
+          <li><b>04</b>和上面手机里那页共用同一份音效，拧哪边另一边跟着变</li>
         </ol>
-        <p class="small">窗口里是从桌面版前端导出的真实界面结构与样式，再接上网页里的播放器；曲目与封面是 NeriPlayer PV 的示例曲，没有登录任何账号。深浅色跟随这一页，系统可以在右上角切换。</p>
+        <ol class="tablegend notes notes--tight" data-legend="5">
+          <li><b>01</b>21 个分区分成九组，从账号、播放、音频到备份同步与关于</li>
+          <li><b>02</b>顶部搜索可以直接跳到任意一项设置</li>
+          <li><b>03</b>开关、滑块与分段选项都能拨，折叠分组可以收起再展开</li>
+          <li><b>04</b>键盘快捷键分应用内与全局两套，冲突时会提示</li>
+        </ol>
+        <p class="small">窗口里是从桌面版前端导出的真实界面结构与样式，再接上网页里的播放器；曲目与封面是 NeriPlayer PV 的示例曲，没有登录任何账号。深浅色跟随这一页，系统可以在右上角切换。桌面版仍在预览阶段，仿真只是某一时刻的快照，以实际运行的版本为准。</p>
       </div>
     </div>
 

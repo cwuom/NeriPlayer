@@ -21,6 +21,8 @@
 
   var EXTRA = [
     ':host { contain: strict; }',
+    /* 窗口整体缩放过，content-visibility: auto 会把曲目行误判成在屏幕外而不画 */
+    '.dsim-app * { content-visibility: visible !important; }',
     '.dsim-app, .dsim-app .app-layout { width: 1280px; height: 800px; }',
     /* 路由切换：与桌面版 .fade 过渡一致 */
     'main.content > * { transition: opacity 300ms cubic-bezier(0,0,0,1), transform 300ms cubic-bezier(0,0,0,1); }',
@@ -103,8 +105,11 @@
     var fs = [];
     var on = S.on;
     if (on && S.sec.equalizer) S.eq.forEach(function (g, i) { if (g) fs.push(biquad('peak', FREQS[i], g, 1.41)); });
-    if (on && S.sec.tone && S.bass) fs.push(biquad('low', 100, S.bass, 0.707));
-    if (on && S.sec.tone && S.treble) fs.push(biquad('high', 8000, S.treble, 0.707));
+    if (on && S.sec.tone && S.bass) fs.push(biquad('low', S.bassFreq || 100, S.bass, 0.707));
+    if (on && S.sec.tone && S.treble) fs.push(biquad('high', S.trebleFreq || 8000, S.treble, 0.707));
+    var lc = NP.sound.loudnessDb ? NP.sound.loudnessDb() : null;
+    if (lc && lc.bass) fs.push(biquad('low', 120, lc.bass, 0.707));
+    if (lc && lc.treble) fs.push(biquad('high', 10000, lc.treble, 0.707));
     var pre = on && S.sec.equalizer ? S.preamp : 0;
     var pts = [];
     for (var i = 0; i < 96; i++) {
@@ -217,7 +222,7 @@
     var lang = NP.en ? 'en' : 'zh';
     var get = location.protocol === 'file:' ? viaScript(lang) : fetch(BASE + 'desktop/sim-' + lang + '.html').then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); }).catch(function () { return viaScript(lang); });
     source = get.then(function (text) {
-      text = text.split('{{C}}').join(BASE + 'img/covers/').split('{{I}}').join(BASE + 'img/desktop/app-icon.png');
+      text = text.split('{{C}}').join(BASE + 'img/covers/').split('{{I}}').join(BASE + 'img/desktop/app-icon.png').split('{{K}}').join(BASE + 'img/desktop/icons/');
       var box = document.createElement('div');
       box.innerHTML = text;
       var parts = {};
@@ -343,20 +348,37 @@
   };
   Sim.prototype.na = function (what) { this.toast(what ? L('网页演示里没有接入「' + what + '」', '“' + what + '” isn’t wired up in this web demo') : L('这里是网页演示，这一项没有接入', 'This part isn’t wired up in the web demo')); };
   Sim.prototype.onView = function (fn) { this.listeners.push(fn); };
+  /* 侧边栏归属：歌单、歌手、统计这些详情页都挂在音乐库下面（路由 meta.section） */
+  function sectionOf(r) { return r === 'home' || r === 'explore' || r === 'settings' ? r : 'library'; }
+  Sim.prototype.view = function () {
+    if (this.np) return 'np';
+    if (this.route === 'settings') return this.setting;
+    return /^r-playlist/.test(this.route) ? 'playlist' : sectionOf(this.route);
+  };
   Sim.prototype.emitView = function () {
-    var v = this.np ? 'np' : this.route === 'settings' ? this.setting : this.route;
+    var v = this.view();
     this.listeners.forEach(function (fn) { fn(v); });
   };
 
-  /* 路由：换掉 main.content，过渡同桌面版 */
-  Sim.prototype.setRoute = function (r, instant) {
+  /* 路由：换掉 main.content，过渡同桌面版；进详情页时记下来处，返回键按记录退回 */
+  Sim.prototype.navigate = function (r) {
+    if (r === this.route) return;
+    this.hist = (this.hist || []).concat([this.route]).slice(-20);
+    this.setRoute(r, false, true);
+  };
+  Sim.prototype.back = function () {
+    var prev = (this.hist || []).pop();
+    this.setRoute(prev || 'library', false, true);
+  };
+  Sim.prototype.setRoute = function (r, instant, keepHist) {
     var self = this;
-    var page = r === 'settings' ? this.setting : r;
+    if (!keepHist) this.hist = [];
+    var page = r;
     var html = this.parts['page-' + page];
     if (!html) return;
     var c = this.content;
     this.route = r;
-    var navIdx = { home: 0, explore: 1, library: 2, settings: 3 }[r];
+    var navIdx = { home: 0, explore: 1, library: 2, settings: 3 }[sectionOf(r)];
     this.qa('.side-nav .nav-item').forEach(function (it, i) {
       var on = i === navIdx;
       it.classList.toggle('active', on);
@@ -367,6 +389,7 @@
     var swap = function () {
       c.innerHTML = html;
       c.scrollTop = 0;
+      if (page === 'settings') self.fillSettings();
       self.bindPage(page);
       if (!instant && !reduced) {
         c.classList.remove('dsim-leave');
@@ -380,21 +403,33 @@
     else { c.classList.add('dsim-leave'); clearTimeout(this._route); this._route = setTimeout(swap, 100); }
     this.emitView();
   };
+  /* 设置：框架只导出一份，21 个分区的内容区各自一份（set-<id>），切换时只换内容区 */
+  var SET_ALIAS = { fx: 'audio_effects' };
+  Sim.prototype.markNav = function () {
+    var key = this.setting;
+    this.qa('.settings-nav-item[data-dsim-set]', this.content).forEach(function (it) {
+      var on = it.getAttribute('data-dsim-set') === key;
+      it.classList.toggle('active', on);
+      if (on) it.setAttribute('aria-current', 'page'); else it.removeAttribute('aria-current');
+    });
+  };
+  Sim.prototype.fillSettings = function () {
+    var cur = this.q('.settings-content', this.content);
+    if (cur) cur.innerHTML = this.parts['set-' + this.setting] || '';
+    this.markNav();
+  };
   Sim.prototype.setSetting = function (key) {
     var self = this;
+    key = SET_ALIAS[key] || key;
+    if (!this.parts['set-' + key]) return;
     if (this.route !== 'settings') { this.setting = key; this.setRoute('settings'); return; }
     if (key === this.setting) return;
     this.setting = key;
-    var box = document.createElement('div');
-    box.innerHTML = this.parts['page-' + key];
-    var fresh = box.querySelector('.settings-content');
     var cur = this.q('.settings-content', this.content);
-    var items = this.qa('.settings-nav-item', this.content);
-    var freshItems = Array.prototype.slice.call(box.querySelectorAll('.settings-nav-item'));
-    items.forEach(function (it, i) { it.classList.toggle('active', !!freshItems[i] && freshItems[i].classList.contains('active')); });
+    this.markNav();
     cur.classList.add('dsim-leave');
     setTimeout(function () {
-      cur.innerHTML = fresh.innerHTML;
+      cur.innerHTML = self.parts['set-' + key];
       cur.scrollTop = 0;
       cur.classList.remove('dsim-leave');
       cur.classList.add('dsim-enter');
@@ -489,141 +524,338 @@
     P.emit();
   };
 
-  /* 各页面里的可点元素 */
+  /* 各页面里的可点元素：快照时点过一遍的跳转元素带 data-dsim-go，其余按种类接上 */
+  var LIB_TABS = ['library', 'library-fav', 'library-dl'];
+  var LIB_CATS = ['library', 'library-artists', 'library-files'];
+  function isStartrail(el) { return /星轨|Startrail/.test(el.textContent || ''); }
+  Sim.prototype.playRow = function (row) {
+    if (isStartrail(row)) { P.seek(0); if (!P.audible) P.play(); this.toast(L('开始播放《星轨》', 'Playing “Startrail”')); }
+    else this.toast(L('网页演示只带了《星轨》的音频，其他曲目点了不会出声', 'Only “星轨” ships with audio here, so other tracks stay silent'));
+  };
+  /* 列表里「正在播放」的那一行（亮起 + 均衡条）只留给《星轨》，和底部播放栏一致 */
+  Sim.prototype.markPlaying = function (c) {
+    var bars = null;
+    this.qa('.track-item', c).forEach(function (row, i) {
+      var idx = row.querySelector('.track-index');
+      var eq = idx && idx.querySelector('.equalizer-bars');
+      if (eq && !bars) bars = eq.outerHTML;
+      var star = /^local:startrail\b/.test(row.getAttribute('data-track-key') || '');
+      if (!star && row.classList.contains('active')) {
+        row.classList.remove('active');
+        if (eq) idx.innerHTML = '<span class="index-num">' + (i + 1) + '</span>';
+      }
+      row._star = star;
+    });
+    if (!bars) bars = '<div class="equalizer-bars"><span class="bar"></span><span class="bar"></span><span class="bar"></span></div>';
+    this.qa('.track-item', c).forEach(function (row) {
+      if (!row._star) return;
+      var idx = row.querySelector('.track-index');
+      var num = idx && idx.querySelector('.index-num');
+      if (!row.classList.contains('active') && num && idx.className === 'track-index') { row.classList.add('active'); idx.innerHTML = bars; }
+    });
+  };
   Sim.prototype.bindPage = function (page) {
     var self = this;
     var c = this.content;
-    if (page === 'home') {
-      this.qa('.feed-song', c).forEach(function (b) {
-        b.addEventListener('click', function () {
-          var t = (b.textContent || '');
-          if (/星轨|Startrail/.test(t)) { P.seek(0); if (!P.audible) P.play(); self.toast(L('开始播放《星轨》', 'Playing “Startrail”')); }
-          else self.toast(L('网页演示只带了《星轨》的音频', 'Only “星轨” ships with audio here'));
+    this.markPlaying(c);
+    if (page === 'settings') {
+      this.qa('.settings-nav-item[data-dsim-set]', c).forEach(function (b) {
+        b.addEventListener('click', function () { self.setSetting(b.getAttribute('data-dsim-set')); });
+      });
+      this.qa('.settings-search input', c).forEach(function (i) { i.addEventListener('keydown', function (e) { e.stopPropagation(); }); });
+      this.bindSettingsContent(this.setting);
+      return;
+    }
+    var bound = [];
+    var on = function (el, fn) { bound.push(el); el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(e); }); };
+    this.qa('[data-dsim-go]', c).forEach(function (b) { on(b, function () { self.navigate(b.getAttribute('data-dsim-go')); }); });
+    this.qa('.back-btn', c).forEach(function (b) { on(b, function () { self.back(); }); });
+    this.qa('.feed-song, .track-item, .daily-card', c).forEach(function (b) { on(b, function () { self.playRow(b); }); });
+    this.qa('.play-all-btn', c).forEach(function (b) {
+      on(b, function () {
+        var rows = self.qa('.track-item', c);
+        var star = rows.filter(isStartrail)[0];
+        if (star) self.playRow(star); else self.toast(L('这个歌单里没有《星轨》，网页演示只带了这一首的音频', 'This playlist doesn’t include “星轨”, the only track with audio here'));
+      });
+    });
+    if (/^library/.test(page)) {
+      this.qa('.tab-chip', c).forEach(function (b, i) {
+        on(b, function () { if (LIB_TABS[i]) self.navigate(LIB_TABS[i]); else self.na(b.textContent.trim().replace(/^[a-z_]+/, '')); });
+      });
+      this.qa('.local-category-chip', c).forEach(function (b, i) { on(b, function () { if (LIB_CATS[i]) self.navigate(LIB_CATS[i]); }); });
+    }
+    var form = this.q('.home-search', c);
+    if (form) form.addEventListener('submit', function (e) { e.preventDefault(); self.setRoute('explore'); });
+    this.qa('input[type="text"], input[type="search"]', c).forEach(function (i) { i.addEventListener('keydown', function (e) { e.stopPropagation(); }); });
+    this.bindChips(c);
+    this.qa('button, [role="button"], .playlist-item, .continue-card, .feed-playlist', c).forEach(function (b) {
+      if (bound.indexOf(b) >= 0 || b._chip || b.closest('[data-dsim-go], .track-item, .feed-song')) return;
+      b.addEventListener('click', function (e) { e.preventDefault(); self.na(b.getAttribute('title') || b.getAttribute('aria-label') || b.textContent.trim().replace(/^[a-z_]+(?=[^a-z_])/, '').slice(0, 16)); });
+    });
+  };
+  /* 一组里只有一个亮着的按钮（分段选择、筛选标签）：点哪个亮哪个，只改外观 */
+  Sim.prototype.bindChips = function (root) {
+    var groups = [];
+    this.qa('button.active, button.selected, button[aria-pressed="true"], button[aria-checked="true"]', root).forEach(function (b) {
+      var p = b.parentElement;
+      if (!p || groups.indexOf(p) >= 0 || b.closest('.settings-nav, .side-nav')) return;
+      var sib = Array.prototype.filter.call(p.children, function (x) { return x.tagName === 'BUTTON'; });
+      if (sib.length < 2) return;
+      groups.push(p);
+      var cls = b.classList.contains('selected') ? 'selected' : 'active';
+      sib.forEach(function (x) {
+        x._chip = true;
+        x.addEventListener('click', function () {
+          sib.forEach(function (y) {
+            var me = y === x;
+            y.classList.toggle(cls, me);
+            if (y.hasAttribute('aria-pressed')) y.setAttribute('aria-pressed', me ? 'true' : 'false');
+            if (y.hasAttribute('aria-checked')) y.setAttribute('aria-checked', me ? 'true' : 'false');
+          });
         });
       });
-      this.qa('.continue-card, .feed-playlist, .header-action, .feed-pages button', c).forEach(function (b) { b.addEventListener('click', function () { self.na(b.getAttribute('title') || (b.querySelector('.playlist-name, .playlist-title') || b).textContent.trim()); }); });
-      var form = this.q('.home-search', c);
-      if (form) form.addEventListener('submit', function (e) { e.preventDefault(); self.setRoute('explore'); });
-    } else if (page === 'library' || page === 'explore') {
-      this.qa('button, [role="button"]', c).forEach(function (b) { b.addEventListener('click', function (e) { e.preventDefault(); self.na(b.getAttribute('title') || b.textContent.trim().slice(0, 16)); }); });
-    } else {
-      this.qa('.settings-nav-item', c).forEach(function (b, i) {
-        b.addEventListener('click', function () {
-          var key = self.settingAt(i);
-          if (key) self.setSetting(key);
-          else self.na((b.querySelector('.settings-nav-title, .nav-title, span:not(.material-symbols-rounded)') || b).textContent.trim().split(/\s{2,}|\n/)[0]);
-        });
-      });
-      this.bindSettingsContent(page);
-    }
+    });
   };
-  Sim.prototype.settingAt = function (i) {
-    if (!this._setMap) {
-      var map = {};
-      var self = this;
-      ['fx', 'shortcuts', 'appearance'].forEach(function (k) {
-        var d = document.createElement('div');
-        d.innerHTML = self.parts['page-' + k];
-        var items = Array.prototype.slice.call(d.querySelectorAll('.settings-nav-item'));
-        items.forEach(function (it, j) { if (it.classList.contains('active')) map[j] = k; });
-      });
-      this._setMap = map;
-    }
-    return this._setMap[i];
-  };
+  /* 设置分区里的通用控件：开关与滑块是原生 input，折叠标题收放下面的内容，分段按钮切换高亮，其余给提示 */
   Sim.prototype.bindSettingsContent = function (key) {
     var self = this;
     var box = this.q('.settings-content', this.content);
     if (!box) return;
+    this.qa('.section-label.clickable', box).forEach(function (h) {
+      var body = h.nextElementSibling;
+      var arrow = h.querySelector('.section-arrow');
+      if (!body) return;
+      h.addEventListener('click', function () {
+        var open = !(arrow ? arrow.classList.contains('expanded') : body.style.display !== 'none');
+        if (arrow) arrow.classList.toggle('expanded', open);
+        if (reduced || !body.animate) { body.style.display = open ? '' : 'none'; return; }
+        body.style.display = '';
+        body.style.overflow = 'hidden';
+        var hgt = body.scrollHeight;
+        var a = body.animate(open ? [{ height: '0px', opacity: 0 }, { height: hgt + 'px', opacity: 1 }] : [{ height: hgt + 'px', opacity: 1 }, { height: '0px', opacity: 0 }], { duration: open ? 300 : 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+        a.onfinish = function () { body.style.overflow = ''; if (!open) body.style.display = 'none'; };
+      });
+    });
+    this.qa('input[type="range"]', box).forEach(function (i) { i.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); });
+    this.qa('input[type="text"], input[type="search"], input[type="number"], textarea', box).forEach(function (i) { i.addEventListener('keydown', function (e) { e.stopPropagation(); }); });
     if (key === 'appearance') {
-      var segs = this.qa('.theme-mode-btn, .segmented button, [class*="theme"] button', box);
       this.qa('button', box).forEach(function (b) {
         var ic = b.querySelector('.material-symbols-rounded');
         var name = ic ? ic.textContent.trim() : '';
-        if (name === 'dark_mode' || name === 'light_mode' || name === 'brightness_auto' || name === 'contrast') {
-          b.addEventListener('click', function (e) {
-            var mode = name === 'dark_mode' ? 'dark' : name === 'light_mode' ? 'light' : (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
-            var r = self.host.getBoundingClientRect();
-            var o = { x: (e.clientX - r.left) / self.k, y: (e.clientY - r.top) / self.k };
-            b.parentElement.querySelectorAll('button').forEach(function (x) { x.classList.toggle('active', x === b); });
-            if (mode !== self.theme) { self.theme = mode; self.applyTheme(true, o); }
-          });
-        } else if (!b._bound) {
-          b.addEventListener('click', function () { self.na(b.getAttribute('title') || b.getAttribute('aria-label') || L('这一项设置', 'this setting')); });
-        }
+        if (name !== 'dark_mode' && name !== 'light_mode' && name !== 'brightness_auto' && name !== 'contrast') return;
+        b._theme = true;
+        b.addEventListener('click', function (e) {
+          var mode = name === 'dark_mode' ? 'dark' : name === 'light_mode' ? 'light' : (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+          var r = self.host.getBoundingClientRect();
+          var o = { x: (e.clientX - r.left) / self.k, y: (e.clientY - r.top) / self.k };
+          if (mode !== self.theme) { self.theme = mode; self.applyTheme(true, o); }
+        });
       });
-      void segs;
-    } else if (key === 'fx') {
+    } else if (key === 'audio_effects') {
       this.bindFx(box);
-    } else {
-      this.qa('button', box).forEach(function (b) { b.addEventListener('click', function () { self.toast(L('网页里不录制快捷键；在演示桌面下方可以试试应用内快捷键', 'Shortcut recording is off here — try the in-app shortcuts below the mock desktop')); }); });
+    } else if (key === 'shortcuts') {
+      this.qa('.shortcut-settings button', box).forEach(function (b) { b._fx = true; b.addEventListener('click', function () { self.toast(L('网页里不录制快捷键；在演示桌面下方可以试试应用内快捷键', 'Shortcut recording is off here — try the in-app shortcuts below the mock desktop')); }); });
       if (this.os === 'mac') this.qa('kbd, .shortcut-key, .key-cap', box).forEach(function (k) { if (/^Ctrl$/.test(k.textContent.trim())) k.textContent = '⌘'; });
     }
-    this.qa('input[type="text"], input[type="search"]', box).forEach(function (i) { i.addEventListener('keydown', function (e) { e.stopPropagation(); }); });
+    this.bindChips(box);
+    this.qa('button, .setting-card[style*="pointer"]', box).forEach(function (b) {
+      if (b._chip || b._theme || b._fx || b.closest('.section-label')) return;
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        var t = b.getAttribute('aria-label') || b.getAttribute('title') || (b.querySelector('.setting-title') || b).textContent.trim().replace(/^[a-z_]+(?=[^a-z_])/, '');
+        self.na(t.slice(0, 20));
+      });
+    });
   };
 
-  /* 音效与倍速：与手机里那页共享同一份 DSP 状态 */
-  var RANGE_KEYS = { 0: 'preamp', 1: 'eq0', 2: 'eq1', 3: 'eq2', 4: 'eq3', 5: 'eq4', 6: 'eq5', 7: 'eq6', 8: 'eq7', 9: 'eq8', 10: 'eq9', 11: 'bass', 13: 'treble', 17: 'warmth', 18: 'clarity', 20: 'vocal', 21: 'vocalRemoval', 22: 'width', 26: 'reverb', 44: 'speed', 45: 'pitch' };
+  /* 音效与倍速：与手机里那页共享同一份 DSP 状态。滑块与开关按桌面版 AudioEffectsSettings.vue 里的先后顺序对应 */
+  var S_ = function () { return NP.sound.state; };
+  /* 听感调节（listening.ts）：滑块位置与参数之间用同一对 strength / position 换算 */
+  function strength(v) { var m = Math.abs(v) / 100; return (v < 0 ? -1 : 1) * m * (0.4 + 0.6 * m); }
+  function position(v) { var m = Math.min(1, Math.abs(v)); return (v < 0 ? -1 : 1) * (Math.sqrt(0.16 + 2.4 * m) - 0.4) / 1.2 * 100; }
+  function protect(S) { S.sec.dynamics = true; S.limiter = true; S.ceiling = Math.min(-0.5, S.ceiling); }
+  function tune(field, scale, neutral, sec) {
+    return {
+      get: function (S) { return S.sec[sec] === false ? 0 : position((S[field] - neutral) / scale); },
+      set: function (S, v) {
+        if (S.sec[sec] === false) NP.sound.resetSection(sec);
+        S.sec[sec] = true;
+        S[field] = neutral + scale * strength(v);
+        if (field === 'width') S.mono = false;
+        if (field === 'vocal' && v > 0) S.vocalRemoval = 0;
+        protect(S);
+      },
+      listen: true,
+    };
+  }
+  function key(k, sec) { return { get: function (S) { return S[k]; }, set: function (S, v) { S[k] = v; if (sec && S.sec[sec] === false) S.sec[sec] = true; }, sec: sec }; }
+  function eqk(i) { return { get: function (S) { return S.eq[i]; }, set: function (S, v) { S.eq[i] = v; S.sec.equalizer = true; } }; }
+  function spk(k) { return { get: function (S) { return S[k]; }, set: function (S, v) { S[k] = v; }, speaker: true }; }
+  var FX_RANGES = [
+    tune('bass', 12, 0, 'tone'), tune('vocal', 1, 0, 'tone'), tune('treble', 12, 0, 'tone'), tune('warmth', 1, 0, 'tone'), tune('width', 1, 1, 'space'),
+    key('preamp', 'equalizer'), eqk(0), eqk(1), eqk(2), eqk(3), eqk(4), eqk(5), eqk(6), eqk(7), eqk(8), eqk(9),
+    key('bass', 'tone'), key('bassFreq', 'tone'), key('treble', 'tone'), key('trebleFreq', 'tone'), key('loudComp', 'tone'),
+    key('virtualBass', 'tone'), key('vbFreq', 'tone'), key('warmth', 'tone'), key('clarity', 'tone'), key('clarityFreq', 'tone'), key('vocal', 'tone'), key('vocalRemoval', 'tone'),
+    key('width', 'space'), { get: function (S) { return S.monoBass; }, set: function (S, v) { S.monoBass = v < 40 ? 0 : v; } }, key('crossfeed', 'space'), key('surround', 'space'),
+    key('reverb', 'space'), key('reverbRoom', 'space'), key('reverbDamping', 'space'), key('reverbPreDelay', 'space'),
+    key('compThr', 'dynamics'), key('compRatio', 'dynamics'), key('compAttack', 'dynamics'), key('compRelease', 'dynamics'), key('compKnee', 'dynamics'), key('compMakeup', 'dynamics'),
+    key('outGain', 'dynamics'), key('ceiling', 'dynamics'), key('release', 'dynamics'),
+    { get: function (S) { return S.spkProt; }, set: function (S, v) { S.spkProt = v < 40 ? 0 : v; }, speaker: true }, spk('spkBass'), spk('spkLoud'), spk('spkClarity'), spk('spkExpand'),
+    { get: function () { return P.speed; }, set: function (S, v) { P.setSpeed(v); S.sec.speed = true; if (S.linked) P.setPitch(M.clamp(v, 0.25, 2)); }, rate: true },
+    { get: function () { return P.pitch; }, set: function (S, v) { P.setPitch(v); S.sec.speed = true; }, rate: true },
+    null,
+  ];
+  var FX_CHECKS = [
+    { get: function (S) { return S.on; }, set: function (S, v) { S.on = v; } },
+    { get: function (S) { return S.sec.equalizer !== false; }, set: function (S, v) { S.sec.equalizer = v; } },
+    { get: function (S) { return S.peqOn; }, set: function (S, v) { S.peqOn = v; } },
+    { get: function (S) { return S.sec.tone !== false; }, set: function (S, v) { S.sec.tone = v; } },
+    { get: function (S) { return S.sec.space !== false; }, set: function (S, v) { S.sec.space = v; } },
+    { get: function (S) { return S.mono; }, set: function (S, v) { S.mono = v; } },
+    { get: function (S) { return S.swap; }, set: function (S, v) { S.swap = v; } },
+    { get: function (S) { return S.sec.dynamics !== false; }, set: function (S, v) { S.sec.dynamics = v; } },
+    { get: function (S) { return S.compOn; }, set: function (S, v) { S.compOn = v; } },
+    { get: function (S) { return S.limiter; }, set: function (S, v) { S.limiter = v; } },
+    { get: function (S) { return !!S.sec.speaker; }, set: function (S, v) { S.sec.speaker = v; if (v) S.on = true; } },
+    { get: function (S) { return S.linked; }, set: function (S, v) { S.linked = v; P.setPitch(v ? M.clamp(P.speed, 0.25, 2) : 1); } },
+    null,
+    { get: function (S) { return S.autoHeadroom; }, set: function (S, v) { S.autoHeadroom = v; } },
+  ];
+  var SPK_SIZES = ['phone', 'tablet', 'large'];
+  /* 显示格式照桌面版：单位跟着初始文字走，小数位按步进，dB 正值带 + 号 */
+  function fxFormat(inp, disp) {
+    var t0 = disp ? disp.textContent.trim() : '';
+    var unit = (/[a-zA-Z%×x]+\s*$/.exec(t0) || [''])[0].trim();
+    var sp = /\d\s+[a-zA-Z%]/.test(t0) ? ' ' : '';
+    var step = parseFloat(inp.step) || 1;
+    var dec = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+    var pct = unit === '%' && parseFloat(inp.max) <= 1;
+    var word = t0 && !/\d/.test(t0) ? t0 : '';
+    return function (v) {
+      if (word && Math.abs(v) < 0.5) return word;
+      if (pct) return Math.round(v * 100) + sp + '%';
+      if (unit === 'x' || unit === '×') return v.toFixed(2) + unit;
+      var s = v.toFixed(dec);
+      if (unit === 'dB' && v > 0) s = '+' + s;
+      if (!unit && word) s = (v > 0 ? '+' : '') + Math.round(v);
+      return s + (unit ? sp + unit : '');
+    };
+  }
   Sim.prototype.bindFx = function (box) {
     var self = this;
-    var S = NP.sound.state;
-    var ranges = this.qa('.audio-effects-settings input[type="range"]', box);
-    this.fx = { box: box, ranges: [], path: this.q('.dsp-frequency-graph svg path', box), graph: this.q('.dsp-frequency-graph svg', box) };
-    ranges.forEach(function (inp, i) {
-      var key = RANGE_KEYS[i];
+    var changed = function () {
+      NP.sound.apply();
+      if (NP.fxPage) NP.fxPage.paint();
+      if (NP.dsp && NP.dsp.page) NP.dsp.page.paint();
+      if (NP.dspChain) NP.dspChain();
+      self.syncFx();
+    };
+    this.fx = { box: box, ranges: [], checks: [], path: this.q('.dsp-frequency-graph svg path', box), graph: this.q('.dsp-frequency-graph svg', box), changed: changed };
+    this.qa('input[type="range"]', box).forEach(function (inp, i) {
+      var spec = FX_RANGES[i];
       var ctl = inp.closest('.dsp-number-control');
       var disp = ctl && ctl.querySelector('.editable-range-display');
-      var shown = disp ? parseFloat(disp.textContent) : NaN;
-      var v0 = parseFloat(inp.value);
-      var pctMode = disp && /%/.test(disp.textContent);
-      var unit = disp ? disp.textContent.replace(/^[-+−\d.\s]+/, '').trim() : '';
-      var fmt = function (v) {
-        if (pctMode) return Math.round(v * 100) + '%';
-        var s = Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : v.toFixed(Math.abs(v * 10 - Math.round(v * 10)) < 1e-6 ? 1 : 2);
-        return s + (unit ? ' ' + unit : '');
-      };
-      void shown; void v0;
-      var entry = { inp: inp, key: key, disp: disp, fmt: fmt };
+      var range = ctl && ctl.querySelector('.dsp-number-range');
+      var fmt = fxFormat(inp, disp);
+      var entry = { inp: inp, spec: spec, disp: disp, range: range, fmt: fmt, ctl: ctl };
       self.fx.ranges.push(entry);
       inp.addEventListener('input', function () {
         var v = parseFloat(inp.value);
-        if (disp) setText(disp, fmt(v));
-        if (!key) return;
-        if (key === 'speed') { P.setSpeed(v); S.sec.speed = true; }
-        else if (key === 'pitch') { P.setPitch(v); S.sec.speed = true; }
-        else {
-          if (key.indexOf('eq') === 0) S.eq[+key.slice(2)] = v; else S[key] = v;
-          S.preset = 'custom';
-          S.on = true;
-        }
-        NP.sound.apply();
-        if (NP.fxPage) NP.fxPage.paint();
+        self.paintRange(entry, v);
+        if (!spec) return;
+        var S = S_();
+        spec.set(S, v);
+        if (!spec.speaker && !spec.rate) { S.preset = 'custom'; S.on = true; }
+        changed();
       });
       inp.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+      if (disp) { disp._fx = true; disp.addEventListener('click', function () { self.toast(L('网页里直接拖滑块就好，数值输入框没有接入', 'Drag the slider here — typing a value isn’t wired up')); }); }
     });
-    var master = this.q('.effects-master input[type="checkbox"]', box);
-    if (master) master.addEventListener('change', function () { S.on = master.checked; NP.sound.apply(); if (NP.fxPage) NP.fxPage.paint(); });
-    this.fx.master = master;
-    var ab = this.q('.effects-master .effects-toolbar button', box);
-    if (ab) ab.addEventListener('click', function () { S.on = !S.on; NP.sound.apply(); if (NP.fxPage) NP.fxPage.paint(); });
-    this.fx.ab = ab;
-    this.qa('details > summary button', box).forEach(function (b) { b.addEventListener('click', function (e) { e.preventDefault(); self.na(b.textContent.trim()); }); });
-    this.qa('.effects-presets button', box).forEach(function (b) { b.addEventListener('click', function () { self.qa('.effects-presets button', box).forEach(function (x) { x.classList.toggle('active', x === b); }); }); });
+    this.qa('input[type="checkbox"]', box).forEach(function (inp, i) {
+      var spec = FX_CHECKS[i];
+      self.fx.checks.push({ inp: inp, spec: spec });
+      inp.addEventListener('change', function () {
+        if (!spec) { self.toast(L('网页里只有一个输出设备，按设备记忆就先不演示了', 'There’s only one output here, so per-device memory stays off')); inp.checked = false; return; }
+        spec.set(S_(), inp.checked);
+        changed();
+      });
+    });
+    this.qa('.effects-preset-card', box).forEach(function (b) {
+      b._fx = true;
+      var name = (b.querySelector('strong') || b).textContent.trim();
+      b.addEventListener('click', function () {
+        var p = (NP.sound.presets || []).filter(function (x) { return x.name === name; })[0];
+        if (!p) { self.na(name); return; }
+        NP.sound.usePreset(p.id);
+        changed();
+      });
+    });
+    var master = this.q('.effects-master', box);
+    var ab = master && this.qa('button', master).filter(function (b) { return !b.closest('label'); })[0];
+    if (ab) {
+      ab._fx = true;
+      this.fx.ab = ab;
+      ab.addEventListener('click', function () { self.fx.abOff = !self.fx.abOff; S_().on = !self.fx.abOff; changed(); });
+    }
+    this.qa('details', box).forEach(function (d) {
+      var sum = d.querySelector('summary');
+      var spkSec = /扬声器|Speaker/i.test(sum ? sum.textContent : '');
+      Array.prototype.forEach.call(d.querySelectorAll('summary button'), function (b) {
+        b._fx = true;
+        b.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var sec = ['equalizer', null, 'tone', 'space', 'dynamics', 'speaker', 'speed'][self.qa('details', box).indexOf(d)];
+          if (sec === 'speed') { P.setSpeed(1); P.setPitch(1); }
+          else if (sec) NP.sound.resetSection(sec);
+          changed();
+        });
+      });
+      if (spkSec) {
+        var sizes = Array.prototype.filter.call(d.querySelectorAll('button'), function (b) { return !b.closest('summary') && !b.classList.contains('editable-range-display'); });
+        sizes.forEach(function (b, i) {
+          b._fx = true;
+          b._chip = true;
+          b.addEventListener('click', function () { if (SPK_SIZES[i]) { S_().spkSize = SPK_SIZES[i]; changed(); } });
+        });
+        self.fx.sizes = sizes;
+      }
+    });
     this.syncFx();
+  };
+  Sim.prototype.paintRange = function (r, v) {
+    if (r.disp) setText(r.disp, r.fmt(v));
+    if (!r.range) return;
+    var lo = parseFloat(r.inp.min);
+    var hi = parseFloat(r.inp.max);
+    var p = M.clamp((v - lo) / (hi - lo));
+    var z = lo < 0 && hi > 0 ? M.clamp(-lo / (hi - lo)) : 0;
+    var st = r.range.style;
+    st.setProperty('--thumb', (p * 100).toFixed(2) + '%');
+    st.setProperty('--fill-from', (Math.min(p, z) * 100).toFixed(2) + '%');
+    st.setProperty('--fill-to', (Math.max(p, z) * 100).toFixed(2) + '%');
   };
   Sim.prototype.syncFx = function () {
     var f = this.fx;
     if (!f || !f.box.isConnected) return;
-    var S = NP.sound.state;
+    var self = this;
+    var S = S_();
     f.ranges.forEach(function (r) {
-      if (!r.key || document.activeElement === r.inp) return;
-      var v = r.key === 'speed' ? P.speed : r.key === 'pitch' ? P.pitch : r.key.indexOf('eq') === 0 ? S.eq[+r.key.slice(2)] : S[r.key];
-      if (v == null) return;
+      if (!r.spec || document.activeElement === r.inp || (self.root && self.root.activeElement === r.inp)) return;
+      var v = r.spec.get(S);
+      if (v == null || isNaN(v)) return;
       if (Math.abs(parseFloat(r.inp.value) - v) > 1e-6) r.inp.value = v;
-      if (r.disp) setText(r.disp, r.fmt(parseFloat(r.inp.value)));
+      self.paintRange(r, parseFloat(r.inp.value));
     });
-    if (f.master && f.master.checked !== S.on) f.master.checked = S.on;
-    if (f.ab) f.ab.classList.toggle('active', S.on);
+    f.checks.forEach(function (c) { if (c.spec) { var on = !!c.spec.get(S); if (c.inp.checked !== on) c.inp.checked = on; } });
+    if (f.sizes) f.sizes.forEach(function (b, i) { b.classList.toggle('active', SPK_SIZES[i] === S.spkSize); });
+    this.qa('.effects-preset-card', f.box).forEach(function (b) {
+      var name = (b.querySelector('strong') || b).textContent.trim();
+      var p = (NP.sound.presets || []).filter(function (x) { return x.name === name; })[0];
+      var on = !!p && S.on && p.id === S.preset;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     if (f.path) {
       var pts = response(S);
       var max = 0;
@@ -892,7 +1124,7 @@
       var fi = fav.querySelector('.material-symbols-rounded');
       if (fi) fi.classList.toggle('filled', P.liked);
     }
-    if (this.route === 'settings' && this.setting === 'fx') this.syncFx();
+    if (this.route === 'settings' && this.setting === 'audio_effects') this.syncFx();
     void self;
   };
 
@@ -931,7 +1163,8 @@
     if (!this.ready) { this.pending = view; return; }
     if (view === 'np') { this.openNP(true); return; }
     this.openNP(false);
-    if (view === 'fx' || view === 'shortcuts' || view === 'appearance') this.setSetting(view);
+    if (view === 'playlist') view = 'r-playlist-local-1';
+    if (this.parts['set-' + (SET_ALIAS[view] || view)]) this.setSetting(view);
     else this.setRoute(view);
   };
 

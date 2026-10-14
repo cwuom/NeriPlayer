@@ -1070,9 +1070,21 @@ Drag a dot on the curve or switch presets, and the sound really changes ↗
 # Fig. 05 — 设置 · 音效与倍速 · 每个开关都能拧
 Fig. 05 — Settings · Audio Effects &amp; Speed · every switch works
 
+@7e04a25936  html  p.sim-draft
+# {{0}}<span><b>预览仿真，不是最终版本</b>界面与音效以实际运行的版本为准。</span>
+{{0}}<span><b>Preview simulation, not the final version</b>The app you actually run is the reference for its interface and sound.</span>
+
 @f6ddd1f871  html  p.dscope__title
 # <b>效果监视器</b><span class="mono" data-scope-src="">模型频谱 · 按播放后换成实时分析</span>
 <b>Effect monitor</b><span class="mono" data-scope-src>Modeled spectrum · switches to live analysis once you press play</span>
+
+@d81916c925  attr  button.dscope__ab[title]
+# 网页里的试听：把输出过一遍小喇叭的频响，戴耳机也能听出外放的样子；App 本身不会这样处理
+A preview for this page only: the output goes through a small-speaker response, so you can hear phone playback even on headphones. The app itself never does this.
+
+@fdf88e6e3f  html  button.dscope__ab
+# {{0}}<span>模拟手机外放</span>
+{{0}}<span>Simulate phone speaker</span>
 
 @407aa454cb  html  button.dscope__ab
 # {{0}}<span>按住听原声</span>
@@ -1898,13 +1910,17 @@ Desktop screens
 # <i>C</i>音乐库<s></s>
 <i>C</i>Library<s></s>
 
-@a269a4b169  html  button#deskT3
-# <i>D</i>音效与倍速<s></s>
-<i>D</i>Audio effects &amp; speed<s></s>
+@ac980c97df  html  button#deskT3
+# <i>D</i>歌单<s></s>
+<i>D</i>Playlist<s></s>
 
-@efd616e5fe  html  button#deskT4
-# <i>E</i>快捷键<s></s>
-<i>E</i>Shortcuts<s></s>
+@de24ef6141  html  button#deskT4
+# <i>E</i>音效与倍速<s></s>
+<i>E</i>Audio Effects &amp; Speed<s></s>
+
+@0c7783b18d  html  button#deskT5
+# <i>F</i>设置<s></s>
+<i>F</i>Settings<s></s>
 
 @ebf15d3562  attr  div.seg[aria-label]
 # 窗口样式
@@ -1921,6 +1937,10 @@ Desktop interface simulation: switch pages, play “星轨”, open Now Playing 
 @1beea76de3  html  figcaption.fig__cap
 # Fig. 11a — NeriPlayer Desktop · 1280 × 800 · 每个按钮都能点
 Fig. 11a — NeriPlayer Desktop · 1280 × 800 · every button works
+
+@f7bafd1e5d  html  p.sim-draft
+# {{0}}<span><b>预览仿真，不是最终版本</b>界面与功能以实际运行的版本为准。</span>
+{{0}}<span><b>Preview simulation, not the final version</b>The app you actually run is the reference for its interface and features.</span>
 
 @1218b4ee06  html  p.tabstage__note
 # 桌面版的真实界面，<br>直接上手点一点 ↙
@@ -1974,41 +1994,57 @@ The desktop app’s real interface,<br>go ahead and click around ↙
 # <b>04</b>播放统计、最近播放与多选入口
 <b>04</b>Play stats, recent plays and multi-select
 
-@f29d9f3874  html  li
-# <b>01</b>设置左右两栏，顶上可以搜索任意一项
-<b>01</b>Two-column settings, with search for any option at the top
+@2f743cad24  html  li
+# <b>01</b>封面、名称、曲目数与总时长，网易云歌单还带简介与播放量
+<b>01</b>Cover, name, track count and total length; NetEase playlists add a description and play count
 
-@0effdc14d6  html  li
-# <b>02</b>理论频响曲线随均衡器、前级与音调实时更新
-<b>02</b>The theoretical frequency response follows the EQ, preamp and tone live
+@af08ed0457  html  li
+# <b>02</b>全部播放、随机与多选，顶部可以在歌单里搜歌
+<b>02</b>Play all, shuffle and multi-select, plus search inside the playlist at the top
 
-@dc9b05554f  html  li
-# <b>03</b>每个参数都能拖滑块，也能直接输入数值
-<b>03</b>Every parameter has a slider, or type the value in directly
+@92782a1cdb  html  li
+# <b>03</b>曲目行：序号、封面、歌手 · 专辑与时长，点《星轨》就能听
+<b>03</b>Track rows: number, cover, artist · album and length — click “星轨” to hear it
 
-@fd2b1d00c4  html  li
-# <b>04</b>分区可折叠，单独「恢复此分区」
-<b>04</b>Sections collapse, each with its own “Reset this section”
+@09c61786a8  html  li
+# <b>04</b>首页、音乐库里的歌单卡片都能点进来，左上角返回来处
+<b>04</b>Every playlist card on Home and in the Library opens here; the back button returns to where you came from
 
-@cca66fc446  html  li
-# <b>01</b>全局快捷键默认关闭，开启后失焦或收进托盘也能用
-<b>01</b>Global shortcuts are off by default; once on, they work even unfocused or in the tray
+@48665e916b  html  li
+# <b>01</b>先挑预设，再用「听感调节」的低音、人声、明亮度、温暖感、空间感微调
+<b>01</b>Pick a preset, then fine-tune bass, vocals, brightness, warmth and space under Listening tuning
 
-@34e08018eb  html  li
-# <b>02</b>应用内：Space 播放，方向键快进与音量
-<b>02</b>In the app: Space plays, arrow keys seek and set volume
+@0bbea78bcf  html  li
+# <b>02</b>理论频响随均衡器、前级、音调与响度补偿实时更新
+<b>02</b>The theoretical response follows the EQ, preamp, tone and loudness compensation in real time
 
-@1c92f741ae  html  li
-# <b>03</b>全局：Ctrl / Cmd + Alt 组合，冲突时会提示
-<b>03</b>Global: Ctrl / Cmd + Alt combos, with a warning on conflicts
+@812368b92a  html  li
+# <b>03</b>扬声器优化、动态保护、倍速与唱片效果各成一个分区，可单独恢复
+<b>03</b>Speaker optimization, dynamics, speed and the vinyl effect each get their own section with its own reset
 
-@c7f8411b5a  html  li
-# <b>04</b>点按键框录制新组合，Esc 取消，Backspace 清除
-<b>04</b>Click a key box to record a new combo; Esc cancels, Backspace clears
+@3dd22ea97b  html  li
+# <b>04</b>和上面手机里那页共用同一份音效，拧哪边另一边跟着变
+<b>04</b>Shares one sound with the phone page above — turn a knob on either side and the other follows
 
-@1768b6482a  html  p.small
-# 窗口里是从桌面版前端导出的真实界面结构与样式，再接上网页里的播放器；曲目与封面是 NeriPlayer PV 的示例曲，没有登录任何账号。深浅色跟随这一页，系统可以在右上角切换。
-The window shows the real interface structure and styles exported from the desktop app’s front end, wired to the player on this page. The tracks and covers are the NeriPlayer PV demo songs, and no account is signed in. Light and dark follow this page; switch the system at the top right.
+@3b29f8681b  html  li
+# <b>01</b>21 个分区分成九组，从账号、播放、音频到备份同步与关于
+<b>01</b>21 sections in nine groups, from accounts, playback and audio to backup, sync and About
+
+@9f7f5a0238  html  li
+# <b>02</b>顶部搜索可以直接跳到任意一项设置
+<b>02</b>Search at the top jumps straight to any setting
+
+@e33452ddf9  html  li
+# <b>03</b>开关、滑块与分段选项都能拨，折叠分组可以收起再展开
+<b>03</b>Switches, sliders and segmented options all respond, and groups fold away and back
+
+@3673def3ee  html  li
+# <b>04</b>键盘快捷键分应用内与全局两套，冲突时会提示
+<b>04</b>Keyboard shortcuts come in in-app and global sets, with a warning on conflicts
+
+@faebdb38df  html  p.small
+# 窗口里是从桌面版前端导出的真实界面结构与样式，再接上网页里的播放器；曲目与封面是 NeriPlayer PV 的示例曲，没有登录任何账号。深浅色跟随这一页，系统可以在右上角切换。桌面版仍在预览阶段，仿真只是某一时刻的快照，以实际运行的版本为准。
+The window holds the real interface structure and styles exported from the desktop front end, wired to this page’s player; the tracks and covers are NeriPlayer PV samples, and no account is signed in. Light and dark follow this page, and the system can be switched at the top right. The desktop app is still in preview and this simulation is a snapshot of one moment — the version you actually run is the reference.
 
 @98024bb02a  html  li
 # <b>01</b><span><strong>本地曲库</strong>多个音乐文件夹，原生文件监视与增量扫描；标题、歌手、专辑可以写回音频文件</span>
