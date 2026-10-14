@@ -140,6 +140,16 @@ class WebDavArchiveLeaseTest {
         }
     }
 
+    @Test fun `a forbidden first lock falls back like an unsupported method but a known lease target refuses it`() {
+        val requests = arrayListOf<Request>()
+        val client = client(requests) { request -> response(403, "", request) }
+        assertNull(WebDavArchiveLease.acquire("https://sync.test/dav/backup", client, "Basic fixture", "auth", false, {}))
+        assertThrows(WebDavAccessDeniedException::class.java) {
+            WebDavArchiveLease.acquire("https://sync.test/dav/backup", client, "Basic fixture", "auth", true, {})
+        }
+        assertEquals(listOf("LOCK", "LOCK"), requests.map { it.method })
+    }
+
     @Test fun `malformed successful grant releases its own known token and preserves the original failure`() {
         val requests = arrayListOf<Request>()
         val client = client(requests) { request -> response(if (request.method == "UNLOCK") 204 else 200, "<bad/>", request) }

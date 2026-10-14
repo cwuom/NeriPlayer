@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.runtime.transport
 
 
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
@@ -245,6 +246,36 @@ class PlaybackTransportOwnerTest {
         assertEquals(listOf(-2), port.focusLossPauses)
     }
 
+    @Test
+    fun `network wake lock is held only while the current stream loads`() = runTest {
+        val port = RecordingPort()
+        val owner = PlaybackTransportOwner(backgroundScope, port) { 0L }
+        owner.applyInitialWakeMode()
+        owner.applyWakeModeForUrl("https://example.test/a.flac")
+        owner.onMediaLoadingChanged(false)
+        owner.onMediaLoadingChanged(true)
+        owner.onMediaLoadingChanged(false)
+        owner.applyWakeModeForUrl("https://example.test/b.flac")
+
+        assertEquals(
+            listOf(C.WAKE_MODE_NETWORK, C.WAKE_MODE_LOCAL, C.WAKE_MODE_NETWORK, C.WAKE_MODE_LOCAL, C.WAKE_MODE_NETWORK),
+            port.wakeModes
+        )
+    }
+
+    @Test
+    fun `local playback and restored media keep their wake lock when loading stops`() = runTest {
+        val port = RecordingPort()
+        val owner = PlaybackTransportOwner(backgroundScope, port) { 0L }
+        owner.applyInitialWakeMode()
+        owner.onMediaLoadingChanged(false)
+        owner.applyWakeModeForUrl("content://media/external/audio/1")
+        owner.onMediaLoadingChanged(true)
+        owner.onMediaLoadingChanged(false)
+
+        assertEquals(listOf(C.WAKE_MODE_NETWORK, C.WAKE_MODE_LOCAL), port.wakeModes)
+    }
+
     private fun usb(): UsbFocusSnapshot = UsbFocusSnapshot(
         enabled = true,
         mixedPlayback = false,
@@ -306,6 +337,7 @@ class PlaybackTransportOwnerTest {
             transportActive: Boolean
         ) { foregroundGuardEnabled += enabled }
         override fun pauseForUsbFocusLoss(change: Int) { focusLossPauses += change }
-        override fun setWakeMode(wakeMode: Int) = Unit
+        val wakeModes = mutableListOf<Int>()
+        override fun setWakeMode(wakeMode: Int) { wakeModes += wakeMode }
     }
 }

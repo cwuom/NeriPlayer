@@ -8,7 +8,13 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 
 internal data class AudioLoadControlPolicy(
     val minBufferMs: Int = 15_000,
-    val maxBufferMs: Int = 30_000,
+    /**
+     * 缓冲降到下限才重新加载，一直加载到上限再停；上下限差得越大，
+     * 两轮加载之间网卡和存储空闲越久，蜂窝尾流与 Wi-Fi 唤醒次数越少
+     *
+     * 字节上限仍是 Media3 的音频默认值，高码率无损会先触到字节上限
+     */
+    val maxBufferMs: Int = 120_000,
     val bufferForPlaybackMs: Int = 1_000,
     val bufferForPlaybackAfterRebufferMs: Int = 3_000,
     /**
@@ -24,21 +30,6 @@ internal fun buildAudioLoadControl(
     policy: AudioLoadControlPolicy = AudioLoadControlPolicy()
 ): LoadControl {
     return try {
-        assert(policy.bufferForPlaybackMs >= 0) {
-            "bufferForPlaybackMs must be >= 0"
-        }
-        assert(policy.bufferForPlaybackAfterRebufferMs >= 0) {
-            "bufferForPlaybackAfterRebufferMs must be >= 0"
-        }
-        assert(policy.minBufferMs >= policy.bufferForPlaybackMs) {
-            "minBufferMs must be >= bufferForPlaybackMs"
-        }
-        assert(policy.minBufferMs >= policy.bufferForPlaybackAfterRebufferMs) {
-            "minBufferMs must be >= bufferForPlaybackAfterRebufferMs"
-        }
-        assert(policy.maxBufferMs >= policy.minBufferMs) {
-            "maxBufferMs must be >= minBufferMs"
-        }
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 policy.minBufferMs,
@@ -53,17 +44,11 @@ internal fun buildAudioLoadControl(
             .setBackBuffer(policy.backBufferMs.coerceAtLeast(0), false)
             .build()
     } catch (error: IllegalArgumentException) {
-        buildDefaultLoadControlAfterFailure(error)
-    } catch (error: AssertionError) {
-        buildDefaultLoadControlAfterFailure(error)
+        NPLogger.e(
+            "NERI-PlayerManager",
+            "Invalid audio LoadControl policy, falling back to Media3 defaults",
+            error
+        )
+        DefaultLoadControl.Builder().build()
     }
-}
-
-private fun buildDefaultLoadControlAfterFailure(error: Throwable): LoadControl {
-    NPLogger.e(
-        "NERI-PlayerManager",
-        "Invalid audio LoadControl policy, falling back to Media3 defaults",
-        error
-    )
-    return DefaultLoadControl.Builder().build()
 }

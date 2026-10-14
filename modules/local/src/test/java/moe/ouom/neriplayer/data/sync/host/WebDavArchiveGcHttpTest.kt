@@ -589,7 +589,7 @@ class WebDavArchiveGcHttpTest {
 
     @Test
     fun `only explicit unsupported locking permits unlocked sync`() = runTest {
-        for (status in listOf(405, 501)) {
+        for (status in listOf(403, 405, 501)) {
             val fixture = Fixture()
             fixture.lockStatus = status
             fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
@@ -598,7 +598,7 @@ class WebDavArchiveGcHttpTest {
             assertFalse(fixture.supported)
             assertTrue(fixture.requests.none { it.method == "DELETE" || it.method == "UNLOCK" })
         }
-        for (status in listOf(401, 403, 423, 500)) {
+        for (status in listOf(401, 423, 500)) {
             val fixture = Fixture()
             fixture.lockStatus = status
             fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
@@ -633,10 +633,12 @@ class WebDavArchiveGcHttpTest {
             fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
         }
         assertTrue(fixture.supported)
-        fixture.lockStatus = 405
-        fixture.requests.clear()
-        assertTrue(fixture.backend.fetch().isFailure)
-        assertEquals(listOf("LOCK"), fixture.requests.map { it.method })
+        for (status in listOf(403, 405)) {
+            fixture.lockStatus = status
+            fixture.requests.clear()
+            assertTrue(fixture.backend.fetch().isFailure)
+            assertEquals(listOf("LOCK"), fixture.requests.map { it.method })
+        }
     }
 
     @Test

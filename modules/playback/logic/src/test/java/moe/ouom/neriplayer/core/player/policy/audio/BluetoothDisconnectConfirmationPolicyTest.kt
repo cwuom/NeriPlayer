@@ -31,6 +31,49 @@ class BluetoothDisconnectConfirmationPolicyTest {
     }
 
     @Test
+    fun `sampling window outlasts the platform noisy reroute delay`() {
+        val windowMs = (0 until BLUETOOTH_DISCONNECT_CONFIRMATION_MAX_SAMPLES).sumOf(::bluetoothDisconnectSampleDelayMs)
+        assertTrue(windowMs > ANDROID_BECOMING_NOISY_REROUTE_DELAY_MS)
+        assertTrue(BLUETOOTH_DISCONNECT_CONFIRMATION_MAX_SAMPLES >= BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT)
+    }
+
+    @Test
+    fun `routes that leave Bluetooth after the reroute delay still confirm within the window`() {
+        assertTrue(
+            shouldConfirmBluetoothDisconnect(
+                stopOnBluetoothDisconnectEnabled = true,
+                playbackActive = true,
+                previousRouteWasBluetooth = true,
+                sampledRoutesAreBluetooth = listOf(true, true, false, false, false)
+            )
+        )
+    }
+
+    @Test
+    fun `window ends as transient only while the route is still Bluetooth`() {
+        val reroutedAtWindowEnd = listOf(true, true, true, false, false)
+        assertFalse(isBluetoothDisconnectTransient(reroutedAtWindowEnd))
+        assertFalse(
+            shouldConfirmBluetoothDisconnect(
+                stopOnBluetoothDisconnectEnabled = true,
+                playbackActive = true,
+                previousRouteWasBluetooth = true,
+                sampledRoutesAreBluetooth = reroutedAtWindowEnd
+            )
+        )
+        assertTrue(
+            shouldConfirmBluetoothDisconnect(
+                stopOnBluetoothDisconnectEnabled = true,
+                playbackActive = true,
+                previousRouteWasBluetooth = true,
+                sampledRoutesAreBluetooth = reroutedAtWindowEnd + false
+            )
+        )
+        assertTrue(isBluetoothDisconnectTransient(listOf(false, false, true, true, true)))
+        assertFalse(isBluetoothDisconnectTransient(listOf(true, true, true, true)))
+    }
+
+    @Test
     fun `inactive or disabled playback never confirms disconnect`() {
         assertFalse(
             shouldConfirmBluetoothDisconnect(
@@ -48,5 +91,10 @@ class BluetoothDisconnectConfirmationPolicyTest {
                 sampledRoutesAreBluetooth = listOf(false, false, false)
             )
         )
+    }
+
+    private companion object {
+        // AudioDeviceInventory.BECOMING_NOISY_DELAY_MS
+        const val ANDROID_BECOMING_NOISY_REROUTE_DELAY_MS = 1_000L
     }
 }

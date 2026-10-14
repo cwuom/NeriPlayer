@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.command.shouldBootstrapPlaybackServiceOnAppLaunch
 import moe.ouom.neriplayer.core.player.policy.command.shouldRunPlaybackServiceInForeground
 import moe.ouom.neriplayer.core.player.policy.wake.DEFAULT_PLAYBACK_WAKE_MODE
+import moe.ouom.neriplayer.core.player.policy.wake.resolveLoadingAwareWakeMode
 import moe.ouom.neriplayer.core.player.policy.wake.resolvePlaybackWakeMode
 
 data class PlaybackTransportSnapshot(
@@ -60,6 +61,8 @@ class PlaybackTransportOwner(
     @Volatile
     private var lastUsbFocusDisruptionAtMs = 0L
     private var currentWakeMode = DEFAULT_PLAYBACK_WAKE_MODE
+    private var mediaWakeMode = DEFAULT_PLAYBACK_WAKE_MODE
+    private var mediaLoading = true
 
     fun rebindScope(mainScope: CoroutineScope) {
         this.mainScope = mainScope
@@ -248,15 +251,28 @@ class PlaybackTransportOwner(
         effectiveNativePath || requestedNativePath
 
     fun applyWakeModeForUrl(url: String?) {
-        val mode = resolvePlaybackWakeMode(url)
-        if (mode == currentWakeMode) return
-        port.setWakeMode(mode)
-        currentWakeMode = mode
+        mediaWakeMode = resolvePlaybackWakeMode(url)
+        mediaLoading = true
+        updateWakeMode()
+    }
+
+    fun onMediaLoadingChanged(loading: Boolean) {
+        mediaLoading = loading
+        updateWakeMode()
     }
 
     fun applyInitialWakeMode() {
+        mediaWakeMode = DEFAULT_PLAYBACK_WAKE_MODE
+        mediaLoading = true
         port.setWakeMode(DEFAULT_PLAYBACK_WAKE_MODE)
         currentWakeMode = DEFAULT_PLAYBACK_WAKE_MODE
+    }
+
+    private fun updateWakeMode() {
+        val mode = resolveLoadingAwareWakeMode(mediaWakeMode, mediaLoading)
+        if (mode == currentWakeMode) return
+        port.setWakeMode(mode)
+        currentWakeMode = mode
     }
 
     private fun shouldIgnoreUsbFocusPause(source: String, state: PlaybackTransportSnapshot): Boolean {

@@ -150,7 +150,8 @@ class WebDavArchiveLease internal constructor(
 
         private fun readInitialGrant(response: Response, root: HttpUrl, client: OkHttpClient,
             authorization: String, authFailureMessage: String, knownSupported: Boolean): WebDavArchiveLockResponse.Grant? {
-            if (response.code in setOf(405, 501) && !knownSupported) return null
+            // 坚果云对所有 LOCK 返回 403，未确认过锁能力的目标按不支持处理
+            if (response.code in setOf(403, 405, 501) && !knownSupported) return null
             return try { WebDavArchiveLockResponse.read(response, root, authFailureMessage) }
             catch (error: Exception) {
                 val released = releaseFailedGrant(response, root, client, authorization, error)

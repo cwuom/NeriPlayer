@@ -34,4 +34,14 @@ class PlaybackWakeModePolicyTest {
         assertEquals(C.WAKE_MODE_NONE, resolvePlaybackWakeMode(" "))
         assertEquals(C.WAKE_MODE_NONE, resolvePlaybackWakeMode(null))
     }
+
+    @Test
+    fun `idle network buffering keeps only the cpu wake lock`() {
+        assertEquals(C.WAKE_MODE_NETWORK, resolveLoadingAwareWakeMode(C.WAKE_MODE_NETWORK, loading = true))
+        assertEquals(C.WAKE_MODE_LOCAL, resolveLoadingAwareWakeMode(C.WAKE_MODE_NETWORK, loading = false))
+        for (mode in listOf(C.WAKE_MODE_LOCAL, C.WAKE_MODE_NONE)) {
+            assertEquals(mode, resolveLoadingAwareWakeMode(mode, loading = true))
+            assertEquals(mode, resolveLoadingAwareWakeMode(mode, loading = false))
+        }
+    }
 }
