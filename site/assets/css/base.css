@@ -8,6 +8,9 @@
 @font-face { font-family: "NP Hand"; src: url("../fonts/np-hand.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Caveat"; src: url("../fonts/caveat.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
 @font-face { font-family: "Geist"; src: url("../fonts/geist.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "NP Roboto"; src: url("../fonts/roboto.woff2") format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+0000-2DFF, U+FB00-FB06; }
+@font-face { font-family: "NP Roboto"; src: url("../fonts/np-phone-cjk.woff2") format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF; }
+@font-face { font-family: "NP Droid Mono"; src: url("../fonts/droid-mono.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("../fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 
 :root {

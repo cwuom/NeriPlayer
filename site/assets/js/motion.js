@@ -315,6 +315,8 @@
   function applyTheme(t) {
     var root = document.documentElement;
     root.setAttribute('data-theme', t);
+    root.style.colorScheme = t;
+    root.style.backgroundColor = t === 'dark' ? '#15130f' : '#fbf7ef';
     $$('meta[name="theme-color"]').forEach(function (m) { m.setAttribute('content', t === 'dark' ? '#15130f' : '#fbf7ef'); });
     var btn = $('#themeBtn');
     if (btn) {
@@ -474,9 +476,25 @@
       observe();
       initScroll();
       initSegs();
-      requestAnimationFrame(function () {
-        setTimeout(function () { var h = $('.hero'); if (h) h.classList.add('is-intro'); }, 60);
-      });
+      /* 开场等标题字体就位（最多 1.2 秒），否则会先闪一下回退字体再换 */
+      var started = false;
+      var start = function () {
+        if (started) return;
+        started = true;
+        requestAnimationFrame(function () {
+          setTimeout(function () { var h = $('.hero'); if (h) h.classList.add('is-intro'); }, 60);
+        });
+      };
+      var h1 = $('.hero h1');
+      if (document.fonts && document.fonts.load && h1) {
+        var sample = (h1.textContent || 'NeriPlayer').replace(/\s+/g, '').slice(0, 24);
+        Promise.all([
+          document.fonts.load('400 64px Fraunces', sample),
+          document.fonts.load('italic 400 64px Fraunces', sample),
+          document.fonts.load('400 64px "NP Serif"', sample),
+        ]).then(start, start);
+        setTimeout(start, 1200);
+      } else start();
     },
     initTheme: initTheme,
   };
