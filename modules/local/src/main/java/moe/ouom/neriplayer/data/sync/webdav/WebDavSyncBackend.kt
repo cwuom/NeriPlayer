@@ -242,16 +242,39 @@ internal class WebDavSyncBackend(
         }
         currentCoroutineContext().ensureActive()
         val publishedContent = SyncArchiveRepository.webDavPublicationContent(prepared.content)
-        return writeFile(manifestUrl, publishedContent, lease, version.token, version.createOnly).mapCatching { written ->
-            val token = if (lease == null) confirmUnlockedPublication(written.fingerprint).version else written.version
+        return publishManifest(publishedContent, version, lease).mapCatching { written ->
             currentProtocolObserved(4)
-            val published = Version(token, false, written.fingerprint, prepared.paths)
+            val published = Version(written.version, false, written.fingerprint, prepared.paths)
             if (lease != null && permitsGc(version, published)) {
                 try { collectUnreferenced(publishedContent, prepared.paths, version.knownPaths, lease) }
                 catch (error: Exception) { deferMaintenanceFailure(error) }
             }
             published
         }
+    }
+
+    private suspend fun publishManifest(content: ByteArray, version: Version, lease: WebDavArchiveLease?): Result<WebDavWriteResult> {
+        if (lease != null) return writeFile(manifestUrl, content, lease, version.token, version.createOnly)
+        return publishUnlocked(content, version).mapCatching { written ->
+            written.copy(version = confirmUnlockedPublication(written.fingerprint).version)
+        }
+    }
+
+    private suspend fun publishUnlocked(content: ByteArray, version: Version): Result<WebDavWriteResult> {
+        val opaque = opaqueCondition(version) ?: return writeFile(manifestUrl, content, null, version.token, version.createOnly)
+        val conditional = apiClient.updateFileContent(manifestUrl, content, expectedVersion = opaque)
+        if (!isExistingObjectConflict(conditional.exceptionOrNull())) return conditional
+        // 服务器也可能不认非标准 ETag，确认清单未变后才退回指纹保护的写入
+        requireUnchangedManifest(version, null)
+        return writeFile(manifestUrl, content, null)
+    }
+
+    // 坚果云返回不带引号的 ETag，原样用于 If-Match 才能由服务端原子拒绝并发发布
+    private fun opaqueCondition(version: Version): WebDavConcurrencyToken? {
+        if (version.createOnly) return null
+        val token = version.token ?: return null
+        val etag = token.etag ?: return null
+        return token.takeIf { !WebDavArchiveListing.isStrongETag(etag) && opaqueETag.matches(etag) }
     }
 
     private suspend fun confirmUnlockedPublication(fingerprint: String): WebDavRemoteFileSnapshot {
@@ -385,7 +408,7 @@ internal class WebDavSyncBackend(
         )
     }
 
-    private fun isExistingObjectConflict(error: Throwable): Boolean =
+    private fun isExistingObjectConflict(error: Throwable?): Boolean =
         error is WebDavContentConflictException && error.statusCode == 412
 
     private suspend fun verifyExistingObject(url: String, content: ByteArray, lease: WebDavArchiveLease?): Result<Unit> {
@@ -400,5 +423,6 @@ internal class WebDavSyncBackend(
     private companion object {
         const val TAG = "WebDavSyncManager"
         val strongETag = Regex("\"[!#-~\\u0080-\\u00ff]*\"")
+        val opaqueETag = Regex("[!#-+\\--~]+")
     }
 }

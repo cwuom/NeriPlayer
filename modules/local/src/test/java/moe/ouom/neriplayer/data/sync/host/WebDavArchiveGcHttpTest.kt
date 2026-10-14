@@ -147,7 +147,8 @@ class WebDavArchiveGcHttpTest {
                 val manifestWrites = fixture.requests.filter {
                     it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME
                 }
-                assertTrue(manifestWrites.drop(1).all { it.header("If-Match") == null && it.header("If-Unmodified-Since") == null })
+                val opaque = etag?.takeUnless { it.startsWith("W/") }
+                assertTrue(manifestWrites.drop(1).all { it.header("If-Match") == opaque && it.header("If-Unmodified-Since") == null })
                 val current = fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME).copyOf()
                 fixture.requests.clear()
                 val stale = fixture.backend.upload(data, first)
@@ -157,6 +158,51 @@ class WebDavArchiveGcHttpTest {
             }
             assertFalse(fixture.supported)
             assertTrue(fixture.requests.none { it.method == "DELETE" })
+        }
+    }
+
+    @Test
+    fun `unquoted ETags let the server reject a write that races the fingerprint check`() = runTest {
+        val fixture = Fixture()
+        fixture.lockStatus = 403
+        fixture.quoteETags = false
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            val competing = byteArrayOf(1, 2, 3)
+            var raced = false
+            fixture.beforeRequest = { request ->
+                if (!raced && request.method == "PUT" && request.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME) {
+                    raced = true
+                    fixture.files[SyncArchiveRepository.MANIFEST_FILE_NAME] = competing
+                }
+            }
+            val lost = fixture.backend.upload(data, first)
+            assertTrue(lost.exceptionOrNull() is moe.ouom.neriplayer.api.sync.webdav.WebDavContentConflictException)
+            assertTrue(competing.contentEquals(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)))
+            val manifestWrites = fixture.requests.filter {
+                it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME
+            }
+            assertEquals(first.token!!.etag, manifestWrites.last().header("If-Match"))
+            assertFalse(first.token!!.etag!!.startsWith("\""))
+        }
+    }
+
+    @Test
+    fun `a server rejecting unquoted If-Match still publishes after the manifest is confirmed unchanged`() = runTest {
+        val fixture = Fixture()
+        fixture.lockStatus = 403
+        fixture.quoteETags = false
+        fixture.rejectBareIfMatch = true
+        fixture.archive.playbackDatasets.fromLegacy(payload).use { data ->
+            val first = fixture.backend.upload(data, WebDavSyncBackend.Version(null, true)).getOrThrow()
+            fixture.requests.clear()
+            val second = fixture.backend.upload(data, first).getOrThrow()
+            assertEquals(WebDavApiClient.calculateFingerprint(fixture.files.getValue(SyncArchiveRepository.MANIFEST_FILE_NAME)),
+                second.lastKnownFingerprint)
+            val manifestWrites = fixture.requests.filter {
+                it.method == "PUT" && it.url.pathSegments.last() == SyncArchiveRepository.MANIFEST_FILE_NAME
+            }
+            assertEquals(listOf(first.token!!.etag, null), manifestWrites.map { it.header("If-Match") })
         }
     }
 
@@ -1120,6 +1166,8 @@ class WebDavArchiveGcHttpTest {
         var savedRemoteFingerprint: String? = null
         val maintenanceScopes = arrayListOf<String>()
         var constantETag = false
+        var quoteETags = true
+        var rejectBareIfMatch = false
         var ignoreWriteConditions = false
         var manifestWriteETag: (String) -> String? = { it }
         var manifestReadETag: (String) -> String? = { it }
@@ -1193,6 +1241,7 @@ class WebDavArchiveGcHttpTest {
             if (locked && request.header("If")?.contains(TOKEN) != true) return response(request, 423)
             if (name == SyncArchiveRepository.MANIFEST_FILE_NAME) manifestWriteStatus?.let { return response(request, it) }
             val previous = files[name]
+            if (rejectBareIfMatch && request.header("If-Match")?.startsWith("\"") == false) return response(request, 412)
             if (!ignoreWriteConditions && request.header("If-None-Match") == "*" && previous != null) return response(request, 412)
             if (!ignoreWriteConditions && request.header("If-Match") != null && request.header("If-Match") != previous?.let(::etag)) return response(request, 412)
             val bytes = Buffer().use { request.body!!.writeTo(it); it.readByteArray() }
@@ -1204,8 +1253,11 @@ class WebDavArchiveGcHttpTest {
             return written.build()
         }
 
-        private fun etag(bytes: ByteArray): String = if (constantETag) "\"constant\"" else "\"" + MessageDigest.getInstance("SHA-256")
-            .digest(bytes).joinToString("") { "%02x".format(it) } + "\""
+        private fun etag(bytes: ByteArray): String {
+            if (constantETag) return "\"constant\""
+            val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            return if (quoteETags) "\"$digest\"" else digest
+        }
 
         fun objectETag(path: String): String = etag(files.getValue(path))
         fun advance(milliseconds: Long) { wallMs += milliseconds; uptimeMs += milliseconds }
