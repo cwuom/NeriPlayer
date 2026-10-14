@@ -28,6 +28,9 @@ object BiliMusicHomeRepository {
 
     private const val CACHE_TTL_MS = 10 * 60 * 1000L
 
+    /** 官方 MV 补全的并发上限：每批同时发起的 view 请求数 */
+    private const val MV_ENRICH_PARALLELISM = 4
+
     /** 热门视频榜的缓存快照，与榜单缓存分开存放，便于各自独立失效 */
     private data class HotSnapshot(
         val videos: List<BiliMusicHotVideo>,
@@ -106,33 +109,40 @@ object BiliMusicHomeRepository {
     }
 
     /**
-     * 按 mv_bvid 补全官方 MV 的 aid（顺带取回 MV 真实时长）。
+     * 按 mv_bvid 补全官方 MV 的 aid（顺带取回 MV 真实时长、上传账号与封面）。
      *
      * 榜单接口的 mv_aid 实测恒为 0，而现有 B 站播放链路要求条目带有效 avid；
      * 单个曲目补全失败时保持原样（上层会回退到授权投稿播放），不影响整期榜单。
+     *
+     * 补全需要逐条调用 WBI view 接口，因此按 [MV_ENRICH_PARALLELISM] 分块串行推进：
+     * 与 [moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient] 的其它分页批处理保持一致，
+     * 避免一次性打出几十个并发请求触发 B 站风控。
      */
     private suspend fun resolveOfficialMvIds(
         songs: List<BiliMusicRankSong>
-    ): List<BiliMusicRankSong> = coroutineScope {
-        songs.map { song ->
-            async {
-                if (song.mvBvid.isBlank() || song.mvAid > 0L) {
-                    song
-                } else {
-                    val info = runCatching { client.getVideoBasicInfoByBvid(song.mvBvid) }.getOrNull()
-                    if (info != null && info.aid > 0L) {
-                        song.copy(
-                            mvAid = info.aid,
-                            mvDurationSec = info.durationSec,
-                            mvUploader = info.ownerName,
-                            mvCoverUrl = normalizeVideoCover(info.coverUrl)
-                        )
-                    } else {
-                        song
-                    }
-                }
+    ): List<BiliMusicRankSong> {
+        if (songs.none { it.mvBvid.isNotBlank() && it.mvAid <= 0L }) return songs
+        return coroutineScope {
+            songs.chunked(MV_ENRICH_PARALLELISM).flatMap { chunk ->
+                chunk.map { song -> async { enrichOfficialMv(song) } }.awaitAll()
             }
-        }.awaitAll()
+        }
+    }
+
+    /** 补全单条曲目的官方 MV 身份；无需补全或补全失败时原样返回 */
+    private suspend fun enrichOfficialMv(song: BiliMusicRankSong): BiliMusicRankSong {
+        if (song.mvBvid.isBlank() || song.mvAid > 0L) return song
+        val info = runCatching { client.getVideoBasicInfoByBvid(song.mvBvid) }.getOrNull()
+        return if (info != null && info.aid > 0L) {
+            song.copy(
+                mvAid = info.aid,
+                mvDurationSec = info.durationSec,
+                mvUploader = info.ownerName,
+                mvCoverUrl = normalizeVideoCover(info.coverUrl)
+            )
+        } else {
+            song
+        }
     }
 
     /** B 站接口偶尔返回 http 图片地址，统一提升为 https，避免明文图片被拦截 */

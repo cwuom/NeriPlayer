@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableBiliVideoItem
 import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableHotVideoItems
 import moe.ouom.neriplayer.data.model.bilibili.music.toPlayableRankVideoItems
 import moe.ouom.neriplayer.platform.bilibili.api.image.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.util.format.formatDate
@@ -98,6 +99,8 @@ internal fun BiliMusicRankDetailScreen(
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val state = ui.biliMusicRank
+    // 播放中时详情页会被常驻迷你播放器遮住底部，列表末尾需要额外预留它的高度
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
     LaunchedEffect(offlineMode) {
         vm.setOfflineMode(offlineMode)
     }
@@ -184,7 +187,7 @@ internal fun BiliMusicRankDetailScreen(
                 }
                 when {
                     state.songs.isNotEmpty() -> LazyColumn(
-                        contentPadding = PaddingValues(bottom = 24.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item(key = "bili-music-rank-play-all") {
@@ -264,6 +267,8 @@ internal fun BiliMusicHotDetailScreen(
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val state = ui.biliMusicHot
+    // 播放中时详情页会被常驻迷你播放器遮住底部，列表末尾需要额外预留它的高度
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
     LaunchedEffect(offlineMode) {
         vm.setOfflineMode(offlineMode)
     }
@@ -310,7 +315,7 @@ internal fun BiliMusicHotDetailScreen(
             }
             when {
                 state.items.isNotEmpty() -> LazyColumn(
-                    contentPadding = PaddingValues(bottom = 24.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     item(key = "bili-music-hot-play-all") {
