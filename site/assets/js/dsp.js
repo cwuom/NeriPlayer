@@ -116,11 +116,11 @@
   function semis(pitch) { return Math.round(12 * Math.log(pitch) / Math.LN2 * 2) / 2; }
 
   /* 滑块：key → [取值, 写入, 范围, 步进, 格式, 所在分区] */
-  var local = { tab: 'presets', cat: 0, band: 5, drag: -1, speakerSize: 'phone', spkBass: 0.5, spkLoud: 0.4, spkClarity: 0.3, spkExpand: 0.3, spkProt: 0, mode: 'balanced', perOut: false, usb: false, compAdv: false };
+  var local = { tab: 'presets', cat: 0, band: 5, drag: -1, mode: 'balanced', perOut: false, usb: false, compAdv: false };
   function sv(k) { return function () { return S[k]; }; }
   function ss(k) { return function (v) { S[k] = v; custom(); }; }
-  function lv(k) { return function () { return local[k]; }; }
-  function ls(k) { return function (v) { local[k] = v; }; }
+  /* 扬声器优化不属于音色预设（SpeakerOptimizerSettings 单独保存），调它不会把预设变成「自定义」 */
+  function spk(k) { return function (v) { S[k] = v; }; }
   var SL = {
     preamp: [sv('preamp'), ss('preamp'), [-12, 6], 0.5, fDb, 'equalizer'],
     bass: [sv('bass'), ss('bass'), [-12, 12], 0.5, fDb, 'tone'],
@@ -152,11 +152,11 @@
     outGain: [sv('outGain'), ss('outGain'), [-12, 12], 0.5, fDb, 'dynamics'],
     ceiling: [sv('ceiling'), ss('ceiling'), [-6, 0], 0.1, fDb, 'dynamics'],
     release: [sv('release'), ss('release'), [20, 500], 10, fMs, 'dynamics'],
-    spkBass: [lv('spkBass'), ls('spkBass'), [0, 1], 0.01, fPct, 'speaker'],
-    spkLoud: [lv('spkLoud'), ls('spkLoud'), [0, 1], 0.01, fPct, 'speaker'],
-    spkClarity: [lv('spkClarity'), ls('spkClarity'), [0, 1], 0.01, fPct, 'speaker'],
-    spkExpand: [lv('spkExpand'), ls('spkExpand'), [0, 1], 0.01, fPct, 'speaker'],
-    spkProt: [lv('spkProt'), ls('spkProt'), [0, 400], 10, function (v) { return v < 1 ? T.auto + ' · 180 Hz' : fHz(v); }, 'speaker'],
+    spkBass: [sv('spkBass'), spk('spkBass'), [0, 1], 0.05, fPct, 'speaker'],
+    spkLoud: [sv('spkLoud'), spk('spkLoud'), [0, 1], 0.05, fPct, 'speaker'],
+    spkClarity: [sv('spkClarity'), spk('spkClarity'), [0, 1], 0.05, fPct, 'speaker'],
+    spkExpand: [sv('spkExpand'), spk('spkExpand'), [0, 1], 0.05, fPct, 'speaker'],
+    spkProt: [sv('spkProt'), function (v) { S.spkProt = v < 40 ? 0 : v; }, [0, 400], 10, function (v) { return v < 40 ? T.auto + ' · ' + fHz(NP.sound.spkSizes[S.spkSize]) : fHz(v); }, 'speaker'],
     speed: [function () { return P.speed; }, function (v) { P.setSpeed(v); if (S.linked) P.setPitch(M.clamp(v, 0.25, 2)); }, [0.25, 3], 0.05, fX, 'speed'],
     pitch: [function () { return semis(P.pitch); }, function (v) { P.setPitch(Math.pow(2, v / 12)); }, [-12, 12], 0.5, function (v) { return T.semis(fSemi(v)); }, 'speed'],
   };
@@ -212,7 +212,7 @@
           when('compOn&compAdv', slider('compThr', T.compThr) + slider('compRatio', T.compRatio) + slider('compAttack', T.compAttack) + slider('compRelease', T.compRelease) + slider('compKnee', T.compKnee) + slider('compMakeup', T.compMakeup)) +
           slider('outGain', T.outGain, T.outGainD) + li('limiter', T.limiter, T.limiterD) + when('limiter', slider('ceiling', T.ceiling) + slider('release', T.release)), 'dynamics') + resetBtn('dynamics'),
       speaker: secSwitch('speaker') +
-        card(intro(T.spkT, T.spkD) + note(T.spkSize) + '<div class="fxa-segwrap">' + seg('speakerSize', T.spkSizes) + '</div>' + slider('spkBass', T.spkBass, T.spkBassD) + slider('spkLoud', T.spkLoud, T.spkLoudD) + slider('spkClarity', T.spkClarity) + slider('spkExpand', T.spkExpand) + slider('spkProt', T.spkProt, T.spkProtD), 'speaker') + resetBtn('speaker'),
+        card(intro(T.spkT, T.spkD) + note(T.spkSize) + '<div class="fxa-segwrap">' + seg('spkSize', T.spkSizes) + '</div>' + slider('spkBass', T.spkBass, T.spkBassD) + slider('spkLoud', T.spkLoud, T.spkLoudD) + slider('spkClarity', T.spkClarity) + slider('spkExpand', T.spkExpand) + slider('spkProt', T.spkProt, T.spkProtD), 'speaker') + resetBtn('speaker'),
       speed: secSwitch('speed') +
         card(intro(T.speedT, T.speedD) + slider('speed', T.speed) + quick('speed', [0.5, 0.75, 0.85, 0.95, 1, 1.05, 1.1, 1.25, 1.5, 2], fX) + slider('pitch', T.pitch) + when('!linked', quick('pitch', [-3, -1, 0, 1, 3], fSemi)) + li('linked', T.linked, T.linkedD) + when('linked', note(T.linkedNote)), 'speed') + resetBtn('speed'),
       advanced: card(intro(T.advT, T.advD) + note(T.mode) + '<div class="fxa-segwrap">' + seg('mode', T.modes) + '</div>' + note('', ' data-mode-desc') + li('perOut', T.perOut, T.perOutD) + li('usb', T.usb, T.usbD) + '<div class="fxa-btns">' + btn(T.resetAll, ' data-reset-all') + '</div>'),
@@ -410,7 +410,8 @@
     var stereoN = zero(e('tone', 'vocalRemoval')) && zero(e('space', 'width') - 1) && zero(e('space', 'monoBass')) && !e('space', 'mono') && !e('space', 'swap') && zero(e('space', 'crossfeed'));
     var spaceN = zero(e('space', 'surround')) && zero(e('space', 'reverb'));
     var limN = !e('dynamics', 'limiter') || (zero(e('dynamics', 'ceiling') + 1) && zero(e('dynamics', 'release') - 80));
-    return eqN && peqN && toneN && colorN && stereoN && spaceN && !e('dynamics', 'compOn') && limN;
+    /* 扬声器优化单独判断（NeriDspParams：speakerActive 时即使音色为中性也照常处理） */
+    return eqN && peqN && toneN && colorN && stereoN && spaceN && !e('dynamics', 'compOn') && limN && !S.sec.speaker;
   }
   /* 标签上的小圆点：分区里有偏离默认的调节（包括被关掉） */
   function modified(tab) {
@@ -494,9 +495,9 @@
       btns.forEach(function (b) {
         b.addEventListener('click', function () {
           if (k === 'cat') { local.cat = +b.getAttribute('data-i'); self.fillPresets(true); }
+          else if (k in S) { if (!S.on || !S.sec.speaker) return; S[k] = b.getAttribute('data-v'); }
           else local[k] = b.getAttribute('data-v');
-          if (k === 'mode' || k === 'speakerSize') NP.sound.apply();
-          self.paint();
+          if (k === 'cat') self.paint(); else self.changed();
         });
       });
       return { k: k, box: box, btns: btns, ind: $('.fxa-seg__ind', box) };
@@ -613,12 +614,12 @@
   };
   Page.prototype.resetSection = function (sec) {
     var secs = NP.sound.sections;
-    if (secs[sec]) {
+    if (sec === 'speaker') NP.sound.resetSection(sec);
+    else if (secs[sec]) {
       var was = NP.sound.sectionDefault(sec) && S.sec[sec] !== false;
       NP.sound.resetSection(sec);
-      if (!was) S.preset = Object.keys(secs).every(function (k) { return NP.sound.sectionDefault(k) && S.sec[k] !== false; }) ? 'flat' : 'custom';
-    } else if (sec === 'speaker') { local.spkBass = 0.5; local.spkLoud = 0.4; local.spkClarity = 0.3; local.spkExpand = 0.3; local.spkProt = 0; local.speakerSize = 'phone'; }
-    else if (sec === 'speed') { P.setSpeed(1); P.setPitch(1); S.sec.speed = true; }
+      if (!was) S.preset = ['equalizer', 'tone', 'space', 'dynamics'].every(function (k) { return NP.sound.sectionDefault(k) && S.sec[k] !== false; }) ? 'flat' : 'custom';
+    } else if (sec === 'speed') { P.setSpeed(1); P.setPitch(1); S.sec.speed = true; }
     this.changed();
   };
   Page.prototype.resetAll = function () {
@@ -645,7 +646,7 @@
   };
   Page.prototype.placeSegs = function (jump) {
     this.segs.forEach(function (sg) {
-      var i = sg.k === 'cat' ? local.cat : Math.max(0, sg.btns.map(function (b) { return b.getAttribute('data-v'); }).indexOf(local[sg.k]));
+      var i = sg.k === 'cat' ? local.cat : Math.max(0, sg.btns.map(function (b) { return b.getAttribute('data-v'); }).indexOf(sg.k in S ? S[sg.k] : local[sg.k]));
       var b = sg.btns[i];
       if (!b || !b.offsetWidth) return;
       if (jump) sg.ind.classList.add('is-jump');
@@ -738,6 +739,7 @@
     var idx = $$('#dsp [data-dsp-tab]');
     Page.onTab = function (tab) {
       idx.forEach(function (b) { var on = b.getAttribute('data-dsp-tab') === tab; b.classList.toggle('is-on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+      if (NP.dspScope && NP.dspScope.scope) NP.dspScope.scope.tip();
     };
     idx.forEach(function (b) {
       b.addEventListener('click', function () {
