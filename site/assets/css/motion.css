@@ -155,6 +155,9 @@ img.img-wait { opacity: 0 !important; }
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 html.is-theming, html.is-theming *:not(.lamp):not(.lamp *) { transition-duration: 0s !important; }
 /* 灯单独一层：不跟着整页快照硬切，太阳 / 月亮按自己的过渡转过去 */
+/* 桌面仿真里切深色模式 / 主题色：只展开新画面，旧画面原样垫在下面（desktop-sim.js 用 WAAPI 给 new 加圆形 clip-path） */
+::view-transition-group(dsim-win), ::view-transition-group(dsim-win-mini) { animation: none; }
+::view-transition-old(dsim-win), ::view-transition-new(dsim-win), ::view-transition-old(dsim-win-mini), ::view-transition-new(dsim-win-mini) { animation: none; mix-blend-mode: normal; }
 .lamp { view-transition-name: np-lamp; }
 ::view-transition-group(np-lamp) { animation: none; z-index: 2; }
 ::view-transition-old(np-lamp) { display: none; }
