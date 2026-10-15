@@ -89,7 +89,8 @@ internal fun BiliMusicRankDetailScreen(
     onBack: () -> Unit,
     onPlay: (List<BiliVideoItem>, Int) -> Unit,
     offlineMode: Boolean,
-    restoredRankType: BiliMusicRankType? = null
+    activeRankType: BiliMusicRankType,
+    onRankTypeSelected: (BiliMusicRankType) -> Unit = {}
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
@@ -120,11 +121,11 @@ internal fun BiliMusicRankDetailScreen(
             wasOffline = true
         }
     }
-    // 进程恢复时 rememberSaveable 会带回用户上次选的榜单类型，而共享 HomeViewModel 已被重建回
-    // 默认 HOT；这里用恢复出的 type 对齐一次，避免恢复后展示错误的榜单。
-    LaunchedEffect(restoredRankType) {
-        if (restoredRankType != null && restoredRankType != state.type) {
-            vm.selectBiliMusicRankType(restoredRankType)
+    // 榜单类型由宿主持有（首页「查看全部」时记住的选中项，进程恢复后同样带回），而共享
+    // HomeViewModel 可能已被重建回默认 HOT；这里把它对齐一次，避免展示与用户选择不一致的榜单。
+    LaunchedEffect(activeRankType) {
+        if (activeRankType != state.type) {
+            vm.selectBiliMusicRankType(activeRankType)
         }
     }
 
@@ -161,7 +162,11 @@ internal fun BiliMusicRankDetailScreen(
         ) {
             BiliMusicRankTypeRow(
                 selected = state.type,
-                onTypeSelected = vm::selectBiliMusicRankType
+                onTypeSelected = { type ->
+                    // 详情页内切换榜单时同步回宿主，保证退出再进入或进程恢复后仍是这个榜单
+                    onRankTypeSelected(type)
+                    vm.selectBiliMusicRankType(type)
+                }
             )
             state.period?.let { period ->
                 Row(
@@ -292,8 +297,22 @@ internal fun BiliMusicHotDetailScreen(
     val state = ui.biliMusicHot
     // 播放中时详情页会被常驻迷你播放器遮住底部，列表末尾需要额外预留它的高度
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    // 与 [BiliMusicRankDetailScreen] 同理：详情页打开时首页不再组合，HomeScreen 的 wasOffline
+    // 恢复刷新不会抵达这个目的地；这里自己同步 offlineMode，并在从离线切回在线时重启一次因离线
+    // 被跳过而遗留的空加载，否则会一直停在「暂无内容」直到手动刷新。
+    var wasOffline by remember { mutableStateOf(false) }
     LaunchedEffect(offlineMode) {
+        val cameBackOnline = wasOffline && !offlineMode
         vm.setOfflineMode(offlineMode)
+        if (cameBackOnline) {
+            wasOffline = false
+            val current = vm.uiState.value.biliMusicHot
+            if (current.items.isEmpty() && !current.loading) {
+                vm.loadBiliMusicHot(force = true)
+            }
+        } else if (offlineMode) {
+            wasOffline = true
+        }
     }
 
     Scaffold(

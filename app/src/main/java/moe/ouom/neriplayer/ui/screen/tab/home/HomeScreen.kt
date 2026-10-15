@@ -122,6 +122,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -180,7 +181,7 @@ fun HomeScreen(
     onScrollAnchorIndexesChanged: (Map<String, Int>) -> Unit = {},
     onOpenRecent: (UsageEntry) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
-    onBiliMusicRankMore: () -> Unit = {},
+    onBiliMusicRankMore: (BiliMusicRankType) -> Unit = {},
     onBiliMusicHotMore: () -> Unit = {},
     onBiliMusicRankPlay: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
     onBiliMusicHotPlay: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> }
@@ -482,7 +483,7 @@ fun HomeScreen(
                         registerKey = ::registerGridItemKey,
                         state = ui.biliMusicRank,
                         onTypeSelected = vm::selectBiliMusicRankType,
-                        onMoreClick = onBiliMusicRankMore,
+                        onMoreClick = { onBiliMusicRankMore(ui.biliMusicRank.type) },
                         onPlay = onBiliMusicRankPlay,
                         onRetry = { vm.loadBiliMusicRank(force = true) },
                         offlineMode = offlineMode

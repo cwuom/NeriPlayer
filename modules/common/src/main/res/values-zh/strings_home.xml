@@ -40,4 +40,21 @@
     <string name="home_offline_no_continue">脱机模式下仅显示继续播放，暂无可显示内容。</string>
     <string name="offline_mode_title">脱机模式</string>
     <string name="offline_mode_bottom_hint">当前处于脱机模式</string>
+    <!-- Home: Bilibili 音乐模块 -->
+    <string name="home_bili_music_rank">Bilibili 音乐榜</string>
+    <string name="home_bili_music_hot">Bilibili 音乐热门</string>
+    <string name="home_bili_music_view_all">查看全部</string>
+    <string name="home_bili_music_rank_hot">热门榜</string>
+    <string name="home_bili_music_rank_original">原创榜</string>
+    <string name="home_bili_music_rank_period" formatted="false">第 %1$d 期</string>
+    <string name="home_bili_music_rank_updated">更新时间：%1$s</string>
+    <string name="home_bili_music_play_all">播放全部</string>
+    <string name="home_bili_music_empty">暂无内容</string>
+    <string name="home_bili_music_unavailable">该条目暂无可播放音频</string>
+    <string name="home_bili_music_section_error_prefix">Bilibili 音乐模块加载失败：%s</string>
+    <!-- 播放来源标注：榜单展示原唱信息，实际音频来自官方 MV 或榜单授权投稿 -->
+    <string name="home_bili_music_source_mv">官方 MV</string>
+    <string name="home_bili_music_source_upload">投稿视频 · %1$s</string>
+    <string name="home_bili_music_source_note">榜单展示原唱信息，播放优先使用官方 MV，缺失时回退到榜单授权投稿视频</string>
+    <string name="home_bili_music_open_original">打开原视频</string>
 </resources>
