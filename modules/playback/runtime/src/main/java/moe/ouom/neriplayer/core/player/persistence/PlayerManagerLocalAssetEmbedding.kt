@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.persistence
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
@@ -55,9 +56,11 @@ internal suspend fun PlayerManager.embedLocalSongAssetsImpl(
     if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS) return outcome
     runSongMetadataMutation {
         val latest = latestSongCopy(song)
+        val updated = withEmbeddedAssets(latest, embedding, originalCoverBackup)
+        if (latest != base) rewriteTagsEditedDuringEmbedding(updated)
         updateSongInAllPlaces(
             originalSong = song,
-            updatedSong = withEmbeddedAssets(latest, embedding, originalCoverBackup),
+            updatedSong = updated,
             triggerSync = true,
             syncDownloadedMetadata = shouldSyncDownloadedMetadataAfterMetadataUpdate(
                 writeLocalMetadata = true,
@@ -67,6 +70,21 @@ internal suspend fun PlayerManager.embedLocalSongAssetsImpl(
         )
     }
     return LocalMediaMetadataWriteOutcome.SUCCESS
+}
+
+/**
+ * 单曲编辑在全局锁内写文件，可能恰好发生在本次读取副本与写文件之间，
+ * 文件里的标题、歌手等随后会被旧副本覆盖；这里在锁内按最新副本补写一次，
+ * 刚嵌入的歌词与封面保持不动
+ */
+private suspend fun PlayerManager.rewriteTagsEditedDuringEmbedding(updated: SongItem) {
+    val outcome = writeLocalEditableMetadata(song = updated, writeCover = false, writeLyrics = false)
+    if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "rewrite tags edited during embedding failed: outcome=$outcome, song=${updated.name}"
+        )
+    }
 }
 
 private suspend fun PlayerManager.withEmbeddedAssets(

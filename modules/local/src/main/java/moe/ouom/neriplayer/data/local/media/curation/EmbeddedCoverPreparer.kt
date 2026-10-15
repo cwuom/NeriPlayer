@@ -3,9 +3,12 @@ package moe.ouom.neriplayer.data.local.media.curation
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import androidx.core.graphics.scale
+import androidx.exifinterface.media.ExifInterface
 import androidx.core.net.toUri
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -32,6 +35,29 @@ data class PreparedEmbeddedCover(
 )
 
 data class EmbeddedCoverDimensions(val width: Int, val height: Int)
+
+/** [newlyCreated] 表示文件由这次提交创建，写入失败且没有其他歌曲引用时可以删除 */
+data class CommittedEmbeddedCover(val reference: String, val newlyCreated: Boolean)
+
+/** EXIF 方向对应的像素变换；嵌入封面不保留 EXIF，必须先把像素转正 */
+data class CoverOrientation(val rotationDegrees: Int, val mirrored: Boolean) {
+    val isIdentity: Boolean get() = rotationDegrees == 0 && !mirrored
+
+    companion object {
+        val NORMAL = CoverOrientation(0, mirrored = false)
+
+        fun fromExif(orientation: Int): CoverOrientation = when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> CoverOrientation(0, mirrored = true)
+            ExifInterface.ORIENTATION_ROTATE_180 -> CoverOrientation(180, mirrored = false)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> CoverOrientation(180, mirrored = true)
+            ExifInterface.ORIENTATION_TRANSPOSE -> CoverOrientation(90, mirrored = true)
+            ExifInterface.ORIENTATION_ROTATE_90 -> CoverOrientation(90, mirrored = false)
+            ExifInterface.ORIENTATION_TRANSVERSE -> CoverOrientation(270, mirrored = true)
+            ExifInterface.ORIENTATION_ROTATE_270 -> CoverOrientation(270, mirrored = false)
+            else -> NORMAL
+        }
+    }
+}
 
 object EmbeddedCoverPreparer {
     private const val JPEG_QUALITY = 90
@@ -84,14 +110,15 @@ object EmbeddedCoverPreparer {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+        val orientation = if (isJpeg(sourceBytes)) readOrientation(sourceBytes) else CoverOrientation.NORMAL
         val sourceTarget = fitWithinEdge(bounds.outWidth, bounds.outHeight, preset.maxEdgePx)
-        val keepSource = isJpeg(sourceBytes) &&
+        val keepSource = isJpeg(sourceBytes) && orientation.isIdentity &&
             sourceTarget.width == bounds.outWidth && sourceTarget.height == bounds.outHeight &&
             editableCoverDecodeSampleSize(bounds.outWidth, bounds.outHeight) == 1
         val encoded = if (keepSource) {
             EncodedCover(sourceBytes, sourceTarget)
         } else {
-            encodeJpeg(sourceBytes, bounds, preset.maxEdgePx) ?: return@withContext null
+            encodeJpeg(sourceBytes, bounds, preset.maxEdgePx, orientation) ?: return@withContext null
         }
         val staged = stageBytes(stagingDirectory(context), encoded.bytes) ?: return@withContext null
         PreparedEmbeddedCover(
@@ -103,13 +130,28 @@ object EmbeddedCoverPreparer {
     }
 
     /** 把暂存封面转存到持久的自定义封面目录，返回可长期作为 `customCoverUrl` 的引用 */
-    suspend fun commit(context: Context, prepared: PreparedEmbeddedCover): String? =
+    suspend fun commit(context: Context, prepared: PreparedEmbeddedCover): CommittedEmbeddedCover? =
         withContext(Dispatchers.IO) {
             val staged = prepared.reference.toUri().path?.let(::File)?.takeIf(File::isFile)
                 ?: return@withContext null
             val bytes = runCatching { staged.readBytes() }.getOrNull() ?: return@withContext null
+            CustomSongCoverStorage.findPreparedCover(context, bytes)
+                ?.let { return@withContext CommittedEmbeddedCover(it, newlyCreated = false) }
             CustomSongCoverStorage.persistPreparedCover(context, bytes)
+                ?.let { CommittedEmbeddedCover(it, newlyCreated = true) }
         }
+
+    /** 删除提交后没有被任何歌曲采用的封面，只处理自定义封面目录内的文件 */
+    suspend fun discard(context: Context, references: Collection<String>) = withContext(Dispatchers.IO) {
+        references.forEach { reference -> CustomSongCoverStorage.deletePreparedCover(context, reference) }
+    }
+
+    private fun readOrientation(bytes: ByteArray): CoverOrientation = runCatching {
+        val exif = ExifInterface(ByteArrayInputStream(bytes))
+        CoverOrientation.fromExif(
+            exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        )
+    }.getOrDefault(CoverOrientation.NORMAL)
 
     private fun stageBytes(directory: File, bytes: ByteArray): File? {
         if (!directory.isDirectory && !directory.mkdirs()) return null
@@ -136,7 +178,8 @@ object EmbeddedCoverPreparer {
     private fun encodeJpeg(
         sourceBytes: ByteArray,
         bounds: BitmapFactory.Options,
-        maxEdgePx: Int?
+        maxEdgePx: Int?,
+        orientation: CoverOrientation
     ): EncodedCover? {
         val decodeOptions = BitmapFactory.Options().apply {
             inSampleSize = maxOf(
@@ -145,6 +188,7 @@ object EmbeddedCoverPreparer {
             )
         }
         val decoded = BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, decodeOptions)
+            ?.let { bitmap -> applyOrientation(bitmap, orientation) }
             ?: return null
         val target = fitWithinEdge(decoded.width, decoded.height, maxEdgePx)
         val scaled = if (decoded.width != target.width || decoded.height != target.height) {
@@ -164,6 +208,17 @@ object EmbeddedCoverPreparer {
             if (scaled !== decoded) scaled.recycle()
             decoded.recycle()
         }
+    }
+
+    private fun applyOrientation(bitmap: Bitmap, orientation: CoverOrientation): Bitmap {
+        if (orientation.isIdentity) return bitmap
+        val matrix = Matrix().apply {
+            if (orientation.mirrored) postScale(-1f, 1f)
+            postRotate(orientation.rotationDegrees.toFloat())
+        }
+        val oriented = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (oriented !== bitmap) bitmap.recycle()
+        return oriented
     }
 
     private fun isJpeg(bytes: ByteArray): Boolean {

@@ -28,8 +28,14 @@ sealed interface LocalMediaWriteAccessPlan {
     /** Android 11 起依次弹出系统修改授权，每个请求最多 [MAX_URIS_PER_WRITE_REQUEST] 首 */
     data class SystemConsent(val requests: List<PendingIntent>) : LocalMediaWriteAccessPlan
 
-    /** Android 10 没有批量修改授权，只能让用户授予这批歌曲所在的文件夹，写入改走文件夹授权 */
-    data class FolderGrant(val suggestedFolder: StorageDocumentPath?) : LocalMediaWriteAccessPlan
+    /**
+     * Android 10 没有批量修改授权，只能让用户授予这批歌曲所在的文件夹，写入改走文件夹授权；
+     * 跨存储卷或用户选了别的目录时一次覆盖不全，授权后需要重新规划
+     */
+    data class FolderGrant(
+        val suggestedFolder: StorageDocumentPath?,
+        val pendingSongs: Int
+    ) : LocalMediaWriteAccessPlan
 
     /** 系统拒绝创建授权请求，继续写入必然整批失败 */
     data class Unavailable(val error: Throwable) : LocalMediaWriteAccessPlan
@@ -105,6 +111,7 @@ internal fun systemConsentPlan(
 internal fun folderGrantPlan(pendingDirectories: List<StorageDocumentPath?>): LocalMediaWriteAccessPlan {
     if (pendingDirectories.isEmpty()) return LocalMediaWriteAccessPlan.Ready
     return LocalMediaWriteAccessPlan.FolderGrant(
-        FolderArtworkLocator.commonAncestor(pendingDirectories.filterNotNull().distinct())
+        suggestedFolder = FolderArtworkLocator.commonAncestor(pendingDirectories.filterNotNull().distinct()),
+        pendingSongs = pendingDirectories.size
     )
 }

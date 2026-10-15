@@ -52,7 +52,16 @@ class LocalMediaWriteAccessPlanTest {
             )
         )
 
-        assertEquals(LocalMediaWriteAccessPlan.FolderGrant(StorageDocumentPath("primary", "Music")), plan)
+        assertEquals(LocalMediaWriteAccessPlan.FolderGrant(StorageDocumentPath("primary", "Music"), 3), plan)
         assertEquals(LocalMediaWriteAccessPlan.Ready, folderGrantPlan(emptyList()))
+    }
+
+    @Test
+    fun `songs on different volumes get no shared folder suggestion`() {
+        val plan = folderGrantPlan(
+            listOf(StorageDocumentPath("primary", "Music"), StorageDocumentPath("1A2B-3C4D", "Music"))
+        )
+
+        assertEquals(LocalMediaWriteAccessPlan.FolderGrant(suggestedFolder = null, pendingSongs = 2), plan)
     }
 }

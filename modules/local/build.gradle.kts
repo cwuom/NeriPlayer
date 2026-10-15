@@ -29,6 +29,7 @@ dependencies {
     api(libs.androidx.datastore.preferences)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.work.runtime.ktx)

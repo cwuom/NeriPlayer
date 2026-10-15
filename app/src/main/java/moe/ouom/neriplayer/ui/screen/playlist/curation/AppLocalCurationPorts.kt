@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.core.player.persistence.LocalSongAssetEmbedding
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.curation.CommittedEmbeddedCover
 import moe.ouom.neriplayer.data.local.media.curation.EmbeddedCoverPreparer
 import moe.ouom.neriplayer.data.local.media.curation.EmbeddedCoverSizePreset
 import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
@@ -74,8 +75,11 @@ internal class AppLocalCurationPorts(private val context: Context) : LocalCurati
         preset: EmbeddedCoverSizePreset
     ): PreparedEmbeddedCover? = EmbeddedCoverPreparer.prepare(context, reference, preset)
 
-    override suspend fun commitCover(prepared: PreparedEmbeddedCover): String? =
+    override suspend fun commitCover(prepared: PreparedEmbeddedCover): CommittedEmbeddedCover? =
         EmbeddedCoverPreparer.commit(context, prepared)
+
+    override suspend fun discardCovers(references: Collection<String>) =
+        EmbeddedCoverPreparer.discard(context, references)
 
     /** 歌词与封面在一次文件事务里写入；文件写入不占用播放器的全局元数据锁，可与其他歌曲并行 */
     override suspend fun apply(

@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.data.local.media.curation
 
+import androidx.exifinterface.media.ExifInterface
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EmbeddedCoverPreparerTest {
@@ -43,6 +46,21 @@ class EmbeddedCoverPreparerTest {
         assertEquals(2, EmbeddedCoverPreparer.decodeSampleSize(1000, 1000, 500))
         assertEquals(4, EmbeddedCoverPreparer.decodeSampleSize(3000, 2000, 500))
         assertEquals(1, EmbeddedCoverPreparer.decodeSampleSize(3000, 3000, null))
+    }
+
+    @Test
+    fun `exif orientations map to the pixel transform that makes artwork upright`() {
+        assertEquals(CoverOrientation.NORMAL, CoverOrientation.fromExif(ExifInterface.ORIENTATION_NORMAL))
+        assertEquals(CoverOrientation.NORMAL, CoverOrientation.fromExif(ExifInterface.ORIENTATION_UNDEFINED))
+        assertEquals(CoverOrientation(90, false), CoverOrientation.fromExif(ExifInterface.ORIENTATION_ROTATE_90))
+        assertEquals(CoverOrientation(180, false), CoverOrientation.fromExif(ExifInterface.ORIENTATION_ROTATE_180))
+        assertEquals(CoverOrientation(270, false), CoverOrientation.fromExif(ExifInterface.ORIENTATION_ROTATE_270))
+        assertEquals(CoverOrientation(0, true), CoverOrientation.fromExif(ExifInterface.ORIENTATION_FLIP_HORIZONTAL))
+        assertEquals(CoverOrientation(180, true), CoverOrientation.fromExif(ExifInterface.ORIENTATION_FLIP_VERTICAL))
+        assertEquals(CoverOrientation(90, true), CoverOrientation.fromExif(ExifInterface.ORIENTATION_TRANSPOSE))
+        assertEquals(CoverOrientation(270, true), CoverOrientation.fromExif(ExifInterface.ORIENTATION_TRANSVERSE))
+        assertTrue(CoverOrientation.NORMAL.isIdentity)
+        assertFalse(CoverOrientation(0, true).isIdentity)
     }
 
     @Test

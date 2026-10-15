@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.local.media.curation.CommittedEmbeddedCover
 import moe.ouom.neriplayer.data.local.media.curation.EmbeddedCoverSizePreset
 import moe.ouom.neriplayer.data.local.media.curation.LocalEmbeddedAssetState
 import moe.ouom.neriplayer.data.local.media.curation.PreparedEmbeddedCover
@@ -313,6 +314,36 @@ class LocalCurationCoordinatorTest {
     }
 
     @Test
+    fun `covers committed only for failed songs are discarded after the batch`() = runTest {
+        val existing = committed("file:///existing/cover.jpg")
+        val ports = FakePorts(
+            assets = listOf("lonely", "ok", "sharedFail", "sharedOk", "oldFail").associateWith { assets() },
+            folderCovers = mapOf(
+                "lonely" to "file:///lonely.jpg",
+                "ok" to "file:///ok.jpg",
+                "sharedFail" to "file:///shared.jpg",
+                "sharedOk" to "file:///shared.jpg",
+                "oldFail" to "file:///existing/cover.jpg"
+            ),
+            failingKeys = mutableSetOf("lonely", "sharedFail", "oldFail"),
+            existingCovers = setOf(existing)
+        )
+        val coordinator = coordinator(ports)
+        coordinator.start(
+            listOf("lonely", "ok", "sharedFail", "sharedOk", "oldFail").map(::song),
+            options().copy(lyricMode = LocalCurationLyricMode.SKIP)
+        )
+        advanceUntilIdle()
+
+        coordinator.apply()
+        advanceUntilIdle()
+
+        assertEquals(listOf(committed("file:///lonely.jpg")), ports.discardedCovers)
+        assertEquals(committed("file:///ok.jpg"), ports.appliedCovers["ok"])
+        assertEquals(committed("file:///shared.jpg"), ports.appliedCovers["sharedOk"])
+    }
+
+    @Test
     fun `options used to start a session become the next default`() = runTest {
         val ports = FakePorts(assets = mapOf("a" to assets()))
         val coordinator = coordinator(ports)
@@ -414,6 +445,8 @@ class LocalCurationCoordinatorTest {
 
     private fun staged(reference: String) = "file:///staged/${reference.hashCode()}.jpg"
 
+    private fun committed(reference: String) = "file:///committed/${reference.hashCode()}.jpg"
+
     private fun assets(lyricBytes: Int = 0, coverBytes: Int = 0) = LocalEmbeddedAssetState(
         embeddedLyricBytes = lyricBytes,
         embeddedCoverBytes = coverBytes,
@@ -460,8 +493,12 @@ class LocalCurationCoordinatorTest {
         private val playingKey: String? = null,
         val failingKeys: MutableSet<String> = mutableSetOf(),
         private val applyDelayMs: Long = 0L,
-        private val matchDelayMs: Long = 0L
+        private val matchDelayMs: Long = 0L,
+        private val existingCovers: Set<String> = emptySet()
     ) : LocalCurationPorts {
+        val committedCovers = mutableSetOf<String>()
+        val discardedCovers = mutableListOf<String>()
+        val appliedCovers = mutableMapOf<String, String?>()
         val matchedTitles = mutableListOf<String>()
         val preparedReferences = mutableListOf<String>()
         val appliedKeys = mutableListOf<String>()
@@ -497,7 +534,14 @@ class LocalCurationCoordinatorTest {
             return PreparedEmbeddedCover("file:///staged/${reference.hashCode()}.jpg", 1_000, 500, 500)
         }
 
-        override suspend fun commitCover(prepared: PreparedEmbeddedCover): String = prepared.reference
+        override suspend fun commitCover(prepared: PreparedEmbeddedCover): CommittedEmbeddedCover {
+            val reference = prepared.reference.replace("staged", "committed")
+            return CommittedEmbeddedCover(reference, newlyCreated = committedCovers.add(reference) && reference !in existingCovers)
+        }
+
+        override suspend fun discardCovers(references: Collection<String>) {
+            discardedCovers += references
+        }
 
         override suspend fun apply(
             song: SongItem,
@@ -510,6 +554,7 @@ class LocalCurationCoordinatorTest {
                 if (applyDelayMs > 0L) delay(applyDelayMs)
                 if (song.name in failingKeys) return LocalCurationFailure.LYRICS_WRITE
                 appliedKeys += song.name
+                appliedCovers[song.name] = coverReference
                 return null
             } finally {
                 concurrentApplies--

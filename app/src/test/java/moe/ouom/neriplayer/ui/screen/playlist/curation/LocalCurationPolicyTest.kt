@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
+import moe.ouom.neriplayer.data.local.media.curation.CommittedEmbeddedCover
 import moe.ouom.neriplayer.data.local.media.curation.LocalEmbeddedAssetState
 import moe.ouom.neriplayer.data.local.media.curation.PreparedEmbeddedCover
 import moe.ouom.neriplayer.data.model.SongItem
@@ -16,6 +17,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalCurationPolicyTest {
+
+    @Test
+    fun `another folder grant is requested only while the pending songs keep shrinking`() {
+        assertTrue(folderGrantMadeProgress(Int.MAX_VALUE, 5))
+        assertTrue(folderGrantMadeProgress(5, 2))
+        assertFalse(folderGrantMadeProgress(2, 2))
+        assertFalse(folderGrantMadeProgress(2, 3))
+    }
+
+    @Test
+    fun `only covers created in this run and adopted by no song are orphans`() {
+        val usage = CommittedCoverUsage()
+        usage.committed(CommittedEmbeddedCover("new-failed", newlyCreated = true))
+        usage.committed(CommittedEmbeddedCover("shared", newlyCreated = true))
+        usage.committed(CommittedEmbeddedCover("shared", newlyCreated = false))
+        usage.committed(CommittedEmbeddedCover("pre-existing", newlyCreated = false))
+        usage.adopted("shared")
+
+        assertEquals(setOf("new-failed"), usage.orphans())
+        usage.reset()
+        assertTrue(usage.orphans().isEmpty())
+    }
 
     @Test
     fun `fill missing embeds existing lyrics before matching online`() {

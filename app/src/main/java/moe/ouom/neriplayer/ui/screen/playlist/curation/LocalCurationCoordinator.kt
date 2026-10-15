@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
+import moe.ouom.neriplayer.data.local.media.curation.CommittedEmbeddedCover
 import moe.ouom.neriplayer.data.local.media.curation.EmbeddedCoverSizePreset
 import moe.ouom.neriplayer.data.local.media.curation.LocalEmbeddedAssetState
 import moe.ouom.neriplayer.data.local.media.curation.PreparedEmbeddedCover
@@ -33,6 +34,34 @@ data class LocalCurrentLyrics(
     val romanizedLyrics: String?
 )
 
+/**
+ * 封面在写入音频前就要转存成持久文件；同专辑的歌按内容共用一份，
+ * 只有本轮新建且没有任何一首写入成功的文件才算孤立，可以删除
+ */
+internal class CommittedCoverUsage {
+    private val created = HashSet<String>()
+    private val adopted = HashSet<String>()
+
+    @Synchronized
+    fun reset() {
+        created.clear()
+        adopted.clear()
+    }
+
+    @Synchronized
+    fun committed(cover: CommittedEmbeddedCover) {
+        if (cover.newlyCreated) created += cover.reference
+    }
+
+    @Synchronized
+    fun adopted(reference: String) {
+        adopted += reference
+    }
+
+    @Synchronized
+    fun orphans(): Set<String> = created - adopted
+}
+
 /** 批量词图管理需要的全部副作用，测试用假实现替换，生产实现见 [AppLocalCurationPorts] */
 interface LocalCurationPorts {
     fun songKey(song: SongItem): String
@@ -43,7 +72,10 @@ interface LocalCurationPorts {
     suspend fun folderCover(song: SongItem): String?
     suspend fun matchLyrics(request: EditableLyricMatchRequest): List<RankedEditableLyricMatch>
     suspend fun prepareCover(reference: String, preset: EmbeddedCoverSizePreset): PreparedEmbeddedCover?
-    suspend fun commitCover(prepared: PreparedEmbeddedCover): String?
+    suspend fun commitCover(prepared: PreparedEmbeddedCover): CommittedEmbeddedCover?
+
+    /** 删除本批次新建、但最终没有歌曲采用的封面 */
+    suspend fun discardCovers(references: Collection<String>)
 
     /** 一次事务写入歌词与封面；返回失败类型，成功为 null */
     suspend fun apply(
@@ -76,6 +108,7 @@ class LocalCurationCoordinator(
     @Volatile
     private var cleanupJob: Job? = null
     private val coverCache = HashMap<String, CompletableDeferred<PreparedEmbeddedCover?>>()
+    private val coverUsage = CommittedCoverUsage()
 
     val isBusy: Boolean
         get() = mutableSession.value?.stage.let {
@@ -138,7 +171,7 @@ class LocalCurationCoordinator(
         val (chosen, coverUrl) = followingCover ?: return
         scope.launch {
             val prepared = prepareCoverOnce(coverUrl, session.options.coverSize) ?: return@launch
-            updateReviewItem(key) { item ->
+            updateReviewItem(key, sessionId = session.id) { item ->
                 // 准备期间用户可能又换了候选，只给仍然选中的那条配封面
                 if (item.lyric != chosen) return@updateReviewItem item
                 item.copy(
@@ -370,6 +403,7 @@ class LocalCurationCoordinator(
         playingKeys: List<String>,
         parallelism: Int
     ) {
+        coverUsage.reset()
         try {
             val semaphore = Semaphore(parallelism)
             coroutineScope {
@@ -404,14 +438,17 @@ class LocalCurationCoordinator(
 
     private suspend fun applyItem(item: LocalCurationItem): LocalCurationFailure? {
         val lyric = item.lyric?.takeIf { item.applyLyric }
-        val coverReference = item.cover?.takeIf { item.applyCover }?.let { proposal ->
+        val committed = item.cover?.takeIf { item.applyCover }?.let { proposal ->
             runCatchingNonCancellation { ports.commitCover(proposal.prepared) }.getOrNull()
                 ?: return LocalCurationFailure.COVER_PREPARE
         }
-        return runCatchingNonCancellation { ports.apply(item.song, lyric, coverReference) }
+        committed?.let(coverUsage::committed)
+        val failure = runCatchingNonCancellation { ports.apply(item.song, lyric, committed?.reference) }
             .getOrElse {
                 if (lyric != null) LocalCurationFailure.LYRICS_WRITE else LocalCurationFailure.COVER_WRITE
             }
+        if (failure == null) committed?.let { coverUsage.adopted(it.reference) }
+        return failure
     }
 
     private fun finishApply(sessionId: Long, cancelled: Boolean) {
@@ -431,11 +468,19 @@ class LocalCurationCoordinator(
             ).also { finished = it }
         }
         finished?.let { ports.notifyFinished(it.appliedCount, it.failedCount) }
+        val orphans = coverUsage.orphans()
+        if (orphans.isNotEmpty()) scope.launch { ports.discardCovers(orphans) }
     }
 
-    private fun updateReviewItem(key: String, transform: (LocalCurationItem) -> LocalCurationItem) {
+    /** [sessionId] 非空时只更新该会话，异步结果不会落到之后新开的会话上 */
+    private fun updateReviewItem(
+        key: String,
+        sessionId: Long? = null,
+        transform: (LocalCurationItem) -> LocalCurationItem
+    ) {
         mutableSession.update { current ->
             if (current?.stage != LocalCurationStage.REVIEW) return@update current
+            if (sessionId != null && current.id != sessionId) return@update current
             current.copy(items = current.items.map { if (it.key == key) transform(it) else it })
         }
     }

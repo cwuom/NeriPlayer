@@ -10,6 +10,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.MediaType.Companion.toMediaType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -24,6 +25,29 @@ class CustomSongCoverStorageTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Test
+    fun `prepared covers are found by content and only covers inside the directory are deleted`() = runBlocking {
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val previousValidator = CustomSongCoverStorage.remoteCoverImageValidator
+        CustomSongCoverStorage.remoteCoverImageValidator = { true }
+        try {
+            val bytes = byteArrayOf(9, 8, 7)
+            assertNull(CustomSongCoverStorage.findPreparedCover(context, bytes))
+
+            val persisted = requireNotNull(CustomSongCoverStorage.persistPreparedCover(context, bytes))
+            assertEquals(persisted, CustomSongCoverStorage.findPreparedCover(context, bytes))
+
+            val outside = tempFolder.newFile("outside.jpg")
+            assertFalse(CustomSongCoverStorage.deletePreparedCover(context, outside.toURI().toString()))
+            assertTrue(outside.isFile)
+            assertTrue(CustomSongCoverStorage.deletePreparedCover(context, persisted))
+            assertNull(CustomSongCoverStorage.findPreparedCover(context, bytes))
+        } finally {
+            CustomSongCoverStorage.remoteCoverImageValidator = previousValidator
+        }
+    }
 
     @Test
     fun `explicit manual remote cover is localized and mapped`() = runBlocking {
