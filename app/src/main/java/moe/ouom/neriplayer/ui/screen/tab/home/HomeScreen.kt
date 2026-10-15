@@ -106,7 +106,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -142,7 +141,6 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteasePlaylistSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteaseSongSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -161,54 +159,6 @@ import moe.ouom.neriplayer.util.format.formatPlayCount
 import kotlin.math.ceil
 import kotlin.math.min
 import java.util.Locale
-
-private const val HomeScrollKeyContinueHeader = "home:continue:header"
-private const val HomeScrollKeyContinueContent = "home:continue:content"
-private const val HomeScrollKeyYtGuess = "home:ytmusic:guess"
-private const val HomeScrollKeyYtDaily = "home:ytmusic:daily"
-private const val HomeScrollKeyYtMoreHeader = "home:ytmusic:more:header"
-private const val HomeScrollKeyYtMoreLoading = "home:ytmusic:more:loading"
-private const val HomeScrollKeyYtMoreError = "home:ytmusic:more:error"
-private const val HomeScrollKeyYtShelvesLoading = "home:ytmusic:shelves:loading"
-private const val HomeScrollKeyYtShelvesError = "home:ytmusic:shelves:error"
-private const val HomeScrollKeyYtEmptyFeedLoading = "home:ytmusic:empty-feed:loading"
-private const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error"
-private const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
-private const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
-private const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
-
-private fun homeNeteaseSongSectionKey(group: String, source: NeteaseHomeSongSource): String {
-    return "home:netease:$group:${source.name.lowercase(Locale.ROOT)}"
-}
-
-private fun homeNeteasePlaylistSectionKey(source: NeteaseHomePlaylistSource): String {
-    return "home:netease:playlist:${source.name.lowercase(Locale.ROOT)}"
-}
-
-internal fun homeNeteasePlaylistScrollKey(sectionKey: String, id: Long): String {
-    return "$sectionKey:playlist:$id"
-}
-
-internal fun homeNeteaseRadarPlaylistScrollKey(id: Long): String {
-    return "$HomeScrollKeyNeteaseRadarPlaylists:playlist:$id"
-}
-
-private fun homeYtMusicPlaylistScrollKey(playlist: YouTubeMusicPlaylist): String {
-    return "home:ytmusic:playlist:${playlist.favoriteId()}"
-}
-
-private fun homeYtMusicShelfScrollKey(shelfIndex: Int, title: String): String {
-    return "home:ytmusic:shelf:$shelfIndex:${title.hashCode()}"
-}
-
-private fun homeYtMusicHomeItemScrollKey(
-    shelfKey: String,
-    itemIndex: Int,
-    item: YouTubeMusicHomeItem
-): String {
-    val stableId = item.browseId.ifBlank { item.videoId }.ifBlank { item.title }
-    return "$shelfKey:item:$itemIndex:${stableId.hashCode()}"
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
