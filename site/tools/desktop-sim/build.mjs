@@ -99,13 +99,53 @@ const kept = await page.evaluate((rules, allHtml) => {
   const style = document.createElement('style');
   document.head.appendChild(style);
   const keep = [];
+  /* 仿真窗口固定 1280 × 800、鼠标操作：尺寸与输入方式的媒体查询按这个窗口算死，
+     否则在手机上（视口只有几百像素宽）会套用桌面版的窄窗口 / 触屏布局。返回 true（无条件）、false（丢掉）或剩下的条件 */
+  const WIN = { width: 1280, height: 800 };
+  const evalMedia = (cond) => {
+    const parts = cond.split(/\s*,\s*/).map((part) => {
+      const rest = [];
+      for (const raw of part.split(/\s+and\s+/i)) {
+        const f = raw.trim().replace(/^only\s+/i, '');
+        if (/^(screen|all)$/i.test(f)) continue;
+        if (/^print$/i.test(f)) return false;
+        let m = /^\((min|max)-(width|height)\s*:\s*([\d.]+)px\)$/i.exec(f);
+        if (m) { const v = WIN[m[2].toLowerCase()]; if (m[1].toLowerCase() === 'min' ? v < +m[3] : v > +m[3]) return false; continue; }
+        m = /^\((width|height)\s*(<=|>=|<|>)\s*([\d.]+)px\)$/i.exec(f);
+        if (m) { const v = WIN[m[1].toLowerCase()]; const n = +m[3]; const ok = { '<=': v <= n, '>=': v >= n, '<': v < n, '>': v > n }[m[2]]; if (!ok) return false; continue; }
+        if (/^\(hover\s*:\s*none\)$|^\(pointer\s*:\s*coarse\)$|^\(any-pointer\s*:\s*coarse\)$/i.test(f)) return false;
+        if (/^\(hover\s*:\s*hover\)$|^\(pointer\s*:\s*fine\)$/i.test(f)) continue;
+        rest.push(f);
+      }
+      return rest.length ? rest.join(' and ') : true;
+    });
+    if (parts.some((p) => p === true)) return true;
+    const left = parts.filter((p) => p !== false);
+    return left.length ? left.join(', ') : false;
+  };
+  // CSS 嵌套里的 @media（AMLL 歌词样式就这么写）同样按仿真窗口算：不成立的删掉，成立的留着（窗口尺寸固定，条件恒真）
+  const pruneNested = (rule) => {
+    if (!rule.cssRules) return;
+    for (let i = rule.cssRules.length - 1; i >= 0; i--) {
+      const r = rule.cssRules[i];
+      if (r instanceof CSSMediaRule && evalMedia(r.conditionText) === false) rule.deleteRule(i);
+      else pruneNested(r);
+    }
+  };
   const visit = (rule) => {
-    if (rule instanceof CSSStyleRule) return used(rule.selectorText) ? rule.cssText : null;
+    if (rule instanceof CSSStyleRule) { if (!used(rule.selectorText)) return null; pruneNested(rule); return rule.cssText; }
     if (rule instanceof CSSFontFaceRule) return null;
     if (rule instanceof CSSKeyframesRule) return rule.cssText;
-    if (rule instanceof CSSMediaRule || rule instanceof CSSSupportsRule) {
+    if (rule instanceof CSSMediaRule) {
+      const cond = evalMedia(rule.conditionText);
+      if (cond === false) return null;
       const inner = [...rule.cssRules].map(visit).filter(Boolean);
-      return inner.length ? '@' + (rule instanceof CSSMediaRule ? 'media ' + rule.conditionText : 'supports ' + rule.conditionText) + ' {' + inner.join('\n') + '}' : null;
+      if (!inner.length) return null;
+      return cond === true ? inner.join('\n') : '@media ' + cond + ' {' + inner.join('\n') + '}';
+    }
+    if (rule instanceof CSSSupportsRule) {
+      const inner = [...rule.cssRules].map(visit).filter(Boolean);
+      return inner.length ? '@supports ' + rule.conditionText + ' {' + inner.join('\n') + '}' : null;
     }
     if (rule.cssText.startsWith('@property')) return rule.cssText;
     return null;

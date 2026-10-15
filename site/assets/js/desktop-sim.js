@@ -63,6 +63,11 @@
     '.amll-lyric-player .' + A.wrap + ' { position: absolute; left: 0; top: 0; width: 100%; will-change: transform, filter; cursor: pointer; }',
     '.amll-lyric-player .' + A.line + ' { transition: transform .6s cubic-bezier(.2,0,0,1); transform-origin: left center; }',
     '.amll-lyric-player.dsim-no-sub .' + A.sub + ' { display: none; }',
+    /* 手机上的播放页截图（整窗口，含播放页自己的标题栏），左上角留一块透明的收起按钮 */
+    /* 桌面版 .now-playing 的定位规则带 Vue 作用域属性，套不到这个元素上，这里自己定位，否则它会占满弹性布局把内容区挤没 */
+    '.dsim-npshot { position: absolute; inset: 0; z-index: 1000; overflow: hidden; background: #0e0c18; }',
+    '.dsim-npshot img { display: block; width: 100%; height: 100%; object-fit: cover; }',
+    '.dsim-npshot__close { position: absolute; left: 0; top: 0; width: 76px; height: 46px; padding: 0; border: 0; background: transparent; cursor: pointer; }',
     /* 网站提示 */
     '.dsim-toast { position: absolute; left: 50%; bottom: 96px; z-index: 3000; max-width: 640px; padding: 12px 18px; border-radius: 8px; background: var(--md-inverse-surface); color: var(--md-inverse-on-surface); font: 14px/1.45 var(--font-family-default, MiSans, sans-serif); box-shadow: 0 6px 18px rgba(0,0,0,.25); opacity: 0; transform: translate(-50%, 12px); pointer-events: none; transition: opacity .25s, transform .35s cubic-bezier(.05,.7,.1,1); }',
     '.dsim-toast.is-on { opacity: 1; transform: translate(-50%, 0); }',
@@ -206,6 +211,8 @@
     this.colorMode = 'cover';
     this.colorIdx = 0;
     this.fxMode = 'simple';
+    /* 手机上播放页（WebGL 流体背景 + 逐字歌词景深模糊）逐帧重绘会把浏览器卡住，换成同主题的真机截图 */
+    this.lite = !!(NP.env.coarse && window.matchMedia('(max-width: 980px)').matches);
     this.listeners = [];
   }
   var source = null;
@@ -287,7 +294,7 @@
   };
   /* 切换方式照桌面版：
      · animate —— 深色模式与主题色：View Transition 圆形扩散（switchThemeWithRipple / switchThemeColorWithRipple），
-       旧画面原样留在下面，新画面从点击处 circle(0) → circle(r) 展开，500ms cubic-bezier(0.2, 0, 0, 1)
+       只给仿真窗口起 view-transition-name，新画面从点击处 circle(0) → circle(r) 展开，500ms cubic-bezier(0.2, 0, 0, 1)
      · smooth —— 取色方式、跟随系统时系统明暗变化：beginSmoothThemeTransition，颜色 300ms 过渡 */
   Sim.prototype.applyTheme = function (animate, origin, smooth) {
     var self = this;
@@ -298,68 +305,38 @@
       self.host.className = cls + (extra || '');
       self.layout();
       self.syncAppearance();
+      self.npShot();
     };
-    if (this.ghost) { this.ghost.remove(); this.ghost = null; if (this._rip) this._rip.cancel(); }
     if (smooth && !reduced) {
       commit(' theme-switching');
       clearTimeout(this._smooth);
       this._smooth = setTimeout(function () { self.host.classList.remove('theme-switching'); }, 350);
       return;
     }
-    if (!animate || reduced || !this.host.animate || !this.app) { commit(); return; }
-    var ghost = this.freeze();
-    var go = function () {
-      if (go.done) return;
-      go.done = true;
-      self.copyState(ghost);
-      commit(' theme-ripple-active');
-      var r = Math.hypot(Math.max(origin.x, W - origin.x), Math.max(origin.y, H - origin.y));
-      var at = ' at ' + origin.x.toFixed(1) + 'px ' + origin.y.toFixed(1) + 'px)';
-      var a = self.host.animate({ clipPath: ['circle(0px' + at, 'circle(' + r.toFixed(1) + 'px' + at] }, { duration: 500, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
-      self._rip = a;
-      var end = function () {
-        if (self.ghost === ghost) { ghost.remove(); self.ghost = null; }
-        self.host.classList.remove('theme-ripple-active');
-      };
-      a.onfinish = end;
-      a.oncancel = end;
-    };
-    ghost._link.onload = go;
-    ghost._link.onerror = go;
-    setTimeout(go, 120);
-  };
-  /* 旧画面：同样的外壳与样式另起一个 Shadow 根，铺在仿真下面，相当于 View Transition 里的 old 快照 */
-  Sim.prototype.freeze = function () {
-    var host = this.host;
-    var g = document.createElement('div');
-    g.className = host.className;
-    g.style.cssText = host.style.cssText;
-    g.style.pointerEvents = 'none';
-    g.setAttribute('aria-hidden', 'true');
-    var root = g.attachShadow({ mode: 'open' });
-    var link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = BASE + 'desktop/sim.css';
-    var style = document.createElement('style');
-    style.textContent = EXTRA;
-    root.appendChild(link);
-    root.appendChild(style);
-    root.appendChild(this.app.cloneNode(true));
-    host.parentNode.insertBefore(g, host);
-    g._link = link;
-    g._root = root;
-    this.ghost = g;
-    return g;
-  };
-  /* cloneNode 不带滚动位置和表单的当前值，逐个补上，旧画面才和切换前一模一样 */
-  Sim.prototype.copyState = function (ghost) {
-    var a = this.app.querySelectorAll('*');
-    var b = ghost._root.querySelector('.dsim-app').querySelectorAll('*');
-    for (var i = 0; i < a.length && i < b.length; i++) {
-      var x = a[i];
-      if (x.scrollTop || x.scrollLeft) { b[i].scrollTop = x.scrollTop; b[i].scrollLeft = x.scrollLeft; }
-      if (x.tagName === 'INPUT') { b[i].checked = x.checked; b[i].value = x.value; }
+    if (!animate || reduced || !this.app) { commit(); return; }
+    /* 和桌面版同一套机制：浏览器把切换前后的窗口各拍一张，只展开新的那张。
+       不支持 View Transition 的浏览器退回颜色平滑过渡，不会闪 */
+    if (!document.startViewTransition || !window.CSS || !CSS.supports('view-transition-name', 'none')) {
+      commit(' theme-switching');
+      clearTimeout(this._smooth);
+      this._smooth = setTimeout(function () { self.host.classList.remove('theme-switching'); }, 350);
+      return;
     }
+    var root = document.documentElement;
+    var name = 'dsim-win' + (this.mini ? '-mini' : '');
+    var tag = function () { self.host.style.viewTransitionName = name; };
+    var untag = function () { self.host.style.viewTransitionName = ''; self.host.classList.remove('theme-ripple-active'); };
+    if (this._vt) { try { this._vt.skipTransition(); } catch (e) { /* 上一次还没结束 */ } }
+    tag();
+    var vt;
+    try { vt = document.startViewTransition(function () { commit(' theme-ripple-active'); tag(); }); } catch (e) { untag(); commit(); return; }
+    this._vt = vt;
+    var r = Math.hypot(Math.max(origin.x, W - origin.x), Math.max(origin.y, H - origin.y));
+    var at = ' at ' + origin.x.toFixed(1) + 'px ' + origin.y.toFixed(1) + 'px)';
+    vt.ready.then(function () {
+      root.animate({ clipPath: ['circle(0px' + at, 'circle(' + r.toFixed(1) + 'px' + at] }, { duration: 500, easing: 'cubic-bezier(0.2, 0, 0, 1)', pseudoElement: '::view-transition-new(' + name + ')' });
+    }).catch(function () { /* 被跳过时直接是新画面 */ });
+    vt.finished.then(untag, untag).then(function () { if (self._vt === vt) self._vt = null; });
   };
   Sim.prototype.layout = function () {
     var w = this.frame.clientWidth;
@@ -385,8 +362,12 @@
     root.appendChild(toast);
     this.toastEl = toast;
     var layout = this.q('.app-layout');
-    layout.insertAdjacentHTML('beforeend', this.parts.np);
-    layout.insertAdjacentHTML('beforeend', this.parts['tb-np']);
+    if (this.lite) {
+      layout.insertAdjacentHTML('beforeend', '<div class="now-playing dsim-npshot"><img alt="" draggable="false" decoding="async"><button type="button" class="dsim-npshot__close" aria-label="' + L('收起', 'Collapse') + '"></button></div>');
+    } else {
+      layout.insertAdjacentHTML('beforeend', this.parts.np);
+      layout.insertAdjacentHTML('beforeend', this.parts['tb-np']);
+    }
     this.qa('.title-bar').forEach(function (tb) {
       tb.classList.remove('tb-transitioning', 'tb-opening', 'tb-closing');
       tb.insertAdjacentHTML('afterbegin', '<div class="tb-traffic-safe-area"><i class="tl tl--close" data-act="close"></i><i class="tl tl--min" data-act="min"></i><i class="tl tl--max" data-act="max"></i></div>');
@@ -1062,10 +1043,21 @@
   };
 
   /* 播放页 */
+  Sim.prototype.npShot = function () {
+    var img = this.lite && this.npEl && this.npEl.querySelector('img');
+    if (!img) return;
+    var src = BASE + 'img/desktop/np-' + this.theme + '-' + (NP.en ? 'en' : 'zh') + '.jpg';
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  };
   Sim.prototype.bindNP = function () {
     var self = this;
     var npEl = this.q('.now-playing');
     this.npEl = npEl;
+    if (this.lite) {
+      this.npShot();
+      this.q('.dsim-npshot__close', npEl).addEventListener('click', function () { self.openNP(false); });
+      return;
+    }
     var tbNp = this.q('.title-bar.tb-np-mode');
     var collapse = this.q('.tb-np-collapse', tbNp);
     if (collapse) collapse.addEventListener('click', function () { self.openNP(false); });
@@ -1116,7 +1108,7 @@
     this.host.classList.toggle('dsim', true);
     var scrim = this.q('.np-underlay-scrim');
     if (scrim) scrim.classList.toggle('np-underlay-scrim--visible', on);
-    if (on) { this.lyr.snap = true; this.lyr.dirty = true; }
+    if (on && this.lyr) { this.lyr.snap = true; this.lyr.dirty = true; }
     this.emitView();
   };
 
@@ -1251,9 +1243,9 @@
       mp.fill.style.transform = 'scaleX(' + prog.toFixed(5) + ')';
       mp.thumb.style.transform = 'translateX(' + (prog * 100).toFixed(3) + '%)';
       var sec = Math.floor(t);
-      if (sec !== this._sec) { this._sec = sec; setText(mp.time, mmss(t) + ' / ' + mmss(P.dur)); if (this.npTimes[0]) { setText(this.npTimes[0], mmss(t)); setText(this.npTimes[1], mmss(P.dur)); } }
+      if (sec !== this._sec) { this._sec = sec; setText(mp.time, mmss(t) + ' / ' + mmss(P.dur)); if (this.npTimes && this.npTimes[0]) { setText(this.npTimes[0], mmss(t)); setText(this.npTimes[1], mmss(P.dur)); } }
     }
-    if (!this.np) return;
+    if (!this.np || this.lite) return;
     var wv = this.wave;
     if (wv && wv.on) {
       var playing = P.playing && !wv.drag;
