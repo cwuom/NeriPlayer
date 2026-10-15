@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 
 /**
  * 首页滚动锚点 key。LazyGrid item 的 key 需要在重组之间保持稳定，
