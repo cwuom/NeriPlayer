@@ -175,10 +175,12 @@ internal fun LocalCurationReviewContent(
                 textAlign = TextAlign.Center
             )
         } else {
+            // 横幅、筛选等占用的高度随状态变化，列表只拿剩余空间，底部按钮始终完整显示
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = listMaxHeight),
+                    .heightIn(max = listMaxHeight)
+                    .weight(1f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filtered, key = LocalCurationItem::key) { item ->

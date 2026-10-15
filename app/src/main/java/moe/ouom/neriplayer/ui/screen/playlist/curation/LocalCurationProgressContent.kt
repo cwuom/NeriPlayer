@@ -133,7 +133,8 @@ internal fun LocalCurationProgressContent(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 280.dp),
+                .heightIn(max = 280.dp)
+                .weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             items(visibleItems, key = LocalCurationItem::key) { item ->
@@ -241,6 +242,7 @@ internal fun LocalCurationFinishedContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 220.dp)
+                    .weight(1f, fill = false)
             ) {
                 items(failedItems, key = LocalCurationItem::key) { item ->
                     LocalCurationActivityRow(item = item)
