@@ -83,6 +83,7 @@
     compThr: L('开始压缩的音量（阈值）', 'Level where compression starts (threshold)'), compRatio: L('压缩强度（比率）', 'Strength (ratio)'),
     compAttack: L('反应速度（启动）', 'Reaction speed (attack)'), compRelease: L('恢复速度（释放）', 'Recovery speed (release)'),
     compKnee: L('过渡柔和度（拐点）', 'Smoothness (knee)'), compMakeup: L('补回音量', 'Make-up gain'),
+    spkMasterOff: L('音效总开关已关闭，优化暂不生效', 'Audio effects are turned off, so this is paused'),
     spkT: L('扬声器优化', 'Speaker optimization'), spkD: L('只在手机自带扬声器外放时生效，插上耳机或连接蓝牙会自动停用', 'Only works on the built-in speaker. It turns off automatically with headphones or Bluetooth.'),
     spkSize: L('扬声器类型', 'Speaker type'), spkSizes: [['phone', L('手机', 'Phone')], ['tablet', L('平板', 'Tablet')], ['large', L('大音箱', 'Large speaker')]],
     spkBass: L('低音补偿', 'Bass enhancement'), spkBassD: L('用谐波补回小喇叭发不出的低音', 'Rebuilds bass that tiny speakers cannot play, using harmonics'),
@@ -676,6 +677,8 @@
       var sec = row.closest('[data-sec]');
       var dis = !!sec && k.indexOf('sec.') !== 0 && !secActive(sec.getAttribute('data-sec'));
       row.classList.toggle('is-dis', dis);
+      /* 外放优化开着但总开关关闭时不会生效，分区开关如实提示（isSpeakerOptimizerBlockedByMaster） */
+      if (k === 'sec.speaker') txt($('[data-sw-desc]', row), S.sec.speaker && !S.on ? T.spkMasterOff : T.secDesc);
     });
     this.sliders.forEach(function (s) {
       var spec = SL[s.k];
