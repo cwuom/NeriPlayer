@@ -38,7 +38,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,7 +88,8 @@ import moe.ouom.neriplayer.util.platform.tryStartActivity
 internal fun BiliMusicRankDetailScreen(
     onBack: () -> Unit,
     onPlay: (List<BiliVideoItem>, Int) -> Unit,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    restoredRankType: BiliMusicRankType? = null
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
@@ -101,8 +104,28 @@ internal fun BiliMusicRankDetailScreen(
     val state = ui.biliMusicRank
     // 播放中时详情页会被常驻迷你播放器遮住底部，列表末尾需要额外预留它的高度
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    // 详情页打开时首页不再组合，HomeScreen 的 wasOffline 恢复刷新不会抵达这个目的地；因此这里
+    // 自己负责同步 offlineMode，并在从离线切回在线时重启一次因离线被跳过而遗留的空加载。
+    var wasOffline by remember { mutableStateOf(false) }
     LaunchedEffect(offlineMode) {
+        val cameBackOnline = wasOffline && !offlineMode
         vm.setOfflineMode(offlineMode)
+        if (cameBackOnline) {
+            wasOffline = false
+            val current = vm.uiState.value.biliMusicRank
+            if (current.songs.isEmpty() && !current.loading) {
+                vm.loadBiliMusicRank(force = true)
+            }
+        } else if (offlineMode) {
+            wasOffline = true
+        }
+    }
+    // 进程恢复时 rememberSaveable 会带回用户上次选的榜单类型，而共享 HomeViewModel 已被重建回
+    // 默认 HOT；这里用恢复出的 type 对齐一次，避免恢复后展示错误的榜单。
+    LaunchedEffect(restoredRankType) {
+        if (restoredRankType != null && restoredRankType != state.type) {
+            vm.selectBiliMusicRankType(restoredRankType)
+        }
     }
 
     Scaffold(

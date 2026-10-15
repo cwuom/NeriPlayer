@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -116,8 +117,8 @@ internal sealed class HomeSelectedItem {
         override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "ytmusic", "playlist" to playlist.toSaveMap())
     }
     // Bilibili 音乐模块的详情页复用首页同一个 HomeViewModel，因此这里不需要携带额外参数
-    object BiliMusicRank : HomeSelectedItem() {
-        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicRank")
+    data class BiliMusicRank(val rankType: BiliMusicRankType) : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicRank", "rankType" to rankType.cacheKey)
     }
     object BiliMusicHot : HomeSelectedItem() {
         override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicHot")
@@ -478,7 +479,9 @@ fun HomeHostScreen(
                                 onBiliMusicRankMore = {
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()
-                                    openHomeSelectedItem(HomeSelectedItem.BiliMusicRank)
+                                    openHomeSelectedItem(
+                                        HomeSelectedItem.BiliMusicRank(BiliMusicRankType.HOT)
+                                    )
                                 },
                                 onBiliMusicHotMore = {
                                     skipDetailCloseAnimation = false
@@ -582,13 +585,14 @@ fun HomeHostScreen(
                                 )
                             }
 
-                            HomeSelectedItem.BiliMusicRank -> {
+                            is HomeSelectedItem.BiliMusicRank -> {
                                 BiliMusicRankDetailScreen(
                                     onBack = { selected = null },
                                     onPlay = { videos, index ->
                                         onPlayBiliAudioWithSourceRoute(videos, index, null)
                                     },
-                                    offlineMode = offlineMode
+                                    offlineMode = offlineMode,
+                                    restoredRankType = current.rankType
                                 )
                             }
 
@@ -621,9 +625,13 @@ private val homeSelectedItemRestorers: Map<String, (Map<String, Any?>) -> HomeSe
     "netease" to { saved -> restorePlaylistSummary(saved.savedMap("playlist"))?.let(HomeSelectedItem::Netease) },
     "bili" to { saved -> restoreBiliPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::Bili) },
     "ytmusic" to { saved -> restoreYouTubeMusicPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::YouTubeMusic) },
-    "biliMusicRank" to { _ -> HomeSelectedItem.BiliMusicRank },
+    "biliMusicRank" to { saved -> HomeSelectedItem.BiliMusicRank(savedBiliMusicRankType(saved)) },
     "biliMusicHot" to { _ -> HomeSelectedItem.BiliMusicHot }
 )
+
+private fun savedBiliMusicRankType(saved: Map<String, Any?>): BiliMusicRankType =
+    BiliMusicRankType.entries.firstOrNull { it.cacheKey == saved.savedNonBlankString("rankType") }
+        ?: BiliMusicRankType.HOT
 
 /** 根据 UsageEntry 分发到不同平台详情 */
 private fun openRecent(
