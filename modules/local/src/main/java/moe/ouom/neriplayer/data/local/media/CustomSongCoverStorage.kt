@@ -367,23 +367,61 @@ object CustomSongCoverStorage {
         if (!remoteCoverImageValidator(bytes)) {
             return null
         }
-
-        val contentHash = sha256(bytes)
-        val extension = request.url.pathSegments.last().substringAfterLast('.', "")
         // 网络封面先保存为应用内输入, 最终本体由音频旁的 Covers 侧载承载
+        return persistCoverBytes(
+            context = context,
+            bytes = bytes,
+            extension = request.url.pathSegments.last().substringAfterLast('.', "")
+        )
+    }
+
+    /**
+     * 保存已经压缩好的待嵌入封面；按内容寻址，同专辑多首歌共用一份文件
+     */
+    suspend fun persistPreparedCover(
+        context: Context,
+        bytes: ByteArray,
+        extension: String = "jpg"
+    ): String? = withContext(Dispatchers.IO) {
+        if (!remoteCoverImageValidator(bytes)) return@withContext null
+        persistCoverBytes(context, bytes, extension)
+    }
+
+    /** 同内容的封面已经保存过时返回其引用，提交时不会新建文件 */
+    suspend fun findPreparedCover(
+        context: Context,
+        bytes: ByteArray,
+        extension: String = "jpg"
+    ): String? = withContext(Dispatchers.IO) {
+        findStoredCover(File(context.filesDir, DIRECTORY_NAME), bytes, extension)?.toURI()?.toString()
+    }
+
+    /** 删除自定义封面目录中的文件；目录外的引用一律忽略 */
+    suspend fun deletePreparedCover(context: Context, reference: String): Boolean = withContext(Dispatchers.IO) {
+        val file = resolveLocalFileReference(reference, runCatching { reference.toUri() }.getOrNull())
+            ?.takeIf { it.isFile && isInsideDirectory(it, File(context.filesDir, DIRECTORY_NAME)) }
+            ?: return@withContext false
+        file.delete()
+    }
+
+    private fun findStoredCover(directory: File, bytes: ByteArray, extension: String): File? {
+        val contentHash = sha256(bytes)
+        val target = File(directory, remoteCoverFileName(contentHash, extension))
+        if (target.isFile && target.length() == bytes.size.toLong()) return target
+        return directory.listFiles()?.firstOrNull { file ->
+            file.isFile && file.length() > 0L && file.name.substringBeforeLast('.') == contentHash
+        }
+    }
+
+    private fun persistCoverBytes(
+        context: Context,
+        bytes: ByteArray,
+        extension: String
+    ): String? {
         val directory = File(context.filesDir, DIRECTORY_NAME)
         if (!directory.exists() && !directory.mkdirs()) return null
-        val target = File(directory, remoteCoverFileName(contentHash, extension))
-        if (target.isFile && target.length() == bytes.size.toLong()) {
-            return target.toURI().toString()
-        }
-        val existing = directory.listFiles()
-            ?.firstOrNull { file ->
-                file.isFile && file.name.substringBeforeLast('.') == contentHash
-            }
-        if (existing != null && existing.length() > 0L) {
-            return existing.toURI().toString()
-        }
+        findStoredCover(directory, bytes, extension)?.let { return it.toURI().toString() }
+        val target = File(directory, remoteCoverFileName(sha256(bytes), extension))
 
         val temporary = File(directory, ".${target.name}.${UUID.randomUUID()}.tmp")
         return try {

@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.LowPriority
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.DropdownMenu
@@ -30,7 +31,9 @@ internal fun PlaylistSelectionMoreMenu(
     canSync: Boolean = false,
     onSync: (() -> Unit)? = null,
     canInsert: Boolean = false,
-    onInsert: (() -> Unit)? = null
+    onInsert: (() -> Unit)? = null,
+    canCurateLocalAssets: Boolean = false,
+    onCurateLocalAssets: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -79,6 +82,17 @@ internal fun PlaylistSelectionMoreMenu(
                     onExport()
                 }
             )
+            if (onCurateLocalAssets != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(CoreCommonR.string.local_curation_entry)) },
+                    leadingIcon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+                    enabled = canCurateLocalAssets,
+                    onClick = {
+                        expanded = false
+                        onCurateLocalAssets()
+                    }
+                )
+            }
             if (onSync != null) {
                 DropdownMenuItem(
                     text = {

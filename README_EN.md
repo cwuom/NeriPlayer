@@ -178,6 +178,21 @@ Current positioning:
   a quick preview first, then hydrate richer title/artist/album/cover metadata
   in the background. `LocalPlaylistRepository` manages system local playlists,
   user playlists, favorites, sorting, de-duplication, backup, and sync triggers.
+- **Batch lyrics & artwork curation**:
+  local playlists can match and embed lyrics and artwork for local songs from the
+  top bar or the selection menu. Analysis runs in the background without
+  interrupting playback. Searching and writing each process 10 songs in parallel
+  by default (each song also queries its lyric sources concurrently), adjustable
+  from 1 to 16 before starting. Matching checks the last LRC timestamp against the track
+  length, separates live and studio versions, and weighs LRC `ar/al/ti` tags.
+  Artwork prefers `cover/folder/front/album` images in the song's folder, then the
+  online artwork of the same track the lyrics came from, optionally resized to
+  500/1000 px JPEG. The app estimates the size increase before writing and supports
+  per-song review, alternative matches, and retrying failures. Standard lyric tags
+  are downgraded to line-timed LRC for car head units and Bluetooth devices, while
+  full word-timed lyrics stay in NeriPlayer's private tag. Under scoped storage,
+  reading folder images needs a one-time folder grant, and editing media files
+  created by other apps asks for one system consent per batch.
 - **Library browsing now has real categories**:
   `Library` is no longer just a playlist list. Local content can switch between
   playlists and artists, while `LocalArtistSummary` groups songs by display

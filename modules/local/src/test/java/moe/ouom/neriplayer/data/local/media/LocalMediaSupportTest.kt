@@ -66,6 +66,36 @@ class LocalMediaSupportTest {
 
 
     @Test
+    fun `media store sources are matched through their SAF mirror document id`() {
+        val mediaStoreSource = mock(Uri::class.java)
+        `when`(mediaStoreSource.scheme).thenReturn("content")
+        `when`(mediaStoreSource.authority).thenReturn("media")
+
+        val mirror = LocalMediaSupport.resolveSidecarSourceDocumentId(
+            sourceUri = mediaStoreSource,
+            parentDocumentId = "primary:Music/Album",
+            displayName = "01 Song.mp3"
+        )
+
+        assertEquals("primary:Music/Album/01 Song.mp3", mirror)
+        assertTrue(
+            LocalMediaSupport.containsExactDocumentSource(
+                documentIds = listOf("primary:Music/Album/01 Song.mp3", "primary:Music/Album/cover.jpg"),
+                sourceDocumentId = mirror
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.containsExactDocumentSource(
+                documentIds = listOf("primary:Music/Album/02 Other.mp3"),
+                sourceDocumentId = mirror
+            )
+        )
+        assertNull(
+            LocalMediaSupport.resolveSidecarSourceDocumentId(mediaStoreSource, "primary:Music", "../escape.mp3")
+        )
+    }
+
+    @Test
     fun `sidecar cover wins over embedded and remote fallback references`() {
         assertEquals(
             "file:///music/Covers/song.jpg",

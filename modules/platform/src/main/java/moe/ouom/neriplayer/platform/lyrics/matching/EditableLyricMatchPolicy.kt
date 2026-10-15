@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchCandidat
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricTimelineFit
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.platform.lyrics.search.toSimplifiedChineseForDomesticSearch
 import moe.ouom.neriplayer.data.model.lyrics.matching.DEFAULT_EDITABLE_LYRIC_MATCH_SOURCES
@@ -83,6 +84,7 @@ fun rankEditableLyricMatches(
             if (!hasPlausibleIdentity) {
                 return@mapNotNull null
             }
+            val supplementalSignals = evaluateLyricMatchSupplementalSignals(request, candidate)
             val score = titleScore +
                 artistScore +
                 albumScore +
@@ -90,11 +92,14 @@ fun rankEditableLyricMatches(
                 qualityScore +
                 wordTimingScore +
                 keywordScore +
+                supplementalSignals.score +
                 candidate.sourceScore.coerceIn(0, 20)
             if (score < MIN_EDITABLE_LYRIC_MATCH_SCORE) {
                 return@mapNotNull null
             }
             val confidence = when {
+                supplementalSignals.timelineFit == EditableLyricTimelineFit.OVERFLOWS ->
+                    EditableLyricMatchConfidence.LOW
                 hasReliableIdentity && hasDurationSignal -> EditableLyricMatchConfidence.HIGH
                 hasPrimaryArtist && hasDurationSignal && titleScore >= 20 ->
                     EditableLyricMatchConfidence.MEDIUM
@@ -107,7 +112,8 @@ fun rankEditableLyricMatches(
                 score = score,
                 durationDeltaMs = durationDeltaMs(request.durationMs, candidate.durationMs),
                 confidence = confidence,
-                hasWordTiming = hasWordTiming
+                hasWordTiming = hasWordTiming,
+                timelineFit = supplementalSignals.timelineFit
             )
         }
         .sortedWith(
@@ -262,7 +268,7 @@ fun scoreLyricMatchKeyword(keyword: String, candidate: EditableLyricMatchCandida
     return (48 - fuzzyScore / 2).coerceIn(12, 48)
 }
 
-private fun hasPlaceholderLyricMetadata(value: String): Boolean {
+internal fun hasPlaceholderLyricMetadata(value: String): Boolean {
     return normalizeLyricMatchText(value) in setOf(
         "unknown",
         "unknown artist",
@@ -280,7 +286,7 @@ private fun hasCompatibleLyricVersion(expectedTitle: String, candidateTitle: Str
 }
 
 private fun lyricVersionSignature(value: String): Set<String> {
-    return lyricVersionModifierRegex.findAll(normalizeLyricMatchText(value))
+    val signature = lyricVersionModifierRegex.findAll(normalizeLyricMatchText(value))
         .map { match ->
             when (match.value) {
                 "remastered" -> "remaster"
@@ -288,6 +294,8 @@ private fun lyricVersionSignature(value: String): Set<String> {
             }
         }
         .toSet()
+    // 中日文现场标记没有英文词边界，需要单独归一到 live
+    return if (isLiveLyricVersion(value)) signature + "live" else signature
 }
 
 private fun canonicalLyricMatchTitle(value: String): String {

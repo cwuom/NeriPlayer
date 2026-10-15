@@ -1131,19 +1131,32 @@ internal fun LocalMediaSupport.findNearbyCoverReference(
     return usable(findNearbyCover(localFile)?.toURI()?.toString())
 }
 
-internal fun LocalMediaSupport.documentChildrenContainSource(
-    parentChildren: Collection<DocumentChild>,
+/**
+ * MediaStore 条目的文档 ID 是 `audio:21` 这类媒体库编号，与授权文件夹里的 SAF 子项不可比；
+ * 它在文件夹中的镜像由父目录与文件名唯一确定，仍按精确文档 ID 匹配
+ */
+internal fun LocalMediaSupport.resolveSidecarSourceDocumentId(
     sourceUri: Uri,
-    displayName: String,
-    parentDocumentId: String
-): Boolean {
-    val sourceDocumentId = try {
+    parentDocumentId: String,
+    displayName: String
+): String? {
+    if (isMediaStoreUri(sourceUri)) return buildExternalStorageDocumentId(parentDocumentId, displayName)
+    return try {
         DocumentsContract.getDocumentId(sourceUri)
     } catch (error: SecurityException) {
         throw error
     } catch (_: Exception) {
         null
     }
+}
+
+internal fun LocalMediaSupport.documentChildrenContainSource(
+    parentChildren: Collection<DocumentChild>,
+    sourceUri: Uri,
+    displayName: String,
+    parentDocumentId: String
+): Boolean {
+    val sourceDocumentId = resolveSidecarSourceDocumentId(sourceUri, parentDocumentId, displayName)
     val containsSource = containsExactDocumentSource(
         documentIds = parentChildren
             .filterNot(DocumentChild::isDirectory)

@@ -242,6 +242,13 @@
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
   - `LocalArtistDetailScreen.kt` 展示本地艺术家详情，支持播放全部、
     多选、导出歌单和批量下载可在线解析的歌曲。
+  - `curation/` 是批量词图管理：`LocalCurationCoordinator` 持有进程级会话并通过
+    `LocalCurationPorts` 访问副作用（生产实现 `AppLocalCurationPorts` 调用
+    `PlayerManager.embedLocalSongAssets`：文件写入在全局元数据锁外并行、同一文件由本地媒体层按目标排队，
+    锁内只基于最新副本合并歌词与封面字段），`LocalCurationPolicy` 是可单测的规划、自动勾选与空间估算规则。
+    文件侧的嵌入资产检查、封面压缩、文件夹封面定位与媒体写入授权位于
+    `modules/local` 的 `data/local/media/curation/`；时间轴、现场版与 LRC 标签加权位于
+    `:platform` 的 `LyricMatchSupplementalSignals.kt`。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/artist/`
   - 网易云艺术家详情页，展示艺术家信息、热门歌曲、分页专辑和关注状态。

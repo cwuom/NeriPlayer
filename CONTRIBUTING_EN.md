@@ -268,6 +268,16 @@ Libraries with Kotlin/Java production sources use `build-logic.android.feature-l
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
   - `LocalArtistDetailScreen.kt`: local artist details with play-all,
     multi-select, playlist export, and batch download for resolvable online songs.
+  - `curation/`: batch lyrics & artwork curation. `LocalCurationCoordinator` owns the
+    process-wide session and reaches side effects through `LocalCurationPorts`
+    (the production `AppLocalCurationPorts` calls `PlayerManager.embedLocalSongAssets`, which
+    writes files outside the global metadata lock in parallel, queues writes to the same file in
+    the local media layer, and only merges lyric and artwork fields into the latest copy under the lock);
+    `LocalCurationPolicy` holds the unit-tested planning, auto-selection, and size
+    estimation rules. File-side embedded asset inspection, artwork resizing, folder
+    artwork lookup, and media write consent live in `data/local/media/curation/` of
+    `modules/local`; timeline, live-version, and LRC tag weighting live in
+    `LyricMatchSupplementalSignals.kt` of `:platform`.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/artist/`
   - NetEase artist detail screens for artist info, hot songs, paged albums,
