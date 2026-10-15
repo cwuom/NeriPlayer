@@ -54,6 +54,14 @@ internal fun needsLocalCover(mode: LocalCurationCoverMode, existing: LocalEmbedd
         LocalCurationCoverMode.REPLACE_ALL -> true
     }
 
+/** 换选歌词后封面是否跟随新候选：文件夹封面与匹配结果无关，保持不变；在线封面必须与歌词同源 */
+internal fun coverFollowsLyricChoice(item: LocalCurationItem, options: LocalCurationOptions): Boolean {
+    val cover = item.cover
+    if (cover != null) return cover.origin == LocalCurationCoverOrigin.ONLINE
+    val existing = item.existing ?: return false
+    return options.useOnlineCover && needsLocalCover(options.coverMode, existing)
+}
+
 /** 时间轴超出歌曲时长的候选直接淘汰，其余按匹配器排序取第一名 */
 internal fun pickLocalLyricMatch(ranked: List<RankedEditableLyricMatch>): RankedEditableLyricMatch? =
     ranked.firstOrNull { match ->
@@ -87,7 +95,7 @@ internal fun pickLocalCoverMatch(
     return ranked.firstOrNull(::isUsableCoverMatch)
 }
 
-private fun isUsableCoverMatch(match: RankedEditableLyricMatch): Boolean {
+internal fun isUsableCoverMatch(match: RankedEditableLyricMatch): Boolean {
     return !match.candidate.coverUrl.isNullOrBlank() &&
         match.confidence != EditableLyricMatchConfidence.LOW &&
         match.timelineFit != EditableLyricTimelineFit.OVERFLOWS

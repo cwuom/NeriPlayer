@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +51,21 @@ internal fun resolveLocalCurationFolderAccess(pending: List<StorageDocumentPath?
 }
 
 /**
+ * 持久保留文件夹授权，并尽量同时保留写权限：之后嵌入词图可以直接走文件夹授权，
+ * 不必每批再向系统申请修改媒体文件。返回是否获得了 [requireWrite] 要求的权限
+ */
+internal fun takeLocalCurationFolderGrant(context: Context, uri: Uri, requireWrite: Boolean): Boolean {
+    val resolver = context.contentResolver
+    val readWrite = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+    val granted = runCatching { resolver.takePersistableUriPermission(uri, readWrite) }.isSuccess ||
+        (!requireWrite && runCatching {
+            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }.isSuccess)
+    FolderArtworkLocator.clearCache()
+    return granted
+}
+
+/**
  * 分区存储下读取同目录 cover.jpg 需要用户授权一次文件夹；授权完成后立即重新统计，
  * 选择器默认定位到这批歌曲的公共上级目录
  */
@@ -63,13 +80,7 @@ internal fun LocalCurationFolderAccessCard(songs: List<SongItem>) {
     }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
-            // 同时保留写权限，之后嵌入词图可以直接走文件夹授权，不必每批再向系统申请修改媒体文件
-            val readWrite = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, readWrite) }
-                .recoverCatching {
-                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            FolderArtworkLocator.clearCache()
+            takeLocalCurationFolderGrant(context, uri, requireWrite = false)
             refreshKey++
         }
     }

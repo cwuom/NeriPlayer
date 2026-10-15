@@ -250,6 +250,69 @@ class LocalCurationCoordinatorTest {
     }
 
     @Test
+    fun `online artwork follows the chosen lyric candidate`() = runTest {
+        val ports = FakePorts(
+            assets = mapOf("song" to assets()),
+            matches = mapOf(
+                "song" to listOf(
+                    ranked("first", coverUrl = "https://img/first.jpg"),
+                    ranked("second", coverUrl = "https://img/second.jpg"),
+                    ranked("third")
+                )
+            )
+        )
+        val coordinator = coordinator(ports)
+        coordinator.start(listOf(song("song")), options())
+        advanceUntilIdle()
+        assertEquals(staged("https://img/first.jpg"), coordinator.session.value?.item("song")?.cover?.prepared?.reference)
+
+        coordinator.chooseLyricAlternative("song", 0)
+        advanceUntilIdle()
+        val second = requireNotNull(coordinator.session.value).item("song")
+        assertEquals("second", second.lyric?.matchedTitle)
+        assertEquals(staged("https://img/second.jpg"), second.cover?.prepared?.reference)
+        assertTrue(second.applyCover)
+
+        coordinator.chooseLyricAlternative("song", second.lyricAlternatives.indexOfFirst { it.matchedTitle == "third" })
+        advanceUntilIdle()
+        val third = requireNotNull(coordinator.session.value).item("song")
+        assertNull(third.cover)
+        assertFalse(third.applyCover)
+
+        coordinator.chooseLyricAlternative("song", third.lyricAlternatives.indexOfFirst { it.matchedTitle == "first" })
+        advanceUntilIdle()
+        val back = requireNotNull(coordinator.session.value).item("song")
+        assertEquals(staged("https://img/first.jpg"), back.cover?.prepared?.reference)
+        assertEquals(1, ports.preparedReferences.count { it == "https://img/first.jpg" })
+    }
+
+    @Test
+    fun `folder artwork stays when another lyric candidate is chosen`() = runTest {
+        val ports = FakePorts(
+            assets = mapOf("song" to assets()),
+            folderCovers = mapOf("song" to "file:///music/cover.jpg"),
+            matches = mapOf(
+                "song" to listOf(
+                    ranked("first", coverUrl = "https://img/first.jpg"),
+                    ranked("second", coverUrl = "https://img/second.jpg")
+                )
+            )
+        )
+        val coordinator = coordinator(ports)
+        coordinator.start(listOf(song("song")), options())
+        advanceUntilIdle()
+
+        coordinator.chooseLyricAlternative("song", 0)
+        advanceUntilIdle()
+
+        val item = requireNotNull(coordinator.session.value).item("song")
+        assertEquals("second", item.lyric?.matchedTitle)
+        assertEquals(LocalCurationCoverOrigin.FOLDER, item.cover?.origin)
+        assertTrue(item.applyCover)
+        assertFalse("https://img/second.jpg" in ports.preparedReferences)
+    }
+
+    @Test
     fun `options used to start a session become the next default`() = runTest {
         val ports = FakePorts(assets = mapOf("a" to assets()))
         val coordinator = coordinator(ports)
@@ -348,6 +411,8 @@ class LocalCurationCoordinatorTest {
     )
 
     private fun LocalCurationSession.item(key: String) = items.first { it.key == key }
+
+    private fun staged(reference: String) = "file:///staged/${reference.hashCode()}.jpg"
 
     private fun assets(lyricBytes: Int = 0, coverBytes: Int = 0) = LocalEmbeddedAssetState(
         embeddedLyricBytes = lyricBytes,

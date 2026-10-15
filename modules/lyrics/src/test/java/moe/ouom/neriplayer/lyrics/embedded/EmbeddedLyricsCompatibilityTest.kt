@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.lyrics.embedded
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EmbeddedLyricsCompatibilityTest {
@@ -249,4 +251,33 @@ class EmbeddedLyricsCompatibilityTest {
 
         assertEquals("[00:01.00]Hello\n[00:01.00]你好", merged)
     }
+
+    @Test
+    fun `inline ttml translations survive the downgrade for external players`() {
+        val merged = requireNotNull(mergeLyricsForExternalPlayers(ttmlWithInlineTranslation, null)).lines()
+
+        assertEquals(2, merged.size)
+        assertTrue(merged[0].startsWith("[00:01.00]Hello"))
+        assertEquals("[00:01.00]你好世界", merged[1])
+    }
+
+    @Test
+    fun `separate translated lyrics take precedence over inline ttml translations`() {
+        val merged = requireNotNull(mergeLyricsForExternalPlayers(ttmlWithInlineTranslation, "[00:01.00]哈喽")).lines()
+
+        assertEquals(listOf("[00:01.00]哈喽"), merged.drop(1))
+        assertFalse(merged.any { it.contains("你好世界") })
+    }
+
+    private val ttmlWithInlineTranslation = """
+        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+            <body><div>
+                <p begin="00:01.000" end="00:02.000">
+                    <span begin="00:01.000" end="00:01.500">Hello</span>
+                    <span begin="00:01.500" end="00:02.000">World</span>
+                    <span ttm:role="x-translation">你好世界</span>
+                </p>
+            </div></body>
+        </tt>
+    """.trimIndent()
 }

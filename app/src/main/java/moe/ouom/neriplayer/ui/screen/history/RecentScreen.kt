@@ -229,8 +229,9 @@ fun RecentScreen(
         }
     }
 
-    LaunchedEffect(showSearch, selectionMode, autoShowKeyboard) {
-        if (!shouldRequestPlaylistSearchFocus(showSearch, selectionMode, autoShowKeyboard)) {
+    LaunchedEffect(showSearch, selectionMode, autoShowKeyboard, hasHistory) {
+        // 没有历史记录时不组合搜索框，弹出键盘也没有输入目标
+        if (!hasHistory || !shouldRequestPlaylistSearchFocus(showSearch, selectionMode, autoShowKeyboard)) {
             return@LaunchedEffect
         }
         // 等搜索框随展开动画进入组合后再请求焦点

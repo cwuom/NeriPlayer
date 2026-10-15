@@ -118,6 +118,9 @@ object FolderArtworkLocator {
         synchronized(directoryCache) { directoryCache.clear() }
     }
 
+    fun storagePathOf(context: Context, song: SongItem): StorageDocumentPath? =
+        songDirectory(context, song)?.let(::storagePathOf)
+
     private fun songDirectory(context: Context, song: SongItem): String? {
         val path = song.localFilePath
             ?.takeIf { it.startsWith("/") }

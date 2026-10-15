@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.lyrics.embedded
 
 import kotlin.math.abs
+import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
 import moe.ouom.neriplayer.lyrics.parser.isNeteaseYrc
 import moe.ouom.neriplayer.lyrics.parser.isTtmlLyrics
@@ -44,8 +45,10 @@ fun mergeLyricsForExternalPlayers(
     lyrics: String?,
     translatedLyrics: String?
 ): String? {
-    val original = lyrics?.let(::toLineTimedLyricsForExternalPlayers).orEmpty().trim()
+    val downgraded = lyrics?.let(::downgradeForExternalPlayers)
+    val original = downgraded?.lyrics.orEmpty().trim()
     val translation = translatedLyrics?.let(::toLineTimedLyricsForExternalPlayers).orEmpty().trim()
+        .ifEmpty { downgraded?.inlineTranslation.orEmpty().trim() }
     if (original.isEmpty()) return translation.takeIf(String::isNotEmpty)
     if (translation.isEmpty()) return original
 
@@ -79,13 +82,26 @@ fun mergeLyricsForExternalPlayers(
  * 车机、蓝牙与第三方播放器只认逐行 LRC，逐字 YRC、TTML 与增强 LRC 在标准字段里会显示成乱码；
  * 这里降级为逐行时间轴，完整格式仍由 [NERI_ORIGINAL_LYRICS_METADATA_KEY] 保留
  */
-fun toLineTimedLyricsForExternalPlayers(lyrics: String): String {
-    val needsDowngrade = isTtmlLyrics(lyrics) || isNeteaseYrc(lyrics) ||
-        enhancedLrcWordTimestampRegex.containsMatchIn(lyrics)
-    if (!needsDowngrade) return lyrics
+fun toLineTimedLyricsForExternalPlayers(lyrics: String): String = downgradeForExternalPlayers(lyrics).lyrics
+
+/** TTML 常把翻译内嵌在每一行里，降级时单独取出为同时间戳的逐行翻译，否则标准字段会丢掉全部翻译 */
+private fun downgradeForExternalPlayers(lyrics: String): DowngradedLyrics {
+    if (!needsExternalPlayerDowngrade(lyrics)) return DowngradedLyrics(lyrics, inlineTranslation = null)
     val entries = parseNeteaseLyricsAuto(lyrics).flattenWordTimedEntries()
-    return entries.toEditableLyricsText().ifBlank { lyrics }
+    return DowngradedLyrics(
+        lyrics = entries.toEditableLyricsText().ifBlank { lyrics },
+        inlineTranslation = entries.mapNotNull(LyricEntry::asTranslationLine).toEditableLyricsText()
+            .takeIf(String::isNotBlank)
+    )
 }
+
+private fun needsExternalPlayerDowngrade(lyrics: String): Boolean =
+    isTtmlLyrics(lyrics) || isNeteaseYrc(lyrics) || enhancedLrcWordTimestampRegex.containsMatchIn(lyrics)
+
+private fun LyricEntry.asTranslationLine(): LyricEntry? =
+    translation?.takeIf(String::isNotBlank)?.let { copy(text = it, translation = null) }
+
+private data class DowngradedLyrics(val lyrics: String, val inlineTranslation: String?)
 
 private fun normalizeTranslationTimestamps(
     originalLines: List<ParsedLyricLine>,

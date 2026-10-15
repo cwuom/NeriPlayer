@@ -115,15 +115,38 @@ class LocalCurationCoordinator(
         item.copy(applyCover = selected && item.cover != null)
     }
 
-    /** 用户主动换成其他候选即表示认可，直接勾选写入；被换下的在线结果留在候选里可以换回 */
-    fun chooseLyricAlternative(key: String, index: Int) = updateReviewItem(key) { item ->
-        val chosen = item.lyricAlternatives.getOrNull(index) ?: return@updateReviewItem item
-        val previous = item.lyric?.takeIf { it.origin == LocalCurationLyricOrigin.ONLINE }
-        item.copy(
-            lyric = chosen,
-            lyricAlternatives = listOfNotNull(previous) + item.lyricAlternatives.filterIndexed { i, _ -> i != index },
-            applyLyric = true
-        )
+    /**
+     * 用户主动换成其他候选即表示认可，直接勾选写入；被换下的在线结果留在候选里可以换回。
+     * 在线封面随歌词一起换成新候选的，新候选没有可信封面时清除，避免词图来自不同的歌
+     */
+    fun chooseLyricAlternative(key: String, index: Int) {
+        val session = mutableSession.value ?: return
+        var followingCover: Pair<LocalCurationLyricProposal, String>? = null
+        updateReviewItem(key) { item ->
+            val chosen = item.lyricAlternatives.getOrNull(index) ?: return@updateReviewItem item
+            val previous = item.lyric?.takeIf { it.origin == LocalCurationLyricOrigin.ONLINE }
+            val coverFollows = coverFollowsLyricChoice(item, session.options)
+            followingCover = chosen.coverUrl?.takeIf { coverFollows }?.let { chosen to it }
+            item.copy(
+                lyric = chosen,
+                lyricAlternatives = listOfNotNull(previous) + item.lyricAlternatives.filterIndexed { i, _ -> i != index },
+                applyLyric = true,
+                cover = item.cover.takeUnless { coverFollows },
+                applyCover = item.applyCover && !coverFollows
+            )
+        }
+        val (chosen, coverUrl) = followingCover ?: return
+        scope.launch {
+            val prepared = prepareCoverOnce(coverUrl, session.options.coverSize) ?: return@launch
+            updateReviewItem(key) { item ->
+                // 准备期间用户可能又换了候选，只给仍然选中的那条配封面
+                if (item.lyric != chosen) return@updateReviewItem item
+                item.copy(
+                    cover = LocalCurationCoverProposal(prepared, LocalCurationCoverOrigin.ONLINE, chosen.confidence),
+                    applyCover = true
+                )
+            }
+        }
     }
 
     /** 上次使用的选项，面板打开时作为默认值 */
@@ -447,6 +470,7 @@ class LocalCurationCoordinator(
         matchedArtist = candidate.artist,
         confidence = confidence,
         timelineFit = timelineFit,
-        hasWordTiming = hasWordTiming
+        hasWordTiming = hasWordTiming,
+        coverUrl = candidate.coverUrl.takeIf { isUsableCoverMatch(this) }
     )
 }

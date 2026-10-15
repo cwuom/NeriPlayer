@@ -84,7 +84,8 @@ private suspend fun PlayerManager.withEmbeddedAssets(
             newLyrics = embedding.lyrics,
             newTranslatedLyric = embedding.translatedLyrics,
             newRomanizedLyric = embedding.romanizedLyrics,
-            userEdited = embedding.userEditedLyrics,
+            // 嵌入现有歌词不改变来源，用户改过的歌词仍要受保护，不能被之后的自动匹配或同步覆盖
+            userEdited = embedding.userEditedLyrics || latest.lyricSyncEdited == true,
             revision = revision
         )
     } else {
@@ -97,9 +98,13 @@ private suspend fun PlayerManager.withEmbeddedAssets(
     )
 }
 
+/** 批量任务可能持续很久，不在播放队列里的歌也要取歌单里的最新副本，避免用批次开始时的快照覆盖期间的编辑 */
 private fun PlayerManager.latestSongCopy(song: SongItem): SongItem {
     return currentQueueSnapshot().playlist.firstOrNull { it.sameIdentityAs(song) }
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(song) }
+        ?: localRepo.playlists.value.firstNotNullOfOrNull { playlist ->
+            playlist.songs.firstOrNull { it.sameIdentityAs(song) }
+        }
         ?: song
 }
 
