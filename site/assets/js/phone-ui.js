@@ -568,7 +568,7 @@
     prepare: function () {
       var play = $('#phPlay');
       var lyr = $('#phLyrics');
-      var img = play && $('.pc-art img', play);
+      var img = (play && $('.pc-art img', play)) || $('img[src*="img/covers/"]');
       if (img) coverBase = img.getAttribute('src').replace(/[^/]*$/, '');
       if (!play || !lyr) return;
       var lp = $('.pg-lyrics', lyr);
