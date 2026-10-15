@@ -90,6 +90,7 @@ internal fun LocalCurationReviewContent(
     var showConfirm by remember { mutableStateOf(false) }
     var writeAccessDenied by remember { mutableStateOf(false) }
     val requestWriteAccess = rememberLocalCurationWriteAccessRequester(
+        songs = { session.items.filter(LocalCurationItem::hasSelection).map { it.song } },
         onGranted = {
             writeAccessDenied = false
             onApply()
@@ -99,7 +100,7 @@ internal fun LocalCurationReviewContent(
     val filtered = remember(session.items, filter) { session.items.filter { it.matches(filter) } }
     val selectableCount = session.count(LocalCurationItemPhase.READY) +
         session.count(LocalCurationItemPhase.FAILED)
-    val allSelected = selectableCount > 0 && session.selectedCount == selectableCount
+    val allSelected = remember(session.items) { areAllLocalCurationProposalsSelected(session.items) }
     val sizeDelta = remember(session.items) { estimateLocalCurationBytesDelta(session.items) }
     val listMaxHeight = localCurationMaxHeight(0.48f)
 
@@ -174,10 +175,12 @@ internal fun LocalCurationReviewContent(
                 textAlign = TextAlign.Center
             )
         } else {
+            // 横幅、筛选等占用的高度随状态变化，列表只拿剩余空间，底部按钮始终完整显示
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = listMaxHeight),
+                    .heightIn(max = listMaxHeight)
+                    .weight(1f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filtered, key = LocalCurationItem::key) { item ->
@@ -241,7 +244,7 @@ internal fun LocalCurationReviewContent(
             confirmButton = {
                 MiuixSettingsTextButton(onClick = {
                     showConfirm = false
-                    requestWriteAccess(session.items.filter(LocalCurationItem::hasSelection).map { it.song })
+                    requestWriteAccess()
                 }) {
                     Text(stringResource(CoreCommonR.string.local_curation_confirm_write))
                 }

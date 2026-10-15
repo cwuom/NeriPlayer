@@ -133,7 +133,8 @@ internal fun LocalCurationProgressContent(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 280.dp),
+                .heightIn(max = 280.dp)
+                .weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             items(visibleItems, key = LocalCurationItem::key) { item ->
@@ -181,6 +182,7 @@ internal fun LocalCurationFinishedContent(
     val failedItems = session.items.filter { it.phase == LocalCurationItemPhase.FAILED }
     var writeAccessDenied by remember { mutableStateOf(false) }
     val requestWriteAccess = rememberLocalCurationWriteAccessRequester(
+        songs = { failedItems.map { it.song } },
         onGranted = onRetry,
         onDenied = { writeAccessDenied = true }
     )
@@ -240,6 +242,7 @@ internal fun LocalCurationFinishedContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 220.dp)
+                    .weight(1f, fill = false)
             ) {
                 items(failedItems, key = LocalCurationItem::key) { item ->
                     LocalCurationActivityRow(item = item)
@@ -261,7 +264,7 @@ internal fun LocalCurationFinishedContent(
         ) {
             if (hasFailures) {
                 MiuixSettingsOutlinedButton(
-                    onClick = { requestWriteAccess(failedItems.map { it.song }) },
+                    onClick = requestWriteAccess,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(stringResource(CoreCommonR.string.local_curation_retry_failed))

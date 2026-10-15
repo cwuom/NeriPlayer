@@ -26,7 +26,7 @@ sealed interface LocalMediaWriteAccessPlan {
     data object Ready : LocalMediaWriteAccessPlan
 
     /** Android 11 起依次弹出系统修改授权，每个请求最多 [MAX_URIS_PER_WRITE_REQUEST] 首 */
-    data class SystemConsent(val requests: List<PendingIntent>) : LocalMediaWriteAccessPlan
+    data class SystemConsent(val requests: List<PendingIntent>, val pendingItems: Int) : LocalMediaWriteAccessPlan
 
     /**
      * Android 10 没有批量修改授权，只能让用户授予这批歌曲所在的文件夹，写入改走文件夹授权；
@@ -100,7 +100,7 @@ internal fun systemConsentPlan(
     return runCatching {
         pending.chunked(MAX_URIS_PER_WRITE_REQUEST).map(createRequest)
     }.fold(
-        onSuccess = { LocalMediaWriteAccessPlan.SystemConsent(it) },
+        onSuccess = { LocalMediaWriteAccessPlan.SystemConsent(it, pending.size) },
         onFailure = { error ->
             NPLogger.e(TAG, "create write request failed for ${pending.size} items", error)
             LocalMediaWriteAccessPlan.Unavailable(error)

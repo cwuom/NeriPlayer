@@ -66,7 +66,9 @@ data class LocalCurationLyricProposal(
     val timelineFit: EditableLyricTimelineFit,
     val hasWordTiming: Boolean,
     /** 同一候选可信的在线封面；换选歌词时封面跟着换，词图始终来自同一首 */
-    val coverUrl: String? = null
+    val coverUrl: String? = null,
+    /** 在线候选在 [source] 平台上的曲目 ID */
+    val candidateId: String? = null
 )
 
 enum class LocalCurationCoverOrigin {

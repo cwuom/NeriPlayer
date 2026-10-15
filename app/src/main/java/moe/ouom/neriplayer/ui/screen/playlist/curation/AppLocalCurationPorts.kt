@@ -26,6 +26,8 @@ import moe.ouom.neriplayer.data.local.media.curation.PreparedEmbeddedCover
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
+import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 
@@ -178,8 +180,19 @@ internal fun localSongAssetEmbedding(
     translatedLyrics = lyric?.let { it.translatedLyrics.orEmpty() },
     romanizedLyrics = lyric?.let { it.romanizedLyrics.orEmpty() },
     userEditedLyrics = lyric?.origin == LocalCurationLyricOrigin.ONLINE,
-    coverReference = coverReference
+    coverReference = coverReference,
+    replacesLyricProvenance = lyric?.origin == LocalCurationLyricOrigin.ONLINE,
+    matchedLyricSource = lyric?.takeIf { it.origin == LocalCurationLyricOrigin.ONLINE }
+        ?.source?.toMusicPlatformOrNull(),
+    matchedSongId = lyric?.takeIf { it.origin == LocalCurationLyricOrigin.ONLINE }?.candidateId
 )
+
+/** 只有网易云与 QQ 音乐的曲目能记录为匹配来源，其余来源会清空歌曲原有的匹配信息 */
+internal fun EditableLyricMatchSource.toMusicPlatformOrNull(): MusicPlatform? = when (this) {
+    EditableLyricMatchSource.CLOUD_MUSIC -> MusicPlatform.CLOUD_MUSIC
+    EditableLyricMatchSource.QQ_MUSIC -> MusicPlatform.QQ_MUSIC
+    else -> null
+}
 
 internal fun localCurationFailureFor(
     outcome: LocalMediaMetadataWriteOutcome,

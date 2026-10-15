@@ -56,6 +56,14 @@ internal fun needsLocalCover(mode: LocalCurationCoverMode, existing: LocalEmbedd
         LocalCurationCoverMode.REPLACE_ALL -> true
     }
 
+/** 与 [LocalCurationCoordinator.setAllSelected] 的范围一致：每首待写入歌曲的每项提议都已勾选才算全选 */
+internal fun areAllLocalCurationProposalsSelected(items: List<LocalCurationItem>): Boolean {
+    val ready = items.filter { it.phase == LocalCurationItemPhase.READY }
+    return ready.isNotEmpty() && ready.all { item ->
+        (item.lyric == null || item.applyLyric) && (item.cover == null || item.applyCover)
+    }
+}
+
 /** 换选歌词后封面是否跟随新候选：文件夹封面与匹配结果无关，保持不变；在线封面必须与歌词同源 */
 internal fun coverFollowsLyricChoice(item: LocalCurationItem, options: LocalCurationOptions): Boolean {
     val cover = item.cover

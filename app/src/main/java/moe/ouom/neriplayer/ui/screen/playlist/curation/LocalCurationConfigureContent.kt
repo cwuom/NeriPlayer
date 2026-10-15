@@ -79,6 +79,7 @@ internal fun LocalCurationConfigureContent(
         Column(
             modifier = Modifier
                 .heightIn(max = maxHeight)
+                .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {

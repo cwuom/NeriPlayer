@@ -524,6 +524,7 @@ class LocalCurationCoordinator(
         confidence = confidence,
         timelineFit = timelineFit,
         hasWordTiming = hasWordTiming,
-        coverUrl = candidate.coverUrl.takeIf { isUsableCoverMatch(this) }
+        coverUrl = candidate.coverUrl.takeIf { isUsableCoverMatch(this) },
+        candidateId = candidate.id
     )
 }

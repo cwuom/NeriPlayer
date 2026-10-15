@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfiden
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricTimelineFit
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,11 +20,11 @@ import org.junit.Test
 class LocalCurationPolicyTest {
 
     @Test
-    fun `another folder grant is requested only while the pending songs keep shrinking`() {
-        assertTrue(folderGrantMadeProgress(Int.MAX_VALUE, 5))
-        assertTrue(folderGrantMadeProgress(5, 2))
-        assertFalse(folderGrantMadeProgress(2, 2))
-        assertFalse(folderGrantMadeProgress(2, 3))
+    fun `another authorization round runs only while the pending count keeps shrinking`() {
+        assertTrue(writeAccessMadeProgress(Int.MAX_VALUE, 5))
+        assertTrue(writeAccessMadeProgress(5, 2))
+        assertFalse(writeAccessMadeProgress(2, 2))
+        assertFalse(writeAccessMadeProgress(2, 3))
     }
 
     @Test
@@ -151,6 +152,52 @@ class LocalCurationPolicyTest {
         assertNull(coverOnly.lyrics)
         assertNull(coverOnly.translatedLyrics)
         assertFalse(coverOnly.writesLyrics)
+    }
+
+    @Test
+    fun `bulk selection counts every lyric and cover proposal`() {
+        val base = LocalCurationItem(
+            key = "a",
+            song = song(),
+            phase = LocalCurationItemPhase.READY,
+            lyric = lyric(),
+            cover = cover(LocalCurationCoverOrigin.ONLINE, EditableLyricMatchConfidence.MEDIUM),
+            applyLyric = true,
+            applyCover = false
+        )
+
+        assertFalse(areAllLocalCurationProposalsSelected(listOf(base)))
+        assertTrue(areAllLocalCurationProposalsSelected(listOf(base.copy(applyCover = true))))
+        assertTrue(areAllLocalCurationProposalsSelected(listOf(base.copy(cover = null))))
+        assertFalse(areAllLocalCurationProposalsSelected(listOf(base.copy(phase = LocalCurationItemPhase.COMPLETE))))
+    }
+
+    @Test
+    fun `online lyrics replace provenance only when the platform can be recorded`() {
+        val cloud = localSongAssetEmbedding(lyric().copy(candidateId = "1234"), coverReference = null)
+        assertEquals(MusicPlatform.CLOUD_MUSIC, cloud.matchedLyricSource)
+        assertEquals("1234", cloud.matchedSongId)
+
+        val qq = localSongAssetEmbedding(
+            lyric().copy(source = EditableLyricMatchSource.QQ_MUSIC, candidateId = "mid"),
+            coverReference = null
+        )
+        assertEquals(MusicPlatform.QQ_MUSIC, qq.matchedLyricSource)
+
+        val kugou = localSongAssetEmbedding(
+            lyric().copy(source = EditableLyricMatchSource.KUGOU, candidateId = "hash"),
+            coverReference = null
+        )
+        assertTrue(kugou.replacesLyricProvenance)
+        assertNull(kugou.matchedLyricSource)
+
+        val existing = localSongAssetEmbedding(
+            lyric(origin = LocalCurationLyricOrigin.EXISTING).copy(candidateId = "1234"),
+            coverReference = null
+        )
+        assertFalse(existing.replacesLyricProvenance)
+        assertNull(existing.matchedLyricSource)
+        assertNull(existing.matchedSongId)
     }
 
     @Test
