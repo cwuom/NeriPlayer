@@ -33,6 +33,7 @@
   background: #141218;
   -webkit-mask-image: -webkit-radial-gradient(white, black);
 }
+.device__shot { display: block; width: 100%; height: 100%; object-fit: cover; }
 .device__screen::after {
   content: "";
   position: absolute;

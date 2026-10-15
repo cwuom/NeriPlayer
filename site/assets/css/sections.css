@@ -1025,6 +1025,7 @@
 @media (max-width: 980px) {
   .hero__grid { grid-template-columns: 1fr; }
   .hero__fig { max-width: 520px; margin: 0 auto; }
+  .crayon__art { inset: 0 6%; margin: auto 0; }
   .sheet__grid, .sheet__grid--phone, .sheet__grid--flip { grid-template-columns: 1fr; }
   .sheet__grid--flip .phone-col { order: 2; }
   .phone-col { order: -1; }

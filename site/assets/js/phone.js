@@ -990,7 +990,7 @@
 
   /* ---------- 静音预览提示 ---------- */
   function initHints() {
-    $$('#devicePlay, #deviceLyrics, #deviceDsp').forEach(function (dev) {
+    $$('#devicePlay:not(.is-shot), #deviceLyrics:not(.is-shot), #deviceDsp').forEach(function (dev) {
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'ph-hint hand';
@@ -1021,11 +1021,33 @@
     pending.then(open, open);
     setTimeout(open, 2500);
   }
+  /* 手机上看网站时，播放页与歌词页这两台换成真机截图：流体背景和逐字歌词逐帧重绘，在手机浏览器里很卡 */
+  var SHOTS = { devicePlay: ['nowplaying', NP.L('播放页真机截图：《星轨》封面取色的流体背景、波浪进度条、主控与封面页歌词', 'Now Playing on a real device: fluid background colored from the “星轨” cover, wavy progress bar, controls and cover lyrics')],
+    deviceLyrics: ['lyrics', NP.L('歌词页真机截图：当前行点亮，译文贴在原文下方', 'Lyrics page on a real device: the current line lights up with the translation right below')] };
+  function useShots() {
+    if (!NP.env.coarse || !window.matchMedia('(max-width: 980px)').matches) return;
+    var base = SCRIPT_BASE.replace(/js\/$/, '') + 'img/shots/';
+    var lang = NP.en ? 'en' : 'zh';
+    Object.keys(SHOTS).forEach(function (id) {
+      var dev = document.getElementById(id);
+      var screen = dev && $('.device__screen', dev);
+      if (!screen) return;
+      screen.innerHTML = '<img class="device__shot" src="' + base + SHOTS[id][0] + '-' + lang + '.jpg" alt="' + SHOTS[id][1] + '" width="540" height="1200" decoding="async">';
+      dev.classList.add('is-shot');
+      dev.removeAttribute('data-phone');
+      var fig = dev.closest('.phone-fig');
+      var cap = fig && $('.fig__cap', fig);
+      if (cap) cap.textContent = cap.textContent.replace(/ · .*$/, NP.L(' · 真机截图', ' · real-device screenshot'));
+    });
+    var lab = $('#placeLab');
+    if (lab) lab.hidden = true;
+  }
   NP.phones = {
     init: function () {
+      useShots();
       if (NP.phoneUI) NP.phoneUI.prepare();
       waitFonts($$('.device'));
-      phones = $$('.device').map(function (d) { return new Phone(d); });
+      phones = $$('.device').filter(function (d) { return !d.classList.contains('is-shot'); }).map(function (d) { return new Phone(d); });
       NP.phones.list = phones;
       if (NP.phoneUI) NP.phoneUI.init(phones);
       initHome();

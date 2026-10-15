@@ -214,10 +214,12 @@
       var p = M.clamp((sy - hero.top) / hero.h);
       hero.copy.style.translate = '0 ' + (-p * 90).toFixed(1) + 'px';
       hero.copy.style.opacity = (1 - p * 0.75).toFixed(3);
-      hero.art.style.translate = (pointer.x * 10).toFixed(1) + 'px ' + (-p * 130 + pointer.y * 8).toFixed(1) + 'px';
-      hero.art.style.rotate = (p * 6).toFixed(2) + 'deg';
+      // 单栏时插画排在文案下面，滚到它时 p 已经不小，跟着上移会跑出画框，只在双栏时做滚动视差
+      var ps = hero.stacked.matches ? 0 : p;
+      hero.art.style.translate = (pointer.x * 10).toFixed(1) + 'px ' + (-ps * 130 + pointer.y * 8).toFixed(1) + 'px';
+      hero.art.style.rotate = (ps * 6).toFixed(2) + 'deg';
       hero.doodles.forEach(function (d) {
-        d.el.style.translate = (pointer.x * 22 * d.depth).toFixed(1) + 'px ' + (-p * 260 * d.depth + pointer.y * 16 * d.depth).toFixed(1) + 'px';
+        d.el.style.translate = (pointer.x * 22 * d.depth).toFixed(1) + 'px ' + (-ps * 260 * d.depth + pointer.y * 16 * d.depth).toFixed(1) + 'px';
       });
     }
 
@@ -265,6 +267,7 @@
         el: h,
         copy: $('.hero__copy', h),
         art: $('.crayon', h),
+        stacked: window.matchMedia('(max-width: 980px)'),
         doodles: $$('.doodle', h).map(function (el, i) { return { el: el, depth: 0.5 + ((i * 37) % 10) / 10 }; }),
       };
       if (!NP.env.coarse) {

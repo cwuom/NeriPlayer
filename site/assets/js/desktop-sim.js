@@ -67,8 +67,8 @@
     '.dsim-toast { position: absolute; left: 50%; bottom: 96px; z-index: 3000; max-width: 640px; padding: 12px 18px; border-radius: 8px; background: var(--md-inverse-surface); color: var(--md-inverse-on-surface); font: 14px/1.45 var(--font-family-default, MiSans, sans-serif); box-shadow: 0 6px 18px rgba(0,0,0,.25); opacity: 0; transform: translate(-50%, 12px); pointer-events: none; transition: opacity .25s, transform .35s cubic-bezier(.05,.7,.1,1); }',
     '.dsim-toast.is-on { opacity: 1; transform: translate(-50%, 0); }',
     ':host(.np-open) .dsim-toast { bottom: 40px; }',
-    /* 主题圆形扩散 */
-    '.dsim-ripple { position: absolute; inset: 0; z-index: 4000; pointer-events: none; }',
+    /* 主题平滑过渡（桌面版 html.theme-switching 那条规则；快照时根节点上没有这个类，精简样式时被筛掉了） */
+    '@media (prefers-reduced-motion: no-preference) { :host(.theme-switching) *, :host(.theme-switching) ::before, :host(.theme-switching) ::after { transition: background-color .3s, color .3s, border-color .3s, fill .3s, stroke .3s, box-shadow .3s !important; } }',
     'input, button { -webkit-tap-highlight-color: transparent; }',
   ].join('\n');
 
@@ -205,6 +205,7 @@
     this.themeMode = 'system';
     this.colorMode = 'cover';
     this.colorIdx = 0;
+    this.fxMode = 'simple';
     this.listeners = [];
   }
   var source = null;
@@ -284,25 +285,81 @@
     var v = pal && (this.colorMode === 'default' ? pal.colors[this.colorIdx] : pal.modes[this.colorMode]);
     return v || this.meta[this.theme];
   };
-  Sim.prototype.applyTheme = function (animate, origin) {
+  /* 切换方式照桌面版：
+     · animate —— 深色模式与主题色：View Transition 圆形扩散（switchThemeWithRipple / switchThemeColorWithRipple），
+       旧画面原样留在下面，新画面从点击处 circle(0) → circle(r) 展开，500ms cubic-bezier(0.2, 0, 0, 1)
+     · smooth —— 取色方式、跟随系统时系统明暗变化：beginSmoothThemeTransition，颜色 300ms 过渡 */
+  Sim.prototype.applyTheme = function (animate, origin, smooth) {
     var self = this;
     var vars = this.currentVars();
     var cls = 'dsim ' + this.theme + '-theme platform-' + (this.os === 'mac' ? 'mac' : this.os === 'linux' ? 'linux' : 'windows') + (this.np ? ' np-open' : '');
-    var commit = function () {
+    var commit = function (extra) {
       self.host.style.cssText = vars;
-      self.host.className = cls;
+      self.host.className = cls + (extra || '');
       self.layout();
+      self.syncAppearance();
     };
-    if (!animate || reduced || !this.host.animate) { commit(); return; }
-    // 桌面版：圆形扩散切换主题。这里先拍一层旧画面的纯色遮罩，再从点击处展开
-    var ripple = document.createElement('div');
-    ripple.className = 'dsim-ripple';
-    ripple.style.background = getComputedStyle(this.host).getPropertyValue('--md-background') || '';
-    this.root.appendChild(ripple);
-    commit();
-    var r = Math.hypot(Math.max(origin.x, W - origin.x), Math.max(origin.y, H - origin.y));
-    var a = ripple.animate({ clipPath: ['circle(' + r + 'px at ' + origin.x + 'px ' + origin.y + 'px)', 'circle(0px at ' + origin.x + 'px ' + origin.y + 'px)'] }, { duration: 500, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
-    a.onfinish = function () { ripple.remove(); };
+    if (this.ghost) { this.ghost.remove(); this.ghost = null; if (this._rip) this._rip.cancel(); }
+    if (smooth && !reduced) {
+      commit(' theme-switching');
+      clearTimeout(this._smooth);
+      this._smooth = setTimeout(function () { self.host.classList.remove('theme-switching'); }, 350);
+      return;
+    }
+    if (!animate || reduced || !this.host.animate || !this.app) { commit(); return; }
+    var ghost = this.freeze();
+    var go = function () {
+      if (go.done) return;
+      go.done = true;
+      self.copyState(ghost);
+      commit(' theme-ripple-active');
+      var r = Math.hypot(Math.max(origin.x, W - origin.x), Math.max(origin.y, H - origin.y));
+      var at = ' at ' + origin.x.toFixed(1) + 'px ' + origin.y.toFixed(1) + 'px)';
+      var a = self.host.animate({ clipPath: ['circle(0px' + at, 'circle(' + r.toFixed(1) + 'px' + at] }, { duration: 500, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+      self._rip = a;
+      var end = function () {
+        if (self.ghost === ghost) { ghost.remove(); self.ghost = null; }
+        self.host.classList.remove('theme-ripple-active');
+      };
+      a.onfinish = end;
+      a.oncancel = end;
+    };
+    ghost._link.onload = go;
+    ghost._link.onerror = go;
+    setTimeout(go, 120);
+  };
+  /* 旧画面：同样的外壳与样式另起一个 Shadow 根，铺在仿真下面，相当于 View Transition 里的 old 快照 */
+  Sim.prototype.freeze = function () {
+    var host = this.host;
+    var g = document.createElement('div');
+    g.className = host.className;
+    g.style.cssText = host.style.cssText;
+    g.style.pointerEvents = 'none';
+    g.setAttribute('aria-hidden', 'true');
+    var root = g.attachShadow({ mode: 'open' });
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = BASE + 'desktop/sim.css';
+    var style = document.createElement('style');
+    style.textContent = EXTRA;
+    root.appendChild(link);
+    root.appendChild(style);
+    root.appendChild(this.app.cloneNode(true));
+    host.parentNode.insertBefore(g, host);
+    g._link = link;
+    g._root = root;
+    this.ghost = g;
+    return g;
+  };
+  /* cloneNode 不带滚动位置和表单的当前值，逐个补上，旧画面才和切换前一模一样 */
+  Sim.prototype.copyState = function (ghost) {
+    var a = this.app.querySelectorAll('*');
+    var b = ghost._root.querySelector('.dsim-app').querySelectorAll('*');
+    for (var i = 0; i < a.length && i < b.length; i++) {
+      var x = a[i];
+      if (x.scrollTop || x.scrollLeft) { b[i].scrollTop = x.scrollTop; b[i].scrollLeft = x.scrollLeft; }
+      if (x.tagName === 'INPUT') { b[i].checked = x.checked; b[i].value = x.value; }
+    }
   };
   Sim.prototype.layout = function () {
     var w = this.frame.clientWidth;
@@ -348,7 +405,7 @@
     new MutationObserver(function () {
       if (self.themeMode !== 'system') return;
       var t = self.pageTheme();
-      if (t !== self.theme) { self.theme = t; self.applyTheme(false); }
+      if (t !== self.theme) { self.theme = t; self.applyTheme(false, null, true); }
     }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     NP.whenVisible(this.frame, function () { self.visible = true; P.startPreview(); }, function () { self.visible = false; }, '40px 0px');
     this.ready = true;
@@ -726,7 +783,7 @@
         if (!mode || mode === self.colorMode) return;
         self.colorMode = mode;
         self.syncAppearance();
-        self.applyTheme(true, at(e));
+        self.applyTheme(false, at(e), true);
       });
     });
     this.syncAppearance();
@@ -796,7 +853,7 @@
     key('outGain', 'dynamics'), key('ceiling', 'dynamics'), key('release', 'dynamics'),
     { get: function (S) { return S.spkProt; }, set: function (S, v) { S.spkProt = v < 40 ? 0 : v; }, speaker: true }, spk('spkBass'), spk('spkLoud'), spk('spkClarity'), spk('spkExpand'),
     { get: function () { return P.speed; }, set: function (S, v) { P.setSpeed(v); S.sec.speed = true; if (S.linked) P.setPitch(M.clamp(v, 0.25, 2)); }, rate: true },
-    { get: function () { return P.pitch; }, set: function (S, v) { P.setPitch(v); S.sec.speed = true; }, rate: true },
+    { get: function () { return P.pitch; }, set: function (S, v) { P.setPitch(v); S.sec.speed = true; }, rate: true, pitch: true },
     null,
   ];
   var FX_CHECKS = [
@@ -906,6 +963,7 @@
         });
       });
       if (spkSec) {
+        self.fx.spkHelp = d.querySelector('.effects-content > p.setting-desc');
         var sizes = Array.prototype.filter.call(d.querySelectorAll('button'), function (b) { return !b.closest('summary') && !b.classList.contains('editable-range-display'); });
         sizes.forEach(function (b, i) {
           b._fx = true;
@@ -915,7 +973,36 @@
         self.fx.sizes = sizes;
       }
     });
+    /* 听感调节 / 专业调节（AudioEffectsSettings.vue 的 mode）：
+       听感只显示五个听感滑块；专业显示均衡与各分区、扬声器细项与响度增益，扬声器里那句「更细的调整在专业调节」只在听感下出现 */
+    var modeBtns = this.qa('.effects-mode-switch button', box);
+    this.fx.modeBtns = modeBtns;
+    this.fx.listening = this.q('.effects-listening', box);
+    this.fx.pro = this.qa('.effects-professional, .effects-professional-control', box);
+    modeBtns.forEach(function (b, i) {
+      b._fx = true;
+      b.addEventListener('click', function () {
+        var m = i === 1 ? 'advanced' : 'simple';
+        if (m === self.fxMode) return;
+        self.fxMode = m;
+        self.paintFxMode(true);
+      });
+    });
+    this.paintFxMode(false);
     this.syncFx();
+  };
+  Sim.prototype.paintFxMode = function (animate) {
+    var f = this.fx;
+    var adv = this.fxMode === 'advanced';
+    f.modeBtns.forEach(function (b, i) { var on = (i === 1) === adv; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    var show = function (el, on) {
+      if (!el) return;
+      el.style.display = on ? '' : 'none';
+      if (on && animate && !reduced && el.animate) el.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(0, 0, 0, 1)' });
+    };
+    show(f.listening, !adv);
+    f.pro.forEach(function (el) { show(el, adv); });
+    show(f.spkHelp, !adv);
   };
   Sim.prototype.paintRange = function (r, v) {
     if (r.disp) setText(r.disp, r.fmt(v));
@@ -935,6 +1022,8 @@
     var self = this;
     var S = S_();
     f.ranges.forEach(function (r) {
+      /* 唱片效果开着时音调跟随速度，桌面版用 v-if 拿掉音调滑块 */
+      if (r.spec && r.spec.pitch && r.ctl) r.ctl.style.display = S.linked ? 'none' : '';
       if (!r.spec || document.activeElement === r.inp || (self.root && self.root.activeElement === r.inp)) return;
       var v = r.spec.get(S);
       if (v == null || isNaN(v)) return;
