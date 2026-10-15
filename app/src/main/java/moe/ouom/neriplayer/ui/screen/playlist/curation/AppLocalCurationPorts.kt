@@ -181,12 +181,13 @@ internal fun localSongAssetEmbedding(
     romanizedLyrics = lyric?.let { it.romanizedLyrics.orEmpty() },
     userEditedLyrics = lyric?.origin == LocalCurationLyricOrigin.ONLINE,
     coverReference = coverReference,
+    replacesLyricProvenance = lyric?.origin == LocalCurationLyricOrigin.ONLINE,
     matchedLyricSource = lyric?.takeIf { it.origin == LocalCurationLyricOrigin.ONLINE }
         ?.source?.toMusicPlatformOrNull(),
     matchedSongId = lyric?.takeIf { it.origin == LocalCurationLyricOrigin.ONLINE }?.candidateId
 )
 
-/** 只有网易云与 QQ 音乐的曲目能记录为匹配来源，其余来源保持歌曲原有的匹配信息 */
+/** 只有网易云与 QQ 音乐的曲目能记录为匹配来源，其余来源会清空歌曲原有的匹配信息 */
 internal fun EditableLyricMatchSource.toMusicPlatformOrNull(): MusicPlatform? = when (this) {
     EditableLyricMatchSource.CLOUD_MUSIC -> MusicPlatform.CLOUD_MUSIC
     EditableLyricMatchSource.QQ_MUSIC -> MusicPlatform.QQ_MUSIC

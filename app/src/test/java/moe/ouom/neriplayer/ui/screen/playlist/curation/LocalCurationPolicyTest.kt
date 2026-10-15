@@ -188,12 +188,14 @@ class LocalCurationPolicyTest {
             lyric().copy(source = EditableLyricMatchSource.KUGOU, candidateId = "hash"),
             coverReference = null
         )
+        assertTrue(kugou.replacesLyricProvenance)
         assertNull(kugou.matchedLyricSource)
 
         val existing = localSongAssetEmbedding(
             lyric(origin = LocalCurationLyricOrigin.EXISTING).copy(candidateId = "1234"),
             coverReference = null
         )
+        assertFalse(existing.replacesLyricProvenance)
         assertNull(existing.matchedLyricSource)
         assertNull(existing.matchedSongId)
     }

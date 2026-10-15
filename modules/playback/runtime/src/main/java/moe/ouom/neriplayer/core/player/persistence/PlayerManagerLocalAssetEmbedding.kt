@@ -24,9 +24,11 @@ data class LocalSongAssetEmbedding(
     val userEditedLyrics: Boolean = true,
     val coverReference: String? = null,
     /**
-     * 新歌词所属的平台曲目；这两个字段同时承担本地文件到网易云曲目的播放回退，
-     * 只有能用 [MusicPlatform] 表示的来源才替换，为 null 时保持原值
+     * 新歌词换了来源时为 true：旧的匹配曲目可能正是要纠正的错误结果，不能留给音译与本地播放回退使用。
+     * 新来源能用 [MusicPlatform] 表示时记下 [matchedLyricSource] 与 [matchedSongId]，否则清空；
+     * 为 false 时（只是嵌入现有歌词）保持原值
      */
+    val replacesLyricProvenance: Boolean = false,
     val matchedLyricSource: MusicPlatform? = null,
     val matchedSongId: String? = null
 ) {
@@ -132,9 +134,10 @@ private suspend fun PlayerManager.withEmbeddedAssets(
 }
 
 internal fun SongItem.withLyricProvenance(embedding: LocalSongAssetEmbedding): SongItem {
-    val source = embedding.matchedLyricSource ?: return this
-    val songId = embedding.matchedSongId?.takeIf(String::isNotBlank) ?: return this
-    return copy(matchedLyricSource = source, matchedSongId = songId)
+    if (!embedding.replacesLyricProvenance) return this
+    val songId = embedding.matchedSongId?.takeIf(String::isNotBlank)
+    val source = embedding.matchedLyricSource?.takeIf { songId != null }
+    return copy(matchedLyricSource = source, matchedSongId = songId?.takeIf { source != null })
 }
 
 /** 批量任务可能持续很久，不在播放队列里的歌也要取歌单里的最新副本，避免用批次开始时的快照覆盖期间的编辑 */
