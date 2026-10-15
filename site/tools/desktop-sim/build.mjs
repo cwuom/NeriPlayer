@@ -22,15 +22,16 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: true 
 const page = await browser.newPage();
 await page.setContent('<!doctype html><html><head></head><body></body></html>');
 
-/* ---------- 拆分：外壳 + 各页面 + 播放页 ---------- */
-const PAGES = ['home', 'explore', 'library', 'fx', 'shortcuts', 'appearance'];
+/* ---------- 拆分：外壳 + 各页面 + 设置各分区 + 播放页 ---------- */
 const parts = {};
 const texts = [];
 const icons = new Set();
+const usedIcons = new Set();
 for (const lang of ['zh', 'en']) {
-  const views = JSON.parse(readFileSync(join(SNAP, `views-${lang}.json`), 'utf8'));
+  const data = JSON.parse(readFileSync(join(SNAP, `views-${lang}.json`), 'utf8'));
   const meta = JSON.parse(readFileSync(join(SNAP, `meta-${lang}.json`), 'utf8'));
-  const res = await page.evaluate((views, PAGES) => {
+  const res = await page.evaluate((data) => {
+    const views = data.views;
     const box = document.createElement('div');
     const clean = (root) => {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
@@ -39,7 +40,8 @@ for (const lang of ['zh', 'en']) {
       dead.forEach((n) => n.remove());
       root.querySelectorAll('img[src]').forEach((img) => {
         const s = img.getAttribute('src');
-        if (s.startsWith('/__covers/')) img.setAttribute('src', '{{C}}' + s.slice(10));
+        const cover = /\/__covers\/([\w-]+\.jpg)/.exec(s);
+        if (cover) img.setAttribute('src', '{{C}}' + cover[1]);
         else if (s === '/app-icon.png') img.setAttribute('src', '{{I}}');
         img.setAttribute('draggable', 'false');
       });
@@ -54,10 +56,10 @@ for (const lang of ['zh', 'en']) {
     shell.querySelector('main.content').innerHTML = '';
     shell.querySelectorAll('.now-playing').forEach((n) => n.remove());
     out.shell = shell.outerHTML;
-    for (const p of PAGES) {
-      r = parse(views[p]);
-      out['page-' + p] = r.querySelector('main.content').innerHTML;
-    }
+    out['page-home'] = parse(views.home).querySelector('main.content').innerHTML;
+    for (const [k, html] of Object.entries(data.pages)) out['page-' + k] = parse(html).querySelector('main.content').innerHTML;
+    out['page-settings'] = parse(data.frame).innerHTML;
+    for (const id of data.sections) out['set-' + id] = parse(data.settings[id]).innerHTML;
     r = parse(views.np);
     out.np = r.querySelector('.now-playing').outerHTML;
     out['tb-np'] = r.querySelector('header.title-bar').outerHTML;
@@ -65,7 +67,11 @@ for (const lang of ['zh', 'en']) {
     all.innerHTML = Object.values(out).join('');
     const icons = [...all.querySelectorAll('.material-symbols-rounded')].map((e) => e.textContent.trim()).filter(Boolean);
     return { out, text: all.textContent, icons };
-  }, views, PAGES);
+  }, data);
+  // 平台图标（/icons/ic_*.svg）是桌面版 public 里的文件：改成 {{K}} 前缀，用到的拷进 assets/img/desktop/icons
+  for (const [k, v] of Object.entries(res.out)) {
+    res.out[k] = v.replace(/\/icons\/([\w.-]+\.svg)/g, (m, name) => { usedIcons.add(name); return '{{K}}' + name; });
+  }
   parts[lang] = { html: res.out, meta };
   texts.push(res.text);
   res.icons.forEach((i) => icons.add(i));
@@ -73,7 +79,13 @@ for (const lang of ['zh', 'en']) {
 
 /* ---------- 样式：只留用得上的规则，改写成 Shadow DOM 可用 ---------- */
 const css = JSON.parse(readFileSync(join(SNAP, 'css-zh.json'), 'utf8'));
-const allHtml = Object.values(parts.zh.html).join('') + Object.values(parts.en.html).join('');
+// 判断规则是否用得上时，页面按真实的祖先结构包起来，设置分区放回设置页框架里
+const inContent = (h) => '<div class="app-layout"><main class="content">' + h + '</main></div>';
+const allHtml = ['zh', 'en'].map((lang) => Object.entries(parts[lang].html).map(([k, v]) => {
+  if (k.startsWith('page-')) return inContent(v);
+  if (k.startsWith('set-')) return inContent(parts[lang].html['page-settings'].replace(/(<main[^>]*class="[^"]*settings-content[^"]*"[^>]*>)/, '$1' + v));
+  return v;
+}).join('')).join('');
 const kept = await page.evaluate((rules, allHtml) => {
   document.documentElement.className = 'light-theme dark-theme platform-windows platform-mac window-fullscreen theme-ripple-active';
   document.body.innerHTML = '<div id="app">' + allHtml + '</div>';
@@ -132,11 +144,21 @@ console.log('sim.css', Math.round(sheet.length / 1024) + 'k', kept.length, 'rule
 for (const lang of ['zh', 'en']) {
   const { html, meta } = parts[lang];
   const tpl = Object.entries(html).map(([k, v]) => `<template data-part="${k}">${v}</template>`).join('\n');
-  const data = { light: meta.lightVars, dark: meta.darkVars, hyper: meta.hyper };
+  // 平台图标是 CSS 遮罩，直接打开 file:// 时浏览器不给跨源遮罩图，这里内联成 data URI，加载时替换 {{K}}
+  const iconData = {};
+  if (DESK) for (const name of usedIcons) iconData[name] = 'data:image/svg+xml,' + encodeURIComponent(readFileSync(join(DESK, 'public', 'icons', name), 'utf8').replace(/\s+/g, ' ').trim());
+  const data = { light: meta.lightVars, dark: meta.darkVars, hyper: meta.hyper, icons: iconData, palettes: meta.palettes || null };
   writeFileSync(join(OUT, `sim-${lang}.html`), tpl + '\n<script type="application/json" data-part="meta">' + JSON.stringify(data) + '</script>\n');
   console.log(`sim-${lang}.html`, Math.round((tpl.length) / 1024) + 'k');
 }
 await browser.close();
+if (DESK && usedIcons.size) {
+  const IDIR = join(ROOT, 'assets', 'img', 'desktop', 'icons');
+  rmSync(IDIR, { recursive: true, force: true });
+  mkdirSync(IDIR, { recursive: true });
+  for (const name of usedIcons) writeFileSync(join(IDIR, name), readFileSync(join(DESK, 'public', 'icons', name)));
+  console.log('icons', [...usedIcons].join(' '));
+}
 
 /* ---------- 字体子集 ---------- */
 if (DESK) {

@@ -218,6 +218,11 @@
 .dscope__ab .i { width: 16px; height: 16px; }
 .dscope__ab:hover { border-color: var(--ink-3); }
 .dscope__ab.is-held { border-color: var(--ink); background: var(--ink); color: var(--paper); scale: .97; box-shadow: 0 0 0 5px color-mix(in srgb, var(--ink) 10%, transparent); }
+.dscope__btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.dscope__spk { touch-action: manipulation; }
+.dscope__spk[aria-pressed="true"] { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, var(--card)); color: var(--acc); }
+.dscope__tip { margin: -4px 0 14px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--acc) 8%, transparent); font-size: 11.5px; line-height: 1.6; color: var(--ink-2); opacity: 1; translate: 0 0; transition: opacity .3s, translate .4s var(--ease-out); }
+.dscope__tip.is-in { opacity: 0; translate: 0 -4px; }
 .dscope__mon { display: grid; grid-template-columns: minmax(0, 1fr) 236px; gap: 14px; }
 .dscope__spec, .dscope__field, .dscope__meter { position: relative; border: 1px solid var(--rule); border-radius: 12px; background: color-mix(in srgb, var(--card) 70%, transparent); }
 .dscope__spec { height: 268px; }

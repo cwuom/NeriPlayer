@@ -156,6 +156,8 @@
         soft: biquad('highshelf', 5200),
         air: biquad('highshelf', 11000),
         vocal: biquad('peaking', 2400, 0.9),
+        lcBass: biquad('lowshelf', 120),
+        lcTreble: biquad('highshelf', 10000),
       };
       var split = ctx.createChannelSplitter(2);
       var merge = ctx.createChannelMerger(2);
@@ -183,6 +185,69 @@
         return { cv: cv, g: g };
       });
       var sum = gain();
+      /* 扬声器优化：照原生 SpeakerStage —— 四阶高通护低频 → 谐波补低音 → 2.8 kHz / 8 kHz 提清晰度 → 侧声道扩展 → 1.2 kHz 分两段压缩提响度 */
+      var matrix = function () {
+        var sp = ctx.createChannelSplitter(2);
+        var mg = ctx.createChannelMerger(2);
+        var g = { sp: sp, mg: mg, ll: gain(), lr: gain(), rl: gain(), rr: gain() };
+        sp.connect(g.ll, 0); sp.connect(g.lr, 0);
+        sp.connect(g.rl, 1); sp.connect(g.rr, 1);
+        g.ll.connect(mg, 0, 0); g.rl.connect(mg, 0, 0);
+        g.lr.connect(mg, 0, 1); g.rr.connect(mg, 0, 1);
+        g.lr.gain.value = g.rl.gain.value = 0;
+        return g;
+      };
+      /* 原生按包络把低频归一化到 ±3 再整形、最后乘回包络；这里按典型低频幅度 1/6 换算：输入 ×2 落进曲线的 ±1，对应归一化后的 ±3 */
+      var shaper = ctx.createWaveShaper();
+      var curve = new Float32Array(1025);
+      for (var ci = 0; ci < curve.length; ci++) {
+        var xn = (ci / 512 - 1) * 3;
+        curve[ci] = (0.7 * Math.tanh(1.6 * xn) + 0.3 * xn * xn) / 6;
+      }
+      shaper.curve = curve;
+      shaper.oversample = '2x';
+      var hMono = gain();
+      hMono.channelCount = 1;
+      hMono.channelCountMode = 'explicit';
+      hMono.channelInterpretation = 'speakers';
+      var band = function (type) {
+        var c = ctx.createDynamicsCompressor();
+        c.threshold.value = 0; c.ratio.value = 1; c.knee.value = 6; c.attack.value = 0.004; c.release.value = 0.14;
+        return { a: biquad(type, 1200, 0.7071), b: biquad(type, 1200, 0.7071), c: c, g: gain() };
+      };
+      var spk = {
+        hpA: biquad('highpass', 10, 0.5412), hpB: biquad('highpass', 10, 1.3066),
+        hLpA: biquad('lowpass', 252, 0.707), hLpB: biquad('lowpass', 252, 0.707), hPre: gain(), hShape: shaper,
+        hHp: biquad('highpass', 302, 0.707), hLp: biquad('lowpass', 1512, 0.707), hAmt: gain(), mix: gain(),
+        clPeak: biquad('peaking', 2800, 0.8), clShelf: biquad('highshelf', 8000, 0.707),
+        ex: matrix(), low: band('lowpass'), high: band('highpass'), out: gain(),
+      };
+      spk.hPre.gain.value = 2;
+      spk.hAmt.gain.value = 0;
+      sum.connect(spk.hpA);
+      spk.hpA.connect(spk.hpB);
+      spk.hpB.connect(spk.mix);
+      spk.hpB.connect(hMono);
+      [hMono, spk.hLpA, spk.hLpB, spk.hPre, spk.hShape, spk.hHp, spk.hLp, spk.hAmt, spk.mix].reduce(function (a, b) { a.connect(b); return b; });
+      spk.mix.connect(spk.clPeak);
+      spk.clPeak.connect(spk.clShelf);
+      spk.clShelf.connect(spk.ex.sp);
+      [spk.low, spk.high].forEach(function (b) {
+        spk.ex.mg.connect(b.a); b.a.connect(b.b); b.b.connect(b.c); b.c.connect(b.g); b.g.connect(spk.out);
+      });
+      /* 外放试听（只在网页里）：把输出再过一遍小喇叭的频响，戴耳机也能听出手机外放的样子 */
+      var sim = {
+        inp: gain(), dry: gain(), wet: gain(), m: matrix(),
+        hpA: biquad('highpass', 520, 0.5412), hpB: biquad('highpass', 520, 1.3066), res: biquad('peaking', 1100, 1.1), body: biquad('peaking', 3200, 1.4),
+        lp: biquad('lowpass', 11000, 0.707), drive: ctx.createWaveShaper(), lvl: gain(),
+      };
+      var sc = new Float32Array(1025);
+      for (var si = 0; si < sc.length; si++) { var sx = si / 512 - 1; sc[si] = Math.tanh(1.8 * sx) / Math.tanh(1.8); }
+      sim.drive.curve = sc;
+      sim.wet.gain.value = 0;
+      sim.inp.connect(sim.dry);
+      sim.inp.connect(sim.m.sp);
+      [sim.m.mg, sim.hpA, sim.hpB, sim.res, sim.body, sim.lp, sim.drive, sim.lvl, sim.wet].reduce(function (a, b) { a.connect(b); return b; });
       var comp = ctx.createDynamicsCompressor();
       var makeup = gain();
       var limiter = ctx.createDynamicsCompressor();
@@ -205,23 +270,25 @@
       head.connect(pre);
       head.connect(anPre);
       var node = pre;
-      bands.concat(peq, [tone.vb, tone.bass, tone.treble, tone.body, tone.soft, tone.air, tone.vocal]).forEach(function (b) { node.connect(b); node = b; });
+      bands.concat(peq, [tone.vb, tone.bass, tone.treble, tone.lcBass, tone.lcTreble, tone.body, tone.soft, tone.air, tone.vocal]).forEach(function (b) { node.connect(b); node = b; });
       node.connect(split);
       merge.connect(dry);
       merge.connect(revIn);
       revIn.connect(preDelay);
       dry.connect(sum);
       wet.connect(sum);
-      sum.connect(comp);
+      spk.out.connect(comp);
       comp.connect(makeup);
       makeup.connect(limiter);
       limiter.connect(vol);
-      vol.connect(ctx.destination);
+      vol.connect(sim.inp);
+      sim.dry.connect(ctx.destination);
+      sim.wet.connect(ctx.destination);
       limiter.connect(anPost);
       limiter.connect(tapSplit);
       tapSplit.connect(anL, 0);
       tapSplit.connect(anR, 1);
-      fx = { ctx: ctx, src: src, head: head, anPre: anPre, anPost: anPost, anL: anL, anR: anR, pre: pre, bands: bands, peq: peq, tone: tone, ms: ms, wet: wet, preDelay: preDelay, convs: convs, cur: -1, irKey: '', comp: comp, makeup: makeup, limiter: limiter, vol: vol, pitch: null };
+      fx = { ctx: ctx, src: src, head: head, anPre: anPre, anPost: anPost, anL: anL, anR: anR, pre: pre, bands: bands, peq: peq, tone: tone, ms: ms, wet: wet, preDelay: preDelay, convs: convs, cur: -1, irKey: '', spk: spk, sim: sim, comp: comp, makeup: makeup, limiter: limiter, vol: vol, pitch: null };
       if (ctx.audioWorklet && SCRIPT_BASE) {
         ctx.audioWorklet.addModule(SCRIPT_BASE + 'pitch-worklet.js').then(function () {
           var node = new AudioWorkletNode(ctx, 'neri-pitch', { outputChannelCount: [2] });
@@ -242,18 +309,23 @@
   var DEFAULTS = {
     eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], preamp: 0, peqOn: false, peq: [],
     bass: 0, bassFreq: 100, treble: 0, trebleFreq: 8000, virtualBass: 0, vbFreq: 100,
-    warmth: 0, clarity: 0, clarityFreq: 5000, vocal: 0, vocalRemoval: 0,
+    warmth: 0, clarity: 0, clarityFreq: 5000, vocal: 0, vocalRemoval: 0, loudComp: 0,
     width: 1, monoBass: 0, mono: false, swap: false, crossfeed: 0, surround: 0,
     reverb: 0, reverbRoom: 0.5, reverbDamping: 0.5, reverbPreDelay: 10,
     compOn: false, compThr: -18, compRatio: 2, compAttack: 10, compRelease: 150, compKnee: 6, compMakeup: 0,
     outGain: 0, limiter: true, ceiling: -1, release: 80,
+    spkSize: 'phone', spkProt: 0, spkBass: 0.5, spkLoud: 0.4, spkClarity: 0.3, spkExpand: 0.3,
   };
   var SECTION_KEYS = {
     equalizer: ['eq', 'preamp', 'peqOn', 'peq'],
-    tone: ['bass', 'bassFreq', 'treble', 'trebleFreq', 'virtualBass', 'vbFreq', 'warmth', 'clarity', 'clarityFreq', 'vocal', 'vocalRemoval'],
+    tone: ['bass', 'bassFreq', 'treble', 'trebleFreq', 'virtualBass', 'vbFreq', 'warmth', 'clarity', 'clarityFreq', 'vocal', 'vocalRemoval', 'loudComp'],
     space: ['width', 'monoBass', 'mono', 'swap', 'crossfeed', 'surround', 'reverb', 'reverbRoom', 'reverbDamping', 'reverbPreDelay'],
     dynamics: ['compOn', 'compThr', 'compRatio', 'compAttack', 'compRelease', 'compKnee', 'compMakeup', 'outGain', 'limiter', 'ceiling', 'release'],
+    speaker: ['spkSize', 'spkProt', 'spkBass', 'spkLoud', 'spkClarity', 'spkExpand'],
   };
+  /* 扬声器优化：低频保护低于 40 Hz 时按扬声器类型自动取值（SpeakerSize.protectionHz） */
+  var SPK_HZ = { phone: 180, tablet: 120, large: 70 };
+  function spkProtHz(s) { s = s || sound; return s.spkProt >= 40 ? s.spkProt : SPK_HZ[s.spkSize] || 180; }
   function copyVal(v) { return Array.isArray(v) ? v.map(function (x) { return typeof x === 'object' ? Object.assign({}, x) : x; }) : v; }
   var sound = {
     on: true,
@@ -283,12 +355,13 @@
     return SECTION_KEYS[name].every(function (k) {
       var a = sound[k], b = DEFAULTS[k];
       if (Array.isArray(b)) return a.length === b.length && a.every(function (v, i) { return typeof v === 'object' ? false : Math.abs(v - b[i]) < 1e-4; });
-      return typeof b === 'boolean' ? a === b : Math.abs(a - b) < 1e-4;
+      return typeof b === 'number' ? Math.abs(a - b) < 1e-4 : a === b;
     });
   }
+  /* 扬声器分区恢复默认只重置调节（SpeakerOptimizerSettings.resetTuning），开关保持原样 */
   function resetSectionKeys(name) {
     SECTION_KEYS[name].forEach(function (k) { sound[k] = copyVal(DEFAULTS[k]); });
-    sound.sec[name] = true;
+    if (name !== 'speaker') sound.sec[name] = true;
   }
   var PEQ_TYPE = { peak: 'peaking', low_shelf: 'lowshelf', high_shelf: 'highshelf', low_pass: 'lowpass', high_pass: 'highpass', notch: 'notch', band_pass: 'bandpass' };
   function sectionOn(name) { return sound.on && sound.sec[name]; }
@@ -315,6 +388,9 @@
     ramp(fx.tone.bass.gain, tn ? sound.bass : 0);
     ramp(fx.tone.treble.frequency, sound.trebleFreq);
     ramp(fx.tone.treble.gain, tn ? sound.treble : 0);
+    var lc = loudnessDb();
+    ramp(fx.tone.lcBass.gain, lc.bass);
+    ramp(fx.tone.lcTreble.gain, lc.treble);
     ramp(fx.tone.air.frequency, sound.clarityFreq * 2);
     ramp(fx.tone.body.gain, tn ? sound.warmth * 3 : 0);
     ramp(fx.tone.soft.gain, tn ? -sound.warmth * 4 : 0);
@@ -335,6 +411,7 @@
     var pd = Math.round(fx.ctx.sampleRate * Math.min(120, sound.reverbPreDelay) / 1000);
     ramp(fx.preDelay.delayTime, Math.max(0, pd - 1) / fx.ctx.sampleRate);
     if (rev > 0) updateReverb();
+    applySpeaker(ramp);
     var dyn = sectionOn('dynamics');
     var cOn = dyn && sound.compOn;
     ramp(fx.comp.threshold, cOn ? sound.compThr : 0);
@@ -351,6 +428,75 @@
     fx.limiter.release.setTargetAtTime(sound.release / 1000, t, 0.03);
     ramp(fx.vol.gain, P.volume * Math.pow(10, (dyn ? sound.outGain : 0) / 20));
     if (fx.pitch) fx.pitch.parameters.get('ratio').setValueAtTime(speedOn() && !sound.linked ? P.pitch : 1, t);
+  }
+  /* 响度补偿（桌面版 loudnessCompensationDb）：音量调低多少，就按比例补回低频和高频；音量 100% 时不起作用 */
+  function loudnessDb() {
+    var a = sectionOn('tone') ? M.clamp(sound.loudComp || 0) : 0;
+    if (a <= 0) return { bass: 0, treble: 0 };
+    var att = Math.min(40, Math.max(0, -20 * Math.log10(M.clamp(P.volume, 0.001, 1))));
+    return { bass: a * Math.min(10, att * 0.3), treble: a * Math.min(4, att * 0.1) };
+  }
+  /* 参数换算同 SpeakerStage::setTargets / speakerBandSettings；网页里的输出就当作手机扬声器，开了就生效 */
+  function speakerBand(loud, boost) {
+    var thr = -8 - 22 * loud;
+    var ratio = 2.5 + boost * loud;
+    return { thr: thr, ratio: ratio, makeup: 0.55 * -thr * (1 - 1 / ratio) };
+  }
+  function applySpeaker(ramp) {
+    var s = fx.spk;
+    var on = sectionOn('speaker');
+    var hz = spkProtHz();
+    ramp(s.hpA.frequency, on ? hz : 10);
+    ramp(s.hpB.frequency, on ? hz : 10);
+    var hf = M.clamp(Math.max(hz, 60) * 1.4, 70, 260);
+    ramp(s.hLpA.frequency, hf);
+    ramp(s.hLpB.frequency, hf);
+    ramp(s.hHp.frequency, hf * 1.2);
+    ramp(s.hLp.frequency, hf * 6);
+    ramp(s.hAmt.gain, on ? sound.spkBass * 1.6 : 0);
+    ramp(s.clPeak.gain, on ? 4 * sound.spkClarity : 0);
+    ramp(s.clShelf.gain, on ? 3 * sound.spkClarity : 0);
+    var k = 1 + 0.6 * (on ? sound.spkExpand : 0);
+    ramp(s.ex.ll.gain, (1 + k) / 2);
+    ramp(s.ex.rr.gain, (1 + k) / 2);
+    ramp(s.ex.lr.gain, (1 - k) / 2);
+    ramp(s.ex.rl.gain, (1 - k) / 2);
+    var loud = on ? sound.spkLoud : 0;
+    [[s.low, 1.5], [s.high, 2.5]].forEach(function (x) {
+      var b = x[0];
+      var c = speakerBand(loud, x[1]);
+      ramp(b.c.threshold, loud > 0 ? c.thr : 0);
+      ramp(b.c.ratio, loud > 0 ? c.ratio : 1);
+      /* 浏览器的压缩节点自带补偿增益（约 0.5 × 压缩量），这里补齐到原生的 0.55 × */
+      ramp(b.g.gain, loud > 0 ? Math.pow(10, (c.makeup - 0.5 * -c.thr * (1 - 1 / c.ratio)) / 20) : 1);
+    });
+    applyPreview(ramp);
+  }
+  /* 外放试听的小喇叭模型：按扬声器类型换口径（越小低频越早滚降、声像越窄），推得越响越容易发毛 */
+  var SIM = {
+    phone: { hp: 520, res: 1100, resG: 5, body: 3200, bodyG: 3, lp: 11000, width: 0.3, lvl: 1.5 },
+    tablet: { hp: 300, res: 900, resG: 3.5, body: 3000, bodyG: 2, lp: 14000, width: 0.65, lvl: 1.3 },
+    large: { hp: 95, res: 160, resG: 2, body: 2600, bodyG: 1, lp: 18000, width: 1, lvl: 1.05 },
+  };
+  var preview = { on: false };
+  function applyPreview(ramp) {
+    var m = fx.sim;
+    var p = SIM[sound.spkSize] || SIM.phone;
+    var on = preview.on;
+    ramp(m.dry.gain, on ? 0 : 1);
+    ramp(m.wet.gain, on ? 1 : 0);
+    ramp(m.hpA.frequency, p.hp);
+    ramp(m.hpB.frequency, p.hp);
+    ramp(m.res.frequency, p.res);
+    ramp(m.res.gain, p.resG);
+    ramp(m.body.frequency, p.body);
+    ramp(m.body.gain, p.bodyG);
+    ramp(m.lp.frequency, p.lp);
+    ramp(m.lvl.gain, p.lvl);
+    ramp(m.m.ll.gain, (1 + p.width) / 2);
+    ramp(m.m.rr.gain, (1 + p.width) / 2);
+    ramp(m.m.lr.gain, (1 - p.width) / 2);
+    ramp(m.m.rl.gain, (1 - p.width) / 2);
   }
   /* 房间大小 / 明亮度 / 处理模式变了才重算脉冲响应；两路卷积交叉淡变，拖滑块时不会咔哒 */
   function updateReverb() {
@@ -382,7 +528,9 @@
   NP.sound = {
     state: sound, apply: function () { applyFx(); applyRate(); emit(); }, live: function () { return !!fx && P.audible; }, freqs: EQ_FREQS, rate: rate,
     defaults: DEFAULTS, sections: SECTION_KEYS, sectionDefault: sectionDefault, resetSection: resetSectionKeys,
-    compAmount: compAmount, setCompAmount: setCompAmount,
+    compAmount: compAmount, setCompAmount: setCompAmount, spkProtHz: spkProtHz, spkSizes: SPK_HZ, loudnessDb: loudnessDb,
+    preview: function () { return preview.on; },
+    setPreview: function (on) { preview.on = !!on; if (fx) applyPreview(function (p, v) { p.setTargetAtTime(v, fx.ctx.currentTime, 0.03); }); emit(); },
     /* 效果监视器：有真实音频链时给出分析节点，否则返回 null，由页面用模型画 */
     limiterReduction: function () { return fx ? fx.limiter.reduction : 0; },
     taps: function () { return fx && P.audible ? { ctx: fx.ctx, pre: fx.anPre, post: fx.anPost, l: fx.anL, r: fx.anR, comp: fx.comp } : null; },

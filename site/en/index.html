@@ -304,7 +304,7 @@
       <p class="hand hero__note">Listening together tonight?</p>
       <svg class="hero__arrow draw" viewBox="0 0 120 70" aria-hidden="true"><path d="M6 12 C 40 4, 78 18, 96 54" pathLength="1"></path><path d="M84 46 L 97 56 L 101 40" pathLength="1"></path></svg>
       <div class="crayon" aria-hidden="true">
-        <svg class="crayon__art" viewBox="164 131 695 546">
+        <svg class="crayon__art" viewBox="0 0 695 546">
           <g filter="url(#crayon)">
             <use href="#np-p-head" class="cr cr--head"></use>
             <use href="#np-p-arc" class="cr cr--arc"></use>
@@ -825,6 +825,7 @@
               </div>
             </div>
             <figcaption class="fig__cap">Fig. 05 — Settings · Audio Effects &amp; Speed · every switch works</figcaption>
+            <p class="sim-draft"><svg class="i" aria-hidden="true"><use href="#i-info"></use></svg><span><b>Preview simulation, not the final version</b>The app you actually run is the reference for its interface and sound.</span></p>
           </figure>
         </div>
       </div>
@@ -832,8 +833,12 @@
       <figure class="dscope" id="dspChain" data-reveal="">
         <div class="dscope__head">
           <p class="dscope__title"><b>Effect monitor</b><span class="mono" data-scope-src="">Modeled spectrum · switches to live analysis once you press play</span></p>
-          <button type="button" class="dscope__ab" data-scope-ab="" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-headphones"></use></svg><span>Hold to hear the original</span></button>
+          <div class="dscope__btns">
+            <button type="button" class="dscope__ab dscope__spk" data-scope-spk="" aria-pressed="false" title="A preview for this page only: the output goes through a small-speaker response, so you can hear phone playback even on headphones. The app itself never does this."><svg class="i" aria-hidden="true"><use href="#i-speaker"></use></svg><span>Simulate phone speaker</span></button>
+            <button type="button" class="dscope__ab" data-scope-ab="" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-headphones"></use></svg><span>Hold to hear the original</span></button>
+          </div>
         </div>
+        <p class="dscope__tip mono" data-scope-tip="" hidden=""></p>
         <div class="dscope__mon">
           <div class="dscope__spec">
             <canvas data-scope-spec="" aria-hidden="true"></canvas>
@@ -1296,8 +1301,9 @@
         <button type="button" role="tab" id="deskT0" aria-selected="true" aria-controls="deskScreen" class="is-on" data-tab="0"><i>A</i>Home<s></s></button>
         <button type="button" role="tab" id="deskT1" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="1"><i>B</i>Now Playing<s></s></button>
         <button type="button" role="tab" id="deskT2" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="2"><i>C</i>Library<s></s></button>
-        <button type="button" role="tab" id="deskT3" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="3"><i>D</i>Audio effects &amp; speed<s></s></button>
-        <button type="button" role="tab" id="deskT4" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="4"><i>E</i>Shortcuts<s></s></button>
+        <button type="button" role="tab" id="deskT3" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="3"><i>D</i>Playlist<s></s></button>
+        <button type="button" role="tab" id="deskT4" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="4"><i>E</i>Audio Effects &amp; Speed<s></s></button>
+        <button type="button" role="tab" id="deskT5" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="5"><i>F</i>Settings<s></s></button>
         <div class="seg dstage__os" role="radiogroup" aria-label="Window style">
           <button type="button" role="radio" aria-checked="true" class="is-on" data-sim-os="win"><svg class="i" aria-hidden="true"><use href="#i-win"></use></svg>Windows</button>
           <button type="button" role="radio" aria-checked="false" data-sim-os="mac"><svg class="i" aria-hidden="true"><use href="#i-apple"></use></svg>macOS</button>
@@ -1310,39 +1316,10 @@
           <div class="dwin__screen" id="deskScreen" role="tabpanel" aria-labelledby="deskT0">
             <img class="dwin__ph" src="../assets/img/desktop/home-light-en.jpg" alt="Desktop home: the sidebar on the left, search at the top, “Continue playing” playlist cards and a three-column personal radar, with the player bar at the bottom" width="1600" height="1000" loading="lazy" data-themed="">
             <div class="dsim" id="deskSim" role="application" aria-label="Desktop interface simulation: switch pages, play “星轨”, open Now Playing and tune the sound"></div>
-            <div class="dpins is-on" data-pins="0" aria-hidden="true">
-              <span class="tabpin" style="--x:3%;--y:17%"><b>1</b></span>
-              <span class="tabpin" style="--x:52.8%;--y:9.5%"><b>2</b></span>
-              <span class="tabpin" style="--x:45.5%;--y:32%"><b>3</b></span>
-              <span class="tabpin" style="--x:92%;--y:95.5%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="1" aria-hidden="true">
-              <span class="tabpin" style="--x:22.5%;--y:34%"><b>1</b></span>
-              <span class="tabpin" style="--x:62.5%;--y:36%"><b>2</b></span>
-              <span class="tabpin" style="--x:38.5%;--y:65.5%"><b>3</b></span>
-              <span class="tabpin" style="--x:22.5%;--y:87%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="2" aria-hidden="true">
-              <span class="tabpin" style="--x:35%;--y:16.6%"><b>1</b></span>
-              <span class="tabpin" style="--x:20%;--y:30%"><b>2</b></span>
-              <span class="tabpin" style="--x:19.5%;--y:52%"><b>3</b></span>
-              <span class="tabpin" style="--x:89.4%;--y:9.4%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="3" aria-hidden="true">
-              <span class="tabpin" style="--x:21%;--y:62%"><b>1</b></span>
-              <span class="tabpin" style="--x:66.4%;--y:30%"><b>2</b></span>
-              <span class="tabpin" style="--x:66%;--y:56%"><b>3</b></span>
-              <span class="tabpin" style="--x:90.8%;--y:46%"><b>4</b></span>
-            </div>
-            <div class="dpins" data-pins="4" aria-hidden="true">
-              <span class="tabpin" style="--x:92%;--y:25%"><b>1</b></span>
-              <span class="tabpin" style="--x:61.7%;--y:42.4%"><b>2</b></span>
-              <span class="tabpin" style="--x:80.5%;--y:47.6%"><b>3</b></span>
-              <span class="tabpin" style="--x:49.8%;--y:32.6%"><b>4</b></span>
-            </div>
           </div>
         </div>
         <figcaption class="fig__cap">Fig. 11a — NeriPlayer Desktop · 1280 × 800 · every button works</figcaption>
+        <p class="sim-draft"><svg class="i" aria-hidden="true"><use href="#i-info"></use></svg><span><b>Preview simulation, not the final version</b>The app you actually run is the reference for its interface and features.</span></p>
         <p class="tabstage__note hand" aria-hidden="true">The desktop app’s real interface,<br>go ahead and click around ↙</p>
       </figure>
 
@@ -1366,18 +1343,24 @@
           <li><b>04</b>Play stats, recent plays and multi-select</li>
         </ol>
         <ol class="tablegend notes notes--tight" data-legend="3">
-          <li><b>01</b>Two-column settings, with search for any option at the top</li>
-          <li><b>02</b>The theoretical frequency response follows the EQ, preamp and tone live</li>
-          <li><b>03</b>Every parameter has a slider, or type the value in directly</li>
-          <li><b>04</b>Sections collapse, each with its own “Reset this section”</li>
+          <li><b>01</b>Cover, name, track count and total length; NetEase playlists add a description and play count</li>
+          <li><b>02</b>Play all, shuffle and multi-select, plus search inside the playlist at the top</li>
+          <li><b>03</b>Track rows: number, cover, artist · album and length — click “星轨” to hear it</li>
+          <li><b>04</b>Every playlist card on Home and in the Library opens here; the back button returns to where you came from</li>
         </ol>
         <ol class="tablegend notes notes--tight" data-legend="4">
-          <li><b>01</b>Global shortcuts are off by default; once on, they work even unfocused or in the tray</li>
-          <li><b>02</b>In the app: Space plays, arrow keys seek and set volume</li>
-          <li><b>03</b>Global: Ctrl / Cmd + Alt combos, with a warning on conflicts</li>
-          <li><b>04</b>Click a key box to record a new combo; Esc cancels, Backspace clears</li>
+          <li><b>01</b>Pick a preset, then fine-tune bass, vocals, brightness, warmth and space under Listening tuning</li>
+          <li><b>02</b>The theoretical response follows the EQ, preamp, tone and loudness compensation in real time</li>
+          <li><b>03</b>Speaker optimization, dynamics, speed and the vinyl effect each get their own section with its own reset</li>
+          <li><b>04</b>Shares one sound with the phone page above — turn a knob on either side and the other follows</li>
         </ol>
-        <p class="small">The window shows the real interface structure and styles exported from the desktop app’s front end, wired to the player on this page. The tracks and covers are the NeriPlayer PV demo songs, and no account is signed in. Light and dark follow this page; switch the system at the top right.</p>
+        <ol class="tablegend notes notes--tight" data-legend="5">
+          <li><b>01</b>21 sections in nine groups, from accounts, playback and audio to backup, sync and About</li>
+          <li><b>02</b>Search at the top jumps straight to any setting</li>
+          <li><b>03</b>Switches, sliders and segmented options all respond, and groups fold away and back</li>
+          <li><b>04</b>Keyboard shortcuts come in in-app and global sets, with a warning on conflicts</li>
+        </ol>
+        <p class="small">The window holds the real interface structure and styles exported from the desktop front end, wired to this page’s player; the tracks and covers are NeriPlayer PV samples, and no account is signed in. Light and dark follow this page, and the system can be switched at the top right. The desktop app is still in preview and this simulation is a snapshot of one moment — the version you actually run is the reference.</p>
       </div>
     </div>
 

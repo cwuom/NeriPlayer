@@ -454,7 +454,12 @@
   }
 
   /* ---------- 仿真窗口的导览：标签 ↔ 仿真里的页面，图钉与图例跟着走 ---------- */
-  var VIEWS = ['home', 'np', 'library', 'fx', 'shortcuts'];
+  var VIEWS = ['home', 'np', 'library', 'playlist', 'audio_effects', 'appearance'];
+  function tabOf(v) {
+    var i = VIEWS.indexOf(v);
+    if (i >= 0 || v === 'explore') return i;
+    return v === 'np' || v === 'home' || v === 'library' || v === 'playlist' ? i : 5;
+  }
   function initStage(sim) {
     var stage = $('#deskStage');
     if (!stage) return;
@@ -502,7 +507,7 @@
         li.addEventListener('pointerleave', function () { li.classList.remove('is-hot'); pin.classList.remove('is-hot'); });
       });
     });
-    if (sim) sim.onView(function (v) { show(VIEWS.indexOf(v)); });
+    if (sim) sim.onView(function (v) { show(tabOf(v)); });
   }
 
   /* 窗口与示意桌面共用一个系统选择，默认跟访客的系统走 */

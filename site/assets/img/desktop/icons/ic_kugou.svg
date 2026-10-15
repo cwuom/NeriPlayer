@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <mask id="letter">
+      <rect width="48" height="48" fill="#fff"/>
+      <g fill="none" stroke="#000" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 14v20"/>
+        <path d="M31 14 19.5 25.2"/>
+        <path d="m23.4 21.6 8.6 12.4"/>
+      </g>
+    </mask>
+  </defs>
+  <circle cx="24" cy="24" r="20" fill="currentColor" mask="url(#letter)"/>
+</svg>
