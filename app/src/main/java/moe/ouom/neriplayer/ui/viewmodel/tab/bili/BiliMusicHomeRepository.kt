@@ -117,21 +117,48 @@ object BiliMusicHomeRepository {
      * 补全需要逐条调用 WBI view 接口，因此按 [MV_ENRICH_PARALLELISM] 分块串行推进：
      * 与 [moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient] 的其它分页批处理保持一致，
      * 避免一次性打出几十个并发请求触发 B 站风控。
+     *
+     * 另外，一旦某一批里所有待补全曲目都失败（典型是风控 412 或网络超时），说明后续请求大概率也会失败，
+     * 此时立刻停止并把剩余曲目原样返回：用户马上就能看到榜单（回退到榜单授权投稿），
+     * 而不是等所有批次依次超时后仍然一无所获。
      */
     private suspend fun resolveOfficialMvIds(
         songs: List<BiliMusicRankSong>
     ): List<BiliMusicRankSong> {
-        if (songs.none { it.mvBvid.isNotBlank() && it.mvAid <= 0L }) return songs
-        return coroutineScope {
-            songs.chunked(MV_ENRICH_PARALLELISM).flatMap { chunk ->
-                chunk.map { song -> async { enrichOfficialMv(song) } }.awaitAll()
+        if (songs.none { it.needsMvEnrichment }) return songs
+        val resolved = ArrayList<BiliMusicRankSong>(songs.size)
+        var cursor = 0
+        while (cursor < songs.size) {
+            val chunkEnd = minOf(cursor + MV_ENRICH_PARALLELISM, songs.size)
+            val chunk = songs.subList(cursor, chunkEnd)
+            val outcomes = coroutineScope {
+                chunk.map { song -> async { enrichOfficialMv(song) to song.needsMvEnrichment } }.awaitAll()
             }
+            var attempted = 0
+            var enriched = 0
+            outcomes.forEach { (song, needed) ->
+                resolved += song
+                if (needed) {
+                    attempted++
+                    if (!song.needsMvEnrichment) enriched++
+                }
+            }
+            if (attempted > 0 && enriched == 0) {
+                resolved += songs.subList(chunkEnd, songs.size)
+                break
+            }
+            cursor = chunkEnd
         }
+        return resolved
     }
+
+    /** 单条曲目是否还需要补全官方 MV 的 aid 等媒体身份 */
+    private val BiliMusicRankSong.needsMvEnrichment: Boolean
+        get() = mvBvid.isNotBlank() && mvAid <= 0L
 
     /** 补全单条曲目的官方 MV 身份；无需补全或补全失败时原样返回 */
     private suspend fun enrichOfficialMv(song: BiliMusicRankSong): BiliMusicRankSong {
-        if (song.mvBvid.isBlank() || song.mvAid > 0L) return song
+        if (!song.needsMvEnrichment) return song
         val info = runCatching { client.getVideoBasicInfoByBvid(song.mvBvid) }.getOrNull()
         return if (info != null && info.aid > 0L) {
             song.copy(

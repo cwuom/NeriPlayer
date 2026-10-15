@@ -79,9 +79,18 @@ data class BiliMusicRankSong(
     val videoCover: String
         get() = if (hasOfficialMv) mvCoverUrl.ifBlank { videoCoverUrl } else videoCoverUrl
 
-    /** 实际播放来源：官方 MV 优先，其次为榜单授权投稿 */
+    /**
+     * 实际播放来源：官方 MV 优先，其次为榜单授权投稿；两者都不存在时为 [BiliMusicPlaybackSource.UNAVAILABLE]。
+     *
+     * 之所以要区分「无可播放源」而不是笼统归到 UPLOAD：SDK 侧有可能只带回 mv_bvid 但补全失败，
+     * 同时 creation_* 也为空，此时条目是不可播放的，UI 必须如实告知用户，而不是显示一个点了没反应的来源标签。
+     */
     val playbackSource: BiliMusicPlaybackSource
-        get() = if (hasOfficialMv) BiliMusicPlaybackSource.OFFICIAL_MV else BiliMusicPlaybackSource.UPLOAD
+        get() = when {
+            !isPlayable -> BiliMusicPlaybackSource.UNAVAILABLE
+            hasOfficialMv -> BiliMusicPlaybackSource.OFFICIAL_MV
+            else -> BiliMusicPlaybackSource.UPLOAD
+        }
 
     /** 只有拿到完整视频身份时才允许入队播放 */
     val isPlayable: Boolean
@@ -102,7 +111,10 @@ enum class BiliMusicPlaybackSource {
     OFFICIAL_MV,
 
     /** 榜单授权的投稿视频（接口 creation_*） */
-    UPLOAD
+    UPLOAD,
+
+    /** 官方 MV 与授权投稿都不完整，即无可播放音频 */
+    UNAVAILABLE
 }
 
 /**

@@ -381,7 +381,7 @@ private fun BiliMusicRankSongCard(
     }
 }
 
-/** 如实标注该曲目实际会播放的音频来源：官方 MV 或榜单授权投稿 */
+/** 如实标注该曲目实际会播放的音频来源：官方 MV、榜单授权投稿，或明确告知暂无可播放音频 */
 @Composable
 internal fun BiliMusicRankSong.playbackSourceLabel(): String =
     when (playbackSource) {
@@ -393,6 +393,9 @@ internal fun BiliMusicRankSong.playbackSourceLabel(): String =
                 CoreCommonR.string.home_bili_music_source_upload,
                 playbackUploader.ifBlank { singer }
             )
+
+        BiliMusicPlaybackSource.UNAVAILABLE ->
+            stringResource(CoreCommonR.string.home_bili_music_unavailable)
     }
 
 /**
