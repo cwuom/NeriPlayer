@@ -211,8 +211,19 @@ class LocalCurationPolicyTest {
             applyCover = true
         )
 
-        assertEquals(2L * 7 - 10 + 4_000 - 1_000, estimateLocalCurationBytesDelta(listOf(item)))
+        // flac 只有一个标准字段：合并 7 + 原文 5 + 三个翻译字段 6
+        assertEquals(7L + 5 + 3 * 2 - 10 + 4_000 - 1_000, estimateLocalCurationBytesDelta(listOf(item)))
         assertEquals(0L, estimateLocalCurationBytesDelta(listOf(item.copy(applyLyric = false, applyCover = false))))
+    }
+
+    @Test
+    fun `lyric size estimate counts every tag the writer fills for the container`() {
+        val proposal = lyric(lyrics = "abcde", translated = "xy")
+
+        // mp3 写 LYRICS 与 UNSYNCEDLYRICS 两个标准字段
+        assertEquals(2L * 7 + 5 + 3 * 2, estimatedLyricTagBytes(proposal, "mp3"))
+        assertEquals(7L + 5 + 3 * 2, estimatedLyricTagBytes(proposal, "flac"))
+        assertEquals(7L + 5 + 3 * 2, estimatedLyricTagBytes(proposal, null))
     }
 
     @Test

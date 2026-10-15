@@ -54,10 +54,15 @@ internal suspend fun PlayerManager.embedLocalSongAssetsImpl(
         writeLyrics = embedding.writesLyrics
     )
     if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS) return outcome
-    runSongMetadataMutation {
+    return runSongMetadataMutation {
         val latest = latestSongCopy(song)
         val updated = withEmbeddedAssets(latest, embedding, originalCoverBackup)
-        if (latest != base) rewriteTagsEditedDuringEmbedding(updated)
+        val repairOutcome = if (latest != base) {
+            rewriteTagsEditedDuringEmbedding(updated)
+        } else {
+            LocalMediaMetadataWriteOutcome.SUCCESS
+        }
+        // 词图已经写进文件，内存仍要同步；补写失败时把结果交给调用方标记失败，重试会按最新副本重写
         updateSongInAllPlaces(
             originalSong = song,
             updatedSong = updated,
@@ -68,8 +73,8 @@ internal suspend fun PlayerManager.embedLocalSongAssetsImpl(
             ),
             fastLocalUsageSync = true
         )
+        repairOutcome
     }
-    return LocalMediaMetadataWriteOutcome.SUCCESS
 }
 
 /**
@@ -77,7 +82,9 @@ internal suspend fun PlayerManager.embedLocalSongAssetsImpl(
  * 文件里的标题、歌手等随后会被旧副本覆盖；这里在锁内按最新副本补写一次，
  * 刚嵌入的歌词与封面保持不动
  */
-private suspend fun PlayerManager.rewriteTagsEditedDuringEmbedding(updated: SongItem) {
+private suspend fun PlayerManager.rewriteTagsEditedDuringEmbedding(
+    updated: SongItem
+): LocalMediaMetadataWriteOutcome {
     val outcome = writeLocalEditableMetadata(song = updated, writeCover = false, writeLyrics = false)
     if (outcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
         NPLogger.w(
@@ -85,6 +92,7 @@ private suspend fun PlayerManager.rewriteTagsEditedDuringEmbedding(updated: Song
             "rewrite tags edited during embedding failed: outcome=$outcome, song=${updated.name}"
         )
     }
+    return outcome
 }
 
 private suspend fun PlayerManager.withEmbeddedAssets(

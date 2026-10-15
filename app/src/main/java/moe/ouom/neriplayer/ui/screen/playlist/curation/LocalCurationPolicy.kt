@@ -9,6 +9,8 @@ import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricTimelineFit
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
+import moe.ouom.neriplayer.lyrics.embedded.standardLyricsMetadataKeys
+import moe.ouom.neriplayer.lyrics.embedded.translatedLyricsMetadataKeys
 
 /** 网易云与 QQ 同时提供封面，酷狗与 LRCLIB 补充歌词覆盖面；AMLL 体积大且慢，留给单曲编辑器 */
 internal val LOCAL_CURATION_MATCH_SOURCES: Set<EditableLyricMatchSource> = setOf(
@@ -132,14 +134,15 @@ internal fun buildLocalCurationMatchRequest(
 }
 
 /**
- * 歌词会同时写入标准字段（原文与翻译合并）和 NeriPlayer 私有字段，因此按两份估算；
- * 旧值按一份扣除，结果偏保守，宁可多报也不让用户在空间不足时意外失败
+ * 与写入器保持一致：原文与翻译合并后写入容器的每个标准歌词字段，原文另存一份私有字段，
+ * 翻译写入全部翻译字段，音译一份。旧值按一份扣除，结果偏保守，宁可多报也不让用户在空间不足时意外失败
  */
-internal fun estimatedLyricTagBytes(proposal: LocalCurationLyricProposal): Long {
+internal fun estimatedLyricTagBytes(proposal: LocalCurationLyricProposal, audioExtension: String?): Long {
     val lyric = proposal.lyrics.utf8Size()
     val translated = proposal.translatedLyrics.orEmpty().utf8Size()
     val romanized = proposal.romanizedLyrics.orEmpty().utf8Size()
-    return 2L * (lyric + translated) + romanized
+    val standardKeys = standardLyricsMetadataKeys(audioExtension).size
+    return standardKeys * (lyric + translated) + lyric + translatedLyricsMetadataKeys.size * translated + romanized
 }
 
 internal fun estimateLocalCurationBytesDelta(items: List<LocalCurationItem>): Long =
@@ -147,7 +150,8 @@ internal fun estimateLocalCurationBytesDelta(items: List<LocalCurationItem>): Lo
         var delta = 0L
         val lyric = item.lyric
         if (item.applyLyric && lyric != null) {
-            delta += estimatedLyricTagBytes(lyric) - (item.existing?.embeddedLyricBytes ?: 0)
+            delta += estimatedLyricTagBytes(lyric, item.existing?.audioExtension) -
+                (item.existing?.embeddedLyricBytes ?: 0)
         }
         val cover = item.cover
         if (item.applyCover && cover != null) {

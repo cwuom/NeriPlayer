@@ -119,7 +119,9 @@ private fun yrcLineEndMs(line: String): Long? {
 
 private fun lrcLineStartMs(line: String): Long? {
     if (!hasLyricText(line)) return null
-    return lrcTimestampRegex.findAll(line).mapNotNull(::parseLrcTimestampMs).maxOrNull()
+    return lrcTimestampRegex.findAll(line)
+        .mapNotNull { match -> parseLrcTimestampMs(match, allowSecondsOverflow = true) }
+        .maxOrNull()
 }
 
 fun isLiveLyricVersion(title: String, album: String? = null): Boolean {

@@ -334,11 +334,15 @@ class LocalCurationCoordinatorTest {
             options().copy(lyricMode = LocalCurationLyricMode.SKIP)
         )
         advanceUntilIdle()
+        var stageAtDiscard: LocalCurationStage? = null
+        ports.onDiscard = { stageAtDiscard = coordinator.session.value?.stage }
 
         coordinator.apply()
         advanceUntilIdle()
 
         assertEquals(listOf(committed("file:///lonely.jpg")), ports.discardedCovers)
+        assertEquals(LocalCurationStage.APPLYING, stageAtDiscard)
+        assertEquals(LocalCurationStage.FINISHED, coordinator.session.value?.stage)
         assertEquals(committed("file:///ok.jpg"), ports.appliedCovers["ok"])
         assertEquals(committed("file:///shared.jpg"), ports.appliedCovers["sharedOk"])
     }
@@ -498,6 +502,7 @@ class LocalCurationCoordinatorTest {
     ) : LocalCurationPorts {
         val committedCovers = mutableSetOf<String>()
         val discardedCovers = mutableListOf<String>()
+        var onDiscard: () -> Unit = {}
         val appliedCovers = mutableMapOf<String, String?>()
         val matchedTitles = mutableListOf<String>()
         val preparedReferences = mutableListOf<String>()
@@ -540,6 +545,7 @@ class LocalCurationCoordinatorTest {
         }
 
         override suspend fun discardCovers(references: Collection<String>) {
+            onDiscard()
             discardedCovers += references
         }
 

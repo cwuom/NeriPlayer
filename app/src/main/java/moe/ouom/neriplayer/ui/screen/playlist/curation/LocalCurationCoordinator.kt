@@ -413,10 +413,20 @@ class LocalCurationCoordinator(
             }
             playingKeys.forEach { key -> applyKey(sessionId, key) }
         } catch (cancellation: CancellationException) {
-            withContext(NonCancellable) { finishApply(sessionId, cancelled = true) }
+            withContext(NonCancellable) {
+                discardOrphanCovers()
+                finishApply(sessionId, cancelled = true)
+            }
             throw cancellation
         }
+        withContext(NonCancellable) { discardOrphanCovers() }
         finishApply(sessionId, cancelled = false)
+    }
+
+    /** 清理完成前会话保持写入中，重试不会拿到即将被删除的封面 */
+    private suspend fun discardOrphanCovers() {
+        val orphans = coverUsage.orphans()
+        if (orphans.isNotEmpty()) runCatchingNonCancellation { ports.discardCovers(orphans) }
     }
 
     private suspend fun applyKey(sessionId: Long, key: String) {
@@ -468,8 +478,6 @@ class LocalCurationCoordinator(
             ).also { finished = it }
         }
         finished?.let { ports.notifyFinished(it.appliedCount, it.failedCount) }
-        val orphans = coverUsage.orphans()
-        if (orphans.isNotEmpty()) scope.launch { ports.discardCovers(orphans) }
     }
 
     /** [sessionId] 非空时只更新该会话，异步结果不会落到之后新开的会话上 */

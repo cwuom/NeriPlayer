@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
 import moe.ouom.neriplayer.data.local.media.curation.LocalEmbeddedAssetInspector
 import moe.ouom.neriplayer.data.local.media.curation.LocalEmbeddedAssetState
 import moe.ouom.neriplayer.data.local.media.curation.PreparedEmbeddedCover
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchRequest
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
@@ -78,8 +79,20 @@ internal class AppLocalCurationPorts(private val context: Context) : LocalCurati
     override suspend fun commitCover(prepared: PreparedEmbeddedCover): CommittedEmbeddedCover? =
         EmbeddedCoverPreparer.commit(context, prepared)
 
-    override suspend fun discardCovers(references: Collection<String>) =
-        EmbeddedCoverPreparer.discard(context, references)
+    /** 写入失败也可能已经发布了新封面（例如补写标签失败），仍被歌曲引用的文件不能删 */
+    override suspend fun discardCovers(references: Collection<String>) {
+        val inUse = buildSet {
+            val songs = LocalPlaylistRepository.getInstance(context).playlists.value.asSequence()
+                .flatMap { it.songs.asSequence() } +
+                PlayerManager.currentQueueFlow.value.asSequence() +
+                listOfNotNull(PlayerManager.currentSongFlow.value)
+            songs.forEach { song ->
+                song.customCoverUrl?.let(::add)
+                song.originalCoverUrl?.let(::add)
+            }
+        }
+        EmbeddedCoverPreparer.discard(context, references.filterNot(inUse::contains))
+    }
 
     /** 歌词与封面在一次文件事务里写入；文件写入不占用播放器的全局元数据锁，可与其他歌曲并行 */
     override suspend fun apply(

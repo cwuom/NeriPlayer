@@ -37,6 +37,15 @@ class LyricMatchSupplementalSignalsTest {
     }
 
     @Test
+    fun `timeline end counts seconds above 59 the way the playback parser does`() {
+        assertEquals(159_900L, lyricTimelineEndMs("[00:10.00]Start\n[001:99.9]Late line"))
+        assertEquals(
+            EditableLyricTimelineFit.OVERFLOWS,
+            resolveLyricTimelineFit(100_000L, "[00:10.00]Start\n[001:99.9]Late line", EditableLyricFormat.LRC)
+        )
+    }
+
+    @Test
     fun `timeline end reads yrc line start plus duration`() {
         val lyric = "[1000,2000](1000,500,0)Hello\n[200000,4500](200000,4500,0)Bye"
 
