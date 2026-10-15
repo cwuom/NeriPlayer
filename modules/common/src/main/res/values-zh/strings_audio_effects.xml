@@ -181,6 +181,7 @@
     <string name="audio_effects_speaker_desc">只在手机自带扬声器外放时生效，插上耳机或连接蓝牙会自动停用</string>
     <string name="audio_effects_speaker_enabled">启用外放优化</string>
     <string name="audio_effects_speaker_inactive">当前不是扬声器输出，优化暂不生效</string>
+    <string name="audio_effects_speaker_master_off">音效总开关已关闭，优化暂不生效</string>
     <string name="audio_effects_speaker_size">扬声器类型</string>
     <string name="audio_effects_speaker_size_phone">手机</string>
     <string name="audio_effects_speaker_size_tablet">平板</string>

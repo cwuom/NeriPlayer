@@ -63,7 +63,10 @@ class AudioEffectsDspResolutionTest {
 
     @Test
     fun `speaker optimizer only runs on the built in speaker`() {
-        val settings = AudioEffectsSettings(speaker = SpeakerOptimizerSettings(enabled = true))
+        val settings = AudioEffectsSettings(
+            main = AudioEffectsProfile(enabled = true),
+            speaker = SpeakerOptimizerSettings(enabled = true)
+        )
         val onSpeaker = settings.resolveDsp(speaker)
         assertTrue(onSpeaker.active)
         assertEquals(1f, onSpeaker.params[NeriDspParams.SPEAKER_ENABLED])
@@ -73,6 +76,37 @@ class AudioEffectsDspResolutionTest {
         val onHeadphones = settings.resolveDsp(headphones)
         assertFalse(onHeadphones.active)
         assertEquals(AudioEffectsInactiveReason.NEUTRAL, onHeadphones.inactiveReason)
+    }
+
+    @Test
+    fun `master switch off bypasses the speaker optimizer and every tuned section`() {
+        val rock = requireNotNull(findAudioEffectsBuiltInPreset("rock"))
+        val settings = AudioEffectsSettings(
+            main = AudioEffectsProfile().applyBuiltInPreset(rock).copy(enabled = false),
+            speaker = SpeakerOptimizerSettings(enabled = true)
+        )
+
+        val resolution = settings.resolveDsp(speaker)
+
+        assertFalse(resolution.active)
+        assertEquals(AudioEffectsInactiveReason.DISABLED, resolution.inactiveReason)
+        assertEquals(0f, resolution.params[NeriDspParams.MASTER_ENABLED])
+        assertEquals(0f, resolution.params[NeriDspParams.SPEAKER_ENABLED])
+    }
+
+    @Test
+    fun `speaker route profile owns the master switch when outputs are separated`() {
+        val settings = AudioEffectsSettings(
+            perOutputEnabled = true,
+            main = AudioEffectsProfile(enabled = true),
+            speaker = SpeakerOptimizerSettings(enabled = true)
+        ).updateProfileFor(AudioOutputRoute.SPEAKER) { it.copy(enabled = false) }
+
+        assertEquals(AudioEffectsInactiveReason.DISABLED, settings.resolveDsp(speaker).inactiveReason)
+        assertTrue(
+            settings.updateProfileFor(AudioOutputRoute.SPEAKER) { it.copy(enabled = true) }
+                .resolveDsp(speaker).active
+        )
     }
 
     @Test
