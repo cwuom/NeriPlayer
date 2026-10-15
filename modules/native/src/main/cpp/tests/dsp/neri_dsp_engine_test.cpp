@@ -91,6 +91,31 @@ float peak(const std::vector<float>& samples, size_t startSample) {
     return value;
 }
 
+// 单频点幅度，只看左声道的稳态段
+double toneAmplitude(const std::vector<float>& samples, double frequencyHz, int startFrame) {
+    double real = 0.0;
+    double imag = 0.0;
+    int count = 0;
+    for (size_t i = static_cast<size_t>(startFrame) * 2; i < samples.size(); i += 2) {
+        const double phase = 2.0 * kPi * frequencyHz * static_cast<double>(i / 2) / kSampleRate;
+        real += samples[i] * std::cos(phase);
+        imag += samples[i] * std::sin(phase);
+        ++count;
+    }
+    return count == 0 ? 0.0 : 2.0 * std::sqrt(real * real + imag * imag) / count;
+}
+
+std::vector<float> mixedStereo(const std::vector<std::pair<float, float>>& tones, int frames) {
+    std::vector<float> samples(static_cast<size_t>(frames) * 2, 0.0f);
+    for (const auto& [frequencyHz, amplitude] : tones) {
+        const auto tone = stereoSine(frequencyHz, amplitude, frames);
+        for (size_t i = 0; i < samples.size(); ++i) {
+            samples[i] += tone[i];
+        }
+    }
+    return samples;
+}
+
 bool configured(Engine& engine, const Params& params, int channels = 2, int encoding = kEncodingPcmFloat) {
     CHECK(engine.setParams(params.data(), kParamCount));
     CHECK(engine.configure(kSampleRate, channels, encoding));
@@ -348,10 +373,259 @@ bool testDisableFadesOutToIdle() {
     return true;
 }
 
+Params bassParams(float gainDb) {
+    Params params = neutralParams();
+    params[kBassGainDb] = gainDb;
+    params[kBassFrequencyHz] = 100.0f;
+    params[kLimiterEnabled] = 1.0f;
+    params[kLimiterCeilingDb] = -1.0f;
+    return params;
+}
+
+bool testBassBoostLiftsLowsAtNormalLevel() {
+    Engine engine;
+    CHECK(configured(engine, bassParams(6.0f)));
+    const auto input = stereoSine(55.0f, 0.05f, kSampleRate);
+    const auto output = processFloat(engine, input);
+    const double gainDb = 20.0 * std::log10(toneAmplitude(output, 55.0, kSampleRate / 2) / 0.05);
+    std::printf("  bass_lift gainDb=%.2f\n", gainDb);
+    CHECK(gainDb > 4.8 && gainDb < 6.5);
+    return true;
+}
+
+bool testBassBoostDoesNotSpendHeadroomOnSubsonics() {
+    Engine engine;
+    CHECK(configured(engine, bassParams(6.0f)));
+    const auto input = stereoSine(12.0f, 0.05f, kSampleRate * 2);
+    const auto output = processFloat(engine, input);
+    const double gainDb = 20.0 * std::log10(toneAmplitude(output, 12.0, kSampleRate) / 0.05);
+    std::printf("  bass_subsonic gainDb=%.2f\n", gainDb);
+    CHECK(gainDb < 1.5);
+    return true;
+}
+
+bool testLoudBassBoostKeepsMidsAtFullLevel() {
+    Engine engine;
+    CHECK(configured(engine, bassParams(9.0f)));
+    const auto input = mixedStereo({{60.0f, 0.5f}, {1000.0f, 0.2f}}, kSampleRate * 2);
+    const auto output = processFloat(engine, input);
+    const double midDb = 20.0 * std::log10(toneAmplitude(output, 1000.0, kSampleRate) / 0.2);
+    const double bassDb = 20.0 * std::log10(toneAmplitude(output, 60.0, kSampleRate) / 0.5);
+    std::printf("  loud_bass midDb=%.2f bassDb=%.2f peak=%.3f\n", midDb, bassDb, peak(output, kSampleRate));
+    // 低频已经很满时只收低频增益，中高频不该被限幅器一起压下去
+    CHECK(midDb > -1.0);
+    CHECK(bassDb > 0.5);
+    CHECK(peak(output, kSampleRate) <= dbToGain(-1.0f) + 1.0e-4f);
+    return true;
+}
+
+bool testQuietBassStillGetsFullBoostAfterLoudPassage() {
+    Engine engine;
+    CHECK(configured(engine, bassParams(6.0f)));
+    processFloat(engine, stereoSine(55.0f, 0.6f, kSampleRate));
+    const auto output = processFloat(engine, stereoSine(55.0f, 0.05f, kSampleRate));
+    const double gainDb = 20.0 * std::log10(toneAmplitude(output, 55.0, kSampleRate / 2) / 0.05);
+    std::printf("  bass_recovery gainDb=%.2f\n", gainDb);
+    CHECK(gainDb > 4.8);
+    return true;
+}
+
+// 底鼓：55 Hz 指数衰减正弦，每 500 ms 一下，叠加持续的 1 kHz 中频
+std::vector<float> kickWithMids(float kickAmplitude, float midAmplitude, int frames) {
+    std::vector<float> samples(static_cast<size_t>(frames) * 2, 0.0f);
+    const int period = kSampleRate / 2;
+    for (int i = 0; i < frames; ++i) {
+        const int local = i % period;
+        const double t = static_cast<double>(local) / kSampleRate;
+        const double kick = kickAmplitude * std::exp(-t / 0.08) * std::sin(2.0 * kPi * 55.0 * t);
+        const double mid = midAmplitude * std::sin(2.0 * kPi * 1000.0 * i / kSampleRate);
+        samples[static_cast<size_t>(i) * 2] = static_cast<float>(kick + mid);
+        samples[static_cast<size_t>(i) * 2 + 1] = static_cast<float>(kick + mid);
+    }
+    return samples;
+}
+
+// 20 ms Hann 窗内 1 kHz 幅度的最大最小差，衡量中高频被低频带着起伏的程度
+double midPumpDb(const std::vector<float>& samples, int startFrame) {
+    const int window = kSampleRate / 50;
+    double low = 1.0e9;
+    double high = 0.0;
+    for (int start = startFrame; start + window <= static_cast<int>(samples.size() / 2); start += window / 2) {
+        double real = 0.0;
+        double imag = 0.0;
+        double weightSum = 0.0;
+        for (int i = start; i < start + window; ++i) {
+            const double weight = 0.5 - 0.5 * std::cos(2.0 * kPi * (i - start) / (window - 1));
+            const double phase = 2.0 * kPi * 1000.0 * i / kSampleRate;
+            real += weight * samples[static_cast<size_t>(i) * 2] * std::cos(phase);
+            imag += weight * samples[static_cast<size_t>(i) * 2] * std::sin(phase);
+            weightSum += weight;
+        }
+        const double amplitude = 2.0 * std::sqrt(real * real + imag * imag) / weightSum;
+        low = std::min(low, amplitude);
+        high = std::max(high, amplitude);
+    }
+    return 20.0 * std::log10(high / std::max(low, 1.0e-9));
+}
+
+// 4 kHz 以上能量相对总能量，增益突跳产生的咔哒声会落在这里
+double highBandRatioDb(const std::vector<float>& samples, int startFrame) {
+    const BiquadCoefficients highPass = designBiquad(FilterType::HighPass, kSampleRate, 4000.0, 0.0, 0.707);
+    BiquadState first;
+    BiquadState second;
+    double high = 0.0;
+    double total = 0.0;
+    for (size_t i = 0; i < samples.size(); i += 2) {
+        const float filtered = second.process(highPass, first.process(highPass, samples[i]));
+        if (static_cast<int>(i / 2) < startFrame) continue;
+        high += static_cast<double>(filtered) * filtered;
+        total += static_cast<double>(samples[i]) * samples[i];
+    }
+    return 10.0 * std::log10(std::max(high, 1.0e-20) / total);
+}
+
+double kickGainDb(const std::vector<float>& input, const std::vector<float>& output, int startFrame) {
+    // 只看每下底鼓前 60 ms 的 55 Hz 能量
+    const int period = kSampleRate / 2;
+    const int window = kSampleRate * 60 / 1000;
+    double inEnergy = 0.0;
+    double outEnergy = 0.0;
+    for (int base = startFrame; base + period <= static_cast<int>(input.size() / 2); base += period) {
+        double ir = 0.0, ii = 0.0, orr = 0.0, oi = 0.0;
+        for (int i = base; i < base + window; ++i) {
+            const double phase = 2.0 * kPi * 55.0 * (i - base) / kSampleRate;
+            ir += input[static_cast<size_t>(i) * 2] * std::cos(phase);
+            ii += input[static_cast<size_t>(i) * 2] * std::sin(phase);
+            orr += output[static_cast<size_t>(i) * 2] * std::cos(phase);
+            oi += output[static_cast<size_t>(i) * 2] * std::sin(phase);
+        }
+        inEnergy += ir * ir + ii * ii;
+        outEnergy += orr * orr + oi * oi;
+    }
+    return 10.0 * std::log10(outEnergy / inEnergy);
+}
+
+bool testLoudKickBoostPunchesWithoutPumping() {
+    Params params = bassParams(6.0f);
+    // 与 Kotlin 自动余量对 +6 dB 低音给出的前级一致
+    params[kPreampDb] = -1.25f;
+    Engine engine;
+    CHECK(configured(engine, params));
+    const auto input = kickWithMids(0.6f, 0.25f, kSampleRate * 4);
+    const auto output = processFloat(engine, input);
+    const EngineStats stats = engine.takeStats();
+    const double kick = kickGainDb(input, output, kSampleRate);
+    const double pump = midPumpDb(output, kSampleRate);
+    const double inputPump = midPumpDb(input, kSampleRate);
+    std::printf("  loud_kick kickDb=%.2f midPumpDb=%.2f (input %.2f) limiterDb=%.2f events=%lld peak=%.3f\n",
+                kick, pump, inputPump, stats.maxLimiterReductionDb,
+                static_cast<long long>(stats.limiterEvents), peak(output, kSampleRate));
+    const double clickInput = highBandRatioDb(input, kSampleRate);
+    const double clickOutput = highBandRatioDb(output, kSampleRate);
+    std::printf("  loud_kick highBandDb=%.2f (input %.2f)\n", clickOutput, clickInput);
+    // 峰值已贴近满幅的母带只剩少量余量，低音仍要明显抬起，且不能带着中频起伏或咔哒声
+    CHECK(clickOutput < clickInput + 1.0);
+    CHECK(kick > 1.5);
+    CHECK(pump - inputPump < 0.5);
+    CHECK(stats.limiterEvents == 0);
+    CHECK(peak(output, kSampleRate) <= dbToGain(-1.0f) + 1.0e-4f);
+    return true;
+}
+
+bool testBassPresetWithHarmonicsDoesNotPumpLoudKicks() {
+    // 与内置“低音增强”预设和它的自动余量一致
+    Params params = bassParams(7.0f);
+    params[kGraphicEqEnabled] = 1.0f;
+    params[kGraphicEqGain0] = 1.0f;
+    params[kGraphicEqGain0 + 1] = 1.0f;
+    params[kGraphicEqGain0 + 2] = 0.5f;
+    params[kVirtualBassAmount] = 0.25f;
+    params[kPreampDb] = -3.0f;
+    Engine engine;
+    CHECK(configured(engine, params));
+    const auto input = kickWithMids(0.6f, 0.25f, kSampleRate * 4);
+    const auto output = processFloat(engine, input);
+    const EngineStats stats = engine.takeStats();
+    const double kick = kickGainDb(input, output, kSampleRate);
+    const double pump = midPumpDb(output, kSampleRate) - midPumpDb(input, kSampleRate);
+    std::printf("  preset_kick kickDb=%.2f midPumpDb=%.2f limiterDb=%.2f events=%lld\n",
+                kick, pump, stats.maxLimiterReductionDb, static_cast<long long>(stats.limiterEvents));
+    CHECK(pump < 0.3);
+    CHECK(stats.limiterEvents == 0);
+    return true;
+}
+
+bool testModerateKickGetsNearlyTheFullBoost() {
+    Params params = bassParams(6.0f);
+    params[kPreampDb] = -1.25f;
+    Engine engine;
+    CHECK(configured(engine, params));
+    const auto input = kickWithMids(0.35f, 0.15f, kSampleRate * 4);
+    const auto output = processFloat(engine, input);
+    const EngineStats stats = engine.takeStats();
+    const double kick = kickGainDb(input, output, kSampleRate);
+    const double pump = midPumpDb(output, kSampleRate) - midPumpDb(input, kSampleRate);
+    std::printf("  moderate_kick kickDb=%.2f midPumpDb=%.2f limiterEvents=%lld\n",
+                kick, pump, static_cast<long long>(stats.limiterEvents));
+    CHECK(kick > 3.5);
+    CHECK(pump < 0.3);
+    CHECK(stats.limiterEvents == 0);
+    return true;
+}
+
+bool testDynamicBassDoesNotDistortLoudLows() {
+    Engine engine;
+    CHECK(configured(engine, bassParams(9.0f)));
+    const auto output = processFloat(engine, stereoSine(60.0f, 0.55f, kSampleRate * 2));
+    const double fundamental = toneAmplitude(output, 60.0, kSampleRate);
+    double harmonics = 0.0;
+    for (int order = 2; order <= 9; ++order) {
+        const double amplitude = toneAmplitude(output, 60.0 * order, kSampleRate);
+        harmonics += amplitude * amplitude;
+    }
+    const double thdDb = 20.0 * std::log10(std::sqrt(harmonics) / fundamental);
+    std::printf("  dynamic_bass thdDb=%.2f gainDb=%.2f\n", thdDb, 20.0 * std::log10(fundamental / 0.55));
+    CHECK(thdDb < -50.0);
+    return true;
+}
+
+bool testBassCutStaysAStaticShelf() {
+    Engine engine;
+    CHECK(configured(engine, bassParams(-6.0f)));
+    const auto input = mixedStereo({{55.0f, 0.5f}, {12.0f, 0.05f}}, kSampleRate * 2);
+    const auto output = processFloat(engine, input);
+    const double bassDb = 20.0 * std::log10(toneAmplitude(output, 55.0, kSampleRate) / 0.5);
+    const double subsonicDb = 20.0 * std::log10(toneAmplitude(output, 12.0, kSampleRate) / 0.05);
+    std::printf("  bass_cut bassDb=%.2f subsonicDb=%.2f\n", bassDb, subsonicDb);
+    CHECK(bassDb < -4.8 && bassDb > -6.5);
+    CHECK(std::fabs(subsonicDb + 6.0) < 0.5);
+    return true;
+}
+
+bool testLimiterDoesNotModulateWithinBassCycles() {
+    Params params = neutralParams();
+    params[kOutputGainDb] = 12.0f;
+    params[kLimiterEnabled] = 1.0f;
+    params[kLimiterCeilingDb] = -1.0f;
+    Engine engine;
+    CHECK(configured(engine, params));
+    const auto output = processFloat(engine, stereoSine(50.0f, 0.5f, kSampleRate * 2));
+    const double fundamental = toneAmplitude(output, 50.0, kSampleRate);
+    double harmonics = 0.0;
+    for (int order = 2; order <= 9; ++order) {
+        const double amplitude = toneAmplitude(output, 50.0 * order, kSampleRate);
+        harmonics += amplitude * amplitude;
+    }
+    const double thdDb = 20.0 * std::log10(std::sqrt(harmonics) / fundamental);
+    std::printf("  limiter_bass thdDb=%.2f\n", thdDb);
+    CHECK(thdDb < -40.0);
+    return true;
+}
+
 } // namespace
 
 int main() {
-    const std::array<std::pair<const char*, std::function<bool()>>, 12> tests = {{
+    const std::array<std::pair<const char*, std::function<bool()>>, 22> tests = {{
         {"disabled_passthrough", testDisabledEngineIsBitExactPassthrough},
         {"neutral_transparent", testNeutralEnabledChainIsTransparentForFloat},
         {"graphic_band_gain", testGraphicBandBoostMatchesRequestedGain},
@@ -364,6 +638,16 @@ int main() {
         {"extremes_bounded", testEverythingAtExtremesStaysFiniteAndBounded},
         {"invalid_params", testInvalidParamsAreRejected},
         {"disable_fades_to_idle", testDisableFadesOutToIdle},
+        {"bass_lifts_lows", testBassBoostLiftsLowsAtNormalLevel},
+        {"bass_skips_subsonics", testBassBoostDoesNotSpendHeadroomOnSubsonics},
+        {"loud_bass_keeps_mids", testLoudBassBoostKeepsMidsAtFullLevel},
+        {"quiet_bass_recovers_boost", testQuietBassStillGetsFullBoostAfterLoudPassage},
+        {"bass_cut_static_shelf", testBassCutStaysAStaticShelf},
+        {"loud_kick_punch_no_pump", testLoudKickBoostPunchesWithoutPumping},
+        {"moderate_kick_full_boost", testModerateKickGetsNearlyTheFullBoost},
+        {"bass_preset_no_pump", testBassPresetWithHarmonicsDoesNotPumpLoudKicks},
+        {"dynamic_bass_low_distortion", testDynamicBassDoesNotDistortLoudLows},
+        {"limiter_bass_low_distortion", testLimiterDoesNotModulateWithinBassCycles},
     }};
     int failures = 0;
     for (const auto& [name, test] : tests) {

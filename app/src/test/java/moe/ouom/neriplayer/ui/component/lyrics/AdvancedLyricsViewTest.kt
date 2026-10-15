@@ -713,7 +713,7 @@ class AdvancedLyricsViewTest {
         assertTrue(
             shouldRenderInterpolatedPlaybackFrame(
                 lastRenderedFrameNanos = 1_000_000_000L,
-                frameNanos = 1_033_000_000L,
+                frameNanos = 1_034_000_000L,
                 frameIntervalNanos = InterpolatedPlaybackDefaultFrameIntervalNanos
             )
         )
@@ -731,7 +731,7 @@ class AdvancedLyricsViewTest {
         assertTrue(
             shouldRenderInterpolatedPlaybackFrame(
                 lastRenderedFrameNanos = 1_000_000_000L,
-                frameNanos = 1_066_000_000L,
+                frameNanos = 1_067_000_000L,
                 frameIntervalNanos = InterpolatedPlaybackLowPowerFrameIntervalNanos
             )
         )

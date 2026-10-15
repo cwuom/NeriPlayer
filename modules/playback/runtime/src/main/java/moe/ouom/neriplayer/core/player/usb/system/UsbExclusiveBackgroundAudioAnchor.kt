@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveBackgroundAudioAnchorSpec
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveBackgroundAudioAnchorTransferMode
 import moe.ouom.neriplayer.core.player.policy.usb.isUsbExclusiveBackgroundAudioAnchorBuiltInRoute
+import moe.ouom.neriplayer.core.player.policy.usb.isUsbExclusiveBackgroundAudioAnchorUsbRoute
 import moe.ouom.neriplayer.core.player.policy.usb.shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier
 import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveBackgroundAudioAnchorCarrier
 import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveBackgroundAudioAnchorSpecs
@@ -45,7 +46,11 @@ internal object UsbExclusiveBackgroundAudioAnchor {
     private val lock = Any()
     private var activeAnchor: ActiveAnchor? = null
 
-    fun start(reason: String): Boolean {
+    @Volatile
+    private var usbStreamClaimed: () -> Boolean = { false }
+
+    fun start(reason: String, usbStreamClaimed: () -> Boolean = { false }): Boolean {
+        this.usbStreamClaimed = usbStreamClaimed
         synchronized(lock) {
             val existing = activeAnchor
             if (existing != null && existing.track.state == AudioTrack.STATE_INITIALIZED) {
@@ -266,6 +271,8 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         val carrierActive = shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
             transferMode = anchor.spec.transferMode,
             routedToBuiltInOutput = isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(routedOutputType),
+            routedToClaimedUsbOutput = isUsbExclusiveBackgroundAudioAnchorUsbRoute(routedOutputType) &&
+                runCatching { usbStreamClaimed() }.getOrDefault(false),
         )
         val routeChanged = anchor.routedOutputId != routedOutputId ||
             anchor.routedOutputType != routedOutputType

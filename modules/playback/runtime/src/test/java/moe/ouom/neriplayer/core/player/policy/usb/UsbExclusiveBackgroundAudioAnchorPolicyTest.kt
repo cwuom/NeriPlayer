@@ -97,6 +97,25 @@ class UsbExclusiveBackgroundAudioAnchorPolicyTest {
     }
 
     @Test
+    fun `carrier follows a usb route only while native output owns the stream interface`() {
+        assertTrue(
+            shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
+                transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
+                routedToBuiltInOutput = false,
+                routedToClaimedUsbOutput = true
+            )
+        )
+        assertTrue(isUsbExclusiveBackgroundAudioAnchorUsbRoute(AudioDeviceInfo.TYPE_USB_HEADSET))
+        assertTrue(isUsbExclusiveBackgroundAudioAnchorUsbRoute(AudioDeviceInfo.TYPE_USB_DEVICE))
+        assertFalse(isUsbExclusiveBackgroundAudioAnchorUsbRoute(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP))
+        assertFalse(isUsbExclusiveBackgroundAudioAnchorUsbRoute(null))
+        assertTrue(isUsbExclusiveStreamInterfaceClaimed(opened = true, streaming = true, transitioning = false))
+        assertFalse(isUsbExclusiveStreamInterfaceClaimed(opened = true, streaming = true, transitioning = true))
+        assertFalse(isUsbExclusiveStreamInterfaceClaimed(opened = true, streaming = false, transitioning = false))
+        assertFalse(isUsbExclusiveStreamInterfaceClaimed(opened = false, streaming = true, transitioning = false))
+    }
+
+    @Test
     fun `only the built in speaker counts as a carrier route`() {
         assertTrue(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER))
         assertFalse(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(AudioDeviceInfo.TYPE_USB_HEADSET))

@@ -3,6 +3,8 @@
 package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
+import moe.ouom.neriplayer.core.player.network.holdPlaybackForNetworkIfOffline
+import moe.ouom.neriplayer.core.player.network.isPlaybackNetworkUsable
 import moe.ouom.neriplayer.core.player.host.PlayerDownloadAccess
 import moe.ouom.neriplayer.core.player.runtime.source.retrySongUrlResolution
 
@@ -965,6 +967,9 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
             mainScope.launch {
                 gate.runMutation {
                     clearPendingSeekPosition()
+                    if (resumePlaybackAfterRefresh && holdPlaybackForNetworkIfOffline("refresh_cooldown")) {
+                        return@runMutation
+                    }
                     consecutivePlayFailures++
                     postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.player_playback_network_error)))
                     if (!resumePlaybackAfterRefresh || !resumePlaybackRequested ||
@@ -1152,6 +1157,15 @@ private suspend fun PlayerManager.handleRefreshResult(
             if (!action.emitFailureError) return
             val gate = refreshSideEffectGate(request, song)
             if (!gate.runMutation { clearPendingSeekPosition() }) return
+            if (semantics.resumePlaybackAfterRefresh) {
+                var held = false
+                withContext(Dispatchers.Main) {
+                    refreshSideEffectGate(request, song).runMutation {
+                        held = holdPlaybackForNetworkIfOffline("refresh_failed:${semantics.reason}")
+                    }
+                }
+                if (held) return
+            }
             if (!gate.runMutation {
                     postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.player_playback_network_error)))
                 }
@@ -1778,7 +1792,7 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
     } catch (e: Exception) {
         if (e is CancellationException) throw e
         NPLogger.e("NERI-PlayerManager", "Failed to get url", e)
-        if (!suppressError) {
+        if (!suppressError && isPlaybackNetworkUsable(application)) {
             sideEffects.emitError {
                 postPlayerEvent(
                     PlayerEvent.ShowError(
@@ -1871,7 +1885,7 @@ private suspend fun PlayerManager.getBiliAudioUrl(
     } catch (e: Exception) {
         if (e is CancellationException) throw e
         NPLogger.e("NERI-PlayerManager", "Failed to get Bili play url", e)
-        if (!suppressError) {
+        if (!suppressError && isPlaybackNetworkUsable(application)) {
             sideEffects.emitError {
                 postPlayerEvent(
                     PlayerEvent.ShowError(
@@ -1965,7 +1979,7 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
             "Failed to get YouTube Music play url: videoId=$videoId, elapsedMs=${System.currentTimeMillis() - resolveStartedAtMs}",
             e
         )
-        if (!suppressError) {
+        if (!suppressError && isPlaybackNetworkUsable(application)) {
             sideEffects.emitError {
                 postPlayerEvent(
                     PlayerEvent.ShowError(

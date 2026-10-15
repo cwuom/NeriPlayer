@@ -78,6 +78,43 @@ class PreferredRefreshRateWindowTest {
         verify(window).attributes = attributes
     }
 
+    @Test
+    fun `an idle now playing screen drops to 60 Hz and restores the preference afterwards`() {
+        val display = display(currentRate = 120f, 60f, 90f, 120f)
+        `when`(decorView.display).thenReturn(display)
+
+        val ambient = activity.applyPreferredHighRefreshRate(highRefreshRateEnabled = true, ambientIdle = true)
+        assertEquals(true, ambient)
+        assertEquals(60f, attributes.preferredRefreshRate, 0f)
+
+        val restored = activity.applyPreferredHighRefreshRate(highRefreshRateEnabled = true, ambientIdle = false)
+        assertEquals(false, restored)
+        assertEquals(120f, attributes.preferredRefreshRate, 0f)
+    }
+
+    @Test
+    fun `a 60 Hz display has nothing to save and keeps the normal preference`() {
+        val display = display(currentRate = 60f, 60f)
+        `when`(decorView.display).thenReturn(display)
+
+        val ambient = activity.applyPreferredHighRefreshRate(highRefreshRateEnabled = false, ambientIdle = true)
+
+        assertEquals(false, ambient)
+        assertEquals(0f, attributes.preferredRefreshRate, 0f)
+    }
+
+    @Test
+    fun `ambient idle needs a visible resumed player and three quiet seconds`() {
+        assertEquals(true, isAmbientRefreshRateIdle(true, true, false, AMBIENT_REFRESH_RATE_IDLE_MS))
+        assertEquals(false, isAmbientRefreshRateIdle(true, true, false, AMBIENT_REFRESH_RATE_IDLE_MS - 1))
+        assertEquals(false, isAmbientRefreshRateIdle(true, true, true, AMBIENT_REFRESH_RATE_IDLE_MS))
+        assertEquals(false, isAmbientRefreshRateIdle(true, false, false, AMBIENT_REFRESH_RATE_IDLE_MS))
+        assertEquals(false, isAmbientRefreshRateIdle(false, true, false, AMBIENT_REFRESH_RATE_IDLE_MS))
+        assertEquals(null, resolveAmbientRefreshRate(listOf(30f, 60f)))
+        assertEquals(60f, resolveAmbientRefreshRate(listOf(30f, 60f, 90f, 120f)))
+        assertEquals(90f, resolveAmbientRefreshRate(listOf(48f, 90f)))
+    }
+
     private fun display(currentRate: Float, vararg supportedRates: Float): Display =
         mock(Display::class.java).also { display ->
             `when`(display.refreshRate).thenReturn(currentRate)

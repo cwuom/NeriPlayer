@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.clearUsbExclusiveInterruptedPlaybackIntent
 import moe.ouom.neriplayer.core.player.lifecycle.prepareUsbExclusiveRouteForManualPlayback
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
+import moe.ouom.neriplayer.core.player.network.PlaybackNetworkResumeOwner
 import moe.ouom.neriplayer.core.player.lyrics.externalLyricBoundaryProgressIntervalMs
 import moe.ouom.neriplayer.core.player.lyrics.isExternalBluetoothLyricCadenceActive
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
@@ -1085,6 +1086,7 @@ internal fun PlayerManager.playImpl(
     }
     cancelPendingPauseRequest(resetVolumeToFull = resumeVolumeFromPendingPause == null)
     suppressAutoResumeForCurrentSession = false
+    PlaybackNetworkResumeOwner.disarm("play")
     updateResumePlaybackRequested(true)
     if (!usbExclusivePlaybackEnabled) {
         clearUsbExclusiveInterruptedPlaybackIntent("manual_play")

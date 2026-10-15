@@ -49,17 +49,31 @@ internal fun usbExclusiveBackgroundAudioAnchorCarrier(
     return carrier
 }
 
-/** 载波只写到确认的内置扬声器路由；USB 等外部路由一律静音，避免独占释放后漏到 DAC */
+/**
+ * 全零锚点会被部分 ROM 的静音检测判成"没在放"，随后冻结进程或代理掉唤醒锁。
+ * 载波写到内置扬声器；系统仍把媒体路由留在 USB 时，只在 native 正占着 DAC 流接口期间写，
+ * 系统那条路径此时到不了 DAC。蓝牙等其它外部路由一律静音
+ */
 internal fun shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
     transferMode: UsbExclusiveBackgroundAudioAnchorTransferMode,
-    routedToBuiltInOutput: Boolean
+    routedToBuiltInOutput: Boolean,
+    routedToClaimedUsbOutput: Boolean = false
 ): Boolean {
     return transferMode == UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming &&
-        routedToBuiltInOutput
+        (routedToBuiltInOutput || routedToClaimedUsbOutput)
 }
 
 internal fun isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(routedOutputType: Int?): Boolean =
     routedOutputType == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+
+internal fun isUsbExclusiveBackgroundAudioAnchorUsbRoute(routedOutputType: Int?): Boolean =
+    routedOutputType == AudioDeviceInfo.TYPE_USB_HEADSET || routedOutputType == AudioDeviceInfo.TYPE_USB_DEVICE
+
+internal fun isUsbExclusiveStreamInterfaceClaimed(
+    opened: Boolean,
+    streaming: Boolean,
+    transitioning: Boolean
+): Boolean = opened && streaming && !transitioning
 
 internal fun usbExclusiveBackgroundAudioAnchorSpecs(): List<UsbExclusiveBackgroundAudioAnchorSpec> {
     return listOf(

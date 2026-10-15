@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.playback.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
+import moe.ouom.neriplayer.core.player.policy.usb.isUsbExclusiveStreamInterfaceClaimed
 import moe.ouom.neriplayer.core.player.policy.usb.keepalive.shouldShowUsbExclusiveFloatingKeepAlive
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchor
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveFloatingKeepAlive
@@ -39,7 +40,10 @@ internal class AndroidUsbExclusiveKeepAlivePort(
     override fun onForegroundFailure(reason: String) = host.onForegroundFailure(reason)
 
     override fun startAnchor(reason: String) {
-        UsbExclusiveBackgroundAudioAnchor.start(reason)
+        UsbExclusiveBackgroundAudioAnchor.start(reason) {
+            val native = UsbExclusiveSessionController.state.value
+            isUsbExclusiveStreamInterfaceClaimed(native.opened, native.streaming, native.transitioning)
+        }
         val showFloating = shouldShowUsbExclusiveFloatingKeepAlive(
             preferenceEnabled = PlayerManager.usbExclusiveFloatingKeepAliveEnabled,
             overlayPermitted = UsbExclusiveFloatingKeepAlive.canDrawOverlays(context)

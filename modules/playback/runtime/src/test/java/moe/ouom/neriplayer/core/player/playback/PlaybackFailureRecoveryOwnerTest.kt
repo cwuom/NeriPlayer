@@ -172,9 +172,55 @@ class PlaybackFailureRecoveryOwnerTest {
         assertFalse(port.failureActions.isEmpty())
     }
 
+    @Test
+    fun `offline resolution failure holds the current track instead of skipping the queue`() {
+        val port = FakePort().apply { networkHold = true }
+
+        PlaybackFailureRecoveryOwner(port).onResolutionFailure(
+            10L, PlaybackResolutionFailure.URL_UNAVAILABLE, PlaybackCommandSource.LOCAL
+        )
+
+        assertEquals(listOf(PlaybackResolutionFailure.URL_UNAVAILABLE.reason), port.holds)
+        assertEquals(0, port.failureCount)
+        assertTrue(port.advances.isEmpty())
+        assertEquals(0, port.stopCount)
+    }
+
+    @Test
+    fun `login failures still advance even while offline`() {
+        val port = FakePort().apply { networkHold = true }
+
+        PlaybackFailureRecoveryOwner(port).onResolutionFailure(
+            10L, PlaybackResolutionFailure.LOGIN_REQUIRED, PlaybackCommandSource.LOCAL
+        )
+
+        assertTrue(port.holds.isEmpty())
+        assertEquals(listOf(PlaybackResolutionFailure.LOGIN_REQUIRED.reason), port.advances)
+    }
+
+    @Test
+    fun `offline player error holds after cache work instead of advancing`() = runTest {
+        val port = FakePort().apply { networkHold = true }
+
+        PlaybackFailureRecoveryOwner(port).onPlayerFailure(
+            10L, "player_error", PlaybackCommandSource.LOCAL, "failed-track-cache"
+        )
+
+        assertEquals(listOf("failed-track-cache"), port.invalidatedKeys)
+        assertEquals(listOf("player_error"), port.holds)
+        assertTrue(port.advances.isEmpty())
+    }
+
     private class FakePort : PlaybackFailureRecoveryPort {
         override var requestToken = 10L
         override var resumePlaybackRequested = true
+        var networkHold = false
+        val holds = mutableListOf<String>()
+
+        override fun holdForNetwork(reason: String): Boolean {
+            if (networkHold) holds += reason
+            return networkHold
+        }
         var failureCount = 0
         var stopCount = 0
         var playlistSize = 2

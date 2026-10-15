@@ -125,6 +125,160 @@ void FilterBankStage::processMono(float* data, int frames) {
     process(data, nullptr, frames);
 }
 
+namespace {
+
+// 增强部分叠到原信号上不越过约 -1.2 dBFS，留一点给后级的温暖、激励等小增益
+constexpr float kEnhancementCeiling = 0.87f;
+// 保持时间覆盖约 25 Hz 的一个周期，收量在低频周期内保持不变
+constexpr double kEnhancementHoldSeconds = 0.04;
+constexpr double kEnhancementReleaseMs = 250.0;
+constexpr float kSubsonicTransparentHz = 5.0f;
+
+// 让 x + g * added 不越过上限的最大 g；原信号自己已经越线时为 0，交给输出限幅器
+float enhancementAllowance(float dry, float added) {
+    const float magnitude = std::fabs(added);
+    if (magnitude < 1.0e-7f) {
+        return 1.0f;
+    }
+    const float limit = kEnhancementCeiling - (added > 0.0f ? dry : -dry);
+    return clampf(limit / magnitude, 0.0f, 1.0f);
+}
+
+} // namespace
+
+float bassSubsonicFrequencyHz(float gainDb, float frequencyHz) {
+    if (gainDb <= 0.0f) {
+        return 0.0f;
+    }
+    const float target = clampf(0.25f * frequencyHz, 16.0f, 30.0f);
+    const float engage = clampf(gainDb / 4.0f, 0.0f, 1.0f);
+    return kSubsonicTransparentHz + (target - kSubsonicTransparentHz) * engage;
+}
+
+void BassBoostStage::configure(const StageContext& context) {
+    context_ = context;
+    gainDb_.setCoefficient(context.smoothing);
+    frequency_.setCoefficient(context.smoothing);
+    gainDb_.snap(0.0f);
+    frequency_.snap(100.0f);
+    designedFrequencyHz_ = -1.0f;
+    designedSubsonicHz_ = -1.0f;
+    running_ = false;
+    reset();
+}
+
+void BassBoostStage::setTargets(float gainDb, float frequencyHz) {
+    gainDb_.setTarget(gainDb);
+    frequency_.setTarget(frequencyHz);
+}
+
+void BassBoostStage::snapToTargets() {
+    gainDb_.snap(gainDb_.target());
+    frequency_.snap(frequency_.target());
+    running_ = false;
+}
+
+void BassBoostStage::reset() {
+    shelf_.reset();
+    subsonic_.reset();
+}
+
+bool BassBoostStage::active() const {
+    return gainDb_.value() != 0.0f || gainDb_.target() != 0.0f;
+}
+
+bool BassBoostStage::boosting() const {
+    return gainDb_.value() > 0.0f || gainDb_.target() > 0.0f;
+}
+
+void BassBoostStage::redesign(float subsonicHz) {
+    shelf_.coefficients = designBiquad(
+        FilterType::LowShelf, context_.sampleRate, frequency_.value(), gainDb_.value(), 0.707
+    );
+    if (subsonicHz > 0.0f && subsonicHz != designedSubsonicHz_) {
+        subsonic_.coefficients = designBiquad(FilterType::HighPass, context_.sampleRate, subsonicHz, 0.0, 0.707);
+    }
+    designedSubsonicHz_ = subsonicHz;
+    designedGainDb_ = gainDb_.value();
+    designedFrequencyHz_ = frequency_.value();
+}
+
+void BassBoostStage::processSubsonic(float* left, float* right, int frames) {
+    const bool gainChanged = gainDb_.advance();
+    const bool frequencyChanged = frequency_.advance();
+    if (!active()) {
+        running_ = false;
+        subsonicHz_ = 0.0f;
+        return;
+    }
+    if (!running_) {
+        reset();
+        running_ = true;
+        designedFrequencyHz_ = -1.0f;
+    }
+    subsonicHz_ = bassSubsonicFrequencyHz(gainDb_.value(), frequency_.value());
+    if (gainChanged || frequencyChanged || designedFrequencyHz_ != frequency_.value() ||
+        designedGainDb_ != gainDb_.value() || subsonicHz_ != designedSubsonicHz_) {
+        redesign(subsonicHz_);
+    }
+    if (subsonicHz_ > 0.0f) {
+        subsonic_.processBlock(left, right, frames);
+    } else {
+        subsonic_.reset();
+    }
+}
+
+void BassBoostStage::processShelf(float* left, float* right, int frames) {
+    if (!running_) {
+        return;
+    }
+    shelf_.processBlock(left, right, frames);
+}
+
+void EnhancementLimiter::configure(const StageContext& context) {
+    release_ = timeCoefficient(context.sampleRate, kEnhancementReleaseMs);
+    holdSamples_ = static_cast<int>(std::lround(context.sampleRate * kEnhancementHoldSeconds));
+    reset();
+}
+
+void EnhancementLimiter::reset() {
+    gain_ = 1.0f;
+    holdRemaining_ = 0;
+    capturedFrames_ = 0;
+}
+
+void EnhancementLimiter::capture(const float* left, const float* right, int frames) {
+    capturedFrames_ = std::min(frames, kMaxFrames);
+    std::copy(left, left + capturedFrames_, dryLeft_.begin());
+    std::copy(right, right + capturedFrames_, dryRight_.begin());
+}
+
+void EnhancementLimiter::apply(float* left, float* right, int frames) {
+    const int limited = std::min(frames, capturedFrames_);
+    for (int i = 0; i < limited; ++i) {
+        const auto index = static_cast<size_t>(i);
+        const float addedLeft = left[i] - dryLeft_[index];
+        const float addedRight = right[i] - dryRight_[index];
+        const float target = std::min(
+            enhancementAllowance(dryLeft_[index], addedLeft),
+            enhancementAllowance(dryRight_[index], addedRight)
+        );
+        if (target < gain_) {
+            gain_ = target;
+            holdRemaining_ = holdSamples_;
+        } else if (target <= gain_ * 1.002f) {
+            holdRemaining_ = holdSamples_;
+        } else if (holdRemaining_ > 0) {
+            --holdRemaining_;
+        } else {
+            gain_ += (target - gain_) * release_;
+        }
+        left[i] = dryLeft_[index] + gain_ * addedLeft;
+        right[i] = dryRight_[index] + gain_ * addedRight;
+    }
+    capturedFrames_ = 0;
+}
+
 void HarmonicBassStage::configure(const StageContext& context) {
     context_ = context;
     amount_.setCoefficient(context.smoothing);

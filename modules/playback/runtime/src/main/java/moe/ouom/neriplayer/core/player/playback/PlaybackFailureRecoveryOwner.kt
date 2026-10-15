@@ -5,6 +5,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.network.holdPlaybackForNetworkIfOffline
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
@@ -24,6 +25,9 @@ internal interface PlaybackFailureRecoveryPort {
     fun stopPreservingQueue()
     fun advanceAfterFailure(reason: String, commandSource: PlaybackCommandSource)
     suspend fun invalidateCache(key: String, reason: String, shouldApplyMutation: () -> Boolean)
+
+    /** 断网时停在当前曲目等网络，不让每一首都解析失败后把整个队列跳光 */
+    fun holdForNetwork(reason: String): Boolean = false
 }
 
 internal class PlaybackFailureRecoveryOwner(private val port: PlaybackFailureRecoveryPort) {
@@ -38,6 +42,7 @@ internal class PlaybackFailureRecoveryOwner(private val port: PlaybackFailureRec
             port.stopPreservingQueue()
             return
         }
+        if (failure == PlaybackResolutionFailure.URL_UNAVAILABLE && port.holdForNetwork(failure.reason)) return
         port.recordFailure()
         port.advanceAfterFailure(failure.reason, commandSource)
     }
@@ -58,6 +63,7 @@ internal class PlaybackFailureRecoveryOwner(private val port: PlaybackFailureRec
         }
         recoveryContext.ensureActive()
         if (!canRecover(requestToken)) return
+        if (port.holdForNetwork(reason)) return
         port.advanceAfterFailure(reason, commandSource)
     }
 
@@ -116,5 +122,8 @@ internal val playbackFailureRecoveryOwner = PlaybackFailureRecoveryOwner(
         ) {
             PlayerManager.invalidateCachedResourceForPlaybackRecovery(key, reason, shouldApplyMutation)
         }
+
+        override fun holdForNetwork(reason: String): Boolean =
+            PlayerManager.holdPlaybackForNetworkIfOffline(reason)
     }
 )

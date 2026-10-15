@@ -86,4 +86,23 @@ class OfflineModeStatePolicyTest {
         assertFalse(shouldRefreshOfflineStateForLifecycleEvent(Lifecycle.Event.ON_PAUSE))
         assertFalse(shouldRefreshOfflineStateForLifecycleEvent(Lifecycle.Event.ON_STOP))
     }
+
+    @Test
+    fun `reachability signature is stable for equal state and changes on each connectivity bit`() {
+        val base = networkReachabilitySignature(
+            hasInternet = true, validated = true, notSuspended = true, transportMask = 0b10
+        )
+        assertEquals(
+            base,
+            networkReachabilitySignature(hasInternet = true, validated = true, notSuspended = true, transportMask = 0b10)
+        )
+        val variants = listOf(
+            networkReachabilitySignature(false, true, true, 0b10),
+            networkReachabilitySignature(true, false, true, 0b10),
+            networkReachabilitySignature(true, true, false, 0b10),
+            networkReachabilitySignature(true, true, true, 0b01),
+        )
+        assertTrue(variants.none { it == base })
+        assertEquals(variants.size, variants.toSet().size)
+    }
 }
