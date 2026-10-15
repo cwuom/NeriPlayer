@@ -30,7 +30,9 @@ class LocalMediaWriteAccessPlanTest {
         }
 
         assertEquals(listOf(1_000, 1_000, 500), batchSizes)
-        assertEquals(3, (plan as LocalMediaWriteAccessPlan.SystemConsent).requests.size)
+        val consent = plan as LocalMediaWriteAccessPlan.SystemConsent
+        assertEquals(3, consent.requests.size)
+        assertEquals(2_500, consent.pendingItems)
     }
 
     @Test

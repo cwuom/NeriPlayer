@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.music.MusicPlatform
 
 /** 一次写入歌曲文件的歌词与封面；字段为 null 表示该项保持不变 */
 data class LocalSongAssetEmbedding(
@@ -21,7 +22,13 @@ data class LocalSongAssetEmbedding(
     val translatedLyrics: String? = null,
     val romanizedLyrics: String? = null,
     val userEditedLyrics: Boolean = true,
-    val coverReference: String? = null
+    val coverReference: String? = null,
+    /**
+     * 新歌词所属的平台曲目；这两个字段同时承担本地文件到网易云曲目的播放回退，
+     * 只有能用 [MusicPlatform] 表示的来源才替换，为 null 时保持原值
+     */
+    val matchedLyricSource: MusicPlatform? = null,
+    val matchedSongId: String? = null
 ) {
     val writesLyrics: Boolean get() = lyrics != null
     val writesCover: Boolean get() = coverReference != null
@@ -113,7 +120,7 @@ private suspend fun PlayerManager.withEmbeddedAssets(
             // 嵌入现有歌词不改变来源，用户改过的歌词仍要受保护，不能被之后的自动匹配或同步覆盖
             userEdited = embedding.userEditedLyrics || latest.lyricSyncEdited == true,
             revision = revision
-        )
+        ).withLyricProvenance(embedding)
     } else {
         latest
     }
@@ -122,6 +129,12 @@ private suspend fun PlayerManager.withEmbeddedAssets(
         customCoverUrl = normalizeCustomMetadataValue(embedding.coverReference, withLyrics.coverUrl),
         originalCoverUrl = originalCoverBackup ?: withLyrics.originalCoverUrl
     )
+}
+
+internal fun SongItem.withLyricProvenance(embedding: LocalSongAssetEmbedding): SongItem {
+    val source = embedding.matchedLyricSource ?: return this
+    val songId = embedding.matchedSongId?.takeIf(String::isNotBlank) ?: return this
+    return copy(matchedLyricSource = source, matchedSongId = songId)
 }
 
 /** 批量任务可能持续很久，不在播放队列里的歌也要取歌单里的最新副本，避免用批次开始时的快照覆盖期间的编辑 */
