@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
+import moe.ouom.neriplayer.core.player.network.holdPlaybackForNetworkIfOffline
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_RUNTIME_STALL_MAX_RECOVERY_ATTEMPTS
@@ -236,6 +237,7 @@ private fun PlayerManager.reportRuntimePlaybackStallExhausted(
     )
     resetPlaybackRuntimeWatchdog(reason = "recovery_exhausted")
     PlaybackTransitionWakeLock.release(requestToken, "runtime_stall_exhausted")
+    if (holdPlaybackForNetworkIfOffline("runtime_stall_exhausted")) return
     postPlayerEvent(
         PlayerEvent.ShowError(
             getLocalizedString(CoreCommonR.string.player_playback_failed_with_code, "RUNTIME_STALL")

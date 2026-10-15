@@ -31,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -58,6 +57,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.animation.AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS
+import moe.ouom.neriplayer.ui.animation.isNewAmbientFrameSlot
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import kotlin.math.abs
 
@@ -65,9 +66,8 @@ private const val DynamicBackgroundFallbackColor = 0xFF808080.toInt()
 private const val StrongHueConflictDegrees = 105f
 private const val PaletteCoverDecodeSizePx = 320
 private const val DynamicBackgroundPaletteTransitionDurationMs = 520L
-private const val DynamicBackgroundSteadyFrameIntervalNs = 1_000_000_000L / 45L
-private const val DynamicBackgroundBoostFrameIntervalNs = 1_000_000_000L / 60L
-private const val DynamicBackgroundBoostDurationNs = 900_000_000L
+// 与波形、歌词共用帧格，播放时和它们落在同一批 vsync，不再单独多出一组帧
+private const val DynamicBackgroundFrameIntervalNs = AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS
 
 internal fun shouldCommitDynamicBackgroundPalette(
     requestIdentity: String,
@@ -185,7 +185,6 @@ fun HyperBackground(
     var activeShaderPalette by remember(painter, currentIsDark) {
         mutableStateOf<DynamicBackgroundShaderPalette?>(null)
     }
-    var boostedAnimationUntilNs by remember { mutableLongStateOf(0L) }
 
     AndroidView(
         modifier = modifier,
@@ -226,10 +225,8 @@ fun HyperBackground(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    val latestBoostedAnimationUntilNs by rememberUpdatedState(boostedAnimationUntilNs)
     LaunchedEffect(coverRequestIdentity) {
         val requestIdentity = coverRequestIdentity
-        boostedAnimationUntilNs = System.nanoTime() + DynamicBackgroundBoostDurationNs
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || coverUrl.isNullOrBlank()) {
             return@LaunchedEffect
         }
@@ -329,7 +326,7 @@ fun HyperBackground(
                 var currentBeat = 0f
                 var pendingBeatPeak = 0f
                 var startNs = 0L
-                var nextRenderNs = Long.MIN_VALUE
+                var lastRenderedNs = 0L
                 var smoothLevel = 0f
                 var smoothBeat = 0f
                 var lastRenderWidth = 0
@@ -347,19 +344,10 @@ fun HyperBackground(
                 try {
                     while (isActive) {
                         withFrameNanos { t ->
-                            val frameIntervalNs = if (t < latestBoostedAnimationUntilNs) {
-                                DynamicBackgroundBoostFrameIntervalNs
-                            } else {
-                                DynamicBackgroundSteadyFrameIntervalNs
-                            }
-                            if (nextRenderNs != Long.MIN_VALUE && t < nextRenderNs) {
+                            if (!isNewAmbientFrameSlot(lastRenderedNs, t, DynamicBackgroundFrameIntervalNs)) {
                                 return@withFrameNanos
                             }
-                            nextRenderNs = nextDynamicBackgroundRenderNs(
-                                frameNs = t,
-                                currentNextNs = nextRenderNs,
-                                intervalNs = frameIntervalNs
-                            )
+                            lastRenderedNs = t
                             if (startNs == 0L) startNs = t
                             val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
                             painter.setAnimTime(seconds % 62.831852f)
@@ -386,7 +374,8 @@ fun HyperBackground(
                             }
                             painter.updateMaterials()
                             v.setRenderEffect(painter.renderEffect)
-                            v.postInvalidateOnAnimation()
+                            // 在本帧内失效；postInvalidateOnAnimation 会再排一帧，整窗口出帧翻倍
+                            v.invalidate()
                         }
                     }
                 } finally {
@@ -437,7 +426,7 @@ private suspend fun animateDynamicBackgroundPalette(
     val startColors = from.colors.copyOf()
     val interpolatedColors = FloatArray(startColors.size)
     var startNanos = 0L
-    var lastUpdateNanos = Long.MIN_VALUE
+    var lastUpdateNanos = 0L
     var finished = false
     while (!finished) {
         withFrameNanos { frameNanos ->
@@ -446,11 +435,7 @@ private suspend fun animateDynamicBackgroundPalette(
             }
             val rawFraction = ((frameNanos - startNanos).toDouble() /
                 (DynamicBackgroundPaletteTransitionDurationMs * 1_000_000.0)).toFloat()
-            if (
-                rawFraction < 1f &&
-                lastUpdateNanos != Long.MIN_VALUE &&
-                frameNanos - lastUpdateNanos < DynamicBackgroundBoostFrameIntervalNs
-            ) {
+            if (rawFraction < 1f && !isNewAmbientFrameSlot(lastUpdateNanos, frameNanos, DynamicBackgroundFrameIntervalNs)) {
                 return@withFrameNanos
             }
             lastUpdateNanos = frameNanos
@@ -459,7 +444,7 @@ private suspend fun animateDynamicBackgroundPalette(
             painter.setColors(interpolatedColors)
             painter.setLightOffset(lerpFloat(from.lightOffset, to.lightOffset, fraction))
             painter.setSaturateOffset(lerpFloat(from.saturateOffset, to.saturateOffset, fraction))
-            view.postInvalidateOnAnimation()
+            view.invalidate()
             finished = rawFraction >= 1f
         }
     }
@@ -468,22 +453,6 @@ private suspend fun animateDynamicBackgroundPalette(
     painter.setSaturateOffset(to.saturateOffset)
     view.postInvalidateOnAnimation()
     return to
-}
-
-internal fun nextDynamicBackgroundRenderNs(
-    frameNs: Long,
-    currentNextNs: Long,
-    intervalNs: Long
-): Long {
-    if (currentNextNs == Long.MIN_VALUE || frameNs - currentNextNs > intervalNs * 2L) {
-        return frameNs + intervalNs
-    }
-
-    var nextNs = currentNextNs
-    while (nextNs <= frameNs) {
-        nextNs += intervalNs
-    }
-    return nextNs
 }
 
 private fun buildDynamicBackgroundPalette(

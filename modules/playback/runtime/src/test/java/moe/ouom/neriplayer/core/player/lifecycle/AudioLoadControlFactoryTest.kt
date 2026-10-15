@@ -35,13 +35,13 @@ class AudioLoadControlFactoryTest {
     }
 
     @Test
-    fun `audio loads in bursts between 15 seconds and 2 minutes`() {
+    fun `audio loads in bursts between 15 seconds and 5 minutes`() {
         val loadControl = buildAudioLoadControl()
         loadControl.onPrepared(playerId)
 
         assertTrue(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 14_999)))
-        assertTrue(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 60_000)))
-        assertFalse(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 120_000)))
+        assertTrue(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 200_000)))
+        assertFalse(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 300_000)))
         // 停止后要等缓冲回落到下限才再次联网
         assertFalse(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 60_000)))
         assertTrue(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 14_999)))

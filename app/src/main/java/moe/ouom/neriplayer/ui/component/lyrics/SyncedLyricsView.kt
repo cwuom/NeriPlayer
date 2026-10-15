@@ -44,7 +44,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -108,6 +107,10 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToLong
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.withFrameNanos
+import moe.ouom.neriplayer.ui.animation.AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS
+import moe.ouom.neriplayer.ui.animation.isNewAmbientFrameSlot
 
 private const val LYRIC_TIME_SMOOTHING_DURATION_MS = 96
 private const val LYRIC_TIME_SMOOTHING_MAX_DELTA_MS = 180L
@@ -507,28 +510,39 @@ private fun animateFloatWhenEnabled(
     return if (enabled) animated else immediate
 }
 
+/**
+ * 线性过渡到新的歌词时间；按播放页共用的帧格推进，
+ * 不跟随 120 Hz 屏逐帧刷新，否则歌词会单独把整个窗口拉到满帧
+ */
 @Composable
 private fun rememberSmoothedLyricTimeMs(
     targetTimeMs: Long
 ): Long {
-    val smoothedTime = remember { Animatable(targetTimeMs.toFloat()) }
+    var displayedTimeMs by remember { mutableLongStateOf(targetTimeMs) }
 
     LaunchedEffect(targetTimeMs) {
-        val displayedTimeMs = smoothedTime.value.roundToLong()
-        if (shouldSnapLyricTimeSmoothing(displayedTimeMs, targetTimeMs)) {
-            smoothedTime.snapTo(targetTimeMs.toFloat())
-        } else {
-            smoothedTime.animateTo(
-                targetValue = targetTimeMs.toFloat(),
-                animationSpec = tween(
-                    durationMillis = LYRIC_TIME_SMOOTHING_DURATION_MS,
-                    easing = LinearEasing
-                )
-            )
+        val startTimeMs = displayedTimeMs
+        if (shouldSnapLyricTimeSmoothing(startTimeMs, targetTimeMs)) {
+            displayedTimeMs = targetTimeMs
+            return@LaunchedEffect
+        }
+        val durationNanos = LYRIC_TIME_SMOOTHING_DURATION_MS * 1_000_000L
+        var startFrameNanos = 0L
+        var lastRenderedFrameNanos = 0L
+        while (displayedTimeMs != targetTimeMs) {
+            withFrameNanos { frameNanos ->
+                if (startFrameNanos == 0L) startFrameNanos = frameNanos
+                if (!isNewAmbientFrameSlot(lastRenderedFrameNanos, frameNanos, AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS)) {
+                    return@withFrameNanos
+                }
+                lastRenderedFrameNanos = frameNanos
+                val fraction = ((frameNanos - startFrameNanos).toDouble() / durationNanos).coerceIn(0.0, 1.0)
+                displayedTimeMs = startTimeMs + ((targetTimeMs - startTimeMs) * fraction).roundToLong()
+            }
         }
     }
 
-    return smoothedTime.value.roundToLong()
+    return displayedTimeMs
 }
 
 /** 上下渐隐 */

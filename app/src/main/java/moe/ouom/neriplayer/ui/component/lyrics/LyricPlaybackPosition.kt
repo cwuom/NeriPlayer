@@ -12,12 +12,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.isActive
+import moe.ouom.neriplayer.ui.animation.AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS
+import moe.ouom.neriplayer.ui.animation.isNewAmbientFrameSlot
 import kotlin.math.abs
 
 private const val InterpolatedPlaybackResyncThresholdMs = 220L
 private const val InterpolatedPlaybackBackwardToleranceMs = 24L
-internal const val InterpolatedPlaybackDefaultFrameIntervalNanos = 33_000_000L
-internal const val InterpolatedPlaybackLowPowerFrameIntervalNanos = 66_000_000L
+internal const val InterpolatedPlaybackDefaultFrameIntervalNanos = AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS * 2L
+internal const val InterpolatedPlaybackLowPowerFrameIntervalNanos = AMBIENT_ANIMATION_FRAME_INTERVAL_NANOS * 4L
 
 @Stable
 internal class InterpolatedPlaybackPositionState(initialPositionMs: Long) {
@@ -56,25 +58,27 @@ internal fun rememberInterpolatedPlaybackPositionState(
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             var lastRenderedFrameNanos = 0L
             while (isActive) {
-                val frameNanos = withFrameNanos { it }
-                if (!shouldRenderInterpolatedPlaybackFrame(
-                        lastRenderedFrameNanos = lastRenderedFrameNanos,
-                        frameNanos = frameNanos,
-                        frameIntervalNanos = frameIntervalNanos
+                // 在帧回调内写入，和波形、背景落在同一帧
+                withFrameNanos { frameNanos ->
+                    if (!shouldRenderInterpolatedPlaybackFrame(
+                            lastRenderedFrameNanos = lastRenderedFrameNanos,
+                            frameNanos = frameNanos,
+                            frameIntervalNanos = frameIntervalNanos
+                        )
+                    ) {
+                        return@withFrameNanos
+                    }
+                    lastRenderedFrameNanos = frameNanos
+                    val predictedPositionMs = resolveInterpolatedPlaybackPosition(
+                        anchorPositionMs = state.anchorPositionMs,
+                        anchorRealtimeNanos = state.anchorRealtimeNanos,
+                        frameRealtimeNanos = frameNanos,
+                        playbackSpeed = playbackSpeed,
+                        previousRenderedPositionMs = state.renderedPositionMs
                     )
-                ) {
-                    continue
-                }
-                lastRenderedFrameNanos = frameNanos
-                val predictedPositionMs = resolveInterpolatedPlaybackPosition(
-                    anchorPositionMs = state.anchorPositionMs,
-                    anchorRealtimeNanos = state.anchorRealtimeNanos,
-                    frameRealtimeNanos = frameNanos,
-                    playbackSpeed = playbackSpeed,
-                    previousRenderedPositionMs = state.renderedPositionMs
-                )
-                if (predictedPositionMs != state.renderedPositionMs) {
-                    state.renderedPositionMs = predictedPositionMs
+                    if (predictedPositionMs != state.renderedPositionMs) {
+                        state.renderedPositionMs = predictedPositionMs
+                    }
                 }
             }
         }
@@ -149,13 +153,7 @@ internal fun shouldRenderInterpolatedPlaybackFrame(
     lastRenderedFrameNanos: Long,
     frameNanos: Long,
     frameIntervalNanos: Long
-): Boolean {
-    if (lastRenderedFrameNanos == 0L) {
-        return true
-    }
-    val minimumIntervalNanos = frameIntervalNanos.coerceAtLeast(0L)
-    return frameNanos - lastRenderedFrameNanos >= minimumIntervalNanos
-}
+): Boolean = isNewAmbientFrameSlot(lastRenderedFrameNanos, frameNanos, frameIntervalNanos)
 
 internal fun resolveInterpolatedPlaybackPosition(
     anchorPositionMs: Long,

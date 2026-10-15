@@ -14,6 +14,21 @@ private const val RESPONSE_SAMPLE_RATE = 48_000.0
 private const val GRAPHIC_BAND_Q = 1.41
 private const val SHELF_Q = 0.707
 
+/**
+ * 低音搁架在 native 侧带动态增益，低频满载时只收低频提升量，
+ * 前级只需为剩下的一小部分预留余量；全额预扣会让中高频整体变小
+ */
+private const val BASS_SHELF_HEADROOM_SHARE = 0.3
+private const val SUBSONIC_TRANSPARENT_HZ = 5.0
+
+/** 与 native bassSubsonicFrequencyHz 相同：提升量越大次声高通越紧，衰减时不启用 */
+internal fun bassSubsonicFrequencyHz(gainDb: Float, frequencyHz: Float): Double? {
+    if (gainDb <= 0f) return null
+    val target = (0.25 * frequencyHz).coerceIn(16.0, 30.0)
+    val engage = (gainDb / 4.0).coerceIn(0.0, 1.0)
+    return SUBSONIC_TRANSPARENT_HZ + (target - SUBSONIC_TRANSPARENT_HZ) * engage
+}
+
 /** 与 native neri_dsp_primitives.cpp 相同的 RBJ 设计，用于界面曲线和自动余量估算 */
 internal data class BiquadCoefficients(
     val b0: Double,
@@ -96,7 +111,10 @@ private fun normalize(b0: Double, b1: Double, b2: Double, a0: Double, a1: Double
     return BiquadCoefficients(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
 }
 
-internal fun AudioEffectsSound.responseFilters(sampleRate: Double = RESPONSE_SAMPLE_RATE): List<BiquadCoefficients> {
+internal fun AudioEffectsSound.responseFilters(
+    sampleRate: Double = RESPONSE_SAMPLE_RATE,
+    bassShelfShare: Double = 1.0
+): List<BiquadCoefficients> {
     val filters = mutableListOf<BiquadCoefficients>()
     if (equalizerEnabled) {
         equalizerBandsDb.forEachIndexed { index, gain ->
@@ -123,7 +141,11 @@ internal fun AudioEffectsSound.responseFilters(sampleRate: Double = RESPONSE_SAM
         }
     }
     if (bassDb != 0f) {
-        filters += designBiquad(ParametricEqBandType.LOW_SHELF, sampleRate, bassFrequencyHz.toDouble(), bassDb.toDouble(), SHELF_Q)
+        val shelfGainDb = if (bassDb > 0f) bassDb * bassShelfShare else bassDb.toDouble()
+        filters += designBiquad(ParametricEqBandType.LOW_SHELF, sampleRate, bassFrequencyHz.toDouble(), shelfGainDb, SHELF_Q)
+        bassSubsonicFrequencyHz(bassDb, bassFrequencyHz)?.let { subsonicHz ->
+            filters += designBiquad(ParametricEqBandType.HIGH_PASS, sampleRate, subsonicHz, 0.0, SHELF_Q)
+        }
     }
     if (trebleDb != 0f) {
         filters += designBiquad(
@@ -158,7 +180,7 @@ fun AudioEffectsSound.responseCurve(points: Int = 96): List<Pair<Float, Float>> 
  * 剩余的瞬时峰值交给限幅器，避免破音又不会让整体音量掉太多
  */
 fun AudioEffectsSound.estimatedHeadroomDb(): Float {
-    val filters = responseFilters()
+    val filters = responseFilters(bassShelfShare = BASS_SHELF_HEADROOM_SHARE)
     var maxBoost = 0.0
     val low = ln(20.0)
     val high = ln(20_000.0)

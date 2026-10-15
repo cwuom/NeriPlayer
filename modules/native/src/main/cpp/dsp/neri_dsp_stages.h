@@ -31,6 +31,8 @@ public:
     void snapToTargets();
     void reset();
     bool active() const;
+    // 任一增益型频段当前或目标为正
+    bool boosting() const;
     void process(float* left, float* right, int frames);
     void processMono(float* data, int frames);
 
@@ -51,6 +53,59 @@ private:
 
     StageContext context_;
     std::vector<Band> bands_;
+};
+
+// 次声高通随提升量从近乎透明逐步收紧，Kotlin 侧频响曲线用同一公式
+float bassSubsonicFrequencyHz(float gainDb, float frequencyHz);
+
+// 低音搁架；次声高通随提升量收紧，避免把余量花在听不到的频段
+class BassBoostStage {
+public:
+    void configure(const StageContext& context);
+    void setTargets(float gainDb, float frequencyHz);
+    void snapToTargets();
+    void reset();
+    bool active() const;
+    bool boosting() const;
+    // 次声高通和搁架分开调用，中间由引擎记录增强前的干信号
+    void processSubsonic(float* left, float* right, int frames);
+    void processShelf(float* left, float* right, int frames);
+
+private:
+    void redesign(float subsonicHz);
+
+    StageContext context_;
+    SmoothedValue gainDb_;
+    SmoothedValue frequency_;
+    float designedGainDb_ = 0.0f;
+    float designedFrequencyHz_ = -1.0f;
+    float designedSubsonicHz_ = -1.0f;
+    float subsonicHz_ = 0.0f;
+    bool running_ = false;
+    StereoBiquad shelf_;
+    StereoBiquad subsonic_;
+};
+
+// 只对增强模块额外加出来的部分做逐样本限量：叠加后会越过上限时收这部分，
+// 原信号不动，输出限幅器就不必把中高频一起压下去。
+// 收量瞬时到位再保持一个低频周期以上，周期内不起伏
+class EnhancementLimiter {
+public:
+    static constexpr int kMaxFrames = 128;
+
+    void configure(const StageContext& context);
+    void reset();
+    void capture(const float* left, const float* right, int frames);
+    void apply(float* left, float* right, int frames);
+
+private:
+    float gain_ = 1.0f;
+    float release_ = 1.0f;
+    int holdSamples_ = 0;
+    int holdRemaining_ = 0;
+    int capturedFrames_ = 0;
+    std::array<float, kMaxFrames> dryLeft_{};
+    std::array<float, kMaxFrames> dryRight_{};
 };
 
 class HarmonicBassStage {
@@ -348,6 +403,8 @@ private:
     float ceiling_ = 0.97f;
     float release_ = 1.0f;
     float limiterGain_ = 1.0f;
+    int holdSamples_ = 0;
+    int holdRemaining_ = 0;
     float maxReductionDb_ = 0.0f;
     int64_t limiterEvents_ = 0;
 };

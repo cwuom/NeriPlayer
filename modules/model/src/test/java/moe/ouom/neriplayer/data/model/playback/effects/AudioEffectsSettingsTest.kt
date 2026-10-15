@@ -136,6 +136,20 @@ class AudioEffectsSettingsTest {
     }
 
     @Test
+    fun `bass boost reserves only partial headroom and shows the subsonic roll off`() {
+        val boosted = AudioEffectsSound(bassDb = 6f, bassFrequencyHz = 100f)
+        // 动态低音负责低频满载时的峰值，前级不再把整段提升量从中高频里扣掉
+        assertEquals(1.25f, boosted.estimatedHeadroomDb(), 0.15f)
+        assertEquals(6f, boosted.responseDb(40f), 1.0f)
+        assertTrue(boosted.responseDb(12f) < 0f)
+        assertEquals(0f, boosted.responseDb(2_000f), 0.1f)
+
+        val cut = AudioEffectsSound(bassDb = -6f, bassFrequencyHz = 100f)
+        assertEquals(-6f, cut.responseDb(12f), 0.2f)
+        assertEquals(0f, cut.estimatedHeadroomDb())
+    }
+
+    @Test
     fun `auto eq parametric and graphic text imports`() {
         val parametric = parseAutoEqText(
             """
