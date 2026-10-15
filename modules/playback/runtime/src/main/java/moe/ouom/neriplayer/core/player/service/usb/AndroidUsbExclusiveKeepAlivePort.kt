@@ -40,7 +40,7 @@ internal class AndroidUsbExclusiveKeepAlivePort(
     override fun onForegroundFailure(reason: String) = host.onForegroundFailure(reason)
 
     override fun startAnchor(reason: String) {
-        UsbExclusiveBackgroundAudioAnchor.start(reason) {
+        UsbExclusiveBackgroundAudioAnchor.start(context, reason) {
             val native = UsbExclusiveSessionController.state.value
             isUsbExclusiveStreamInterfaceClaimed(native.opened, native.streaming, native.transitioning)
         }

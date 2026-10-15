@@ -555,6 +555,29 @@ bool testBassPresetWithHarmonicsDoesNotPumpLoudKicks() {
     return true;
 }
 
+bool testAttenuationIsNotUndoneByTheEnhancementLimiter() {
+    std::vector<float> input = kickWithMids(0.6f, 0.0f, kSampleRate * 3);
+    const auto treble = stereoSine(12000.0f, 0.1f, kSampleRate * 3);
+    for (size_t i = 0; i < input.size(); ++i) {
+        input[i] += treble[i];
+    }
+    auto attenuationDb = [&](float bassDb) {
+        Params params = bassParams(bassDb);
+        params[kTrebleGainDb] = -6.0f;
+        params[kTrebleFrequencyHz] = 8000.0f;
+        Engine engine;
+        if (!configured(engine, params)) return 99.0;
+        const auto output = processFloat(engine, input);
+        return 20.0 * std::log10(toneAmplitude(output, 12000.0, kSampleRate) / 0.1);
+    };
+    const double cutOnly = attenuationDb(0.0f);
+    const double cutWithBass = attenuationDb(9.0f);
+    std::printf("  treble_cut alone=%.2f withBass=%.2f\n", cutOnly, cutWithBass);
+    CHECK(cutOnly < -4.0);
+    CHECK(std::fabs(cutWithBass - cutOnly) < 0.3);
+    return true;
+}
+
 bool testModerateKickGetsNearlyTheFullBoost() {
     Params params = bassParams(6.0f);
     params[kPreampDb] = -1.25f;
@@ -625,7 +648,7 @@ bool testLimiterDoesNotModulateWithinBassCycles() {
 } // namespace
 
 int main() {
-    const std::array<std::pair<const char*, std::function<bool()>>, 22> tests = {{
+    const std::array<std::pair<const char*, std::function<bool()>>, 23> tests = {{
         {"disabled_passthrough", testDisabledEngineIsBitExactPassthrough},
         {"neutral_transparent", testNeutralEnabledChainIsTransparentForFloat},
         {"graphic_band_gain", testGraphicBandBoostMatchesRequestedGain},
@@ -646,6 +669,7 @@ int main() {
         {"loud_kick_punch_no_pump", testLoudKickBoostPunchesWithoutPumping},
         {"moderate_kick_full_boost", testModerateKickGetsNearlyTheFullBoost},
         {"bass_preset_no_pump", testBassPresetWithHarmonicsDoesNotPumpLoudKicks},
+        {"attenuation_outside_limiter", testAttenuationIsNotUndoneByTheEnhancementLimiter},
         {"dynamic_bass_low_distortion", testDynamicBassDoesNotDistortLoudLows},
         {"limiter_bass_low_distortion", testLimiterDoesNotModulateWithinBassCycles},
     }};

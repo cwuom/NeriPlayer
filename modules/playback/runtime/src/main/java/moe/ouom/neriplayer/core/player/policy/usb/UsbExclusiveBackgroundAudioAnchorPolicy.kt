@@ -69,6 +69,9 @@ internal fun isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(routedOutputType: I
 internal fun isUsbExclusiveBackgroundAudioAnchorUsbRoute(routedOutputType: Int?): Boolean =
     routedOutputType == AudioDeviceInfo.TYPE_USB_HEADSET || routedOutputType == AudioDeviceInfo.TYPE_USB_DEVICE
 
+/** 无法把路由设备和 native 占用的 DAC 对上号时保持静音：只有唯一一个 USB 输出时才能确定是同一台 */
+internal fun isUsbExclusiveAnchorRouteTheClaimedDevice(usbOutputCount: Int): Boolean = usbOutputCount == 1
+
 internal fun isUsbExclusiveStreamInterfaceClaimed(
     opened: Boolean,
     streaming: Boolean,

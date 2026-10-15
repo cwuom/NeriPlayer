@@ -1218,6 +1218,9 @@ object PlayerManager {
         return rejectRoomControlRestriction()
     }
 
+    /** 只查询，不弹提示；本地播放命令此刻会被一起听房间规则拦下时为 true */
+    internal fun isLocalRoomControlRestricted(): Boolean = localRoomControlRestriction().errorResId != null
+
     private fun rejectRoomControlRestriction(): Boolean {
         val restriction = localRoomControlRestriction()
         val message = restriction.errorResId ?: return false

@@ -1037,7 +1037,8 @@ internal fun PlayerManager.playBiliVideoPartsImpl(
 internal fun PlayerManager.playImpl(
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     bypassLoudVolumeWarning: Boolean = false,
-    allowFadeIn: Boolean = true
+    allowFadeIn: Boolean = true,
+    resumePositionOverrideMs: Long? = null
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -1052,7 +1053,8 @@ internal fun PlayerManager.playImpl(
                 playImpl(
                     commandSource = commandSource,
                     bypassLoudVolumeWarning = true,
-                    allowFadeIn = allowFadeIn
+                    allowFadeIn = allowFadeIn,
+                    resumePositionOverrideMs = resumePositionOverrideMs
                 )
             }
         )
@@ -1157,17 +1159,20 @@ internal fun PlayerManager.playImpl(
                 isPlayerPrepared = preparedInPlayer,
                 currentMediaUrlResolvedAtMs = currentMediaUrlResolvedAtMs
             )
+            val resumePositionMs = resumePositionOverrideMs ?: manualResumeDecision.resumePositionMs
             playAtIndex(
                 currentIndex,
-                resumePositionMs = manualResumeDecision.resumePositionMs,
+                resumePositionMs = resumePositionMs,
                 commandSource = commandSource,
                 forceStartupProtectionFade = manualResumeDecision.forceStartupProtectionFade,
-                startPlanOverride = if (allowFadeIn) null else resolveNoFadePlaybackStartPlan()
+                startPlanOverride = if (allowFadeIn) null else resolveNoFadePlaybackStartPlan(),
+                allowRememberedLongFormPosition = resumePositionOverrideMs == null &&
+                    commandSource == PlaybackCommandSource.LOCAL
             )
             emitPlaybackCommand(
                 type = "PLAY",
                 source = commandSource,
-                positionMs = manualResumeDecision.resumePositionMs,
+                positionMs = resumePositionMs,
                 currentIndex = currentIndex
             )
         }

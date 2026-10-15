@@ -31,6 +31,8 @@ public:
     void snapToTargets();
     void reset();
     bool active() const;
+    // 任一增益型频段当前或目标为正
+    bool boosting() const;
     void process(float* left, float* right, int frames);
     void processMono(float* data, int frames);
 

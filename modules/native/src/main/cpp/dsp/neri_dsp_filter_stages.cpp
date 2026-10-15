@@ -81,6 +81,15 @@ bool FilterBankStage::active() const {
     return false;
 }
 
+bool FilterBankStage::boosting() const {
+    for (const auto& band : bands_) {
+        if (isGainFilter(band.appliedType) && (band.gain.value() > 0.0f || band.gain.target() > 0.0f)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool FilterBankStage::advanceBand(Band& band) {
     bool changed = band.frequency.advance();
     changed = band.gain.advance() || changed;

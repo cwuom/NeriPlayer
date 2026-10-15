@@ -8,6 +8,8 @@ class PlaybackNetworkResumePolicyTest {
     private val request = PlaybackNetworkResumeRequest(
         songKey = "bili:BV1:p2",
         requestToken = 7L,
+        positionGeneration = 3L,
+        positionMs = 1_234_000L,
         armedAtElapsedMs = 1_000L,
         reason = "refresh_failed"
     )
@@ -28,25 +30,28 @@ class PlaybackNetworkResumePolicyTest {
                 nowElapsedMs = 1_000L + PLAYBACK_NETWORK_RESUME_WINDOW_MS,
                 currentSongKey = "bili:BV1:p2",
                 currentRequestToken = 7L,
+                currentPositionGeneration = 3L,
                 playbackRequested = false
             )
         )
     }
 
     @Test
-    fun `do not resume after the window, a track change, a user command, or a manual play`() {
+    fun `do not resume after the window, a track change, a user command, a seek, or a manual play`() {
         fun resume(
             now: Long = 2_000L,
             song: String? = "bili:BV1:p2",
             token: Long = 7L,
+            positionGeneration: Long = 3L,
             requested: Boolean = false
-        ) = shouldResumePlaybackAfterNetworkRestored(request, now, song, token, requested)
+        ) = shouldResumePlaybackAfterNetworkRestored(request, now, song, token, positionGeneration, requested)
 
         assertFalse(resume(now = 1_001L + PLAYBACK_NETWORK_RESUME_WINDOW_MS))
         assertFalse(resume(now = 500L))
         assertFalse(resume(song = "bili:BV1:p3"))
         assertFalse(resume(song = null))
         assertFalse(resume(token = 8L))
+        assertFalse(resume(positionGeneration = 4L))
         assertFalse(resume(requested = true))
     }
 }

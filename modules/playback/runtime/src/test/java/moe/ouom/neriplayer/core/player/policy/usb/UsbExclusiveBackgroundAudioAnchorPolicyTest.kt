@@ -116,6 +116,13 @@ class UsbExclusiveBackgroundAudioAnchorPolicyTest {
     }
 
     @Test
+    fun `usb carrier stays silent unless the routed usb output is the only one`() {
+        assertTrue(isUsbExclusiveAnchorRouteTheClaimedDevice(usbOutputCount = 1))
+        assertFalse(isUsbExclusiveAnchorRouteTheClaimedDevice(usbOutputCount = 2))
+        assertFalse(isUsbExclusiveAnchorRouteTheClaimedDevice(usbOutputCount = 0))
+    }
+
+    @Test
     fun `only the built in speaker counts as a carrier route`() {
         assertTrue(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER))
         assertFalse(isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(AudioDeviceInfo.TYPE_USB_HEADSET))

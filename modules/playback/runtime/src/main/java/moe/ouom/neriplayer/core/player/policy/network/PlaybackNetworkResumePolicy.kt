@@ -9,6 +9,8 @@ const val PLAYBACK_NETWORK_RESUME_WINDOW_MS = 30L * 60L * 1000L
 data class PlaybackNetworkResumeRequest(
     val songKey: String,
     val requestToken: Long,
+    val positionGeneration: Long,
+    val positionMs: Long,
     val armedAtElapsedMs: Long,
     val reason: String
 )
@@ -23,12 +25,13 @@ fun shouldHoldPlaybackForNetwork(
     requiresNetwork: Boolean
 ): Boolean = playbackRequested && requiresNetwork && !networkUsable
 
-/** 用户在等待期间做过任何播放操作、换过歌或已经手动播放，都不再自动恢复 */
+/** 用户在等待期间做过任何播放操作、换过歌、拖过进度或已经手动播放，都不再自动恢复 */
 fun shouldResumePlaybackAfterNetworkRestored(
     request: PlaybackNetworkResumeRequest,
     nowElapsedMs: Long,
     currentSongKey: String?,
     currentRequestToken: Long,
+    currentPositionGeneration: Long,
     playbackRequested: Boolean,
     windowMs: Long = PLAYBACK_NETWORK_RESUME_WINDOW_MS
 ): Boolean {
@@ -36,5 +39,6 @@ fun shouldResumePlaybackAfterNetworkRestored(
     return elapsedMs in 0..windowMs &&
         currentSongKey == request.songKey &&
         currentRequestToken == request.requestToken &&
+        currentPositionGeneration == request.positionGeneration &&
         !playbackRequested
 }

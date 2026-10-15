@@ -1,11 +1,14 @@
 package moe.ouom.neriplayer.core.player.usb.system
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveBackgroundAudioAnchorSpec
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveBackgroundAudioAnchorTransferMode
+import moe.ouom.neriplayer.core.player.policy.usb.isUsbExclusiveAnchorRouteTheClaimedDevice
 import moe.ouom.neriplayer.core.player.policy.usb.isUsbExclusiveBackgroundAudioAnchorBuiltInRoute
 import moe.ouom.neriplayer.core.player.policy.usb.isUsbExclusiveBackgroundAudioAnchorUsbRoute
 import moe.ouom.neriplayer.core.player.policy.usb.shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier
@@ -38,6 +41,9 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         @Volatile
         var routedOutputType: Int? = null
 
+        @Volatile
+        var routeIsOnlyUsbOutput = false
+
         var streamWriterRunning: AtomicBoolean? = null
 
         var streamWriter: Thread? = null
@@ -49,8 +55,12 @@ internal object UsbExclusiveBackgroundAudioAnchor {
     @Volatile
     private var usbStreamClaimed: () -> Boolean = { false }
 
-    fun start(reason: String, usbStreamClaimed: () -> Boolean = { false }): Boolean {
+    @Volatile
+    private var audioManager: AudioManager? = null
+
+    fun start(context: Context, reason: String, usbStreamClaimed: () -> Boolean = { false }): Boolean {
         this.usbStreamClaimed = usbStreamClaimed
+        audioManager = context.applicationContext.getSystemService(AudioManager::class.java)
         synchronized(lock) {
             val existing = activeAnchor
             if (existing != null && existing.track.state == AudioTrack.STATE_INITIALIZED) {
@@ -268,14 +278,18 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         val routedOutput = runCatching { anchor.track.routedDevice }.getOrNull()
         val routedOutputId = routedOutput?.id
         val routedOutputType = routedOutput?.type
+        val routeChanged = anchor.routedOutputId != routedOutputId ||
+            anchor.routedOutputType != routedOutputType
+        if (routeChanged) {
+            anchor.routeIsOnlyUsbOutput = isUsbExclusiveBackgroundAudioAnchorUsbRoute(routedOutputType) &&
+                isUsbExclusiveAnchorRouteTheClaimedDevice(usbOutputCount())
+        }
         val carrierActive = shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
             transferMode = anchor.spec.transferMode,
             routedToBuiltInOutput = isUsbExclusiveBackgroundAudioAnchorBuiltInRoute(routedOutputType),
-            routedToClaimedUsbOutput = isUsbExclusiveBackgroundAudioAnchorUsbRoute(routedOutputType) &&
+            routedToClaimedUsbOutput = anchor.routeIsOnlyUsbOutput &&
                 runCatching { usbStreamClaimed() }.getOrDefault(false),
         )
-        val routeChanged = anchor.routedOutputId != routedOutputId ||
-            anchor.routedOutputType != routedOutputType
         val carrierChanged = anchor.carrierActive != carrierActive
         anchor.routedOutputId = routedOutputId
         anchor.routedOutputType = routedOutputType
@@ -290,6 +304,12 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         }
         return if (carrierActive) anchor.carrier else anchor.silence
     }
+
+    private fun usbOutputCount(): Int = runCatching {
+        audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS).orEmpty().count { device ->
+            isUsbExclusiveBackgroundAudioAnchorUsbRoute(device.type)
+        }
+    }.getOrDefault(0)
 
     private fun releaseLocked(reason: String) {
         val anchor = activeAnchor ?: return

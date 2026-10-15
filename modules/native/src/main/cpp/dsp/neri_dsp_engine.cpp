@@ -315,19 +315,24 @@ void Engine::runChain(int frames) {
     graphicEq_.process(left, right, frames);
     parametricEq_.process(left, right, frames);
     bass_.processSubsonic(left, right, frames);
-    // 低音、高音提升和虚拟低音谐波只在余量内叠加，越线时收增强量而不是让输出限幅器压整段信号
-    const bool enhancing = bass_.boosting() || tone_.active() || virtualBass_.active();
+    // 低音、高音提升和虚拟低音谐波只在余量内叠加，越线时收增强量而不是让输出限幅器压整段信号；
+    // 衰减放在限量之外，否则会随低频峰值被拉回干信号
+    const bool bassBoost = bass_.boosting();
+    const bool trebleBoost = tone_.boosting();
+    if (!bassBoost) bass_.processShelf(left, right, frames);
+    const bool enhancing = bassBoost || trebleBoost || virtualBass_.active();
     if (enhancing) {
         enhancementLimiter_.capture(left, right, frames);
     } else {
         enhancementLimiter_.reset();
     }
-    bass_.processShelf(left, right, frames);
-    tone_.process(left, right, frames);
+    if (bassBoost) bass_.processShelf(left, right, frames);
+    if (trebleBoost) tone_.process(left, right, frames);
     virtualBass_.process(left, right, frames);
     if (enhancing) {
         enhancementLimiter_.apply(left, right, frames);
     }
+    if (!trebleBoost) tone_.process(left, right, frames);
     warmth_.process(left, right, frames);
     exciter_.process(left, right, frames);
     applyVocalClarity(frames);

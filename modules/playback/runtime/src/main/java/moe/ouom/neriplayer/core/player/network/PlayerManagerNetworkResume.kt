@@ -11,7 +11,9 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.currentPositionMsOr
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
+import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.policy.network.PLAYBACK_NETWORK_RESUME_WINDOW_MS
 import moe.ouom.neriplayer.core.player.policy.network.PlaybackNetworkResumeRequest
 import moe.ouom.neriplayer.core.player.policy.network.shouldHoldPlaybackForNetwork
@@ -19,6 +21,7 @@ import moe.ouom.neriplayer.core.player.policy.network.shouldResumePlaybackAfterN
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
+import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val TAG = "NERI-NetworkResume"
@@ -33,15 +36,11 @@ internal fun mediaUrlRequiresNetwork(url: String?): Boolean {
     return url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
 }
 
-/** 被系统按 uid 拦网时 activeNetwork 也会返回 null，和真正断网一样处理 */
-internal fun isPlaybackNetworkUsable(context: Context): Boolean {
-    val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return true
-    return runCatching {
-        val network = connectivity.activeNetwork ?: return@runCatching false
-        connectivity.getNetworkCapabilities(network)
-            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-    }.getOrDefault(true)
-}
+/**
+ * 只认系统验证过的网络：上游断开的 Wi-Fi 或认证页仍带 INTERNET 却没有 VALIDATED；
+ * 被系统按 uid 拦网时 activeNetwork 也会返回 null，都和真正断网一样处理
+ */
+internal fun isPlaybackNetworkUsable(context: Context): Boolean = context.hasConfirmedInternetAccess()
 
 /**
  * 断网导致的失败不再暂停了事或连跳整个队列：停在原位，网络回来后在窗口内自动续播。
@@ -96,7 +95,7 @@ internal object PlaybackNetworkResumeOwner {
             override fun onAvailable(network: Network) = scheduleResume(context, onRestored)
 
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
                     scheduleResume(context, onRestored)
                 }
             }
@@ -131,6 +130,13 @@ internal fun PlayerManager.holdPlaybackForNetworkIfOffline(reason: String): Bool
     if (!shouldHoldPlaybackForNetwork(resumePlaybackRequested, isPlaybackNetworkUsable(application), requiresNetwork)) {
         return false
     }
+    // 强制停止后播放器不再保留进度，恢复时显式从这里继续，不依赖"保留上次进度"设置
+    // 切歌解析途中播放器里还是上一首，要用这次加载请求的位置
+    val positionMs = if (isPendingMediaLoadActive()) {
+        pendingMediaLoadPositionMs
+    } else {
+        player.currentPositionMsOr(_playbackPositionMs.value)
+    }.coerceAtLeast(0L)
     pauseImpl(
         forcePersist = true,
         commandSource = PlaybackCommandSource.LOCAL_SAFETY,
@@ -143,6 +149,8 @@ internal fun PlayerManager.holdPlaybackForNetworkIfOffline(reason: String): Bool
         pending = PlaybackNetworkResumeRequest(
             songKey = song.stableKey(),
             requestToken = playbackRequestToken,
+            positionGeneration = playbackPositionGeneration,
+            positionMs = positionMs,
             armedAtElapsedMs = SystemClock.elapsedRealtime(),
             reason = reason
         ),
@@ -159,10 +167,17 @@ private fun PlayerManager.resumePlaybackAfterNetworkRestored() {
         nowElapsedMs = SystemClock.elapsedRealtime(),
         currentSongKey = _currentSongFlow.value?.stableKey(),
         currentRequestToken = playbackRequestToken,
+        currentPositionGeneration = playbackPositionGeneration,
         playbackRequested = resumePlaybackRequested
     )
     PlaybackNetworkResumeOwner.disarm(if (shouldResume) "network_restored" else "stale_request")
     if (!shouldResume) return
-    NPLogger.i(TAG, "network restored, resuming held playback: reason=${pending.reason}")
-    play(PlaybackCommandSource.LOCAL)
+    // 暂停时没有向一起听房间发命令；听众受房间规则限制时用安全来源恢复，同样不广播
+    val commandSource = if (isLocalRoomControlRestricted()) {
+        PlaybackCommandSource.LOCAL_SAFETY
+    } else {
+        PlaybackCommandSource.LOCAL
+    }
+    NPLogger.i(TAG, "network restored, resuming held playback: reason=${pending.reason}, source=$commandSource")
+    playImpl(commandSource = commandSource, resumePositionOverrideMs = pending.positionMs)
 }
