@@ -144,7 +144,10 @@ console.log('sim.css', Math.round(sheet.length / 1024) + 'k', kept.length, 'rule
 for (const lang of ['zh', 'en']) {
   const { html, meta } = parts[lang];
   const tpl = Object.entries(html).map(([k, v]) => `<template data-part="${k}">${v}</template>`).join('\n');
-  const data = { light: meta.lightVars, dark: meta.darkVars, hyper: meta.hyper };
+  // 平台图标是 CSS 遮罩，直接打开 file:// 时浏览器不给跨源遮罩图，这里内联成 data URI，加载时替换 {{K}}
+  const iconData = {};
+  if (DESK) for (const name of usedIcons) iconData[name] = 'data:image/svg+xml,' + encodeURIComponent(readFileSync(join(DESK, 'public', 'icons', name), 'utf8').replace(/\s+/g, ' ').trim());
+  const data = { light: meta.lightVars, dark: meta.darkVars, hyper: meta.hyper, icons: iconData, palettes: meta.palettes || null };
   writeFileSync(join(OUT, `sim-${lang}.html`), tpl + '\n<script type="application/json" data-part="meta">' + JSON.stringify(data) + '</script>\n');
   console.log(`sim-${lang}.html`, Math.round((tpl.length) / 1024) + 'k');
 }

@@ -70,7 +70,7 @@ await sleep(1200);
 
 /* ---------- 可跳转的页面：先拍下来，再逐个点出去看去向 ---------- */
 // 歌曲行点了是播放，分类标签是页内切换（单独导出成变体），这些不当作跳转候选
-const EXCLUDE = '.track-item, .feed-song, .daily-card, .tab-chip, .local-category-chip, input, textarea, .new-playlist-row, .back-btn, .play-all-btn, .hero-icon-btn';
+const EXCLUDE = '.track-item, .feed-song, .daily-card, .tab-chip, .local-category-chip, .platform-tab, [class*="chip"], .favorite-artist-platforms, .favorite-artist-import, input, textarea, .new-playlist-row, .back-btn, .play-all-btn, .hero-icon-btn';
 const mark = () => app((ex) => {
   document.querySelectorAll('[data-dsim-c]').forEach((e) => e.removeAttribute('data-dsim-c'));
   const els = [...document.querySelectorAll('main.content *')].filter((el) => {
@@ -83,11 +83,12 @@ const mark = () => app((ex) => {
   els.forEach((e, i) => e.setAttribute('data-dsim-c', String(i)));
   return els.length;
 }, EXCLUDE);
+// re 为数字时按序号点
 const clickText = (sel, re) => app(async (sel, src) => {
-  const re = new RegExp(src);
-  const el = [...document.querySelectorAll(sel)].find((e) => re.test(e.textContent.trim()));
+  const list = [...document.querySelectorAll(sel)];
+  const el = typeof src === 'number' ? list[src] : list.find((e) => new RegExp(src).test(e.textContent.trim()));
   if (el) el.click();
-  await new Promise((r) => setTimeout(r, 700));
+  await new Promise((r) => setTimeout(r, el ? 500 : 0));
   return !!el;
 }, sel, re);
 // 音乐库的页内变体：每次都从「本地 · 歌单」重新点过去，避免 keep-alive 留下上一次的状态
@@ -97,17 +98,28 @@ const LIB = {
   'library-files': [['.local-category-chip', EN ? '^.{0,24}(Local )?[Ff]iles$' : '本地文件$']],
   'library-fav': [['.tab-chip', EN ? '^favorite' : '收藏$']],
   'library-dl': [['.tab-chip', EN ? '^download' : '下载$']],
+  'library-fav-artists': [['.tab-chip', EN ? '^favorite' : '收藏$'], ['.local-category-chip', 1]],
+  'library-fav-artists-bili': [['.tab-chip', EN ? '^favorite' : '收藏$'], ['.local-category-chip', 1], ['.favorite-artist-platforms button', 1]],
+  'library-fav-artists-yt': [['.tab-chip', EN ? '^favorite' : '收藏$'], ['.local-category-chip', 1], ['.favorite-artist-platforms button', 2]],
 };
-const STATES = [{ key: 'explore', route: '/explore' }]
+// 探索页的平台标签（网易云 / 哔哩哔哩 / YouTube Music / 链接）
+const EXP = { explore: [], 'explore-bili': [['.platform-tab', 1]], 'explore-yt': [['.platform-tab', 2]], 'explore-link': [['.platform-tab', 3]] };
+const STATES = Object.entries(EXP).map(([key, steps]) => ({ key, route: '/explore', steps }))
   .concat(Object.entries(LIB).map(([key, steps]) => ({ key, route: '/library', steps })));
 async function enter(st) {
   if (st.key === 'home') { await go('/', 1200); return; }
   await go(st.route, 1200);
   if (st.route === '/library') {
+    // 收藏页的分类与平台筛选也会被 keep-alive 留住：先切到歌手、平台点回第一个，再回到歌单
+    await clickText('.tab-chip', EN ? '^favorite' : '收藏$');
+    await clickText('.local-category-chip', 1);
+    await clickText('.favorite-artist-platforms button', 0);
+    await clickText('.local-category-chip', 0);
     await clickText('.tab-chip', EN ? '^folder_open' : '本地$');
-    await clickText('.local-category-chip', EN ? '^queue_music' : '歌单$');
-    for (const [sel, re] of st.steps) await clickText(sel, re);
+    await clickText('.local-category-chip', 0);
   }
+  if (st.route === '/explore') await clickText('.platform-tab', 0);
+  for (const [sel, re] of st.steps) await clickText(sel, re);
 }
 const keyOf = (p) => 'r' + p.replace(/[?#].*$/, '').replace(/[^\w]+/g, '-').replace(/-$/, '');
 const pages = {};
@@ -168,6 +180,38 @@ for (const id of SECTIONS) {
     return c.innerHTML;
   });
 }
+/* ---------- 外观：取色方式与主题色。在真界面里挨个点，记下 html 上的主题变量与说明文字 ---------- */
+async function palettes() {
+  await go('/settings?section=appearance', 1500);
+  const card = (icon) => `[...document.querySelectorAll('.settings-content .setting-card')].find((c) => [...c.querySelectorAll('.material-symbols-rounded')].some((s) => s.textContent.trim() === '${icon}'))`;
+  const click = (icon, sel, i) => app(new Function('sel', 'i', `const c = ${card(icon)}; const b = c && c.querySelectorAll(sel)[i]; if (b) b.click(); return !!b;`), sel, i);
+  const desc = (icon) => app(new Function(`const c = ${card(icon)}; const d = c && c.querySelector('.setting-desc'); return d ? d.textContent.trim() : '';`));
+  const vars = () => app(() => document.documentElement.style.cssText);
+  const out = { modes: {}, modeDesc: {}, colors: [] };
+  for (const [i, m] of [[2, 'system'], [1, 'cover'], [0, 'default']]) {
+    await click('colorize', '.m3-chip', i);
+    await sleep(1400);
+    out.modes[m] = await vars();
+    out.modeDesc[m] = await desc('colorize');
+  }
+  const n = await app(new Function(`const c = ${card('format_paint')}; return c ? c.querySelectorAll('.color-dot').length : 0;`));
+  for (let i = 0; i < n; i++) {
+    await click('format_paint', '.color-dot', i);
+    await sleep(1100);
+    out.colors.push(await vars());
+  }
+  await click('format_paint', '.color-dot', 0);
+  await sleep(700);
+  await click('colorize', '.m3-chip', 1);
+  await sleep(1400);
+  out.darkModeLabels = await app(() => {
+    const t = document.querySelector('#app').__vue_app__.config.globalProperties.$t;
+    return t ? { system: t('settings.dark_mode_system'), dark: t('settings.dark_mode_on'), light: t('settings.dark_mode_off') } : null;
+  });
+  return out;
+}
+const lightPal = await palettes();
+console.log('palettes', lightPal.colors.length, 'colors ·', Object.keys(lightPal.modes).join(','), '·', JSON.stringify(lightPal.darkModeLabels));
 await go('/settings?section=appearance', 1500);
 const frame = await app((ids) => {
   const main = document.querySelector('main.content').cloneNode(true);
@@ -193,12 +237,13 @@ await page.reload({ waitUntil: 'networkidle2' });
 await sleep(2500);
 await startPlayback();
 await sleep(2500);
-await app(() => localStorage.removeItem('np-snap-dark'));
 const darkVars = await app(() => document.documentElement.style.cssText);
 const darkClass = await app(() => document.documentElement.className);
+const darkPal = await palettes();
+await app(() => localStorage.removeItem('np-snap-dark'));
 
 writeFileSync(`${out}/views-${lang}.json`, JSON.stringify({ views, pages, settings, frame, sections: SECTIONS }));
-writeFileSync(`${out}/meta-${lang}.json`, JSON.stringify({ lightVars, darkVars, htmlClass, darkClass, hyper }));
+writeFileSync(`${out}/meta-${lang}.json`, JSON.stringify({ lightVars, darkVars, htmlClass, darkClass, hyper, palettes: { light: lightPal, dark: darkPal } }));
 writeFileSync(`${out}/css-${lang}.json`, JSON.stringify(css));
 const kb = (s) => Math.round(s.length / 1024) + 'k';
 console.log('pages', Object.keys(pages).length, kb(Object.values(pages).join('')), '· settings', kb(Object.values(settings).join('')), '· css rules', css.length);
