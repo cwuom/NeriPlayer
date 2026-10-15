@@ -90,6 +90,7 @@ internal fun LocalCurationReviewContent(
     var showConfirm by remember { mutableStateOf(false) }
     var writeAccessDenied by remember { mutableStateOf(false) }
     val requestWriteAccess = rememberLocalCurationWriteAccessRequester(
+        songs = { session.items.filter(LocalCurationItem::hasSelection).map { it.song } },
         onGranted = {
             writeAccessDenied = false
             onApply()
@@ -99,7 +100,7 @@ internal fun LocalCurationReviewContent(
     val filtered = remember(session.items, filter) { session.items.filter { it.matches(filter) } }
     val selectableCount = session.count(LocalCurationItemPhase.READY) +
         session.count(LocalCurationItemPhase.FAILED)
-    val allSelected = selectableCount > 0 && session.selectedCount == selectableCount
+    val allSelected = remember(session.items) { areAllLocalCurationProposalsSelected(session.items) }
     val sizeDelta = remember(session.items) { estimateLocalCurationBytesDelta(session.items) }
     val listMaxHeight = localCurationMaxHeight(0.48f)
 
@@ -241,7 +242,7 @@ internal fun LocalCurationReviewContent(
             confirmButton = {
                 MiuixSettingsTextButton(onClick = {
                     showConfirm = false
-                    requestWriteAccess(session.items.filter(LocalCurationItem::hasSelection).map { it.song })
+                    requestWriteAccess()
                 }) {
                     Text(stringResource(CoreCommonR.string.local_curation_confirm_write))
                 }

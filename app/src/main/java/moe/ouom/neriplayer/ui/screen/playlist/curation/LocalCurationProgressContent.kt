@@ -181,6 +181,7 @@ internal fun LocalCurationFinishedContent(
     val failedItems = session.items.filter { it.phase == LocalCurationItemPhase.FAILED }
     var writeAccessDenied by remember { mutableStateOf(false) }
     val requestWriteAccess = rememberLocalCurationWriteAccessRequester(
+        songs = { failedItems.map { it.song } },
         onGranted = onRetry,
         onDenied = { writeAccessDenied = true }
     )
@@ -261,7 +262,7 @@ internal fun LocalCurationFinishedContent(
         ) {
             if (hasFailures) {
                 MiuixSettingsOutlinedButton(
-                    onClick = { requestWriteAccess(failedItems.map { it.song }) },
+                    onClick = requestWriteAccess,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(stringResource(CoreCommonR.string.local_curation_retry_failed))
