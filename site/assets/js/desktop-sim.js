@@ -202,6 +202,9 @@
     this.np = false;
     this.os = opts.os || 'win';
     this.theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    this.themeMode = 'system';
+    this.colorMode = 'cover';
+    this.colorIdx = 0;
     this.listeners = [];
   }
   var source = null;
@@ -222,12 +225,16 @@
     var lang = NP.en ? 'en' : 'zh';
     var get = location.protocol === 'file:' ? viaScript(lang) : fetch(BASE + 'desktop/sim-' + lang + '.html').then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); }).catch(function () { return viaScript(lang); });
     source = get.then(function (text) {
-      text = text.split('{{C}}').join(BASE + 'img/covers/').split('{{I}}').join(BASE + 'img/desktop/app-icon.png').split('{{K}}').join(BASE + 'img/desktop/icons/');
+      text = text.split('{{C}}').join(BASE + 'img/covers/').split('{{I}}').join(BASE + 'img/desktop/app-icon.png');
       var box = document.createElement('div');
       box.innerHTML = text;
+      var meta = JSON.parse($('script[data-part="meta"]', box).textContent);
+      var icons = meta.icons || {};
       var parts = {};
-      $$('template[data-part]', box).forEach(function (t) { parts[t.getAttribute('data-part')] = t.innerHTML; });
-      return { parts: parts, meta: JSON.parse($('script[data-part="meta"]', box).textContent) };
+      $$('template[data-part]', box).forEach(function (t) {
+        parts[t.getAttribute('data-part')] = t.innerHTML.replace(/\{\{K\}\}([\w.-]+\.svg)/g, function (m, n) { return icons[n] || BASE + 'img/desktop/icons/' + n; });
+      });
+      return { parts: parts, meta: meta };
     });
     source.catch(function () { source = null; });
     return source;
@@ -269,9 +276,17 @@
     link.onload = go;
     link.onerror = function () { self.frame.classList.add('is-fallback'); };
   };
+  /* 外观：深色模式（跟随系统 / 始终开启 / 始终关闭）× 取色方式（默认主题色 / 封面 / 系统强调色）。
+     各组合的主题变量都是在桌面版里实际切换后记下来的（snapshot.mjs palettes） */
+  Sim.prototype.pageTheme = function () { return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; };
+  Sim.prototype.currentVars = function () {
+    var pal = this.meta.palettes && this.meta.palettes[this.theme];
+    var v = pal && (this.colorMode === 'default' ? pal.colors[this.colorIdx] : pal.modes[this.colorMode]);
+    return v || this.meta[this.theme];
+  };
   Sim.prototype.applyTheme = function (animate, origin) {
     var self = this;
-    var vars = this.meta[this.theme];
+    var vars = this.currentVars();
     var cls = 'dsim ' + this.theme + '-theme platform-' + (this.os === 'mac' ? 'mac' : this.os === 'linux' ? 'linux' : 'windows') + (this.np ? ' np-open' : '');
     var commit = function () {
       self.host.style.cssText = vars;
@@ -329,8 +344,10 @@
     P.on(function () { self.sync(); });
     NP.addFrame(function (dt) { self.tick(dt); }, 9);
     NP.onResize(function () { self.layout(); });
+    // 深色模式选「跟随系统」时跟着这一页的明暗走（网页的明暗就是仿真里的“系统”）
     new MutationObserver(function () {
-      var t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      if (self.themeMode !== 'system') return;
+      var t = self.pageTheme();
       if (t !== self.theme) { self.theme = t; self.applyTheme(false); }
     }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     NP.whenVisible(this.frame, function () { self.visible = true; P.startPreview(); }, function () { self.visible = false; }, '40px 0px');
@@ -349,7 +366,7 @@
   Sim.prototype.na = function (what) { this.toast(what ? L('网页演示里没有接入「' + what + '」', '“' + what + '” isn’t wired up in this web demo') : L('这里是网页演示，这一项没有接入', 'This part isn’t wired up in the web demo')); };
   Sim.prototype.onView = function (fn) { this.listeners.push(fn); };
   /* 侧边栏归属：歌单、歌手、统计这些详情页都挂在音乐库下面（路由 meta.section） */
-  function sectionOf(r) { return r === 'home' || r === 'explore' || r === 'settings' ? r : 'library'; }
+  function sectionOf(r) { return r === 'home' || r === 'settings' ? r : /^explore/.test(r) ? 'explore' : 'library'; }
   Sim.prototype.view = function () {
     if (this.np) return 'np';
     if (this.route === 'settings') return this.setting;
@@ -364,6 +381,11 @@
   Sim.prototype.navigate = function (r) {
     if (r === this.route) return;
     this.hist = (this.hist || []).concat([this.route]).slice(-20);
+    this.setRoute(r, false, true);
+  };
+  /* 页内切换（音乐库分类、收藏的歌单 / 歌手、平台筛选、探索的平台标签）：不进历史，只换内容 */
+  Sim.prototype.swapVariant = function (r) {
+    if (r === this.route) return;
     this.setRoute(r, false, true);
   };
   Sim.prototype.back = function () {
@@ -578,12 +600,17 @@
         if (star) self.playRow(star); else self.toast(L('这个歌单里没有《星轨》，网页演示只带了这一首的音频', 'This playlist doesn’t include “星轨”, the only track with audio here'));
       });
     });
-    if (/^library/.test(page)) {
-      this.qa('.tab-chip', c).forEach(function (b, i) {
-        on(b, function () { if (LIB_TABS[i]) self.navigate(LIB_TABS[i]); else self.na(b.textContent.trim().replace(/^[a-z_]+/, '')); });
+    var variant = function (sel, keys) {
+      self.qa(sel, c).forEach(function (b, i) {
+        on(b, function () { if (keys[i] && self.parts['page-' + keys[i]]) self.swapVariant(keys[i]); else self.na(b.textContent.trim().replace(/^[a-z_]+(?=[^a-z_])/, '')); });
       });
-      this.qa('.local-category-chip', c).forEach(function (b, i) { on(b, function () { if (LIB_CATS[i]) self.navigate(LIB_CATS[i]); }); });
+    };
+    if (/^library/.test(page)) {
+      variant('.tab-chip', LIB_TABS);
+      variant('.local-category-chip', /^library-fav/.test(page) ? ['library-fav', 'library-fav-artists'] : LIB_CATS);
+      variant('.favorite-artist-platforms button', ['library-fav-artists', 'library-fav-artists-bili', 'library-fav-artists-yt']);
     }
+    if (/^explore/.test(page)) variant('.platform-tab', ['explore', 'explore-bili', 'explore-yt', 'explore-link']);
     var form = this.q('.home-search', c);
     if (form) form.addEventListener('submit', function (e) { e.preventDefault(); self.setRoute('explore'); });
     this.qa('input[type="text"], input[type="search"]', c).forEach(function (i) { i.addEventListener('keydown', function (e) { e.stopPropagation(); }); });
@@ -639,18 +666,7 @@
     this.qa('input[type="range"]', box).forEach(function (i) { i.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); });
     this.qa('input[type="text"], input[type="search"], input[type="number"], textarea', box).forEach(function (i) { i.addEventListener('keydown', function (e) { e.stopPropagation(); }); });
     if (key === 'appearance') {
-      this.qa('button', box).forEach(function (b) {
-        var ic = b.querySelector('.material-symbols-rounded');
-        var name = ic ? ic.textContent.trim() : '';
-        if (name !== 'dark_mode' && name !== 'light_mode' && name !== 'brightness_auto' && name !== 'contrast') return;
-        b._theme = true;
-        b.addEventListener('click', function (e) {
-          var mode = name === 'dark_mode' ? 'dark' : name === 'light_mode' ? 'light' : (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
-          var r = self.host.getBoundingClientRect();
-          var o = { x: (e.clientX - r.left) / self.k, y: (e.clientY - r.top) / self.k };
-          if (mode !== self.theme) { self.theme = mode; self.applyTheme(true, o); }
-        });
-      });
+      this.bindAppearance(box);
     } else if (key === 'audio_effects') {
       this.bindFx(box);
     } else if (key === 'shortcuts') {
@@ -666,6 +682,84 @@
         self.na(t.slice(0, 20));
       });
     });
+  };
+
+  /* 外观分区：照 SettingsView.vue —— 三段深色模式（拇指每格 38px）、取色方式不是「默认」时主题色一排变淡且不可点 */
+  var DARK_MODES = ['system', 'dark', 'light'];
+  var COLOR_MODES = ['default', 'cover', 'system'];
+  function cardWith(box, icon) {
+    return Array.prototype.filter.call(box.querySelectorAll('.setting-card'), function (c) {
+      return Array.prototype.some.call(c.querySelectorAll('.material-symbols-rounded'), function (s) { return s.textContent.trim() === icon; });
+    })[0];
+  }
+  Sim.prototype.bindAppearance = function (box) {
+    var self = this;
+    var at = function (e) { var r = self.host.getBoundingClientRect(); return { x: (e.clientX - r.left) / self.k, y: (e.clientY - r.top) / self.k }; };
+    var dm = cardWith(box, 'dark_mode');
+    var tc = cardWith(box, 'format_paint');
+    var cm = cardWith(box, 'colorize');
+    this.ap = { dm: dm, tc: tc, cm: cm };
+    if (dm) Array.prototype.forEach.call(dm.querySelectorAll('.pill'), function (b, i) {
+      b._theme = true;
+      b.addEventListener('click', function (e) {
+        var mode = DARK_MODES[i];
+        if (!mode || mode === self.themeMode) return;
+        self.themeMode = mode;
+        var t = mode === 'system' ? self.pageTheme() : mode;
+        self.syncAppearance();
+        if (t !== self.theme) { self.theme = t; self.applyTheme(true, at(e)); }
+      });
+    });
+    if (tc) Array.prototype.forEach.call(tc.querySelectorAll('.color-dot'), function (b, i) {
+      b._theme = true;
+      b.addEventListener('click', function (e) {
+        if (self.colorMode !== 'default' || i === self.colorIdx) return;
+        self.colorIdx = i;
+        self.syncAppearance();
+        self.applyTheme(true, at(e));
+      });
+    });
+    if (cm) Array.prototype.forEach.call(cm.querySelectorAll('.m3-chip'), function (b, i) {
+      b._theme = true;
+      b.addEventListener('click', function (e) {
+        var mode = COLOR_MODES[i];
+        if (!mode || mode === self.colorMode) return;
+        self.colorMode = mode;
+        self.syncAppearance();
+        self.applyTheme(true, at(e));
+      });
+    });
+    this.syncAppearance();
+  };
+  Sim.prototype.syncAppearance = function () {
+    var ap = this.ap;
+    if (!ap || !(ap.dm || ap.tc || ap.cm) || !(ap.dm || ap.cm).isConnected) return;
+    var pal = this.meta.palettes && this.meta.palettes[this.theme];
+    var self = this;
+    if (ap.dm) {
+      var di = DARK_MODES.indexOf(this.themeMode);
+      Array.prototype.forEach.call(ap.dm.querySelectorAll('.pill'), function (b, i) { b.classList.toggle('active', i === di); });
+      var thumb = ap.dm.querySelector('.pill-thumb');
+      if (thumb) thumb.style.transform = 'translateX(' + di * 38 + 'px)';
+      var lab = pal && pal.darkModeLabels;
+      if (lab) setText(ap.dm.querySelector('.setting-desc'), lab[this.themeMode]);
+    }
+    if (ap.tc) {
+      var row = ap.tc.querySelector('.color-row');
+      if (row) { row.style.opacity = this.colorMode !== 'default' ? '0.4' : ''; row.style.pointerEvents = this.colorMode !== 'default' ? 'none' : ''; }
+      Array.prototype.forEach.call(ap.tc.querySelectorAll('.color-dot'), function (b, i) {
+        var on = i === self.colorIdx;
+        b.classList.toggle('selected', on);
+        var chk = b.querySelector('.material-symbols-rounded');
+        if (on && !chk) b.innerHTML = '<span class="material-symbols-rounded" style="font-size: 16px; color: white">check</span>';
+        else if (!on && chk) b.innerHTML = '';
+      });
+    }
+    if (ap.cm) {
+      var ci = COLOR_MODES.indexOf(this.colorMode);
+      Array.prototype.forEach.call(ap.cm.querySelectorAll('.m3-chip'), function (b, i) { b.classList.toggle('active', i === ci); b.setAttribute('aria-checked', i === ci ? 'true' : 'false'); });
+      if (pal && pal.modeDesc) setText(ap.cm.querySelector('.setting-desc'), pal.modeDesc[this.colorMode]);
+    }
   };
 
   /* 音效与倍速：与手机里那页共享同一份 DSP 状态。滑块与开关按桌面版 AudioEffectsSettings.vue 里的先后顺序对应 */

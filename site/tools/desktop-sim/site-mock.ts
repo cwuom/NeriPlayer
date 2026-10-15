@@ -108,6 +108,33 @@ const favoritePlaylists = [
   { id: '5098', name: EN ? 'Starlit train' : '星空列车', source: 'netease', coverUrl: COVER('goodnight-train'), cover: 'goodnight-train', trackCount: 10, addedTime: now - 864e5, modifiedAt: now, sortOrder: 2, rot: 9, songs: rot(9).map(neteaseSong), tracks: rot(9).map(localTrack) },
   { id: '5099', name: EN ? 'Lo-fi for focus' : '专注 Lo-fi', source: 'netease', coverUrl: COVER('low-orbit'), cover: 'low-orbit', trackCount: 10, addedTime: now - 3 * 864e5, modifiedAt: now, sortOrder: 1, rot: 7, songs: rot(7).map(neteaseSong), tracks: rot(7).map(localTrack) },
 ]
+/* 收藏里关注的歌手：网易云三位、哔哩哔哩一位（YouTube Music 留空，和没导入关注时一样） */
+const ARTISTS: { id: string, source: string, name: string, cover: string, subtitle: string, songs: string[] }[] = [
+  { id: '9001', source: 'neteaseArtist', name: 'Neri Line', cover: 'startrail', subtitle: EN ? '2 songs · 1 album' : '2 首歌 · 1 张专辑', songs: ['startrail', 'goodnight-train'] },
+  { id: '9002', source: 'neteaseArtist', name: 'Soda Cat', cover: 'cat-soda', subtitle: EN ? '2 songs · 2 albums' : '2 首歌 · 2 张专辑', songs: ['cat-soda', 'two-am'] },
+  { id: '9003', source: 'neteaseArtist', name: 'Glass Harbor', cover: 'seaside-signal', subtitle: EN ? '1 song · 1 album' : '1 首歌 · 1 张专辑', songs: ['seaside-signal'] },
+  { id: '7001', source: 'biliArtist', name: EN ? 'Neri Line Official' : '音理线官方', cover: 'goodnight-train', subtitle: EN ? 'PV and live clips' : 'PV 与现场片段', songs: ['startrail', 'goodnight-train', 'polaris'] },
+]
+const artistFavorites = ARTISTS.map((a, i) => ({
+  id: a.id, name: a.name, source: a.source, coverUrl: COVER(a.cover), subtitle: a.subtitle, trackCount: a.songs.length,
+  addedTime: now - (i + 5) * 864e5, modifiedAt: now, sortOrder: -1 - i,
+}))
+const artistOf = (id: string | number) => ARTISTS.find(a => a.id === String(id)) || ARTISTS[0]
+const netSong = (k: string, i: number) => {
+  const s = byKey(k)
+  const x = neteaseSong(s, SONGS.indexOf(s))
+  return { ...x, al: { ...x.al, picUrl: NET_COVER(s[0]) }, _i: i }
+}
+const highQuality = ({ cat }: { cat?: string }) => {
+  const n = String(cat || '').length % 10
+  return {
+    code: 200,
+    playlists: PL_NAMES.map((name, i) => ({
+      id: 5100 + n * 10 + i, name, coverImgUrl: NET_COVER(rot(n)[i % 10][0]), trackCount: 20 + i * 7,
+      description: PL_DESC, creator: { nickname: 'NeriPlayer' },
+    })),
+  }
+}
 const statItem = (s: typeof SONGS[number], i: number, k: number) => ({
   identityKey: `local:${s[0]}`, id: `local:${s[0]}`, name: s[1], artist: s[2], album: s[3], albumId: '', coverUrl: COVER(s[0]),
   mediaUri: `C:/Music/${s[0]}.flac`, durationMs: s[4], playCount: Math.max(1, Math.round((10 - i) * 3.2 * k)),
@@ -129,7 +156,32 @@ const handlers: Record<string, unknown> = {
   list_playlists: localPlaylists.map(p => ({ ...p, id: Number(p.id) })),
   get_playlist_tracks: ({ id }: { id: string | number }) => (LOCAL_ORDER[String(id)] || LOCAL_ORDER[1]).map((k, i) => localTrack(byKey(k), i)),
   get_netease_playlist_detail: neteasePlaylist,
-  list_favorite_playlists: favoritePlaylists,
+  list_favorite_playlists: [...favoritePlaylists, ...artistFavorites],
+  get_high_quality_playlists: highQuality,
+  get_system_accent_color: 'rgb(0, 120, 212)',
+  get_netease_artist_detail: ({ artistId }: { artistId: string }) => {
+    const a = artistOf(artistId)
+    return { code: 200, data: { artist: {
+      name: a.name, alias: [], cover: NET_COVER(a.cover), avatar: NET_COVER(a.cover), musicSize: a.songs.length, albumSize: 1,
+      briefDesc: EN ? `${a.name} — sample artist from the NeriPlayer PV.` : `${a.name}，NeriPlayer PV 里的示例歌手。`,
+    } } }
+  },
+  get_netease_artist_songs: ({ artistId }: { artistId: string }) => ({ code: 200, songs: artistOf(artistId).songs.map(netSong) }),
+  get_netease_artist_albums: ({ artistId }: { artistId: string }) => {
+    const a = artistOf(artistId)
+    return { code: 200, hotAlbums: [...new Set(a.songs.map(k => byKey(k)[3]))].map((name, i) => ({
+      id: Number(a.id) * 10 + i, name, picUrl: NET_COVER(a.songs[i] || a.cover), publishTime: Date.UTC(2026, 3 + i, 1), size: a.songs.length,
+    })) }
+  },
+  get_bili_artist_detail: ({ mid }: { mid: number }) => {
+    const a = artistOf(mid)
+    return {
+      header: { name: a.name, coverUrl: COVER(a.cover), bannerUrl: COVER(a.cover), description: a.subtitle },
+      tracks: a.songs.map((k, i) => ({ ...localTrack(byKey(k), i), id: `bilibili:BV1neri${i}`, source: 'bilibili' })),
+      page: 1, total: a.songs.length, hasMore: false,
+    }
+  },
+  get_bili_artist_contents: { collections: [], series: [], page: 1, hasMore: false },
   get_playback_stats_overview: statsOverview,
   get_playback_stat_tracks: ({ identityKeys }: { identityKeys: string[] }) => identityKeys.map(k => {
     const s = SONGS.find(x => `local:${x[0]}` === k)
