@@ -145,7 +145,7 @@
     <string name="listen_together_error_nickname_chars">当前昵称仅支持汉字、英文字母和数字</string>
     <string name="settings_listen_together_server_test">测试可用性</string>
     <string name="settings_listen_together_server_saved">一起听服务器设置已保存</string>
-    <string name="settings_listen_together_server_reset_done">已恢复使用内置默认服务器</string>
+    <string name="settings_listen_together_server_reset_done">输入已恢复为默认服务器，点击应用后生效</string>
     <string name="settings_listen_together_server_test_success_default">内置默认服务器可用</string>
     <string name="settings_listen_together_server_test_success_custom">自定义一起听服务器可用</string>
     <string name="settings_listen_together_server_test_invalid">该地址已响应，但看起来不是可用的一起听服务端</string>
