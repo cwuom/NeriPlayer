@@ -86,6 +86,7 @@ import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.MoreOptionsMainContent
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.SongEncyclopediaContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.EditSongInfoSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.isCompactEditSongLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.LyricBehaviorSheet
@@ -331,7 +332,8 @@ internal enum class MoreOptionsPage {
     FONT_SIZE,
     EDIT_INFO,
     BILI_VIDEO_SKIP,
-    LISTEN_TOGETHER
+    LISTEN_TOGETHER,
+    ENCYCLOPEDIA
 }
 
 internal fun resolveMoreOptionsInitialPage(startWithLyricBehavior: Boolean): MoreOptionsPage =
@@ -479,6 +481,7 @@ private class MoreOptionsMainActions(
     val onOpenFontSize: () -> Unit = { owner.open(MoreOptionsPage.FONT_SIZE) }
     val onOpenBiliVideoSkip: () -> Unit = { owner.open(MoreOptionsPage.BILI_VIDEO_SKIP) }
     val onOpenListenTogether: () -> Unit = { owner.open(MoreOptionsPage.LISTEN_TOGETHER) }
+    val onOpenEncyclopedia: () -> Unit = { owner.open(MoreOptionsPage.ENCYCLOPEDIA) }
     val onShowDetails: () -> Unit = { owner.dismiss { onShowSongDetails(originalSong) } }
     val onShowQuality: () -> Unit = { owner.dismiss(onShowQualitySwitch) }
     val onAlbum: (AlbumSummary) -> Unit = { album ->
@@ -649,6 +652,7 @@ private fun MoreOptionsPages(
         targetState, viewModel, actualSong, displayedLyrics, displayedTranslatedLyrics,
         displayedRomanizedLyrics, snackbarHostState, offlineMode, owner
     )
+    MoreOptionsEncyclopediaPage(targetState, viewModel, actualSong, owner)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -1015,6 +1019,17 @@ private fun MoreOptionsEditInfoContent(
 }
 
 @Composable
+private fun MoreOptionsEncyclopediaPage(
+    targetState: MoreOptionsPage,
+    viewModel: NowPlayingViewModel,
+    actualSong: SongItem,
+    owner: MoreOptionsSheetOwner
+) {
+    if (targetState != MoreOptionsPage.ENCYCLOPEDIA) return
+    SongEncyclopediaContent(viewModel, actualSong, owner.onBack)
+}
+
+@Composable
 private fun MoreOptionsMainPage(
     targetState: MoreOptionsPage,
     viewModel: NowPlayingViewModel,
@@ -1064,6 +1079,7 @@ private fun MoreOptionsMainPageContent(
         onOpenFontSize = actions.onOpenFontSize,
         onOpenBiliVideoSkip = actions.onOpenBiliVideoSkip,
         onOpenListenTogether = actions.onOpenListenTogether,
+        onOpenEncyclopedia = actions.onOpenEncyclopedia,
         onShowSongDetails = actions.onShowDetails,
         onShowQualitySwitch = actions.onShowQuality,
         onEnterAlbum = actions.onAlbum,

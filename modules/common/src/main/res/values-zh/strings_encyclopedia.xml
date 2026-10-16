@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Song Encyclopedia -->
+    <string name="encyclopedia_title">歌曲百科</string>
+    <string name="encyclopedia_loading">正在加载百科…</string>
+    <string name="encyclopedia_empty">暂无相关资料</string>
+    <string name="encyclopedia_not_supported">当前歌曲暂无百科来源</string>
+    <string name="encyclopedia_failed">百科加载失败</string>
+    <string name="encyclopedia_retry">重试</string>
+    <string name="encyclopedia_source_note">数据来自网易云音乐，仅供参考</string>
+    <string name="encyclopedia_section_basic">基本信息</string>
+    <string name="encyclopedia_section_music">音乐属性</string>
+    <string name="encyclopedia_section_credits">创作团队</string>
+    <string name="encyclopedia_section_awards">获奖与收录</string>
+    <string name="encyclopedia_label_song">歌曲</string>
+    <string name="encyclopedia_label_artists">歌手</string>
+    <string name="encyclopedia_label_album">专辑</string>
+    <string name="encyclopedia_label_genres">曲风</string>
+    <string name="encyclopedia_label_tags">标签</string>
+    <string name="encyclopedia_label_language">语种</string>
+    <string name="encyclopedia_label_bpm">BPM</string>
+    <string name="encyclopedia_label_lyricist">作词</string>
+    <string name="encyclopedia_label_composer">作曲</string>
+    <string name="encyclopedia_label_arranger">编曲</string>
+    <string name="encyclopedia_label_producer">制作人</string>
+    <string name="encyclopedia_label_appearance">影视节目</string>
+</resources>

@@ -41,11 +41,13 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.encyclopedia.encyclopediaSongKey
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
+import moe.ouom.neriplayer.platform.netease.encyclopedia.SongEncyclopediaResult
 import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -101,7 +103,9 @@ class NowPlayingViewModel : ViewModel() {
 
     private val searchRequestCoordinator = ManualSearchRequestCoordinator()
     private val originalInfoRequests = RequestGeneration()
+    private val encyclopediaRequests = RequestGeneration()
     private var searchJob: Job? = null
+    private var encyclopediaJob: Job? = null
     private var nextSearchSessionId = 0L
     private var activeSearchSessionId = 0L
 
@@ -118,6 +122,53 @@ class NowPlayingViewModel : ViewModel() {
         )
     )
     val manualSearchState = _manualSearchState.asStateFlow()
+
+    private val _encyclopediaState = MutableStateFlow<SongEncyclopediaUiState>(SongEncyclopediaUiState.Idle)
+
+    /** 歌曲百科状态；结果始终携带所属歌曲 key，界面渲染前必须按当前歌曲校验。 */
+    val encyclopediaState = _encyclopediaState.asStateFlow()
+
+    /**
+     * 加载当前歌曲的百科。
+     *
+     * 每次调用推进代际票据，旧请求返回后一律丢弃，避免快速切歌时串台。
+     */
+    fun loadEncyclopedia(song: SongItem, forceReload: Boolean = false) {
+        val songKey = song.encyclopediaSongKey()
+        if (!forceReload) {
+            val current = _encyclopediaState.value
+            if (current is SongEncyclopediaUiState.Success && current.data.songKey == songKey) {
+                return
+            }
+        }
+        val ticket = encyclopediaRequests.advance()
+        encyclopediaJob?.cancel()
+        _encyclopediaState.value = SongEncyclopediaUiState.Loading
+        encyclopediaJob = viewModelScope.launch {
+            val result = runCatching {
+                AppContainer.songEncyclopediaRepository.getEncyclopedia(song)
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                NPLogger.w("NowPlayingViewModel", "百科请求异常: songKey=$songKey", error)
+                SongEncyclopediaResult.Failed(error)
+            }
+            if (!ticket.isCurrent) return@launch
+            _encyclopediaState.value = result.toUiState()
+        }
+    }
+
+    /** 取消进行中的百科请求；界面离开百科页时调用。 */
+    fun cancelEncyclopediaLoad() {
+        encyclopediaRequests.advance()
+        encyclopediaJob?.cancel()
+        encyclopediaJob = null
+        _encyclopediaState.value = SongEncyclopediaUiState.Idle
+    }
+
+    /** 重试当前歌曲的百科请求。 */
+    fun retryEncyclopediaLoad(song: SongItem) {
+        loadEncyclopedia(song, forceReload = true)
+    }
 
     init {
         viewModelScope.launch {
@@ -581,6 +632,13 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
+}
+
+private fun SongEncyclopediaResult.toUiState(): SongEncyclopediaUiState = when (this) {
+    is SongEncyclopediaResult.Success -> SongEncyclopediaUiState.Success(data)
+    SongEncyclopediaResult.NotSupported -> SongEncyclopediaUiState.NotSupported
+    SongEncyclopediaResult.NotAvailable -> SongEncyclopediaUiState.Empty
+    is SongEncyclopediaResult.Failed -> SongEncyclopediaUiState.Failed()
 }
 
 private fun ManualSearchState.matches(request: ManualSearchRequest): Boolean {

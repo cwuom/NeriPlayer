@@ -1455,4 +1455,31 @@ class NeteaseClient(
             .build()
         return executeRequestCancellable(client, request)
     }
+
+    /**
+     * 歌曲百科基础板块（曲风、语种、BPM、获奖、影视节目等）。
+     *
+     * 该端点匿名可用；不存在的歌曲同样返回 code=200，但不会带
+     * SONG_PLAY_ABOUT_SONG_BASIC 板块，由解析层判定为「暂无资料」。
+     */
+    suspend fun getSongEncyclopediaSummaryCancellable(songId: Long): String {
+        require(songId > 0L) { "songId 必须为正数" }
+        return requestCancellable(
+            url = "https://music.163.com/api/song/play/about/block/page",
+            params = mapOf("songId" to songId.toString()),
+            mode = CryptoMode.API,
+            method = "GET",
+        )
+    }
+
+    /** 歌曲百科创作团队。匿名可用；无数据时 songCreatorsRoleVos 为 null。 */
+    suspend fun getSongCreatorsCancellable(songId: Long): String {
+        require(songId > 0L) { "songId 必须为正数" }
+        return requestCancellable(
+            url = "https://music.163.com/api/song/creators",
+            params = mapOf("songId" to songId.toString()),
+            mode = CryptoMode.API,
+            method = "GET",
+        )
+    }
 }
