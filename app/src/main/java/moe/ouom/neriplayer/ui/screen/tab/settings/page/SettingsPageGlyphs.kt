@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.AltRoute
+import androidx.compose.material.icons.automirrored.rounded.SpeakerNotes
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -22,7 +23,6 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.SpeakerNotes
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material.icons.rounded.Wallpaper
@@ -71,7 +71,7 @@ internal fun SettingsPage.cleanGlyph(): SettingsPageGlyph = when (this) {
     SettingsPage.Personalization -> SettingsPageGlyph(Icons.Rounded.Home, Blue)
     SettingsPage.Motion -> SettingsPageGlyph(Icons.Rounded.AutoAwesome, Orange)
     SettingsPage.Lyrics -> SettingsPageGlyph(Icons.Rounded.Lyrics, Violet)
-    SettingsPage.ExternalLyrics -> SettingsPageGlyph(Icons.Rounded.SpeakerNotes, Mint)
+    SettingsPage.ExternalLyrics -> SettingsPageGlyph(Icons.AutoMirrored.Rounded.SpeakerNotes, Mint)
     SettingsPage.XiaomiSuperIsland -> SettingsPageGlyph(Icons.Rounded.Notifications, Orange)
     SettingsPage.Downloads -> SettingsPageGlyph(Icons.Rounded.Download, Green)
     SettingsPage.Storage,

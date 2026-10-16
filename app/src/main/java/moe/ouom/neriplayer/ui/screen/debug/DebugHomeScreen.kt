@@ -46,12 +46,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.ManageSearch
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.ManageSearch
-import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -198,7 +198,7 @@ fun DebugHomeScreen(
                     onClick = onOpenNeteaseDebug
                 )
                 DebugRow(
-                    glyph = rememberVectorPainter(Icons.Rounded.ManageSearch),
+                    glyph = rememberVectorPainter(Icons.AutoMirrored.Rounded.ManageSearch),
                     hue = DebugBlue,
                     title = stringResource(CoreCommonR.string.debug_search_api),
                     description = stringResource(CoreCommonR.string.debug_search_api_desc),
@@ -236,7 +236,7 @@ fun DebugHomeScreen(
                     onClick = onOpenLogs
                 )
                 DebugRow(
-                    glyph = rememberVectorPainter(Icons.Rounded.ReceiptLong),
+                    glyph = rememberVectorPainter(Icons.AutoMirrored.Rounded.ReceiptLong),
                     hue = DebugGraphite,
                     title = stringResource(CoreCommonR.string.settings_always_record_logs),
                     description = stringResource(CoreCommonR.string.settings_always_record_logs_desc),
