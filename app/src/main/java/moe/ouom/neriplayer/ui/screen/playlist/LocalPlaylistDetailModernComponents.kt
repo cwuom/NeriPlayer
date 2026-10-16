@@ -4,8 +4,7 @@ import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +70,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
 import androidx.compose.ui.platform.LocalDensity
@@ -79,6 +79,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.media3.common.Player
@@ -102,6 +103,7 @@ import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.common.search.SearchTextMatcher
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.math.roundToInt
 
 internal const val PLAYLIST_HEADER_KEY = "header"
 internal const val PLAYLIST_ACTIONS_KEY = "playlist_actions"
@@ -173,10 +175,8 @@ internal fun playlistModernSearchVisibilityProgress(
 ): Float {
     val progress by animateFloatAsState(
         targetValue = if (searchVisible) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
+        // 调用端统一应用缓动曲线，避免弹簧进度再次缓动后在中段突然加速
+        animationSpec = tween(durationMillis = 300, easing = LinearEasing),
         label = label
     )
     return progress.coerceIn(0f, 1f)
@@ -386,7 +386,7 @@ private suspend fun <T> rankPlaylistSearchResults(
 
 private val PlaylistHeroCoverSize = 88.dp
 private val PlaylistHeroCoverCornerRadius = 14.dp
-private val PlaylistHeroSearchTopPadding = 14.dp
+private val PlaylistHeroSearchTopPadding = 22.dp
 private val PlaylistDockedSearchTopPadding = 10.dp
 private val PlaylistDockedSearchBottomPadding = 8.dp
 private val PlaylistSearchFieldMinHeight = 60.dp
@@ -1050,6 +1050,7 @@ internal fun PlaylistModernHeroHeader(
     offlineMode: Boolean,
     height: Dp,
     coverContentDescription: String = displayName,
+    actionsRevealProgress: Float = 1f,
     actions: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -1069,8 +1070,7 @@ internal fun PlaylistModernHeroHeader(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
-                .padding(start = 20.dp, top = 6.dp, end = 20.dp, bottom = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(start = 20.dp, top = 6.dp, end = 20.dp, bottom = 6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1120,7 +1120,19 @@ internal fun PlaylistModernHeroHeader(
             }
             CompositionLocalProvider(LocalPlaylistHeroVisualColors provides visualColors) {
                 if (actions != null) {
-                    Box(modifier = Modifier.padding(top = PlaylistHeroSearchTopPadding)) {
+                    Box(
+                        modifier = Modifier
+                            .clipToBounds()
+                            .layout { measurable, constraints ->
+                                // 完整测量输入框，只展开槽位高度，避免首帧撑满自适应头部
+                                val placeable = measurable.measure(constraints.copy(minHeight = 0))
+                                val revealedHeight = (placeable.height * actionsRevealProgress.coerceIn(0f, 1f)).roundToInt()
+                                layout(placeable.width, constraints.constrainHeight(revealedHeight)) {
+                                    placeable.placeRelative(0, 0)
+                                }
+                            }
+                            .padding(top = PlaylistHeroSearchTopPadding)
+                    ) {
                         actions()
                     }
                 }
@@ -1138,6 +1150,7 @@ internal fun LocalPlaylistHeroHeader(
     playCount: Long,
     offlineMode: Boolean,
     height: Dp,
+    actionsRevealProgress: Float = 1f,
     actions: (@Composable () -> Unit)? = null
 ) {
     PlaylistModernHeroHeader(
@@ -1151,6 +1164,7 @@ internal fun LocalPlaylistHeroHeader(
         ),
         offlineMode = offlineMode,
         height = height,
+        actionsRevealProgress = actionsRevealProgress,
         actions = actions
     )
 }

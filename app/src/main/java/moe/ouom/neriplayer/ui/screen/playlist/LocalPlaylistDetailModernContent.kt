@@ -287,12 +287,8 @@ internal fun LocalPlaylistDetailModernContent(
                 showSearch = showSearch,
                 selectionMode = selectionMode
             )
-            val searchVisibilityProgress by animateFloatAsState(
-                targetValue = if (searchVisible) 1f else 0f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                ),
+            val searchVisibilityProgress = playlistModernSearchVisibilityProgress(
+                searchVisible = searchVisible,
                 label = "playlist-search-visibility"
             )
             val searchSlotProgress = searchVisibilityProgress.coerceIn(0f, 1f)
@@ -730,6 +726,7 @@ internal fun LocalPlaylistDetailModernContent(
                                             playCount = playlistPlayCount,
                                             offlineMode = offlineMode,
                                             height = playlistHeroHeight,
+                                            actionsRevealProgress = searchVisibilityEased,
                                             actions = if (headerSearchVisible) {
                                                 {
                                                     Box(

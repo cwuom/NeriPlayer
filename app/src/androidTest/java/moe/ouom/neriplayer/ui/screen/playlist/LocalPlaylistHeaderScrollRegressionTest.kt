@@ -4,6 +4,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.os.Build
+import android.view.View
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.Image
@@ -31,17 +32,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -49,18 +54,22 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.model.SongItem
@@ -115,6 +124,8 @@ class LocalPlaylistHeaderScrollRegressionTest {
     private var backgroundBitmap: Bitmap? = null
     private var previousBackgroundUri: String? = null
     private var backgroundWasChanged = false
+    private var previousAutoShowKeyboard: Boolean? = null
+    private var hostView: View? = null
     private var screenMounted = false
     private var oneDpPx = 0f
     private var coverInsetPx = 0f
@@ -128,26 +139,32 @@ class LocalPlaylistHeaderScrollRegressionTest {
 
     @After
     fun removeOwnedFixture() {
-        composeRule.mainClock.autoAdvance = true
-        ownedPlaylistId?.let { playlistId ->
-            runBlocking {
-                withTimeout(RepositoryTimeoutMs) { repository.deletePlaylist(playlistId) }
+        try {
+            composeRule.mainClock.autoAdvance = true
+            ownedPlaylistId?.let { playlistId ->
+                runBlocking {
+                    withTimeout(RepositoryTimeoutMs) { repository.deletePlaylist(playlistId) }
+                }
+                if (screenMounted) {
+                    composeRule.waitUntil(UiTimeoutMs) { !screenVisible.value }
+                }
+                AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
             }
             if (screenMounted) {
-                composeRule.waitUntil(UiTimeoutMs) { !screenVisible.value }
+                composeRule.runOnIdle { fixtureVisible.value = false }
+                composeRule.waitForIdle()
             }
-            AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
+            if (backgroundWasChanged) {
+                runBlocking { AppContainer.settingsRepo.setBackgroundImageUri(previousBackgroundUri) }
+            }
+            backgroundBitmap?.recycle()
+            coverFile?.delete()
+            backgroundFile?.delete()
+        } finally {
+            previousAutoShowKeyboard?.let { previous ->
+                runBlocking { AppContainer.settingsRepo.setAutoShowKeyboard(previous) }
+            }
         }
-        if (screenMounted) {
-            composeRule.runOnIdle { fixtureVisible.value = false }
-            composeRule.waitForIdle()
-        }
-        if (backgroundWasChanged) {
-            runBlocking { AppContainer.settingsRepo.setBackgroundImageUri(previousBackgroundUri) }
-        }
-        backgroundBitmap?.recycle()
-        coverFile?.delete()
-        backgroundFile?.delete()
     }
 
     @Test
@@ -198,6 +215,223 @@ class LocalPlaylistHeaderScrollRegressionTest {
     @Test
     fun cleanOrdinaryBrowsingPlacesUpdatedSongOrderImmediately() {
         verifyOrdinaryBrowsingPlacesUpdatedOrderImmediately(UiStyle.Clean)
+    }
+
+    @Test
+    fun materialSearchOpensAndClosesWithoutJumpingTheHeaderActionsOrSongs() {
+        verifySearchTransitionContinuity(UiStyle.Material)
+    }
+
+    @Test
+    fun cleanSearchOpensAndClosesWithoutJumpingTheHeaderActionsOrSongs() {
+        verifySearchTransitionContinuity(UiStyle.Clean)
+    }
+
+    @Test
+    fun materialSearchKeepsFocusAndKeyboardWhileFilteringAndClearsThemOnClose() {
+        verifySearchFocusAndKeyboard(UiStyle.Material)
+    }
+
+    @Test
+    fun cleanSearchKeepsFocusAndKeyboardWhileFilteringAndClearsThemOnClose() {
+        verifySearchFocusAndKeyboard(UiStyle.Clean)
+    }
+
+    private fun verifySearchTransitionContinuity(style: UiStyle) {
+        configureAutoShowKeyboard(false)
+        createAndShowPlaylist(style, hostedScene = true)
+        val samples = mutableListOf<SearchFrameSample>()
+        composeRule.mainClock.autoAdvance = false
+        try {
+            samples += captureSearchFrame("search-before", 0)
+            searchToggle().performClick()
+            samples += captureSearchFrame("search-open", 0)
+            repeat(SearchTransitionFrameCount) { frame ->
+                composeRule.mainClock.advanceTimeByFrame()
+                samples += captureSearchFrame("search-open", frame + 1)
+            }
+            assertEquals("opening search did not compose one input", 1, searchFields().fetchSemanticsNodes().size)
+            searchToggle().performClick()
+            samples += captureSearchFrame("search-close", 0)
+            repeat(SearchTransitionFrameCount) { frame ->
+                composeRule.mainClock.advanceTimeByFrame()
+                samples += captureSearchFrame("search-close", frame + 1)
+            }
+            assertTrue("closing search left its input composed", allSearchFields().fetchSemanticsNodes().isEmpty())
+        } finally {
+            requireNotNull(evidenceDirectory).resolve("search-transition-frames.txt").writeText(
+                "style=$style, hosted=true, autoShowKeyboard=false\n" + samples.joinToString("\n")
+            )
+            composeRule.mainClock.autoAdvance = true
+        }
+        val diagnostics = "evidence=${evidenceDirectory?.absolutePath}\n" + samples.joinToString("\n")
+        val tolerance = PixelToleranceDp * oneDpPx
+        val initial = samples.first()
+        val opened = samples.last { it.phase == "search-open" }
+        val closed = samples.last()
+        assertTrue(
+            "search did not expand the header and move the following content: $diagnostics",
+            opened.firstSong.top - initial.firstSong.top > 32f * oneDpPx
+        )
+        listOf("search-open", "search-close").forEach { phase ->
+            val transition = if (phase == "search-open") {
+                listOf(initial) + samples.filter { it.phase == phase }
+            } else {
+                listOf(opened) + samples.filter { it.phase == phase }
+            }
+            val movingFrames = transition.zipWithNext().count { (previous, next) ->
+                abs(next.firstSong.top - previous.firstSong.top) > tolerance
+            }
+            assertTrue("search content snapped instead of progressing through layout frames: $phase\n$diagnostics", movingFrames >= 3)
+            transition.zipWithNext().forEach { (previous, next) ->
+                val rowMovement = next.firstSong.top - previous.firstSong.top
+                val actionMovement = next.playButton.top - previous.playButton.top
+                assertTrue(
+                    "search header changed the following content by a large single-frame jump: $previous\n$next\n$diagnostics",
+                    abs(rowMovement) <= SearchMaximumFrameStepDp * oneDpPx
+                )
+                assertEquals("search detached the playback actions from the first song: $diagnostics", rowMovement, actionMovement, tolerance)
+                assertTrue(
+                    "search content reversed direction during its visibility transition: $diagnostics",
+                    if (phase == "search-open") rowMovement >= -tolerance else rowMovement <= tolerance
+                )
+            }
+        }
+        samples.forEach { sample ->
+            assertEquals("search moved the header cover: $diagnostics", initial.cover.top, sample.cover.top, tolerance)
+            assertEquals("search changed the list viewport origin: $diagnostics", initial.listTop, sample.listTop, tolerance)
+            assertTrue("search visibility changed the logical scroll anchor: $diagnostics", sample.firstVisibleIndex == 0 && sample.scrollOffsetPx <= tolerance)
+            assertTrue("disabled automatic keyboard unexpectedly focused the search input: $diagnostics", !sample.inputFocused)
+            assertEquals("disabled automatic keyboard unexpectedly opened IME: $diagnostics", false, sample.imeVisible)
+        }
+        assertEquals("closing search did not restore the playback actions: $diagnostics", initial.playButton.top, closed.playButton.top, tolerance)
+        assertEquals("closing search did not restore the first song: $diagnostics", initial.firstSong.top, closed.firstSong.top, tolerance)
+    }
+
+    private fun verifySearchFocusAndKeyboard(style: UiStyle) {
+        configureAutoShowKeyboard(true)
+        createAndShowPlaylist(style, hostedScene = false)
+        val beforeOpening = captureSettledFrame("search-before-keyboard")
+        searchToggle().performClick()
+        composeRule.waitUntil(UiTimeoutMs) {
+            searchFields().fetchSemanticsNodes().singleOrNull()
+                ?.config?.getOrNull(SemanticsProperties.Focused) == true && imeVisible() == true
+        }
+        assertEquals("opening search should start with an empty query", "", composeRule.onNode(searchFieldMatcher())
+            .assertIsFocused().fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        val afterOpening = captureSettledFrame("search-after-keyboard")
+        val tolerance = PixelToleranceDp * oneDpPx
+        assertEquals("opening IME changed the first visible item", 0, afterOpening.firstVisibleIndex)
+        assertEquals("opening IME changed the logical scroll offset", 0f, afterOpening.scrollOffsetPx, tolerance)
+        assertEquals("opening IME moved the header cover", requireNotNull(beforeOpening.coverTop), requireNotNull(afterOpening.coverTop), tolerance)
+        val query = "song$SongCount"
+        composeRule.onNode(searchFieldMatcher()).performTextInput(query)
+        composeRule.waitUntil(UiTimeoutMs) {
+            captureSongBounds(playlistList().fetchSemanticsNode().boundsInRoot)
+                .map { it.index } == listOf(songs.lastIndex)
+        }
+        composeRule.onNode(searchFieldMatcher()).assertIsFocused().assertTextEquals(query)
+        assertEquals("filtering dismissed the keyboard", true, imeVisible())
+        captureSettledFrame("search-filtered")
+        searchToggle().performClick()
+        composeRule.waitUntil(UiTimeoutMs) {
+            allSearchFields().fetchSemanticsNodes().isEmpty() && imeVisible() == false &&
+                captureSongBounds(playlistList().fetchSemanticsNode().boundsInRoot)
+                    .any { it.index == 0 }
+        }
+        searchToggle().performClick()
+        composeRule.waitUntil(UiTimeoutMs) {
+            searchFields().fetchSemanticsNodes().singleOrNull()
+                ?.config?.getOrNull(SemanticsProperties.Focused) == true && imeVisible() == true
+        }
+        assertEquals("reopening search should clear the previous query", "", composeRule.onNode(searchFieldMatcher())
+            .assertIsFocused().fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        assertTrue(
+            "closing and reopening search retained its old filter",
+            captureSongBounds(playlistList().fetchSemanticsNode().boundsInRoot).any { it.index == 0 }
+        )
+        searchToggle().performClick()
+        composeRule.waitUntil(UiTimeoutMs) { allSearchFields().fetchSemanticsNodes().isEmpty() && imeVisible() == false }
+        composeRule.mainClock.autoAdvance = false
+        try {
+            searchToggle().performClick()
+            repeat(2) { composeRule.mainClock.advanceTimeByFrame() }
+            searchToggle().performClick()
+            composeRule.mainClock.advanceTimeBy(800L)
+            composeRule.waitForIdle()
+            assertTrue("rapidly closing search left its input composed", allSearchFields().fetchSemanticsNodes().isEmpty())
+            assertEquals("cancelled search autofocus reopened IME", false, imeVisible())
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun configureAutoShowKeyboard(enabled: Boolean) {
+        runBlocking {
+            previousAutoShowKeyboard = AppContainer.settingsRepo.autoShowKeyboardFlow.first()
+            AppContainer.settingsRepo.setAutoShowKeyboard(enabled)
+        }
+    }
+
+    private fun searchToggle(): SemanticsNodeInteraction = composeRule.onNode(
+        hasContentDescription(context.getString(CoreCommonR.string.cd_search_songs))
+    )
+
+    private fun searchFieldMatcher(): SemanticsMatcher = hasSetTextAction().and(
+        SemanticsMatcher("visible search field") { node ->
+            node.layoutInfo.isPlaced && node.boundsInRoot.width > 0f && node.boundsInRoot.height > 0f
+        }
+    )
+
+    private fun searchFields() = composeRule.onAllNodes(searchFieldMatcher())
+
+    private fun allSearchFields() = composeRule.onAllNodes(hasSetTextAction())
+
+    private fun imeVisible(): Boolean? = composeRule.runOnUiThread {
+        hostView?.let { ViewCompat.getRootWindowInsets(it)?.isVisible(WindowInsetsCompat.Type.ime()) }
+    }
+
+    private fun captureSearchFrame(phase: String, frame: Int): SearchFrameSample {
+        val layout = captureFrame(
+            phase,
+            frame,
+            captureAllSongs = true,
+            captureScreenshot = phase == "search-before" || frame in 1..3 || frame == SearchTransitionFrameCount
+        )
+        val playButton = composeRule.onNode(
+            hasContentDescription(context.getString(CoreCommonR.string.player_play_all))
+                .or(hasContentDescription(context.getString(CoreCommonR.string.player_shuffle_play)))
+        ).fetchSemanticsNode()
+        return SearchFrameSample(
+            phase = phase,
+            frame = frame,
+            testClockTimeMs = layout.testClockTimeMs,
+            listTop = layout.listTop,
+            firstVisibleIndex = layout.firstVisibleIndex,
+            scrollOffsetPx = layout.scrollOffsetPx,
+            cover = requireNotNull(coverBounds()),
+            playButton = Rect(
+                left = playButton.positionInRoot.x,
+                top = playButton.positionInRoot.y,
+                right = playButton.positionInRoot.x + playButton.size.width,
+                bottom = playButton.positionInRoot.y + playButton.size.height
+            ),
+            firstSong = layout.songs.single { it.index == 0 },
+            inputFocused = allSearchFields().fetchSemanticsNodes().any {
+                it.config.getOrNull(SemanticsProperties.Focused) == true
+            },
+            imeVisible = imeVisible()
+        )
+    }
+
+    private fun captureSettledFrame(phase: String): HeaderFrameSample {
+        val previousAutoAdvance = composeRule.mainClock.autoAdvance
+        composeRule.mainClock.autoAdvance = false
+        return try {
+            captureFrame(phase, 0, captureAllSongs = true)
+        } finally {
+            composeRule.mainClock.autoAdvance = previousAutoAdvance
+        }
     }
 
     private fun verifyOrdinaryBrowsingPlacesUpdatedOrderImmediately(style: UiStyle) {
@@ -639,6 +873,7 @@ class LocalPlaylistHeaderScrollRegressionTest {
             animateColors = false
         ) {
             oneDpPx = with(LocalDensity.current) { 1.dp.toPx() }
+            hostView = LocalView.current
             val backgroundBackdrop = rememberAdvancedGlassBackdrop()
             val contentBackdrop = rememberAdvancedGlassBackdrop()
             val controller = AdvancedGlassController(
@@ -758,7 +993,8 @@ class LocalPlaylistHeaderScrollRegressionTest {
     private fun captureFrame(
         phase: String,
         frame: Int,
-        captureAllSongs: Boolean = false
+        captureAllSongs: Boolean = false,
+        captureScreenshot: Boolean = true
     ): HeaderFrameSample {
         val testClockTimeMs = composeRule.mainClock.currentTime
         val list = playlistList().fetchSemanticsNode()
@@ -789,11 +1025,13 @@ class LocalPlaylistHeaderScrollRegressionTest {
                 true
             }
         )
-        val screenshot = composeRule.onRoot().captureToImage().asAndroidBitmap()
-        requireNotNull(evidenceDirectory).resolve("$phase-${frame.toString().padStart(3, '0')}.png")
-            .outputStream().use { output ->
-                check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output))
-            }
+        if (captureScreenshot) {
+            val screenshot = composeRule.onRoot().captureToImage().asAndroidBitmap()
+            requireNotNull(evidenceDirectory).resolve("$phase-${frame.toString().padStart(3, '0')}.png")
+                .outputStream().use { output ->
+                    check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output))
+                }
+        }
         assertEquals("frame capture advanced a paused animation clock", testClockTimeMs, composeRule.mainClock.currentTime)
         return sample
     }
@@ -872,6 +1110,20 @@ class LocalPlaylistHeaderScrollRegressionTest {
         val repositoryOrder: List<Long>
     )
 
+    private data class SearchFrameSample(
+        val phase: String,
+        val frame: Int,
+        val testClockTimeMs: Long,
+        val listTop: Float,
+        val firstVisibleIndex: Int,
+        val scrollOffsetPx: Float,
+        val cover: Rect,
+        val playButton: Rect,
+        val firstSong: SongFrameBounds,
+        val inputFocused: Boolean,
+        val imeVisible: Boolean?
+    )
+
     private data class FlingVelocitySample(
         val testClockTimeMs: Long,
         val incoming: Velocity,
@@ -885,6 +1137,8 @@ class LocalPlaylistHeaderScrollRegressionTest {
         const val SongCount = 31
         const val StartingItemIndex = 3
         const val OrderUpdateFrameCount = 24
+        const val SearchTransitionFrameCount = 48
+        const val SearchMaximumFrameStepDp = 16f
         const val GestureFrameCount = 32
         const val ReleaseFrameCount = 8
         const val ShortReverseReleaseFrameCount = 40

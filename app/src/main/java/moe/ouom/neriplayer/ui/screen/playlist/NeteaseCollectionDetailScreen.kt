@@ -746,6 +746,7 @@ fun DetailScreen(
                                         subtitle = heroSubtitle,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
+                                        actionsRevealProgress = searchVisibilityEased,
                                         coverContentDescription = heroTitle,
                                         actions = if (headerSearchVisible) {
                                             {

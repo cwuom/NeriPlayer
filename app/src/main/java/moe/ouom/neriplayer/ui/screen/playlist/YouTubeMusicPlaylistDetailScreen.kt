@@ -659,6 +659,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 subtitle = heroSubtitle,
                                 offlineMode = offlineMode,
                                 height = playlistHeroHeight,
+                                actionsRevealProgress = searchVisibilityEased,
                                 coverContentDescription = resolvedPlaylist.title,
                                 actions = if (headerSearchVisible) {
                                     {

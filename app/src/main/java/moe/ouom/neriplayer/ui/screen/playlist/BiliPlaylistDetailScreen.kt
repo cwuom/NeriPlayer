@@ -636,6 +636,7 @@ fun BiliPlaylistDetailScreen(
                                     ),
                                     offlineMode = offlineMode,
                                     height = playlistHeroHeight,
+                                    actionsRevealProgress = searchVisibilityEased,
                                     coverContentDescription = displayHeader.title,
                                     actions = if (headerSearchVisible) {
                                         {
