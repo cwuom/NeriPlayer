@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -59,6 +60,8 @@ import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.playlist.usage.resolveLocalPlaylistUsageId
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.home.BiliMusicHotDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.home.BiliMusicRankDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
@@ -112,6 +115,16 @@ internal sealed class HomeSelectedItem {
     }
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem() {
         override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "ytmusic", "playlist" to playlist.toSaveMap())
+    }
+    // Bilibili 音乐模块的详情页复用首页同一个 HomeViewModel，因此这里不需要携带额外参数。
+    // 榜单类型（热门榜 / 原创榜）不放在这里：它是详情页内部可切换的展示状态，若并入导航身份，
+    // 详情内切换类型就会改变 AnimatedContent 的 targetState 而触发一次多余的转场动画。类型单独
+    // 持久化在宿主侧（见 biliMusicRankTypeKey），与导航身份解耦。
+    object BiliMusicRank : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicRank")
+    }
+    object BiliMusicHot : HomeSelectedItem() {
+        override fun saveState() = hashMapOf(SAVED_TYPE_KEY to "biliMusicHot")
     }
 }
 
@@ -192,6 +205,12 @@ fun HomeHostScreen(
         mutableStateOf(null)
     }
     var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
+    // 榜单详情页当前展示的榜单类型（热门榜 / 原创榜）。它与导航身份分开保存：详情页内部切换
+    // 类型时只更新这里，AnimatedContent 的 targetState 不变，因此不会触发多余的转场动画，也不会
+    // 重跑 LaunchedEffect(selected) 而破坏返回时的滚动恢复。用 rememberSaveable 保证进程恢复后
+    // 仍回到用户上次选择的榜单。
+    var biliMusicRankTypeKey by rememberSaveable { mutableStateOf(BiliMusicRankType.HOT.cacheKey) }
+    val biliMusicRankType = remember(biliMusicRankTypeKey) { biliMusicRankTypeOf(biliMusicRankTypeKey) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingNeteaseCoverWarmupJob by remember { mutableStateOf<Job?>(null) }
@@ -465,7 +484,25 @@ fun HomeHostScreen(
                                     }
                                     openRecent(entry, context, ::openHomeSelectedItem)
                                 },
-                                onSongClick = onSongClick
+                                onSongClick = onSongClick,
+                                onBiliMusicRankMore = { activeRankType ->
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    // 记住用户点开「查看全部」时首页选中的榜单类型，详情页据此对齐
+                                    biliMusicRankTypeKey = activeRankType.cacheKey
+                                    openHomeSelectedItem(HomeSelectedItem.BiliMusicRank)
+                                },
+                                onBiliMusicHotMore = {
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    openHomeSelectedItem(HomeSelectedItem.BiliMusicHot)
+                                },
+                                onBiliMusicRankPlay = { videos, index ->
+                                    onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                },
+                                onBiliMusicHotPlay = { videos, index ->
+                                    onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                }
                             )
                         }
                     } else {
@@ -556,6 +593,28 @@ fun HomeHostScreen(
                                     offlineMode = offlineMode
                                 )
                             }
+
+                            is HomeSelectedItem.BiliMusicRank -> {
+                                BiliMusicRankDetailScreen(
+                                    onBack = { selected = null },
+                                    onPlay = { videos, index ->
+                                        onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                    },
+                                    offlineMode = offlineMode,
+                                    activeRankType = biliMusicRankType,
+                                    onRankTypeSelected = { biliMusicRankTypeKey = it.cacheKey }
+                                )
+                            }
+
+                            HomeSelectedItem.BiliMusicHot -> {
+                                BiliMusicHotDetailScreen(
+                                    onBack = { selected = null },
+                                    onPlay = { videos, index ->
+                                        onPlayBiliAudioWithSourceRoute(videos, index, null)
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
                         }
                     }
                 }
@@ -575,8 +634,13 @@ private val homeSelectedItemRestorers: Map<String, (Map<String, Any?>) -> HomeSe
     "neteaseAlbum" to { saved -> restoreAlbumSummary(saved.savedMap("album"))?.let(HomeSelectedItem::NeteaseAlbumList) },
     "netease" to { saved -> restorePlaylistSummary(saved.savedMap("playlist"))?.let(HomeSelectedItem::Netease) },
     "bili" to { saved -> restoreBiliPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::Bili) },
-    "ytmusic" to { saved -> restoreYouTubeMusicPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::YouTubeMusic) }
+    "ytmusic" to { saved -> restoreYouTubeMusicPlaylist(saved.savedMap("playlist"))?.let(HomeSelectedItem::YouTubeMusic) },
+    "biliMusicRank" to { _ -> HomeSelectedItem.BiliMusicRank },
+    "biliMusicHot" to { _ -> HomeSelectedItem.BiliMusicHot }
 )
+
+private fun biliMusicRankTypeOf(cacheKey: String): BiliMusicRankType =
+    BiliMusicRankType.entries.firstOrNull { it.cacheKey == cacheKey } ?: BiliMusicRankType.HOT
 
 /** 根据 UsageEntry 分发到不同平台详情 */
 private fun openRecent(

@@ -40,4 +40,21 @@
     <string name="home_offline_no_continue">Offline mode only shows Continue Playing. Nothing is available yet.</string>
     <string name="offline_mode_title">Offline Mode</string>
     <string name="offline_mode_bottom_hint">Currently in offline mode</string>
+    <!-- Home: Bilibili music modules -->
+    <string name="home_bili_music_rank">Bilibili Music Chart</string>
+    <string name="home_bili_music_hot">Bilibili Music Hot</string>
+    <string name="home_bili_music_view_all">View all</string>
+    <string name="home_bili_music_rank_hot">Popular</string>
+    <string name="home_bili_music_rank_original">Original</string>
+    <string name="home_bili_music_rank_period" formatted="false">Issue %1$d</string>
+    <string name="home_bili_music_rank_updated">Updated %1$s</string>
+    <string name="home_bili_music_play_all">Play all</string>
+    <string name="home_bili_music_empty">Nothing here yet</string>
+    <string name="home_bili_music_unavailable">No playable audio for this item</string>
+    <string name="home_bili_music_section_error_prefix">Failed to load Bilibili music: %s</string>
+    <!-- Playback source labels: the chart shows original artists, audio comes from official MV or the chart\'s authorized upload -->
+    <string name="home_bili_music_source_mv">Official MV</string>
+    <string name="home_bili_music_source_upload">Uploaded video · %1$s</string>
+    <string name="home_bili_music_source_note">The chart lists the original artists; playback prefers the official MV and falls back to the chart\'s authorized upload</string>
+    <string name="home_bili_music_open_original">Open original video</string>
 </resources>
