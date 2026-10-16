@@ -3,7 +3,10 @@ uniform float regionCount;
 uniform float4 regionBounds[32];
 uniform float4 cornerRadii[32];
 uniform float regionOpacity[32];
+uniform float regionLens[32];
 uniform float invertMask;
+// liquid glass: x = refraction strength, y = edge band px, z = rim px, w = rim highlight
+uniform float4 lensParams;
 
 float roundedRectDistance(float2 position, float4 bounds, float4 radii) {
     float2 center = (bounds.xy + bounds.zw) * 0.5;
@@ -19,6 +22,8 @@ float roundedRectDistance(float2 position, float4 bounds, float4 radii) {
 
 half4 main(float2 position) {
     float coverage = 0.0;
+    float nearestDistance = 1.0e6;
+    int nearestIndex = -1;
     for (int index = 0; index < 32; index++) {
         if (float(index) >= regionCount) {
             break;
@@ -28,11 +33,49 @@ half4 main(float2 position) {
             regionBounds[index],
             cornerRadii[index]
         );
-        coverage = max(
-            coverage,
-            clamp(0.5 - distance, 0.0, 1.0) * regionOpacity[index]
-        );
+        float regionCoverage = clamp(0.5 - distance, 0.0, 1.0) * regionOpacity[index];
+        if (regionCoverage > coverage) {
+            coverage = regionCoverage;
+            nearestDistance = distance;
+            nearestIndex = index;
+        }
     }
     float resolvedCoverage = mix(coverage, 1.0 - coverage, invertMask);
-    return child.eval(position) * half(resolvedCoverage);
+    if (invertMask > 0.5 || coverage <= 0.0 || lensParams.x <= 0.0 || nearestIndex < 0) {
+        return child.eval(position) * half(resolvedCoverage);
+    }
+    float lens = 0.0;
+    float4 bounds = float4(0.0);
+    float4 radii = float4(0.0);
+    // constant-index loop keeps array access legal on every AGSL backend
+    for (int index = 0; index < 32; index++) {
+        if (index == nearestIndex) {
+            lens = regionLens[index];
+            bounds = regionBounds[index];
+            radii = cornerRadii[index];
+        }
+    }
+    if (lens <= 0.0) {
+        return child.eval(position) * half(resolvedCoverage);
+    }
+    float edgeBand = max(lensParams.y, 1.0);
+    float depth = clamp(-nearestDistance / edgeBand, 0.0, 1.0);
+    float edgeWeight = (1.0 - depth) * (1.0 - depth);
+    float2 gradient = float2(
+        roundedRectDistance(position + float2(1.0, 0.0), bounds, radii) -
+            roundedRectDistance(position - float2(1.0, 0.0), bounds, radii),
+        roundedRectDistance(position + float2(0.0, 1.0), bounds, radii) -
+            roundedRectDistance(position - float2(0.0, 1.0), bounds, radii)
+    );
+    float gradientLength = length(gradient);
+    float2 normal = gradientLength > 0.0001 ? gradient / gradientLength : float2(0.0);
+    float2 samplePosition = position - normal * (lensParams.x * edgeBand * edgeWeight * lens);
+    half4 color = child.eval(samplePosition);
+    half luma = dot(color.rgb, half3(0.2126, 0.7152, 0.0722));
+    color.rgb = mix(half3(luma), color.rgb, half(1.0 + 0.12 * lens));
+    float rimDepth = clamp(-nearestDistance / max(lensParams.z, 0.5), 0.0, 1.0);
+    float rim = (1.0 - rimDepth) * (1.0 - rimDepth);
+    float light = 0.55 + 0.45 * clamp(dot(normal, float2(-0.5, -0.86)), -1.0, 1.0);
+    color.rgb += half3(rim * lensParams.w * light * lens) * color.a;
+    return color * half(resolvedCoverage);
 }

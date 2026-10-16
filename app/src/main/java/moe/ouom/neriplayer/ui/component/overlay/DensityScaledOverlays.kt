@@ -38,6 +38,7 @@ import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 
 internal val LocalOverlaySurfaceScale = compositionLocalOf { 1f }
 
@@ -80,6 +81,22 @@ internal fun DensityScaledAlertDialog(
     properties: DialogProperties = DialogProperties()
 ) {
     val surfaceScale = LocalOverlaySurfaceScale.current
+    if (NeriDesign.isClean) {
+        CleanAlertDialog(
+            onDismissRequest = onDismissRequest,
+            confirmButton = {
+                ApplyOverlayWindowNavigationBarPolicy()
+                confirmButton()
+            },
+            modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
+            dismissButton = dismissButton,
+            icon = icon,
+            title = title,
+            text = text,
+            properties = properties
+        )
+        return
+    }
     MaterialAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {

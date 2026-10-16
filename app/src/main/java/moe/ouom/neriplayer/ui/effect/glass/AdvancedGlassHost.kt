@@ -21,6 +21,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
+private const val LIQUID_GLASS_REFRACTION = 0.42f
+private val LIQUID_GLASS_EDGE_BAND = 14.dp
+private val LIQUID_GLASS_RIM = 1.6.dp
+private const val LIQUID_GLASS_RIM_HIGHLIGHT = 0.16f
+
 internal val LocalAdvancedGlassController = staticCompositionLocalOf {
     AdvancedGlassController(
         sdkInt = 0,
@@ -133,12 +138,14 @@ internal fun AdvancedGlassHost(
                 background = resolveStableAdvancedGlassRenderRegions(
                     backdropPositionInWindow = backgroundBackdrop.positionInWindow,
                     regions = renderedRegions,
-                    backdropScaleInWindow = backgroundBackdrop.scaleInWindow
+                    backdropScaleInWindow = backgroundBackdrop.scaleInWindow,
+                    backdropCoordinates = backgroundBackdrop.coordinates
                 ),
                 content = resolveStableAdvancedGlassRenderRegions(
                     backdropPositionInWindow = contentBackdrop.positionInWindow,
                     regions = contentRegions,
-                    backdropScaleInWindow = contentBackdrop.scaleInWindow
+                    backdropScaleInWindow = contentBackdrop.scaleInWindow,
+                    backdropCoordinates = contentBackdrop.coordinates
                 ),
                 hasNavigationSceneRegion = renderedRegions.any { region ->
                     !isGlobalAdvancedGlassNavigation(region.role)
@@ -159,6 +166,16 @@ internal fun AdvancedGlassHost(
     val localBlurRendererCacheKey = sessionController.advancedBlurQuality.ordinal
     val blurRadiusDp = sessionController.normalizedBlurAmountDp
     val blurRadiusPx = with(density) { blurRadiusDp.dp.toPx() }
+    val lensSpec = remember(density) {
+        with(density) {
+            AdvancedGlassLensSpec(
+                refraction = LIQUID_GLASS_REFRACTION,
+                edgeBandPx = LIQUID_GLASS_EDGE_BAND.toPx(),
+                rimPx = LIQUID_GLASS_RIM.toPx(),
+                rimHighlight = LIQUID_GLASS_RIM_HIGHLIGHT
+            )
+        }
+    }
     val backgroundLocalBlurPlan = remember(
         sessionController.isBaseBlurEnabled,
         blurRadiusPx,
@@ -220,6 +237,7 @@ internal fun AdvancedGlassHost(
 
     val backgroundEffectResult = remember(
         sessionController.isBaseBlurEnabled,
+        sessionController.isLiquidGlassEnabled,
         blurRadiusPx,
         renderProfile,
         renderRegionState.background,
@@ -232,12 +250,14 @@ internal fun AdvancedGlassHost(
                 controller = sessionController,
                 radiusPx = blurRadiusPx,
                 renderRegions = renderRegionState.background,
-                renderEffectSession = backgroundRenderEffectSession
+                renderEffectSession = backgroundRenderEffectSession,
+                lens = lensSpec
             )
         }
     }
     val contentEffectResult = remember(
         sessionController.isBaseBlurEnabled,
+        sessionController.isLiquidGlassEnabled,
         blurRadiusPx,
         renderProfile,
         renderRegionState.content,
@@ -250,7 +270,8 @@ internal fun AdvancedGlassHost(
                 controller = sessionController,
                 radiusPx = blurRadiusPx,
                 renderRegions = renderRegionState.content,
-                renderEffectSession = contentRenderEffectSession
+                renderEffectSession = contentRenderEffectSession,
+                lens = lensSpec
             )
         }
     }
@@ -459,7 +480,8 @@ private fun buildBackdropEffect(
     controller: AdvancedGlassController,
     radiusPx: Float,
     renderRegions: List<AdvancedGlassRenderRegion>,
-    renderEffectSession: AdvancedGlassRenderEffectSession
+    renderEffectSession: AdvancedGlassRenderEffectSession,
+    lens: AdvancedGlassLensSpec
 ): Result<androidx.compose.ui.graphics.RenderEffect?> {
     if (!controller.isBaseBlurEnabled ||
         renderRegions.isEmpty()
@@ -469,7 +491,8 @@ private fun buildBackdropEffect(
     return runCatching {
         renderEffectSession.update(
             radiusPx = radiusPx,
-            regions = renderRegions
+            regions = renderRegions,
+            lens = if (controller.isLiquidGlassEnabled) lens else AdvancedGlassLensSpec.None
         )
     }
 }
