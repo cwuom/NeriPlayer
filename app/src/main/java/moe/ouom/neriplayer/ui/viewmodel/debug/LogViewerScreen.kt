@@ -34,8 +34,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -69,9 +81,8 @@ fun LogViewerScreen(
     val clipboard = LocalClipboard.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var logContent by remember { mutableStateOf<List<String>>(emptyList()) }
+    var logContent by remember { mutableStateOf<List<String>?>(null) }
     val decodedFilePath = remember { URLDecoder.decode(filePath, StandardCharsets.UTF_8.name()) }
-
     // SAF auncher for exporting
     val exportLogLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain"),
@@ -104,6 +115,7 @@ fun LogViewerScreen(
                 }
             } catch (e: FileNotFoundException) {
                 withContext(Dispatchers.Main) {
+                    logContent = emptyList()
                     snackbarHostState.showNeriSnackbar(composeResources.getString(CoreCommonR.string.log_cannot_read))
                 }
             }
@@ -111,16 +123,24 @@ fun LogViewerScreen(
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         snackbarHost = {
-            val miniH = LocalMiniPlayerHeight.current
-            NeriSnackbarHost(
-                hostState = snackbarHostState,
-                bottomPadding = miniH
-            )
+            NeriSnackbarHost(hostState = snackbarHostState, bottomPadding = LocalMiniPlayerHeight.current)
         },
         topBar = {
             TopAppBar(
-                title = { Text(File(decodedFilePath).name, style = MaterialTheme.typography.titleMedium) },
+                title = {
+                    Text(
+                        File(decodedFilePath).name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
@@ -128,7 +148,7 @@ fun LogViewerScreen(
                 },
                 actions = {
                     IconButton(onClick = {
-                        val fullText = logContent.joinToString("\n")
+                        val fullText = logContent.orEmpty().joinToString("\n")
                         coroutineScope.launch {
                             val messageRes = when (
                                 val result = clipboard.copyPlainTextSafely("text", fullText)
@@ -154,27 +174,64 @@ fun LogViewerScreen(
             )
         }
     ) { padding ->
-        val miniH = LocalMiniPlayerHeight.current
-        val listState = rememberLazyListState()
-        LaunchedEffect(logContent.size) {
-            if (logContent.isNotEmpty()) {
-                listState.scrollToItem(logContent.size - 1)
+        val lines = logContent
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = padding.calculateTopPadding())
+                .padding(horizontal = 12.dp)
+                .padding(bottom = LocalMiniPlayerHeight.current + 16.dp)
+        ) {
+            AnimatedVisibility(visible = lines != null, enter = fadeIn(), exit = fadeOut()) {
+                MiuixSettingsSectionCard(modifier = Modifier.fillMaxSize()) {
+                    LogLines(lines.orEmpty())
+                }
             }
         }
+    }
+}
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .padding(padding)
-                .padding(bottom = miniH)
-        ) {
-            items(logContent) { line ->
+/**
+ * Opens already scrolled to the newest line, so the reader never watches the list jump there,
+ * and tints lines by level so failures stand out in a long log.
+ */
+@Composable
+private fun LogLines(lines: List<String>) {
+    val listState = remember(lines) { LazyListState(firstVisibleItemIndex = (lines.size - 1).coerceAtLeast(0)) }
+    val colors = MaterialTheme.colorScheme
+    val gutterWidth = remember(lines.size) { lines.size.toString().length }
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        itemsIndexed(lines) { index, line ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+                Text(
+                    text = (index + 1).toString().padStart(gutterWidth),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = colors.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(end = 10.dp, top = 1.dp)
+                )
                 Text(
                     text = line,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    color = when (logLineLevel(line)) {
+                        LogLineLevel.Error -> colors.error
+                        LogLineLevel.Warning -> Color(0xFFFF9F0A)
+                        LogLineLevel.Other -> colors.onSurface
+                    }
                 )
             }
         }
     }
+}
+
+internal enum class LogLineLevel { Error, Warning, Other }
+
+private val ErrorMarkers = listOf(" E/", " E ", "[E]", "ERROR", "FATAL", "Exception", "at ")
+private val WarningMarkers = listOf(" W/", " W ", "[W]", "WARN")
+
+internal fun logLineLevel(line: String): LogLineLevel = when {
+    ErrorMarkers.any { marker ->
+        if (marker == "at ") line.trimStart().startsWith(marker) else line.contains(marker)
+    } -> LogLineLevel.Error
+    WarningMarkers.any(line::contains) -> LogLineLevel.Warning
+    else -> LogLineLevel.Other
 }

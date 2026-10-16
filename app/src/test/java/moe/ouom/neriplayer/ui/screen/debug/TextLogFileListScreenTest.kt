@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.ui.screen.debug
 import android.app.Application
 import android.content.Context
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -139,7 +139,8 @@ class TextLogFileListScreenTest {
                     resolveDirectory = resolveDirectory,
                     onBack = { backCount++ },
                     onLogFileClick = { opened += it },
-                    fileIcon = { Icon(Icons.Outlined.Description, null) }
+                    fileIcon = Icons.Rounded.Description,
+                    fileHue = Color(0xFF0A84FF)
                 )
             }
         }
