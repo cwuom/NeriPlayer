@@ -73,6 +73,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingLyricsSharedTransition
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmap
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.ui.animation.sharedCoverTarget
 import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -518,11 +519,12 @@ internal class NowPlayingCoverOwner(
     fun presentation(
         request: NowPlayingCoverRequest?,
         songKey: String?,
-        songKeyAliases: List<String>
+        songKeyAliases: List<String>,
+        fallbackFrame: NowPlayingCoverFrame? = displayedFrame
     ): NowPlayingCoverPresentation {
         val aliases = normalizedCoverAliases(songKey, songKeyAliases)
         val failed = currentFailureFor(request)
-        val frames = displayedCoverFrames(aliases, request?.frame)
+        val frames = displayedCoverFrames(aliases, request?.frame, fallbackFrame)
         latestAliases = aliases
         return buildPresentation(request, songKey, failed, frames)
     }
@@ -536,11 +538,11 @@ internal class NowPlayingCoverOwner(
     )
 
     private fun displayedCoverFrames(
-        aliases: List<String>, requestedFrame: NowPlayingCoverFrame?
+        aliases: List<String>, requestedFrame: NowPlayingCoverFrame?, fallbackFrame: NowPlayingCoverFrame?
     ): DisplayedCoverFrames {
         val cached = cachedFrame(aliases, requestedFrame)
         val retained = retainedBitmapFrame(aliases, requestedFrame)
-        return DisplayedCoverFrames(cached, cached ?: retained ?: displayedFrame)
+        return DisplayedCoverFrames(cached, cached ?: retained ?: fallbackFrame)
     }
 
     private fun buildPresentation(
@@ -829,6 +831,9 @@ private fun currentNowPlayingCoverViewport(): NowPlayingCoverViewport {
     return resolveNowPlayingCoverViewport(width, LocalConfiguration.current.orientation)
 }
 
+internal fun nowPlayingCoverArtworkAlpha(flight: SharedCoverFlightState?): Float =
+    if (flight?.hidesCovers == true) 0f else 1f
+
 @Composable
 @OptIn(ExperimentalSharedTransitionApi::class)
 internal fun NowPlayingCoverPanel(
@@ -889,7 +894,7 @@ private fun NowPlayingCoverSizedPanel(
                 .align(Alignment.Center)
                 .size(coverSize)
                 // the source badge rides with the artwork, so it hides while the artwork flies
-                .graphicsLayer { alpha = if (coverFlight?.hidesCovers == true) 0f else 1f }
+                .graphicsLayer { alpha = nowPlayingCoverArtworkAlpha(coverFlight) }
         ) {
             NowPlayingCoverPanelImage(
                 owner = owner,
@@ -1120,8 +1125,13 @@ internal fun StableNowPlayingCoverImage(
     songKeyAliases: List<String>
 ) {
     val request = owner.requestFor(NowPlayingCoverRequestInput(coverUrl, songKey, coverCacheKey))
-    val presentation = owner.presentation(request, songKey, songKeyAliases)
-    SideEffect { owner.onPresented(songKey, presentation) }
+    // 封面页重建时只从当前歌曲恢复，留在页面内切歌时才保留交接帧
+    var surfaceFrame by remember(owner) { mutableStateOf<NowPlayingCoverFrame?>(null) }
+    val presentation = owner.presentation(request, songKey, songKeyAliases, fallbackFrame = surfaceFrame)
+    SideEffect {
+        surfaceFrame = presentation.visibleFrame
+        owner.onPresented(songKey, presentation)
+    }
     NowPlayingCoverSurface(
         owner, presentation, context, coverRequestSizePx, offlineMode,
         contentDescription, modifier

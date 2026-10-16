@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.ui.navigation
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import androidx.compose.ui.layout.boundsInWindow
 import android.content.res.Resources
 import androidx.compose.animation.AnimatedVisibility
@@ -70,6 +69,7 @@ import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.navigation.resolveBottomBarSelectionAlpha
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
+import moe.ouom.neriplayer.ui.component.playback.MiniPlayerTabletControls
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdrops
@@ -244,11 +244,18 @@ internal fun AppNavigationScaffold(
 private fun cleanFloatingChromeYieldsToIme(): Boolean =
     NeriDesign.isClean && WindowInsets.isImeVisible
 
-private fun bottomBarVisibilityTarget(showNowPlaying: Boolean): Float =
-    if (showNowPlaying) 0f else 1f
+@Composable
+private fun floatingPlaybackChromeVisible(requested: Boolean): Boolean =
+    shouldShowFloatingPlaybackChrome(requested, cleanFloatingChromeYieldsToIme())
 
-private fun bottomBarVisibilityDuration(showNowPlaying: Boolean): Int =
-    if (showNowPlaying) 220 else 280
+internal fun shouldShowFloatingPlaybackChrome(requested: Boolean, yieldsToIme: Boolean): Boolean =
+    requested && !yieldsToIme
+
+private fun bottomBarVisibilityTarget(visible: Boolean): Float =
+    if (visible) 1f else 0f
+
+private fun bottomBarVisibilityDuration(visible: Boolean): Int =
+    if (visible) 280 else 220
 
 @Composable
 private fun AppScaffoldBottomBar(
@@ -260,11 +267,11 @@ private fun AppScaffoldBottomBar(
     val layoutDirection = LocalLayoutDirection.current
     val tabInsets = NavigationBarDefaults.windowInsets
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
-    val barHidden = bottomBar.showNowPlaying || cleanFloatingChromeYieldsToIme()
+    val barVisible = floatingPlaybackChromeVisible(requested = !bottomBar.showNowPlaying)
     val visibilityProgress by animateFloatAsState(
-        targetValue = bottomBarVisibilityTarget(barHidden),
+        targetValue = bottomBarVisibilityTarget(barVisible),
         animationSpec = tween(
-            durationMillis = bottomBarVisibilityDuration(barHidden),
+            durationMillis = bottomBarVisibilityDuration(barVisible),
             easing = FastOutSlowInEasing
         ),
         label = "bottom_bar_visibility"
@@ -440,6 +447,22 @@ private fun rememberMiniPlayerPlaybackControls(): AppMiniPlayerPlaybackControls 
 }
 
 @Composable
+private fun rememberAdaptiveMiniPlayerActions(
+    visible: Boolean,
+    offlineMode: Boolean,
+    onOpenCurrentPlaybackSource: (() -> Unit)?
+): MiniPlayerTabletControls? {
+    if (LocalConfiguration.current.smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP) {
+        return null
+    }
+    return rememberMiniPlayerTabletActions(
+        visible = visible,
+        offlineMode = offlineMode,
+        onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+    )
+}
+
+@Composable
 private fun AppMiniPlayerOverlay(
     miniPlayer: AppMiniPlayerPresentation,
     showNowPlaying: Boolean,
@@ -451,16 +474,14 @@ private fun AppMiniPlayerOverlay(
 ) {
     val controls = rememberMiniPlayerPlaybackControls()
     val resources = LocalResources.current
-    val sharedCoverFlight = LocalSharedCoverFlight.current
-    val miniPlayerVisible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying) &&
-        !cleanFloatingChromeYieldsToIme()
-    val tabletControls = if (LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
-        rememberMiniPlayerTabletActions(
-            visible = miniPlayerVisible,
-            offlineMode = offlineMode,
-            onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
-        )
-    } else null
+    val miniPlayerVisible = floatingPlaybackChromeVisible(
+        requested = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying)
+    )
+    val tabletControls = rememberAdaptiveMiniPlayerActions(
+        visible = miniPlayerVisible,
+        offlineMode = offlineMode,
+        onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+    )
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedVisibility(
             visible = miniPlayerVisible,

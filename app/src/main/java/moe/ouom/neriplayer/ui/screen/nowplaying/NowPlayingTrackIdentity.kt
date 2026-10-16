@@ -58,26 +58,33 @@ internal fun resolveNowPlayingTrackDisplay(song: SongItem?): NowPlayingTrackDisp
 internal data class NowPlayingTrackIdentityPresentation(
     val titleStyle: TextStyle,
     val artistStyle: TextStyle,
-    val horizontalAlignment: Alignment.Horizontal
+    val horizontalAlignment: Alignment.Horizontal,
+    val modifier: Modifier
 )
 
-internal fun resolveNowPlayingTrackIdentityPresentation(
-    compact: Boolean,
-    typography: Typography
-): NowPlayingTrackIdentityPresentation = if (compact) {
-    NowPlayingTrackIdentityPresentation(typography.titleLarge, typography.bodyMedium, Alignment.Start)
-} else {
-    NowPlayingTrackIdentityPresentation(typography.headlineSmall, typography.bodyLarge, Alignment.CenterHorizontally)
+internal enum class NowPlayingTrackIdentityLayout {
+    Expanded,
+    Compact,
+    LargeCover
 }
 
-/** Large-cover layout: the title reads like a headline under the artwork, aligned to its edge. */
-internal fun resolveNowPlayingLargeCoverIdentityPresentation(
+internal fun resolveNowPlayingTrackIdentityPresentation(
+    layout: NowPlayingTrackIdentityLayout,
     typography: Typography
-): NowPlayingTrackIdentityPresentation = NowPlayingTrackIdentityPresentation(
-    typography.headlineMedium,
-    typography.titleMedium.copy(fontWeight = FontWeight.Normal),
-    Alignment.Start
-)
+): NowPlayingTrackIdentityPresentation = when (layout) {
+    NowPlayingTrackIdentityLayout.Compact -> NowPlayingTrackIdentityPresentation(
+        typography.titleLarge, typography.bodyMedium, Alignment.Start, Modifier
+    )
+    NowPlayingTrackIdentityLayout.Expanded -> NowPlayingTrackIdentityPresentation(
+        typography.headlineSmall, typography.bodyLarge, Alignment.CenterHorizontally, Modifier
+    )
+    NowPlayingTrackIdentityLayout.LargeCover -> NowPlayingTrackIdentityPresentation(
+        typography.headlineMedium,
+        typography.titleMedium.copy(fontWeight = FontWeight.Normal),
+        Alignment.Start,
+        Modifier.fillMaxWidth()
+    )
+}
 
 internal class NowPlayingTrackIdentityOwner {
     private data class CopyContext(val clipboard: Clipboard, val scope: CoroutineScope)
@@ -123,21 +130,16 @@ internal fun NowPlayingTrackIdentity(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onArtistClick: () -> Unit,
-    compact: Boolean = false,
-    largeCover: Boolean = false
+    layout: NowPlayingTrackIdentityLayout = NowPlayingTrackIdentityLayout.Expanded
 ) {
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val owner = remember { NowPlayingTrackIdentityOwner() }
     owner.bindCopyContext(clipboard, clipboardScope)
-    val presentation = if (largeCover) {
-        resolveNowPlayingLargeCoverIdentityPresentation(MaterialTheme.typography)
-    } else {
-        resolveNowPlayingTrackIdentityPresentation(compact, MaterialTheme.typography)
-    }
+    val presentation = resolveNowPlayingTrackIdentityPresentation(layout, MaterialTheme.typography)
     AnimatedVisibility(
         visible = visible,
-        modifier = if (largeCover) Modifier.fillMaxWidth() else Modifier,
+        modifier = presentation.modifier,
         enter = slideInVertically(
             animationSpec = tween(durationMillis = 400, delayMillis = 150),
             initialOffsetY = { it / 4 }

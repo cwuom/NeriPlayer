@@ -203,7 +203,9 @@ Current positioning:
   importing followed artists from a signed-in account while preserving local follows.
 - **Large screens and daily controls are getting real polish**:
   tablet Now Playing, Lyrics, Settings, and artist pages, plus phone landscape
-  playback, use steadier width constraints and bottom controls. The `Mini Player` supports
+  playback, use steadier width constraints and bottom controls. Clean Now Playing retains
+  its container morph on phones and uses the default vertical slide and fade on tablets.
+  The `Mini Player` supports
   horizontal swipe for previous/next without expanding the full player. Home
   widgets include a 4x1 slim player, a 2x2 mini player, and a 4x2 playback card.
   Artwork-colored Material You cards adapt to light/dark themes, orientation,
@@ -270,6 +272,8 @@ Current positioning:
   lyric blur, two-level advanced blur, Coherent Feedback, the fluid Now Playing background,
   Home card toggles, default start
   destination, haptic feedback, and custom song title/artist/cover metadata.
+  In-app UI scaling ranges from `0.6-1.2x` on phones and `0.6-2.0x` on tablets
+  and in car mode, in `0.05x` steps.
   After upgrading or completing first-run onboarding, a one-time prompt offers the
   preview theme. It applies immediately and can be changed in Theme settings;
   users who already enabled it or answered the prompt are not asked again.

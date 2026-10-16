@@ -91,7 +91,7 @@ internal fun rememberNowPlayingMorphState(
     val dragging = flight?.dragOpenProgress != null
     LaunchedEffect(visible, dragging) {
         val linked = flight
-        if (dragging && !visible && linked != null) {
+        if (dragging && !visible) {
             // the finger owns the morph; release hands over to the open or close branch
             state.closing = false
             state.mounted = true
@@ -155,7 +155,6 @@ internal fun NowPlayingContainerMorph(
     val cardCornerPx = with(density) { 40.dp.toPx() }
     val miniCoverCornerPx = with(density) { 10.dp.toPx() }
     val pageCoverCornerPx = with(density) { 24.dp.toPx() }
-    val fallbackInsetPx = with(density) { 96.dp.toPx() }
     val geometry = remember { MorphGeometry() }
     val coverPath = remember { Path() }
     Box(
@@ -167,7 +166,7 @@ internal fun NowPlayingContainerMorph(
                 if (p >= 0.999f) return@drawBehind
                 val scrim = MorphScrimAlpha * p
                 if (scrim > 0f) drawRect(Color.Black.copy(alpha = scrim))
-                val card = geometry.card(p, size, capsuleInWindow(), fallbackInsetPx)
+                val card = geometry.card(p, size, capsuleInWindow())
                 val corner = morphCorner(p, capsuleCornerPx, cardCornerPx)
                 val fadeSpan = if (morph.closing) CloseCardFadeSpan else OpenCardFadeSpan
                 val cardAlpha = smoothStep(p / fadeSpan)
@@ -196,7 +195,7 @@ internal fun NowPlayingContainerMorph(
                         geometry.translation = Offset.Zero
                         return@graphicsLayer
                     }
-                    val card = geometry.card(p, size, capsuleInWindow(), fallbackInsetPx)
+                    val card = geometry.card(p, size, capsuleInWindow())
                     val scale = (card.width / size.width).coerceAtLeast(0.01f)
                     transformOrigin = TransformOrigin(0f, 0f)
                     scaleX = scale
@@ -217,7 +216,7 @@ internal fun NowPlayingContainerMorph(
             content()
         }
         Canvas(Modifier.fillMaxSize()) {
-            if (flight?.linked != true) return@Canvas
+            if (flight?.linked != true || !flight.hidesCovers) return@Canvas
             val p = progress.value.coerceIn(0f, 1f)
             val bitmap = artwork() ?: return@Canvas
             val from = flight.miniCoverBounds?.translate(-geometry.origin) ?: return@Canvas
@@ -275,9 +274,10 @@ private class MorphGeometry {
     var scale: Float = 1f
     var translation: Offset = Offset.Zero
 
-    fun card(p: Float, size: Size, capsuleInWindow: Rect?, fallbackInsetPx: Float): Rect {
+    fun card(p: Float, size: Size, capsuleInWindow: Rect?): Rect {
         val capsule = capsuleInWindow?.translate(-origin)
-            ?: Rect(fallbackInsetPx / 4f, size.height - fallbackInsetPx, size.width - fallbackInsetPx / 4f, size.height - fallbackInsetPx / 2f)
+            // a recreated player has no capsule in this viewport, so fade without inventing one
+            ?: Rect(Offset.Zero, size)
         return Rect(
             left = lerp(capsule.left, 0f, p),
             top = lerp(capsule.top, 0f, p),

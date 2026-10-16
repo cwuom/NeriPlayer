@@ -5,6 +5,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
@@ -20,7 +21,7 @@ import kotlinx.coroutines.launch
  * transform, so a press never recomposes or relayouts the pressed subtree.
  */
 internal class CleanPressIndication(
-    private val highlightColor: Color
+    private val highlightColor: State<Color>
 ) : IndicationNodeFactory {
     override fun create(interactionSource: InteractionSource): DelegatableNode =
         CleanPressIndicationNode(interactionSource, highlightColor)
@@ -37,7 +38,7 @@ private const val PressHighlightAlpha = 0.07f
 
 private class CleanPressIndicationNode(
     private val interactionSource: InteractionSource,
-    private val highlightColor: Color
+    private val highlightColor: State<Color>
 ) : Modifier.Node(), DrawModifierNode {
     private val pressProgress = Animatable(0f)
 
@@ -79,7 +80,7 @@ private class CleanPressIndicationNode(
             this@draw.drawContent()
             val highlight = (PressHighlightAlpha * progress).coerceIn(0f, PressHighlightAlpha)
             if (highlight > 0f) {
-                drawRect(highlightColor.copy(alpha = highlight))
+                drawRect(highlightColor.value.copy(alpha = highlight))
             }
         }
     }

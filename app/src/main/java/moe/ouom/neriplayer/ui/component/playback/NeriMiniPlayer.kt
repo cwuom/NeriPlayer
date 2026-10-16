@@ -100,6 +100,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -493,6 +494,7 @@ fun NeriMiniPlayer(
     val useTabletControls = tabletControls != null &&
         smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
     val cleanStyle = NeriDesign.isClean
+    val useContainerMorph = shouldUseNowPlayingContainerMorph(cleanStyle, smallestScreenWidthDp)
     val sharedCoverFlight = LocalSharedCoverFlight.current
     val miniContentColor = if (cleanStyle) {
         MaterialTheme.colorScheme.onSurface
@@ -933,7 +935,7 @@ fun NeriMiniPlayer(
                     }
                 )
             }
-            .pointerInput(useTabletControls, cleanStyle) {
+            .pointerInput(useTabletControls, useContainerMorph, density.density, openDragDistancePx) {
                 if (useTabletControls) return@pointerInput
                 val tracker = VelocityTracker()
                 var dragTotalPx = 0f
@@ -947,11 +949,13 @@ fun NeriMiniPlayer(
                         change.consume()
                         tracker.addPosition(change.uptimeMillis, change.position)
                         dragTotalPx += dragAmount
-                        // the clean morph follows the finger; Material only opens on release
-                        if (cleanStyle) sharedCoverFlight?.dragOpenProgress = dragProgress()
+                        // 手机容器跟随手指，平板和默认转场只在松手后打开
+                        if (useContainerMorph) sharedCoverFlight?.dragOpenProgress = dragProgress()
                     },
                     onDragEnd = {
-                        val open = shouldOpenNowPlayingFromDrag(dragProgress(), tracker.calculateVelocity().y)
+                        val open = shouldOpenNowPlayingFromDrag(
+                            dragProgress(), tracker.calculateVelocity().y / density.density
+                        )
                         if (open) currentOnExpand()
                         sharedCoverFlight?.dragOpenProgress = null
                     },

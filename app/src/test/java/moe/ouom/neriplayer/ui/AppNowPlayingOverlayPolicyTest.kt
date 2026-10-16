@@ -5,6 +5,7 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.selectNowPlayingOverlayTheme
 import moe.ouom.neriplayer.ui.playback.visual.releaseNowPlayingInputSession
+import moe.ouom.neriplayer.ui.playback.visual.shouldUseNowPlayingContainerMorph
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.platform.TextToolbar
@@ -17,6 +18,20 @@ import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.verifyNoMoreInteractions
 
 class AppNowPlayingOverlayPolicyTest {
+    @Test
+    fun `clean morph is limited to phone device widths including the 599 to 600 boundary`() {
+        assertTrue(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 599))
+        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 600))
+        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 800))
+        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = false, smallestScreenWidthDp = 390))
+        assertFalse(shouldUseNowPlayingContainerMorph(cleanStyle = false, smallestScreenWidthDp = 800))
+    }
+
+    @Test
+    fun `a landscape phone keeps its morph based on the smallest width`() {
+        assertTrue(shouldUseNowPlayingContainerMorph(cleanStyle = true, smallestScreenWidthDp = 390))
+    }
+
     @Test
     fun `opening the player ends focus before hiding selection and the keyboard`() {
         val focus = mock(FocusManager::class.java)

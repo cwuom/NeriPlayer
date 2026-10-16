@@ -57,6 +57,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -159,6 +161,10 @@ internal fun SettingsScreen(
     onNavigateToDownloadManager: () -> Unit
 ) {
     val appearanceState = bindings.state.appearance
+    val configuration = LocalConfiguration.current
+    val effectiveUiDensityScale = UiDensityScalePreference
+        .forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+        .normalize(appearanceState.visualBackground.uiDensityScale)
     val lyricsState = bindings.state.lyrics
     val playbackState = bindings.state.playback
     val otherState = bindings.state.other
@@ -368,7 +374,7 @@ internal fun SettingsScreen(
                                         Text(
                                             stringResource(
                                                 CoreCommonR.string.settings_ui_scale_current,
-                                                "%.2f".format(appearanceState.visualBackground.uiDensityScale)
+                                                "%.2f".format(effectiveUiDensityScale)
                                             )
                                         )
                                     },
@@ -1189,7 +1195,7 @@ internal fun SettingsScreen(
         onRemoveColorFromPalette = appearanceActions.onRemoveColorFromPalette,
         showDpiDialog = showDpiDialog,
         onShowDpiDialogChange = { showDpiDialog = it },
-        uiDensityScale = appearanceState.visualBackground.uiDensityScale,
+        uiDensityScale = effectiveUiDensityScale,
         onUiDensityScaleChange = appearanceActions.onUiDensityScaleChange
     )
 

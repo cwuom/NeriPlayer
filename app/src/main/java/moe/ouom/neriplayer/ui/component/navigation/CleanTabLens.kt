@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -127,12 +128,16 @@ internal fun CleanTabIndicator(
     if (!bar.isAttached || !host.isAttached) return
     val barOffset = host.localPositionOf(bar, Offset.Zero)
     val progress = tabDrag.dragProgress.value.coerceIn(0f, 1f)
+    val liquidGlassEnabled = LocalAdvancedGlassController.current.isLiquidGlassEnabled
+    val glassProgress = if (liquidGlassEnabled) progress else 0f
     val colors = MaterialTheme.colorScheme
     val accent = colors.primary
     val restFill = colors.onSurface.copy(alpha = if (dark) 0.12f else 0.07f)
     val liftedFill = Color.White.copy(alpha = if (dark) 0.08f else 0.22f)
     val rim = if (dark) Color.White.copy(alpha = 0.5f) else Color.White
-    val refraction = remember { LensRefractionEffect() }
+    val refraction = remember(liquidGlassEnabled) {
+        if (liquidGlassEnabled) LensRefractionEffect() else null
+    }
     val accentPaint = remember(accent) {
         Paint().apply { colorFilter = ColorFilter.tint(accent, BlendMode.SrcIn) }
     }
@@ -143,7 +148,7 @@ internal fun CleanTabIndicator(
             .graphicsLayer {
                 shape = CircleShape
                 clip = false
-                shadowElevation = LensElevation.toPx() * progress
+                shadowElevation = LensElevation.toPx() * glassProgress
                 ambientShadowColor = Color.Black.copy(alpha = 0.08f)
                 spotShadowColor = Color.Black.copy(alpha = if (dark) 0.34f else 0.2f)
             }
@@ -162,12 +167,12 @@ internal fun CleanTabIndicator(
                     .graphicsLayer {
                         clip = true
                         shape = CircleShape
-                        renderEffect = if (progress > 0.01f) {
-                            refraction.effect(
+                        renderEffect = if (glassProgress > 0.01f) {
+                            refraction?.effect(
                                 width = size.width,
                                 height = size.height,
                                 edgeBandPx = LensEdgeBand.toPx(),
-                                refractionPx = LensRefraction.toPx() * progress
+                                refractionPx = LensRefraction.toPx() * glassProgress
                             )
                         } else {
                             null
@@ -175,7 +180,7 @@ internal fun CleanTabIndicator(
                     }
             ) {
                 drawRoundRect(
-                    color = lerp(restFill, liftedFill, progress),
+                    color = lerp(restFill, liftedFill, glassProgress),
                     cornerRadius = CornerRadius(size.height / 2f)
                 )
                 // bar point q lands at (q - c) * m + half: magnify about the indicator center
@@ -192,11 +197,11 @@ internal fun CleanTabIndicator(
                         canvas.restore()
                     }
                 }
-                if (progress > 0.01f) drawInnerShadow(progress)
+                if (glassProgress > 0.01f) drawInnerShadow(glassProgress)
             }
         }
-        if (progress > 0.01f) {
-            Canvas(Modifier.fillMaxSize()) { drawSpecularRim(rim, progress, dark) }
+        if (glassProgress > 0.01f) {
+            Canvas(Modifier.fillMaxSize()) { drawSpecularRim(rim, glassProgress, dark) }
         }
     }
 }

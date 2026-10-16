@@ -56,26 +56,6 @@ import moe.ouom.neriplayer.ui.theme.NeriMotion
 
 private const val ReverseFadeSpan = 0.12f
 private const val MaxRevealFrameStepNanos = 40_000_000L
-private const val SmoothFrameNanos = 40_000_000L
-private const val SmoothFramesRequired = 2
-private const val MaxSettleNanos = 320_000_000L
-
-/**
- * The first themed frames recompose the whole app and can stall the main thread for hundreds of
- * milliseconds. The circle waits for a couple of regular frames so it starts where it can be seen,
- * but never longer than [MaxSettleNanos] so a uniformly slow device still responds promptly.
- */
-private suspend fun awaitSmoothFrames() {
-    val start = withFrameNanos { it }
-    var previous = start
-    var smooth = 0
-    while (smooth < SmoothFramesRequired) {
-        val now = withFrameNanos { it }
-        smooth = if (now - previous <= SmoothFrameNanos) smooth + 1 else 0
-        previous = now
-        if (now - start >= MaxSettleNanos) return
-    }
-}
 
 /**
  * Circular theme hand-off. Forward: the new theme grows out of [originInWindow] while the old
@@ -112,10 +92,10 @@ fun ThemeRevealOverlay(
     LaunchedEffect(Unit) {
         try {
             progress.floatValue = 0f
-            awaitSmoothFrames()
             val easing = if (reverse) NeriMotion.EmphasizedAccelerateSoft else NeriMotion.SmoothInOut
             val durationNanos = durationMillis * 1_000_000L
             var elapsed = 0L
+            // 交接首帧开始计时，避免先停住等待图标和主题恢复平稳
             var last = withFrameNanos { it }
             while (elapsed < durationNanos) {
                 val now = withFrameNanos { it }

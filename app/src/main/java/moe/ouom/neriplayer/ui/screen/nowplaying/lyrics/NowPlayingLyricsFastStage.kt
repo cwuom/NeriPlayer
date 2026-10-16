@@ -59,7 +59,7 @@ internal class NowPlayingLyricsLoadStages(
         val cached = request.cachedPreferredLyrics ?: request.song?.let { song ->
             sources.cachedPreferred(song, request.defaultLyricSource, request.preferWordTimedLyrics)
         }
-        return NowPlayingInitialLyricsResult(cached, buildNowPlayingInitialLyricsState(request.song, cached))
+        return NowPlayingInitialLyricsResult(cached, buildNowPlayingCachedInitialLyricsState(request.song, cached))
     }
 
     override suspend fun readFast(request: NowPlayingLyricsLoadRequest): NowPlayingFastLyricsResult =
@@ -88,7 +88,7 @@ internal class NowPlayingLyricsLoadStages(
         local: LocalLyricsScanMetadata?,
         downloaded: ManagedDownloadStorage.DownloadedLyricsBundle?
     ): LoadedLyricsState = request.cachedPreferredLyrics?.let {
-        overlayConfirmedUserLyrics(request.song, buildPreferredLyricSourceState(it))
+        buildNowPlayingInitialLyricsState(request.song, it)
     }
         ?: buildFastState(request.song, managed, local, downloaded)
 

@@ -35,12 +35,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -80,7 +74,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.Coil
 import com.materialkolor.PaletteStyle
@@ -431,6 +424,7 @@ private fun NeriAppContent(
         initialValue = repo.defaultLyricFontScales
     )
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
+    val hasCustomBackground = backgroundImageUri != null
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsStateWithLifecycle(initialValue = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsStateWithLifecycle(initialValue = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
@@ -1190,33 +1184,10 @@ private fun NeriAppContent(
             // changing NavHost's start destination rebuilds its graph and clears the live stack
             val navHostStartDestination = remember { initialMainStartDestination }
             val navController = rememberNavController()
-            val backEntry by navController.currentBackStackEntryAsState()
-            // Keep every NavHost entry that is still participating in the transition active
-            val visibleNavigationEntries by navController.visibleEntries
-                .collectAsStateWithLifecycle()
-            val visibleNavigationOwners: Set<Any> = remember(
-                visibleNavigationEntries,
-                backEntry,
-                lifecycleOwner
-            ) {
-                buildSet {
-                    if (visibleNavigationEntries.isNotEmpty()) {
-                        addAll(visibleNavigationEntries)
-                    } else {
-                        backEntry?.let(::add)
-                    }
-                    add(lifecycleOwner)
-                }
-            }
-            val currentRoute = backEntry?.destination?.route
-            val visibleNavigationRoutes = remember(visibleNavigationEntries, currentRoute) {
-                buildSet {
-                    visibleNavigationEntries.forEach { entry ->
-                        add(entry.destination.route)
-                    }
-                    add(currentRoute)
-                }
-            }
+            val navigationVisibility = rememberAppNavigationVisibility(navController, lifecycleOwner)
+            val currentRoute = navigationVisibility.currentRoute
+            val visibleNavigationOwners = navigationVisibility.owners
+            val visibleNavigationRoutes = navigationVisibility.routes
             val mainTabMotionTarget = resolveMainTabNavigationMotionTarget(
                 currentRoute = currentRoute,
                 visibleRoutes = visibleNavigationRoutes,
@@ -1440,13 +1411,7 @@ private fun NeriAppContent(
                 }
             }
             val bottomBarItems = remember(showHomeTab, devModeEnabled) {
-                buildList {
-                    if (showHomeTab) add(Destinations.Home to Icons.Outlined.Home)
-                    add(Destinations.Explore to Icons.Outlined.Search)
-                    add(Destinations.Library to Icons.Outlined.LibraryMusic)
-                    add(Destinations.Settings to Icons.Outlined.Settings)
-                    if (devModeEnabled) add(Destinations.Debug to Icons.Outlined.BugReport)
-                }
+                appMainTabItems(showHomeTab, devModeEnabled)
             }
 
             val snackbarHostState = remember { SnackbarHostState() }
@@ -1645,15 +1610,16 @@ private fun NeriAppContent(
                 )?.invoke()
             }
 
-            val effectiveDynamicBackgroundEnabled =
-                nowPlayingDynamicBackgroundEnabled && !nowPlayingCoverBlurBackgroundEnabled
-            val effectiveAudioReactiveEnabled =
-                nowPlayingAudioReactiveEnabled && effectiveDynamicBackgroundEnabled
+            val backgroundMode = resolveNowPlayingBackgroundMode(
+                nowPlayingDynamicBackgroundEnabled,
+                nowPlayingCoverBlurBackgroundEnabled,
+                nowPlayingAudioReactiveEnabled
+            )
 
             NowPlayingPresentationEffects(
                 showNowPlaying = showNowPlaying,
                 lifecycleResumed = lifecycleResumed,
-                audioReactiveEnabled = effectiveAudioReactiveEnabled,
+                audioReactiveEnabled = backgroundMode.audioReactive,
                 keepScreenOn = nowPlayingKeepScreenOn
             )
 
@@ -1668,7 +1634,7 @@ private fun NeriAppContent(
 
             CompositionLocalProvider(
                 LocalSharedCoverFlight provides sharedCoverFlight,
-                LocalHasCustomBackground provides (backgroundImageUri != null),
+                LocalHasCustomBackground provides hasCustomBackground,
                 LocalPredictiveBackPreviewEnabled provides predictiveBackPreviewEnabled
             ) {
             AdvancedGlassHost(
@@ -1676,7 +1642,7 @@ private fun NeriAppContent(
                 backgroundBackdrop = backgroundGlassBackdrop,
                 contentBackdrop = contentGlassBackdrop,
                 activeNavigationOwners = activeAdvancedGlassOwners,
-                disableStretchOverscroll = backgroundImageUri != null
+                disableStretchOverscroll = hasCustomBackground
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                 Box(
@@ -1705,7 +1671,7 @@ private fun NeriAppContent(
                     AppNavigationScaffold(
                         bottomBar = AppBottomBarPresentation(
                             items = bottomBarItems,
-                            currentDestination = backEntry?.destination,
+                            currentDestination = navigationVisibility.destination,
                             showNowPlaying = shouldSuppressPlaybackNavigation(
                                 showNowPlaying, nowPlayingOverlayMounted,
                                 LocalConfiguration.current.smallestScreenWidthDp,
@@ -1838,7 +1804,7 @@ private fun NeriAppContent(
                             blurEnabled = nowPlayingCoverBlurBackgroundEnabled,
                             blurAmount = nowPlayingCoverBlurAmount,
                             blurDarken = nowPlayingCoverBlurDarken,
-                            dynamicEnabled = effectiveDynamicBackgroundEnabled,
+                            dynamicEnabled = backgroundMode.dynamic,
                             offlineMode = offlineMode
                         ),
                         onVisibilityChanged = { mounted ->

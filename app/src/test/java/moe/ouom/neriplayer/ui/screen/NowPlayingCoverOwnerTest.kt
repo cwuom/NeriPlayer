@@ -35,6 +35,45 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class NowPlayingCoverOwnerTest {
     @Test
+    fun `new cover surface starts with its requested song while mounted surfaces keep the handoff`() = runTest {
+        val owner = NowPlayingCoverOwner(this)
+        val first = owner.newRequest("content://surface-reentry/first", "surface-reentry-first", "g1")!!
+        owner.presentation(first, "surface-reentry-first", emptyList())
+        val firstDecoded = first.frame.copy(decodedBitmap = markerBitmap)
+        owner.publishDecodedFrame(first, firstDecoded)
+        owner.onPresented("surface-reentry-first", owner.presentation(first, "surface-reentry-first", emptyList()))
+
+        val next = owner.newRequest("content://surface-reentry/next", "surface-reentry-next", "g2")!!
+        val reentered = owner.presentation(next, "surface-reentry-next", emptyList(), fallbackFrame = null)
+        assertEquals(next.frame, reentered.visibleFrame)
+        val mounted = owner.presentation(next, "surface-reentry-next", emptyList(), fallbackFrame = firstDecoded)
+        assertEquals(firstDecoded, mounted.visibleFrame)
+
+        val nextDecoded = next.frame.copy(decodedBitmap = markerBitmap)
+        owner.publishDecodedFrame(next, nextDecoded)
+        val completed = owner.presentation(next, "surface-reentry-next", emptyList(), fallbackFrame = firstDecoded)
+        assertEquals(nextDecoded, completed.visibleFrame)
+        assertTrue(completed.animateVisibleFrame)
+        owner.close()
+    }
+
+    @Test
+    fun `new cover surface restores the same song from its decoded cache`() = runTest {
+        val owner = NowPlayingCoverOwner(this)
+        val first = owner.newRequest("content://surface-reentry/same", "surface-reentry-same", "g1")!!
+        owner.presentation(first, "surface-reentry-same", emptyList())
+        val decoded = first.frame.copy(decodedBitmap = markerBitmap)
+        owner.publishDecodedFrame(first, decoded)
+
+        val reentered = owner.newRequest("content://surface-reentry/same", "surface-reentry-same", "g1")!!
+        assertEquals(
+            decoded,
+            owner.presentation(reentered, "surface-reentry-same", emptyList(), fallbackFrame = null).visibleFrame
+        )
+        owner.close()
+    }
+
+    @Test
     fun `stale success and error cannot publish after switching songs`() = runTest {
         val owner = NowPlayingCoverOwner(this)
         val first = owner.newRequest("content://cover-owner-test/first", "cover-owner-test-first", "g1")!!

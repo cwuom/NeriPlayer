@@ -183,6 +183,7 @@
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsFastStage.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsBackgroundStage.kt",
     "moe/ouom/neriplayer/ui/screen/nowplaying/lyrics/NowPlayingLyricsResolution.kt",
+    "moe/ouom/neriplayer/ui/component/lyrics/AdvancedLyricsPreparation.kt",
     "moe/ouom/neriplayer/data/ltw/session/link/ListenTogetherControllerLinkOwner.kt",
     "moe/ouom/neriplayer/core/player/runtime/stats/PlaybackStatsOwner.kt",
     "moe/ouom/neriplayer/core/player/runtime/stats/PlaybackStatsPendingWrites.kt",
@@ -209,6 +210,7 @@
     "moe/ouom/neriplayer/ui/settings/owner/AppSettingsCacheClearOwner.kt",
     "moe/ouom/neriplayer/ui/navigation/AppNavigationGraph.kt",
     "moe/ouom/neriplayer/ui/navigation/AppNavigationScaffold.kt",
+    "moe/ouom/neriplayer/ui/NeriAppNavigationPresentation.kt",
     "moe/ouom/neriplayer/ui/navigation/AppDragBoundsOwner.kt",
     "moe/ouom/neriplayer/ui/banner/AppManagedProcessingBannerOwner.kt",
     "moe/ouom/neriplayer/ui/theme/reveal/AppThemeRevealOverlayHost.kt",
@@ -290,6 +292,7 @@
     "moe/ouom/neriplayer/core/download/policy/settings/**/*.kt",
     "moe/ouom/neriplayer/data/local/database/maintenance/**/*.kt",
     "moe/ouom/neriplayer/data/model/stats/PlaybackStatsTimeRangeExtensions.kt",
+    "moe/ouom/neriplayer/data/settings/appearance/UiDensityScalePreference.kt",
     "moe/ouom/neriplayer/data/settings/lyrics/**/*.kt",
     "moe/ouom/neriplayer/data/settings/download/**/*.kt",
     "moe/ouom/neriplayer/data/settings/storage/**/*.kt",
@@ -326,6 +329,13 @@
     "moe/ouom/neriplayer/data/local/storage/Storage*.kt"
   ],
   "method_scopes": [
+    {
+      "source": "moe/ouom/neriplayer/activity/MainActivity.kt",
+      "class": "moe.ouom.neriplayer.activity.MainActivityKt",
+      "methods": [
+        "AppUiDensityRoot"
+      ]
+    },
     {
       "source": "moe/ouom/neriplayer/core/download/storage/backend/ManagedTemporaryWriteJournal.kt",
       "class": "moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteJournalKt",
@@ -545,15 +555,22 @@
       "class": "moe.ouom.neriplayer.ui.NeriAppKt",
       "methods": [
         "NeriAppContent",
-        "NeriAppContent$lambda$173",
-        "NeriAppContent$lambda$173$RenderMainTabRoute",
-        "NeriAppContent$lambda$173$RenderMainTabRoute$38",
-        "NeriAppContent$lambda$173$RenderMainTabRoute$39",
-        "NeriAppContent$lambda$173$RenderMainTabRoute$40",
-        "NeriAppContent$lambda$173$RenderMainTabRoute$41",
-        "NeriAppContent$lambda$173$RenderMainTabRoute$42",
-        "NeriAppContent$lambda$173$RenderMainTabRoute$42$1",
-        "NeriAppContent$lambda$173$48"
+        "NeriAppContent$lambda$178",
+        "NeriAppContent$lambda$178$RenderMainTabRoute",
+        "NeriAppContent$lambda$178$RenderMainTabRoute$24",
+        "NeriAppContent$lambda$178$RenderMainTabRoute$25",
+        "NeriAppContent$lambda$178$RenderMainTabRoute$26",
+        "NeriAppContent$lambda$178$RenderMainTabRoute$27",
+        "NeriAppContent$lambda$178$RenderMainTabRoute$28",
+        "NeriAppContent$lambda$178$RenderMainTabRoute$28$1",
+        "NeriAppContent$lambda$178$30"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/ui/NeriAppPresentationEffects.kt",
+      "class": "moe.ouom.neriplayer.ui.NeriAppPresentationEffectsKt",
+      "methods": [
+        "resolveNowPlayingBackgroundMode"
       ]
     },
     {
@@ -1086,16 +1103,18 @@
       "class": "moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingScreenKt",
       "methods": [
         "NowPlayingScreen",
-        "NowPlayingScreen$lambda$152$1$0$1",
-        "NowPlayingScreen$lambda$152$1$0$1$20",
-        "NowPlayingScreen$lambda$152$1$0$1$21",
-        "NowPlayingScreen$lambda$152$1$0$1$22",
-        "NowPlayingScreen$lambda$152$1$0$1$23",
-        "NowPlayingScreen$lambda$152$1$0$1$24",
-        "NowPlayingScreen$lambda$152$1$0$1$25",
-        "NowPlayingScreen$lambda$152$1$0$1$26",
-        "NowPlayingScreen$lambda$152$1$0$1$27",
-        "NowPlayingScreen$lambda$152$1$0$1$22$0"
+        "resolveNowPlayingCoverPagePresentation",
+        "NowPlayingScreen$lambda$154$1$0$1",
+        "NowPlayingScreen$lambda$154$1$0$1$21",
+        "NowPlayingScreen$lambda$154$1$0$1$22",
+        "NowPlayingScreen$lambda$154$1$0$1$23",
+        "NowPlayingScreen$lambda$154$1$0$1$24",
+        "NowPlayingScreen$lambda$154$1$0$1$25",
+        "NowPlayingScreen$lambda$154$1$0$1$26",
+        "NowPlayingScreen$lambda$154$1$0$1$27",
+        "NowPlayingScreen$lambda$154$1$0$1$28",
+        "NowPlayingScreen$lambda$154$1$0$1$29",
+        "NowPlayingScreen$lambda$154$1$0$1$23$0"
       ]
     },
     {

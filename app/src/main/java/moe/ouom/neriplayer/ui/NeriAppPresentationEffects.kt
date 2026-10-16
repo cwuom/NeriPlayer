@@ -33,6 +33,17 @@ internal data class AppStylePreferences(
     val predictiveBackPreviewEnabled: Boolean
 )
 
+internal data class NowPlayingBackgroundMode(val dynamic: Boolean, val audioReactive: Boolean)
+
+internal fun resolveNowPlayingBackgroundMode(
+    dynamicRequested: Boolean,
+    coverBlurEnabled: Boolean,
+    audioReactiveRequested: Boolean
+): NowPlayingBackgroundMode {
+    val dynamic = dynamicRequested && !coverBlurEnabled
+    return NowPlayingBackgroundMode(dynamic, audioReactiveRequested && dynamic)
+}
+
 @Composable
 internal fun rememberAppStylePreferences(
     repo: SettingsRepository,

@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePrefer
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.appearance.isDimensityDevice
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeDynamicColor
@@ -443,8 +444,15 @@ class SettingsRepository(private val context: Context) {
             )
         }
 
+    // 保留请求值，车载模式变化时由显示层重新裁剪
     val uiDensityScaleFlow: Flow<Float> =
         autoSettingsRepository.uiDensityScaleFlow
+
+    private fun normalizeUiDensityScale(scale: Float): Float {
+        val configuration = context.resources.configuration
+        return UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+            .normalize(scale)
+    }
 
     val bypassProxyFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.BYPASS_PROXY] ?: true }
@@ -1145,7 +1153,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setUiDensityScale(scale: Float) {
-        autoSettingsRepository.setUiDensityScale(scale)
+        autoSettingsRepository.setUiDensityScale(normalizeUiDensityScale(scale))
     }
 
     suspend fun setBypassProxy(enabled: Boolean) {

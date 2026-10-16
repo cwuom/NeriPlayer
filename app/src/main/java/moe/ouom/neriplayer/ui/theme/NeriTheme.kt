@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -130,8 +131,8 @@ fun NeriTheme(
             // one provider for both styles: branching around content() would remount the
             // whole app (and its NavController) whenever the style changes
             val materialIndication = LocalIndication.current
-            val highlight = colorScheme.onSurface
-            val cleanIndication = remember(highlight) { CleanPressIndication(highlight) }
+            val highlight = rememberUpdatedState(colorScheme.onSurface)
+            val cleanIndication = remember { CleanPressIndication(highlight) }
             CompositionLocalProvider(
                 LocalIndication provides if (uiStyle == UiStyle.Clean) cleanIndication else materialIndication,
                 content = content

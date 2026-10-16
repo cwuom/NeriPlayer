@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ADVANCED_BLUR_QUALIT
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreference
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY
@@ -127,7 +128,8 @@ object AutoSettingsSchema {
             type = SettingValueType.Float,
             defaultFloat = 1.0f,
             order = 44,
-            ui = SettingUiType.Custom
+            ui = SettingUiType.Custom,
+            normalizer = UiDensityScalePreference::class
         )
         val uiDensityScale = autoSetting(
             titleRes = CoreCommonR.string.settings_ui_scale_dpi,

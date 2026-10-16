@@ -59,7 +59,7 @@ private const val CLOSE_STIFFNESS = 420f
 class SharedCoverFlightState {
     private var sourceBounds: Rect? = null
     private var sourceCornerPx = 0f
-    private var sourceBitmap: ImageBitmap? = null
+    private var sourceBitmap: ImageBitmap? by mutableStateOf(null)
     private var targetBounds: Rect? = null
     private var targetCornerPx = 0f
     private var targetAttached = false
@@ -75,7 +75,9 @@ class SharedCoverFlightState {
         get() = sourceBounds
 
     fun reportMiniPlayerContainer(bounds: Rect) {
-        if (!bounds.isEmpty) miniPlayerContainerBounds = bounds
+        if (!bounds.isEmpty && ((!linked && !flying) || miniPlayerContainerBounds == null)) {
+            miniPlayerContainerBounds = bounds
+        }
     }
     internal var flightBitmap: ImageBitmap? by mutableStateOf(null)
         private set
@@ -83,10 +85,13 @@ class SharedCoverFlightState {
         private set
 
     internal fun reportSource(bounds: Rect, cornerPx: Float, bitmap: ImageBitmap?) {
+        sourceBitmap = bitmap
         if (bounds.isEmpty) return
-        sourceBounds = bounds
-        sourceCornerPx = cornerPx
-        if (bitmap != null) sourceBitmap = bitmap
+        // the mini player can slide out while its backdrop scales, but the flight starts at rest
+        if ((!linked && !flying) || sourceBounds == null) {
+            sourceBounds = bounds
+            sourceCornerPx = cornerPx
+        }
     }
 
     internal fun reportTarget(bounds: Rect, cornerPx: Float) {
@@ -102,7 +107,7 @@ class SharedCoverFlightState {
     }
 
     /** Live layout coordinates of the Now Playing artwork, for transforms that move it. */
-    var targetCoordinates: LayoutCoordinates? = null
+    var targetCoordinates: LayoutCoordinates? by mutableStateOf(null)
         internal set
 
     val miniCoverBitmap: ImageBitmap?
@@ -125,9 +130,10 @@ class SharedCoverFlightState {
     var linked: Boolean by mutableStateOf(false)
         private set
 
-    /** Real covers stay hidden whenever either path is drawing a stand-in artwork. */
+    /** 替代封面的位图和两端坐标齐备后才隐藏真实封面 */
     val hidesCovers: Boolean
-        get() = flying || linked
+        get() = flying || (linked && sourceBitmap != null && sourceBounds != null &&
+            targetCoordinates?.isAttached == true)
 
     fun beginLinked() {
         // a Material flight must not keep painting its bitmap under the morph
@@ -202,7 +208,7 @@ private const val DragOpenProgressThreshold = 0.3f
 private const val DragOpenFlingVelocity = -900f
 private const val DragCancelFlingVelocity = 600f
 
-/** Release decision for the mini player swipe: far enough or flung upward, unless flung back down. */
+/** 松手速度使用 dp/s，避免相同手势随屏幕密度改变展开判定 */
 fun shouldOpenNowPlayingFromDrag(progress: Float, velocityY: Float): Boolean = when {
     velocityY > DragCancelFlingVelocity -> false
     velocityY < DragOpenFlingVelocity && progress > 0.04f -> true

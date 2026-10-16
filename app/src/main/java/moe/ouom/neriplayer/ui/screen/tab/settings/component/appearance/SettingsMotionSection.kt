@@ -739,8 +739,8 @@ private fun SnappedFloatSliderListItem(
     var pendingValue by remember { mutableFloatStateOf(value) }
     var dragging by remember { mutableStateOf(false) }
 
-    // persisted values arrive late while dragging; adopting them would yank the thumb back
-    LaunchedEffect(value, dragging) {
+    // 松手后保留预览，等待异步保存值回流，避免再次采纳旧值
+    LaunchedEffect(value) {
         if (!dragging && (pendingValue - value).absoluteValue > 0.01f) {
             pendingValue = value
         }

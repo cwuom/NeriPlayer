@@ -229,6 +229,10 @@ internal fun SettingsPersonalizationPlaybackInfoCard(
         .collectAsState(initial = true)
     val nowPlayingImmersiveMode by autoSettingsRepository.nowPlayingImmersiveModeFlow
         .collectAsState(initial = false)
+    val coverLyricsState = resolveCoverLyricsSwitchState(
+        lyricsEnabled = nowPlayingCoverLyricsEnabled,
+        immersiveMode = nowPlayingImmersiveMode
+    )
     val nowPlayingProgressShowQualitySwitch by autoSettingsRepository
         .nowPlayingProgressShowQualitySwitchFlow.collectAsState(initial = true)
     val nowPlayingProgressShowAudioCodec by autoSettingsRepository
@@ -282,12 +286,11 @@ internal fun SettingsPersonalizationPlaybackInfoCard(
         )
         PersonalizationSwitchItem(
             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOW_PLAYING_COVER_LYRICS_ENABLED),
-            // immersive mode hides cover lyrics, so the option reads as off and locked meanwhile
-            checked = nowPlayingCoverLyricsEnabled && !nowPlayingImmersiveMode,
+            checked = coverLyricsState.checked,
             onCheckedChange = { enabled ->
                 scope.launch { autoSettingsRepository.setNowPlayingCoverLyricsEnabled(enabled) }
             },
-            enabled = !nowPlayingImmersiveMode,
+            enabled = coverLyricsState.enabled,
             supportingContent = null,
             highlightTargetId = highlightTargetId,
             highlightPulse = highlightPulse,
@@ -333,6 +336,20 @@ internal fun SettingsPersonalizationPlaybackInfoCard(
         )
     }
 }
+
+internal data class CoverLyricsSwitchState(
+    val checked: Boolean,
+    val enabled: Boolean
+)
+
+internal fun resolveCoverLyricsSwitchState(
+    lyricsEnabled: Boolean,
+    immersiveMode: Boolean
+): CoverLyricsSwitchState = CoverLyricsSwitchState(
+    // 沉浸模式只锁定显示状态，退出后恢复保存的封面歌词偏好
+    checked = lyricsEnabled && !immersiveMode,
+    enabled = !immersiveMode
+)
 
 @Composable
 internal fun SettingsPersonalizationControlsCard(

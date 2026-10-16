@@ -19,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
@@ -37,9 +39,11 @@ import moe.ouom.neriplayer.ui.component.common.predictiveDismissTransform
 import moe.ouom.neriplayer.ui.component.common.rememberPredictiveDismissState
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
+import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
 import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import moe.ouom.neriplayer.ui.theme.NeriMotion
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 internal data class NowPlayingOverlayCover(
     val url: String?,
@@ -95,6 +99,17 @@ internal fun releaseNowPlayingInputSession(
     keyboardController?.hide()
 }
 
+internal fun resolveNowPlayingOverlayArtwork(
+    songKey: String?,
+    flight: SharedCoverFlightState?
+): ImageBitmap? = RetainedPlaybackCoverBitmapCache.getLatestForOwner(songKey)?.bitmap
+    ?: flight?.miniCoverBitmap
+
+internal fun shouldUseNowPlayingContainerMorph(
+    cleanStyle: Boolean,
+    smallestScreenWidthDp: Int
+): Boolean = cleanStyle && smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP
+
 @Composable
 internal fun AppNowPlayingOverlay(
     visible: Boolean,
@@ -117,7 +132,10 @@ internal fun AppNowPlayingOverlay(
             releaseNowPlayingInputSession(focusManager, textToolbar, keyboardController)
         }
     }
-    val clean = theme.uiStyle == UiStyle.Clean
+    val useContainerMorph = shouldUseNowPlayingContainerMorph(
+        cleanStyle = theme.uiStyle == UiStyle.Clean,
+        smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
+    )
     val sharedCoverFlight = LocalSharedCoverFlight.current
     val overlayBody: @Composable () -> Unit = {
         DisposableEffect(Unit) {
@@ -144,8 +162,8 @@ internal fun AppNowPlayingOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    // clean previews back through the container morph instead of a scale-down
-                    .then(if (clean) Modifier else Modifier.predictiveDismissTransform(dismissState))
+                    // phone morphs own the back preview, while tablets keep the default transform
+                    .then(if (useContainerMorph) Modifier else Modifier.predictiveDismissTransform(dismissState))
                     .blockUnderlyingTouches()
             ) {
                 NowPlayingBackdrop(
@@ -158,7 +176,7 @@ internal fun AppNowPlayingOverlay(
             }
         }
     }
-    if (clean) {
+    if (useContainerMorph) {
         val backPreviewEnabled = LocalPredictiveBackPreviewEnabled.current
         val morph = rememberNowPlayingMorphState(
             visible = visible,
@@ -170,10 +188,7 @@ internal fun AppNowPlayingOverlay(
                 morph = morph,
                 flight = sharedCoverFlight,
                 capsuleInWindow = { sharedCoverFlight?.miniPlayerContainerBounds },
-                artwork = {
-                    RetainedPlaybackCoverBitmapCache.getLatestForOwner(cover.songKey)?.bitmap
-                        ?: sharedCoverFlight?.miniCoverBitmap
-                },
+                artwork = { resolveNowPlayingOverlayArtwork(cover.songKey, sharedCoverFlight) },
                 cardColor = remember(theme.activeCoverSeedHex) {
                     nowPlayingMorphCardColor(theme.activeCoverSeedHex)
                 },

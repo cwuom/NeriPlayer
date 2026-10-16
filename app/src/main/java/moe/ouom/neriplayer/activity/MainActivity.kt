@@ -89,6 +89,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -237,23 +238,26 @@ private fun GitHubSyncWarningDialog(
 }
 
 @Composable
-private fun AppUiDensityRoot(
+internal fun AppUiDensityRoot(
     userScale: Float,
     content: @Composable () -> Unit
 ) {
     val baseContext = LocalContext.current
     val baseDensity = LocalDensity.current
-    val scaledDensity = remember(baseDensity, userScale) {
+    val configuration = LocalConfiguration.current
+    val appliedScale = UiDensityScalePreference
+        .forDevice(configuration.smallestScreenWidthDp, configuration.uiMode).normalize(userScale)
+    val scaledDensity = remember(baseDensity, appliedScale) {
         Density(
-            density = baseDensity.density * userScale,
+            density = baseDensity.density * appliedScale,
             fontScale = baseDensity.fontScale
         )
     }
     val uncorrectedDensityDpi = baseContext.applicationContext.resources
         .displayMetrics.densityDpi
-    val surfaceScale = remember(userScale, uncorrectedDensityDpi) {
+    val surfaceScale = remember(appliedScale, uncorrectedDensityDpi) {
         resolveOnePlusHighDensityUiScale(
-            userScale = userScale,
+            userScale = appliedScale,
             manufacturer = Build.MANUFACTURER,
             brand = Build.BRAND,
             densityDpi = uncorrectedDensityDpi

@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +73,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.ui.component.settings.HsvPicker
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -305,13 +307,20 @@ internal fun DpiSettingDialog(
     onDismiss: () -> Unit,
     onApply: (Float) -> Unit
 ) {
-    var sliderValue by remember(currentScale) { mutableFloatStateOf(currentScale) }
+    val configuration = LocalConfiguration.current
+    val scaleRange = UiDensityScalePreference.forDevice(configuration.smallestScreenWidthDp, configuration.uiMode)
+    var sliderValue by remember(currentScale, scaleRange.maximumScale) {
+        mutableFloatStateOf(scaleRange.normalize(currentScale))
+    }
 
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(CoreCommonR.string.settings_ui_scale)) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     text = String.format("%.2fx", sliderValue),
                     style = MaterialTheme.typography.titleLarge,
@@ -321,8 +330,8 @@ internal fun DpiSettingDialog(
                 MiuixSettingsSlider(
                     value = sliderValue,
                     onValueChange = { sliderValue = it },
-                    valueRange = 0.6f..1.2f,
-                    steps = 11,
+                    valueRange = scaleRange.valueRange,
+                    steps = scaleRange.steps,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))

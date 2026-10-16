@@ -50,17 +50,20 @@ class NowPlayingLyricsFastStageTest {
             )
             for (edited in edits) {
                 val input = request(edited).copy(cachedPreferredLyrics = preferred, defaultLyricSource = LyricSourcePreference.Kugou)
-                for (state in listOf(stages.readInitial(input).state, stages.readFast(input).state)) {
-                    assertEquals(edited.matchedLyric, state.rawLyrics)
-                    assertEquals(edited.matchedTranslatedLyric, state.rawTranslatedLyrics)
-                    assertEquals(edited.matchedRomanizedLyric, state.rawPhoneticLyrics)
-                    assertEquals(edited.matchedLyric?.substringAfter(']') ?: "preferred original",
-                        state.lyrics.firstOrNull()?.text.orEmpty())
-                    assertEquals(edited.matchedTranslatedLyric?.substringAfter(']') ?: "preferred translation",
-                        state.translatedLyrics.firstOrNull()?.text.orEmpty())
-                    assertEquals(edited.matchedRomanizedLyric?.substringAfter(']') ?: "preferred romanized",
-                        state.phoneticLyrics.firstOrNull()?.text.orEmpty())
-                }
+                val initial = stages.readInitial(input).state
+                assertTrue(initial.lyrics.isEmpty())
+                assertTrue(initial.translatedLyrics.isEmpty())
+                assertTrue(initial.phoneticLyrics.isEmpty())
+                val state = stages.readFast(input).state
+                assertEquals(edited.matchedLyric, state.rawLyrics)
+                assertEquals(edited.matchedTranslatedLyric, state.rawTranslatedLyrics)
+                assertEquals(edited.matchedRomanizedLyric, state.rawPhoneticLyrics)
+                assertEquals(edited.matchedLyric?.substringAfter(']') ?: "preferred original",
+                    state.lyrics.firstOrNull()?.text.orEmpty())
+                assertEquals(edited.matchedTranslatedLyric?.substringAfter(']') ?: "preferred translation",
+                    state.translatedLyrics.firstOrNull()?.text.orEmpty())
+                assertEquals(edited.matchedRomanizedLyric?.substringAfter(']') ?: "preferred romanized",
+                    state.phoneticLyrics.firstOrNull()?.text.orEmpty())
             }
         }
     }

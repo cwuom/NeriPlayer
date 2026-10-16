@@ -79,6 +79,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -190,6 +191,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwne
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.shouldShowNowPlayingEmbeddedLyrics
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.rememberNowPlayingLyricsLoadOwner
+import moe.ouom.neriplayer.ui.component.lyrics.LocalAdvancedLyricsPreparationCache
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsLoadRequest
 import moe.ouom.neriplayer.ui.screen.nowplaying.lyrics.NowPlayingLyricsRefreshVersions
 import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
@@ -258,6 +260,27 @@ internal fun shouldUseNowPlayingToolbarDock(
     useCompactPortraitLayout: Boolean,
     controlsAtBottom: Boolean = false
 ): Boolean = toolbarDockEnabled && !useCompactPortraitLayout && !controlsAtBottom
+
+internal data class NowPlayingCoverPagePresentation(
+    val beforeCoverSpacing: Dp,
+    val afterCoverSpacing: Dp,
+    val preferredCoverSize: Dp?,
+    val trackIdentityLayout: NowPlayingTrackIdentityLayout,
+    val lyricsAdjustBehavior: Boolean
+)
+
+internal fun resolveNowPlayingCoverPagePresentation(
+    immersiveMode: Boolean,
+    lyricsAdjustBehavior: Boolean
+): NowPlayingCoverPagePresentation = if (immersiveMode) {
+    NowPlayingCoverPagePresentation(
+        16.dp, 28.dp, NowPlayingImmersiveCoverSize, NowPlayingTrackIdentityLayout.LargeCover, false
+    )
+} else {
+    NowPlayingCoverPagePresentation(
+        8.dp, 16.dp, null, NowPlayingTrackIdentityLayout.Expanded, lyricsAdjustBehavior
+    )
+}
 
 internal data class PlaybackActionToolbarLayout(
     val horizontalPadding: Dp,
@@ -974,6 +997,7 @@ fun NowPlayingScreen(
     val isWideLayout = windowWidthDp >= 480.dp
     val useWideLandscapeLayout = isLandscape && (isWideLayout || phoneLandscape)
     val lyricsAdjustBehavior = shouldAdjustNowPlayingLyricsBehavior(isLandscape, phoneLandscape)
+    val coverPagePresentation = resolveNowPlayingCoverPagePresentation(immersiveMode, lyricsAdjustBehavior)
     val useCompactPortraitLayout = !tabletPortrait && shouldUseCompactNowPlayingPortraitLayout(
         isLandscape = isLandscape,
         availableHeightDp = windowHeightDp.value,
@@ -1054,7 +1078,10 @@ fun NowPlayingScreen(
         onDownload = requestCoverDownload
     )
 
-    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+    CompositionLocalProvider(
+        LocalContentColor provides MaterialTheme.colorScheme.onSurface,
+        LocalAdvancedLyricsPreparationCache provides loadedLyricsState.advancedLyricsPreparation
+    ) {
         // 歌词页和宽屏歌词共用一个可拖动的转场，返回手势按进度淡回播放页
         val lyricsTransition = rememberHostPredictiveBackTransition(
             targetState = showLyricsScreen,
@@ -1468,7 +1495,7 @@ fun NowPlayingScreen(
                                 preferredSize = preferredSize
                             )
                         }
-                        val largeCoverTrackIdentity: @Composable () -> Unit = {
+                        val portraitTrackIdentity: @Composable () -> Unit = {
                             NowPlayingTrackIdentity(
                                 display = resolveNowPlayingTrackDisplay(currentSong),
                                 visible = contentVisible,
@@ -1477,7 +1504,7 @@ fun NowPlayingScreen(
                                 sharedTransitionScope = this@SharedTransitionLayout,
                                 animatedVisibilityScope = this@AnimatedContent,
                                 onArtistClick = openCurrentArtist,
-                                largeCover = true
+                                layout = coverPagePresentation.trackIdentityLayout
                             )
                         }
                         val trackIdentity: @Composable (Boolean) -> Unit = { compact ->
@@ -1489,7 +1516,11 @@ fun NowPlayingScreen(
                                 sharedTransitionScope = this@SharedTransitionLayout,
                                 animatedVisibilityScope = this@AnimatedContent,
                                 onArtistClick = openCurrentArtist,
-                                compact = compact
+                                layout = if (compact) {
+                                    NowPlayingTrackIdentityLayout.Compact
+                                } else {
+                                    NowPlayingTrackIdentityLayout.Expanded
+                                }
                             )
                         }
                         val coverToolbar: @Composable (Boolean) -> Unit = { compactHeight ->
@@ -1501,7 +1532,7 @@ fun NowPlayingScreen(
                                     iconSize = nowPlayingToolbarIconSize,
                                     minimumTouchTarget = nowPlayingToolbarMinimumTouchTarget,
                                     compactHeight = compactHeight,
-                                    lyricsAdjustBehavior = lyricsAdjustBehavior && !immersiveMode
+                                    lyricsAdjustBehavior = coverPagePresentation.lyricsAdjustBehavior
                                 ),
                                 status = NowPlayingCoverToolbarStatus(
                                     sleepTimerActive = sleepTimerState.isActive,
@@ -1541,13 +1572,15 @@ fun NowPlayingScreen(
                         // 手机竖屏保留原来的控件顺序和封面歌词
                         val mainColumnContent: @Composable ColumnScope.() -> Unit = {
                             coverTopBar()
-                            Spacer(Modifier.height(if (immersiveMode) 16.dp else 8.dp))
+                            Spacer(Modifier.height(coverPagePresentation.beforeCoverSpacing))
                             coverPanel(
                                 Modifier.nowPlayingCoverPanelModifier(false, this),
-                                if (immersiveMode) NowPlayingImmersiveCoverSize else null
+                                coverPagePresentation.preferredCoverSize
                             )
-                            Spacer(Modifier.height(if (immersiveMode) 28.dp else 16.dp))
-                            if (immersiveMode) largeCoverTrackIdentity() else trackIdentity(false)
+                            Spacer(Modifier.height(coverPagePresentation.afterCoverSpacing))
+                            key(coverPagePresentation.trackIdentityLayout) {
+                                portraitTrackIdentity()
+                            }
 
                             NowPlayingLeadingProgress(
                                 nowPlayingProgressAtBottom,

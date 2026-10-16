@@ -105,16 +105,25 @@ internal class AppAppearanceSettingsActions(
     val onBackgroundImageChange: (Uri?) -> Unit = { uri ->
             scope.launch {
                 repo.setBackgroundImageUri(uri?.toString())
-                // a custom background only reads through frosted chrome, so picking one opts into it
-                if (uri != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    repo.setAdvancedBlurEnabled(true)
-                    repo.setEnhancedAdvancedBlurEnabled(true)
-                } else if (uri == null) {
-                    // enhanced blur only pays off over an image; a plain canvas does not need it
-                    repo.setEnhancedAdvancedBlurEnabled(false)
-                }
+                updateBackgroundImageBlur(uri)
             }
         }
+
+    private suspend fun updateBackgroundImageBlur(uri: Uri?) {
+        if (uri == null) {
+            // 移除图片后不再需要背景增强模糊
+            repo.setEnhancedAdvancedBlurEnabled(false)
+            return
+        }
+        enableBackgroundImageBlur()
+    }
+
+    private suspend fun enableBackgroundImageBlur() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        // 自定义背景需要透过磨砂控件显示，选择图片时一并启用
+        repo.setAdvancedBlurEnabled(true)
+        repo.setEnhancedAdvancedBlurEnabled(true)
+    }
 
     val onBackgroundImageBlurChange: (Float) -> Unit = {}
 
