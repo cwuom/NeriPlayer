@@ -856,7 +856,8 @@ internal fun LocalPlaylistDetailModernContent(
                                         val songKey = remember(song) { song.stableKey() }
                                         LocalPlaylistReorderableItem(
                                             state = reorderState,
-                                            key = songKey
+                                            key = songKey,
+                                            animatePlacement = selectionMode && canReorderCurrentSongs
                                         ) { isDragging ->
                                             val rowScale by animateFloatAsState(
                                                 targetValue = if (isDragging) 1.02f else 1f,
