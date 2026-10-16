@@ -1405,9 +1405,9 @@ fun NowPlayingScreen(
                             onQueue = { showQueueSheet = true },
                             onSleepTimer = { showSleepTimerDialog = true },
                             onVolume = { showVolumeSheet = true },
-                            // in immersive mode the lyrics button always opens the full lyrics page
+                            // immersive mode switches pages without opening the lyric behavior sheet
                             onLyrics = if (immersiveMode) {
-                                { onShowLyricsScreenChange(true) }
+                                { onShowLyricsScreenChange(!showLyricsScreen) }
                             } else resolveNowPlayingLyricsToolbarAction(
                                 lyricsAdjustBehavior = lyricsAdjustBehavior,
                                 onAdjust = {

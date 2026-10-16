@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.core.graphics.toColorInt
@@ -436,6 +440,7 @@ internal fun XiaomiSuperIslandSettingsPage(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val setting = AutoSettingsSchema.lyrics.xiaomiSuperIslandLyricEnabled
     val enabled by autoSettingsRepository.xiaomiSuperIslandLyricEnabledFlow.collectAsState(
@@ -454,6 +459,15 @@ internal fun XiaomiSuperIslandSettingsPage(
     LaunchedEffect(Unit) {
         notificationAllowed = notificationsAllowed(context)
         shizukuGranted = ShizukuPermissionHelper.isPermissionGrantedWhenReady()
+    }
+    DisposableEffect(context, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationAllowed = notificationsAllowed(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val update: (XiaomiSuperIslandSettings) -> Unit = { next ->
         scope.launch { settingsRepository.setXiaomiSuperIslandSettings(next) }

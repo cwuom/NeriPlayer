@@ -308,18 +308,14 @@ private fun ScrollableCapsuleTabs(
                 label = "clean_capsule_content"
             )
             CleanTabGlass(
-                modifier = Modifier
-                    .height(height)
-                    .semantics {
-                        role = Role.Tab
-                        this.selected = selected
-                    },
+                modifier = Modifier.height(height),
                 selected = selected
             ) {
                 Box(
                     modifier = Modifier
                         .height(height)
-                        .clickable {
+                        .semantics { this.selected = selected }
+                        .clickable(role = Role.Tab) {
                             if (!selected) {
                                 context.performHapticFeedback()
                                 onSelected(index)

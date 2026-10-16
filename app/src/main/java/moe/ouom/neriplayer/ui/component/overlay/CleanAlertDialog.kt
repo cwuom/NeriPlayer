@@ -163,7 +163,7 @@ private fun CleanDialogButtonRow(
             layout(width, height) {
                 // dismiss leads, confirm trails, matching the reading order of the action
                 placeables.reversed().forEachIndexed { index, placeable ->
-                    placeable.place(index * (slotWidth + gap), (height - placeable.height) / 2)
+                    placeable.placeRelative(index * (slotWidth + gap), (height - placeable.height) / 2)
                 }
             }
         } else {

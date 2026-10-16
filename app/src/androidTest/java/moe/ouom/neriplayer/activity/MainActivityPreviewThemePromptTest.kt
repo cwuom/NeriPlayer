@@ -44,9 +44,11 @@ class MainActivityPreviewThemePromptTest {
     private var originalStyle = UiStyle.Material
     private var originalDisclaimer = false
     private var originalOnboarding = false
+    private var originalCleanMotion = false
 
     @Before
     fun prepareUnansweredMaterialInstallation() = runBlocking {
+        originalCleanMotion = NeriMotionStyle.clean
         originalSettings = context.dataStore.data.first()
         originalDebugWarning = context.debugBuildWarningDataStore.data.first()
         originalStyle = settings.uiStyleFlow.first()
@@ -61,11 +63,15 @@ class MainActivityPreviewThemePromptTest {
 
     @After
     fun restoreInstallationSettings() = runBlocking {
-        settings.setUiStyle(originalStyle)
-        settings.setDisclaimerAccepted(originalDisclaimer)
-        settings.setStartupOnboardingCompleted(originalOnboarding)
-        context.dataStore.updateData { originalSettings }
-        context.debugBuildWarningDataStore.updateData { originalDebugWarning }
+        try {
+            settings.setUiStyle(originalStyle)
+            settings.setDisclaimerAccepted(originalDisclaimer)
+            settings.setStartupOnboardingCompleted(originalOnboarding)
+            context.dataStore.updateData { originalSettings }
+            context.debugBuildWarningDataStore.updateData { originalDebugWarning }
+        } finally {
+            NeriMotionStyle.clean = originalCleanMotion
+        }
         Unit
     }
 

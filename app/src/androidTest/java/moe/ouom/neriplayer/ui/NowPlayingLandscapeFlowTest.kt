@@ -8,16 +8,20 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertContentDescriptionEquals
@@ -73,6 +77,7 @@ import moe.ouom.neriplayer.core.startup.debug.DebugBuildWarningRepository
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.playback.PersistedState
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -81,6 +86,7 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsCursor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsQuery
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.theme.NeriMotionStyle
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
 import moe.ouom.neriplayer.testutil.performNativeClick
@@ -90,17 +96,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 class NowPlayingLandscapeFlowTest {
     @get:Rule
     val composeRule = createEmptyComposeRule()
+
+    private val originalCleanMotion = NeriMotionStyle.clean
+
+    @After
+    fun restoreMotionStyle() {
+        NeriMotionStyle.clean = originalCleanMotion
+    }
 
     @Test
     fun selectedSettingsSearch_opensRealLandscapePlayerWithoutSelectionOverlay() {
@@ -118,6 +133,12 @@ class NowPlayingLandscapeFlowTest {
         val savedQueue = runBlocking { SavedPlaybackQueue.read(context) }
         val automation = instrumentation.uiAutomation
         val originalServiceFlags = automation.serviceInfo.flags
+        val originalUserRotation = Settings.System.getInt(
+            context.contentResolver, Settings.System.USER_ROTATION, UiAutomation.ROTATION_FREEZE_0
+        ).coerceIn(UiAutomation.ROTATION_FREEZE_0, UiAutomation.ROTATION_FREEZE_270)
+        val originalAutoRotation = Settings.System.getInt(
+            context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 1
+        ) != 0
         val fixtureDirectory = File(context.cacheDir, "landscape-flow-${System.nanoTime()}")
         check(fixtureDirectory.mkdirs())
         var scenario: ActivityScenario<MainActivity>? = null
@@ -133,12 +154,14 @@ class NowPlayingLandscapeFlowTest {
                 settings.setStartupOnboardingCompleted(true)
                 settings.setDefaultStartDestination(Destinations.Settings.route)
                 settings.setUiDensityScale(1f)
+                settings.setUiStyle(UiStyle.Clean)
                 settings.setAdvancedLyricsEnabled(false)
                 settings.setShowLyricTranslation(true)
                 settings.setLyricTranslationUsePhonetic(false)
                 settings.setDynamicColor(true)
                 settings.setNowPlayingDynamicBackgroundEnabled(true)
                 settings.setNowPlayingCoverBlurBackgroundEnabled(false)
+                settings.setNowPlayingImmersiveMode(false)
                 autoSettings.setNowPlayingCoverLyricsEnabled(true)
                 autoSettings.setNowPlayingProgressShowQualitySwitch(true)
                 autoSettings.setNowPlayingProgressShowAudioCodec(true)
@@ -146,6 +169,7 @@ class NowPlayingLandscapeFlowTest {
                 assertTrue(settings.disclaimerAcceptedFlow.filterNotNull().first())
                 assertTrue(settings.startupOnboardingCompletedFlow.filterNotNull().first())
                 assertTrue(settings.defaultStartDestinationFlow.first() == Destinations.Settings.route)
+                assertEquals(UiStyle.Clean, settings.uiStyleFlow.first())
                 assertTrue(warning.isAcknowledged())
             }
             grantRuntimePermissions(*playbackRuntimePermissions())
@@ -178,8 +202,11 @@ class NowPlayingLandscapeFlowTest {
                     .fetchSemanticsNodes().size == 1 &&
                     composeRule.onAllNodesWithText(warningTitle).fetchSemanticsNodes().isEmpty()
             }
-            if (phone) waitForPhonePortrait(scenario)
-            else composeRule.onNodeWithTag("appNavigationRail").assertIsDisplayed()
+            if (phone) {
+                waitForPhonePortrait(scenario)
+            } else {
+                composeRule.onNodeWithTag("appNavigationRail").assertIsDisplayed()
+            }
             val song = createLocalSong(context, fixtureDirectory)
             scenario.onActivity { activity ->
                 PlayerManager.release()
@@ -242,21 +269,25 @@ class NowPlayingLandscapeFlowTest {
             // 触摸真实迷你播放器，保留系统选择菜单在进入前的状态
             // 动态背景持续请求帧，播放阶段由测试推进时钟，避免等待动画永久空闲
             composeRule.mainClock.autoAdvance = false
-            if (phone) {
-                // 手机键盘覆盖迷你播放器，先收起键盘但保留焦点和系统选择菜单
-                scenario.onActivity { activity ->
-                    WindowInsetsControllerCompat(activity.window, activity.window.decorView)
-                        .hide(WindowInsetsCompat.Type.ime())
-                }
-                composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
-                    composeRule.mainClock.advanceTimeBy(64L)
-                    automation.windows.none { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-                }
-                search.assertIsFocused()
-                assertTrue(!search.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange].collapsed)
-                assertTrue(nativeSelectionMenuShown(setOf(copyLabel, cutLabel)))
-                capture(context, "settings-selection-keyboard-hidden")
+            // Clean 在输入时隐藏所有设备的迷你播放器，收起键盘后仍保留焦点和系统选择菜单
+            scenario.onActivity { activity ->
+                WindowInsetsControllerCompat(activity.window, activity.window.decorView)
+                    .hide(WindowInsetsCompat.Type.ime())
             }
+            composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                automation.windows.none { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            }
+            search.assertIsFocused()
+            assertTrue(!search.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange].collapsed)
+            assertTrue(nativeSelectionMenuShown(setOf(copyLabel, cutLabel)))
+            capture(context, "settings-selection-keyboard-hidden")
+            composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                composeRule.onNodeWithText(songName, useUnmergedTree = true).isDisplayed()
+            }
+            // 设置页仍按应用策略竖屏，播放页切回 FULL_USER 时使用明确的横持方向
+            if (phone) assertTrue(automation.setRotation(UiAutomation.ROTATION_FREEZE_90))
             composeRule.onNodeWithText(songName, useUnmergedTree = true)
                 .assertIsDisplayed().performNativeClick()
             composeRule.mainClock.advanceTimeBy(500L)
@@ -290,6 +321,7 @@ class NowPlayingLandscapeFlowTest {
             capture(context, "player")
             if (!phone) verifyLandscapeLyricsAction(context, "nowPlayingLandscapeCoverPage")
             verifyLandscapeLyricsPage(context, phone)
+            if (!phone) verifyImmersiveLyricsPageToggle(context)
 
             if (phone) {
                 verifyCompactEditingWithKeyboard(context, songName)
@@ -314,6 +346,23 @@ class NowPlayingLandscapeFlowTest {
             composeRule.onNodeWithText("lyrics").assertIsDisplayed()
             if (!phone) composeRule.onNodeWithTag("appNavigationRail").assertIsDisplayed()
             assertTrue(!nativeSelectionMenuShown(setOf(copyLabel, cutLabel)))
+            val miniPlayerTitle = hasText(songName) and hasAnyAncestor(hasTestTag("appMiniPlayer"))
+            composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                composeRule.onAllNodesWithTag("appMiniPlayer", useUnmergedTree = true)
+                    .fetchSemanticsNodes().size == 1 &&
+                    composeRule.onAllNodes(miniPlayerTitle, useUnmergedTree = true)
+                        .fetchSemanticsNodes().size == 1
+            }
+            // 平板等覆盖层卸载才恢复迷你播放器，随后还需要完成最长 220ms 的独立入场
+            composeRule.mainClock.advanceTimeBy(300L)
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("appMiniPlayer", useUnmergedTree = true).assertIsDisplayed()
+            composeRule.onNode(miniPlayerTitle, useUnmergedTree = true).assertIsDisplayed()
+            if (!phone) {
+                composeRule.onNodeWithTag("miniPlayerPrevious").assertIsDisplayed()
+                composeRule.onNodeWithTag("miniPlayerNext").assertIsDisplayed()
+            }
             capture(context, "settings-return")
         } catch (failure: Throwable) {
             runCatching { capture(context, "failure") }
@@ -329,8 +378,17 @@ class NowPlayingLandscapeFlowTest {
             } finally {
                 composeRule.mainClock.autoAdvance = true
                 try {
-                    if (!phone) assertTrue(automation.setRotation(UiAutomation.ROTATION_UNFREEZE))
-                    automation.serviceInfo = automation.serviceInfo.apply { flags = originalServiceFlags }
+                    try {
+                        assertTrue(automation.setRotation(originalUserRotation))
+                    } finally {
+                        try {
+                            if (originalAutoRotation) {
+                                assertTrue(automation.setRotation(UiAutomation.ROTATION_UNFREEZE))
+                            }
+                        } finally {
+                            automation.serviceInfo = automation.serviceInfo.apply { flags = originalServiceFlags }
+                        }
+                    }
                 } finally {
                     try {
                         runBlocking { removeFixturePlaybackStats(context) }
@@ -431,6 +489,30 @@ class NowPlayingLandscapeFlowTest {
         waitForLandscapePage("nowPlayingLandscapeCoverPage", "nowPlayingLandscapeLyricsPage")
         assertPlaybackInformationVisible(!phone, "nowPlayingLandscapeCoverPage")
         capture(context, "cover-return")
+    }
+
+    private fun verifyImmersiveLyricsPageToggle(context: Context) {
+        val settings = SettingsRepository(context)
+        val localized = LanguageManager.localizedContext(context, LanguageManager.getCurrentLanguage(context))
+        val lyricsLabel = localized.getString(CoreCommonR.string.lyrics_title)
+        val adjustLabel = localized.getString(CoreCommonR.string.lyrics_adjust_behavior)
+        runBlocking { settings.setNowPlayingImmersiveMode(true) }
+        fun awaitLyricsAction(label: String) {
+            composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                composeRule.onNodeWithTag("nowPlayingLyricsAction").fetchSemanticsNode()
+                    .config.getOrNull(SemanticsProperties.ContentDescription)?.contains(label) == true
+            }
+        }
+        awaitLyricsAction(lyricsLabel)
+        composeRule.onNodeWithTag("nowPlayingLyricsAction").assertIsDisplayed().performClick()
+        waitForLandscapePage("nowPlayingLandscapeLyricsPage", "nowPlayingLandscapeCoverPage")
+        composeRule.onNodeWithTag("nowPlayingLyricsAction").assertIsDisplayed().performClick()
+        waitForLandscapePage("nowPlayingLandscapeCoverPage", "nowPlayingLandscapeLyricsPage")
+        assertPlaybackInformationVisible(true, "nowPlayingLandscapeCoverPage")
+        capture(context, "immersive-lyrics-cover-return")
+        runBlocking { settings.setNowPlayingImmersiveMode(false) }
+        awaitLyricsAction(adjustLabel)
     }
 
     private fun verifyLandscapeLyricsAction(context: Context, pageTag: String) {
@@ -695,6 +777,7 @@ class NowPlayingLandscapeFlowTest {
         waitForPhonePortrait(scenario, songName)
         composeRule.onNodeWithContentDescription(songName, useUnmergedTree = true).assertIsDisplayed()
         assertPlaybackInformationVisible(true)
+        assertPlayerWindowAppearance(scenario)
         capture(context, "portrait-player")
 
         scenario.recreate()
@@ -702,6 +785,7 @@ class NowPlayingLandscapeFlowTest {
         composeRule.onNodeWithContentDescription(songName, useUnmergedTree = true).assertIsDisplayed()
         assertRequestedOrientation(scenario, ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
         assertPlaybackInformationVisible(true)
+        assertPlayerWindowAppearance(scenario)
 
         waitForSingleBackButton()
         composeRule.onNodeWithTag("nowPlayingBackButton").performClick()
@@ -714,6 +798,8 @@ class NowPlayingLandscapeFlowTest {
         }
         composeRule.onNodeWithText("lyrics").assertIsDisplayed()
         assertRequestedOrientation(scenario, ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+        assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
+            .setRotation(UiAutomation.ROTATION_FREEZE_90))
         composeRule.onNodeWithText(songName, useUnmergedTree = true).performNativeClick()
         composeRule.mainClock.advanceTimeBy(500L)
         composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
@@ -775,6 +861,7 @@ class NowPlayingLandscapeFlowTest {
             assertRequestedOrientation(scenario, ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
             composeRule.onNodeWithContentDescription(playLabel, useUnmergedTree = true).assertIsDisplayed()
             assertPlaybackInformationVisible(true)
+            assertPlayerWindowAppearance(scenario)
             capture(context, "tablet-portrait-player-recreated")
         } finally {
             assertTrue(automation.setRotation(UiAutomation.ROTATION_FREEZE_0))
@@ -788,35 +875,112 @@ class NowPlayingLandscapeFlowTest {
         capture(context, "tablet-landscape-restored")
     }
 
+    private fun assertPlayerWindowAppearance(scenario: ActivityScenario<MainActivity>) {
+        waitForNativeOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+        val reservedSamples = mutableListOf<Pair<Int, Int>>()
+        var systemControlsBottom = 0f
+        scenario.onActivity { activity ->
+            val decor = activity.window.decorView
+            val content = activity.findViewById<View>(android.R.id.content)
+            val decorOrigin = IntArray(2).also(decor::getLocationOnScreen)
+            val contentOrigin = IntArray(2).also(content::getLocationOnScreen)
+            val insets = WindowInsetsCompat.toWindowInsetsCompat(checkNotNull(decor.rootWindowInsets), decor)
+            val systemTop = minOf(
+                insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()).top,
+                insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars()).top
+            )
+            val navigationBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val topGap = contentOrigin[1] - decorOrigin[1]
+            val bottomGap = decor.height - content.height - topGap
+            systemControlsBottom = (decorOrigin[1] + systemTop).toFloat()
+            assertEquals("播放背景应延伸到窗口左边缘", decorOrigin[0], contentOrigin[0])
+            assertEquals("播放背景应覆盖原生窗口宽度", decor.width, content.width)
+            // 旧版 Android 15 仍可能强制保留系统栏和屏幕开孔区域
+            assertTrue("顶部留白只能来自系统安全区域: $topGap, system=$systemTop, insets=$insets",
+                topGap == 0 || topGap == systemTop)
+            assertTrue("底部留白只能来自系统导航栏: $bottomGap, navigation=$navigationBottom",
+                bottomGap == 0 || bottomGap == navigationBottom)
+            val sampleX = decorOrigin[0] + decor.width * 3 / 4
+            if (topGap > 0) reservedSamples += sampleX to (decorOrigin[1] + topGap / 2)
+            if (bottomGap > 0) reservedSamples += sampleX to (decorOrigin[1] + decor.height - bottomGap / 2)
+            val controller = WindowInsetsControllerCompat(activity.window, decor)
+            assertTrue("播放页应使用浅色系统栏图标", !controller.isAppearanceLightStatusBars &&
+                !controller.isAppearanceLightNavigationBars)
+            assertEquals("系统保留区域应跟随深色播放页", Color.rgb(0x12, 0x12, 0x12),
+                (decor.background as? ColorDrawable)?.color)
+        }
+        val back = composeRule.onNodeWithTag("nowPlayingBackButton").fetchSemanticsNode()
+        assertTrue("返回按钮应避开系统窗口控件", back.positionOnScreen.y + 1f >= systemControlsBottom)
+        if (reservedSamples.isNotEmpty()) {
+            val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+            try {
+                for ((x, y) in reservedSamples) {
+                    val contrast = 1.05f / (Color.luminance(bitmap.getPixel(x, y)) + 0.05f)
+                    assertTrue("浅色系统图标应与播放背景保持足够对比: $contrast", contrast >= 4.5f)
+                }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
     private fun waitForNativeOrientation(scenario: ActivityScenario<MainActivity>, orientation: Int) {
         var frameView: View? = null
-        var frameObserved = false
-        // 先等新窗口绘制一帧，避免 Compose 把旋转前已销毁的窗口当作同步目标
-        composeRule.waitUntil(STARTUP_TIMEOUT_MS) {
-            composeRule.mainClock.advanceTimeBy(64L)
-            var ready = false
-            if (scenario.state == Lifecycle.State.RESUMED) {
-                scenario.onActivity { activity ->
-                    val decor = activity.window.decorView
-                    val landscape = orientation == Configuration.ORIENTATION_LANDSCAPE
-                    if (activity.resources.configuration.orientation == orientation &&
-                        decor.isAttachedToWindow && decor.hasWindowFocus() &&
-                        decor.width > 0 && decor.height > 0 &&
-                        (decor.width > decor.height) == landscape
-                    ) {
-                        if (frameView !== decor) {
-                            frameView = decor
-                            frameObserved = false
-                            decor.postOnAnimation { if (frameView === decor) frameObserved = true }
+        var frameObserved = AtomicBoolean(false)
+        var frameObserver: ViewTreeObserver? = null
+        var frameCallback: Runnable? = null
+        fun unregisterFrameCallback() {
+            val observer = frameObserver
+            val callback = frameCallback
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && observer?.isAlive == true && callback != null) {
+                observer.unregisterFrameCommitCallback(callback)
+            }
+            frameObserver = null
+            frameCallback = null
+        }
+        // 原生截图需要新窗口真正提交硬件帧，单次动画回调不能证明 GPU 已完成提交
+        try {
+            composeRule.waitUntil(STARTUP_TIMEOUT_MS) {
+                composeRule.mainClock.advanceTimeBy(64L)
+                var ready = false
+                if (scenario.state == Lifecycle.State.RESUMED) {
+                    scenario.onActivity { activity ->
+                        val decor = activity.window.decorView
+                        val landscape = orientation == Configuration.ORIENTATION_LANDSCAPE
+                        if (activity.resources.configuration.orientation == orientation &&
+                            decor.isAttachedToWindow && decor.hasWindowFocus() &&
+                            decor.width > 0 && decor.height > 0 &&
+                            (decor.width > decor.height) == landscape
+                        ) {
+                            if (frameView !== decor) {
+                                unregisterFrameCallback()
+                                check(decor.isHardwareAccelerated) { "方向就绪验证需要硬件渲染窗口" }
+                                frameView = decor
+                                frameObserved = AtomicBoolean(false)
+                                val observed = frameObserved
+                                val observer = decor.viewTreeObserver
+                                val callback = Runnable { observed.set(true) }
+                                frameObserver = observer
+                                frameCallback = callback
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    observer.registerFrameCommitCallback(callback)
+                                } else {
+                                    error("硬件帧提交验证需要 API 29 及以上")
+                                }
+                                decor.invalidate()
+                            }
+                            ready = frameObserved.get()
+                        } else {
+                            unregisterFrameCallback()
+                            frameView = null
+                            frameObserved = AtomicBoolean(false)
                         }
-                        ready = frameObserved
-                    } else {
-                        frameView = null
-                        frameObserved = false
                     }
                 }
+                ready
             }
-            ready
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { unregisterFrameCallback() }
         }
     }
 
@@ -877,6 +1041,8 @@ class NowPlayingLandscapeFlowTest {
             portrait && composeRule.onAllNodesWithTag("nowPlayingWideLayout", useUnmergedTree = true)
                 .fetchSemanticsNodes().isEmpty() && contentReady
         }
+        composeRule.mainClock.advanceTimeBy(1_000L)
+        composeRule.waitForIdle()
     }
 
     private fun assertRequestedOrientation(scenario: ActivityScenario<MainActivity>, expected: Int) {
@@ -971,12 +1137,14 @@ class NowPlayingLandscapeFlowTest {
         val onboarding: Boolean,
         val startDestination: String,
         val densityScale: Float,
+        val uiStyle: UiStyle,
         val advancedLyrics: Boolean,
         val showLyricTranslation: Boolean,
         val lyricTranslationUsePhonetic: Boolean,
         val dynamicColor: Boolean,
         val dynamicBackground: Boolean,
         val coverBlur: Boolean,
+        val immersiveMode: Boolean,
         val coverLyrics: Boolean,
         val progressQualitySwitch: Boolean,
         val progressAudioCodec: Boolean,
@@ -987,12 +1155,14 @@ class NowPlayingLandscapeFlowTest {
             settings.setStartupOnboardingCompleted(onboarding)
             settings.setDefaultStartDestination(startDestination)
             settings.setUiDensityScale(densityScale)
+            settings.setUiStyle(uiStyle)
             settings.setAdvancedLyricsEnabled(advancedLyrics)
             settings.setShowLyricTranslation(showLyricTranslation)
             settings.setLyricTranslationUsePhonetic(lyricTranslationUsePhonetic)
             settings.setDynamicColor(dynamicColor)
             settings.setNowPlayingDynamicBackgroundEnabled(dynamicBackground)
             settings.setNowPlayingCoverBlurBackgroundEnabled(coverBlur)
+            settings.setNowPlayingImmersiveMode(immersiveMode)
             autoSettings.setNowPlayingCoverLyricsEnabled(coverLyrics)
             autoSettings.setNowPlayingProgressShowQualitySwitch(progressQualitySwitch)
             autoSettings.setNowPlayingProgressShowAudioCodec(progressAudioCodec)
@@ -1004,10 +1174,12 @@ class NowPlayingLandscapeFlowTest {
                 settings.disclaimerAcceptedFlow.filterNotNull().first(),
                 settings.startupOnboardingCompletedFlow.filterNotNull().first(),
                 settings.defaultStartDestinationFlow.first(), settings.uiDensityScaleFlow.first(),
+                settings.uiStyleFlow.first(),
                 settings.advancedLyricsEnabledFlow.first(), settings.showLyricTranslationFlow.first(),
                 settings.lyricTranslationUsePhoneticFlow.first(), settings.dynamicColorFlow.first(),
                 settings.nowPlayingDynamicBackgroundEnabledFlow.first(),
                 settings.nowPlayingCoverBlurBackgroundEnabledFlow.first(),
+                settings.nowPlayingImmersiveModeFlow.first(),
                 settings.nowPlayingCoverLyricsEnabledFlow.first(),
                 settings.nowPlayingProgressShowQualitySwitchFlow.first(),
                 settings.nowPlayingProgressShowAudioCodecFlow.first(),

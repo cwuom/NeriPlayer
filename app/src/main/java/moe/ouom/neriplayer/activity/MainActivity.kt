@@ -272,12 +272,13 @@ internal fun AppUiDensityRoot(
 }
 
 @Composable
-private fun LocalizedAppContent(
+internal fun LocalizedAppContent(
     language: LanguageManager.Language,
     content: @Composable () -> Unit
 ) {
     val baseContext = LocalContext.current
-    val localizedContext = remember(baseContext, language) {
+    val configuration = LocalConfiguration.current
+    val localizedContext = remember(baseContext, language, configuration) {
         LanguageManager.localizedContext(baseContext, language)
     }
     CompositionLocalProvider(
@@ -400,6 +401,7 @@ class MainActivity : ComponentActivity() {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
                             controller.isAppearanceLightStatusBars = !useDark
                             controller.isAppearanceLightNavigationBars = !useDark
+                            window.applyMainWindowCaptionAppearance(useLightSystemBarIcons = useDark)
                         }
                         SafeModeScreen(
                             onRestoreNormal = ::restoreFromSafeMode
@@ -562,6 +564,7 @@ class MainActivity : ComponentActivity() {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
                             controller.isAppearanceLightStatusBars = !useLightSystemBarIcons
                             controller.isAppearanceLightNavigationBars = !useLightSystemBarIcons
+                            window.applyMainWindowCaptionAppearance(useLightSystemBarIcons)
                         }
 
                         var playedEntrance by rememberSaveable { mutableStateOf(false) }
@@ -1133,10 +1136,11 @@ class MainActivity : ComponentActivity() {
                                                 ::clearLauncherShortcutRequest,
                                             onIsDarkChanged = { isDark ->
                                                 // 主题切换时保留窗口底色与内容主题一致
-                                                window.applyMainWindowBackground(isDark)
+                                                window.applyMainWindowBackground(isDark || isNowPlayingVisible)
                                             },
                                             onNowPlayingVisibilityChanged = { visible ->
                                                 isNowPlayingVisible = visible
+                                                window.applyMainWindowBackground(useDark || visible)
                                                 if (nowPlayingShownForRefreshRate != visible) {
                                                     nowPlayingShownForRefreshRate = visible
                                                     lastTouchAtMs = SystemClock.uptimeMillis()

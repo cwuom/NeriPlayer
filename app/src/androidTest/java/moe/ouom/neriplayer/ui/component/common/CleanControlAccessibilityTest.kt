@@ -21,11 +21,14 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -91,6 +94,32 @@ class CleanControlAccessibilityTest {
 
     @Test
     fun scrollingTabsFitLargeText() = checkLargeLabels(listOf("甲", "乙", "丙", "丁", "戊"))
+
+    @Test
+    fun scrollingTabsExposeSelectionOnTheClickableTab() {
+        val labels = listOf("Presets", "Equalizer", "Tone", "Space", "Dynamics", "Speaker", "Speed", "Advanced")
+        val selected = mutableStateOf(0)
+        show {
+            CleanSegmentedTabs(
+                labels = labels,
+                selectedIndex = selected.value,
+                onSelected = { selected.value = it },
+                modifier = Modifier.testTag("scrolling-tabs")
+            )
+        }
+
+        labels.forEachIndexed { index, label ->
+            composeRule.onNodeWithTag("scrolling-tabs").performScrollToNode(hasText(label))
+            val tab = composeRule.onNode(hasText(label) and hasClickAction())
+            tab.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, index == 0))
+                .performClick()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+            composeRule.runOnIdle {
+                assertTrue("clicking $label must select its section", selected.value == index)
+            }
+        }
+    }
 
     private fun checkSlider(direction: LayoutDirection) {
         var primary = Color.Unspecified
