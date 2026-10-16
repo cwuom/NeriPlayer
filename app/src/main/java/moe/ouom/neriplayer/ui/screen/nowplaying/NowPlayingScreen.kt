@@ -994,8 +994,7 @@ fun NowPlayingScreen(
     val tabletPortrait = isNowPlayingTabletPortrait(isLandscape, configuration.smallestScreenWidthDp)
     val windowWidthDp = with(density) { windowInfo.containerSize.width.toDp() }
     val windowHeightDp = with(density) { windowInfo.containerSize.height.toDp() }
-    val isWideLayout = windowWidthDp >= 480.dp
-    val useWideLandscapeLayout = isLandscape && (isWideLayout || phoneLandscape)
+    val useWideLandscapeLayout = isLandscape
     val lyricsAdjustBehavior = shouldAdjustNowPlayingLyricsBehavior(isLandscape, phoneLandscape)
     val coverPagePresentation = resolveNowPlayingCoverPagePresentation(immersiveMode, lyricsAdjustBehavior)
     val useCompactPortraitLayout = !tabletPortrait && shouldUseCompactNowPlayingPortraitLayout(
