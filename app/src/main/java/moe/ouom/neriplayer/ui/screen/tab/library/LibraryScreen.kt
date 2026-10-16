@@ -457,10 +457,7 @@ fun LibraryScreen(
                         LibraryTab.NETEASEALBUM -> LibraryPullToRefresh(
                             refreshing = ui.neteaseRefreshing,
                             enabled = !offlineMode && topAppBarState.collapsedFraction <= 0.01f,
-                            onRefresh = {
-                                vm.refreshNeteasePlaylists()
-                                vm.refreshNeteaseAlbums()
-                            }
+                            onRefresh = vm::refreshNeteaseLibrary
                         ) { NeteaseLibraryList(
                             playlists = ui.neteasePlaylists,
                             albums = ui.neteaseAlbums,

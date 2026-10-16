@@ -23,10 +23,19 @@ import kotlin.math.roundToInt
  */
 @Stable
 internal class ExploreCollapsingHeaderState {
-    var heightPx by mutableIntStateOf(0)
-        internal set
+    private var measuredHeightPx by mutableIntStateOf(0)
+    var heightPx: Int
+        get() = measuredHeightPx
+        internal set(value) {
+            measuredHeightPx = value
+            offsetPx = offsetPx.coerceIn(-value.toFloat(), 0f)
+        }
     var offsetPx by mutableFloatStateOf(0f)
         private set
+
+    fun expand() {
+        offsetPx = 0f
+    }
 
     private fun consume(delta: Float): Float {
         val previous = offsetPx

@@ -458,6 +458,15 @@ internal fun XiaomiSuperIslandSettingsPage(
     val update: (XiaomiSuperIslandSettings) -> Unit = { next ->
         scope.launch { settingsRepository.setXiaomiSuperIslandSettings(next) }
     }
+    fun setEnabled(next: Boolean) {
+        scope.launch { autoSettingsRepository.setXiaomiSuperIslandLyricEnabled(next) }
+        if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PermissionChecker.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         MiuixSettingsSectionCard {
             AutoSettingSpecListItem(
@@ -465,20 +474,10 @@ internal fun XiaomiSuperIslandSettingsPage(
                 trailingContent = {
                     MiuixSettingsSwitch(
                         checked = enabled,
-                        onCheckedChange = { next ->
-                            scope.launch { autoSettingsRepository.setXiaomiSuperIslandLyricEnabled(next) }
-                            if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                                PermissionChecker.PERMISSION_GRANTED
-                            ) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }
+                        onCheckedChange = ::setEnabled
                     )
                 },
-                onClick = {
-                    scope.launch { autoSettingsRepository.setXiaomiSuperIslandLyricEnabled(!enabled) }
-                }
+                onClick = { setEnabled(!enabled) }
             )
         }
         MiuixSettingsSectionCard {

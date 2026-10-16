@@ -28,6 +28,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -37,6 +39,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -94,6 +97,21 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var youtubeMusicPlaylistsPending = false
     private var youtubeEnabled = YouTubeFeatureGate.isEnabled()
     private var lastObservedYouTubeEnabled: Boolean? = null
+    private val neteaseRefreshOwner = LibraryNeteaseRefreshOwner(
+        scope = viewModelScope,
+        state = _uiState,
+        loadUserId = { withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() } },
+        loadPlaylists = { userId ->
+            withContext(Dispatchers.IO) {
+                parseNeteaseLibraryPlaylists(neteaseClient.getUserPlaylists(userId))
+            }
+        },
+        loadAlbums = { userId ->
+            withContext(Dispatchers.IO) {
+                parseNeteaseLibraryAlbums(neteaseClient.getUserStaredAlbums(userId))
+            }
+        }
+    )
 
     init {
         // 本地歌单
@@ -104,33 +122,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 网易云 歌单
+        // 网易云歌单和专辑共用一次刷新，避免各自提前结束 loading
         viewModelScope.launch {
+            var observedSession: String? = null
             neteaseCookieRepo.cookieFlow.collect { cookies ->
-                val mutable = cookies.toMutableMap()
-                mutable.putIfAbsent("os", "pc")
-                if (!cookies["MUSIC_U"].isNullOrBlank()) {
-                    refreshNeteasePlaylists()
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        neteasePlaylists = emptyList(),
-                        neteaseError = null
-                    )
+                val nextSession = cookies["MUSIC_U"]?.takeIf { it.isNotBlank() }
+                if (nextSession != observedSession || nextSession == null) {
+                    neteaseRefreshOwner.cancel()
                 }
-            }
-        }
-        // 网易云 专辑
-        viewModelScope.launch {
-            neteaseCookieRepo.cookieFlow.collect { cookies ->
-                val mutable = cookies.toMutableMap()
-                mutable.putIfAbsent("os", "pc")
-                if (!cookies["MUSIC_U"].isNullOrBlank()) {
-                    refreshNeteaseAlbums()
+                observedSession = nextSession
+                if (nextSession != null) {
+                    refreshNeteaseLibrary()
                 } else {
-                    _uiState.value = _uiState.value.copy(
-                        neteaseAlbums = emptyList(),
-                        neteaseError = null
-                    )
+                    _uiState.update {
+                        it.copy(
+                            neteasePlaylists = emptyList(),
+                            neteaseAlbums = emptyList(),
+                            neteaseError = null
+                        )
+                    }
                 }
             }
         }
@@ -274,43 +284,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
 
-    fun refreshNeteasePlaylists() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(neteaseRefreshing = true) }
-            try {
-                val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
-                val raw = withContext(Dispatchers.IO) { neteaseClient.getUserPlaylists(uid) }
-                val mapped = parseNeteaseLibraryPlaylists(raw)
-                _uiState.value = _uiState.value.copy(
-                    neteasePlaylists = mapped,
-                    neteaseError = null
-                )
-            } catch (e: IOException) {
-                _uiState.value = _uiState.value.copy(neteaseError = e.message)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(neteaseError = e.message)
-            } finally {
-                _uiState.update { it.copy(neteaseRefreshing = false) }
-            }
-        }
-    }
-    
-    fun refreshNeteaseAlbums() {
-        viewModelScope.launch {
-            try {
-                val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
-                val raw = withContext(Dispatchers.IO) { neteaseClient.getUserStaredAlbums(uid) }
-                val mapped = parseNeteaseLibraryAlbums(raw)
-                _uiState.value = _uiState.value.copy(
-                    neteaseAlbums = mapped,
-                    neteaseError = null
-                )
-            } catch (e: IOException) {
-                _uiState.value = _uiState.value.copy(neteaseError = e.message)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(neteaseError = e.message)
-            }
-        }
+    fun refreshNeteaseLibrary() {
+        neteaseRefreshOwner.refresh()
     }
 
     fun refreshYouTubeMusicPlaylists() {
@@ -422,6 +397,66 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             coverUrl = playlist.coverUrl,
             trackCount = playlist.trackCount ?: 0
         )
+    }
+}
+
+internal class LibraryNeteaseRefreshOwner(
+    private val scope: CoroutineScope,
+    private val state: MutableStateFlow<LibraryUiState>,
+    private val loadUserId: suspend () -> Long,
+    private val loadPlaylists: suspend (Long) -> List<PlaylistSummary>,
+    private val loadAlbums: suspend (Long) -> List<AlbumSummary>
+) {
+    private var refreshJob: Job? = null
+
+    fun refresh() {
+        if (refreshJob?.isActive == true || !scope.isActive) return
+        state.update { it.copy(neteaseRefreshing = true) }
+        val nextJob = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val userId = loadUserId()
+                coroutineScope {
+                    val playlists = async { loadResult { loadPlaylists(userId) } }
+                    val albums = async { loadResult { loadAlbums(userId) } }
+                    val playlistResult = playlists.await()
+                    val albumResult = albums.await()
+                    state.update {
+                        it.copy(
+                            neteasePlaylists = playlistResult.getOrDefault(it.neteasePlaylists),
+                            neteaseAlbums = albumResult.getOrDefault(it.neteaseAlbums),
+                            neteaseError = playlistResult.exceptionOrNull()?.message
+                                ?: albumResult.exceptionOrNull()?.message
+                        )
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                state.update { it.copy(neteaseError = error.message) }
+            } finally {
+                if (refreshJob === coroutineContext[Job]) {
+                    refreshJob = null
+                    state.update { it.copy(neteaseRefreshing = false) }
+                }
+            }
+        }
+        refreshJob = nextJob
+        nextJob.start()
+    }
+
+    fun cancel() {
+        val previousJob = refreshJob
+        refreshJob = null
+        previousJob?.cancel()
+        state.update { it.copy(neteaseRefreshing = false) }
+    }
+
+    private suspend fun <T> loadResult(load: suspend () -> T): Result<T> = try {
+        Result.success(load())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
     }
 }
 

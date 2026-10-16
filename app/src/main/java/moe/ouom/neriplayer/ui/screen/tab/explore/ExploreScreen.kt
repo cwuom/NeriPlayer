@@ -258,6 +258,29 @@ internal fun shouldRenderExploreSearchResults(
     currentPage: Int
 ): Boolean = page == currentPage
 
+@Composable
+internal fun rememberExploreSearchCollapsingHeaderState(
+    query: String,
+    source: SearchSource,
+    searching: Boolean,
+    searchError: String?,
+    hasResults: Boolean
+): ExploreCollapsingHeaderState {
+    val state = rememberExploreCollapsingHeaderState()
+    val showingSearch = query.isNotEmpty()
+    val showingResults = showingSearch && !searching && searchError == null && hasResults
+    LaunchedEffect(showingSearch, showingResults) {
+        // placeholders cannot dispatch the scroll gesture needed to reveal hidden controls
+        if (!showingResults) state.expand()
+    }
+    LaunchedEffect(showingSearch, source) {
+        if (!showingSearch && (source == SearchSource.BILIBILI || source == SearchSource.LINK_RECOGNITION)) {
+            state.expand()
+        }
+    }
+    return state
+}
+
 internal fun exploreSearchResultsBottomPadding(miniPlayerHeight: Dp): Dp =
     16.dp + miniPlayerHeight
 
@@ -662,7 +685,13 @@ fun ExploreScreen(
         queueExploreSearchRecord(normalizedQuery)
     }
 
-    val collapsingHeader = rememberExploreCollapsingHeaderState()
+    val collapsingHeader = rememberExploreSearchCollapsingHeaderState(
+        query = searchQuery,
+        source = ui.selectedSearchSource,
+        searching = ui.searching,
+        searchError = ui.searchError,
+        hasResults = ui.searchItems.isNotEmpty()
+    )
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
         // follow the finger and stay put; a release snap reads as an unwanted bounce
