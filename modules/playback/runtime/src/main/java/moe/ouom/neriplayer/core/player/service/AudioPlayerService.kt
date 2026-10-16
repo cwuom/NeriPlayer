@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.core.player.policy.service.shouldPreservePlayerRuntim
 import moe.ouom.neriplayer.core.player.policy.service.shouldSchedulePlaybackServiceIdleShutdown
 import moe.ouom.neriplayer.core.player.policy.service.shouldUseStickyStartModeWhilePlayerRuntimeInitializes
 import moe.ouom.neriplayer.core.player.service.lifecycle.ScreenInteractiveMonitor
+import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.service.lifecycle.suspendPlaybackForServiceRestart
 import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.core.player.service.notification.isFloatingLyricsEffectivelyEnabled
@@ -1018,6 +1019,8 @@ class AudioPlayerService : Service() {
         }
         serviceScope.launch {
             PlayerManager.playbackControlPlayingFlow.collectSafely("playbackControlPlayingFlow") {
+                // 在暂停调用内同步收集时加载任务尚未收尾，排到队尾再刷新，否则会话停在缓冲
+                serviceScope.launch(Dispatchers.Main) { updatePlaybackState(force = true) }
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("playback_control")
             }
@@ -1497,6 +1500,7 @@ class AudioPlayerService : Service() {
 
     private fun onScreenInteractiveChanged(interactive: Boolean) {
         screenInteractive = interactive
+        LyriconManager.setScreenInteractive(interactive)
         if (!interactive || !presentationOwnerDelegate.isInitialized()) return
         presentationOwner.onScreenInteractive(
             foregroundStarted = isForegroundStarted,

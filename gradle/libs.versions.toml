@@ -7,6 +7,7 @@ coilCompose = "2.7.0"
 datastorePreferences = "1.2.1"
 dec = "0.1.2"
 documentfile = "1.1.0"
+exifinterface = "1.3.6"
 gson = "2.14.0"
 kotlin = "2.4.10"
 ksp = "2.3.10"
@@ -67,6 +68,7 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
 androidx-foundation = { module = "androidx.compose.foundation:foundation" }
 androidx-media = { module = "androidx.media:media", version.ref = "media" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }

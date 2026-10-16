@@ -67,6 +67,45 @@ internal fun shouldRefreshOfflineStateForLifecycleEvent(event: Lifecycle.Event):
     return event == Lifecycle.Event.ON_RESUME
 }
 
+/**
+ * 信号强度、带宽估计变化也会走 onCapabilitiesChanged，蜂窝下几秒一次；
+ * 只有影响联网判断的能力位变了才值得重新查询
+ */
+internal fun networkReachabilitySignature(
+    hasInternet: Boolean,
+    validated: Boolean,
+    notSuspended: Boolean,
+    transportMask: Int
+): Int {
+    var signature = transportMask shl 3
+    if (hasInternet) signature = signature or 0b001
+    if (validated) signature = signature or 0b010
+    if (notSuspended) signature = signature or 0b100
+    return signature
+}
+
+private val OBSERVED_TRANSPORTS = intArrayOf(
+    NetworkCapabilities.TRANSPORT_CELLULAR,
+    NetworkCapabilities.TRANSPORT_WIFI,
+    NetworkCapabilities.TRANSPORT_BLUETOOTH,
+    NetworkCapabilities.TRANSPORT_ETHERNET,
+    NetworkCapabilities.TRANSPORT_VPN,
+)
+
+private fun NetworkCapabilities.reachabilitySignature(): Int {
+    var transports = 0
+    OBSERVED_TRANSPORTS.forEachIndexed { index, transport ->
+        if (hasTransport(transport)) transports = transports or (1 shl index)
+    }
+    return networkReachabilitySignature(
+        hasInternet = hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+        validated = hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+        notSuspended = Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+            hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED),
+        transportMask = transports
+    )
+}
+
 @Composable
 fun rememberOfflineModeState(): State<Boolean> {
     val context = LocalContext.current
@@ -159,6 +198,10 @@ fun rememberOfflineModeState(): State<Boolean> {
 
             fun updateOfflineStateAfterSettled() {
                 runOnMain {
+                    // 界面不可见时不必跟踪，ON_RESUME 会重新确认一次
+                    if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                        return@runOnMain
+                    }
                     pendingSettleRecheck?.let(mainHandler::removeCallbacks)
                     val recheck = Runnable {
                         pendingSettleRecheck = null
@@ -171,12 +214,14 @@ fun rememberOfflineModeState(): State<Boolean> {
                 }
             }
 
+            val reachabilityByNetwork = java.util.concurrent.ConcurrentHashMap<Network, Int>()
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     updateOfflineStateAfterSettled()
                 }
 
                 override fun onLost(network: Network) {
+                    reachabilityByNetwork.remove(network)
                     updateOfflineStateAfterSettled()
                 }
 
@@ -184,6 +229,8 @@ fun rememberOfflineModeState(): State<Boolean> {
                     network: Network,
                     networkCapabilities: NetworkCapabilities
                 ) {
+                    val signature = networkCapabilities.reachabilitySignature()
+                    if (reachabilityByNetwork.put(network, signature) == signature) return
                     updateOfflineStateAfterSettled()
                 }
             }

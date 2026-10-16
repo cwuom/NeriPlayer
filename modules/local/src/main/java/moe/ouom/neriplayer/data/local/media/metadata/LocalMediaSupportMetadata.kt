@@ -39,6 +39,17 @@ internal fun LocalMediaSupport.logEditableMetadataWriteTiming(
     }
 }
 
+/**
+ * MediaStore 条目对应的 SAF 文档只是更好的写入路径；只读授权的文件夹会在探测时抛出拒绝，
+ * 这时跳过镜像，继续使用 MediaStore 自身（可能已经通过系统授权获得写权限）
+ */
+private fun LocalMediaSupport.resolveWritableSafMirrorOrNull(context: Context, source: Uri): Uri? = try {
+    resolveWritableLocalMediaUri(context, source)
+} catch (error: SecurityException) {
+    NPLogger.d(TAG, "skip read-only SAF mirror for $source: ${error.javaClass.simpleName}")
+    null
+}
+
 internal fun LocalMediaSupport.editableLocalMediaUriCandidates(
     context: Context,
     song: SongItem
@@ -46,7 +57,7 @@ internal fun LocalMediaSupport.editableLocalMediaUriCandidates(
     val directCandidates = song.localMediaUriCandidates()
     val safCandidates = directCandidates.asSequence()
         .filter(::isMediaStoreUri)
-        .mapNotNull { source -> resolveWritableLocalMediaUri(context, source) }
+        .mapNotNull { source -> resolveWritableSafMirrorOrNull(context, source) }
         .toList()
     return (safCandidates + directCandidates)
         .distinctBy(Uri::toString)
@@ -76,8 +87,8 @@ fun LocalMediaSupport.isStandaloneContentMetadataTarget(
     if (isMediaStoreUri(sourceUri)) {
         val relativePath = queryContentInfo(context, sourceUri).relativePath
             ?.trim()?.trim('/')?.takeIf(String::isNotBlank) ?: return false
-        // 目录查询失败不代表相邻文件不存在，匹配根仍需保持侧载事务
-        return resolveExternalStorageTreeUri(context, relativePath) == null
+        // 目录查询失败不代表相邻文件不存在，匹配根仍需保持侧载事务；只读授权写不了侧载，按独立文件处理
+        return resolveExternalStorageTreeUri(context, relativePath, requireWrite = true) == null
     }
     // 单文件授权没有相邻文件命名空间，已有 SAF 目录授权仍沿完整侧载事务处理
     return resolveLocalDocumentNavigation(context, sourceUri)?.parentDocumentId == null

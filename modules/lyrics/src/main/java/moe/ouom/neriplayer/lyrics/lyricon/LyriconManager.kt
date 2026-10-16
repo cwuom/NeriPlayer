@@ -49,6 +49,10 @@ object LyriconManager {
     private var playbackSpeed: Float = 1f
     @Volatile
     private var effectiveLyricOffsetMs: Long = 0L
+    @Volatile
+    private var screenInteractive: Boolean = true
+    @Volatile
+    private var playbackActive: Boolean = false
 
     fun initialize(context: Context) {
         if (provider != null) return
@@ -111,10 +115,11 @@ object LyriconManager {
 
     fun setPlaybackState(isPlaying: Boolean) {
         if (!enabled && isPlaying) return
+        playbackActive = isPlaying
         try {
             provider?.player?.setPlaybackState(isPlaying)
             // provider 初始化失败时没有接收方，空转的 200ms 循环只会持续唤醒主线程
-            if (isPlaying && provider != null) {
+            if (isPlaying && provider != null && screenInteractive) {
                 startFeedLoop()
             } else {
                 stopFeedLoop()
@@ -139,10 +144,28 @@ object LyriconManager {
                 durationMs = songDurationMs,
                 lyricOffsetMs = effectiveLyricOffsetMs,
             )
-            runCatching { provider?.player?.setPosition(displayPositionMs) }
+            if (screenInteractive) {
+                runCatching { provider?.player?.setPosition(displayPositionMs) }
+            }
             updateSuperLyric(displayPositionMs)
         } catch (e: Exception) {
             // NPLogger.e("LyriconManager", "setPosition failed", e)
+        }
+    }
+
+    /**
+     * 熄屏时状态栏歌词不可见，停掉 200 ms 的跨进程位置推送，只保留锚点；
+     * 亮屏后立刻按锚点重推一次再恢复节奏
+     */
+    fun setScreenInteractive(interactive: Boolean) {
+        if (screenInteractive == interactive) return
+        screenInteractive = interactive
+        if (!interactive) {
+            stopFeedLoop()
+            return
+        }
+        if (playbackActive && enabled && provider != null) {
+            startFeedLoop()
         }
     }
 

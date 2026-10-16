@@ -214,10 +214,12 @@
       var p = M.clamp((sy - hero.top) / hero.h);
       hero.copy.style.translate = '0 ' + (-p * 90).toFixed(1) + 'px';
       hero.copy.style.opacity = (1 - p * 0.75).toFixed(3);
-      hero.art.style.translate = (pointer.x * 10).toFixed(1) + 'px ' + (-p * 130 + pointer.y * 8).toFixed(1) + 'px';
-      hero.art.style.rotate = (p * 6).toFixed(2) + 'deg';
+      // 单栏时插画排在文案下面，滚到它时 p 已经不小，跟着上移会跑出画框，只在双栏时做滚动视差
+      var ps = hero.stacked.matches ? 0 : p;
+      hero.art.style.translate = (pointer.x * 10).toFixed(1) + 'px ' + (-ps * 130 + pointer.y * 8).toFixed(1) + 'px';
+      hero.art.style.rotate = (ps * 6).toFixed(2) + 'deg';
       hero.doodles.forEach(function (d) {
-        d.el.style.translate = (pointer.x * 22 * d.depth).toFixed(1) + 'px ' + (-p * 260 * d.depth + pointer.y * 16 * d.depth).toFixed(1) + 'px';
+        d.el.style.translate = (pointer.x * 22 * d.depth).toFixed(1) + 'px ' + (-ps * 260 * d.depth + pointer.y * 16 * d.depth).toFixed(1) + 'px';
       });
     }
 
@@ -265,6 +267,7 @@
         el: h,
         copy: $('.hero__copy', h),
         art: $('.crayon', h),
+        stacked: window.matchMedia('(max-width: 980px)'),
         doodles: $$('.doodle', h).map(function (el, i) { return { el: el, depth: 0.5 + ((i * 37) % 10) / 10 }; }),
       };
       if (!NP.env.coarse) {
@@ -315,6 +318,8 @@
   function applyTheme(t) {
     var root = document.documentElement;
     root.setAttribute('data-theme', t);
+    root.style.colorScheme = t;
+    root.style.backgroundColor = t === 'dark' ? '#15130f' : '#fbf7ef';
     $$('meta[name="theme-color"]').forEach(function (m) { m.setAttribute('content', t === 'dark' ? '#15130f' : '#fbf7ef'); });
     var btn = $('#themeBtn');
     if (btn) {
@@ -474,9 +479,25 @@
       observe();
       initScroll();
       initSegs();
-      requestAnimationFrame(function () {
-        setTimeout(function () { var h = $('.hero'); if (h) h.classList.add('is-intro'); }, 60);
-      });
+      /* 开场等标题字体就位（最多 1.2 秒），否则会先闪一下回退字体再换 */
+      var started = false;
+      var start = function () {
+        if (started) return;
+        started = true;
+        requestAnimationFrame(function () {
+          setTimeout(function () { var h = $('.hero'); if (h) h.classList.add('is-intro'); }, 60);
+        });
+      };
+      var h1 = $('.hero h1');
+      if (document.fonts && document.fonts.load && h1) {
+        var sample = (h1.textContent || 'NeriPlayer').replace(/\s+/g, '').slice(0, 24);
+        Promise.all([
+          document.fonts.load('400 64px Fraunces', sample),
+          document.fonts.load('italic 400 64px Fraunces', sample),
+          document.fonts.load('400 64px "NP Serif"', sample),
+        ]).then(start, start);
+        setTimeout(start, 1200);
+      } else start();
     },
     initTheme: initTheme,
   };

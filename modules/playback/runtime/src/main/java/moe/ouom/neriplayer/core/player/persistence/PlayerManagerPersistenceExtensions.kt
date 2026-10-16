@@ -1075,7 +1075,7 @@ private suspend fun PlayerManager.resumePlaybackAfterLocalMetadataWrite(
     }
 }
 
-private suspend fun PlayerManager.writeLocalEditableMetadata(
+internal suspend fun PlayerManager.writeLocalEditableMetadata(
     song: SongItem,
     coverReference: String? = song.customCoverUrl,
     writeCover: Boolean = coverReference != null,
@@ -1925,7 +1925,7 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     true
 }
 
-private suspend fun PlayerManager.updateSongInAllPlaces(
+internal suspend fun PlayerManager.updateSongInAllPlaces(
     originalSong: SongItem,
     updatedSong: SongItem,
     triggerSync: Boolean,

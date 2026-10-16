@@ -626,19 +626,24 @@ internal fun LocalMediaSupport.isWritableDocumentUri(context: Context, uri: Uri)
     }
 }
 
+/**
+ * 可写授权排在只读授权之前；[requireWrite] 用于决定是否走侧载事务，
+ * 只读授权的文件夹可以读取侧载，但不能作为写入目标
+ */
 internal fun LocalMediaSupport.resolveExternalStorageTreeUri(
     context: Context,
-    relativePath: String
+    relativePath: String,
+    requireWrite: Boolean = false
 ): Uri? {
+    val persisted = context.contentResolver.persistedUriPermissions
     val candidates = buildList {
         LocalMediaHostAccess.downloads.configuredDirectoryUri()
             ?.let { runCatching { it.toUri() }.getOrNull() }
             ?.let(::add)
-        context.contentResolver.persistedUriPermissions
-            .asSequence()
-            .filter { it.isReadPermission || it.isWritePermission }
-            .map { it.uri }
-            .forEach(::add)
+        persisted.filter { it.isWritePermission }.forEach { add(it.uri) }
+        if (!requireWrite) {
+            persisted.filter { it.isReadPermission && !it.isWritePermission }.forEach { add(it.uri) }
+        }
     }.filter { uri ->
         uri.authority == "com.android.externalstorage.documents" &&
             runCatching { DocumentsContract.isTreeUri(uri) }.getOrDefault(false)

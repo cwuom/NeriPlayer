@@ -33,6 +33,7 @@
   background: #141218;
   -webkit-mask-image: -webkit-radial-gradient(white, black);
 }
+.device__shot { display: block; width: 100%; height: 100%; object-fit: cover; }
 .device__screen::after {
   content: "";
   position: absolute;
@@ -67,13 +68,16 @@
   transform-origin: 0 0;
   color: var(--p-on);
   background: #1b1832;
-  font-family: Roboto, "Noto Sans SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-family: "NP Roboto", Roboto, "Noto Sans SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   line-height: 1.43;
   letter-spacing: .01em;
   user-select: none;
   -webkit-user-select: none;
+  transition: opacity .5s var(--ease-out);
 }
+/* 系统字体到达前先黑屏，避免文字换字体时跳一下 */
+.device.is-fontwait .ph { opacity: 0; }
 .ph svg { fill: currentColor; }
 .ph__fluid { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ph__status {
@@ -233,57 +237,21 @@
 .msheet__grab { display: block; width: 32px; height: 4px; margin: 21px auto 0; border-radius: 2px; background: rgba(202, 196, 208, .9); }
 .msheet__scroll { position: absolute; inset: 47px 0 0; overflow-y: auto; padding: 18px 24px 40px; scrollbar-width: none; overscroll-behavior: contain; }
 .msheet__scroll::-webkit-scrollbar { display: none; }
-.ms-title { font-size: 17px; font-weight: 500; line-height: 26px; }
-.ms-sub { margin-top: 12px; font-size: 13px; line-height: 20px; color: var(--p-on-var); }
-.ms-card { margin-top: 18px; padding: 21px 16px 14px; border-radius: 16px; background: var(--p-card); }
-.ms-sub + .ms-card { margin-top: 14px; }
-.ms-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.ms-row b { font-size: 14px; font-weight: 500; line-height: 22px; }
-.ms-row b small { display: block; font-size: 12px; font-weight: 400; line-height: 18px; color: var(--p-on-var); }
-.ms-val { font-family: "Roboto Mono", "Geist Mono", monospace; font-size: 16px; font-weight: 400; line-height: 24px; letter-spacing: .02em; color: var(--p-primary); white-space: nowrap; }
 .xslider { position: relative; height: 44px; margin: 18px 0 12px; cursor: pointer; touch-action: none; }
 .xslider i { position: absolute; top: 50%; display: block; }
-.xs-on { left: 0; width: calc(var(--v) * (100% - 10px) - 3px); height: 16px; margin-top: -8px; border-radius: 8px 2px 2px 8px; background: var(--p-primary); }
-.xs-thumb { left: calc(var(--v) * (100% - 10px) + 3px); width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: var(--p-primary); }
-.xs-off { left: calc(var(--v) * (100% - 10px) + 13px); right: 0; height: 16px; margin-top: -8px; border-radius: 2px 8px 8px 2px; background: var(--p-sec); }
+.xs-on { left: 0; width: calc(var(--v) * (100% - 10px) - 3px); height: 16px; margin-top: -8px; border-radius: 8px 2px 2px 8px; background: var(--p-primary); transition: width .18s cubic-bezier(.2, 0, 0, 1); }
+.xs-thumb { left: calc(var(--v) * (100% - 10px) + 3px); width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: var(--p-primary); transition: left .18s cubic-bezier(.2, 0, 0, 1), width .15s; }
+.xs-off { left: calc(var(--v) * (100% - 10px) + 13px); right: 0; height: 16px; margin-top: -8px; border-radius: 2px 8px 8px 2px; background: var(--p-sec); transition: left .18s cubic-bezier(.2, 0, 0, 1); }
 .xs-off::after { content: ""; position: absolute; right: 6px; top: 6px; width: 4px; height: 4px; border-radius: 50%; background: var(--p-primary); }
+.xslider:active .xs-thumb { width: 2px; }
 .xslider--steps .xs-off { background: var(--p-sec) radial-gradient(circle, rgba(210, 188, 253, .85) 1.2px, transparent 1.6px) 0 50% / 10px 16px repeat-x; }
 .xslider--steps .xs-on { background: var(--p-primary) radial-gradient(circle, rgba(56, 38, 92, .7) 1.2px, transparent 1.6px) 0 50% / 10px 16px repeat-x; }
-.ms-chips { display: flex; flex-wrap: wrap; gap: 24px 6px; padding: 8px 0; }
-.ms-chips button {
-  height: 32px;
-  padding: 0 13px;
-  border: 1px solid rgba(147, 143, 153, .62);
-  border-radius: 8px;
-  background: none;
-  color: var(--p-on);
-  font-family: Roboto, "Geist", sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  cursor: pointer;
-  transition: background .2s, border-color .2s;
-}
-.ms-chips button:hover { background: rgba(230, 224, 233, .06); }
-.ms-chips button.is-on { border-color: transparent; background: var(--p-sec); }
-.ms-chips--eq button { padding: 0 16px; font-size: 14px; }
-[data-ms="loud"] .ms-chips button { padding: 0 16px; font-size: 13px; }
-.ms-hint { margin: 16px 0 8px; font-size: 12px; color: var(--p-on); }
-.ms-card hr { height: 1px; margin: 14px 0 0; border: 0; background: rgba(147, 143, 153, .3); }
 .m3switch { position: relative; flex: none; width: 52px; height: 32px; margin-top: 4px; border-radius: 16px; background: var(--p-primary); cursor: pointer; transition: background .25s, box-shadow .25s; }
-.m3switch i { position: absolute; left: 24px; top: 4px; width: 24px; height: 24px; border-radius: 50%; background: #38265c; transition: left .25s cubic-bezier(.3, 1.4, .5, 1), width .2s, height .2s, top .2s, background .25s; }
+.m3switch i { position: absolute; left: 24px; top: 4px; width: 24px; height: 24px; border-radius: 50%; background: #38265c; transition: left .3s cubic-bezier(.3, 1.4, .5, 1), width .2s, height .2s, top .2s, background .25s; }
 .m3switch:not(.is-on) { background: #36343b; box-shadow: inset 0 0 0 2px var(--p-outline); }
 .m3switch:not(.is-on) i { left: 8px; top: 8px; width: 16px; height: 16px; background: var(--p-outline); }
-.ms-card.is-off .ms-chips--eq, .ms-card.is-off .ms-bands { opacity: .38; pointer-events: none; }
-.ms-bands { display: grid; }
-.ms-band__row { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; line-height: 20px; }
-.ms-band__row span:last-child { font-family: "Roboto Mono", "Geist Mono", monospace; font-size: 14px; }
-.ms-band .xslider { height: 36px; margin: 6px 0 4px; }
-.ms-band .xs-on, .ms-band .xs-off { height: 14px; margin-top: -7px; border-radius: 7px; }
-.ms-band .xs-thumb { height: 40px; margin-top: -20px; }
-.ms-band .xslider--steps .xs-off { background: var(--p-sec) radial-gradient(circle, rgba(210, 188, 253, .9) .9px, transparent 1.3px) 2px 50% / 4.6px 14px repeat-x; }
-.ms-band .xslider--steps .xs-on { background: var(--p-primary) radial-gradient(circle, rgba(56, 38, 92, .75) .9px, transparent 1.3px) 2px 50% / 4.6px 14px repeat-x; }
-.ms-band .xs-off::after { display: none; }
+.m3switch:active i { width: 28px; height: 28px; top: 2px; left: 22px; }
+.m3switch:not(.is-on):active i { left: 4px; }
 
 /* ---------------- 歌词页 ---------------- */
 

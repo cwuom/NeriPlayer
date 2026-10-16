@@ -262,6 +262,8 @@ void OutputStage::configure(const StageContext& context) {
     context_ = context;
     gain_.setCoefficient(context.smoothing);
     gain_.snap(1.0f);
+    // 保持时间覆盖约 33 Hz 的半周期，压缩量在低频周期内不起伏，避免调制出谐波
+    holdSamples_ = static_cast<int>(std::lround(context.sampleRate * 0.015));
     reset();
 }
 
@@ -278,6 +280,7 @@ void OutputStage::snapToTargets() {
 
 void OutputStage::reset() {
     limiterGain_ = 1.0f;
+    holdRemaining_ = 0;
 }
 
 void OutputStage::process(float* left, float* right, int frames) {
@@ -294,6 +297,11 @@ void OutputStage::process(float* left, float* right, int frames) {
             if (target < limiterGain_) {
                 limiterGain_ = target;
                 limiterEvents_ += 1;
+                holdRemaining_ = holdSamples_;
+            } else if (target <= limiterGain_ * 1.002f) {
+                holdRemaining_ = holdSamples_;
+            } else if (holdRemaining_ > 0) {
+                --holdRemaining_;
             } else {
                 limiterGain_ += (target - limiterGain_) * release_;
             }

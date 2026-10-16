@@ -19,7 +19,7 @@ const CHROME = [
   '/usr/bin/chromium',
 ].find((p) => p && existsSync(p));
 
-const buckets = { serif: new Set(), serifItalic: new Set(), hand: new Set(), mono: new Set(), sans: new Set() };
+const buckets = { serif: new Set(), serifItalic: new Set(), hand: new Set(), mono: new Set(), sans: new Set(), phone: new Set() };
 const add = (key, text) => { for (const ch of text) buckets[key].add(ch); };
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
@@ -29,8 +29,8 @@ for (const path of ['/', '/404.html', '/en/', '/en/__missing__']) {
   await page.goto(base + path, { waitUntil: 'networkidle2', timeout: 60000 });
   await new Promise((r) => setTimeout(r, 1500));
   const got = await page.evaluate(() => {
-    const out = { serif: '', serifItalic: '', hand: '', mono: '', sans: '' };
-    const pick = (ff) => (/^"?Fraunces/.test(ff) ? 'serif' : /Caveat/.test(ff) ? 'hand' : /Geist Mono/.test(ff) ? 'mono' : /^"?Geist/.test(ff) ? 'sans' : null);
+    const out = { serif: '', serifItalic: '', hand: '', mono: '', sans: '', phone: '' };
+    const pick = (ff) => (/^"?Fraunces/.test(ff) ? 'serif' : /Caveat/.test(ff) ? 'hand' : /Geist Mono/.test(ff) ? 'mono' : /^"?Geist/.test(ff) ? 'sans' : /^"?NP (Roboto|Droid)/.test(ff) ? 'phone' : null);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let n;
     while ((n = walker.nextNode())) {
@@ -59,9 +59,14 @@ for (const path of ['/', '/404.html', '/en/', '/en/__missing__']) {
 await browser.close();
 
 // 脚本里动态写入的手写体文案（提示、开发者模式等）
+const PHONE_JS = new Set(['phone.js', 'phone-ui.js', 'dsp.js', 'demos.js', 'lyrics.js']);
 for (const f of readdirSync(join(ROOT, 'assets/js'))) {
   const src = readFileSync(join(ROOT, 'assets/js', f), 'utf8');
-  for (const m of src.matchAll(/'([^'\n]*[\u3000-\u9fff\uff00-\uffef][^'\n]*)'/g)) add('hand', m[1]);
+  for (const m of src.matchAll(/'([^'\n]*[\u3000-\u9fff\uff00-\uffef][^'\n]*)'/g)) {
+    add('hand', m[1]);
+    // 手机里的界面文案（音效页各分区、提示条等）大多在切换后才写入，直接从源码收
+    if (PHONE_JS.has(f)) add('phone', m[1]);
+  }
 }
 
 const json = Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, [...v].sort().join('')]));

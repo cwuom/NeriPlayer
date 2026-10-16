@@ -119,7 +119,9 @@ void Engine::rebuildStages() {
     mix_.snap(0.0f);
     graphicEq_.configure(context_, kGraphicBandCount);
     parametricEq_.configure(context_, kParametricBandCount);
-    tone_.configure(context_, 2);
+    bass_.configure(context_);
+    enhancementLimiter_.configure(context_);
+    tone_.configure(context_, 1);
     vocalClarity_.configure(context_, 3);
     virtualBass_.configure(context_);
     warmth_.configure(context_);
@@ -191,10 +193,8 @@ void Engine::applyParams() {
     }
     const float bassDb = clampf(p(kBassGainDb), -15.0f, 15.0f);
     const float trebleDb = clampf(p(kTrebleGainDb), -15.0f, 15.0f);
+    bass_.setTargets(bassDb, clampf(p(kBassFrequencyHz), 30.0f, 400.0f));
     tone_.setBand(0, FilterBandTarget{
-        bassDb != 0.0f, FilterType::LowShelf, clampf(p(kBassFrequencyHz), 30.0f, 400.0f), bassDb, 0.707f
-    });
-    tone_.setBand(1, FilterBandTarget{
         trebleDb != 0.0f, FilterType::HighShelf, clampf(p(kTrebleFrequencyHz), 1000.0f, 16000.0f), trebleDb, 0.707f
     });
     virtualBass_.setTargets(p(kVirtualBassAmount), p(kVirtualBassFrequencyHz));
@@ -245,6 +245,8 @@ void Engine::applyParams() {
 void Engine::resetStages() {
     graphicEq_.reset();
     parametricEq_.reset();
+    bass_.reset();
+    enhancementLimiter_.reset();
     tone_.reset();
     vocalClarity_.reset();
     virtualBass_.reset();
@@ -264,6 +266,7 @@ void Engine::snapStages() {
     preamp_.snap(preamp_.target());
     graphicEq_.snapToTargets();
     parametricEq_.snapToTargets();
+    bass_.snapToTargets();
     tone_.snapToTargets();
     vocalClarity_.snapToTargets();
     virtualBass_.snapToTargets();
@@ -311,8 +314,25 @@ void Engine::runChain(int frames) {
     applyGainRamp(right, frames, preampStart, preampEnd);
     graphicEq_.process(left, right, frames);
     parametricEq_.process(left, right, frames);
-    tone_.process(left, right, frames);
+    bass_.processSubsonic(left, right, frames);
+    // 低音、高音提升和虚拟低音谐波只在余量内叠加，越线时收增强量而不是让输出限幅器压整段信号；
+    // 衰减放在限量之外，否则会随低频峰值被拉回干信号
+    const bool bassBoost = bass_.boosting();
+    const bool trebleBoost = tone_.boosting();
+    if (!bassBoost) bass_.processShelf(left, right, frames);
+    const bool enhancing = bassBoost || trebleBoost || virtualBass_.active();
+    if (enhancing) {
+        enhancementLimiter_.capture(left, right, frames);
+    } else {
+        enhancementLimiter_.reset();
+    }
+    if (bassBoost) bass_.processShelf(left, right, frames);
+    if (trebleBoost) tone_.process(left, right, frames);
     virtualBass_.process(left, right, frames);
+    if (enhancing) {
+        enhancementLimiter_.apply(left, right, frames);
+    }
+    if (!trebleBoost) tone_.process(left, right, frames);
     warmth_.process(left, right, frames);
     exciter_.process(left, right, frames);
     applyVocalClarity(frames);
@@ -493,7 +513,7 @@ int Engine::process(const uint8_t* input, uint8_t* output, size_t bytes) {
 int Engine::computeActiveMask() const {
     int mask = 0;
     if (graphicEq_.active() || parametricEq_.active()) mask |= kStageEqualizer;
-    if (tone_.active()) mask |= kStageTone;
+    if (bass_.active() || tone_.active()) mask |= kStageTone;
     if (virtualBass_.active()) mask |= kStageBass;
     if (warmth_.active() || exciter_.active() || vocalClarity_.active()) mask |= kStageColor;
     if (stereo_.active() || crossfeed_.active()) mask |= kStageStereo;

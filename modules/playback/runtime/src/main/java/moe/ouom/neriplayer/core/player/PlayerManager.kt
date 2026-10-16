@@ -144,7 +144,10 @@ import moe.ouom.neriplayer.core.player.playback.stopPlaybackPreservingQueueImpl
 import moe.ouom.neriplayer.core.player.playback.stopProgressUpdatesImpl
 import moe.ouom.neriplayer.core.player.playback.togglePlayPauseImpl
 import moe.ouom.neriplayer.core.player.runtime.stats.trackEndDeduplicationKey
+import moe.ouom.neriplayer.core.player.persistence.LocalSongAssetEmbedding
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.embedLocalSongAssetsImpl
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToFavoritesImpl
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToPlaylistImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
@@ -1215,6 +1218,9 @@ object PlayerManager {
         return rejectRoomControlRestriction()
     }
 
+    /** 只查询，不弹提示；本地播放命令此刻会被一起听房间规则拦下时为 true */
+    internal fun isLocalRoomControlRestricted(): Boolean = localRoomControlRestriction().errorResId != null
+
     private fun rejectRoomControlRestriction(): Boolean {
         val restriction = localRoomControlRestriction()
         val message = restriction.errorResId ?: return false
@@ -1891,6 +1897,12 @@ object PlayerManager {
         songToUpdate: SongItem,
         newTranslatedLyrics: String?
     ): Boolean = this.updateSongTranslatedLyricsImpl(songToUpdate, newTranslatedLyrics)
+
+    /** 批量嵌入词图专用：文件写入可与其他歌曲并行，只有状态发布进入元数据锁 */
+    suspend fun embedLocalSongAssets(
+        song: SongItem,
+        embedding: LocalSongAssetEmbedding
+    ): LocalMediaMetadataWriteOutcome = embedLocalSongAssetsImpl(song, embedding)
 
     suspend fun updateSongLyricsAndTranslation(
         songToUpdate: SongItem,

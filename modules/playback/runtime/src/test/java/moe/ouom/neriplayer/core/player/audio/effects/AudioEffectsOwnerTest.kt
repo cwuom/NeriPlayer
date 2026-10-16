@@ -67,7 +67,12 @@ class AudioEffectsOwnerTest {
         val port = FakePort()
         val publisher = RecordingPublisher()
         val owner = AudioEffectsOwner(backgroundScope, port, publisher)
-        owner.restore(AudioEffectsSettings(speaker = SpeakerOptimizerSettings(enabled = true)))
+        owner.restore(
+            AudioEffectsSettings(
+                main = AudioEffectsProfile(enabled = true),
+                speaker = SpeakerOptimizerSettings(enabled = true)
+            )
+        )
         assertTrue(publisher.resolutions.last().active)
 
         owner.onRouteChanged(AudioOutputRoute.BLUETOOTH)

@@ -8,6 +8,9 @@
 @font-face { font-family: "NP Hand"; src: url("../fonts/np-hand.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Caveat"; src: url("../fonts/caveat.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
 @font-face { font-family: "Geist"; src: url("../fonts/geist.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "NP Roboto"; src: url("../fonts/roboto.woff2") format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+0000-2DFF, U+FB00-FB06; }
+@font-face { font-family: "NP Roboto"; src: url("../fonts/np-phone-cjk.woff2") format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF; }
+@font-face { font-family: "NP Droid Mono"; src: url("../fonts/droid-mono.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("../fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 
 :root {
@@ -287,6 +290,15 @@ code {
   color: var(--ink-3);
   text-align: center;
 }
+/* 仿真旁的提示：仿真是某一时刻的界面快照，不是最终版本 */
+.sim-draft {
+  display: flex; align-items: flex-start; justify-content: center; gap: 8px;
+  width: fit-content; max-width: 100%; margin: 10px auto 0; padding: 7px 14px;
+  border: 1px dashed var(--rule-2); border-radius: 999px;
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-2); text-align: left;
+}
+.sim-draft .i { flex: none; width: 15px; height: 15px; margin-top: 2px; color: var(--acc); }
+.sim-draft b { margin-right: 6px; color: var(--ink); font-weight: 600; }
 
 .notes { display: grid; margin-top: 22px; border-top: 1px solid var(--rule); }
 /* 序号绝对定位：正文里混排 code、strong 等行内元素时不会被拆成网格单元 */

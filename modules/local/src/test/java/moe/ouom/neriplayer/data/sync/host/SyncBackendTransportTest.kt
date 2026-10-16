@@ -399,12 +399,15 @@ class SyncBackendTransportTest {
     fun `WebDAV rejects unsafe manifest writes and propagates protected write failures`() = runTest {
         val fixture = WebDavFixture()
         val fingerprint = WebDavApiClient.calculateFingerprint(content)
-        val withoutToken = WebDavSyncBackend.Version(WebDavConcurrencyToken(), false, fingerprint)
+        val withoutToken = WebDavSyncBackend.Version(WebDavConcurrencyToken(), false)
         for (token in listOf(WebDavConcurrencyToken(), WebDavConcurrencyToken(etag = "W/\"weak\""),
             WebDavConcurrencyToken(etag = "\"first\", \"second\""), WebDavConcurrencyToken(etag = "\"space inside\""),
             WebDavConcurrencyToken(lastModified = "Thu, 01 Oct 2026 00:00:00 GMT"))) {
             assertTrue(fixture.backend.upload(staged(payload), withoutToken.copy(token = token)).exceptionOrNull()
                 is WebDavMissingConcurrencyTokenException)
+            // 只有内容指纹时必须先确认远端仍是同一版本，远端缺失或变化都不能写入
+            assertTrue(fixture.backend.upload(staged(payload), withoutToken.copy(token = token, lastKnownFingerprint = fingerprint))
+                .exceptionOrNull() is WebDavContentConflictException)
         }
         assertTrue(fixture.writes.isEmpty())
         val uploaded = fixture.backend.upload(staged(payload), WebDavSyncBackend.Version(null, true)).getOrThrow()
@@ -429,12 +432,12 @@ class SyncBackendTransportTest {
         val uploaded = fixture.backend.upload(staged(payload), WebDavSyncBackend.Version(null, true)).getOrThrow()
         fixture.writes.clear()
 
-        fixture.backend.upload(staged(payload), uploaded.copy(knownPaths = emptySet())).getOrThrow()
+        val republished = fixture.backend.upload(staged(payload), uploaded.copy(knownPaths = emptySet())).getOrThrow()
 
         assertTrue(fixture.writes.size > 1)
         assertTrue(fixture.writes.dropLast(1).all { it.header("If-None-Match") == "*" })
         fixture.writes.clear()
-        fixture.backend.upload(staged(payload), uploaded).getOrThrow()
+        fixture.backend.upload(staged(payload), republished).getOrThrow()
         assertEquals(1, fixture.writes.size)
         fixture.reads.clear()
         assertEquals(payload, fixture.backend.fetch().getOrThrow().tracked().dataset?.data)

@@ -84,13 +84,13 @@ val AudioEffectsBuiltInPresets: List<AudioEffectsPreset> = listOf(
     ),
     AudioEffectsPreset(
         "bass_boost", AudioEffectsPresetCategory.TONE,
-        Neutral.copy(equalizerBandsDb = eq(2f, 2f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f), bassDb = 6f, virtualBass = 0.2f)
+        Neutral.copy(equalizerBandsDb = eq(1f, 1f, 0.5f, 0f, 0f, 0f, 0f, 0f, 0f, 0f), bassDb = 7f, virtualBass = 0.25f)
     ),
     AudioEffectsPreset(
         "deep_bass", AudioEffectsPresetCategory.TONE,
         Neutral.copy(
-            equalizerBandsDb = eq(5f, 4f, 2f, 0f, -0.5f, 0f, 0f, 0f, 0f, 0f),
-            bassDb = 6f, bassFrequencyHz = 80f, virtualBass = 0.5f, monoBassHz = 120f
+            equalizerBandsDb = eq(2f, 1.5f, 0.5f, 0f, -0.5f, 0f, 0f, 0f, 0f, 0f),
+            bassDb = 8f, bassFrequencyHz = 80f, virtualBass = 0.45f, monoBassHz = 120f
         )
     ),
     AudioEffectsPreset(

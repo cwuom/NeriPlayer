@@ -33,12 +33,19 @@
     var t = null;
     try { t = localStorage.getItem('np-theme'); } catch (e) {}
     if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', t);
+    var d = document.documentElement;
+    d.setAttribute('data-theme', t);
+    // 样式表到达之前就把底色铺好，深色下切换语言或刷新不会先白一下
+    d.style.colorScheme = t;
+    d.style.backgroundColor = t === 'dark' ? '#15130f' : '#fbf7ef';
   })();
 </script>
 <link rel="stylesheet" href="assets/css/base.css">
 <link rel="stylesheet" href="assets/css/sections.css">
 <link rel="stylesheet" href="assets/css/phone.css">
+<link rel="stylesheet" href="assets/css/dsp.css">
+<link rel="stylesheet" href="assets/css/desktop.css">
+<link rel="stylesheet" href="assets/css/desktop-fonts.css">
 <link rel="stylesheet" href="assets/css/motion.css">
 <script>
   document.documentElement.classList.replace('no-js', 'js');
@@ -50,6 +57,10 @@
 <script defer src="assets/js/phone.js"></script>
 <script defer src="assets/js/phone-ui.js"></script>
 <script defer src="assets/js/demos.js"></script>
+<script defer src="assets/js/dsp.js"></script>
+<script defer src="assets/js/dsp-scope.js"></script>
+<script defer src="assets/js/desktop-sim.js"></script>
+<script defer src="assets/js/desktop.js"></script>
 <script defer src="assets/js/github.js"></script>
 <script defer src="assets/js/motion.js"></script>
 <script defer src="assets/js/main.js"></script>
@@ -130,6 +141,8 @@
   <symbol id="i-fontsize" viewBox="0 0 24 24"><path d="M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z"/></symbol>
   <symbol id="i-share" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11A2.99 2.99 0 0021 5c0-1.66-1.34-3-3-3s-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81A2.99 2.99 0 003 12c0 1.66 1.34 3 3 3 .79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65A2.92 2.92 0 1018 16.08z"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></symbol>
+  <symbol id="i-cmd" viewBox="0 0 24 24"><path d="M9 9V6.5A2.5 2.5 0 1 0 6.5 9H9Zm0 0h6m-6 0v6m6-6V6.5A2.5 2.5 0 1 1 17.5 9H15Zm0 0v6m0 0H9m6 0v2.5a2.5 2.5 0 1 0 2.5-2.5H15Zm-6 0v2.5A2.5 2.5 0 1 1 6.5 15H9Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-opt" viewBox="0 0 24 24"><path d="M3.5 6.5h5.2l6.6 11h5.2M14.2 6.5h6.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M12 3a9 9 0 00-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7a9 9 0 00-9-9zM7 15v4H5v-4h2zm12 4h-2v-4h2v4z"/></symbol>
 
   <!-- 站点图标 -->
@@ -171,6 +184,26 @@
   <symbol id="i-tv" viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></symbol>
   <symbol id="i-playcircle" viewBox="0 0 24 24"><path d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></symbol>
   <symbol id="i-swap" viewBox="0 0 24 24"><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6 0 2.97-2.17 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93 0-4.42-3.58-8-8-8zm-6 8c0-1.65.67-3.15 1.76-4.24L6.34 7.34A7.95 7.95 0 0 0 4 13c0 4.08 3.05 7.44 7 7.93v-2.02c-2.83-.48-5-2.94-5-5.91z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-geq" viewBox="0 0 24 24"><path d="M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z"/></symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></symbol>
+  <symbol id="i-desktop" viewBox="0 0 24 24"><path d="M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 12H4V7h16v10zM11 8h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-3 0h2v2H5zm0-3h2v2H5zm3 6h8v2H8zm6-3h2v2h-2zm0-3h2v2h-2zm3 3h2v2h-2zm0-3h2v2h-2z"/></symbol>
+  <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M2 4c0-1.1.9-2 2-2h11c1.1 0 2 .9 2 2v.4A5 5 0 0 0 14 9a5 5 0 0 0 3 4.6V16c0 1.1-.9 2-2 2H6l-4 4V4zm4 2v2h7V6H6zm0 3v2h5V9H6zm0 3v2h4v-2H6zM19 1h4v2h-2v6a3 3 0 1 1-2-2.82V1z"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42A6.92 6.92 0 0 1 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17A8.93 8.93 0 0 0 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/></symbol>
+  <symbol id="i-win" viewBox="0 0 24 24"><path d="M3 5.6l7.4-1v7.1H3V5.6zm0 12.8l7.4 1.1v-7H3v5.9zm8.4 1.2L21 21v-8.4h-9.6v7zm0-15.2v7.3H21V3l-9.6 1.4z"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.37 12.7c-.02-2.26 1.85-3.35 1.93-3.4-1.05-1.54-2.69-1.75-3.27-1.77-1.39-.14-2.71.82-3.42.82-.7 0-1.79-.8-2.94-.78-1.51.02-2.91.88-3.69 2.24-1.57 2.73-.4 6.77 1.13 8.98.75 1.08 1.64 2.3 2.81 2.25 1.13-.04 1.55-.73 2.92-.73 1.36 0 1.75.73 2.94.71 1.21-.02 1.98-1.1 2.72-2.19.86-1.25 1.21-2.47 1.23-2.53-.03-.01-2.35-.9-2.36-3.6zM14.14 6.06c.62-.75 1.04-1.8.93-2.84-.9.04-1.98.6-2.62 1.35-.58.66-1.08 1.73-.95 2.75 1 .08 2.02-.51 2.64-1.26z"/></symbol>
+  <symbol id="i-linux" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2c-2.3 0-3.7 1.9-3.7 4.4 0 1.4.2 2.1-.7 3.4C6.4 11.5 4.8 13.8 4.8 16.4c0 1 .3 1.8.8 2.4-.7.4-1.7.9-1.7 1.7 0 1 1.6 1.3 3.3 1.5 1.2.1 2.1.6 3 .6.6 0 1.1-.3 1.8-.3s1.2.3 1.8.3c.9 0 1.8-.5 3-.6 1.7-.2 3.3-.5 3.3-1.5 0-.8-1-1.3-1.7-1.7.5-.6.8-1.4.8-2.4 0-2.6-1.6-4.9-2.8-6.6-.9-1.3-.7-2-.7-3.4C15.7 3.9 14.3 2 12 2zm0 8.3c-1.9 0-3.4 2.3-3.4 5.1 0 1.6.5 3 1.3 3.9h4.2c.8-.9 1.3-2.3 1.3-3.9 0-2.8-1.5-5.1-3.4-5.1zM10.6 5.6a.8 1 0 1 0 0 2 .8 1 0 0 0 0-2zm2.8 0a.8 1 0 1 0 0 2 .8 1 0 0 0 0-2zM12 8l-1.4.9 1.4.8 1.4-.8L12 8z"/></symbol>
+  <symbol id="i-tray" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5v-3h3.56A3.98 3.98 0 0 0 12 18c1.45 0 2.73-.78 3.44-2H19v3zm0-5h-5a2 2 0 0 1-4 0H5V5h14v9z"/></symbol>
 
   <!-- 手绘涂鸦 -->
   <symbol id="d-star" viewBox="0 0 40 40"><path d="M20 3c1.6 8.8 4.4 12.4 15 14-9.6 2.4-12.8 5.6-15 17-1.8-10.6-5.4-14.2-16-16.4C14.4 15.4 18 12 20 3z"/></symbol>
@@ -191,9 +224,10 @@
       <a href="#lyrics" data-go><b>02</b>歌词</a>
       <a href="#sources" data-go><b>03</b>多源</a>
       <a href="#hifi" data-go><b>04</b>音质</a>
-      <a href="#together" data-go><b>05</b>一起听</a>
-      <a href="#sync" data-go><b>07</b>隐私</a>
-      <a href="#download" data-go><b>12</b>下载</a>
+      <a href="#dsp" data-go><b>05</b>音效</a>
+      <a href="#sync" data-go><b>08</b>隐私</a>
+      <a href="#desktop" data-go><b>11</b>桌面</a>
+      <a href="#download" data-go><b>14</b>下载</a>
     </nav>
     <div class="nav__actions">
       <a class="nav__gh" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener" aria-label="在 GitHub 上查看 NeriPlayer">
@@ -220,14 +254,16 @@
     <li><a href="#lyrics" data-go><i>02</i><span>歌词</span></a></li>
     <li><a href="#sources" data-go><i>03</i><span>多源</span></a></li>
     <li><a href="#hifi" data-go><i>04</i><span>音质</span></a></li>
-    <li><a href="#together" data-go><i>05</i><span>一起听</span></a></li>
-    <li><a href="#local" data-go><i>06</i><span>本地</span></a></li>
-    <li><a href="#sync" data-go><i>07</i><span>同步</span></a></li>
-    <li><a href="#persona" data-go><i>08</i><span>个性</span></a></li>
-    <li><a href="#tablet" data-go><i>09</i><span>平板</span></a></li>
-    <li><a href="#details" data-go><i>10</i><span>细节</span></a></li>
-    <li><a href="#stack" data-go><i>11</i><span>构造</span></a></li>
-    <li><a href="#download" data-go><i>12</i><span>下载</span></a></li>
+    <li><a href="#dsp" data-go><i>05</i><span>音效</span></a></li>
+    <li><a href="#together" data-go><i>06</i><span>一起听</span></a></li>
+    <li><a href="#local" data-go><i>07</i><span>本地</span></a></li>
+    <li><a href="#sync" data-go><i>08</i><span>同步</span></a></li>
+    <li><a href="#persona" data-go><i>09</i><span>个性</span></a></li>
+    <li><a href="#tablet" data-go><i>10</i><span>平板</span></a></li>
+    <li><a href="#desktop" data-go><i>11</i><span>桌面</span></a></li>
+    <li><a href="#details" data-go><i>12</i><span>细节</span></a></li>
+    <li><a href="#stack" data-go><i>13</i><span>构造</span></a></li>
+    <li><a href="#download" data-go><i>14</i><span>下载</span></a></li>
   </ol>
   <span class="route__cat" id="routeCat" aria-hidden="true"><svg><use href="#np-cat"/></svg></span>
 </aside>
@@ -241,14 +277,16 @@
       <li><a href="#lyrics" data-go><i>02</i>歌词<small>Lyrics</small></a></li>
       <li><a href="#sources" data-go><i>03</i>多源<small>Sources</small></a></li>
       <li><a href="#hifi" data-go><i>04</i>音质<small>Hi-Fi</small></a></li>
-      <li><a href="#together" data-go><i>05</i>一起听<small>Together</small></a></li>
-      <li><a href="#local" data-go><i>06</i>本地与离线<small>Local</small></a></li>
-      <li><a href="#sync" data-go><i>07</i>同步与隐私<small>Sync</small></a></li>
-      <li><a href="#persona" data-go><i>08</i>个性<small>Personalize</small></a></li>
-      <li><a href="#tablet" data-go><i>09</i>平板<small>Tablet</small></a></li>
-      <li><a href="#details" data-go><i>10</i>细节<small>Details</small></a></li>
-      <li><a href="#stack" data-go><i>11</i>构造<small>Inside</small></a></li>
-      <li><a href="#download" data-go><i>12</i>下载<small>Download</small></a></li>
+      <li><a href="#dsp" data-go><i>05</i>音效<small>Native DSP</small></a></li>
+      <li><a href="#together" data-go><i>06</i>一起听<small>Together</small></a></li>
+      <li><a href="#local" data-go><i>07</i>本地与离线<small>Local</small></a></li>
+      <li><a href="#sync" data-go><i>08</i>同步与隐私<small>Sync</small></a></li>
+      <li><a href="#persona" data-go><i>09</i>个性<small>Personalize</small></a></li>
+      <li><a href="#tablet" data-go><i>10</i>平板<small>Tablet</small></a></li>
+      <li><a href="#desktop" data-go><i>11</i>桌面端<small>Desktop</small></a></li>
+      <li><a href="#details" data-go><i>12</i>细节<small>Details</small></a></li>
+      <li><a href="#stack" data-go><i>13</i>构造<small>Inside</small></a></li>
+      <li><a href="#download" data-go><i>14</i>下载<small>Download</small></a></li>
       <li><a href="#faq" data-go><i>i</i>常见问题<small>FAQ</small></a></li>
     </ol>
   </div>
@@ -269,11 +307,12 @@
         <span class="display__line">原生 <em class="ul">Android<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></em>。</span>
       </h1>
       <p class="lead" data-reveal style="--d:2">NeriPlayer（音理音理！）把网易云音乐、哔哩哔哩、YouTube Music 与本地音频装进同一个播放器，再配上逐字歌词、GLSL 流体背景、USB 独占与只属于你自己的同步。</p>
-      <p class="small" data-reveal style="--d:3">基于 Jetpack Compose + Media3，支持 Android 9 及以上。免费开源，GPL-3.0。</p>
+      <p class="small" data-reveal style="--d:3">Android 版基于 Jetpack Compose + Media3，支持 Android 9 及以上；桌面版基于 Tauri 2，支持 Windows、macOS 与 Linux。免费开源，GPL-3.0。</p>
       <div class="hero__cta" data-reveal style="--d:4">
-        <a class="btn btn--ink" href="#download" data-go>下载 APK<svg class="i" aria-hidden="true"><use href="#i-arrow-dr"/></svg></a>
+        <a class="btn btn--ink hero__dl" href="#download" data-go data-cta data-plat-go="android"><svg class="i hero__dl-ic" aria-hidden="true"><use href="#i-phone" data-cta-ic/></svg><span class="hero__dl-t"><span data-cta-label>下载 APK</span><small data-cta-meta>Android 9+ · 免费</small></span><svg class="i" aria-hidden="true"><use href="#i-arrow-dr"/></svg></a>
         <a class="btn btn--line" href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener"><svg class="i" aria-hidden="true"><use href="#i-github"/></svg>GitHub<span class="btn__meta"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg><span data-gh="stars">3.7k</span></span></a>
       </div>
+      <p class="hero__alt" data-reveal style="--d:4"><span data-cta-alt>电脑上也能用：</span><a href="#download" data-go data-plat-go="desktop" data-cta-alt-link>Windows · macOS · Linux 桌面版 ↘</a></p>
       <p class="signals" data-reveal style="--d:5">
         <span class="signals__label">Signals</span>
         <span><i style="--c:var(--red)"></i>多源播放</span>
@@ -287,7 +326,7 @@
       <p class="hand hero__note">今晚也一起听歌吗？</p>
       <svg class="hero__arrow draw" viewBox="0 0 120 70" aria-hidden="true"><path d="M6 12 C 40 4, 78 18, 96 54" pathLength="1"/><path d="M84 46 L 97 56 L 101 40" pathLength="1"/></svg>
       <div class="crayon" aria-hidden="true">
-        <svg class="crayon__art" viewBox="164 131 695 546">
+        <svg class="crayon__art" viewBox="0 0 695 546">
           <g filter="url(#crayon)">
             <use href="#np-p-head" class="cr cr--head"/>
             <use href="#np-p-arc" class="cr cr--arc"/>
@@ -374,16 +413,9 @@
               <li><b>02</b>向左一滑，就进入完整歌词页</li>
             </ol>
           </div>
-          <div class="pstep" data-step="3">
-            <p class="tag"><svg class="i"><use href="#i-tune"/></svg>PlaybackEffectsController</p>
-            <h3 class="sheet__title"><span class="sheet__num">04</span>音效与倍速</h3>
-            <p class="body">点右上角「更多」，再选「音效与倍速」：速度与音调分开调节，响度增强按 dB 步进，均衡器绑定当前播放会话，内置 23 种系统预设，也能逐个拖动 60 Hz 到 14 kHz 的手动频段。播放设置里还有按歌曲实时分析的响度均衡、声道平衡、32-bit 高解析输出、淡入淡出与交叉淡入淡出。</p>
-            <p class="hand hand--note">先按播放，再点手机里的预设或倍速，声音会真的跟着变 ↗</p>
-          </div>
-
           <table class="tblock" aria-label="图纸信息">
             <tbody>
-              <tr><td><span>编号</span><b>NP-01</b></td><td><span>版本</span><b data-gh="rev">—</b></td><td><span>平台</span><b>Android</b></td><td><span>页码</span><b>01 / 12</b></td></tr>
+              <tr><td><span>编号</span><b>NP-01</b></td><td><span>版本</span><b data-gh="rev">—</b></td><td><span>平台</span><b>Android</b></td><td><span>页码</span><b>01 / 14</b></td></tr>
               <tr><td colspan="4"><span>状态</span><b>Android 9+ · 流体背景与高级模糊需 Android 13+</b></td></tr>
               <tr><td colspan="3"><span>来源</span><b><a href="https://github.com/cwuom/NeriPlayer" target="_blank" rel="noopener">cwuom/NeriPlayer</a> · <svg class="i"><use href="#i-star"/></svg><span data-gh="stars">3.7k</span> · <svg class="i"><use href="#i-fork"/></svg><span data-gh="forks">131</span></b></td><td><span>日期</span><b data-gh="date">—</b></td></tr>
               <tr><td colspan="3"><span>示例曲</span><b>《星轨》· Neri Line · NeriPlayer PV</b></td><td class="tblock__stamp"><span class="stamp">NP</span></td></tr>
@@ -439,45 +471,6 @@
                   </div>
 
                   <div class="sheet-scrim" data-ph-scrim></div>
-                  <div class="msheet msheet--fx" data-ph-sheet data-ph-msheet="fx">
-                    <i class="msheet__grab"></i>
-                    <div class="msheet__scroll" data-ph-sheet-scroll>
-                      <p class="ms-title">音效与倍速</p>
-                      <p class="ms-sub">速度与音调可分开调节，均衡器会绑定当前播放会话</p>
-                      <div class="ms-card" data-ms="speed">
-                        <div class="ms-row"><b>播放速度</b><span class="ms-val" data-ms-val>1.00x</span></div>
-                        <div class="xslider" data-xs style="--v:.2308"><i class="xs-on"></i><i class="xs-thumb"></i><i class="xs-off"></i></div>
-                        <div class="ms-chips" data-ms-chips>
-                          <button type="button" data-v="0.10">0.10x</button><button type="button" data-v="0.50">0.50x</button><button type="button" data-v="0.75">0.75x</button><button type="button" data-v="0.85">0.85x</button><button type="button" data-v="1.00" class="is-on">1.00x</button>
-                          <button type="button" data-v="1.25">1.25x</button><button type="button" data-v="1.50">1.50x</button><button type="button" data-v="2.00">2.00x</button><button type="button" data-v="3.00">3.00x</button>
-                        </div>
-                      </div>
-                      <div class="ms-card" data-ms="pitch">
-                        <div class="ms-row"><b>音调</b><span class="ms-val" data-ms-val>1.00x</span></div>
-                        <div class="xslider" data-xs style="--v:.4286"><i class="xs-on"></i><i class="xs-thumb"></i><i class="xs-off"></i></div>
-                        <div class="ms-chips" data-ms-chips>
-                          <button type="button" data-v="0.50">0.50x</button><button type="button" data-v="0.75">0.75x</button><button type="button" data-v="0.85">0.85x</button><button type="button" data-v="1.00" class="is-on">1.00x</button><button type="button" data-v="1.25">1.25x</button>
-                          <button type="button" data-v="1.50">1.50x</button>
-                        </div>
-                      </div>
-                      <div class="ms-card" data-ms="loud">
-                        <div class="ms-row"><b>响度增强<small>当前设备可能不支持响度增强</small></b><span class="ms-val" data-ms-val>+0.0 dB</span></div>
-                        <div class="xslider xslider--steps" data-xs style="--v:0"><i class="xs-on"></i><i class="xs-thumb"></i><i class="xs-off"></i></div>
-                        <div class="ms-chips" data-ms-chips>
-                          <button type="button" data-v="0" class="is-on">+0.0 dB</button><button type="button" data-v="3">+3.0 dB</button><button type="button" data-v="6">+6.0 dB</button>
-                          <button type="button" data-v="9">+9.0 dB</button><button type="button" data-v="12">+12.0 dB</button><button type="button" data-v="15">+15.0 dB</button>
-                        </div>
-                      </div>
-                      <div class="ms-card" data-ms="eq">
-                        <div class="ms-row"><b>均衡器<small>预设</small></b><span class="m3switch is-on" aria-hidden="true"><i></i></span></div>
-                        <p class="ms-hint">速度、音调和均衡器预设</p>
-                        <div class="ms-chips ms-chips--eq" data-eq-chips></div>
-                        <hr>
-                        <p class="ms-hint">手动频段</p>
-                        <div class="ms-bands" data-eq-bands></div>
-                      </div>
-                    </div>
-                  </div>
                   <i class="ph__gesture" aria-hidden="true"></i>
                 </div>
               </div>
@@ -489,8 +482,6 @@
               <p class="ann ann--r hand ann--spec" data-ann="1" style="--y:50.5%">音频规格</p>
               <p class="ann ann--l hand" data-ann="2" style="--y:71%">当前行<br>逐字点亮</p>
               <p class="ann ann--r hand ann--dock" data-ann="2" style="--y:89%">Dock 工具栏</p>
-              <p class="ann ann--l hand" data-ann="3" style="--y:30%">速度与音调<br>分开调</p>
-              <p class="ann ann--r hand" data-ann="3" style="--y:60%">23 种预设<br>+ 手动频段</p>
             </div>
             <figcaption class="fig__cap">Fig. 01 — 播放页 · 每个按钮都能点</figcaption>
           </figure>
@@ -813,12 +804,131 @@
   </div>
 </section>
 
-<!-- ═══════════════ 05 一起听 ═══════════════ -->
-<section class="station" id="together" data-station="5" data-acc="blue" aria-labelledby="together-title">
+<!-- ═══════════════ 05 音效 ═══════════════ -->
+<section class="station" id="dsp" data-station="5" data-acc="pink" aria-labelledby="dsp-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>05</b><span class="eyebrow__rule"></span>一起听 · Listen Together</p>
+        <p class="eyebrow" data-reveal><b>05</b><span class="eyebrow__rule"></span>音效 · Native DSP</p>
+        <h2 class="h2" id="dsp-title" data-reveal style="--d:1">想要什么听感，<span class="ul">自己拧出来<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
+        <p class="lead" data-reveal style="--d:2">系统 <code>Equalizer</code> 与 <code>LoudnessEnhancer</code> 已经退场，换成自研的原生 DSP：float 精度、放在 Media3 输出之前、零延迟。手机在「设置 → 音效与倍速」，桌面版在同名设置页，两端用同一套 29 种预设与参数。右边这台手机照着 App 源码与真机截图逐项重绘，先按播放，再随便拧一拧。</p>
+      </div>
+      <dl class="sec-stats" data-reveal style="--d:2">
+        <div><dt>按风格、音色、场景与设备分好类，选完还能接着微调</dt><dd>29<small>种内置音效</small></dd></div>
+        <div><dt>可拖动的十段图示均衡，外加最多十段参数均衡与 AutoEQ 导入</dt><dd>10<small>+ 10 段均衡</small></dd></div>
+        <div><dt>音效关闭或全部为中性时整条链路旁路，不额外耗电</dt><dd>&lt;0.1<small>% 单核占用</small></dd></div>
+      </dl>
+    </header>
+
+    <article class="sheet sheet--lined dsp" data-reveal>
+      <span class="sheet__tab"></span>
+      <div class="sheet__grid sheet__grid--phone">
+        <div class="dsp__copy">
+          <p class="tag"><svg class="i"><use href="#i-geq"/></svg>Settings · Audio effects &amp; speed</p>
+          <h3 class="sheet__title"><span class="sheet__num">05</span>八个分区，各管一段</h3>
+          <p class="body">顶上是总开关与运行状态：当前输出设备、处理负载与防破音保护。下面八个分区各有自己的开关，关掉只是让这一段按原声走，数值都还在；改过的分区标签旁会亮起一个小圆点。点下面的分区，手机里会跟着翻过去。</p>
+          <div class="dsp__index" role="tablist" aria-label="音效分区">
+            <button type="button" role="tab" data-dsp-tab="presets"><b>01</b><strong>音效</strong><span>29 种预设分成风格、音色、场景、设备四类，还能保存「我的音效」、用分享码导入别人的</span></button>
+            <button type="button" role="tab" data-dsp-tab="equalizer"><b>02</b><strong>均衡器</strong><span>十段曲线直接拖圆点，下方按 0.5 dB 微调；耳机校正可以粘贴 AutoEq 的参数均衡</span></button>
+            <button type="button" role="tab" data-dsp-tab="tone"><b>03</b><strong>音色</strong><span>低音与高音及其范围、虚拟低音，温暖度、清晰度、人声突出与伴奏模式</span></button>
+            <button type="button" role="tab" data-dsp-tab="space"><b>04</b><strong>空间</strong><span>立体声宽度、3D 环绕、耳机交叉馈送、混响、低频居中、单声道与左右互换</span></button>
+            <button type="button" role="tab" data-dsp-tab="dynamics"><b>05</b><strong>动态</strong><span>动态压缩与额外音量，防破音限幅器的峰值上限和恢复时间</span></button>
+            <button type="button" role="tab" data-dsp-tab="speaker"><b>06</b><strong>扬声器</strong><span>只在手机外放时生效：按手机 / 平板 / 大音箱补低音、提响度、扩声场、护低频</span></button>
+            <button type="button" role="tab" data-dsp-tab="speed"><b>07</b><strong>倍速</strong><span>0.25× 到 3× 的倍速与 ±12 个半音的音调，也能像唱片一样让音调跟着变速</span></button>
+            <button type="button" role="tab" data-dsp-tab="advanced"><b>08</b><strong>高级</strong><span>省电 / 均衡 / 高音质三档处理模式，按设备分别保存，USB 独占默认保持比特完美</span></button>
+          </div>
+          <p class="hand hand--note">拖曲线上的圆点、换个预设，声音会真的跟着变 ↗</p>
+        </div>
+
+        <div class="phone-col">
+          <figure class="phone-fig">
+            <div class="device" id="deviceDsp">
+              <div class="device__screen">
+                <div class="ph ph--fx" id="phDsp">
+                  <div class="ph__status" aria-hidden="true"><span class="ph__clock">19:19</span><span class="ph__sys"><svg><use href="#i-signal"/></svg><svg><use href="#i-wifi"/></svg><i class="ph__bat"></i></span></div>
+                  <div class="hm-mini" data-rpl><div class="hm-mini__row"><img src="assets/img/covers/startrail.jpg" alt="" width="90" height="90"><div class="hm-mini__id"><b>星轨</b><span>Neri Line</span></div><button class="pbtn" type="button" data-dsp-play aria-label="播放"><svg><use href="#i-play-o"/></svg></button></div></div>
+                  <nav class="hm-nav" aria-hidden="true">
+                    <span data-rpl><svg><use href="#i-home"/></svg></span>
+                    <span data-rpl><svg><use href="#i-search"/></svg></span>
+                    <span data-rpl><svg><use href="#i-library"/></svg></span>
+                    <span class="is-on" data-rpl><svg><use href="#i-settings"/></svg>设置</span>
+                  </nav>
+                  <i class="ph__gesture" aria-hidden="true"></i>
+                </div>
+              </div>
+            </div>
+            <figcaption class="fig__cap">Fig. 05 — 设置 · 音效与倍速 · 每个开关都能拧</figcaption>
+            <p class="sim-draft"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span><b>预览仿真，不是最终版本</b>界面与音效以实际运行的版本为准。</span></p>
+          </figure>
+        </div>
+      </div>
+
+      <figure class="dscope" id="dspChain" data-reveal>
+        <div class="dscope__head">
+          <p class="dscope__title"><b>效果监视器</b><span class="mono" data-scope-src>模型频谱 · 按播放后换成实时分析</span></p>
+          <div class="dscope__btns">
+            <button type="button" class="dscope__ab dscope__spk" data-scope-spk aria-pressed="false" title="网页里的试听：把输出过一遍小喇叭的频响，戴耳机也能听出外放的样子；App 本身不会这样处理"><svg class="i" aria-hidden="true"><use href="#i-speaker"/></svg><span>模拟手机外放</span></button>
+            <button type="button" class="dscope__ab" data-scope-ab aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-headphones"/></svg><span>按住听原声</span></button>
+          </div>
+        </div>
+        <p class="dscope__tip mono" data-scope-tip hidden></p>
+        <div class="dscope__mon">
+          <div class="dscope__spec">
+            <canvas data-scope-spec aria-hidden="true"></canvas>
+            <ul class="dscope__key mono" aria-hidden="true">
+              <li class="k-dry">原声</li>
+              <li class="k-wet">处理后</li>
+              <li class="k-curve">理论频响</li>
+            </ul>
+            <p class="dscope__read mono" data-scope-read aria-live="polite"></p>
+          </div>
+          <div class="dscope__side">
+            <div class="dscope__field">
+              <canvas data-scope-field aria-hidden="true"></canvas>
+              <p class="mono"><b>声场</b><span data-scope-width>100%</span></p>
+            </div>
+            <div class="dscope__meter">
+              <div class="dscope__bars" aria-hidden="true"><i data-scope-lvl="l"><i></i></i><i data-scope-lvl="r"><i></i></i><s data-scope-ceil></s></div>
+              <p class="mono"><b>输出</b><span data-scope-gr>GR 0.0 dB</span></p>
+            </div>
+          </div>
+        </div>
+        <ol class="dchain">
+          <li data-node="pre"><span>前级<small>Preamp</small></span></li>
+          <li data-node="eq"><span>均衡<small>Graphic · PEQ</small></span></li>
+          <li data-node="tone"><span>音调<small>Bass · Treble</small></span></li>
+          <li data-node="bass"><span>虚拟低音<small>Virtual bass</small></span></li>
+          <li data-node="color"><span>音色<small>Warmth · Clarity</small></span></li>
+          <li data-node="stereo"><span>立体声<small>Width · Crossfeed</small></span></li>
+          <li data-node="space"><span>环绕<small>Surround</small></span></li>
+          <li data-node="reverb"><span>混响<small>Reverb</small></span></li>
+          <li data-node="spk"><span>扬声器<small>Speaker</small></span></li>
+          <li data-node="dyn"><span>压缩<small>Compressor</small></span></li>
+          <li data-node="lim"><span>输出<small>Gain · Limiter</small></span></li>
+        </ol>
+        <p class="dchain__state mono" data-dsp-state>正在处理 · 亮着的环节正在生效</p>
+        <figcaption class="fig__cap">Fig. 05b — 原生 DSP 的处理顺序与实时效果，跟着上面的手机一起变</figcaption>
+      </figure>
+
+      <ol class="notes notes--cols">
+        <li><b>01</b><span><strong>中性即旁路</strong>音效关闭、或所有调节都等于原声时整条链路跳过，系统可以继续走硬件低功耗播放</span></li>
+        <li><b>02</b><span><strong>三档处理模式</strong>省电用简化的混响与压缩、不加抖动；高音质让参数变化更细腻，16 位输出加降噪整形抖动</span></li>
+        <li><b>03</b><span><strong>按设备记忆</strong>扬声器、有线耳机、蓝牙与 USB 各存一套，插拔或切换输出时自动换上</span></li>
+        <li><b>04</b><span><strong>比特完美优先</strong>USB 独占默认旁路音效；开启「比特完美输出」时无论如何都不处理</span></li>
+        <li><b>05</b><span><strong>预设能分享</strong>调好的声音可以存成「我的音效」，复制分享码发给别人一键导入</span></li>
+        <li><b>06</b><span><strong>两端一致</strong>桌面版同样是原生 DSP，29 种预设、十段均衡、参数均衡与 AutoEQ / Equalizer APO 导入都在</span></li>
+      </ol>
+      <p class="dsp__desk"><button class="hand hand--note hand--btn" type="button" data-open-desk-fx>去桌面版仿真里看看同一套音效 ↘</button></p>
+    </article>
+  </div>
+</section>
+
+<!-- ═══════════════ 05 一起听 ═══════════════ -->
+<section class="station" id="together" data-station="6" data-acc="blue" aria-labelledby="together-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <div>
+        <p class="eyebrow" data-reveal><b>06</b><span class="eyebrow__rule"></span>一起听 · Listen Together</p>
         <h2 class="h2" id="together-title" data-reveal style="--d:1">隔着很远，<span class="ul">听同一首歌<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
         <p class="lead" data-reveal style="--d:2">创建房间、分享邀请，所有人的播放进度通过 WebSocket 实时对齐。服务端基于 Cloudflare Workers 与 Durable Objects，你可以一键部署属于自己的那一台。</p>
       </div>
@@ -852,7 +962,7 @@
             <p class="receipt__head mono">房间 NR7K2Q · 实时同步<i></i></p>
             <ol class="receipt__log mono" id="roomLog" aria-hidden="true"></ol>
           </div>
-          <figcaption class="fig__cap">Fig. 05 — 三个人，一个房间</figcaption>
+          <figcaption class="fig__cap">Fig. 06 — 三个人，一个房间</figcaption>
         </figure>
       </div>
     </article>
@@ -860,11 +970,11 @@
 </section>
 
 <!-- ═══════════════ 06 本地 ═══════════════ -->
-<section class="station" id="local" data-station="6" data-acc="green" aria-labelledby="local-title">
+<section class="station" id="local" data-station="7" data-acc="green" aria-labelledby="local-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>06</b><span class="eyebrow__rule"></span>本地与离线 · Local</p>
+        <p class="eyebrow" data-reveal><b>07</b><span class="eyebrow__rule"></span>本地与离线 · Local</p>
         <h2 class="h2" id="local-title" data-reveal style="--d:1">连接断开，<span class="ul">歌还在继续<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
         <p class="lead" data-reveal style="--d:2">播放缓存、下载、歌单、历史和设置默认都留在设备上。网络断开时，首页、探索、播放页、歌词、歌单与下载列表都会切进脱机模式，围绕本地文件与缓存继续运行。</p>
       </div>
@@ -873,7 +983,7 @@
     <div class="cards cards--3">
       <article class="card" id="offlineDemo" data-reveal>
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">06.1</span><h3>脱机模式</h3><label class="pswitch pswitch--sm"><input type="checkbox" id="netSwitch" checked><i></i><span class="sr-only">模拟网络连接</span></label></header>
+        <header class="card__head"><span class="card__no">07.1</span><h3>脱机模式</h3><label class="pswitch pswitch--sm"><input type="checkbox" id="netSwitch" checked><i></i><span class="sr-only">模拟网络连接</span></label></header>
         <p class="body"><code>NetworkStatusMonitor</code> 按系统默认网络承载识别脱机；断网时远程图片请求被阻断，优先用缓存封面。</p>
         <ul class="checklist">
           <li data-online="1">在线探索与首页刷新<em></em></li>
@@ -885,7 +995,7 @@
 
       <article class="card" id="dlDemo" data-reveal style="--d:1">
         <span class="tape tape--tr"></span>
-        <header class="card__head"><span class="card__no">06.2</span><h3>下载与断点续传</h3><span class="card__meta mono">并发 6 · 最高 8</span></header>
+        <header class="card__head"><span class="card__no">07.2</span><h3>下载与断点续传</h3><span class="card__meta mono">并发 6 · 最高 8</span></header>
         <ul class="dl-list">
           <li class="dl"><span class="dl__name">星轨.flac</span><span class="dl__st mono">下载中</span><i class="dl__bar"><i></i></i></li>
           <li class="dl"><span class="dl__name">晚安，列车.mp3</span><span class="dl__st mono">下载中</span><i class="dl__bar"><i></i></i></li>
@@ -896,7 +1006,7 @@
 
       <article class="card" id="storageDemo" data-reveal style="--d:2">
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">06.3</span><h3>存储占用，一眼看清</h3></header>
+        <header class="card__head"><span class="card__no">07.3</span><h3>存储占用，一眼看清</h3></header>
         <div class="stor-bar" aria-hidden="true"><i style="--w:38;--c:#8a6ad6"></i><i style="--w:9;--c:#4f7fd9"></i><i style="--w:6;--c:#5a9f6a"></i><i style="--w:34;--c:#e3a03a"></i><i style="--w:4;--c:#df6f98"></i><i style="--w:9;--c:#8a8175"></i></div>
         <ul class="stor-legend">
           <li style="--c:#8a6ad6">音频缓存<b>1.0 GB</b></li>
@@ -911,7 +1021,7 @@
 
       <article class="card" data-reveal>
         <span class="tape tape--tr"></span>
-        <header class="card__head"><span class="card__no">06.4</span><h3>本地歌手，自动归类</h3></header>
+        <header class="card__head"><span class="card__no">07.4</span><h3>本地歌手，自动归类</h3></header>
         <div class="split-demo">
           <p class="split-demo__in">音理 feat. 诺瓦 / 狩叶、花江</p>
           <svg class="i split-demo__arrow"><use href="#i-down-arrow"/></svg>
@@ -922,7 +1032,7 @@
 
       <article class="card" data-reveal style="--d:1">
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">06.5</span><h3>歌单，改错了也不怕</h3></header>
+        <header class="card__head"><span class="card__no">07.5</span><h3>歌单，改错了也不怕</h3></header>
         <ol class="notes notes--tight">
           <li><b>01</b>删除歌单或歌曲后可以撤销，批量导出也能撤回新增内容</li>
           <li><b>02</b>选中的歌曲可以整体插到指定序号，先预览前后各 5 首上下文</li>
@@ -932,7 +1042,7 @@
 
       <article class="card" data-reveal style="--d:2">
         <span class="tape tape--tr"></span>
-        <header class="card__head"><span class="card__no">06.6</span><h3>流量也算得清</h3></header>
+        <header class="card__head"><span class="card__no">07.6</span><h3>流量也算得清</h3></header>
         <div class="donut" aria-hidden="true"><svg viewBox="0 0 42 42"><circle class="donut__ring" cx="21" cy="21" r="15.9"/><circle class="donut__seg" cx="21" cy="21" r="15.9" style="--c:#4f7fd9;--p:62;--o:0"/><circle class="donut__seg" cx="21" cy="21" r="15.9" style="--c:#e3a03a;--p:24;--o:62"/><circle class="donut__seg" cx="21" cy="21" r="15.9" style="--c:#5a9f6a;--p:14;--o:86"/></svg><ul class="mono"><li style="--c:#4f7fd9">Wi‑Fi 62%</li><li style="--c:#e3a03a">移动网络 24%</li><li style="--c:#5a9f6a">缓存命中 14%</li></ul></div>
         <p class="body">区分播放 / 下载流量、Wi‑Fi / 移动 / 漫游与缓存命中；在高风险网络下下载会主动提示。</p>
       </article>
@@ -941,11 +1051,11 @@
 </section>
 
 <!-- ═══════════════ 07 同步与隐私 ═══════════════ -->
-<section class="station" id="sync" data-station="7" data-acc="teal" aria-labelledby="sync-title">
+<section class="station" id="sync" data-station="8" data-acc="teal" aria-labelledby="sync-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>07</b><span class="eyebrow__rule"></span>同步与隐私 · Sync &amp; Privacy</p>
+        <p class="eyebrow" data-reveal><b>08</b><span class="eyebrow__rule"></span>同步与隐私 · Sync &amp; Privacy</p>
         <h2 class="h2" id="sync-title" data-reveal style="--d:1">你的数据，<span class="ul">只交给你自己<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
         <p class="lead" data-reveal style="--d:2">NeriPlayer 没有中心化服务器。歌单、收藏、最近播放与播放统计这些元数据，只会同步到你自己的 GitHub 仓库（应用内新建时默认私有）或 WebDAV。</p>
       </div>
@@ -966,7 +1076,7 @@
           <div class="node node--me" style="--x:50%;--y:53%"><svg class="i"><use href="#i-phone"/></svg><b>你的设备</b><span>本地 UUID</span></div>
           <div class="node node--none" style="--x:50%;--y:90%"><b>中心化服务器</b><span>不存在</span></div>
           <p class="hand syncmap__note">歌单 · 收藏 · 最近播放 · 播放统计 · 删除记录</p>
-          <figcaption class="fig__cap">Fig. 07 — 不经过任何中转服务器</figcaption>
+          <figcaption class="fig__cap">Fig. 08 — 不经过任何中转服务器</figcaption>
         </figure>
         <ol class="notes">
           <li><b>01</b><span><strong>延迟 5 秒 · 每小时一次</strong>本地变更后延迟同步，另有周期同步；由 WorkManager 调度，只在已验证的网络下执行</span></li>
@@ -1017,11 +1127,11 @@
 </section>
 
 <!-- ═══════════════ 08 个性 ═══════════════ -->
-<section class="station" id="persona" data-station="8" data-acc="violet" aria-labelledby="persona-title">
+<section class="station" id="persona" data-station="9" data-acc="violet" aria-labelledby="persona-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>08</b><span class="eyebrow__rule"></span>个性 · Personalize</p>
+        <p class="eyebrow" data-reveal><b>09</b><span class="eyebrow__rule"></span>个性 · Personalize</p>
         <h2 class="h2" id="persona-title" data-reveal style="--d:1">不只是<span class="ul">换个主题色<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
         <p class="lead" data-reveal style="--d:2">设置项由 <code>AutoSettingsSchema</code> 统一生成：动态取色、种子色、主题风格、明暗模式、UI 缩放与自定义背景……右边的首页按真机布局重绘，拿蜡笔点点看。</p>
       </div>
@@ -1110,7 +1220,7 @@
                 </div>
               </div>
             </div>
-            <figcaption class="fig__cap">Fig. 08 — 首页，按真机布局重绘</figcaption>
+            <figcaption class="fig__cap">Fig. 09 — 首页，按真机布局重绘</figcaption>
           </figure>
         </div>
       </div>
@@ -1119,11 +1229,11 @@
 </section>
 
 <!-- ═══════════════ 09 平板 ═══════════════ -->
-<section class="station" id="tablet" data-station="9" data-acc="teal" aria-labelledby="tablet-title">
+<section class="station" id="tablet" data-station="10" data-acc="teal" aria-labelledby="tablet-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>09</b><span class="eyebrow__rule"></span>平板 · Tablet</p>
+        <p class="eyebrow" data-reveal><b>10</b><span class="eyebrow__rule"></span>平板 · Tablet</p>
         <h2 class="h2" id="tablet-title" data-reveal style="--d:1">屏幕大了，<span class="ul">就换一种摆法<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
         <p class="lead" data-reveal style="--d:2">平板与折叠屏横过来，底栏换成左侧导航栏，播放页拆成封面与歌词两栏，设置变成列表与详情并排，迷你播放器也拉成一整条控制栏。下面四张都是 Pixel Tablet 模拟器里的真机截图。</p>
       </div>
@@ -1176,7 +1286,7 @@
           </div>
           <i class="tabdev__cam" aria-hidden="true"></i>
         </div>
-        <figcaption class="fig__cap">Fig. 09 — Pixel Tablet 模拟器 · Android 16 · 2560 × 1600 横屏</figcaption>
+        <figcaption class="fig__cap">Fig. 10 — Pixel Tablet 模拟器 · Android 16 · 2560 × 1600 横屏</figcaption>
         <p class="tabstage__note hand" aria-hidden="true">真机截图，<br>不是效果图 ↙</p>
       </figure>
 
@@ -1211,12 +1321,257 @@
   </div>
 </section>
 
-<!-- ═══════════════ 10 细节 ═══════════════ -->
-<section class="station" id="details" data-station="10" data-acc="amber" aria-labelledby="details-title">
+<!-- ═══════════════ 10 桌面 ═══════════════ -->
+<section class="station" id="desktop" data-station="11" data-acc="violet" aria-labelledby="desktop-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>10</b><span class="eyebrow__rule"></span>细节 · Details</p>
+        <p class="eyebrow" data-reveal><b>11</b><span class="eyebrow__rule"></span>桌面 · Desktop</p>
+        <h2 class="h2" id="desktop-title" data-reveal style="--d:1">搬到电脑上，<span class="ul">还是那个音理<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
+        <p class="lead" data-reveal style="--d:2">NeriPlayer Desktop 是 Android 版的桌面移植，基于 Tauri 2 + Vue 3 + Rust，面向 Windows、macOS 与 Linux。歌单、收藏、最近播放和统计用同一套格式同步，一起听也能和手机进同一个房间。窗口里是桌面版的真实界面，放的还是那几首示例曲。</p>
+      </div>
+      <dl class="sec-stats" data-reveal style="--d:2">
+        <div><dt>Windows、macOS（Apple Silicon 与 Intel）与 Linux</dt><dd>3<small>个系统</small></dd></div>
+        <div><dt>简体中文、繁体中文、English 与日本語</dt><dd>4<small>种语言</small></dd></div>
+        <div><dt>当前为预览版，可以体验与反馈，尚未进入稳定阶段</dt><dd><small>状态</small>Preview</dd></div>
+      </dl>
+    </header>
+
+    <div class="tabstage dstage" id="deskStage" data-sim>
+      <div class="tabstage__tabs" role="tablist" aria-label="桌面界面">
+        <button type="button" role="tab" id="deskT0" aria-selected="true" aria-controls="deskScreen" class="is-on" data-tab="0"><i>A</i>首页<s></s></button>
+        <button type="button" role="tab" id="deskT1" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="1"><i>B</i>播放页<s></s></button>
+        <button type="button" role="tab" id="deskT2" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="2"><i>C</i>音乐库<s></s></button>
+        <button type="button" role="tab" id="deskT3" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="3"><i>D</i>歌单<s></s></button>
+        <button type="button" role="tab" id="deskT4" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="4"><i>E</i>音效与倍速<s></s></button>
+        <button type="button" role="tab" id="deskT5" aria-selected="false" aria-controls="deskScreen" tabindex="-1" data-tab="5"><i>F</i>设置<s></s></button>
+        <div class="seg dstage__os" role="radiogroup" aria-label="窗口样式">
+          <button type="button" role="radio" aria-checked="true" class="is-on" data-sim-os="win"><svg class="i" aria-hidden="true"><use href="#i-win"/></svg>Windows</button>
+          <button type="button" role="radio" aria-checked="false" data-sim-os="mac"><svg class="i" aria-hidden="true"><use href="#i-apple"/></svg>macOS</button>
+          <button type="button" role="radio" aria-checked="false" data-sim-os="linux"><svg class="i" aria-hidden="true"><use href="#i-linux"/></svg>Linux</button>
+        </div>
+      </div>
+
+      <figure class="tabstage__fig">
+        <div class="dwin" data-tilt>
+          <div class="dwin__screen" id="deskScreen" role="tabpanel" aria-labelledby="deskT0">
+            <img class="dwin__ph" src="assets/img/desktop/home-light-zh.jpg" alt="桌面版首页：左侧导航栏、顶部搜索、继续播放歌单卡片与分三栏的私人雷达，底部是播放栏" width="1600" height="1000" loading="lazy" data-themed>
+            <div class="dsim" id="deskSim" role="application" aria-label="桌面版界面仿真：可以切换页面、播放《星轨》、打开播放页和调音效"></div>
+          </div>
+        </div>
+        <figcaption class="fig__cap">Fig. 11a — NeriPlayer Desktop · 1280 × 800 · 每个按钮都能点</figcaption>
+        <p class="sim-draft"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span><b>预览仿真，不是最终版本</b>界面与功能以实际运行的版本为准。</span></p>
+        <p class="tabstage__note hand" aria-hidden="true">桌面版的真实界面，<br>直接上手点一点 ↙</p>
+      </figure>
+
+      <div class="tabstage__legend">
+        <ol class="tablegend notes notes--tight is-on" data-legend="0">
+          <li><b>01</b>侧边导航：首页、探索、音乐库与设置</li>
+          <li><b>02</b>顶部搜索，回车直接进探索页</li>
+          <li><b>03</b>「继续播放」按打开时间与次数排出最近的歌单</li>
+          <li><b>04</b>底部播放栏：进度贴边，歌词、音量、一起听与队列都在右侧</li>
+        </ol>
+        <ol class="tablegend notes notes--tight" data-legend="1">
+          <li><b>01</b>封面带来源角标，背景从封面取色铺成流体</li>
+          <li><b>02</b>AMLL 逐字歌词：当前行点亮，前后行带景深模糊</li>
+          <li><b>03</b>波浪进度条，下方显示实际码率与格式</li>
+          <li><b>04</b>收藏、队列、睡眠定时、音量、音效与加入歌单</li>
+        </ol>
+        <ol class="tablegend notes notes--tight" data-legend="2">
+          <li><b>01</b>本地、收藏、下载与各平台歌单分类切换</li>
+          <li><b>02</b>歌单、歌手与本地文件，本地曲库支持多个文件夹</li>
+          <li><b>03</b>歌单可拖拽排序、多选，右键还有更多操作</li>
+          <li><b>04</b>播放统计、最近播放与多选入口</li>
+        </ol>
+        <ol class="tablegend notes notes--tight" data-legend="3">
+          <li><b>01</b>封面、名称、曲目数与总时长，网易云歌单还带简介与播放量</li>
+          <li><b>02</b>全部播放、随机与多选，顶部可以在歌单里搜歌</li>
+          <li><b>03</b>曲目行：序号、封面、歌手 · 专辑与时长，点《星轨》就能听</li>
+          <li><b>04</b>首页、音乐库里的歌单卡片都能点进来，左上角返回来处</li>
+        </ol>
+        <ol class="tablegend notes notes--tight" data-legend="4">
+          <li><b>01</b>先挑预设，再用「听感调节」的低音、人声、明亮度、温暖感、空间感微调</li>
+          <li><b>02</b>理论频响随均衡器、前级、音调与响度补偿实时更新</li>
+          <li><b>03</b>扬声器优化、动态保护、倍速与唱片效果各成一个分区，可单独恢复</li>
+          <li><b>04</b>和上面手机里那页共用同一份音效，拧哪边另一边跟着变</li>
+        </ol>
+        <ol class="tablegend notes notes--tight" data-legend="5">
+          <li><b>01</b>21 个分区分成九组，从账号、播放、音频到备份同步与关于</li>
+          <li><b>02</b>顶部搜索可以直接跳到任意一项设置</li>
+          <li><b>03</b>开关、滑块与分段选项都能拨，折叠分组可以收起再展开</li>
+          <li><b>04</b>键盘快捷键分应用内与全局两套，冲突时会提示</li>
+        </ol>
+        <p class="small">窗口里是从桌面版前端导出的真实界面结构与样式，再接上网页里的播放器；曲目与封面是 NeriPlayer PV 的示例曲，没有登录任何账号。深浅色跟随这一页，系统可以在右上角切换。桌面版仍在预览阶段，仿真只是某一时刻的快照，以实际运行的版本为准。</p>
+      </div>
+    </div>
+
+    <ol class="notes notes--cols dnotes" data-reveal>
+      <li><b>01</b><span><strong>本地曲库</strong>多个音乐文件夹，原生文件监视与增量扫描；标题、歌手、专辑可以写回音频文件</span></li>
+      <li><b>02</b><span><strong>下载</strong>并发 1–8，下载后检查可解码内容与时长；歌词、封面与来源信息随文件保存，重启自动续上队列</span></li>
+      <li><b>03</b><span><strong>原生 DSP</strong>10 段均衡、最多 10 段参数均衡、AutoEQ / Equalizer APO 导入、29 种预设，按输出设备记忆</span></li>
+      <li><b>04</b><span><strong>解码与输出</strong>Rust 的 cpal 输出、Symphonia 解码，随包 FFmpeg 再扩展 Opus、ALAC、APE、WavPack 与 DSD</span></li>
+      <li><b>05</b><span><strong>歌词</strong>AMLL 逐字渲染、翻译与罗马字；QQ 音乐、网易云、酷狗、LRCLIB、AMLL TTML 多源匹配，可逐源偏移</span></li>
+      <li><b>06</b><span><strong>系统集成</strong>托盘、关闭到托盘、Windows SMTC、Linux MPRIS、macOS Now Playing 与菜单栏歌词</span></li>
+      <li><b>07</b><span><strong>和手机互通</strong>与 Android 对齐的 V4 ProtoBuf + Zstd 同步格式与合并规则，一起听也是同一个协议</span></li>
+      <li><b>08</b><span><strong>界面</strong>四种界面语言、深浅色、封面取色、自定义背景与随音频律动的流体背景</span></li>
+    </ol>
+
+    <article class="sheet dscene" id="deskScene" data-reveal data-os="win">
+      <span class="sheet__tab"></span>
+      <div class="dscene__grid">
+        <div class="dscene__copy">
+          <p class="tag"><svg class="i"><use href="#i-lyrics"/></svg>Desktop lyrics · Tray · SMTC</p>
+          <h3 class="sheet__title"><span class="sheet__num">11</span>歌词浮在桌面最上层</h3>
+          <p class="body">独立的桌面歌词窗口逐字点亮，可选单行、双行交替或三行滚动，第二行放翻译或下一句；配色、字体、描边、阴影与透明度都能调，锁定后点击穿透，悬停时仍留着解锁按钮。关掉主窗口也能留在托盘继续播放，媒体键与系统媒体会话照常可用。</p>
+          <div class="dctl">
+            <p class="dctl__label mono">配色</p>
+            <div class="dctl__themes" role="radiogroup" aria-label="桌面歌词配色" data-dl-themes></div>
+            <p class="dctl__label mono">布局</p>
+            <div class="seg" role="radiogroup" aria-label="桌面歌词布局">
+              <button type="button" role="radio" aria-checked="true" class="is-on" data-dl-layout="single">单行</button>
+              <button type="button" role="radio" aria-checked="false" data-dl-layout="double">双行交替</button>
+              <button type="button" role="radio" aria-checked="false" data-dl-layout="triple">三行</button>
+            </div>
+            <p class="dctl__label mono">第二行</p>
+            <div class="seg" role="radiogroup" aria-label="桌面歌词第二行">
+              <button type="button" role="radio" aria-checked="true" class="is-on" data-dl-sec="translation">翻译</button>
+              <button type="button" role="radio" aria-checked="false" data-dl-sec="next">下一句</button>
+              <button type="button" role="radio" aria-checked="false" data-dl-sec="none">不显示</button>
+            </div>
+            <label class="pswitch dctl__lock"><input type="checkbox" id="dlLock"><i></i><span>锁定并点击穿透</span></label>
+          </div>
+          <p class="hand hand--note">拖一拖歌词条，再点右下角托盘里的音理 ↘</p>
+        </div>
+
+        <figure class="desk">
+          <div class="desk__os seg" role="radiogroup" aria-label="桌面系统">
+            <button type="button" role="radio" aria-checked="true" class="is-on" data-os="win"><svg class="i" aria-hidden="true"><use href="#i-win"/></svg>Windows</button>
+            <button type="button" role="radio" aria-checked="false" data-os="mac"><svg class="i" aria-hidden="true"><use href="#i-apple"/></svg>macOS</button>
+            <button type="button" role="radio" aria-checked="false" data-os="linux"><svg class="i" aria-hidden="true"><use href="#i-linux"/></svg>Linux</button>
+          </div>
+          <div class="desk__screen" id="deskScreenOS">
+            <div class="desk__wall" aria-hidden="true"><i class="w-win"></i><i class="w-mac"></i><i class="w-linux"></i></div>
+            <div class="desk__app" data-desk-app>
+              <img class="desk__ph" src="assets/img/desktop/np-light-zh.jpg" alt="" width="1600" height="1000" loading="lazy" data-themed>
+              <div class="dsim" data-desk-sim></div>
+              <button type="button" class="desk__close" data-desk-close aria-label="关闭主窗口（留在托盘）"></button>
+            </div>
+            <div class="desk__menubar">
+              <span class="mb-mac" aria-hidden="true"><svg><use href="#i-apple"/></svg><b>NeriPlayer</b><span>文件</span><span>编辑</span><span>播放</span><span>窗口</span></span>
+              <span class="mb-gnome" aria-hidden="true"><b>活动</b></span>
+              <span class="mb-lyric" data-dl-menubar aria-hidden="true"></span>
+              <button type="button" class="mb-neri" data-tray aria-label="NeriPlayer 托盘菜单" aria-expanded="false"><img src="assets/img/app-icon.png" alt="" width="18" height="18"></button>
+              <span class="mb-clock" data-desk-clock aria-hidden="true"></span>
+            </div>
+            <div class="dlyr" id="deskLyr" data-layout="single" data-sec="translation">
+              <div class="dlyr__tools">
+                <button type="button" data-dl-act="prev" aria-label="上一首"><svg><use href="#i-prev"/></svg></button>
+                <button type="button" data-dl-act="toggle" aria-label="播放"><svg><use href="#i-play"/></svg></button>
+                <button type="button" data-dl-act="next" aria-label="下一首"><svg><use href="#i-next"/></svg></button>
+                <i></i>
+                <button type="button" data-dl-act="lock" aria-label="锁定歌词"><svg><use href="#i-lock"/></svg></button>
+                <button type="button" data-dl-act="close" aria-label="关闭桌面歌词"><svg><use href="#i-close"/></svg></button>
+              </div>
+              <div class="dlyr__stage" data-dl-stage></div>
+              <button type="button" class="dlyr__unlock" data-dl-act="unlock" aria-label="解锁歌词"><svg><use href="#i-unlock"/></svg></button>
+            </div>
+            <div class="flyout" data-flyout aria-hidden="true">
+              <img src="assets/img/covers/startrail.jpg" alt="" width="96" height="96" loading="lazy">
+              <div class="flyout__id"><small><img src="assets/img/app-icon.png" alt="" width="14" height="14">NeriPlayer</small><b>星轨</b><span>Neri Line</span></div>
+              <div class="flyout__ctl">
+                <button type="button" tabindex="-1" data-dl-act="prev"><svg><use href="#i-prev"/></svg></button>
+                <button type="button" tabindex="-1" data-dl-act="toggle"><svg><use href="#i-play"/></svg></button>
+                <button type="button" tabindex="-1" data-dl-act="next"><svg><use href="#i-next"/></svg></button>
+              </div>
+              <i class="flyout__bar"><i data-flyout-prog></i></i>
+            </div>
+            <div class="tpop" role="menu" aria-label="托盘菜单" data-tpop>
+              <button type="button" class="tpop__hero" role="menuitem" data-tp="show">
+                <span class="tpop__bg" aria-hidden="true"><img src="assets/img/covers/startrail.jpg" alt="" width="96" height="96" loading="lazy"></span>
+                <span class="tpop__cover"><img src="assets/img/covers/startrail.jpg" alt="" width="96" height="96" loading="lazy"><i class="tpop__eq" aria-hidden="true"><i></i><i></i><i></i></i></span>
+                <span class="tpop__meta"><b>星轨</b><span>Neri Line</span></span>
+                <svg class="tpop__chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
+              </button>
+              <div class="tpop__ctl">
+                <button type="button" data-dl-act="prev" aria-label="上一首"><svg><use href="#i-prev"/></svg></button>
+                <button type="button" class="tpop__play" data-dl-act="toggle" aria-label="播放"><svg><use href="#i-play"/></svg></button>
+                <button type="button" data-dl-act="next" aria-label="下一首"><svg><use href="#i-next"/></svg></button>
+              </div>
+              <i class="tpop__div"></i>
+              <button type="button" class="tpop__item" role="menuitem" data-tp="show"><svg><use href="#i-open"/></svg><span>显示主界面</span></button>
+              <button type="button" class="tpop__item" role="menuitemcheckbox" aria-checked="true" data-tp="lyrics"><svg><use href="#i-lyrics"/></svg><span>桌面歌词</span><i class="tpop__sw" aria-hidden="true"><i></i></i></button>
+              <i class="tpop__div"></i>
+              <button type="button" class="tpop__item tpop__item--quit" role="menuitem" data-tp="quit"><svg><use href="#i-power"/></svg><span>退出 NeriPlayer</span></button>
+            </div>
+            <div class="desk__taskbar">
+              <span class="tb-apps" aria-hidden="true"><i class="tb-start"><svg><use href="#i-win"/></svg></i><i class="tb-app"><svg><use href="#i-search"/></svg></i><i class="tb-app"><svg><use href="#i-folder"/></svg></i><i class="tb-app tb-app--on"><img src="assets/img/app-icon.png" alt="" width="24" height="24"></i></span>
+              <span class="tb-tray">
+                <svg class="tb-ic" aria-hidden="true"><use href="#i-up"/></svg>
+                <button type="button" class="tb-neri" data-tray aria-label="NeriPlayer 托盘菜单" aria-expanded="false"><img src="assets/img/app-icon.png" alt="" width="18" height="18"></button>
+                <svg class="tb-ic" aria-hidden="true"><use href="#i-wifi"/></svg>
+                <svg class="tb-ic" aria-hidden="true"><use href="#i-volume"/></svg>
+                <span class="tb-clock" data-desk-clock></span>
+              </span>
+            </div>
+            <div class="desk__dock" aria-hidden="true"><i></i><i></i><i></i><i class="dock-neri"><img src="assets/img/app-icon.png" alt="" width="40" height="40"></i><i></i></div>
+            <p class="desk__toast" data-desk-toast role="status"></p>
+          </div>
+          <figcaption class="fig__cap">Fig. 11b — 桌面歌词、托盘与系统媒体会话 · 可以拖动、点按</figcaption>
+        </figure>
+      </div>
+
+      <div class="dkeys" id="deskKeys" tabindex="0" role="group" aria-label="快捷键演示：聚焦这里后按键盘">
+        <p class="dkeys__head"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg><b>应用内快捷键</b><span class="dkeys__hint" data-keys-hint>点这里，然后按键盘试试</span></p>
+        <ul class="dkeys__list">
+          <li data-k="space"><kbd>Space</kbd><span>播放 / 暂停</span></li>
+          <li data-k="left"><kbd>←</kbd><kbd>→</kbd><span>快退 / 快进 5 秒</span></li>
+          <li data-k="shift"><kbd>Shift</kbd><kbd>←</kbd><kbd>→</kbd><span>快退 / 快进 30 秒</span></li>
+          <li data-k="up"><kbd>↑</kbd><kbd>↓</kbd><span>音量加 / 减</span></li>
+          <li data-k="m"><kbd>M</kbd><span>静音</span></li>
+          <li data-k="l"><kbd>L</kbd><span>喜欢</span></li>
+          <li data-k="d"><kbd>D</kbd><span>桌面歌词</span></li>
+        </ul>
+      </div>
+    </article>
+
+    <article class="sheet dplat" id="deskPlat" data-reveal>
+      <span class="sheet__tab"></span>
+      <div class="dplat__head">
+        <div>
+          <p class="tag"><svg class="i"><use href="#i-desktop"/></svg>Windows · macOS · Linux</p>
+          <h3 class="sheet__title"><span class="sheet__num">11b</span>三个系统，各自接上原生能力</h3>
+          <p class="body">同一份 Tauri 2 + Rust 内核，在每个系统上接进它自己的媒体会话、托盘和音频输出。下表是发布工作流的分发目标与源码里的平台实现；托盘、歌词与媒体键的具体呈现仍受系统与桌面环境影响。</p>
+        </div>
+        <p class="dplat__you mono" data-plat-you hidden><span>你正在用</span><b data-plat-you-name>Windows</b></p>
+      </div>
+      <div class="dplat__wrap">
+        <table class="dplat__table">
+          <thead>
+            <tr><th scope="col"><span class="sr-only">能力</span></th><th scope="col" data-col="win"><svg class="i" aria-hidden="true"><use href="#i-win"/></svg>Windows</th><th scope="col" data-col="mac"><svg class="i" aria-hidden="true"><use href="#i-apple"/></svg>macOS</th><th scope="col" data-col="linux"><svg class="i" aria-hidden="true"><use href="#i-linux"/></svg>Linux</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">系统媒体会话</th><td data-col="win">SMTC：锁屏、音量浮层与蓝牙耳机按键</td><td data-col="mac">Now Playing：控制中心与媒体键</td><td data-col="linux">MPRIS：GNOME / KDE 的媒体控件</td></tr>
+            <tr><th scope="row">托盘与后台</th><td data-col="win">通知区域图标，关闭到托盘继续播放</td><td data-col="mac">菜单栏图标，关闭窗口不退出</td><td data-col="linux">状态区图标（取决于桌面环境）</td></tr>
+            <tr><th scope="row">歌词</th><td data-col="win">桌面歌词，锁定后点击穿透</td><td data-col="mac">桌面歌词 + <b>菜单栏歌词</b></td><td data-col="linux">桌面歌词，锁定后点击穿透</td></tr>
+            <tr><th scope="row">全局快捷键</th><td data-col="win"><kbd>Ctrl</kbd> + <kbd>Alt</kbd> 组合</td><td data-col="mac"><kbd><svg class="i" aria-hidden="true"><use href="#i-cmd"/></svg>Cmd</kbd> + <kbd><svg class="i" aria-hidden="true"><use href="#i-opt"/></svg>Option</kbd> 组合</td><td data-col="linux"><kbd>Ctrl</kbd> + <kbd>Alt</kbd> 组合</td></tr>
+            <tr><th scope="row">音频输出</th><td data-col="win">cpal · WASAPI</td><td data-col="mac">cpal · CoreAudio</td><td data-col="linux">cpal · ALSA</td></tr>
+            <tr><th scope="row">安装包</th><td data-col="win"><code>.exe</code>（NSIS）· <code>.msi</code></td><td data-col="mac"><code>.dmg</code> · Apple Silicon / Intel</td><td data-col="linux"><code>.deb</code> · <code>.rpm</code> · AppImage</td></tr>
+            <tr><th scope="row">系统要求</th><td data-col="win">x64 · WebView2 运行时</td><td data-col="mac">Apple Silicon 11.0+ · Intel 10.15+</td><td data-col="linux">x64 · WebKitGTK 4.1 · GTK 3</td></tr>
+            <tr><th scope="row">第一次打开</th><td data-col="win">未做代码签名，SmartScreen 里选「仍要运行」</td><td data-col="mac">ad-hoc 签名，在「隐私与安全性」里「仍要打开」</td><td data-col="linux">AppImage 解压后赋予执行权限</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small dplat__note">桌面版不做应用内自动更新，新版本到 Releases 手动下载。USB 独占、SAF 与状态栏歌词属于 Android 版，桌面端用托盘、桌面歌词、媒体会话与快捷键补上。</p>
+    </article>
+  </div>
+</section>
+
+<!-- ═══════════════ 11 细节 ═══════════════ -->
+<section class="station" id="details" data-station="12" data-acc="amber" aria-labelledby="details-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <div>
+        <p class="eyebrow" data-reveal><b>12</b><span class="eyebrow__rule"></span>细节 · Details</p>
         <h2 class="h2" id="details-title" data-reveal style="--d:1">每天都会用到的<span class="ul">小细节<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
         <p class="lead" data-reveal style="--d:2">不起眼，却天天都会碰到。这些地方也一样认真打磨过。</p>
       </div>
@@ -1225,7 +1580,7 @@
     <div class="bento">
       <article class="card card--widgets" data-reveal>
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">10.1</span><h3>桌面小组件</h3><span class="card__meta mono">4×2 · 2×2 · 4×1</span></header>
+        <header class="card__head"><span class="card__no">12.1</span><h3>桌面小组件</h3><span class="card__meta mono">4×2 · 2×2 · 4×1</span></header>
         <div class="widgets">
           <figure class="widget widget--4x2"><img src="assets/img/widgets/widget-4x2.png" alt="4×2 播放卡片小组件预览" width="1020" height="540" loading="lazy"><figcaption class="mono">4 × 2</figcaption></figure>
           <figure class="widget widget--2x2"><img src="assets/img/widgets/widget-2x2.png" alt="2×2 迷你播放器小组件预览" width="540" height="540" loading="lazy"><figcaption class="mono">2 × 2</figcaption></figure>
@@ -1238,7 +1593,7 @@
 
       <article class="card card--shortcut" data-reveal style="--d:1">
         <span class="tape tape--tr"></span>
-        <header class="card__head"><span class="card__no">10.2</span><h3>启动器快捷方式</h3></header>
+        <header class="card__head"><span class="card__no">12.2</span><h3>启动器快捷方式</h3></header>
         <div class="shortcut" aria-hidden="true">
           <span class="shortcut__icon"><img src="assets/img/icon-512.png" alt="" width="96" height="96"></span>
           <ul class="shortcut__menu">
@@ -1253,7 +1608,7 @@
 
       <article class="card card--mini" data-reveal>
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">10.3</span><h3>迷你播放器，一滑切歌</h3></header>
+        <header class="card__head"><span class="card__no">12.3</span><h3>迷你播放器，一滑切歌</h3></header>
         <div class="mini" aria-hidden="true">
           <div class="mini__track">
             <div class="mini__item"><img src="assets/img/covers/polaris.jpg" alt="" width="90" height="90"><div><b>Polaris</b><span>Neri Line</span></div></div>
@@ -1268,7 +1623,7 @@
 
       <article class="card card--float" data-reveal style="--d:1">
         <span class="tape tape--tr"></span>
-        <header class="card__head"><span class="card__no">10.4</span><h3>悬浮与状态栏歌词</h3></header>
+        <header class="card__head"><span class="card__no">12.4</span><h3>悬浮与状态栏歌词</h3></header>
         <div class="floatlrc" aria-hidden="true">
           <div class="floatlrc__bar"><span>19:19</span><i>换一条轨 也不会停</i><span><svg><use href="#i-wifi"/></svg></span></div>
           <div class="floatlrc__pill"><b>每个字 都落在节拍上</b><span>Every word lands right on the beat</span></div>
@@ -1278,7 +1633,7 @@
 
       <article class="card card--car" data-reveal style="--d:2">
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">10.5</span><h3>车载播放</h3></header>
+        <header class="card__head"><span class="card__no">12.5</span><h3>车载播放</h3></header>
         <div class="dash" aria-hidden="true">
           <div class="dash__screen"><img src="assets/img/covers/daylight-route.jpg" alt="" width="90" height="90"><div><b>白昼航线</b><span>Neri Line</span></div></div>
           <ul class="dash__menu"><li>当前队列</li><li>本地歌单</li><li>最近播放</li><li>离线歌曲</li></ul>
@@ -1288,7 +1643,7 @@
 
       <article class="card card--safe" data-reveal style="--d:1">
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">10.6</span><h3>安全模式</h3></header>
+        <header class="card__head"><span class="card__no">12.6</span><h3>安全模式</h3></header>
         <pre class="term mono" aria-hidden="true"><span class="t-dim">$ launch moe.ouom.neriplayer</span>
 <span class="t-warn">! 上次启动发生 ANR</span>
 <span class="t-ok">→ 进入安全模式</span>
@@ -1298,14 +1653,14 @@
 
       <article class="card card--memory" data-reveal style="--d:2">
         <span class="tape tape--tr"></span>
-        <header class="card__head"><span class="card__no">10.7</span><h3>长音频进度记忆</h3></header>
+        <header class="card__head"><span class="card__no">12.7</span><h3>长音频进度记忆</h3></header>
         <div class="memo" aria-hidden="true"><i class="memo__bar"><i></i><b></b></i><div class="memo__marks mono"><span>&lt; 5 秒不记</span><span>≥ 15 分钟才存</span><span>结尾 30 秒算听完</span></div></div>
         <p class="body">长播客、长视频分 P 自动续上；显式指定的播放位置优先于记忆位置。</p>
       </article>
 
       <article class="card card--dev" id="devDemo" data-reveal>
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">10.8</span><h3>开发者模式</h3></header>
+        <header class="card__head"><span class="card__no">12.8</span><h3>开发者模式</h3></header>
         <button class="devver" id="devBtn" type="button"><span>版本号</span><b class="mono" data-gh="tag">NeriPlayer-3e1abcb7.10052132</b><small class="hand" id="devHint">连续点击 7 次试试</small></button>
         <p class="body">真机上同样是在设置页连点版本号 7 次：底栏会出现 Debug 页，内含各平台探针与日志查看器。</p>
       </article>
@@ -1314,11 +1669,11 @@
 </section>
 
 <!-- ═══════════════ 11 构造 ═══════════════ -->
-<section class="station" id="stack" data-station="11" data-acc="blue" aria-labelledby="stack-title">
+<section class="station" id="stack" data-station="13" data-acc="blue" aria-labelledby="stack-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>11</b><span class="eyebrow__rule"></span>构造 · Inside</p>
+        <p class="eyebrow" data-reveal><b>13</b><span class="eyebrow__rule"></span>构造 · Inside</p>
         <h2 class="h2" id="stack-title" data-reveal style="--d:1">十四个模块，<span class="ul">各管一段路<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
         <p class="lead" data-reveal style="--d:2">自有 Android 库按业务域拆分，依赖方向写在门禁里：<code>:model</code> 不依赖实现，<code>:common</code> 不依赖业务，所有库禁止依赖 app 或形成循环。彩色圆点对应它们服务的功能章节。</p>
       </div>
@@ -1330,9 +1685,9 @@
       <span><i style="--c:var(--pink)"></i>02 歌词</span>
       <span><i style="--c:var(--red)"></i>03 多源</span>
       <span><i style="--c:var(--amber)"></i>04 音质</span>
-      <span><i style="--c:var(--blue)"></i>05 一起听</span>
-      <span><i style="--c:var(--green)"></i>06 本地</span>
-      <span><i style="--c:var(--teal)"></i>07 同步</span>
+      <span><i style="--c:var(--blue)"></i>06 一起听</span>
+      <span><i style="--c:var(--green)"></i>07 本地</span>
+      <span><i style="--c:var(--teal)"></i>08 同步</span>
     </div>
 
     <h3 class="stack__h"><svg class="i"><use href="#i-code"/></svg>模块</h3>
@@ -1372,16 +1727,24 @@
 </section>
 
 <!-- ═══════════════ 12 下载 ═══════════════ -->
-<section class="station" id="download" data-station="12" data-acc="red" aria-labelledby="download-title">
+<section class="station" id="download" data-station="14" data-acc="red" aria-labelledby="download-title">
   <div class="wrap">
     <header class="sec-head">
       <div>
-        <p class="eyebrow" data-reveal><b>12</b><span class="eyebrow__rule"></span>下载 · Download</p>
+        <p class="eyebrow" data-reveal><b>14</b><span class="eyebrow__rule"></span>下载 · Download</p>
         <h2 class="h2" id="download-title" data-reveal style="--d:1">装上它，<span class="ul">马上就能听<svg class="ul__mark" aria-hidden="true"><use href="#d-squiggle"/></svg></span>。</h2>
-        <p class="lead" data-reveal style="--d:2">选一个和设备匹配的架构（ABI），点一下就能下载。版本号、文件大小和 SHA-256 校验值都实时读取自 GitHub Releases，免费，也没有任何广告。</p>
+        <p class="lead" data-reveal style="--d:2">先选手机还是电脑，再挑一个和设备匹配的安装包，点一下就能下载。版本号、文件大小和 SHA-256 校验值都实时读取自 GitHub Releases，免费，也没有任何广告。</p>
       </div>
     </header>
 
+    <div class="dlswitch" role="tablist" aria-label="选择平台" data-reveal>
+      <i class="dlswitch__ind" aria-hidden="true"></i>
+      <button type="button" role="tab" id="platA" aria-selected="true" aria-controls="paneA" class="is-on" data-plat="android"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg><span><b>Android</b><small>手机 · 平板 · APK</small></span></button>
+      <button type="button" role="tab" id="platD" aria-selected="false" aria-controls="paneD" tabindex="-1" data-plat="desktop"><svg class="i" aria-hidden="true"><use href="#i-desktop"/></svg><span><b>桌面端</b><small>Windows · macOS · Linux</small></span></button>
+    </div>
+
+    <div class="dlpanes" id="dlPanes">
+    <div class="dlpane is-on" id="paneA" role="tabpanel" aria-labelledby="platA" data-plat="android">
     <div class="cutline" data-reveal><svg class="i"><use href="#i-scissors"/></svg><span class="hand">沿虚线剪下</span></div>
 
     <div class="ticket" id="ticket" data-reveal>
@@ -1413,7 +1776,7 @@
             <a class="btn btn--ink" id="dlBtn" href="https://github.com/cwuom/NeriPlayer/releases/latest" rel="noopener"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg><span>下载 APK</span><small id="dlSize">GitHub Releases</small></a>
             <a class="ticket__more" href="https://github.com/cwuom/NeriPlayer/releases" target="_blank" rel="noopener">全部版本与更新日志<svg class="i"><use href="#i-arrow-dr"/></svg></a>
           </div>
-          <p class="ticket__sha mono" id="dlSha" hidden>SHA-256 <code></code></p>
+          <p class="ticket__sha mono is-off" id="dlSha">SHA-256 <code></code></p>
         </div>
         <div class="ticket__stub">
           <span class="ticket__no">第 <b data-gh="count">—</b> 版</span>
@@ -1428,19 +1791,19 @@
     <div class="channels">
       <article class="card" data-reveal>
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">12.1</span><h3>Release 版本<em class="hand">推荐</em></h3></header>
+        <header class="card__head"><span class="card__no">14.1</span><h3>Release 版本<em class="hand">推荐</em></h3></header>
         <p class="body">完成一批功能后手动发布，构建 arm64-v8a、armeabi-v7a、x86、x86_64 四个 ABI。它并不是严格意义上的稳定通道，仍可能有尚未暴露的问题。</p>
         <a class="link" href="https://github.com/cwuom/NeriPlayer/releases" target="_blank" rel="noopener">GitHub Releases ↗</a>
       </article>
       <article class="card" data-reveal style="--d:1">
         <span class="tape tape--tr"></span>
-        <header class="card__head"><span class="card__no">12.2</span><h3>CI 构建</h3></header>
+        <header class="card__head"><span class="card__no">14.2</span><h3>CI 构建</h3></header>
         <p class="body">master 分支每次成功构建都会上传 arm64-v8a APK，想第一时间尝鲜可以从这里取。</p>
         <p class="links"><a class="link" href="https://github.com/cwuom/NeriPlayer/actions" target="_blank" rel="noopener">GitHub Actions ↗</a><a class="link" href="https://t.me/neriplayer_ci" target="_blank" rel="noopener">Telegram @neriplayer_ci ↗</a></p>
       </article>
       <article class="card card--build" data-reveal style="--d:2">
         <span class="tape tape--tl"></span>
-        <header class="card__head"><span class="card__no">12.3</span><h3>从源码构建</h3><span class="card__meta mono">JDK 17</span></header>
+        <header class="card__head"><span class="card__no">14.3</span><h3>从源码构建</h3><span class="card__meta mono">JDK 17</span></header>
         <div class="code">
           <pre class="mono" id="buildCmd"><code><span class="t-dim"># 克隆仓库并初始化子模块</span>
 git clone --recursive https://github.com/cwuom/NeriPlayer.git
@@ -1472,11 +1835,117 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk</code></pre>
         <ul class="changes" id="dlChanges"><li class="changes__empty">正在向 GitHub 查询最新版本……</li></ul>
       </article>
     </div>
+    </div>
+
+    <div class="dlpane" id="paneD" role="tabpanel" aria-labelledby="platD" data-plat="desktop">
+    <div class="cutline" data-reveal><svg class="i"><use href="#i-scissors"/></svg><span class="hand">沿虚线剪下</span></div>
+
+    <div class="ticket ticket--desk" id="ticketD" data-reveal data-os="win">
+      <div class="ticket__paper">
+        <div class="ticket__main">
+          <div class="ticket__top">
+            <span class="ticket__line"><img src="assets/img/app-icon.png" alt="" width="28" height="28">NeriPlayer · Desktop 预览版</span>
+            <span class="ticket__kind">免费下载 <i>PREVIEW</i></span>
+          </div>
+          <div class="ticket__route">
+            <div class="ticket__stop"><small>来自</small><b>GitHub</b><i>RELEASES</i></div>
+            <div class="ticket__arrow" aria-hidden="true"><span></span><svg class="i"><use href="#i-win" data-dos-ic/></svg></div>
+            <div class="ticket__stop ticket__stop--to"><small>装到</small><b data-dos-to>你的 Windows</b><i data-dos-en>YOUR PC</i></div>
+          </div>
+          <dl class="ticket__info">
+            <div><dt>版本</dt><dd data-gh="dtag">最新预览版</dd></div>
+            <div><dt>发布于</dt><dd data-gh="ddate">—</dd></div>
+            <div><dt>系统要求</dt><dd>Win 10+ · macOS 10.15+ · WebKitGTK 4.1</dd></div>
+            <div><dt>价格</dt><dd>免费 · GPL-3.0</dd></div>
+          </dl>
+          <div class="ticket__osrow">
+            <span class="ticket__oslabel">系统</span>
+            <div class="seg ticket__os" role="radiogroup" aria-label="选择系统" data-dos-seg>
+              <button type="button" role="radio" aria-checked="true" class="is-on" data-dos="win"><svg class="i" aria-hidden="true"><use href="#i-win"/></svg>Windows</button>
+              <button type="button" role="radio" aria-checked="false" data-dos="mac"><svg class="i" aria-hidden="true"><use href="#i-apple"/></svg>macOS</button>
+              <button type="button" role="radio" aria-checked="false" data-dos="linux"><svg class="i" aria-hidden="true"><use href="#i-linux"/></svg>Linux</button>
+            </div>
+          </div>
+          <fieldset class="ticket__seats ticket__seats--os">
+            <legend>选择安装包</legend>
+            <label class="seat" data-os="win"><input type="radio" name="dpkg" value="win-exe" checked><span><b>安装程序 .exe</b><small>x64 · Windows 10 / 11 · 推荐</small></span></label>
+            <label class="seat" data-os="win"><input type="radio" name="dpkg" value="win-msi"><span><b>安装包 .msi</b><small>x64 · 适合批量部署</small></span></label>
+            <label class="seat" data-os="mac"><input type="radio" name="dpkg" value="mac-arm"><span><b>Apple Silicon</b><small>M1 及以后 · .dmg · 推荐</small></span></label>
+            <label class="seat" data-os="mac"><input type="radio" name="dpkg" value="mac-x64"><span><b>Intel</b><small>x64 · .dmg</small></span></label>
+            <label class="seat" data-os="linux"><input type="radio" name="dpkg" value="linux-appimage"><span><b>AppImage</b><small>x64 · 免安装，多数发行版通用</small></span></label>
+            <label class="seat" data-os="linux"><input type="radio" name="dpkg" value="linux-deb"><span><b>.deb</b><small>x64 · Debian / Ubuntu</small></span></label>
+            <label class="seat" data-os="linux"><input type="radio" name="dpkg" value="linux-rpm"><span><b>.rpm</b><small>x64 · Fedora / openSUSE</small></span></label>
+          </fieldset>
+          <div class="ticket__actions">
+            <a class="btn btn--ink" id="dlBtnD" href="https://github.com/cwuom/NeriPlayer-Desktop/releases/latest" rel="noopener"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg><span id="dlBtnDLabel">下载 .exe 安装程序</span><small id="dlSizeD">GitHub Releases</small></a>
+            <a class="ticket__more" href="https://github.com/cwuom/NeriPlayer-Desktop/releases" target="_blank" rel="noopener">全部版本与更新日志<svg class="i"><use href="#i-arrow-dr"/></svg></a>
+          </div>
+          <p class="ticket__sha mono is-off" id="dlShaD">SHA-256 <code></code></p>
+        </div>
+        <div class="ticket__stub">
+          <span class="ticket__no">第 <b data-gh="dcount">—</b> 版</span>
+          <span class="ticket__barcode" aria-hidden="true"></span>
+          <span class="stamp stamp--red ticket__stamp ticket__stamp--sm" aria-hidden="true">预览</span>
+          <span class="ticket__valid">累计下载<b data-gh="ddownloads">—</b></span>
+        </div>
+      </div>
+      <span class="ticket__punch" aria-hidden="true"></span>
+    </div>
+
+    <div class="channels">
+      <article class="card" data-reveal>
+        <span class="tape tape--tl"></span>
+        <header class="card__head"><span class="card__no">14.1</span><h3>预览版 Release<em class="hand">推荐</em></h3></header>
+        <p class="body">完成一批功能后发布，提供 Windows、macOS 与 Linux 的安装包，附 <code>SHA256SUMS.txt</code>、macOS 安装说明以及随包 FFmpeg 的源码与构建脚本。反馈问题时请附上「设置 → 关于」里的构建版本。</p>
+        <a class="link" href="https://github.com/cwuom/NeriPlayer-Desktop/releases" target="_blank" rel="noopener">GitHub Releases ↗</a>
+      </article>
+      <article class="card" data-reveal style="--d:1">
+        <span class="tape tape--tr"></span>
+        <header class="card__head"><span class="card__no">14.2</span><h3>CI 构建</h3></header>
+        <p class="body">想体验还没发布的改动，可以到 Artifacts 工作流挑一次成功的构建，下载对应平台的产物；需要登录 GitHub，先解压外层压缩包再安装。</p>
+        <p class="links"><a class="link" href="https://github.com/cwuom/NeriPlayer-Desktop/actions/workflows/artifacts.yml" target="_blank" rel="noopener">Artifacts 工作流 ↗</a><a class="link" href="https://t.me/ouom_pub" target="_blank" rel="noopener">Telegram @ouom_pub ↗</a></p>
+      </article>
+      <article class="card card--build" data-reveal style="--d:2">
+        <span class="tape tape--tl"></span>
+        <header class="card__head"><span class="card__no">14.3</span><h3>从源码构建</h3><span class="card__meta mono">pnpm 9 · Rust 1.95</span></header>
+        <div class="code">
+          <pre class="mono" id="buildCmdD"><code><span class="t-dim"># 克隆仓库与歌词子模块</span>
+git clone --recursive https://github.com/cwuom/NeriPlayer-Desktop.git
+cd NeriPlayer-Desktop
+pnpm install --frozen-lockfile
+<span class="t-dim"># 启动 Vite 与 Tauri 开发窗口</span>
+pnpm tauri dev</code></pre>
+          <button class="code__copy" type="button" data-copy="#buildCmdD" aria-label="复制构建命令"><svg class="i"><use href="#i-copy"/></svg><span>复制</span></button>
+        </div>
+        <p class="small">还需要 <a href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener">Tauri 平台依赖</a>，以及编译 FFmpeg C++ 垫片的工具链。</p>
+      </article>
+    </div>
+
+    <div class="guide">
+      <article class="note-card" data-reveal>
+        <h3 class="h4">第一次打开</h3>
+        <table class="abi"><tbody>
+          <tr><th class="mono">Windows</th><td>安装包暂未代码签名，SmartScreen 拦下时选「更多信息 → 仍要运行」；缺 WebView2 就先装运行时</td></tr>
+          <tr><th class="mono">macOS</th><td>ad-hoc 签名、未经公证：拖进「应用程序」打开一次，再到「系统设置 → 隐私与安全性」选「仍要打开」</td></tr>
+          <tr><th class="mono">Linux</th><td>AppImage 解压后赋予执行权限；deb / rpm 用发行版的包管理器安装</td></tr>
+        </tbody></table>
+      </article>
+      <article class="note-card" data-reveal style="--d:1">
+        <h3 class="h4">和手机一起用</h3>
+        <p class="body">在两端的「备份与同步」里连上同一个 GitHub 仓库或 WebDAV 目录就行。第一次遇到旧格式会提示升级，先把其他设备更新到最新再确认；音频文件不会被同步。</p>
+      </article>
+      <article class="note-card" data-reveal style="--d:2">
+        <h3 class="h4">最近一班列车</h3>
+        <ul class="changes" id="dlChangesD"><li class="changes__empty">正在向 GitHub 查询最新版本……</li></ul>
+      </article>
+    </div>
+    </div>
+    </div>
   </div>
 </section>
 
 <!-- ═══════════════ 站务室 ═══════════════ -->
-<section class="station station--faq" id="faq" data-station="13" aria-labelledby="faq-title">
+<section class="station station--faq" id="faq" data-station="15" aria-labelledby="faq-title">
   <div class="wrap wrap--narrow">
     <p class="eyebrow" data-reveal><b>i</b><span class="eyebrow__rule"></span>常见问题 · FAQ</p>
     <h2 class="h2" id="faq-title" data-reveal style="--d:1">有什么想问的？</h2>

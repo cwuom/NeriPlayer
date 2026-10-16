@@ -70,6 +70,7 @@ import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.network.PlaybackNetworkResumeOwner
 import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricSupport
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
@@ -1872,6 +1873,7 @@ private fun PlayerManager.preparePlaybackRelease() {
     playbackTransportOwner.resetForRelease()
     cancelPlaybackStartupWatchdog(reason = "release")
     resetPlaybackRuntimeWatchdog(reason = "release")
+    PlaybackNetworkResumeOwner.disarm("release")
     clearActivePlaybackCandidates()
     StartupAudioFocusController.release("player_release")
 

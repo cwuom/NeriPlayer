@@ -15,8 +15,11 @@ import java.nio.file.StandardCopyOption
 import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.json.JSONObject
+
+private const val COMPANION_TRANSACTION_TAG = "LocalMediaCompanion"
 
 data class LocalMediaCompanionRecoveryEntry(
     val reference: String,
@@ -166,7 +169,9 @@ class LocalMediaCompanionTransaction(private val context: Context, private val a
         val current = requireNotNull(record)
         val entry = current.companions.single { it.reference == reference }
         val snapshot = companionSnapshot(context, reference)
-        if (companionDigest(snapshot.bytes) != entry.expectedSha256 || snapshot.identity != entry.fileIdentity) {
+        if (companionDigest(snapshot.bytes) != entry.expectedSha256 ||
+            !sameCompanionFileIdentity(snapshot.identity, entry.fileIdentity)
+        ) {
             throw IOException("伴随文件写入读回或身份校验失败: $reference")
         }
         save(current.copy(companions = current.companions.map {
@@ -206,7 +211,10 @@ class LocalMediaCompanionTransaction(private val context: Context, private val a
         }
         if (target.exists()) {
             val actual = companionSnapshot(context, reference)
-            check(actual.identity == entry.previousIdentity && companionDigest(actual.bytes) == entry.previousSha256)
+            check(
+                sameCompanionFileIdentity(actual.identity, entry.previousIdentity) &&
+                    companionDigest(actual.bytes) == entry.previousSha256
+            )
         } else check(entry.createdByTransaction)
         Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
@@ -230,13 +238,16 @@ class LocalMediaCompanionTransaction(private val context: Context, private val a
         val isNew = existing?.createdByTransaction ?: (created || file != null && !file.exists())
         val snapshot = if (file != null && !file.exists()) null else companionSnapshot(context, reference)
         if (existing != null && snapshot != null) {
-            check(existing.fileIdentity == snapshot.identity) { "伴随文件对象已替换" }
+            check(sameCompanionFileIdentity(existing.fileIdentity, snapshot.identity)) { "伴随文件对象已替换" }
             val digest = companionDigest(snapshot.bytes)
             check(digest == existing.expectedSha256 || digest == existing.originalSha256) { "伴随文件内容冲突" }
         }
         if (snapshot != null) {
             val verified = companionSnapshot(context, reference)
-            check(verified.identity == snapshot.identity && verified.bytes.contentEquals(snapshot.bytes)) { "伴随文件映射不稳定" }
+            check(
+                sameCompanionFileIdentity(verified.identity, snapshot.identity) &&
+                    verified.bytes.contentEquals(snapshot.bytes)
+            ) { "伴随文件映射不稳定" }
         }
         // 重复的创建通知不能重新激活已经消费的创建基线
         if (registerCreation && existing != null) return
@@ -285,7 +296,8 @@ class LocalMediaCompanionTransaction(private val context: Context, private val a
         }
         if (current.companions.any { entry ->
                 !entry.deferredDelete && companionSnapshot(context, entry.reference).let { snapshot ->
-                    companionDigest(snapshot.bytes) != entry.expectedSha256 || snapshot.identity != entry.fileIdentity
+                    companionDigest(snapshot.bytes) != entry.expectedSha256 ||
+                        !sameCompanionFileIdentity(snapshot.identity, entry.fileIdentity)
                 }
             }) {
             throw IOException("伴随事务内容未完整读回")
@@ -324,8 +336,9 @@ internal fun rollbackLocalMediaCompanions(context: Context, record: LocalMetadat
             if (!entry.createdByTransaction && (backup == null || companionDigest(backup) != entry.originalSha256)) return@runCatching false
             val intended = entry.intendedFile?.readBytes()
             if (entry.phase != "RESTORING" && (intended == null || companionDigest(intended) != entry.expectedSha256)) return@runCatching false
-            val sameObject = current.identity == entry.fileIdentity
-            val matchesPrevious = current.identity == entry.previousIdentity && digest == entry.previousSha256
+            val sameObject = sameCompanionFileIdentity(current.identity, entry.fileIdentity)
+            val matchesPrevious = sameCompanionFileIdentity(current.identity, entry.previousIdentity) &&
+                digest == entry.previousSha256
             val owned = when (entry.phase) {
                 "CREATED", "WRITTEN" -> sameObject && digest == entry.expectedSha256
                 "WRITE_INTENT" -> sameObject && bytePrefix(current.bytes, requireNotNull(intended)) || matchesPrevious
@@ -361,7 +374,8 @@ private fun rollbackLegacyCompanion(context: Context, entry: LocalMediaCompanion
     if (!companionMatches(context, entry.reference, entry.expectedSha256)) return false
     val target = companionFile(entry.reference)
     if (target != null && (entry.createdByTransaction || entry.writeIdentityVerified) &&
-        (entry.fileIdentity == null || companionFileIdentity(target) != entry.fileIdentity)) return false
+        (entry.fileIdentity == null || !sameCompanionFileIdentity(companionFileIdentity(target), entry.fileIdentity))
+    ) return false
     if (entry.createdByTransaction) return deleteCompanion(context, entry.reference)
     val backup = entry.backupFile?.readBytes() ?: return false
     if (companionDigest(backup) != entry.originalSha256) return false
@@ -374,7 +388,9 @@ private fun rollbackLegacyCompanion(context: Context, entry: LocalMediaCompanion
 internal fun cleanupCompanionStagedFile(entry: LocalMediaCompanionRecoveryEntry): Boolean {
     val staged = entry.stagedFile ?: return true
     if (!staged.exists()) return true
-    return runCatching { companionFileIdentity(staged) == entry.stagedIdentity && staged.delete() }.getOrDefault(false)
+    return runCatching {
+        sameCompanionFileIdentity(companionFileIdentity(staged), entry.stagedIdentity) && staged.delete()
+    }.getOrDefault(false)
 }
 
 private fun durableCompanionFile(record: LocalMetadataRecoveryRecord, prefix: String, bytes: ByteArray): File =
@@ -402,7 +418,11 @@ private fun writeRegularCompanion(context: Context, reference: String, bytes: By
     val descriptor = openCompanionForRewrite(context, reference.toUri()) ?: throw IOException("伴随文件不可写")
     descriptor.use { fd ->
         val stat = Os.fstat(fd.fileDescriptor)
-        check(OsConstants.S_ISREG(stat.st_mode) && "${stat.st_dev}:${stat.st_ino}" == identity) { "伴随写入对象已改变" }
+        val actual = "${stat.st_dev}:${stat.st_ino}"
+        if (!OsConstants.S_ISREG(stat.st_mode) || !sameCompanionFileIdentity(actual, identity)) {
+            NPLogger.w(COMPANION_TRANSACTION_TAG, "companion identity mismatch: expected=$identity, actual=$actual")
+            error("伴随写入对象已改变")
+        }
         Os.ftruncate(fd.fileDescriptor, 0)
         ParcelFileDescriptor.AutoCloseOutputStream(fd.dup()).use { it.write(bytes); it.flush(); Os.fsync(fd.fileDescriptor) }
     }
@@ -426,7 +446,9 @@ internal fun finishLocalMediaCompanionDeletes(context: Context, record: LocalMet
             val expected = entry.expectedSha256 ?: entry.originalSha256
             if (entry.fileIdentity != null) {
                 val snapshot = companionSnapshot(context, entry.reference)
-                if (snapshot.identity != entry.fileIdentity || companionDigest(snapshot.bytes) != expected) return@runCatching false
+                if (!sameCompanionFileIdentity(snapshot.identity, entry.fileIdentity) ||
+                    companionDigest(snapshot.bytes) != expected
+                ) return@runCatching false
             } else if (!companionMatches(context, entry.reference, expected)) return@runCatching false
             deleteCompanion(context, entry.reference)
         }.getOrDefault(false)
@@ -442,6 +464,17 @@ private fun companionFile(reference: String): File? = when {
 }
 
 private fun companionFileIdentity(file: File): String = Os.stat(file.absolutePath).let { "${it.st_dev}:${it.st_ino}" }
+
+/**
+ * 身份格式为 `st_dev:st_ino`。FUSE 直通下同一文件按只读和读写打开会分别落在底层文件系统与 FUSE 视图，
+ * 设备号不同而 inode 相同，因此只要求 inode 一致；被替换的文件会拿到新 inode，校验依旧有效
+ */
+internal fun sameCompanionFileIdentity(left: String?, right: String?): Boolean {
+    if (left == right) return true
+    if (left == null || right == null) return false
+    val leftInode = left.substringAfter(':', "")
+    return leftInode.isNotEmpty() && leftInode == right.substringAfter(':', "")
+}
 
 private fun companionDigest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
     .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }

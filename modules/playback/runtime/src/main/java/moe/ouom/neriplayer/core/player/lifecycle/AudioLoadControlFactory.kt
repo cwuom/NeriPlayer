@@ -12,9 +12,10 @@ internal data class AudioLoadControlPolicy(
      * 缓冲降到下限才重新加载，一直加载到上限再停；上下限差得越大，
      * 两轮加载之间网卡和存储空闲越久，蜂窝尾流与 Wi-Fi 唤醒次数越少
      *
-     * 字节上限仍是 Media3 的音频默认值，高码率无损会先触到字节上限
+     * 字节上限仍是 Media3 的音频默认值，高码率无损会先触到字节上限；
+     * 锁屏后系统断网或网络抖动时，这段余量决定能不间断播多久
      */
-    val maxBufferMs: Int = 120_000,
+    val maxBufferMs: Int = 300_000,
     val bufferForPlaybackMs: Int = 1_000,
     val bufferForPlaybackAfterRebufferMs: Int = 3_000,
     /**

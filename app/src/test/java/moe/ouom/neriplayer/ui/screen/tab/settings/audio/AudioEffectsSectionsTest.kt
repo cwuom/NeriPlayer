@@ -7,7 +7,10 @@ import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSound
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSoundSection
 import moe.ouom.neriplayer.data.model.playback.effects.ParametricEqBand
+import moe.ouom.neriplayer.data.model.playback.effects.AudioOutputRoute
 import moe.ouom.neriplayer.data.model.playback.effects.SpeakerOptimizerSettings
+import moe.ouom.neriplayer.data.model.playback.effects.profileFor
+import moe.ouom.neriplayer.data.model.playback.effects.updateProfileFor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -161,5 +164,32 @@ class AudioEffectsSectionsTest {
         assertEquals(20f to 20_000f, AudioEffectsInputs.LogFrequency.displayBounds(0f..1f))
         assertEquals("-2", toggleInputSign("2"))
         assertEquals("2", toggleInputSign("-2"))
+    }
+
+    @Test
+    fun `enabling the speaker optimizer also turns on the speaker master switch`() {
+        val off = AudioEffectsSettings(main = AudioEffectsProfile(enabled = false))
+
+        val on = off.withSpeakerOptimizerEnabled(true)
+        assertTrue(on.speaker.enabled)
+        assertTrue(on.main.enabled)
+        assertFalse(on.isSpeakerOptimizerBlockedByMaster())
+
+        val disabled = on.withSpeakerOptimizerEnabled(false)
+        assertFalse(disabled.speaker.enabled)
+        assertTrue(disabled.main.enabled)
+    }
+
+    @Test
+    fun `speaker optimizer reports master blocking per speaker route`() {
+        val separated = AudioEffectsSettings(
+            perOutputEnabled = true,
+            main = AudioEffectsProfile(enabled = true),
+            speaker = SpeakerOptimizerSettings(enabled = true)
+        ).updateProfileFor(AudioOutputRoute.SPEAKER) { it.copy(enabled = false) }
+
+        assertTrue(separated.isSpeakerOptimizerBlockedByMaster())
+        assertTrue(separated.withSpeakerOptimizerEnabled(true).profileFor(AudioOutputRoute.SPEAKER).enabled)
+        assertFalse(separated.copy(speaker = SpeakerOptimizerSettings(enabled = false)).isSpeakerOptimizerBlockedByMaster())
     }
 }

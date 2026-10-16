@@ -79,16 +79,11 @@ fun AudioEffectsSettings.resolveDsp(context: AudioEffectsRuntimeContext): AudioE
     if (context.usbExclusiveNative && (!settings.applyInUsbExclusive || context.usbBitPerfect)) {
         return inactive(AudioEffectsInactiveReason.USB_EXCLUSIVE)
     }
-    val soundActive = profile.enabled && !profile.sound.isNeutral()
+    // 总开关关闭时必须完全原声输出，外放优化也不例外
+    if (!profile.enabled) return inactive(AudioEffectsInactiveReason.DISABLED)
+    val soundActive = !profile.sound.isNeutral()
     val speakerActive = settings.speaker.enabled && context.route == AudioOutputRoute.SPEAKER
-    if (!soundActive && !speakerActive) {
-        val reason = if (profile.enabled || settings.speaker.enabled) {
-            AudioEffectsInactiveReason.NEUTRAL
-        } else {
-            AudioEffectsInactiveReason.DISABLED
-        }
-        return inactive(reason)
-    }
+    if (!soundActive && !speakerActive) return inactive(AudioEffectsInactiveReason.NEUTRAL)
     val sound = if (soundActive) profile.sound.effective() else AudioEffectsSound()
     val params = neutralDspParams()
     params[NeriDspParams.MASTER_ENABLED] = 1f

@@ -104,6 +104,7 @@ internal fun AudioEffectsSettingsPage(usbExclusive: Boolean, modifier: Modifier 
                     section = section,
                     checked = sectionEnabled,
                     route = route,
+                    speakerBlockedByMaster = settings.isSpeakerOptimizerBlockedByMaster(),
                     onCheckedChange = { enabled -> editor.setSectionEnabled(section, enabled, settings, soundState) }
                 )
             }
@@ -177,15 +178,16 @@ private fun AudioEffectsSectionSwitch(
     section: AudioEffectsSection,
     checked: Boolean,
     route: AudioOutputRoute,
+    speakerBlockedByMaster: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
     val description = when (section) {
         AudioEffectsSection.SPEED -> stringResource(CoreCommonR.string.audio_effects_section_switch_speed_desc)
         AudioEffectsSection.DYNAMICS -> stringResource(CoreCommonR.string.audio_effects_section_switch_dynamics_desc)
-        AudioEffectsSection.SPEAKER -> if (checked && route != AudioOutputRoute.SPEAKER) {
-            stringResource(CoreCommonR.string.audio_effects_speaker_inactive)
-        } else {
-            stringResource(CoreCommonR.string.audio_effects_section_switch_desc)
+        AudioEffectsSection.SPEAKER -> when {
+            checked && speakerBlockedByMaster -> stringResource(CoreCommonR.string.audio_effects_speaker_master_off)
+            checked && route != AudioOutputRoute.SPEAKER -> stringResource(CoreCommonR.string.audio_effects_speaker_inactive)
+            else -> stringResource(CoreCommonR.string.audio_effects_section_switch_desc)
         }
         else -> stringResource(CoreCommonR.string.audio_effects_section_switch_desc)
     }

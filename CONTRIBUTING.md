@@ -242,6 +242,13 @@
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
   - `LocalArtistDetailScreen.kt` 展示本地艺术家详情，支持播放全部、
     多选、导出歌单和批量下载可在线解析的歌曲。
+  - `curation/` 是批量词图管理：`LocalCurationCoordinator` 持有进程级会话并通过
+    `LocalCurationPorts` 访问副作用（生产实现 `AppLocalCurationPorts` 调用
+    `PlayerManager.embedLocalSongAssets`：文件写入在全局元数据锁外并行、同一文件由本地媒体层按目标排队，
+    锁内只基于最新副本合并歌词与封面字段），`LocalCurationPolicy` 是可单测的规划、自动勾选与空间估算规则。
+    文件侧的嵌入资产检查、封面压缩、文件夹封面定位与媒体写入授权位于
+    `modules/local` 的 `data/local/media/curation/`；时间轴、现场版与 LRC 标签加权位于
+    `:platform` 的 `LyricMatchSupplementalSignals.kt`。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/artist/`
   - 网易云艺术家详情页，展示艺术家信息、热门歌曲、分页专辑和关注状态。
@@ -469,8 +476,8 @@
   清单和清理；较大归档通过 Git Data API 的 blob/tree/commit 写入仓库，以 GraphQL
   `updateRefs` 的 `beforeOid` 和 `force=false` 原子发布。上传请求的 Base64 只是传输封装，
   仓库正文仍为原始二进制；读取固定分支头并使用 raw 内容。
-- WebDAV 使用 `If-None-Match: *` 创建不可变对象和首次清单；后续清单必须使用强 ETag
-  的 `If-Match`。缺少强条件时停止发布，不能回退无条件写入。
+- WebDAV 使用 `If-None-Match: *` 创建不可变对象和首次清单；每次发布前重新核对清单指纹，
+  有强 ETag 时同时使用 `If-Match`。缺少强 ETag 时只能在指纹一致后发布并回读确认，不能跳过核对直接写入。
 - 播放统计与流量统计采用延迟批量写入；播放统计在播放器/Activity 关键生命周期
   flush，流量累积器在请求或下载尝试结束时 flush，播放累计与每日桶不再按数量淘汰。
   同步合并需要同时维护全量累计、每日桶和旧版 bucket-only 载荷提升，不能先裁剪窗口再抬升。
@@ -632,8 +639,8 @@
    周期同步、validated network 检查和失败重试行为。GitHub 清单发布必须按固定远端
    分支头进行批量提交的 `expectedHeadOid` 校验，或分阶段发布的 `beforeOid` 与
    `force=false` 原子更新，冲突时失败。快速路径预算见 `modules/sync/README.md`，
-   已发送批量提交后的错误不得切换到另一条写入流程。WebDAV 后续清单写入必须使用
-   强 ETag 的 `If-Match`，不支持安全条件写入时停止发布。
+   已发送批量提交后的错误不得切换到另一条写入流程。WebDAV 后续清单写入必须先核对指纹，
+   有强 ETag 时使用 `If-Match`，没有时发布后回读确认，发现变化按冲突重新合并。
 8. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
 9. 存储文件名、键名、Worker 类全名、任务名与输入键属于升级兼容边界，迁移模块时必须保持。

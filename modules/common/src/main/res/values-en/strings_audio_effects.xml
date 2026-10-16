@@ -181,6 +181,7 @@
     <string name="audio_effects_speaker_desc">Only works on the built-in speaker. It turns off automatically with headphones or Bluetooth.</string>
     <string name="audio_effects_speaker_enabled">Enable speaker optimization</string>
     <string name="audio_effects_speaker_inactive">You are not playing through the speaker, so this is paused</string>
+    <string name="audio_effects_speaker_master_off">Audio effects are turned off, so this is paused</string>
     <string name="audio_effects_speaker_size">Speaker type</string>
     <string name="audio_effects_speaker_size_phone">Phone</string>
     <string name="audio_effects_speaker_size_tablet">Tablet</string>
